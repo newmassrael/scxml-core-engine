@@ -490,13 +490,19 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
    it was, so the names are sorted here, once, and not at run time. #}
 {% for param in invoke_info.params | sort(attribute='name', case_sensitive=true) %}
 {% if param.is_static_literal %}
-            _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
-            _host_inv_params[_host_inv_param_count].value = "{{ param.static_value | escape_c }}";
-            _host_inv_param_count++;
+            {
+                /* The parameter keeps a pointer to its text until the host is
+                   called, so the text is an array of static storage, which no
+                   block ends; one of any length (`c_char_array_init`). */
+                static const char _host_inv_value[] = {{ param.static_value | c_char_array_init }};
+                _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
+                _host_inv_params[_host_inv_param_count].value = _host_inv_value;
+                _host_inv_param_count++;
 {% if not param.envelope_metadata %}
-            sce_forge_wire_pair(&_host_inv_wire, "\"{{ param.name | escape_json_string | escape_c }}\"",
-                                sce_forge_wire_string("{{ param.static_value | escape_c }}"));
+                sce_forge_wire_pair(&_host_inv_wire, "\"{{ param.name | escape_json_string | escape_c }}\"",
+                                    sce_forge_wire_string(_host_inv_value));
 {% endif %}
+            }
 {% elif param.native_value %}
             {
                 sce_forge_algorithm_failure_t sce_failure_ = {0};
@@ -607,16 +613,22 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             }
             lua_pop(sm->L, 1);
 {% else %}
-            static const char _host_inv_event_data[] = "{% if payload_params %}{{ payload_params | static_params_json | escape_c }}{% endif %}";
+            static const char _host_inv_event_data[] = {{ ((payload_params | static_params_json) if payload_params else '') | c_char_array_init }};
 {% endif %}
             {
+{% if not invoke_info.native_content and not invoke_info.contentexpr %}
+                /* The request keeps a pointer to the inline `<content>` until
+                   the host is called: an array of static storage, of any
+                   length. */
+                static const char _host_inv_content_text[] = {{ invoke_info.content | default('', true) | c_char_array_init }};
+{% endif %}
                 sce_host_invoke_event_t _host_inv;
                 memset(&_host_inv, 0, sizeof(_host_inv));
                 _host_inv.phase = SCE_HOST_INVOKE_START;
                 _host_inv.processor_type = "{{ invoke_info.invoke_type | escape_c }}";
                 _host_inv.invoke_id = "{{ invoke_info.invoke_id | escape_c }}";
                 _host_inv.src = {% if invoke_info.native_src %}_host_inv_src_native{% elif invoke_info.srcexpr %}_host_inv_src{% else %}"{{ invoke_info.src | default('', true) | escape_c }}"{% endif %};
-                _host_inv.content = {% if invoke_info.native_content %}_host_inv_content_native{% elif invoke_info.contentexpr %}_host_inv_content{% else %}"{{ invoke_info.content | default('', true) | escape_c }}"{% endif %};
+                _host_inv.content = {% if invoke_info.native_content %}_host_inv_content_native{% elif invoke_info.contentexpr %}_host_inv_content{% else %}_host_inv_content_text{% endif %};
                 _host_inv.event_data = _host_inv_event_data;
                 /* W3C SCXML 6.4.1: the machine's one start path records the
                    invocation, reads its deadline and runs the handler; this

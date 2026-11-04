@@ -1534,11 +1534,28 @@ fn classify_expression_site(lines: &[&str], index: usize, needle: &str) -> Expre
     // Outside every string literal on the line, so the backend's own compiler
     // reads it as a program fragment rather than an engine reading it as text.
     // Last of the positive answers, so a hand-off, an adjudicated destination
-    // and a diagnostic each claim the site before this can.
-    if !expression_is_inside_string_literal(line, needle) {
+    // and a diagnostic each claim the site before this can. A value written
+    // through the C or C++ literal door stands outside the template's quotes
+    // because the door writes the quotes, or the characters of a text too long
+    // for them: it is text in the artifact exactly as `"{{ … }}"` is.
+    if !expression_is_inside_string_literal(line, needle) && !written_by_a_literal_door(needle) {
         return ExpressionSiteRole::NativeEmission;
     }
     ExpressionSiteRole::Unadjudicated
+}
+
+/// The filters that write a value as a complete C or C++ text expression — a
+/// string literal while it fits one, the characters of its bytes past that
+/// (`crate::filters::c_text_expression` and its siblings).
+pub(crate) const LITERAL_DOOR_FILTERS: &[&str] =
+    &["c_char_array_init", "c_text_expr", "cpp_text_expr"];
+
+/// Whether `needle`, an interpolation, applies one of [`LITERAL_DOOR_FILTERS`]
+/// last, to the whole value, as the template lexer reads a tag's filters.
+fn written_by_a_literal_door(needle: &str) -> bool {
+    LITERAL_DOOR_FILTERS
+        .iter()
+        .any(|filter| crate::template_lexing::applies_last_to_the_whole_value(needle, filter))
 }
 
 /// Where the callee search may start: [`CALL_WINDOW_LINES`] back, or the top
@@ -5938,6 +5955,40 @@ fn count_braces(line: &str, brace: char) -> i32 {
 mod tests {
     use super::*;
     use crate::parser::SCXMLParser;
+
+    /// A value the C or C++ literal door writes stands outside the template's
+    /// quotes and is still text in the artifact: the census gives it the role
+    /// `"{{ … }}"` has, and only a bare interpolation outside the quotes is
+    /// code the backend's compiler reads.
+    #[test]
+    fn a_value_written_by_the_literal_door_is_text_not_code() {
+        let role = |line: &str, needle: &str| classify_expression_site(&[line], 0, needle);
+        let door = "{{ action.content | cpp_text_expr }}";
+        assert_eq!(
+            role(&format!("    hostRequest.content = {door};"), door),
+            ExpressionSiteRole::Inert
+        );
+        assert_eq!(
+            role(&format!("    unknownCallee({door});"), door),
+            role(
+                "    unknownCallee(\"{{ action.content }}\");",
+                "{{ action.content }}"
+            ),
+        );
+        assert_eq!(
+            role(
+                "    unknownCallee({{ action.content }});",
+                "{{ action.content }}"
+            ),
+            ExpressionSiteRole::NativeEmission
+        );
+        for filter in LITERAL_DOOR_FILTERS {
+            assert!(written_by_a_literal_door(&format!(
+                "{{{{ x | {filter} }}}}"
+            )));
+        }
+        assert!(!written_by_a_literal_door("{{ x | escape_c }}"));
+    }
 
     /// Prints what the seam still owes, so the migration has a number that
     /// comes from the tree rather than from a document.

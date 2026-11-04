@@ -1553,7 +1553,15 @@ no typed interpretation or are explicitly excluded:
   string literal of the target holds is written as the characters of
   its bytes: a compound literal on C11 past 4095 bytes, a `std::string`
   on C++ past 65,535 bytes or wherever it holds a U+0000, and a
-  `buildString` of pieces on Kotlin past one class-file constant.
+  `buildString` of pieces on Kotlin past one class-file constant. The C11
+  and C++ templates write a document's own text the same way — a `<log>`
+  label, inline `<content>`, `<data>` and `<donedata>` content, a static
+  `<param>`, a `<script>` and a `<finalize>` body — through the template
+  filters `c_text_expr`, `c_char_array_init` and `cpp_text_expr`; where a
+  pointer to the text is kept past the statement (a host's parameter, a
+  host request's content) the text is an array of static storage, never a
+  compound literal, which lives only as long as its block
+  (`sce-build/tests/a_long_document_text_is_held_as_characters_in_c_and_cpp.rs`).
   ⚠ Until 2026-11-04 the lexer kept the source spelling and every
   backend pasted it between double quotes: a `'` literal holding a `"`
   did not compile, `'$name'` was a Kotlin template expression, `'\x41'`

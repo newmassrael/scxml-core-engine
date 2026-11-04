@@ -204,7 +204,7 @@
                             "{{ invoke_info.invoke_id }}",
                             sessionId_.has_value() ? sessionId_.value() : "",
                             {{ 'true' if invoke_info.autoforward else 'false' }},
-                            "{{ invoke_info.finalize_content | replace('"', '\"') }}"
+                            {{ invoke_info.finalize_content | cpp_text_expr }}
                         };
                         pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
                     } else {
@@ -258,7 +258,7 @@
 {% endif %}
 {% for param in invoke_info.params %}
 {% if param.is_static_literal %}
-                    _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+                    _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back({{ param.static_value | cpp_text_expr }});
 {% elif param.native_value %}
                     {
                         // `datamodel="sce-static"` (SCE Accepted Subset §2.15):
@@ -596,7 +596,7 @@
    Subset §2.15). The typed value is what that text parses as, which the
    engine's own dequeue reads it back as when it is not given. #}
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
-                    eventData = "{{ state.donedata.native_content | escape_cpp }}";
+                    eventData = {{ state.donedata.native_content | cpp_text_expr }};
                     typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
 {% elif state.donedata.native_content_value %}
 {# `datamodel="sce-static"` (`DoneData::native_content_value`): the `<content
@@ -649,7 +649,7 @@
                     // W3C SCXML 5.5: inline text children are used **as the content
                     // value** — no evaluation, no script engine. Linkable against sce_base.
                     ::SCE::DoneDataHelper::emitContentLiteral(
-                        "{{ state.donedata.content.text | escape_cpp }}",
+                        {{ state.donedata.content.text | cpp_text_expr }},
                         eventData,
                         &typedData
                     );

@@ -100,13 +100,18 @@
    it was, so the names are sorted here, once, and not at run time. #}
 {% for param in params | sort(attribute='name', case_sensitive=true) %}
 {% if param.is_static_literal %}
-                    sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"",
-                                        sce_forge_wire_string("{{ param.static_value | escape_c }}"));
+                    {
+                        /* A host keeps a pointer to the text until it is called:
+                           an array of static storage, of any length. */
+                        static const char sce_param_text_[] = {{ param.static_value | c_char_array_init }};
+                        sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"",
+                                            sce_forge_wire_string(sce_param_text_));
 {% if host_texts %}
-                    _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
-                    _host_params[_host_param_count].value = "{{ param.static_value | escape_c }}";
-                    _host_param_count++;
+                        _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                        _host_params[_host_param_count].value = sce_param_text_;
+                        _host_param_count++;
 {% endif %}
+                    }
 {% elif param.native_value %}
                     {
                         sce_forge_algorithm_failure_t sce_failure_ = {0};
@@ -147,7 +152,7 @@
                    the JSON the arm below serialises to (W3C SCXML B.2.9) —
                    is finished at codegen time. */
                 {
-                    static const char _lit[] = "{{ params | static_params_json | escape_c }}";
+                    static const char _lit[] = {{ params | static_params_json | c_char_array_init }};
                     _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
                                    "<send>'s literal payload does not fit SCE_MAX_DATA_LEN");
                     memcpy(_ed, _lit, sizeof(_lit));
@@ -281,7 +286,7 @@
 {{ send_native_content(action, csym_prefix, machine, '_ed', '_host_content' if host_text else none) }}
 {% elif action.native_content %}
                 {
-                    static const char _lit[] = "{{ action.native_content | escape_c }}";
+                    static const char _lit[] = {{ action.native_content | c_char_array_init }};
                     _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
                                    "<send>'s literal <content> does not fit SCE_MAX_DATA_LEN");
                     memcpy(_ed, _lit, sizeof(_lit));
@@ -300,7 +305,7 @@
                 }
 {% elif (action.content | trim) is startingwith('<') %}
                 {
-                    static const char _lit[] = "{{ action.content | escape_c }}";
+                    static const char _lit[] = {{ action.content | c_char_array_init }};
                     _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
                                    "<send>'s literal <content> does not fit SCE_MAX_DATA_LEN");
                     memcpy(_ed, _lit, sizeof(_lit));
@@ -1066,11 +1071,17 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% elif (action.content or action.contentexpr or action.native_content_value) and not basic_http %}
 {{ send_content_json(action, csym_prefix, model.name, true) }}
 {% endif %}
+{% if not content_buf and not (action.native_content_value and not basic_http) %}
+                /* The request keeps a pointer to the inline `<content>` until
+                   the host is called: an array of static storage, of any
+                   length. */
+                static const char _host_req_content[] = {{ action.content | default('', true) | c_char_array_init }};
+{% endif %}
                 sce_host_send_request_t _host_req;
                 _host_req.processor_type = {{ processor_type }};
                 _host_req.event_name = {% if resolved_event %}{{ resolved_event }}{% elif action.eventexpr %}_host_event{% else %}"{{ action.event | default('', true) | escape_c }}"{% endif %};
                 _host_req.target = {% if resolved_target %}{{ resolved_target }}{% elif action.targetexpr %}_host_target{% else %}"{{ action.target | default('', true) | escape_c }}"{% endif %};
-                _host_req.content = {% if content_buf %}{{ content_buf }}{% elif action.native_content_value and not basic_http %}_host_content{% else %}"{{ action.content | default('', true) | escape_c }}"{% endif %};
+                _host_req.content = {% if content_buf %}{{ content_buf }}{% elif action.native_content_value and not basic_http %}_host_content{% else %}_host_req_content{% endif %};
                 _host_req.send_id = {% if action.id %}"{{ action.id | escape_c }}"{% else %}{{ send_id_c_expr(action) }}{% endif %};
 {% if action.params or action.namelist %}
                 _host_req.params = _host_params;
@@ -2256,14 +2267,14 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {{ se.lua_eval_to_string(action.expr, '_log_buf', '256', '_log_ok') }}
             if (_log_ok) {
                 (void)fprintf(stderr,
-                    {% if action.label %}"%s: %s\n", "{{ action.label }}"{% else %}"%s\n"{% endif %},
+                    {% if action.label %}"%s: %s\n", {{ action.label | c_text_expr }}{% else %}"%s\n"{% endif %},
                     _log_buf);
             } else {
                 /* W3C SCXML 5.9: an expression that fails raises
                    error.execution, and (W3C SCXML 4.9) the error ends the
                    block — every block is its own C function. */
                 (void)fprintf(stderr,
-                    "Failed to evaluate log expression: %s\n", "{{ action.expr }}");
+                    "Failed to evaluate log expression: %s\n", {{ action.expr | c_text_expr }});
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<log> expr failed to evaluate");
@@ -2281,11 +2292,11 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
            the path, so the first MCU/null-datamodel consumer sees aligned
            behaviour with cpp. */
         (void)fprintf(stderr,
-            {% if action.label %}"%s: %s\n", "{{ action.label }}"{% else %}"%s\n"{% endif %},
+            {% if action.label %}"%s: %s\n", {{ action.label | c_text_expr }}{% else %}"%s\n"{% endif %},
             {{ action.expr | replace("'", '"') }});
 {% endif %}
 {% elif action.label %}
-        (void)fprintf(stderr, "%s\n", "{{ action.label }}");
+        (void)fprintf(stderr, "%s\n", {{ action.label | c_text_expr }});
 {% endif %}
 {% elif action.type == 'cancel' %}
         /* W3C SCXML 6.3: <cancel{% if action.sendid %} sendid="{{ action.sendid }}"{% endif %}{% if action.sendidexpr %} sendidexpr="{{ action.sendidexpr }}"{% endif %}>
@@ -2365,7 +2376,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                handles top-level src; inline `<script src="...">` is
                outside W3C 5.8's scope per the corpus). */
             if (luaL_dostring(sm->L,
-                "{{ action.content | to_lua_script | escape_c }}") != 0) {
+                {{ action.content | to_lua_script | c_text_expr }}) != 0) {
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
@@ -3068,7 +3079,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            event is built from or a host reads, which a literal too long for it
            refuses at compile time. */
         {
-            static const char sce_lit_[] = "{{ state.donedata.native_content | escape_c }}";
+            static const char sce_lit_[] = {{ state.donedata.native_content | c_char_array_init }};
             _Static_assert(sizeof(sce_lit_) <= sizeof(sm->done_data),
                            "<donedata>'s inline <content> does not fit SCE_MAX_DATA_LEN");
             memcpy(sm->done_data, sce_lit_, sizeof(sce_lit_));
@@ -4698,7 +4709,7 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
             && evt.invoke_id[0] != '\0'
             && strcmp(evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id) == 0) {
             (void)luaL_dostring(sm->L,
-                "{{ invoke_info.finalize_content | to_lua_script | escape_c }}");
+                {{ invoke_info.finalize_content | to_lua_script | c_text_expr }});
         }
         {% endif %}
         {% endfor %}

@@ -594,7 +594,7 @@
                         hostInvoke.processorType = "{{ invoke_info.invoke_type | escape_cpp }}";
                         hostInvoke.invokeId = "{{ invoke_info.invoke_id }}";
                         hostInvoke.src = "{{ invoke_info.src | default('', true) | escape_cpp }}";
-                        hostInvoke.content = "{{ invoke_info.content | default('', true) | escape_cpp }}";
+                        hostInvoke.content = {{ invoke_info.content | default('', true) | cpp_text_expr }};
                         // The pairs the author sent, as text and as the data
                         // model holds them, for the request's eventData — the
                         // `<send>`'s pair of maps, from the same one evaluation
@@ -716,10 +716,10 @@
 {% set request_checks = host_invoke_request_checks[invoke_info.invoke_id] if invoke_info.invoke_id in host_invoke_request_checks else none %}
                         {% for param in invoke_info.params %}
                         {% if param.is_static_literal %}
-                        hostInvoke.params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+                        hostInvoke.params["{{ param.name | escape_cpp }}"].push_back({{ param.static_value | cpp_text_expr }});
                         {% if not param.envelope_metadata %}
-                        payloadText["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
-                        payloadTyped["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("{{ param.static_value | escape_cpp }}")));
+                        payloadText["{{ param.name | escape_cpp }}"].push_back({{ param.static_value | cpp_text_expr }});
+                        payloadTyped["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string({{ param.static_value | cpp_text_expr }})));
                         {% endif %}
                         {% elif param.native_value %}
                         {

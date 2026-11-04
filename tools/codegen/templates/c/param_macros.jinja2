@@ -35,13 +35,13 @@
 {% for param in params %}
 {% set record_as = param.name if (record and not param.envelope_metadata) else none %}
 {% if param.is_static_literal %}
-{{ indent }}static const char {{ prefix }}_value_{{ loop.index0 }}[] = "{{ param.static_value | escape_c }}";
+{{ indent }}static const char {{ prefix }}_value_{{ loop.index0 }}[] = {{ param.static_value | c_char_array_init }};
 {{ indent }}{{ arr }}[{{ count }}].name = "{{ param.name | escape_c }}";
 {{ indent }}{{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
 {{ indent }}{{ count }}++;
 {% if record_as %}
 {{ indent }}(void)luaL_dostring(sm->L,
-{{ indent }}    "table.insert(_sce_invoke_pairs, {\"{{ param.name | escape_lua | escape_c }}\", \"{{ param.static_value | escape_lua | escape_c }}\"})");
+{{ indent }}    {{ ('table.insert(_sce_invoke_pairs, {"' ~ (param.name | escape_lua) ~ '", "' ~ (param.static_value | escape_lua) ~ '"})') | c_text_expr }});
 {% endif %}
 {% elif failed_flag and not (param.expr or param.location) %}
 {{ indent }}/* W3C SCXML 5.7.1: an empty location names no location in the data

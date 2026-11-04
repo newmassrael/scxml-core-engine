@@ -1602,6 +1602,7 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("escape_cpp_format", escape_cpp_format);
+    env.add_filter("cpp_text_expr", cpp_text_expr);
     // The whitespace a `sce-static` machine's literal `<send><content>` is
     // normalised by, as the other backends spell it.
     env.add_filter("normalize_ws", normalize_ws);
@@ -1701,6 +1702,8 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     register_invoke_filters(env);
     register_event_wire_filters(env);
     env.add_filter("escape_c", escape_c);
+    env.add_filter("c_text_expr", c_text_expr);
+    env.add_filter("c_char_array_init", c_char_array_init);
     register_ecmascript_filters(env, scope);
     env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
     env.add_filter("to_c11_upper_ident", to_c11_upper_ident);
@@ -1790,29 +1793,66 @@ pub fn c_char_constants(text: &str) -> Vec<String> {
 
 /// `text` as a C11 expression of type `const char *`: a string literal while
 /// the text fits one ([`C_STRING_LITERAL_MAX_BYTES`]), and past that a compound
-/// literal of its bytes and the zero that ends them, `(const char[]){…}`, which
-/// ISO C11 (6.5.2.5) holds to no length and which decays to the same pointer.
-/// The caller refuses a text holding U+0000, which a C string cannot hold.
+/// literal of its bytes and the zero that ends them, `((const char[]){…})`,
+/// which ISO C11 (6.5.2.5) holds to no length and which decays to the same
+/// pointer. The outer parentheses are what let it stand as one argument of a
+/// macro (`luaL_dostring` is one): the preprocessor splits a macro's arguments
+/// at every comma not inside parentheses, and braces do not count. A compound
+/// literal lives as long as the block it is written in, so a pointer kept past
+/// the statement takes an array of static storage instead
+/// ([`c_char_array_init`]). The caller refuses a text holding U+0000, which a C
+/// string cannot hold.
 pub fn c_text_expression(text: &str) -> String {
     if text.len() <= C_STRING_LITERAL_MAX_BYTES {
         return format!("\"{}\"", escape_c(text.to_string()));
     }
     let mut constants = c_char_constants(text);
     constants.push("'\\0'".to_string());
-    format!("(const char[]){{{}}}", constants.join(", "))
+    format!("((const char[]){{{}}})", constants.join(", "))
 }
 
 /// `text` as a C++ expression: a string literal while the text fits one
 /// ([`CPP_STRING_LITERAL_MAX_BYTES`]) and holds no U+0000, and otherwise the
-/// `std::string` its bytes initialize, `std::string{…}`, which holds a zero
+/// `std::string` its bytes initialize, `(std::string{…})`, which holds a zero
 /// byte as any other and is held to no length. A string literal is a
 /// `const char *` that a `std::string` is made from up to its first zero, so a
-/// literal holding one would lose the text after it.
+/// literal holding one would lose the text after it. Parenthesized so it stands
+/// as one argument of a macro, as [`c_text_expression`]'s compound literal is.
 pub fn cpp_text_expression(text: &str) -> String {
     if text.len() <= CPP_STRING_LITERAL_MAX_BYTES && !text.contains('\0') {
         return format!("\"{}\"", escape_cpp(text.to_string()));
     }
-    format!("std::string{{{}}}", c_char_constants(text).join(", "))
+    format!("(std::string{{{}}})", c_char_constants(text).join(", "))
+}
+
+/// `text` as the initializer of a C `char` array (`static const char x[] =
+/// …;`): the string literal while the text fits one
+/// ([`C_STRING_LITERAL_MAX_BYTES`]), and past that the brace-enclosed character
+/// constants of its bytes and the zero that ends them, which give the array the
+/// same bytes and the same `sizeof`. The template filter a C site that holds a
+/// document text in an array writes it through.
+pub fn c_char_array_init(text: String) -> String {
+    if text.len() <= C_STRING_LITERAL_MAX_BYTES {
+        return format!("\"{}\"", escape_c(text));
+    }
+    let mut constants = c_char_constants(&text);
+    constants.push("'\\0'".to_string());
+    format!("{{{}}}", constants.join(", "))
+}
+
+/// [`c_text_expression`] as a template filter, for a C site that hands a
+/// document text to a call as a `const char *` the callee reads before it
+/// returns. A pointer that is kept past the statement is given an array of
+/// static storage instead ([`c_char_array_init`]): a compound literal lives
+/// only as long as the block it is written in.
+fn c_text_expr(text: String) -> String {
+    c_text_expression(&text)
+}
+
+/// [`cpp_text_expression`] as a template filter, for a C++ site that makes a
+/// `std::string` of a document text.
+fn cpp_text_expr(text: String) -> String {
+    cpp_text_expression(&text)
 }
 
 /// The shared §scxml-B-2 operator semantics, bound at compile time.

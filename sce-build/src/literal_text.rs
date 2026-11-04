@@ -113,6 +113,9 @@ pub const ALREADY_FIT_FOR_A_LITERAL: &[&str] = &[
     "escape_rust",
     "escape_swift",
     // Return a complete expression, delimiters included.
+    "c_char_array_init",
+    "c_text_expr",
+    "cpp_text_expr",
     "py_string_literal",
     "to_go_literal",
     "to_go_string_expr",

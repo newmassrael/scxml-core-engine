@@ -329,7 +329,7 @@ fn a_zero_character_is_held_whole_or_refused_by_name() {
         (ExprTarget::Kotlin, r#""a\u0000b""#),
         (ExprTarget::Swift, r#""a\0b""#),
         (ExprTarget::Python, r#""a\x00b""#),
-        (ExprTarget::Cpp, r"std::string{'a', '\x00', 'b'}"),
+        (ExprTarget::Cpp, r"(std::string{'a', '\x00', 'b'})"),
         (ExprTarget::Js, r"'a\u0000b'"),
     ];
     for (target, spelling) in held {
@@ -389,12 +389,12 @@ fn a_c_text_past_one_literal_is_a_compound_literal_of_its_bytes() {
     let long = "x".repeat(4096);
     let text = crate::filters::c_text_expression(&long);
     assert!(
-        text.starts_with("(const char[]){'x', 'x', "),
+        text.starts_with("((const char[]){'x', 'x', "),
         "{}",
         &text[..40]
     );
     assert!(
-        text.ends_with("'x', '\\0'}"),
+        text.ends_with("'x', '\\0'})"),
         "{}",
         &text[text.len() - 40..]
     );
@@ -402,7 +402,7 @@ fn a_c_text_past_one_literal_is_a_compound_literal_of_its_bytes() {
     // The emitter writes a literal through the same door.
     let lowered = written(&format!("'{long}'"), ExprTarget::C);
     assert!(
-        lowered.contains("(const char[]){'x', "),
+        lowered.contains("((const char[]){'x', "),
         "{}",
         &lowered[..60]
     );
@@ -423,14 +423,14 @@ fn a_cpp_text_past_one_literal_is_the_string_of_its_bytes() {
     let long = "y".repeat(65_536);
     let text = crate::filters::cpp_text_expression(&long);
     assert!(
-        text.starts_with("std::string{'y', 'y', "),
+        text.starts_with("(std::string{'y', 'y', "),
         "{}",
         &text[..40]
     );
-    assert!(text.ends_with("'y', 'y'}"), "{}", &text[text.len() - 40..]);
+    assert!(text.ends_with("'y', 'y'})"), "{}", &text[text.len() - 40..]);
     assert_eq!(text.matches("'y'").count(), 65_536);
     let lowered = written(&format!("'{long}'"), ExprTarget::Cpp);
-    assert!(lowered.contains("std::string{'y', "), "{}", &lowered[..60]);
+    assert!(lowered.contains("(std::string{'y', "), "{}", &lowered[..60]);
 }
 
 /// A Kotlin literal holds one class-file constant; a longer text is built from

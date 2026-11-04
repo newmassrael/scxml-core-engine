@@ -20,11 +20,11 @@
     auto& scriptEngine = getScriptEngine();
     auto logResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.expr | to_script_source_expr }}).get();
     if (::SCE::ScriptResultUtils::isSuccess(logResult)) {
-        SCE_LOG_INFO("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, "{{ action.label }}"{% endif %}, ::SCE::ScriptResultUtils::resultToString(logResult));
+        SCE_LOG_INFO("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, {{ action.label | cpp_text_expr }}{% endif %}, ::SCE::ScriptResultUtils::resultToString(logResult));
     } else {
         // W3C SCXML 5.9: an expression that fails raises error.execution, and
         // (W3C SCXML 4.9) the error ends the block.
-        SCE_LOG_ERROR("Failed to evaluate log expression: {}", "{{ action.expr }}");
+        SCE_LOG_ERROR("Failed to evaluate log expression: {}", {{ action.expr | cpp_text_expr }});
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                                         "<log> expr failed to evaluate"));
 {% if block_exit is defined and block_exit %}
@@ -34,8 +34,8 @@
 }
 {% else %}
 // Convert JavaScript single quotes to C++ double quotes for string literals
-SCE_LOG_INFO("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, "{{ action.label }}"{% endif %}, {{ action.expr | replace("'", '"') }});
+SCE_LOG_INFO("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, {{ action.label | cpp_text_expr }}{% endif %}, {{ action.expr | replace("'", '"') }});
 {% endif %}
 {% else %}
-SCE_LOG_INFO("{}", "{{ action.label }}");
+SCE_LOG_INFO("{}", {{ action.label | cpp_text_expr }});
 {% endif %}
