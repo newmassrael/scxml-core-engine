@@ -315,21 +315,29 @@ private struct JSONReader {
                 case UInt8(ascii: "u"):
                     let unit = try readUnit()
                     // A high surrogate followed by a `\u` low one is one character,
-                    // as it is where a text is held as UTF-16; one on its own is no
-                    // character, and reads as U+FFFD as the Rust reader reads it.
+                    // as it is where a text is held as UTF-16; a half on its own
+                    // names no character, so the text is no JSON text any runtime
+                    // reads alike (RFC 8259, sections 7 and 8.2).
                     if (0xD800...0xDFFF).contains(unit) {
-                        if let low = readLowSurrogate(high: unit) {
-                            let scalar = 0x10000 + ((UInt32(unit) - 0xD800) << 10) + (UInt32(low) - 0xDC00)
-                            out.append(contentsOf: Array(String(Unicode.Scalar(scalar)!).utf8))
-                        } else {
-                            out.append(contentsOf: Array("\u{FFFD}".utf8))
+                        guard let low = readLowSurrogate(high: unit),
+                            let scalar = Unicode.Scalar(0x10000 + ((UInt32(unit) - 0xD800) << 10) + (UInt32(low) - 0xDC00))
+                        else {
+                            throw JSONError.malformed("a \\u escape is half of a character")
                         }
+                        out.append(contentsOf: Array(String(scalar).utf8))
                         continue
                     }
-                    out.append(contentsOf: Array(String(Unicode.Scalar(UInt32(unit))!).utf8))
+                    guard let scalar = Unicode.Scalar(UInt32(unit)) else {
+                        throw JSONError.malformed("a \\u escape names no character")
+                    }
+                    out.append(contentsOf: Array(String(scalar).utf8))
                 default:
                     throw JSONError.malformed("unknown escape '\\\(String(decoding: [escape], as: UTF8.self))'")
                 }
+            case 0..<0x20:
+                // RFC 8259, section 7: a character below U+0020 stands in a text only
+                // as an escape.
+                throw JSONError.malformed("a control character stands in a text unescaped")
             default:
                 out.append(c)
             }
@@ -371,19 +379,35 @@ private struct JSONReader {
         return low
     }
 
+    /// One number in RFC 8259's grammar (section 6): `-`, then `0` or a digit that
+    /// is not `0` and more digits, then a fraction and an exponent, each with at
+    /// least one digit. A leading zero, a fraction or an exponent with no digit,
+    /// and a sign but `-` are no JSON number.
     mutating func readNumber() throws -> JSONValue {
         let start = at
+        func isDigit(_ reader: JSONReader) -> Bool {
+            !reader.atEnd && reader.bytes[reader.at] >= 0x30 && reader.bytes[reader.at] <= 0x39
+        }
         func digits(_ reader: inout JSONReader) {
-            while !reader.atEnd && reader.bytes[reader.at] >= 0x30 && reader.bytes[reader.at] <= 0x39 {
+            while isDigit(reader) {
                 reader.at += 1
             }
         }
         if !atEnd && bytes[at] == UInt8(ascii: "-") {
             at += 1
         }
-        digits(&self)
+        if !atEnd && bytes[at] == UInt8(ascii: "0") {
+            at += 1
+        } else if isDigit(self) {
+            digits(&self)
+        } else {
+            throw JSONError.malformed("a number has no digits")
+        }
         if !atEnd && bytes[at] == UInt8(ascii: ".") {
             at += 1
+            if !isDigit(self) {
+                throw JSONError.malformed("a fraction has no digits")
+            }
             digits(&self)
         }
         if !atEnd && (bytes[at] == UInt8(ascii: "e") || bytes[at] == UInt8(ascii: "E")) {
@@ -391,12 +415,17 @@ private struct JSONReader {
             if !atEnd && (bytes[at] == UInt8(ascii: "+") || bytes[at] == UInt8(ascii: "-")) {
                 at += 1
             }
+            if !isDigit(self) {
+                throw JSONError.malformed("an exponent has no digits")
+            }
             digits(&self)
         }
-        let slice = bytes[start..<at]
-        if slice.isEmpty || slice.elementsEqual([UInt8(ascii: "-")]) {
-            throw JSONError.malformed("a number has no digits")
+        // A digit right after the number is a number with a leading zero (`01`),
+        // which no runtime reads alike.
+        if isDigit(self) {
+            throw JSONError.malformed("a number has a leading zero")
         }
+        let slice = bytes[start..<at]
         return .number(String(decoding: slice, as: UTF8.self))
     }
 

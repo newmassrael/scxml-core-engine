@@ -13784,6 +13784,108 @@ impl StaticTarget for SwiftTarget {
             filters::escape_swift(label.to_string())
         )
     }
+    // The runtime's `liftRecord` reads the text and hands the fields to a closure
+    // that reads each through the reader a delivery's value of its type is read by
+    // (`PayloadValue.unsigned`, `PayloadValue.text(bound:)`, ...). A refusal is the
+    // record of the standard refusal document, its code matched case by case onto
+    // the machine's enum of it: an exhaustive `switch` the compiler holds to the
+    // runtime's codes, both cases named as the enum document names them.
+    fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
+        let enum_reader = |alias: &str, value: &str| -> Option<String> {
+            let model = lift.enums.get(alias)?;
+            let ty = self.enum_type(lift.machine, alias)?;
+            let arms: String = model
+                .variants
+                .iter()
+                .map(|v| {
+                    format!(
+                        "case \"{}\": return {}; ",
+                        filters::escape_swift(v.name.clone()),
+                        self.enum_variant(&ty, &model.name, &v.name)
+                    )
+                })
+                .collect();
+            Some(format!(
+                "try {{ (v: PayloadValue) throws -> {ty} in let name = try v.name(); switch name \
+                 {{ {arms}default: throw v.unknownVariant(name, alias: \"{}\") }} }}({value})",
+                filters::escape_swift(alias.to_string())
+            ))
+        };
+        // The reader of a present value of `ty` at the value `value` names.
+        let read = |ty: &SceType, max: Option<u32>, value: &str| -> Option<String> {
+            Some(match ty {
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
+                    format!("try {value}.unsigned() as {}", self.scalar_type(ty))
+                }
+                SceType::Int8 | SceType::Int16 | SceType::Int32 => {
+                    format!("try {value}.signed() as {}", self.scalar_type(ty))
+                }
+                SceType::Uint64 => format!("try {value}.unsigned64()"),
+                SceType::Int64 => format!("try {value}.signed64()"),
+                SceType::Float32 => format!("try {value}.float32()"),
+                SceType::Float64 => format!("try {value}.float64()"),
+                SceType::Bool => format!("try {value}.truth()"),
+                SceType::String => format!("try {value}.text(bound: {})", max?),
+                SceType::Bytes => format!("try {value}.bytes(bound: {})", max?),
+                SceType::Enum(reference) => enum_reader(&reference.alias, value)?,
+            })
+        };
+        let mut members = Vec::with_capacity(lift.schema.fields.len());
+        for field in &lift.schema.fields {
+            let at = format!("r.field(\"{}\")", field.id);
+            let reader = match &field.sce_type {
+                EntryType::Scalar(ty) => read(ty, field.max_size, &format!("(try {at})"))?,
+                // The present value is bound to a name of its own inside the closure.
+                EntryType::Optional { elem } => format!(
+                    "try {at}.optional {{ present in {} }}",
+                    read(elem, field.max_size, "present")?
+                ),
+            };
+            members.push((self.record_field(&field.id), reader));
+        }
+        let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
+        let declared: Vec<String> = lift
+            .field_ids()
+            .iter()
+            .map(|id| format!("\"{id}\""))
+            .collect();
+        let defaults = lift.defaults.as_ref().map_or_else(
+            || "nil".to_string(),
+            |json| format!("\"{}\"", filters::escape_swift(json.clone())),
+        );
+        // The refusal, as a record of the standard refusal document.
+        let (code_alias, code_model) = lift.refusal_code()?;
+        let code_ty = self.enum_type(lift.machine, code_alias)?;
+        let arms: String = code_model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "case .{}: return {}; ",
+                    filters::to_camel_case(v.name.clone()),
+                    self.enum_variant(&code_ty, &code_model.name, &v.name)
+                )
+            })
+            .collect();
+        let code = format!("{{ () -> {code_ty} in switch sceRefusal.code {{ {arms}}} }}()");
+        let members_of_refusal =
+            lift.refusal_members(self, &code, "sceRefusal.pointer", "sceRefusal.bound")?;
+        let refusal_record = self.record_value(
+            &self.record_type(lift.machine, lift.refusal_alias),
+            &members_of_refusal,
+        );
+        Some(format!(
+            "switch liftRecord({text}, depth: {depth}, declared: [{declared}], defaults: \
+             {defaults}, read: {{ r in {record} }}) {{ case .success(let sceLifted): {write}; \
+             {absent}; case .failure(let sceRefusal): {refused} }}",
+            text = lift.text,
+            depth = lift.depth,
+            declared = declared.join(", "),
+            write = self.assign(lift.location, "sceLifted"),
+            absent = self.assign(lift.refusal, &self.optional_none("")?),
+            refused = self.assign(lift.refusal, &refusal_record),
+        ))
+    }
     // An expression that is `true` when the append failed: the list is full, or the
     // value could not be computed. The room is checked first, so a full list computes
     // nothing, and the value is computed into a local before it is appended, so a

@@ -71,7 +71,15 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
         let type = try #require(c["type"])
         var got: PayloadRefusal?
         do {
-            try readDescribed(type, try PayloadFields.decode(data).field("v"))
+            // A case that gives a depth is read as a `<sce:lift>` of the record of the
+            // one field `v` reads it (docs/adr/0087, section 2.1).
+            let fields =
+                if let depth = c["depth"] as? Int {
+                    try PayloadFields.lift(data, depth: depth, declared: ["v"], defaults: nil)
+                } else {
+                    try PayloadFields.decode(data)
+                }
+            try readDescribed(type, try fields.field("v"))
         } catch let refusal as PayloadRefusal {
             got = refusal
         }
@@ -112,6 +120,60 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
     #expect(pointerBelow("", "a~b/c") == "/a~0b~1c")
     #expect(pointerBelow("", "~1") == "/~01")
     #expect(pointerBelow("", "") == "/")
+}
+
+/// A lift refuses a container past its depth over the brackets alone, before the
+/// text is read as JSON, and names the declared member it stands under or the whole
+/// text (docs/adr/0087, section 2.1, item 4).
+@Test func aLiftRefusesAContainerPastItsDepthBeforeItReadsTheText() {
+    let declared = ["title", "count"]
+    let cases: [(String, Int, String?)] = [
+        (#"{"title":"a","count":1}"#, 1, nil),
+        (#"{"title":["a"]}"#, 1, "/title"),
+        (#"{"extra":{"a":1}}"#, 1, ""),
+        (#"{"title":[1]}"#, 1, "/title"),
+        ("[[1]]", 1, ""),
+        (#"{"extra":[[[[[[["#, 1, ""),
+        (#"{"title":"[[{\"[","count":1}"#, 1, nil),
+        (#"{"title":{"a":1}}"#, 2, nil),
+        (#"{"title":"[["#, 1, nil),
+        (#"{"title":"x","extra":[1]}"#, 1, ""),
+    ]
+    for (text, depth, pointer) in cases {
+        let refusal = liftTooDeep(text, depth: depth, declared: declared)
+        guard let pointer else {
+            #expect(refusal == nil, "\(text): \(refusal?.reason ?? "")")
+            continue
+        }
+        #expect(refusal?.code == .tooDeep, "\(text)")
+        #expect(refusal?.pointer == pointer, "\(text)")
+        #expect(refusal?.bound == UInt32(depth), "\(text)")
+    }
+}
+
+/// A lift reads its record as a delivery's is read, or answers its refusal as data.
+@Test func aLiftReadsARecordOrAnswersItsRefusal() throws {
+    let read = { (fields: PayloadFields) throws -> [UInt8] in
+        [try fields.unsigned("v"), try fields.unsigned("w")]
+    }
+    let lifted = liftRecord(#"{"v":1}"#, depth: 1, declared: ["v", "w"], defaults: #"{"w":7}"#, read: read)
+    #expect((try? lifted.get()) == [1, 7])
+    let refused: [(String, RefusalCode)] = [
+        (" \t", .notJson),
+        ("[[", .tooDeep),
+        ("[1]", .notObject),
+        (#"{"v":1,"v":2}"#, .notJson),
+        (#"{"v":256,"w":1}"#, .outOfRange),
+        (#"{"w":1}"#, .missing),
+    ]
+    for (text, code) in refused {
+        let outcome = liftRecord(text, depth: 1, declared: ["v", "w"], defaults: nil, read: read)
+        guard case .failure(let refusal) = outcome else {
+            Issue.record("\(text): read, the lift refuses it as \(code)")
+            continue
+        }
+        #expect(refusal.code == code, "\(text): \(refusal.reason)")
+    }
 }
 
 /// What a generated reader of an enum field answers for a name its enum does not

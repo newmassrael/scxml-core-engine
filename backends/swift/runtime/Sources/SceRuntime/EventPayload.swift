@@ -100,6 +100,98 @@ public struct PayloadRefusal: Error, Equatable, CustomStringConvertible {
     }
 }
 
+/// The refusal of a container `text` opens deeper than `depth`, the deepest a value
+/// of a lift's schema holds (docs/adr/0087, section 2.1, item 4), or nil when it
+/// opens none.
+///
+/// Decided over the brackets alone, before the text is read as JSON, so that every
+/// runtime decides it alike and no reader descends past the type: a text is skipped
+/// from its opening quote to the next quote no backslash escapes, each `{` and `[`
+/// outside one opens a level and each `}` and `]` closes one, and the first opened
+/// past `depth` is refused, whatever the text holds after it. A text that never
+/// closes ends the walk with nothing refused, and the reading of the text as JSON
+/// refuses it.
+///
+/// The pointer names the member of the outermost object the container stands under,
+/// the name read from the last text closed in that object before a `:`, when that
+/// name is one of `declared`; otherwise the whole text, `""`. The bound is `depth`.
+public func liftTooDeep(_ text: String, depth: Int, declared: [String]) -> PayloadRefusal? {
+    let bytes = Array(text.utf8)
+    var level = 0
+    var lastText: ArraySlice<UInt8>?
+    var member: ArraySlice<UInt8>?
+    var at = 0
+    while at < bytes.count {
+        switch bytes[at] {
+        case UInt8(ascii: "\""):
+            let start = at
+            at += 1
+            while at < bytes.count && bytes[at] != UInt8(ascii: "\"") {
+                at += bytes[at] == UInt8(ascii: "\\") ? 2 : 1
+            }
+            if at >= bytes.count {
+                return nil
+            }
+            if level == 1 {
+                lastText = bytes[start...at]
+            }
+        case UInt8(ascii: ":") where level == 1:
+            member = lastText
+            lastText = nil
+        case UInt8(ascii: ",") where level == 1:
+            member = nil
+            lastText = nil
+        case UInt8(ascii: "{"), UInt8(ascii: "["):
+            level += 1
+            if level > depth {
+                var pointer = ""
+                if let member,
+                    case .text(let name)? = try? parseJSON(String(decoding: member, as: UTF8.self)),
+                    declared.contains(where: { $0.utf8.elementsEqual(name.utf8) })
+                {
+                    pointer = pointerBelow("", name)
+                }
+                return PayloadRefusal(
+                    "the text opens a container deeper than the \(depth) levels a value of its schema holds",
+                    code: .tooDeep,
+                    pointer: pointer,
+                    bound: depth
+                )
+            }
+        case UInt8(ascii: "}"), UInt8(ascii: "]"):
+            level = max(level - 1, 0)
+        default:
+            break
+        }
+        at += 1
+    }
+    return nil
+}
+
+/// What a `<sce:lift>` reads (docs/adr/0087, section 2.1): `text` as a record of a
+/// schema, whose fields `read` reads out of the fields it is handed, as a delivery
+/// of the schema is read; or the refusal of the first place that is not one, its
+/// code, pointer and bound the statechart keeps as a record. `PayloadFields.lift`
+/// says what is refused before the fields are read. This runtime keeps no log, so
+/// neither outcome is written to one.
+public func liftRecord<T>(
+    _ text: String,
+    depth: Int,
+    declared: [String],
+    defaults: String?,
+    read: (PayloadFields) throws -> T
+) -> Result<T, PayloadRefusal> {
+    do {
+        return .success(try read(PayloadFields.lift(text, depth: depth, declared: declared, defaults: defaults)))
+    } catch let refusal as PayloadRefusal {
+        return .failure(refusal)
+    } catch {
+        // Every reader of this file refuses with a `PayloadRefusal`; an error of
+        // another kind is the text not being JSON at all.
+        return .failure(PayloadRefusal(String(describing: error), code: .notJson, pointer: ""))
+    }
+}
+
 /// `token` below the strict RFC 6901 pointer `prefix` (empty for the whole text):
 /// `/` and the token with `~` written `~0` and `/` written `~1` (RFC 6901,
 /// section 3).
@@ -183,6 +275,33 @@ public struct PayloadFields {
     /// value is.
     public static func decode(_ data: String, defaults: String) throws -> PayloadFields {
         let decoded = trimmingJSONWhitespace(data).isEmpty ? PayloadFields(fields: []) : try decode(data)
+        return try decoded.withDefaults(defaults)
+    }
+
+    /// Reads the text a `<sce:lift>` reads as the fields of a record of a schema
+    /// (docs/adr/0087, section 2.1): `depth` is the deepest container a value of the
+    /// schema holds, `declared` the ids of its fields, and `defaults`, for a schema a
+    /// later revision of which added fields, the JSON object of their defaults, which
+    /// a text that lacks one reads in its place.
+    ///
+    /// Three refusals come before the fields are read, in this order: a text that is
+    /// empty or only whitespace (`notJson`); a container opened deeper than `depth`,
+    /// decided over the text's brackets alone before it is read as JSON
+    /// (`liftTooDeep`, `tooDeep`); and a text that is not one JSON object, as a
+    /// delivery is refused (`decode`).
+    public static func lift(_ text: String, depth: Int, declared: [String], defaults: String?) throws
+        -> PayloadFields
+    {
+        if trimmingJSONWhitespace(text).isEmpty {
+            throw PayloadRefusal("the text is empty", code: .notJson, pointer: "")
+        }
+        if let refusal = liftTooDeep(text, depth: depth, declared: declared) {
+            throw refusal
+        }
+        let decoded = try decode(text)
+        guard let defaults else {
+            return decoded
+        }
         return try decoded.withDefaults(defaults)
     }
 
@@ -354,6 +473,11 @@ public struct PayloadValue {
     /// never received.
     public func signed<T: FixedWidthInteger & SignedInteger>() throws -> T {
         let text = try number()
+        // `-0` is a JSON number and no spelling of a whole number: every runtime
+        // refuses it, as it refuses `"-0"` for a 64-bit integer.
+        if text == "-0" {
+            throw refuse(.badNumber, "is not a whole number (\(text))")
+        }
         guard let whole = Int64(text) else {
             // A whole number no Int64 holds is past every signed width; any other
             // spelling is no whole number at all.
@@ -368,7 +492,7 @@ public struct PayloadValue {
     /// An unsigned whole number at the width its type declares.
     public func unsigned<T: FixedWidthInteger & UnsignedInteger>() throws -> T {
         let text = try number()
-        guard let whole = UInt64(text) else {
+        guard !text.hasPrefix("-"), let whole = UInt64(text) else {
             // Below zero is no spelling of an unsigned number; a whole number no
             // UInt64 holds is past every unsigned width.
             let past = spellsWhole(text) && !text.hasPrefix("-")
@@ -393,6 +517,10 @@ public struct PayloadValue {
             return text
         case .text(let text):
             throw refuse(.badNumber, "is not a whole number written as digits (\(text))")
+        // `-0` is no whole number, and a number below zero no spelling of an
+        // unsigned one, as for every narrower width.
+        case .number(let text) where text == "-0" || (!signed && text.hasPrefix("-")):
+            throw refuse(.badNumber, "is not a whole number of its type (\(text))")
         case .number(let text):
             guard let whole = Int128(text) else {
                 throw refuse(.badNumber, "is not a whole number (\(text))")
@@ -449,11 +577,16 @@ public struct PayloadValue {
         return Float(wide)
     }
 
-    /// A 64-bit fractional value.
+    /// A 64-bit fractional value. A number past the largest double (`1e999`) does
+    /// not fit it, as one past the largest single does not fit a `float32`: no
+    /// runtime holds the infinity a reader would round it to.
     public func float64() throws -> Double {
         let text = try number()
         guard let real = Double(text) else {
             throw refuse(.badNumber, "is not a number (\(text))")
+        }
+        if !real.isFinite {
+            throw pastWidth(text)
         }
         return real
     }

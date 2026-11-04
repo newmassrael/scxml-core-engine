@@ -727,6 +727,38 @@ private func wholePayload() -> Machine {
     )
 }
 
+private func liftedText() -> Machine {
+    let policy = StaticLiftPolicy()
+    let answer = { (a: StaticLiftAnswerRecord) -> JSONValue in
+        .object([
+            (key: "id", value: integer(a.id)),
+            (key: "amount", value: integer(a.amount)),
+            (key: "title", value: .text(a.title)),
+            (key: "kind", value: .text(a.kind.declaredName)),
+            (key: "note", value: optionalText(a.note)),
+            (key: "tag", value: .text(bytesAsPayloadText(a.tag))),
+            (key: "priority", value: integer(a.priority)),
+        ])
+    }
+    let why = { (w: StaticLiftLiftRefusalRecord) -> JSONValue in
+        .object([
+            (key: "code", value: .text(w.code.declaredName)),
+            (key: "path", value: .text(w.path)),
+            (key: "bound", value: optionalInteger(w.bound)),
+        ])
+    }
+    return drive(
+        policy,
+        variables: [
+            "answer": { policy.answer.map(answer) ?? .null },
+            "why": { policy.why.map(why) ?? .null },
+            "said": { .text(policy.said) },
+            "lifts": { integer(policy.lifts) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 private func schemaRevision() -> Machine {
     let policy = StaticSchemaRevisionPolicy()
     return drive(
@@ -1299,6 +1331,13 @@ private func recordBytes() -> Machine {
 // A payload is taken into a record whole, and a list takes the record by name.
 @Test func aWholePayloadIsTakenIntoARecord() {
     replay("static_whole_payload", wholePayload())
+}
+
+// A text is read into a record of a schema, or its refusal kept as a record of the
+// standard refusal document, the same code, pointer and bound on every lane
+// (docs/adr/0087, section 9.1).
+@Test func aLiftReadsATextIntoARecordOrKeepsItsRefusal() {
+    replay("static_lift", liftedText())
 }
 
 // A schema that grew is read with the defaults of the fields a later revision added
