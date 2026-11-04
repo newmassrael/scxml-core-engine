@@ -869,6 +869,46 @@ bound. A scenario that compares the record across eight lanes is the only place 
 - **Testing against a real model.** Its answers change with its weights and its runtime; a scripted provider replays
   exactly, and a real model's evaluation is the host's, keyed as section 6.1 item 4 says.
 
+#### 9.4 Two layers of testing an AI feature
+
+A feature that asks a model is tested in two layers, which answer two different questions and are stated apart
+(Owner's answers, item 5).
+
+1. **The system around the model is tested exhaustively.** A model's answer reaches the machine only through the
+   answer schema and the host operation, so at each call the machine sees one of a finite set of outcome classes: a
+   record read; a refusal of each of the thirteen codes of section 2.3, each with its pointer and its bound classes;
+   and each end of the host operation (an answer, a timeout, a failure, a cancel). The model is abstracted as a
+   nondeterministic environment that may return any class at any call: the environment abstraction of model checking
+   (Clarke, Grumberg and Peled, "Model Checking", MIT Press 1999), and bounded exhaustive testing in the tradition of
+   Korat and TestEra (Boyapati, Khurshid and Marinov, "Korat: Automated Testing Based on Java Predicates", ISSTA 2002;
+   Marinov and Khurshid, "TestEra: A Novel Framework for Automated Testing of Java Programs", ASE 2001), whose small
+   scope holds here without a hypothesis, since the scope is the whole space. The harness statechart's states, its
+   transitions and its repair bound are finite, so every sequence of classes up to the repair bound is enumerated and
+   run, and coverage is required: every transition of the harness taken (100% transition coverage), every refusal code
+   reached, and every host outcome reached at every call site. Equivalence partitioning with boundary values (Myers,
+   "The Art of Software Testing", 1979), whose partitions and boundaries are the shared refusal table
+   (`tests/json_text/payload_refusal.json`); grammar-based generation of valid answers and of answers with a single
+   fault from the schema, as property-based testing generates them (Claessen and Hughes, "QuickCheck: A Lightweight
+   Tool for Random Testing of Haskell Programs", ICFP 2000; Godefroid, Kiezun and Levin, "Grammar-based Whitebox
+   Fuzzing", PLDI 2008); t-way combinatorial coverage of an answer of several fields (Kuhn, Wallace and Gallo,
+   "Software Fault Interactions and Implications for Software Testing", IEEE TSE 2004); and the repository's mutation
+   rounds on the harness's branches complete it. No model runs in this layer: it is deterministic and runs in CI. Its
+   provider is the exhaustive provider of the reference hosts (section 4, Landing order item 6), which answers each
+   call with the class the test names, the classes read from one table every lane reads
+   (`tests/host_features/model_outcome_classes.json`).
+2. **Whether a model's answer is right cannot be tested exhaustively.** Which answer is right for a given input has no
+   mechanical oracle (Barr, Harman, McMinn, Shahbaz and Yoo, "The Oracle Problem in Software Testing: A Survey", IEEE
+   TSE 2015), so it is estimated, not proven: per-task evaluation sets whose rate is stated with its confidence
+   interval (Wilson, "Probable Inference, the Law of Succession, and Statistical Inference", JASA 1927); metamorphic
+   relations, under which inputs of the same meaning give the same value (Chen, Cheung and Yiu, "Metamorphic Testing:
+   A New Approach for Generating Next Test Cases", HKUST-CS98-01, 1998); and differential testing across models and
+   their versions (McKeeman, "Differential Testing for Software", Digital Technical Journal 10(1), 1998). This layer
+   lives in the consuming application, keyed as section 6.1 item 4 says, and never in SCE (section 0).
+3. **The two claims are stated apart.** "Every branch of the system is tested" is a proof by enumeration over a finite
+   space. "The model's answers are right" is a statistical statement, true of a task, a model and a version, and stated
+   with its interval. Neither stands in for the other: an exhaustive run says nothing of how often a model is right,
+   and an evaluation rate says nothing of a branch the evaluation set never reached.
+
 ## Landing order
 
 1. **The refusal record in the readers**: `sce:std/lift/refusal.scxml` and `refusal_code.scxml`; the code, strict
@@ -888,8 +928,13 @@ bound. A scenario that compares the record across eight lanes is the only place 
 6. **`sce-host-model-generate`**: the records in `stdlib/host`, the table in `standard_host.rs`, `sce:answer` and the
    answer-schema table, which holds the GBNF grammar of each schema a document names as an answer, written by the
    fold of step 3, docs/SCE_HOST_FEATURES.md's fifth feature, the scripted provider in seven reference hosts, the
-   scenario.
-7. **The reference harness**, its scenario and `examples/model_harness/`.
+   scenario; and the exhaustive provider of section 9.4, item 1, in the same seven hosts: driven by the test, it
+   answers each call with the outcome class the test names, read from the one table of classes every lane reads, so a
+   test enumerates every sequence of classes up to a bound, the same on every lane.
+7. **The reference harness**, its scenario and `examples/model_harness/`, with the coverage of section 9.4, item 1,
+   required of it on every lane that runs it: every sequence of outcome classes up to the repair bound enumerated
+   against the exhaustive provider, every transition of the harness taken, every refusal code reached, and every host
+   outcome reached at every call site.
 8. **After ADR 0086 step 3**: the lift, the grammar and the harness over records holding lists and records, with
    `lift_answer_list.scxml`.
 
@@ -967,3 +1012,12 @@ The owner accepted this ADR on 2026-11-04 ("accept"), with each open question an
    With it, a general rule of the generator, independent of grammars: a Kotlin text constant past the 65,535 bytes of
    modified UTF-8 one class-file constant holds is written as a `val` built at class init from pieces that each fit,
    so every text constant the generator writes compiles whatever its length.
+5. On 2026-11-04 the owner added the two layers of testing an AI feature (section 9.4; "proceed"): the system around the
+   model is tested exhaustively, the model abstracted as a nondeterministic environment that may return any outcome
+   class (a record read, each of the thirteen refusal codes, each host end) at any call, every sequence of classes up
+   to the repair bound enumerated, with 100% transition coverage of the harness, every refusal code reached and every
+   host outcome reached at every call site, deterministic and in CI; whether a model's answer is right is estimated,
+   not proven (evaluation sets with a Wilson interval, metamorphic relations, differential testing across models and
+   versions), in the consuming application and never in SCE; and the two claims are stated apart, one a proof by
+   enumeration and the other a statistical statement with its interval. Landing order items 6 and 7 carry it: step 6
+   adds the exhaustive provider and its shared table of classes, step 7 the coverage required of the harness.
