@@ -255,10 +255,13 @@ fn a_post_is_applied_at_the_next_boundary_behind_what_the_owner_queued() {
     engine.raise_external(Ev::Pong, "", "");
 
     let inbox = engine.inbox();
-    std::thread::spawn(move || inbox.post(ping()))
+    let taken = std::thread::spawn(move || inbox.post(ping()).is_ok())
         .join()
-        .expect("the posting thread")
-        .expect("an engine's own inbox takes every post while the engine lives");
+        .expect("the posting thread");
+    assert!(
+        taken,
+        "an engine's own inbox takes every post while the engine lives"
+    );
     assert!(
         engine.policy().taken.is_empty(),
         "a post was applied before the owner reached a macrostep boundary"
@@ -287,10 +290,13 @@ fn a_post_wakes_the_owner_through_the_hal_and_the_installed_waker() {
 
     for _ in 0..2 {
         let poster = inbox.clone();
-        std::thread::spawn(move || poster.post(ping()))
+        let taken = std::thread::spawn(move || poster.post(ping()).is_ok())
             .join()
-            .expect("the posting thread")
-            .expect("an engine's own inbox takes every post while the engine lives");
+            .expect("the posting thread");
+        assert!(
+            taken,
+            "an engine's own inbox takes every post while the engine lives"
+        );
     }
     assert_eq!(
         WAKES.load(Ordering::SeqCst) - hal_before,
@@ -371,10 +377,10 @@ fn a_bounded_inbox_refuses_a_post_when_full_and_its_engine_applies_what_it_took(
     let _posting = posting();
     let hal_before = WAKES.load(Ordering::SeqCst);
 
-    std::thread::spawn(|| FULL_AT_TWO.post(ping()))
+    let taken = std::thread::spawn(|| FULL_AT_TWO.post(ping()).is_ok())
         .join()
-        .expect("the posting thread")
-        .expect("an empty inbox of two takes a post");
+        .expect("the posting thread");
+    assert!(taken, "an empty inbox of two takes a post");
     FULL_AT_TWO
         .post(InboxInput::external(Ev::Pong, "", ""))
         .expect("an inbox of two holding one takes a post");
