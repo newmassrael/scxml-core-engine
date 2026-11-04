@@ -34,9 +34,6 @@ mod queue_modules {
     pub mod queue_conformance_scq {
         include!(concat!(env!("OUT_DIR"), "/queue_conformance_scq.rs"));
     }
-    pub mod queue_conformance_node {
-        include!(concat!(env!("OUT_DIR"), "/queue_conformance_node.rs"));
-    }
     #[allow(clippy::all, unused_imports, dead_code)]
     pub mod queue_conformance_intrusive {
         include!(concat!(env!("OUT_DIR"), "/queue_conformance_intrusive.rs"));
@@ -69,7 +66,6 @@ use std::time::{Duration, Instant};
 use queue_modules::queue_conformance_event::QueueConformanceEvent;
 use queue_modules::queue_conformance_intrusive as intrusive;
 use queue_modules::queue_conformance_intrusive_many as intrusive_many;
-use queue_modules::queue_conformance_node::QueueConformanceNode;
 use queue_modules::queue_conformance_scq as scq;
 use queue_modules::queue_conformance_segmented as segmented;
 use queue_modules::queue_conformance_segmented_many as segmented_many;
@@ -325,21 +321,29 @@ fn the_intrusive_modules_state_what_the_document_required_and_what_it_gives() {
     assert_eq!(intrusive_many::POP_PROGRESS, "blocking");
 }
 
-fn nodes() -> Vec<QueueConformanceNode> {
+/// Four nodes of the generated node type, each holding an event of its own.
+fn nodes() -> Vec<intrusive::QueueConformanceIntrusiveNode> {
     (0..4u8)
-        .map(|i| QueueConformanceNode {
-            sensor_id: i + 1,
-            value: u16::from(i) * 9,
-            next: 0xDEAD_BEEF,
-        })
+        .map(|i| intrusive::QueueConformanceIntrusiveNode::new(event(i + 1, u16::from(i) * 9)))
         .collect()
 }
 
-/// The generated queue links through the field the document names, in the
-/// caller's array of the generated struct: nodes come back in the order pushed,
-/// the last one included and at once, and nothing but the link is written.
+/// Every node of `array` still holds the event `nodes` gave it.
+fn assert_values_as_they_were(array: &[intrusive::QueueConformanceIntrusiveNode]) {
+    for (i, node) in array.iter().enumerate() {
+        assert_eq!(
+            pair(&node.value),
+            (i as u8 + 1, i as u16 * 9),
+            "the queue wrote the value of node {i}"
+        );
+    }
+}
+
+/// The generated queue links the runtime's nodes, in the caller's array of
+/// the generated node type: nodes come back in the order pushed, the last one
+/// included and at once, and every node's value is left as it was.
 fn an_intrusive_queue_hands_nodes_back_in_order<Q>(
-    new: unsafe fn(*mut QueueConformanceNode, u32, u32) -> Q,
+    new: unsafe fn(*mut intrusive::QueueConformanceIntrusiveNode, u32, u32) -> Q,
     push: impl Fn(&Q, u32),
     try_pop: impl Fn(&Q) -> Option<u32>,
 ) {
@@ -358,13 +362,7 @@ fn an_intrusive_queue_hands_nodes_back_in_order<Q>(
     assert_eq!(try_pop(&queue), Some(2), "the last node comes back at once");
     assert_eq!(try_pop(&queue), None, "drained");
     drop(queue);
-    for (i, node) in array.iter().enumerate() {
-        assert_eq!(
-            (node.sensor_id, node.value),
-            (i as u8 + 1, i as u16 * 9),
-            "the queue touched more than the link of node {i}"
-        );
-    }
+    assert_values_as_they_were(&array);
 }
 
 #[test]
@@ -381,6 +379,35 @@ fn the_generated_intrusive_queues_hand_nodes_back_in_order() {
         |q, index| unsafe { q.push(index) },
         |q| q.try_pop(),
     );
+}
+
+/// The two generated queues over one element name one node type, so a node
+/// popped from one is pushed to the other, in the same array: a free list and a
+/// work queue over one array is the use (ADR 0088).
+#[test]
+fn a_node_moves_between_the_generated_queues_over_one_element() {
+    let mut array: Vec<intrusive_many::QueueConformanceIntrusiveManyNode> = nodes();
+    let base = array.as_mut_ptr();
+    // SAFETY: `array` outlives both queues and is reached only through `base`
+    // while they are used; node 3 is the first queue's stub and node 2 the
+    // second's, and neither is pushed to either queue.
+    let (one, many) = unsafe {
+        (
+            intrusive::QueueConformanceIntrusive::new(base, 4, 3),
+            intrusive_many::QueueConformanceIntrusiveMany::new(base, 4, 2),
+        )
+    };
+    // SAFETY (every push): node 0 is no stub, and is in neither queue.
+    unsafe { one.push(0) };
+    assert_eq!(one.try_pop(), Some(0));
+    unsafe { many.push(0) };
+    assert_eq!(one.try_pop(), None, "the node left the first queue");
+    assert_eq!(many.try_pop(), Some(0), "the node is in the second queue");
+    assert_eq!(many.try_pop(), None, "drained");
+    unsafe { one.push(0) };
+    assert_eq!(one.try_pop(), Some(0), "and it comes back to the first");
+    assert_eq!(one.try_pop(), None, "drained");
+    assert_values_as_they_were(&array);
 }
 
 // ─── The segmented queues ───

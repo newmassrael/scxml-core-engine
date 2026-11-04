@@ -236,7 +236,6 @@ fn main() {
             "queue_conformance_event",
             "queue_conformance_spsc",
             "queue_conformance_scq",
-            "queue_conformance_node",
             "queue_conformance_intrusive",
             "queue_conformance_intrusive_many",
             "queue_conformance_segmented",

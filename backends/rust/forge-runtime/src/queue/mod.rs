@@ -21,8 +21,9 @@
 //!   data queue, lock-free on both sides. It is absent on a target without
 //!   64-bit atomics, which is the target the RFC refuses that row for.
 //! - [`intrusive`] — the `intrusive` storage mode: Vyukov's MPSC list over
-//!   a node array the caller owns, linked through a `u32` field of the
-//!   element. Push is wait-free and cannot fail; pop is `blocking`, and may
+//!   an array of [`intrusive::Node`]s the caller owns, each holding an
+//!   element and the `u32` link the list threads through it. Push is
+//!   wait-free and cannot fail; pop is `blocking`, and may
 //!   answer "empty" while a push is in flight. It needs only 32-bit atomics,
 //!   and a swap of one: it is absent on a target whose 32-bit atomics are
 //!   loads and stores alone (ARMv6-M, `thumbv6m-none-eabi`).

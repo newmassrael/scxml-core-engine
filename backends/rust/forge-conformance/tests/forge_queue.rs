@@ -31,7 +31,7 @@ use sce_build::queue_history::{
 };
 use sce_forge_runtime::queue::allocator::{Progress, SegmentAllocator};
 use sce_forge_runtime::queue::hazard::HazardDomain;
-use sce_forge_runtime::queue::intrusive::{Link, Mpsc};
+use sce_forge_runtime::queue::intrusive::{Mpsc, Node};
 use sce_forge_runtime::queue::linked::LinkedLamport;
 use sce_forge_runtime::queue::lscq::Lscq;
 use sce_forge_runtime::queue::scq::Scq;
@@ -228,40 +228,16 @@ fn dispatch_bounded_scq(id: &str, capacity: u64, steps: &[Value]) {
     }
 }
 
-/// A node of an intrusive queue: the element, and the `u32` field the queue
-/// links through. The generator writes a `Link` marker for the element
-/// document's own struct; this is its shape by hand.
-#[repr(C)]
-struct IntrusiveNode {
-    payload: u64,
-    next: u32,
-}
-
-struct NextLink;
-
-// SAFETY: `next` is an aligned `u32` field, and the queue is its only user.
-unsafe impl Link<IntrusiveNode> for NextLink {
-    const OFFSET: usize = core::mem::offset_of!(IntrusiveNode, next);
-}
-
 /// One scenario on an intrusive queue over `nodes` nodes the test owns, plus
 /// the stub the queue sets aside. A push's value and a pop's expectation are
-/// node indices.
+/// node indices. Each node is the runtime's `Node`, holding its own index as
+/// its value, which the queue must leave as it was.
 fn run_intrusive_scenario<const MANY_CONSUMERS: bool>(id: &str, nodes: u64, steps: &[Value]) {
-    let mut array: Vec<IntrusiveNode> = (0..=nodes)
-        .map(|_| IntrusiveNode {
-            payload: 0,
-            next: 0,
-        })
-        .collect();
+    let mut array: Vec<Node<u64>> = (0..=nodes).map(Node::new).collect();
     // SAFETY: the array outlives the queue, is not touched by anything but the
     // queue while a node is queued, and the stub is its last node.
     let queue = unsafe {
-        Mpsc::<IntrusiveNode, NextLink, MANY_CONSUMERS>::new(
-            array.as_mut_ptr(),
-            nodes as u32 + 1,
-            nodes as u32,
-        )
+        Mpsc::<u64, MANY_CONSUMERS>::new(array.as_mut_ptr(), nodes as u32 + 1, nodes as u32)
     };
     for (index, step) in steps.iter().enumerate() {
         let context = format!("scenario {id} step {index}");
@@ -287,6 +263,14 @@ fn run_intrusive_scenario<const MANY_CONSUMERS: bool>(id: &str, nodes: u64, step
             }
             other => panic!("{context}: an intrusive scenario has no op {other:?}"),
         }
+    }
+    // The queue is not used past this point: the array is read only through
+    // the vector it lives in.
+    for (index, node) in (0u64..).zip(&array) {
+        assert_eq!(
+            node.value, index,
+            "scenario {id}: the queue wrote the value of node {index}"
+        );
     }
 }
 
@@ -1090,18 +1074,18 @@ fn recorded_scq_runs_are_linearizable() {
 // the excuse the Vyukov list needs and no other.
 
 /// A pointer to the node array that the producer and consumer threads share.
-/// Each node is written by the one thread that owns it until it is pushed, and
-/// read by the consumer after it is popped; the queue's Release/Acquire pair on
-/// the link orders the two.
+/// Each node's value is written by the one thread that owns the node until it
+/// is pushed, and read by the consumer after it is popped; the queue's
+/// Release/Acquire pair on the link orders the two.
 #[derive(Clone, Copy)]
-struct NodeArray(*mut IntrusiveNode);
+struct NodeArray(*mut Node<u64>);
 
 // SAFETY: see the type's documentation.
 unsafe impl Send for NodeArray {}
 unsafe impl Sync for NodeArray {}
 
 impl NodeArray {
-    fn at(self, index: u64) -> *mut IntrusiveNode {
+    fn at(self, index: u64) -> *mut Node<u64> {
         // SAFETY: the callers only name nodes of the array.
         unsafe { self.0.add(index as usize) }
     }
@@ -1119,22 +1103,12 @@ fn record_intrusive_run<const MANY_CONSUMERS: bool>(
     per_producer: u64,
 ) -> History {
     let total = producers as u64 * per_producer;
-    let mut array: Vec<IntrusiveNode> = (0..=total)
-        .map(|_| IntrusiveNode {
-            payload: 0,
-            next: 0,
-        })
-        .collect();
+    let mut array: Vec<Node<u64>> = (0..=total).map(|_| Node::new(0)).collect();
     let nodes = NodeArray(array.as_mut_ptr());
     // SAFETY: `array` outlives the queue; the stub is its last node; nothing
     // but the queue touches a node's link.
-    let queue = unsafe {
-        Mpsc::<IntrusiveNode, NextLink, MANY_CONSUMERS>::new(
-            nodes.0,
-            total as u32 + 1,
-            total as u32,
-        )
-    };
+    let queue =
+        unsafe { Mpsc::<u64, MANY_CONSUMERS>::new(nodes.0, total as u32 + 1, total as u32) };
     let clock = AtomicU64::new(1);
     let delivered = AtomicU64::new(0);
     let started = Instant::now();
@@ -1150,7 +1124,7 @@ fn record_intrusive_run<const MANY_CONSUMERS: bool>(
                     let index = who as u64 * per_producer + k;
                     let payload = index + 1;
                     // SAFETY: this thread owns the node until it is pushed.
-                    unsafe { (*nodes.at(index)).payload = payload };
+                    unsafe { (*nodes.at(index)).value = payload };
                     let invoked = tick();
                     // SAFETY: a node of the array, not the stub, pushed once.
                     unsafe { queue.push(index as u32) };
@@ -1170,7 +1144,7 @@ fn record_intrusive_run<const MANY_CONSUMERS: bool>(
                     match result {
                         Some(index) => {
                             // SAFETY: popped, so the consumer owns the node.
-                            let payload = unsafe { (*nodes.at(u64::from(index))).payload };
+                            let payload = unsafe { (*nodes.at(u64::from(index))).value };
                             delivered.fetch_add(1, Ordering::SeqCst);
                             ops.push(pop(Outcome::Popped(payload), invoked, returned));
                         }
