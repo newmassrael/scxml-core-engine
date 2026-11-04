@@ -9,12 +9,14 @@
     "every case. `params` are what the handler is handed: a deadline the engine keeps",
     "(`_sce_deadline_ms`) is taken out, while `eventData` is the pairs as a local delivery",
     "of a send with them would carry them, the deadline among them. `content` is the text of an",
-    "inline <content> without the whitespace that lays it out.",
+    "inline <content> without the whitespace that lays it out, and a send's `eventData` with one",
+    "is the data a local delivery of it carries: the value its text reads as.",
     "",
     "Read by the Interpreter (tests/integration/HostRequestTest.cpp), which runs every",
     "document, and by the generated C++ engine (tests/integration/HostRequestAotTest.cpp),",
-    "which runs statechart_host_request.scxml. A case with `lowered` is a Mesh request, which",
-    "the generated C++ engine routes through its own router; for it the build's lowering",
+    "which runs statechart_host_request.scxml and statechart_host_request_null.scxml. A case",
+    "with `lowered` is a Mesh request, which the generated C++ engine routes through its own",
+    "router; for it the build's lowering",
     "(host_processor_analyzer::lower_mesh, SCE_MESH.md section 19) is held to the case",
     "instead: the invoke's `src` and `srcexpr` after the lowering, its params in order, and",
     "which of them are envelope fields, whose literal values are the request's."
@@ -32,6 +34,36 @@
         "params": { "k": ["v"], "n": ["7"] },
         "sendId": "note",
         "eventData": "{\"k\":\"v\",\"n\":7}",
+        "invokeId": ""
+      }
+    },
+    {
+      "name": "a send whose inline content, laid out over lines, is an expression",
+      "document": "statechart_host_request.scxml",
+      "kind": "send",
+      "request": {
+        "processorType": "x-sce-host",
+        "eventName": "host.told",
+        "target": "pane://told",
+        "content": "n + 1",
+        "params": {},
+        "sendId": "told",
+        "eventData": "8",
+        "invokeId": ""
+      }
+    },
+    {
+      "name": "a send whose inline content is its value as written, under the null data model",
+      "document": "statechart_host_request_null.scxml",
+      "kind": "send",
+      "request": {
+        "processorType": "x-sce-host",
+        "eventName": "host.said",
+        "target": "pane://said",
+        "content": "1 + 1",
+        "params": {},
+        "sendId": "said",
+        "eventData": "\"1 + 1\"",
         "invokeId": ""
       }
     },

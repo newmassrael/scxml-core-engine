@@ -87,6 +87,19 @@ public:
     void setScxmlBasePath(const std::string &basePath);
 
     /**
+     * @brief Set the datamodel of the document whose actions are parsed next
+     *
+     * The children of a `<send>`'s inline `<content>` are the value itself
+     * under the `null` datamodel and are read as the data model reads inline
+     * content under any other (`SendAction::isContentLiteral`): the split
+     * `DoneDataParser::setDatamodelType` makes for `<donedata>`, set by
+     * `SCXMLParser` from the same root attribute.
+     */
+    void setDatamodelType(const std::string &datamodel) {
+        datamodelType_ = datamodel;
+    }
+
+    /**
      * @brief Check if element is executable content requiring special processing
      * @param element XML element
      * @return Whether it is special executable content
@@ -146,6 +159,9 @@ private:
      * §scxml-5.8: External scripts are resolved relative to SCXML file location
      */
     std::string scxmlBasePath_;
+
+    /// The document's datamodel; the default `DoneDataParser` takes too.
+    std::string datamodelType_ = "ecmascript";
 };
 
 }  // namespace SCE

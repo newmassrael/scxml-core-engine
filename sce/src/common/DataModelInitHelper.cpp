@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "common/DataModelInitHelper.h"
+#include "common/EventDataHelper.h"
 #include "common/FileLoadingHelper.h"
 #include "common/LogToLogger.h"
 #include "runtime/DataContentHelpers.h"
@@ -105,10 +106,7 @@ bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const
 
     // §scxml-B-2: Detect XML content and create DOM object
     // Match Interpreter behavior (StateMachine.cpp:1756) and JSEngine logic (JSEngineImpl.cpp:359)
-    size_t firstNonWhitespace = content.find_first_not_of(" \t\r\n");
-    bool isXML = firstNonWhitespace != std::string::npos && content[firstNonWhitespace] == '<';
-
-    if (isXML) {
+    if (isXMLContent(content)) {
         // §scxml-B-2: XML content → create DOM object using setVariableAsDOM
         // ARCHITECTURE.MD: Zero Duplication - Matches Interpreter (StateMachine.cpp:1756)
         auto result = jsEngine.setVariableAsDOM(sessionId, varId, content);
@@ -124,45 +122,46 @@ bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const
         return true;
     }
 
-    // §scxml-B-2: Non-XML content - try evaluating as an expression first
-    // ARCHITECTURE.md Zero Duplication: Matches StateMachine.cpp:1772-1778 (try eval first)
-    //
-    // The LOWERED half goes to the engine. Under the ECMAScript target the two
-    // halves are the same string, so this is the author's text as before.
-    auto evalResult = jsEngine.evaluateExpression(sessionId, contentSource);
+    // §scxml-B-2: Non-XML content - the value of the expression it is, or
+    // its space-normalized text (test 558)
+    auto setResult = jsEngine.setVariable(sessionId, varId, inlineContentValue(jsEngine, sessionId, contentSource));
+    setResult.wait();
+    auto setJsResult = setResult.get();
+
+    if (!setJsResult.isSuccess()) {
+        errorCallback("Failed to set variable " + varId + ": " + setJsResult.getErrorMessage());
+        return false;
+    }
+
+    SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} from inline content", varId);
+    return true;
+}
+
+SCE::ScriptValue SCE::DataModelInitHelper::inlineContentValue(IScriptEngine &jsEngine, const std::string &sessionId,
+                                                              const ScriptSource &content) {
+    // Try evaluating the children as an expression first. The LOWERED half
+    // goes to the engine; under the ECMAScript target the two halves are the
+    // same string, so this is the author's text.
+    auto evalResult = jsEngine.evaluateExpression(sessionId, content);
     evalResult.wait();
     auto evalJsResult = evalResult.get();
 
     if (evalJsResult.isSuccess()) {
-        // Successfully evaluated as JavaScript expression
-        auto setResult = jsEngine.setVariable(sessionId, varId, evalJsResult.getInternalValue());
-        setResult.wait();
-        auto setJsResult = setResult.get();
-
-        if (!setJsResult.isSuccess()) {
-            errorCallback("Failed to set variable " + varId + ": " + setJsResult.getErrorMessage());
-            return false;
-        }
-
-        SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} with evaluated content", varId);
-        return true;
+        return evalJsResult.getInternalValue();
     }
 
-    // §scxml-B-2 test 558: Evaluation failed - normalize whitespace and store as string
-    // ARCHITECTURE.md Zero Duplication: Matches StateMachine.cpp:1793-1811 (fallback to whitespace normalization)
-    std::string normalized = normalizeWhitespace(content);
+    // No expression: the author's text, whitespace-normalized, is a string.
+    return ScriptValue(normalizeWhitespace(content.source()));
+}
 
-    auto setStrResult = jsEngine.setVariable(sessionId, varId, normalized);
-    setStrResult.wait();
-    auto setStrJsResult = setStrResult.get();
-
-    if (!setStrJsResult.isSuccess()) {
-        errorCallback("Failed to set normalized string for " + varId + ": " + setStrJsResult.getErrorMessage());
-        return false;
+std::string SCE::DataModelInitHelper::inlineContentEventData(IScriptEngine &jsEngine, const std::string &sessionId,
+                                                             const ScriptSource &content) {
+    // Whether the children are an XML document is asked of the author's text,
+    // as `initializeVariable` asks it; such children travel as written.
+    if (isXMLContent(content.source())) {
+        return content.source();
     }
-
-    SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} with whitespace-normalized string: '{}'", varId, normalized);
-    return true;
+    return EventDataHelper::scriptValueToJsonString(inlineContentValue(jsEngine, sessionId, content));
 }
 
 bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine, const std::string &sessionId,

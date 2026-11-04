@@ -44,6 +44,7 @@ std::shared_ptr<IActionNode> SendAction::clone() const {
     cloned->typeExpr_ = typeExpr_;
     cloned->paramsWithExpr_ = paramsWithExpr_;
     cloned->content_ = content_;
+    cloned->contentIsLiteral_ = contentIsLiteral_;
     return cloned;
 }
 
@@ -165,6 +166,14 @@ void SendAction::setContent(const std::string &content) {
 
 const std::string &SendAction::getContent() const {
     return content_;
+}
+
+void SendAction::setContentIsLiteral(bool literal) {
+    contentIsLiteral_ = literal;
+}
+
+bool SendAction::isContentLiteral() const {
+    return contentIsLiteral_;
 }
 
 void SendAction::setContentExpr(const std::string &contentExpr) {

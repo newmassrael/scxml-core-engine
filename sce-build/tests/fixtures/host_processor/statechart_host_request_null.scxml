@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  docs/adr/0084, D4: what a host-served <send> hands the host under the null
+  data model, held to host_request_cases.json beside it as
+  statechart_host_request.scxml is, by both engines.
+
+  With no data model there are no expressions, so the children of an inline
+  <content> are the event's value as they are written: the request made as
+  `asking` is entered carries the text `1 + 1`, without the whitespace that
+  lays it out, as its content, and the same text as a string as its event
+  data (statechart_host_request.scxml's `told` is the ECMAScript reading).
+
+    said   - a <send> to the host's processor with an inline <content>.
+
+  The generated machine is compiled with `x-sce-host` declared as processor
+  (tests/CMakeLists.txt).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="statechart_host_request_null" initial="asking">
+
+  <state id="asking">
+    <onentry>
+      <send id="said" type="x-sce-host" event="host.said" target="pane://said">
+        <content>
+          1 + 1
+        </content>
+      </send>
+    </onentry>
+
+    <transition event="leave" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

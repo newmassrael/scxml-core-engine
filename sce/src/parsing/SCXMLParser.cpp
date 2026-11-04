@@ -316,6 +316,10 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         if (doneDataParser_) {
             doneDataParser_->setDatamodelType(datamodelType);
         }
+        // §scxml-B-2-6: a <send>'s inline <content> is read by the same split.
+        if (actionParser_) {
+            actionParser_->setDatamodelType(datamodelType);
+        }
         SCE_LOG_DEBUG("Datamodel: {}", datamodelType);
     }
 

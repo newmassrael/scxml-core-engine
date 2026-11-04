@@ -1310,6 +1310,17 @@ Mesh through the host (`host_processor_analyzer::lower_mesh`, `SCE_MESH.md`
 section 19), which the Interpreter's router is handed; the generated C++ engine
 keeps its own router.
 
+An inline `<content>` is one text and one reading on both engines. Its text,
+which a host is handed as `content`, is the body sce-build's `content_body`
+gives the generated machines, and the Interpreter's parser reads it with
+`XmlSerializationHelper::serializeContentBody`: the markup when it holds
+elements, the characters otherwise, without the whitespace that lays it out.
+A `<send>`'s event data is that text as the data model reads inline content
+(`DataModelInitHelper::inlineContentEventData` on the Interpreter, the build's
+`to_author_data_content` for a generated machine): an XML document as
+written, otherwise the expression's value or the space-normalized string, and
+under the null data model the text itself.
+
 ### Event Names at the Door (Single Source of Truth)
 
 An event that arrives BY NAME — a child's `<send target="#_parent">` or autoforward,

@@ -99,6 +99,40 @@ public:
                                    const ScriptSource &content, std::function<void(const std::string &)> errorCallback);
 
     /**
+     * @brief The value inline children that are not an XML document hold
+     *
+     * The reading `initializeVariable` gives the children of a `<data>`: the
+     * value of the expression they are, when they evaluate as one, and the
+     * space-normalized string of the author's text otherwise. Never fails —
+     * text that is no expression is a string.
+     *
+     * @param jsEngine Engine the expression is evaluated by
+     * @param sessionId Session it is evaluated in
+     * @param content The children, as a `ScriptSource` (see `initializeVariable`)
+     */
+    static ScriptValue inlineContentValue(IScriptEngine &jsEngine, const std::string &sessionId,
+                                          const ScriptSource &content);
+
+    /**
+     * @brief The event data a `<send>`'s inline `<content>` carries, as JSON text
+     *
+     * The one reading inline content has under a data model, which a
+     * generated machine's send decides when it is built
+     * (`to_author_data_content`, sce-build): children that are an XML
+     * document are their own text, whose DOM node is built by whatever binds
+     * `_event.data`; any other children are `inlineContentValue`, written as
+     * the JSON text every delivery carries. So `<content>n + 1</content>` is
+     * the number the expression gives, `<content>'v'</content>` the string
+     * `v`, and `<content>a  b</content>` the string `a b`, on both engines.
+     *
+     * @param jsEngine Engine the expression is evaluated by
+     * @param sessionId Session it is evaluated in
+     * @param content The children, as a `ScriptSource` (see `initializeVariable`)
+     */
+    static std::string inlineContentEventData(IScriptEngine &jsEngine, const std::string &sessionId,
+                                              const ScriptSource &content);
+
+    /**
      * @brief Initialize a datamodel variable with external file loading
      *
      * @param jsEngine JSEngine instance

@@ -14,7 +14,11 @@
     note   - a <send> to the host's processor, with a target, an id, a
              namelist and a <param>: the pairs as text and as the event data a
              local delivery of the send would carry.
-    job    - an <invoke> whose src is evaluated from `srcexpr`, with a
+    told   - a <send> with an inline <content> laid out over lines, whose
+             text is an expression: the host is handed the text without the
+             whitespace that lays it out, and as the event data the value
+             the expression gives, which is what a local delivery carries.
+    job    -an <invoke> whose src is evaluated from `srcexpr`, with a
              namelist and a <param> name given twice, both values kept.
     body   - an <invoke> with an inline <content> laid out over lines: the
              host is handed its text, without the whitespace around it.
@@ -37,6 +41,11 @@
     <onentry>
       <send id="note" type="x-sce-host" event="host.note" target="pane://note" namelist="n">
         <param name="k" expr="'v'"/>
+      </send>
+      <send id="told" type="x-sce-host" event="host.told" target="pane://told">
+        <content>
+          n + 1
+        </content>
       </send>
     </onentry>
 

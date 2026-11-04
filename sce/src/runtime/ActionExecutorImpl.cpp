@@ -13,6 +13,7 @@
 #include "actions/SendAction.h"
 #include "common/AssignHelper.h"
 #include "common/AssignmentExecutionHelper.h"
+#include "common/DataModelInitHelper.h"
 #include "common/DoneDataHelper.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
@@ -36,6 +37,7 @@
 #include "events/IEventDispatcher.h"
 #include "events/InvokeEventTarget.h"
 #include "events/ParentEventTarget.h"
+#include "runtime/DataContentHelpers.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/INativeActionHost.h"
 #include "scripting/ScriptResultUtils.h"
@@ -1023,7 +1025,26 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 // as no data.
                 contentData = "\"\"";
             }
+        } else if (!action.getContent().empty()) {
+            // §scxml-5.6.2: with no 'expr' the children are the output of
+            // <content>, and the event's data is what they read as — the one
+            // reading every generated machine's send gives them where it is
+            // built, so `<content>'v'</content>` arrives as `v` from either
+            // engine. An XML document travels as written, and the DOM node
+            // is built where `_event.data` is bound. With no data model there
+            // are no expressions, and the text is the value itself, as
+            // `<donedata>`'s is (`DoneDataParser`).
+            if (action.isContentLiteral() && !isXMLContent(action.getContent())) {
+                DoneDataHelper::emitContentLiteral(action.getContent(), contentData);
+            } else {
+                contentData = DataModelInitHelper::inlineContentEventData(
+                    scriptEngine_, sessionId_, ScriptSource::ecmascript(action.getContent()));
+            }
         }
+        // §scxml-C-2: a BasicHTTP message's body is the <content> as written,
+        // the text the generated engine posts too; its data reading above is
+        // what a session receiving the event is handed.
+        const std::string contentBody = action.getContentExpr().empty() ? action.getContent() : contentData;
 
         // §scxml-6.2: the value of delayexpr must be the CSS2 time the clause
         // names too. One that is not — a bare number included — is an
@@ -1110,8 +1131,9 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             event.typedParams = typedParams;  // Engine-agnostic typed params (avoids JSON round-trip)
             // §scxml-C-2: Set content for HTTP body
             // §scxml-5.6: <content> is the container whose data is handed to the
-            // external service named by the send target.
-            event.content = contentData;
+            // external service named by the send target: the body a BasicHTTP
+            // message posts, and the data any other target's session receives.
+            event.content = isHttpEventProcessor ? contentBody : contentData;
             // §scxml-5.10: Set event type for origintype field (test 253, 331, 352, 372)
             event.type = sendType.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : sendType;
 

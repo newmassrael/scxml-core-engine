@@ -2742,6 +2742,14 @@ sce_add_state_machine(
     HOST_INVOKER x-sce-host
 )
 
+# The same table's request under the null data model, whose inline <content> is
+# its value as written; the document makes a send and nothing else.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_request_null.scxml
+    HOST_PROCESSOR x-sce-host
+)
+
 # docs/adr/0084: the machine WhatAnotherThreadPostsEntersThroughTheInboxAotTest
 # posts to from other threads. It sits beside its driver, as
 # parallel_current_state.scxml does, and the C11 machine is driven with it too
