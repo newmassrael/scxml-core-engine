@@ -1278,6 +1278,38 @@ middle of the step. Leaving serialisation to the host is not this rule either:
 it is the Go and Python contract before their step, and SCE's own Mesh deadline
 on the generated C++ engine does not keep it.
 
+The C++ Interpreter has not taken its step yet (ADR 0084, D8): its scheduler
+delivers on a thread of its own and enters under the machine's macrostep mutex,
+and an ending of a host-run invocation (`completeHostInvoke`, `failHostInvoke`,
+`endHostInvokeIn`) is applied the way a host's event is, inside the macrostep
+that runs on the calling thread or as a macrostep of its own. The invocation
+table it judges an ending against is already the shared ledger.
+
+### Host Processor Door (Single Source of Truth)
+
+Decided by `docs/adr/0084-what-reaches-an-engine-from-outside-enters-through-one-inbox-and-one-processor-door.md`
+(D4-D6). Both C++ engines serve a type the host registers through one door:
+
+| Part | Where | Generated engine | Interpreter |
+|------|-------|------------------|-------------|
+| Request, response and handler shapes | `core/HostProcessor.h` | `HostSendRequest`, `HostInvokeRequest`, ... | the same |
+| Registration and the reserved prefix | `SendHelper::refuseReservedHostType`, held to `reserved_type_cases.json` | `registerEventProcessor`, `registerInvoker` | `StateMachine::registerEventProcessor`, `registerInvoker`, `registerMeshRpcInvoker` |
+| Who serves a type | | the build's declaration and the registration | the platform's processor, then the registration, then `error.execution` (`InvokeHandlerFactory`, `ActionExecutorImpl`'s send) |
+| Sessions served | | the tree (`TreeInvokers`) | the tree (`TreeInvokers`, `TreeEventProcessors`, `adoptHostProcessorsOf`) |
+| A running invocation | `core/HostInvokeLedger.h` | one ledger per session, on `PullScheduler` | one ledger per `StateMachine`, on its scheduler through `StateMachine::HostInvokeDeadlines` |
+| Endings | | `completeHostInvoke`, `failHostInvoke`, `endHostInvokeIn` | the same names |
+
+The request is built by each engine from its own evaluation of the element (the
+generated invoke and send sites; `HostRunInvokeHandler` and `ActionExecutorImpl`
+on the Interpreter) through the shared helpers (`NamelistHelper`,
+`EventDataHelper`, `AssignmentExecutionHelper`, `ScriptResultUtils`), and the
+two are held field for field to one table,
+`sce-build/tests/fixtures/host_processor/host_request_cases.json`. Its Mesh rows
+are the requests the build lowers a Mesh request to for the backends that route
+Mesh through the host (`host_processor_analyzer::lower_mesh`, `SCE_MESH.md`
+section 19), which the Interpreter's router is handed; the generated C++ engine
+keeps its own router.
+
 ### Event Names at the Door (Single Source of Truth)
 
 An event that arrives BY NAME — a child's `<send target="#_parent">` or autoforward,
@@ -1424,7 +1456,7 @@ Helpers distributed across `sce/include/core/` and `sce/include/common/`:
 | `HierarchicalStateHelper` | 3.13, D | Ancestry and descendancy, the domain-candidate filter |
 | `ForeachHelper` | 4.6 | Loop variable declaration and type preservation |
 | `InvokeHelper` | 6.4 | Invoke lifecycle (defer/cancel/execute pattern) |
-| `HostInvokeLedger` | 6.4, 6.4.1 | The host-run invocations of one session: the started table and its tokens, the record made before the handler is asked, refusal, immediate completion, the deadline (armed and dropped through the engine's scheduler, `HostInvokeDeadlineSchedulerTrait`; the ledger owns no clock), the one ending, and what a save reads of a running invocation. Each operation answers what is left for the engine to do (`HostInvokeReport`, `HostInvokeEnded`), and the engine does it in its own spelling of an event (ADR 0084, D5) |
+| `HostInvokeLedger` | 6.4, 6.4.1 | The host-run invocations of one session: the started table and its tokens, the record made before the handler is asked, refusal, immediate completion, the deadline (armed and dropped through the engine's scheduler, `HostInvokeDeadlineSchedulerTrait`; the ledger owns no clock), the one ending, and what a save reads of a running invocation. Each operation answers what is left for the engine to do (`HostInvokeReport`, `HostInvokeEnded`), and the engine does it in its own spelling of an event (ADR 0084, D5). Both C++ engines hold it: the generated engine per session, the Interpreter per `StateMachine` (see "Host Processor Door") |
 | `TransitionHelper` | 3.13 | Transition selection and execution |
 | `ConflictResolutionHelper` | D.2 | Optimal transition set selection |
 | `ParallelTransitionHelper` (`ExitSetAlgorithms`) | D.2 | `getTransitionDomain` + `computeExitSet` over the configuration, and the union of a microstep's exit sets in exit order |
