@@ -984,6 +984,39 @@ fn an_embedded_codec_bounded_by_a_length_is_read_from_those_bytes_alone() {
     );
 }
 
+/// A bounded collection (RFC section synth-5-L) is a value over a fixed number of slots: an occupancy
+/// array and a generation counter per slot, and a handle that packs a slot with its generation, the 16/16
+/// layout every backend uses. Its element is the struct the element codec is generated as.
+#[test]
+fn a_bounded_collection_is_a_value_over_slots_with_a_packed_handle() {
+    let code = swift_of("tests/forge/resources/local_sub_table.scxml")
+        .expect("a bounded collection over a codec is written");
+    assert!(
+        code.contains("public struct LocalSubTable: Sequence, Sendable"),
+        "{code}"
+    );
+    assert!(
+        code.contains("private var slots: [SubscriptionEntry?]"),
+        "the slots hold the element codec's struct: {code}"
+    );
+    assert!(
+        code.contains("public static let capacity: Int = 8"),
+        "the capacity is the document's: {code}"
+    );
+    assert!(
+        code.contains("public struct LocalSubTableHandle: Hashable, Sendable"),
+        "the handle is a value that packs a slot with its generation: {code}"
+    );
+    assert!(
+        code.contains("return .full"),
+        "a full collection answers `full` under a policy that does not evict: {code}"
+    );
+    assert!(
+        !code.contains("public func findByIndex"),
+        "a collection with no index declares no lookup by it: {code}"
+    );
+}
+
 /// A content-line codec (SCE_FORGE.md section 4.6.4) is a struct of its entries read from the lines of
 /// one component and written in declaration order. The line grammar is the runtime's: the generated
 /// code asks the reader for each value and the writer to write one, and spells none of it.

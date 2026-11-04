@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (RFC section synth-5-L): a bounded collection under the `oldest-wins`
+     overflow policy: a full collection evicts the oldest entry to take the new one, so an insert is
+     always `ok` and the evicted entry's handle is stale. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="bounded-collection"
+       name="bc_recent_table"
+       version="1.0">
+  <sce:element-type>bc_entry</sce:element-type>
+  <sce:capacity const="2"/>
+  <sce:ordering>insertion</sce:ordering>
+  <sce:on-overflow>oldest-wins</sce:on-overflow>
+</scxml>

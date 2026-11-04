@@ -26711,6 +26711,44 @@ fn render_bounded_collection_kotlin(
     })
 }
 
+/// Render a `<sce:kind="bounded-collection">` document for Swift (SCE Protocol-Synthesis RFC,
+/// section synth-5-L): a value type over `[Element?]` slots, an occupancy array and a generation counter
+/// per slot, with the `UInt32` handle every other backend packs the same 16/16 way. Its element is
+/// the struct the element codec is generated as, in the same module.
+fn render_bounded_collection_swift(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BoundedCollectionModel,
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_bounded_collection_inputs(m, options, crate::generator::Language::Swift)?;
+    let tmpl = env
+        .get_template("bounded_collection.swift.jinja2")
+        .map_err(|e| {
+            ForgeError::from(GenerateError::TemplateLoad(format!(
+                "bounded_collection.swift.jinja2 (swift): {e}"
+            )))
+        })?;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => filters::to_pascal_case(m.name.clone()),
+        element_pascal => filters::to_pascal_case(m.element_type.clone()),
+        capacity => inputs.capacity,
+        on_overflow => inputs.on_overflow_str,
+        overflow_is_oldest_wins => inputs.overflow_is_oldest_wins,
+        ordering => inputs.ordering_str,
+        concurrency => inputs.concurrency_str,
+        has_index_by => m.index_by.is_some(),
+        index_by_field => m.index_by.clone().unwrap_or_default(),
+        index_by_swift_type => inputs.index_type,
+        runtime_dep => "self-contained — Swift stdlib only",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "bounded_collection.swift.jinja2 (swift): {e}"
+        )))
+    })
+}
+
 /// Render a `<sce:kind="queue">` document for the C11 backend (SCE
 /// Protocol-Synthesis RFC §synth-5-P): a header that lays out the queue's
 /// control block, slots and ring entries statically and wraps the runtime
@@ -28245,6 +28283,15 @@ pub fn generate_swift_with_imports(
         // in hand: the renderer reads that refusal from the resolution it was handed
         // ([`crate::BroadcastLogElementFacts::swift_unlowered`]) and refuses before it writes.
         ForgeDocument::BroadcastLog(_) => None,
+        // A collection holds its element by the type that document is generated as, so it is
+        // refused for the element Swift does not write, which only the document-set compile has in
+        // hand ([`crate::BoundedCollectionResolution::element_swift_unlowered`]).
+        ForgeDocument::BoundedCollection(m) => options
+            .bounded_collection_resolutions
+            .as_ref()
+            .and_then(|resolutions| resolutions.get(&m.name))
+            .and_then(|resolution| resolution.element_swift_unlowered.as_ref())
+            .map(|why| format!("bounded-collection '{}': {why}", m.name)),
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -28284,6 +28331,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, Language::Swift)?,
         ForgeDocument::Procedure(m) => render_procedure_swift(&env, m, imports)?,
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_swift(&env, m, imports, options)?,
+        ForgeDocument::BoundedCollection(m) => render_bounded_collection_swift(&env, m, options)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {

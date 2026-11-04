@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (RFC section synth-5-L): the element the bounded collections of this
+     directory hold, a codec of one 32-bit field, which `bc_indexed_table` indexes. It lies beside
+     them because a document-set compile reads every input from one root. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec"
+       name="bc_entry"
+       version="1.0">
+  <datamodel>
+    <sce:field id="callback_id" sce:type="uint32" sce:byte="0" sce:bit-size="32"/>
+  </datamodel>
+</scxml>

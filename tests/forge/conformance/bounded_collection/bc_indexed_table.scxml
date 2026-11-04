@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (RFC section synth-5-L): a bounded collection over a codec element, with an
+     index (`findByIndex`) and the `reject` overflow policy: a full collection answers `full` to an
+     insert and keeps what it holds. Generated beside the element codec by a document-set compile,
+     which resolves the type of the index field from the element document. Kept apart from the shared
+     fixtures so that adding it moves the hash of no generated tree. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="bounded-collection"
+       name="bc_indexed_table"
+       version="1.0">
+  <sce:element-type>bc_entry</sce:element-type>
+  <sce:capacity const="3"/>
+  <sce:index-by field="callback_id"/>
+  <sce:on-overflow>reject</sce:on-overflow>
+</scxml>

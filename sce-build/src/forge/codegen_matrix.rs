@@ -452,7 +452,8 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
 /// functions of stateless kinds (`forge::generator::swift_procedure_unlowered`), and its broadcast log one over an element whose codec that is
 /// (`BroadcastLogElementFacts::refusal_for` refuses every other element by the codec's own
 /// refusal, and the narrow row of a deploy whose target has no 64-bit atomic is refused by
-/// name).
+/// name), and its bounded collection one over an element codec Swift writes
+/// (`BoundedCollectionResolution::element_swift_unlowered` refuses every other element).
 pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
     matches!(
         (kind, lang),
@@ -471,6 +472,7 @@ pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
             | (ForgeKind::Observer, Language::Swift)
             | (ForgeKind::Procedure, Language::Swift)
             | (ForgeKind::BroadcastLog, Language::Swift)
+            | (ForgeKind::BoundedCollection, Language::Swift)
     )
 }
 

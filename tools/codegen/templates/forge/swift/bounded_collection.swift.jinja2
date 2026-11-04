@@ -1,0 +1,162 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="bounded-collection")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// SCE Protocol-Synthesis RFC (section synth-5-L) bounded-collection: a typed container of a fixed capacity
+// whose occupancy varies at run time. The storage is `[Element?]` slots, an occupancy array and a
+// generation counter per slot; a handle packs the slot and its generation into a `UInt32` the same
+// 16/16 way every other backend does, so a stale handle (one whose slot was removed and reused) is
+// refused and not followed. The collection is a value: a copy holds its own slots.
+//
+// Operations contract: insert / remove / get / getBySlot / findByIndex (if index-by is set) /
+// iteration (`Sequence`) / len / capacity.
+
+/// Slot-index bit width inside the packed `{{ pascal }}Handle.raw`: 65536 slots by 65536 generations,
+/// the layout of the C11 `uint32_t` and the C++ `std::uint32_t` handle.
+private let {{ pascal }}SlotBits: UInt32 = 16
+private let {{ pascal }}SlotMask: UInt32 = 0xFFFF
+private let {{ pascal }}GenMask: UInt32 = 0xFFFF
+
+/// A stable handle into `{{ pascal }}`. Each `remove` then `insert` that reuses a slot increments the
+/// slot's generation, so a handle taken before the removal finds nothing.
+public struct {{ pascal }}Handle: Hashable, Sendable {
+    public let raw: UInt32
+
+    public init(raw: UInt32) {
+        self.raw = raw
+    }
+
+    /// The slot index (the low 16 bits).
+    public var slot: UInt32 { raw & {{ pascal }}SlotMask }
+
+    /// The generation counter (the high 16 bits).
+    public var generation: UInt32 { (raw >> {{ pascal }}SlotBits) & {{ pascal }}GenMask }
+
+    /// Packs a `(slot, generation)` pair into the `UInt32` a handle holds.
+    public static func pack(slot: UInt32, generation: UInt32) -> {{ pascal }}Handle {
+        {{ pascal }}Handle(raw: ((generation & {{ pascal }}GenMask) << {{ pascal }}SlotBits) | (slot & {{ pascal }}SlotMask))
+    }
+}
+
+/// The result of `{{ pascal }}.insert`. Under `<sce:on-overflow>oldest-wins</sce:on-overflow>` it is
+/// always `ok` (the oldest entry is evicted to make room); under `reject` and `diagnostic-event` it is
+/// `full` when every slot is occupied.
+public enum {{ pascal }}InsertResult: Equatable, Sendable {
+    case ok({{ pascal }}Handle)
+    case full
+}
+
+/// `{{ pascal }}`: a bounded collection over `{{ element_pascal }}`. Capacity `{{ capacity }}`,
+/// `<sce:on-overflow>{{ on_overflow }}</sce:on-overflow>`, `<sce:ordering>{{ ordering }}</sce:ordering>`,
+/// `<sce:concurrency>{{ concurrency }}</sce:concurrency>`.
+public struct {{ pascal }}: Sequence, Sendable {
+    /// The slot capacity (`<sce:capacity>`).
+    public static let capacity: Int = {{ capacity }}
+
+    private var slots: [{{ element_pascal }}?] = Array(repeating: nil, count: {{ pascal }}.capacity)
+    private var occupied: [Bool] = Array(repeating: false, count: {{ pascal }}.capacity)
+    private var generations: [UInt32] = Array(repeating: 0, count: {{ pascal }}.capacity)
+    private var count: Int = 0
+
+    public init() {}
+
+    /// The number of occupied slots.
+    public var len: Int { count }
+
+    /// Whether no slot is occupied.
+    public var isEmpty: Bool { count == 0 }
+
+    /// The slot capacity.
+    public var capacity: Int { Self.capacity }
+
+    /// Inserts `element`. A free slot is taken when there is one. When every slot is occupied the
+    /// insert is `full`{% if overflow_is_oldest_wins %}, except under `oldest-wins`, which evicts the
+    /// oldest-occupied slot and reuses it: the parse-time validator pins the ordering to insertion
+    /// under that policy, so the lowest occupied slot index is the oldest entry{% endif %}.
+    public mutating func insert(_ element: {{ element_pascal }}) -> {{ pascal }}InsertResult {
+        if let free = occupied.firstIndex(of: false) {
+            slots[free] = element
+            occupied[free] = true
+            count += 1
+            return .ok(.pack(slot: UInt32(free), generation: generations[free]))
+        }
+{% if overflow_is_oldest_wins %}
+        let evicted = occupied.firstIndex(of: true) ?? 0
+        slots[evicted] = element
+        generations[evicted] = (generations[evicted] &+ 1) & {{ pascal }}GenMask
+        // One evicted and one inserted: the count does not change.
+        return .ok(.pack(slot: UInt32(evicted), generation: generations[evicted]))
+{% else %}
+        return .full
+{% endif %}
+    }
+
+    /// Removes the entry `handle` names. `false` when the slot is free, or when the handle's
+    /// generation is not the slot's current one (a use after remove).
+    @discardableResult
+    public mutating func remove(_ handle: {{ pascal }}Handle) -> Bool {
+        let index = Int(handle.slot)
+        guard index < Self.capacity, occupied[index], generations[index] == handle.generation else {
+            return false
+        }
+        slots[index] = nil
+        occupied[index] = false
+        generations[index] = (generations[index] &+ 1) & {{ pascal }}GenMask
+        count -= 1
+        return true
+    }
+
+    /// The entry `handle` names, and `nil` when the slot is free or the handle's generation is not
+    /// the slot's current one (a use after remove).
+    public func get(_ handle: {{ pascal }}Handle) -> {{ element_pascal }}? {
+        let index = Int(handle.slot)
+        guard index < Self.capacity, occupied[index], generations[index] == handle.generation else {
+            return nil
+        }
+        return slots[index]
+    }
+
+    /// The entry in `slot`, read without a handle: `nil` when `slot` is past the capacity or the slot
+    /// is free. The generation is not checked, since the use-after-remove guard belongs to the handle;
+    /// this is for walking the slots by index (the lowering of `<sce:foreach in="<collection>">`).
+    public func getBySlot(_ slot: UInt32) -> {{ element_pascal }}? {
+        let index = Int(slot)
+        guard index < Self.capacity, occupied[index] else { return nil }
+        return slots[index]
+    }
+{% if has_index_by %}
+
+    /// The handle of the first occupied slot whose `{{ index_by_field }}` (`<sce:index-by>`) is `key`.
+    /// A scan bounded by the capacity, a build-time constant.
+    public func findByIndex(_ key: {{ index_by_swift_type }}) -> {{ pascal }}Handle? {
+        for index in 0..<Self.capacity where occupied[index] {
+            if let element = slots[index], element.{{ index_by_field }} == key {
+                return .pack(slot: UInt32(index), generation: generations[index])
+            }
+        }
+        return nil
+    }
+{% endif %}
+
+    /// The occupied entries in slot-index order. Under `<sce:ordering>insertion</sce:ordering>` that is
+    /// the order of insertion, as the parse-time gates validate.
+    public func makeIterator() -> AnyIterator<{{ element_pascal }}> {
+        var index = 0
+        let snapshot = self
+        return AnyIterator {
+            while index < Self.capacity {
+                defer { index += 1 }
+                if snapshot.occupied[index], let element = snapshot.slots[index] {
+                    return element
+                }
+            }
+            return nil
+        }
+    }
+}

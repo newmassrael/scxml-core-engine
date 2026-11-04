@@ -248,6 +248,17 @@ if [ ! -e "${BROADCAST_LOG_CONTEXT_DOCUMENTS[0]}" ]; then
     echo "error: no broadcast log context fixture found under $BROADCAST_LOG_CONTEXT_DIR" >&2
     exit 1
 fi
+# The bounded collections (RFC section synth-5-L) and the codec they hold. A collection is generated
+# from its document SET and never alone, because the type of its index field is read from the element
+# document, which only the set compile has in hand; the element is a codec of the same directory, which
+# the set generates beside them (a set is read from one root, and generated twice the element would be
+# two units of one name).
+BOUNDED_COLLECTION_DIR="tests/forge/conformance/bounded_collection"
+mapfile -t BOUNDED_COLLECTION_DOCUMENTS < <(printf '%s\n' "$BOUNDED_COLLECTION_DIR"/*.scxml | LC_ALL=C sort)
+if [ ! -e "${BOUNDED_COLLECTION_DOCUMENTS[0]}" ]; then
+    echo "error: no bounded collection fixture found under $BOUNDED_COLLECTION_DIR" >&2
+    exit 1
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -272,6 +283,11 @@ for document in "${BROADCAST_LOG_CONTEXT_DOCUMENTS[@]}"; do
     BROADCAST_LOG_CONTEXT_ARGUMENTS+=(--forge "$document")
 done
 "$CODEGEN" orchestrate "${BROADCAST_LOG_CONTEXT_ARGUMENTS[@]}" --language swift --output-dir "$TMP/broadcast_log_context/" > /dev/null
+BOUNDED_COLLECTION_ARGUMENTS=()
+for document in "${BOUNDED_COLLECTION_DOCUMENTS[@]}"; do
+    BOUNDED_COLLECTION_ARGUMENTS+=(--forge "$document")
+done
+"$CODEGEN" orchestrate "${BOUNDED_COLLECTION_ARGUMENTS[@]}" --language swift --output-dir "$TMP/bounded_collection/" > /dev/null
 
 mkdir -p "$GENERATED_DIR"
 # Every file below is generated and the tests beside them are not: clearing by
@@ -338,6 +354,17 @@ for generated in "$TMP/broadcast_log_context"/*.swift; do
     UNIT_FROM[$unit]="$BROADCAST_LOG_CONTEXT_DIR"
     BROADCAST_LOG_UNITS+=("$unit")
 done
+BOUNDED_COLLECTION_UNITS=()
+for generated in "$TMP/bounded_collection"/*.swift; do
+    unit="$(basename "$generated" .swift)"
+    if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+        echo "error: ${UNIT_FROM[$unit]} and the bounded collection fixtures are both written as $unit; one of them needs another name" >&2
+        exit 1
+    fi
+    cp "$generated" "$GENERATED_DIR/"
+    UNIT_FROM[$unit]="$BOUNDED_COLLECTION_DIR"
+    BOUNDED_COLLECTION_UNITS+=("$unit")
+done
 
 # The numerical conformance harness (tests/forge/conformance): the oracle's cases for the
 # units above, held to what each computes. The harness lists the fixtures this backend's
@@ -349,7 +376,7 @@ HARNESS_DIR="backends/swift/tests/Tests/StaticDatamodelTests"
     --manifest "$CORPUS_MANIFEST" \
     --output-dir "$HARNESS_DIR" > /dev/null
 
-echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none}, the event schemas ${SCHEMA_UNITS[*]:-none} and the broadcast logs ${BROADCAST_LOG_UNITS[*]:-none} under $GENERATED_DIR/"
+echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none}, the event schemas ${SCHEMA_UNITS[*]:-none} and the broadcast logs ${BROADCAST_LOG_UNITS[*]:-none} and the bounded collections ${BOUNDED_COLLECTION_UNITS[*]:-none} under $GENERATED_DIR/"
 if [ "${#REFUSED[@]}" -gt 0 ]; then
     echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
     printf '  %s\n' "${REFUSED[@]}"

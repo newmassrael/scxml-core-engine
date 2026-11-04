@@ -3813,6 +3813,7 @@ pub fn compile_forge_with_deploy(
                 capacity,
                 index_by_field_sce_type: None,
                 index_by_imports: Vec::new(),
+                element_swift_unlowered: None,
             },
         );
         Some(map)
@@ -4385,6 +4386,11 @@ pub struct BoundedCollectionResolution {
     /// Imports resolving the index field in its declaring element document.
     /// These belong to the element namespace, not the collection namespace.
     pub index_by_imports: Vec<forge::generator::ImportContext>,
+    /// What of the element document the Swift emitter does not write: a collection holds its
+    /// element by the type that document is generated as, so a document Swift refuses (or one that
+    /// is not a codec) leaves the collection naming a type that is not there. `None` for an element
+    /// it writes, and when the element document is not in hand (a single-document compile).
+    pub element_swift_unlowered: Option<String>,
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-P — what a queue's two
@@ -5859,12 +5865,30 @@ fn compile_document_set(
                 )?;
             }
         }
+        // The element is held by the type its document is generated as: a codec Swift writes
+        // (through the codecs its lists hold), and no other document.
+        let element_swift_unlowered = match element_type_candidates.get(&bc.element_type) {
+            _ if language != generator::Language::Swift => None,
+            Some(forge::model::ForgeDocument::Codec(codec)) => element_import_sources
+                .get(&bc.element_type)
+                .and_then(|(imports, base_dir)| {
+                    forge::static_imports::swift_codec_through_imports(codec, imports, base_dir)
+                        .map(|construct| forge::generator::swift_codec_refusal(codec, &construct))
+                }),
+            Some(_) => Some(format!(
+                "its element '{}' is not a codec, the one document Swift holds a collection's \
+                 element by",
+                bc.element_type
+            )),
+            None => None,
+        };
         bc_resolutions.insert(
             bc.name.clone(),
             BoundedCollectionResolution {
                 capacity,
                 index_by_field_sce_type,
                 index_by_imports,
+                element_swift_unlowered,
             },
         );
     }
