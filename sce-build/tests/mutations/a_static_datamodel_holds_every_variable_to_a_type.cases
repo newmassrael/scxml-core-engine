@@ -541,8 +541,8 @@ PY
 
 mutation_case "a host-run invoke's srcexpr is not lowered to the string it computes" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        (info.native_src, info.native_src_fails) = lower(&info.srcexpr, \"srcexpr\")?;\n",
-     "        let _ = lower(&info.srcexpr, \"srcexpr\")?;\n")
+     "        (info.native_src, info.native_src_fails) =\n            lower(&info.srcexpr, \"srcexpr\", info.srcexpr_spelling.as_ref())?;\n",
+     "        let _ = lower(&info.srcexpr, \"srcexpr\", info.srcexpr_spelling.as_ref())?;\n")
 PY
 
 mutation_case "a host-run invoke's srcexpr stands after it is lowered" <<'PY'
@@ -565,8 +565,8 @@ PY
 
 mutation_case "a host-run invoke's content expr is not lowered to the string it computes" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        (info.native_content, info.native_content_fails) =\n            lower(&info.contentexpr, \"<content expr>\")?;\n",
-     "        let _ = lower(&info.contentexpr, \"<content expr>\")?;\n")
+     "        (info.native_content, info.native_content_fails) = lower(\n            &info.contentexpr,\n            \"<content expr>\",\n            info.contentexpr_spelling.as_ref(),\n        )?;\n",
+     "        let _ = lower(\n            &info.contentexpr,\n            \"<content expr>\",\n            info.contentexpr_spelling.as_ref(),\n        )?;\n")
 PY
 
 mutation_case "a host-run invoke's content expr stands after it is lowered" <<'PY'

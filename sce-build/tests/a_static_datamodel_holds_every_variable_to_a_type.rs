@@ -4486,19 +4486,63 @@ fn every_generated_language_serves_a_static_mesh_request_by_the_route_it_has() {
 }
 
 #[test]
-fn the_interpreter_has_no_mesh_route_so_a_static_mesh_request_is_refused_by_name() {
-    // The Interpreter runs the document's own `<invoke>`, and has no route to send a
-    // Mesh request by (it answers `error.execution`: the platform supports no such
-    // service), so there is nothing for the lowering to hand the request to. It is
-    // refused where the build writes the document for it, by name.
+fn the_interpreter_lowers_a_static_mesh_request_for_the_router_its_host_registers() {
+    // The Interpreter runs the document's own `<invoke>` and serves a Mesh request
+    // by the router its host registers (docs/adr/0084, D6), so the lowering keeps
+    // the element and lowers its params as a `<send>`'s are (D7). The envelope is
+    // literal and travels as written.
     let (ok, out) = run(
         &["lower"],
-        &mesh_requesting(r#"<param name="k" expr="count"/>"#),
+        &mesh_requesting(r#"<param name="k" expr="count + 1"/>"#),
     );
-    assert!(!ok, "the Interpreter has no Mesh route:\n{out}");
+    assert!(ok, "the Interpreter lowers a static Mesh request:\n{out}");
     assert!(
-        out.contains("a mesh <invoke>"),
-        "the refusal names the construct:\n{out}"
+        out.contains(r#"<param name="k" expr="SceStatic.U32.add(count, 1)"/>"#),
+        "the param is the value the machine computes, checked at its width:\n{out}"
+    );
+    assert!(
+        out.contains(r##"<invoke type="sce:mesh-rpc" id="ask" src="#peer">"##),
+        "the element is the author's:\n{out}"
+    );
+    assert!(
+        out.contains(r#"<param name="_mesh_event" expr="'service.request'"/>"#),
+        "the envelope travels as written:\n{out}"
+    );
+}
+
+#[test]
+fn the_interpreter_lowers_a_host_run_invoke_request_where_it_is_written() {
+    // The Interpreter serves an invocation a host runs through the invoker its host
+    // registered (docs/adr/0084, D4), and evaluates the element itself: each
+    // `<param>`, the `srcexpr` and the `<content expr>` are lowered in the
+    // attribute each is written in, and a `namelist` name that lowers to itself
+    // is carried as written, as a `<send>`'s is (D7).
+    let document = invoking_the_host(
+        r#"<invoke type="x-sce-host" id="h" srcexpr="'job://' + (count + 2)" namelist="ready"><param name="k" expr="count + 1"/></invoke><invoke type="x-sce-host" id="g"><content expr="'body ' + (count + 3)"/></invoke>"#,
+    );
+    let (ok, out) = run(&["check"], &document);
+    assert!(ok, "the document stands:\n{out}");
+    let (ok, out) = run(&["lower"], &document);
+    assert!(ok, "the Interpreter lowers a host-run invoke:\n{out}");
+    assert!(
+        out.contains(r#"<param name="k" expr="SceStatic.U32.add(count, 1)"/>"#),
+        "the param is the value the machine computes:\n{out}"
+    );
+    assert!(
+        out.contains("SceStatic.U32.add(count, 2)"),
+        "the source is the string the machine computes:\n{out}"
+    );
+    assert!(
+        out.contains("SceStatic.U32.add(count, 3)"),
+        "the body is the string the machine computes:\n{out}"
+    );
+    assert!(
+        out.contains(r#"namelist="ready""#),
+        "a namelist name that lowers to itself is carried as written:\n{out}"
+    );
+    assert!(
+        out.contains(r#"type="x-sce-host""#),
+        "the element is the author's:\n{out}"
     );
 }
 
@@ -4595,14 +4639,27 @@ fn every_generated_language_serves_a_static_mesh_request_that_names_its_peer() {
 }
 
 #[test]
-fn the_interpreter_refuses_a_static_mesh_request_that_names_its_peer_by_name() {
-    // It has no Mesh route to send the request by, whichever way the peer is named.
-    let (ok, out) = run(&["lower"], &mesh_asking("peer"));
-    assert!(!ok, "the Interpreter has no Mesh route:\n{out}");
+fn the_interpreter_lowers_the_peer_a_static_mesh_request_computes_in_its_attribute() {
+    // The Interpreter evaluates the `srcexpr` itself, so the string it computes is
+    // written where the attribute stands: an operation the model checks is the
+    // library's call there, not the script engine's unchecked `+`.
+    let (ok, out) = run(&["lower"], &mesh_asking("'#peer' + (count + 1)"));
+    assert!(ok, "the Interpreter lowers a computed peer:\n{out}");
     assert!(
-        out.contains("a mesh <invoke>"),
-        "the refusal names the construct:\n{out}"
+        out.contains("SceStatic.U32.add(count, 1)"),
+        "the peer is the string the lowered expression computes:\n{out}"
     );
+    assert!(
+        !out.contains("(count + 1)"),
+        "nothing of the attribute is left as the author wrote it:\n{out}"
+    );
+    // A peer named by a variable lowers to itself and is left as written.
+    let (ok, out) = run(&["lower"], &mesh_asking("peer"));
+    assert!(
+        ok,
+        "the Interpreter lowers a peer named by a variable:\n{out}"
+    );
+    assert!(out.contains(r#"srcexpr="peer""#), "{out}");
 }
 
 #[test]

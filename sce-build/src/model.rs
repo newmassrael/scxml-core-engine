@@ -2362,6 +2362,11 @@ pub struct MeshRpcInvokeInfo {
     /// templates can use the canonical `is not none` test without
     /// tripping over `undefined` vs `null` ambiguity.
     pub deadline_ms: Option<u64>,
+    /// The `srcexpr` attribute as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives: the place a lowering for an engine
+    /// that evaluates the document's own `<invoke>` rewrites. `None` for a `src`.
+    #[serde(skip)]
+    pub srcexpr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Codegen-internal: the native expression of the string [`MeshRpcTarget::SrcExpr`]
     /// computes, which a machine of a data model with no script engine reads
     /// when the invocation starts to name the peer it asks. Empty for a `src`,

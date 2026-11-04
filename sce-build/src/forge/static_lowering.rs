@@ -16319,7 +16319,10 @@ fn lower_host_request_strings(
 ) -> Result<(), GenerateError> {
     let target = rewrites.target;
     let lang = target.name();
-    let lower = |written: &str, attribute: &str| -> Result<(String, bool), GenerateError> {
+    let lower = |written: &str,
+                 attribute: &str,
+                 spelling: Option<&crate::attribute_spelling::AttributeSpelling>|
+     -> Result<(String, bool), GenerateError> {
         if !target.lowers_host_src_expr() {
             return Err(GenerateError::unsupported(format!(
                 "an <invoke> a host runs with a {attribute} has no {lang} lowering yet"
@@ -16333,15 +16336,22 @@ fn lower_host_request_strings(
                     r.error
                 ))
             })?;
+        // Where the expression is written, for a backend that runs the
+        // document's own `<invoke>` (the Interpreter): the string it computes.
+        rewrites.note(written, spelling, &value.text);
         Ok((value.text, value.can_fail))
     };
     if !info.srcexpr.trim().is_empty() {
-        (info.native_src, info.native_src_fails) = lower(&info.srcexpr, "srcexpr")?;
+        (info.native_src, info.native_src_fails) =
+            lower(&info.srcexpr, "srcexpr", info.srcexpr_spelling.as_ref())?;
         info.srcexpr.clear();
     }
     if !info.contentexpr.trim().is_empty() {
-        (info.native_content, info.native_content_fails) =
-            lower(&info.contentexpr, "<content expr>")?;
+        (info.native_content, info.native_content_fails) = lower(
+            &info.contentexpr,
+            "<content expr>",
+            info.contentexpr_spelling.as_ref(),
+        )?;
         info.contentexpr.clear();
     }
     Ok(())
@@ -16406,6 +16416,9 @@ fn lower_mesh_request(
                     r.error
                 ))
             })?;
+        // Where the expression is written, for a backend that runs the
+        // document's own `<invoke>` (the Interpreter): the string it computes.
+        rewrites.note(srcexpr, info.srcexpr_spelling.as_ref(), &value.text);
         info.native_src = value.text;
         info.native_src_fails = value.can_fail;
     }

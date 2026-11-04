@@ -3533,8 +3533,9 @@ can name and is refused there as it was for any value of no type.
 
 **Params.** A `<param>` of a `<send>`, of an `<invoke>` the host runs
 (§2.12), of a Mesh request (§2.6; the six generated languages lower it, with the
-`srcexpr` that names its peer, and the Interpreter, which has no mesh route, refuses it
-by name as "a mesh `<invoke>`"; `statechart_static_mesh_request` runs it on Rust,
+`srcexpr` that names its peer, and `sce-codegen lower` lowers it for the Interpreter,
+which serves it by the router its host registers, docs/adr/0084 D6 and D7;
+`statechart_static_mesh_request` runs it on Rust,
 Kotlin, Go, Python and C11, and `brake_static_invoke` and `brake_static_srcexpr` on
 C++) and of a
 `<final>`'s `<donedata>` is a typed expression read from the

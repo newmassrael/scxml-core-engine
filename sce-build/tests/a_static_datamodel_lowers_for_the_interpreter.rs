@@ -111,12 +111,11 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // Floor: a scan that found nothing to lower would pass. What is lowered
     // today — scalars, checked integers, the typed payload, lists, records,
     // calls of scalar algorithms, a `<send>`'s `<param>`s, a `<final>`'s
-    // `<donedata>`, a child session written inline and a hybrid `<invoke>`
-    // with the candidates it may start — is at least these
-    // thirty-seven machines, which is every one the fixture directory holds, and
-    // the floor rises as the lowering grows.
+    // `<donedata>`, a child session written inline, a hybrid `<invoke>`
+    // with the candidates it may start, and an invocation a host runs — is at
+    // least these forty-one machines, and the floor rises as the lowering grows.
     assert!(
-        lowered.len() >= 37,
+        lowered.len() >= 41,
         "lowered {lowered:?}, refused {:?}",
         refused.iter().map(|(n, _)| n).collect::<Vec<_>>()
     );
@@ -169,6 +168,21 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         // (`sce:std/shared/record_list.scxml`), lowered from the library and
         // written beside its parent.
         "record_list_parent",
+    ] {
+        assert!(
+            lowered.iter().any(|lowered_name| lowered_name == name),
+            "{name} is lowered for the Interpreter: lowered {lowered:?}"
+        );
+    }
+    // An invocation a host runs is served by the invoker the host registered on the
+    // machine (docs/adr/0084, D4 and D7), so the four machines of the standard host
+    // features lower: their requests are lowered as a `<send>`'s pairs are, and the
+    // element is the author's.
+    for name in [
+        "static_host_clock",
+        "static_host_http",
+        "static_host_kv",
+        "static_host_notify",
     ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),
@@ -425,6 +439,51 @@ fn a_donedata_content_that_names_a_value_is_lowered_in_its_attribute() {
     assert!(
         !lowered.contains("<param"),
         "a value is not made into a pair: {lowered}"
+    );
+}
+
+/// An invocation a host runs keeps its element, typed request and result
+/// included, and its `<param>`s are lowered in the attributes they are written
+/// in (docs/adr/0084, D7): a 64-bit integer crosses as the text of its digits, as
+/// a `<send>`'s does, and an operation the model checks is the library's call, so
+/// the Interpreter computes what the generated backends compute.
+#[test]
+fn a_host_run_invoke_keeps_its_element_and_lowers_its_params() {
+    let lowered = lowered_fixture("static_host_notify");
+    let parsed = roxmltree::Document::parse(&lowered).expect("well-formed");
+    let invoke = |id: &str| {
+        parsed
+            .descendants()
+            .find(|n| {
+                n.is_element() && n.tag_name().name() == "invoke" && n.attribute("id") == Some(id)
+            })
+            .unwrap_or_else(|| panic!("the <invoke id=\"{id}\"> stands: {lowered}"))
+    };
+    let param = |id: &str, name: &str| -> String {
+        invoke(id)
+            .children()
+            .find(|n| n.is_element() && n.attribute("name") == Some(name))
+            .and_then(|n| n.attribute("expr"))
+            .unwrap_or_else(|| panic!("<invoke id=\"{id}\"> keeps <param name=\"{name}\">"))
+            .to_string()
+    };
+    let post = invoke("post");
+    assert_eq!(post.attribute("type"), Some("sce-host-notify-post"));
+    assert_eq!(
+        post.attribute(("http://sce.dev/ext", "request")),
+        Some("NotifyPostRequest"),
+        "the typed request travels as written"
+    );
+    assert_eq!(param("post", "id"), "id", "a string is read as it is held");
+    let at = param("post", "at_ms");
+    assert!(
+        at.starts_with("String(") && at.contains("at_ms"),
+        "a 64-bit integer crosses as the text of its digits: {at}"
+    );
+    let far = param("far", "at_ms");
+    assert!(
+        far.starts_with("String(") && far.contains("SceStatic.") && !far.contains("at_ms + 1"),
+        "the sum the model checks is the library's, carried as its digits: {far}"
     );
 }
 

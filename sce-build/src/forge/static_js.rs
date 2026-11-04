@@ -34,9 +34,8 @@
 //!
 //! An algorithm with a construct
 //! [`crate::forge::static_js_algorithm`] does not spell (a `<sce:foreach>` over
-//! a bounded-collection import), an `<invoke>` that is
-//! not a child session — a mesh or a host-run one, and one whose `src` names a
-//! Mesh peer rather than a document — and the executable content the walk does
+//! a bounded-collection import), an `<invoke type="scxml">` whose `src` names a
+//! Mesh peer rather than a document, and the executable content the walk does
 //! not lower are refused with `generate/unsupported-feature` naming the
 //! construct, never passed through: an expression left as the author wrote it
 //! would be run by the script engine as ECMAScript, which is the
@@ -80,6 +79,17 @@
 //! candidates take as variables of different types or bounds is refused by
 //! name (`site_edits`), as is a `namelist` name that lands in a string a
 //! candidate bounds.
+//!
+//! # Host-run invokes and Mesh requests
+//!
+//! The Interpreter serves an `<invoke>` a host runs, and a Mesh request
+//! (`type="sce:mesh-rpc"`), through the invoker its host registered on the
+//! machine, as the generated engines do (docs/adr/0084, D4, D6 and D7). Its own
+//! `<invoke>` evaluates the request, so the element stays as written and only
+//! its expressions are lowered: each `<param>` and each `namelist` name as a
+//! `<send>`'s are, and the `srcexpr` and `<content expr>` to the string each
+//! computes. The envelope of a Mesh request (`_mesh_event`, the deadline) is
+//! literal and travels as written.
 //!
 //! # Algorithms
 //!
@@ -836,6 +846,14 @@ impl StaticTarget for JsTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
+    // Its own `<invoke>` evaluates the `srcexpr` and the `<content expr>` of an
+    // invocation a host runs and hands the host what each computes, so each is
+    // lowered in the attribute it is written in, to the string it computes
+    // (docs/adr/0084, D7). One that cannot be evaluated starts nothing, as on the
+    // generated backends.
+    fn lowers_host_src_expr(&self) -> bool {
+        true
+    }
     // Its own `<send>` evaluates the `targetexpr` and routes the value as it
     // routes a written target. The attribute becomes the call that holds the value
     // to the routes the document declares as `sce:targets`: a value that is none
@@ -880,20 +898,24 @@ impl StaticTarget for JsTarget {
 }
 
 /// What of an `<invoke>` has no lowering for the Interpreter, described for a
-/// refusal: every kind but a child session, written inline — its own document
-/// is lowered where it stands ([`child_edits`]) — or named by `src` — its
-/// document is lowered as one of its own and written beside the invoking one
-/// ([`lower_file_set`]) — and a hybrid one.
+/// refusal. A child session is lowered when it is written inline — its own
+/// document is lowered where it stands ([`child_edits`]) — or named by `src` —
+/// its document is lowered as one of its own and written beside the invoking one
+/// ([`lower_file_set`]) — and a hybrid one is lowered with its candidates.
+///
+/// An invocation a host runs and a Mesh request are lowered by the walk, their
+/// `<param>`s and `namelist` as a `<send>`'s are: the Interpreter serves each
+/// through the invoker its host registered, a Mesh router included, and
+/// raises `error.execution` for a type nothing serves (docs/adr/0084, D4, D6
+/// and D7). Their requests hand no child a variable it bounds, so the bounded
+/// `namelist` refusal below is a child session's alone.
 ///
 /// An allowlist, as [`unsupported_action`] is.
 fn unsupported_invoke(invoke: &Invoke, state: &str) -> Option<String> {
     let info = match invoke {
         Invoke::Scxml(info) => info,
         Invoke::Hybrid(info) => return unsupported_hybrid_invoke(info, state),
-        Invoke::MeshRpc(_) => return Some(format!("a mesh <invoke> in state `{state}`")),
-        Invoke::Unsupported(_) => {
-            return Some(format!("a host-run <invoke> in state `{state}`"));
-        }
+        Invoke::MeshRpc(_) | Invoke::Unsupported(_) => return None,
     };
     // A `src` that names no document — a Mesh peer (`#<name>`) — has nothing to
     // be lowered and written beside the invoking document.

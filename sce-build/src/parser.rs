@@ -5947,6 +5947,7 @@ impl SCXMLParser {
             target,
             mesh_event,
             deadline_ms,
+            srcexpr_spelling: AttributeSpelling::of(elem, None, "srcexpr"),
             ..Default::default()
         })
     }
