@@ -681,6 +681,14 @@ foreach(_CALLED_DOCUMENT forge_call_high forge_call_offset forge_call_ratio forg
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_CALLED_DOCUMENT}.scxml
     )
 endforeach()
+# static_render's text template (docs/adr/0087, section 3): a document of its own
+# kind whose unit's `render` the machine calls, generated beside the machine that
+# includes its header, as a called document is. The suite derives the machine from
+# its scenario, and not the documents it includes.
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/text_notice.scxml
+)
 
 # A host action's argument that overflows. The fixture sits beside the test
 # that reads it, as test_thermostat.scxml does: the host recorder is the C++

@@ -196,6 +196,7 @@
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_record_string_sm.h"
+#include "static_render_sm.h"
 #include "static_schema_revision_sm.h"
 #include "static_send_content_sm.h"
 #include "static_send_delay_sm.h"
@@ -732,6 +733,32 @@ static const variable_t string_literal_variables[] = {
 };
 STATIC_SCENARIO(static_string_literal, string_literal_states, string_literal_variables, static_string_literal_text,
                 no_lists, no_records)
+
+// static_render: a text template rendered into a string variable (docs/adr/0087,
+// section 3.1) through the template's unit, into a buffer of its MAX_LEN, the same
+// bytes as every lane; a hole that overflows writes nothing and ends its block.
+VARIABLE_READER(static_render, count)
+VARIABLE_READER(static_render, refusals)
+
+static const char *static_render_text(void *sm, const char *name) {
+    const static_render_t *machine = (const static_render_t *)sm;
+    if (strcmp(name, "note") == 0) {
+        return static_render_get_note(machine);
+    }
+    if (strcmp(name, "said") == 0) {
+        return static_render_get_said(machine);
+    }
+    return NULL;
+}
+
+static const name_value_t render_states[] = {
+    {"idle", STATIC_RENDER_STATE_IDLE},
+};
+static const variable_t render_variables[] = {
+    {"count", static_render_read_count},
+    {"refusals", static_render_read_refusals},
+};
+STATIC_SCENARIO(static_render, render_states, render_variables, static_render_text, no_lists, no_records)
 
 // static_bytes: a byte string is a buffer of the bytes its variable declares and the
 // length it holds, assigned from a literal or from another byte string, and refused
@@ -3277,6 +3304,7 @@ int main(void) {
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 14);
     bad |= static_string_literal_scenario("static_string_literal", 11);
+    bad |= static_render_scenario("static_render", 11);
     bad |= static_bytes_scenario("static_bytes", 12);
     bad |= static_record_bytes_scenario("static_record_bytes", 36);
     bad |= static_payload_bytes_scenario("static_payload_bytes", 15);

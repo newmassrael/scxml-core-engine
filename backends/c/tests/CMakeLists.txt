@@ -2466,9 +2466,19 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                    forge_call_status.scxml forge_call_level.scxml forge_call_next.scxml
                    forge_call_weight.scxml forge_call_named.scxml
     )
+    # A machine that renders a text template into a string variable (docs/adr/0087,
+    # section 3.1) through the template's unit, whose header is generated once beside
+    # the machine that includes it, as a called document's is (below).
+    sce_generate_static_integration_c_test(static_render
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_render.scxml"
+        STAGE_ALSO text_notice.scxml enum_view_mode.scxml
+    )
+    sce_c_integration_generation(_TEXT_NOTICE
+        "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/text_notice.scxml")
     # The enums a value crosses into a called document by (docs/adr/0051) are
     # documents of their own too, whose headers the called documents include.
-    set(_CALLED_HEADERS "")
+    set(_CALLED_HEADERS ${_TEXT_NOTICE_HEADERS})
     foreach(_CALLED_DOCUMENT forge_call_high forge_call_offset forge_call_ratio forge_call_code
                              forge_call_limit forge_call_range forge_call_status forge_call_level
                              forge_call_next forge_call_weight forge_call_named)
@@ -2770,6 +2780,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_number_SOURCES}
         ${INTEGRATION_C_TEST_static_forge_calls_SOURCES}
+        ${INTEGRATION_C_TEST_static_render_SOURCES}
         ${_CALLED_HEADERS}
         ${INTEGRATION_C_TEST_sync_client_SOURCES}
         ${_STATIC_SYNC_ALGORITHM_HEADERS}

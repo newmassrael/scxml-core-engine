@@ -896,6 +896,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // above would let pass does not stand for its lowering.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_lift"), replayed.end())
         << "static_lift was not replayed: <sce:lift> has no lowering for the Interpreter";
+    // ... and a text template rendered into a string variable (docs/adr/0087, section 3.1),
+    // through the library's one `render` handed the template's parts, so that a refusal the
+    // scan above would let pass does not stand for its lowering.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_render"), replayed.end())
+        << "static_render was not replayed: <sce:render> has no lowering for the Interpreter";
     // ... and the copies of the list of who is online, whose entries are let go by the
     // machine's own delayed send, which the Interpreter's scheduler releases as the
     // scenario moves its logical clock on.
