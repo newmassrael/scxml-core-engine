@@ -27,8 +27,9 @@ const FEATURES: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 "#;
 
 /// Each list of `idle` holds a node after a sibling that only some variants
-/// keep: the second `<onentry>` follows a gated one, `kept` follows a gated
-/// action in its block, and `close` follows a gated transition.
+/// keep: the third `<onentry>` follows a gated one and one whose only action
+/// is gated, which a variant without it holds no block of; `kept` follows a
+/// gated action in its block; and `close` follows a gated transition.
 const MACHINE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" name="shift" initial="idle" datamodel="sce-static">
@@ -36,6 +37,9 @@ const MACHINE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   <state id="idle">
     <onentry sce:requires="session-unicast">
       <sce:action name="first" effect="notice"/>
+    </onentry>
+    <onentry>
+      <sce:action name="only" effect="notice" requires="session-unicast"/>
     </onentry>
     <onentry>
       <sce:action name="gated" effect="notice" requires="session-unicast-accept"/>
@@ -109,10 +113,10 @@ fn every_symbol_of_a_variants_sourcemap_is_the_documents_symbol_of_the_same_node
         let variant = generate(&machine, &dir.path().join(format!("variant-{n}")), Some(on));
         held_to_the_document(&document, &variant, &format!("{on:?}"));
     }
-    // The variant with no feature on keeps the second of each list, and names
-    // it as the document does.
+    // The variant with no feature on keeps the last of each list, and names it
+    // as the document does.
     let none = generate(&machine, &dir.path().join("none"), Some(&[]));
-    for name in ["shift__idle___transition_1", "shift__idle___on_entry_1_1"] {
+    for name in ["shift__idle___transition_1", "shift__idle___on_entry_2_1"] {
         assert!(
             none.symbols.contains_key(name),
             "the variant with no feature on has no `{name}`: {:?}",
@@ -123,6 +127,7 @@ fn every_symbol_of_a_variants_sourcemap_is_the_documents_symbol_of_the_same_node
         "shift__idle___transition_0",
         "shift__idle___on_entry_0_0",
         "shift__idle___on_entry_1_0",
+        "shift__idle___on_entry_2_0",
     ] {
         assert!(
             !none.symbols.contains_key(name),

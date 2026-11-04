@@ -7076,12 +7076,12 @@ fn scxml_children_any_of<'a>(
 /// The derivation writes a removed element as spaces and keeps every line
 /// break, and a column counts characters, so a node of the variant starts at
 /// the row and column where it starts in the document: that position is the
-/// node's identity across the two. A transition's and a block's position is
-/// then the index of the document's element at that position among its
-/// siblings of the same name. An action's is the number of the block's children
-/// before it that are actions of the document: those the variant keeps as
-/// actions, and those it removed, each of which is executable content, the one
-/// thing a condition inside a block may be written on (§3).
+/// node's identity across the two. A transition's position is the index of the
+/// document's element at that position among its state's `<transition>`
+/// children. A block's is its index among the state's blocks of its kind that
+/// hold an action, since the parser keeps no block that holds none, and an
+/// action's its index among its block's children that are actions
+/// ([`is_executable_content`]), each counted in the document.
 fn document_positions(
     source: &str,
     variant: &str,
@@ -7094,11 +7094,20 @@ fn document_positions(
     };
     let written = roxmltree::Document::parse(source).ok()?;
     let derived = roxmltree::Document::parse(variant).ok()?;
-    let kept: BTreeSet<Position> = derived
-        .descendants()
-        .filter(|node| node.is_element())
-        .map(|node| start(&node))
-        .collect();
+    let actions_of = |block: &roxmltree::Node| -> Vec<Position> {
+        block
+            .children()
+            .filter(is_executable_content)
+            .map(|child| start(&child))
+            .collect()
+    };
+    // The blocks of `tag` the parser keeps, each with its actions.
+    let blocks_of = |parent: &roxmltree::Node, tag: &str| -> Vec<(Position, Vec<Position>)> {
+        scxml_children(parent, tag)
+            .map(|block| (start(&block), actions_of(&block)))
+            .filter(|(_, actions)| !actions.is_empty())
+            .collect()
+    };
     let elements_at = |doc: &'_ roxmltree::Document<'_>| -> BTreeMap<Position, roxmltree::NodeId> {
         doc.descendants()
             .filter(|node| {
@@ -7137,12 +7146,9 @@ fn document_positions(
         let in_variant = derived
             .get_node(in_variant)
             .expect("an id of the variant's own tree");
-        let of = |parent: &roxmltree::Node, tag: &str| -> Vec<Position> {
-            scxml_children(parent, tag)
-                .map(|node| start(&node))
-                .collect()
-        };
-        let transitions = of(&in_document, "transition");
+        let transitions: Vec<Position> = scxml_children(&in_document, "transition")
+            .map(|node| start(&node))
+            .collect();
         positions.transitions.insert(
             id.clone(),
             state
@@ -7161,32 +7167,20 @@ fn document_positions(
             ("onentry", &state.on_entry_blocks, &mut positions.on_entry),
             ("onexit", &state.on_exit_blocks, &mut positions.on_exit),
         ] {
-            let written_blocks: Vec<roxmltree::Node> = scxml_children(&in_document, tag).collect();
-            let written_starts: Vec<Position> = written_blocks.iter().map(start).collect();
-            let derived_blocks: Vec<Position> = of(&in_variant, tag);
+            let written_blocks = blocks_of(&in_document, tag);
+            let written_starts: Vec<Position> = written_blocks.iter().map(|(at, _)| *at).collect();
+            let derived_blocks = blocks_of(&in_variant, tag);
             assert_eq!(
                 derived_blocks.len(),
                 blocks.len(),
-                "a state's blocks are the `<{tag}>` children of its element"
+                "a state's blocks are the `<{tag}>` children of its element that hold an action"
             );
             let block_positions = derived_blocks
                 .iter()
                 .zip(blocks)
-                .map(|(&block_at, actions)| {
-                    let block = index_among(&written_starts, block_at);
-                    let ours: BTreeSet<Position> = actions
-                        .iter()
-                        .filter_map(|action| {
-                            let loc = action.source_location.as_ref()?;
-                            Some((loc.line?, loc.col?))
-                        })
-                        .collect();
-                    let of_the_document: Vec<Position> = written_blocks[block]
-                        .children()
-                        .filter(|child| child.is_element())
-                        .map(|child| start(&child))
-                        .filter(|at| ours.contains(at) || !kept.contains(at))
-                        .collect();
+                .map(|((block_at, _), actions)| {
+                    let block = index_among(&written_starts, *block_at);
+                    let of_the_document = &written_blocks[block].1;
                     crate::model::BlockPositions {
                         block,
                         actions: actions
@@ -7197,7 +7191,7 @@ fn document_positions(
                                     .as_ref()
                                     .expect("a parsed action has its position");
                                 index_among(
-                                    &of_the_document,
+                                    of_the_document,
                                     (loc.line.unwrap_or(0), loc.col.unwrap_or(0)),
                                 )
                             })
@@ -7240,6 +7234,21 @@ fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model
     for child in parent.children() {
         if !child.is_element() {
             continue;
+/// The SCE elements the reader of executable content takes as actions, beside
+/// every element of the SCXML namespace.
+const SCE_EXECUTABLE_CONTENT: [&str; 3] = ["action", "append", "clear"];
+
+/// Whether `node` is one of the actions of the executable content it sits in:
+/// an element `parse_executable_content_single` reads into an action (or
+/// refuses), rather than skips. Held to that reader by
+/// `the_actions_of_a_block_are_its_executable_content`.
+fn is_executable_content(node: &roxmltree::Node) -> bool {
+    node.is_element()
+        && (is_scxml_ns(node)
+            || (node.tag_name().namespace() == Some(crate::forge::model::SCE_NAMESPACE)
+                && SCE_EXECUTABLE_CONTENT.contains(&node.tag_name().name())))
+}
+
         }
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
             continue;
@@ -9663,6 +9672,50 @@ mod tests {
         assert!(model.states["p"].is_parallel);
         assert!(model.has_parallel_states);
     }
+    #[test]
+    fn the_actions_of_a_block_are_its_executable_content() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                              xmlns:other="urn:other" version="1.0" initial="s1" datamodel="sce-static">
+            <state id="s1">
+                <onentry>
+                    <!-- a comment -->
+                    <raise event="e"/>
+                    <other:thing/>
+                    <sce:action name="greet" effect="notice"/>
+                    <raise event="e"/>
+                </onentry>
+                <transition event="e" target="s2"/>
+            </state>
+            <final id="s2"/>
+        </scxml>"#;
+        let model = SCXMLParser::new().parse_string(scxml, "test").unwrap();
+        let doc = roxmltree::Document::parse(scxml).unwrap();
+        let block = doc
+            .descendants()
+            .find(|node| node.tag_name().name() == "onentry")
+            .unwrap();
+        let ours: Vec<(u32, u32)> = block
+            .children()
+            .filter(is_executable_content)
+            .map(|child| {
+                let pos = doc.text_pos_at(child.range().start);
+                (pos.row, pos.col)
+            })
+            .collect();
+        let read: Vec<(u32, u32)> = model.states["s1"].on_entry_blocks[0]
+            .iter()
+            .map(|action| {
+                let loc = action.source_location.as_ref().unwrap();
+                (loc.line.unwrap(), loc.col.unwrap())
+            })
+            .collect();
+        assert_eq!(
+            ours, read,
+            "the predicate and the reader take the same children"
+        );
+        assert_eq!(read.len(), 3);
+    }
+
 
     /// §scxml-3.14: a state element that names no id is given one, and is parsed and descended
     /// into like any other. It used to be skipped with everything inside it, so a `<parallel>`
