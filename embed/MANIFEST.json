@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "643bc58",
+  "embed_version": "0c15e2f",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 498,
+  "symbol_count": 499,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1852,6 +1852,16 @@
         "method void (const Whole &) noexcept Whole"
       ],
       "name": "SCE::TypedHostInvokeRequestDetail::Whole"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "struct",
+      "members": [
+        "field const char * gbnf",
+        "field const char * id",
+        "field const char * jsonSchema"
+      ],
+      "name": "SCE::AnswerSchema"
     },
     {
       "header": "events/CppHttplibClient.h",

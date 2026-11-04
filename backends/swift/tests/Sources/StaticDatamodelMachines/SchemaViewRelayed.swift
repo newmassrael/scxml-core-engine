@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ea85fee4970d20335e2c3e2f4a0cd89a9f4f0a21d54f6dae4cb7a7218e2be4b5
+// source-hash: 8de0fa86739ee80dd1cde104a3417a50f438f9eccff41679327b28a2157e9381
 // SCE-MAP: schema_view_relayed.scxml:8 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +28,7 @@ public enum SchemaViewRelayed {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:schema_view_relayed:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"layout\":{\"enum\":[\"month\",\"week\",\"day\",\"agenda_list\"]},\"zoom\":{\"maximum\":255,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"layout\",\"zoom\"],\"type\":\"object\",\"x-sce-source-hash\":\"ea85fee4970d20335e2c3e2f4a0cd89a9f4f0a21d54f6dae4cb7a7218e2be4b5\"}"
+    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:schema_view_relayed:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"layout\":{\"enum\":[\"month\",\"week\",\"day\",\"agenda_list\"]},\"zoom\":{\"maximum\":255,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"layout\",\"zoom\"],\"type\":\"object\",\"x-sce-source-hash\":\"8de0fa86739ee80dd1cde104a3417a50f438f9eccff41679327b28a2157e9381\"}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,
