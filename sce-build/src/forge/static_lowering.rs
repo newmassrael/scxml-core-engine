@@ -10470,6 +10470,105 @@ impl StaticTarget for PythonTarget {
             filters::py_string_literal(label.to_string())
         )
     }
+    // The runtime's `lift_record` reads the text as the `RecordOf` of the schema's
+    // fields, each named by the type name a delivery's value of its type is read
+    // by (`Whole`, `Text`, the machine's enum, ...), and builds the machine's record
+    // from them in the schema's order. A refusal is the record of the standard
+    // refusal document, its code the machine's `IntEnum` member of the code's
+    // number, which the enum document declares for every code the runtime has.
+    fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
+        const PAYLOAD: &str = "sce_event_payload";
+        let whole = |ty: &SceType| -> Option<(i128, i128)> {
+            Some(match ty {
+                SceType::Uint8 => (0, i128::from(u8::MAX)),
+                SceType::Uint16 => (0, i128::from(u16::MAX)),
+                SceType::Uint32 => (0, i128::from(u32::MAX)),
+                SceType::Uint64 => (0, i128::from(u64::MAX)),
+                SceType::Int8 => (i128::from(i8::MIN), i128::from(i8::MAX)),
+                SceType::Int16 => (i128::from(i16::MIN), i128::from(i16::MAX)),
+                SceType::Int32 => (i128::from(i32::MIN), i128::from(i32::MAX)),
+                SceType::Int64 => (i128::from(i64::MIN), i128::from(i64::MAX)),
+                _ => return None,
+            })
+        };
+        // The type name a present value of `ty` is read by.
+        let declared_type = |ty: &SceType, max: Option<u32>| -> Option<String> {
+            Some(match ty {
+                SceType::Uint64 | SceType::Int64 => {
+                    let (low, high) = whole(ty)?;
+                    format!("{PAYLOAD}.WideOf({low}, {high})")
+                }
+                SceType::Float32 => format!("{PAYLOAD}.Single"),
+                SceType::Float64 => "float".to_string(),
+                SceType::Bool => "bool".to_string(),
+                SceType::String => format!("{PAYLOAD}.Text({})", max?),
+                SceType::Bytes => format!("{PAYLOAD}.Bytes({})", max?),
+                SceType::Enum(reference) => self.enum_type(lift.machine, &reference.alias)?,
+                other => {
+                    let (low, high) = whole(other)?;
+                    format!("{PAYLOAD}.Whole({low}, {high})")
+                }
+            })
+        };
+        let mut fields = Vec::with_capacity(lift.schema.fields.len());
+        for field in &lift.schema.fields {
+            let declared = match &field.sce_type {
+                EntryType::Scalar(ty) => declared_type(ty, field.max_size)?,
+                EntryType::Optional { elem } => format!(
+                    "{PAYLOAD}.OptionalOf({})",
+                    declared_type(elem, field.max_size)?
+                ),
+            };
+            fields.push(format!(
+                "({}, {declared})",
+                filters::py_string_literal(field.id.clone())
+            ));
+        }
+        let record_ty = self.record_type(lift.machine, lift.alias);
+        let defaults = lift.defaults.as_ref().map_or_else(
+            || "None".to_string(),
+            |json| filters::py_string_literal(json.clone()),
+        );
+        let declared: Vec<String> = lift
+            .field_ids()
+            .iter()
+            .map(|id| filters::py_string_literal((*id).to_string()))
+            .collect();
+        let (code_alias, _) = lift.refusal_code()?;
+        let code_ty = self.enum_type(lift.machine, code_alias)?;
+        let members = lift.refusal_members(
+            self,
+            &format!("{code_ty}(int(sce_refusal.code))"),
+            "sce_refusal.pointer",
+            "sce_refusal.bound",
+        )?;
+        let refusal_record = self.record_value(
+            &self.record_type(lift.machine, lift.refusal_alias),
+            &members,
+        );
+        Some(
+            [
+                format!("import sce_runtime.event_payload as {PAYLOAD}"),
+                format!(
+                    "sce_lifted, sce_refusal = {PAYLOAD}.lift_record({text}, {depth}, \
+                     [{declared}], {PAYLOAD}.RecordOf([{fields}], {defaults}, {record_ty}))",
+                    text = lift.text,
+                    depth = lift.depth,
+                    declared = declared.join(", "),
+                    fields = fields.join(", "),
+                ),
+                "if sce_refusal is None:".to_string(),
+                format!("    {}", self.assign(lift.location, "sce_lifted")),
+                format!(
+                    "    {}",
+                    self.assign(lift.refusal, &self.optional_none("")?)
+                ),
+                "else:".to_string(),
+                format!("    {}", self.assign(lift.refusal, &refusal_record)),
+            ]
+            .join("\n"),
+        )
+    }
     // The lines of a block that leaves its action block when the append failed:
     // the list is full — `overflow` runs, and nothing is appended — or the value
     // could not be computed, where `failed` runs. The room is checked first, so

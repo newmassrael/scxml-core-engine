@@ -484,6 +484,10 @@ def as_wide(name: str, value: Any, signed: bool, pointer: str) -> int:
                 RefusalCode.BAD_NUMBER, pointer)
         return int(value)
     if isinstance(value, int) and not isinstance(value, bool):
+        # `-0` is no whole number, as `"-0"` is not.
+        if isinstance(value, _NegativeZero):
+            raise TypedPayloadError(f"{name!r} is not a whole number (-0)",
+                                    RefusalCode.BAD_NUMBER, pointer)
         if abs(value) > _EXACT_IN_A_DOUBLE:
             raise TypedPayloadError(
                 f"{name!r} is a number past 2^53 - 1, which is not exact everywhere "
@@ -526,10 +530,73 @@ def _no_constant(spelling: str) -> Any:
     raise ValueError(f"{spelling} is not a JSON number")
 
 
+class _NegativeZero(int):
+    """The JSON number `-0`, which `json.loads` reads as the integer 0: a real
+    reads it as zero, and a whole number refuses it, as every runtime does
+    (`"-0"` is no spelling of a 64-bit integer either)."""
+
+
+def _whole_number(spelling: str) -> int:
+    """A JSON number of no fraction and no exponent, as `json.loads` hands it,
+    `-0` kept apart from 0."""
+    return _NegativeZero(0) if spelling == "-0" else int(spelling)
+
+
+# The whitespace RFC 8259 has between tokens (section 2): space, tab, line feed
+# and carriage return, and no other.
+_JSON_WHITESPACE = " \t\n\r"
+
+
+def _hex4(text: str, at: int) -> Optional[int]:
+    """The number the four hex digits of ``text`` at ``at`` spell, or None when
+    they are not four hex digits (no sign, which `int(…, 16)` would take)."""
+    digits = text[at:at + 4]
+    if len(digits) != 4 or any(c not in "0123456789abcdefABCDEF" for c in digits):
+        return None
+    return int(digits, 16)
+
+
+def _paired_escapes(text: str) -> None:
+    """Refuse a `\\u` escape of ``text`` that names half of a UTF-16 pair with no
+    other half beside it (RFC 8259, sections 7 and 8.2): a high half not followed
+    at once by an escape of a low one, or a low half alone. `json.loads` reads a
+    lone half as a lone surrogate, which no other runtime holds. Every other rule
+    of a text's grammar is `json.loads`'s, which holds them."""
+    in_text = False
+    at = 0
+    while at < len(text):
+        c = text[at]
+        if not in_text:
+            in_text = c == '"'
+        elif c == '"':
+            in_text = False
+        elif c == "\\" and text[at + 1:at + 2] == "u":
+            code = _hex4(text, at + 2)
+            if code is None:
+                at += 2
+                continue
+            if 0xD800 <= code <= 0xDBFF:
+                low = _hex4(text, at + 8) if text[at + 6:at + 8] == "\\u" else None
+                if low is None or not 0xDC00 <= low <= 0xDFFF:
+                    raise ValueError("a \\u escape is half of a character")
+                at += 12
+                continue
+            if 0xDC00 <= code <= 0xDFFF:
+                raise ValueError("a \\u escape is half of a character")
+            at += 6
+            continue
+        elif c == "\\":
+            at += 2
+            continue
+        at += 1
+
+
 def _read_json(text: str) -> Any:
-    """One JSON text read by RFC 8259 alone, as every runtime reads it."""
+    """One JSON text read by RFC 8259 alone, as every runtime reads it: no
+    repeated name, no `NaN`, no half of a UTF-16 pair, and `-0` told from 0."""
+    _paired_escapes(text)
     return json.loads(text, object_pairs_hook=_object_of_distinct_names,
-                      parse_constant=_no_constant)
+                      parse_constant=_no_constant, parse_int=_whole_number)
 
 
 def _decode(data: Any) -> dict:
@@ -618,6 +685,9 @@ def _as(name: str, declared: type, value: Any, pointer: str) -> Any:
                     else RefusalCode.WRONG_KIND)
             raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})",
                                     code, pointer)
+        if isinstance(value, _NegativeZero):
+            raise TypedPayloadError(f"{name!r} is not a whole number (-0)",
+                                    RefusalCode.BAD_NUMBER, pointer)
         return value
     if declared is Single:
         if not _is_number(value):
@@ -633,6 +703,13 @@ def _as(name: str, declared: type, value: Any, pointer: str) -> Any:
         if not _is_number(value):
             raise TypedPayloadError(f"{name!r} is not a number ({value!r})",
                                     RefusalCode.WRONG_KIND, pointer)
+        # A number past the largest double (`1e999`), which `json.loads` reads
+        # as an infinity, does not fit, as one past the largest single does not
+        # fit a `float32`.
+        if math.isinf(float(value)):
+            raise TypedPayloadError(
+                f"{name!r} does not fit the width its schema declares ({value!r})",
+                RefusalCode.OUT_OF_RANGE, pointer)
         return float(value)
     if declared is str:
         return _text(name, value, pointer)
@@ -706,7 +783,7 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
     if defaults is None:
         decoded = _decode(data)
     else:
-        no_data = data is None or (isinstance(data, str) and not data.strip())
+        no_data = data is None or (isinstance(data, str) and not data.strip(_JSON_WHITESPACE))
         delivered = {} if no_data else _decode(data)
         decoded = {**json.loads(defaults), **delivered}
     values = []
@@ -738,3 +815,92 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
             raise _past_width(name, pointer, value, width[0])
         values.append(value)
     return values
+
+
+def lift_too_deep(text: str, depth: int, declared: Sequence[str]) -> Optional[TypedPayloadError]:
+    """The refusal of a container ``text`` opens deeper than ``depth``, the
+    deepest a value of a lift's schema holds (docs/adr/0087, section 2.1, item
+    4), or None when it opens none.
+
+    Decided over the brackets alone, before the text is read as JSON, so that
+    every runtime decides it alike and no reader descends past the type: a text
+    is skipped from its opening quote to the next quote no backslash escapes,
+    each `{` and `[` outside one opens a level and each `}` and `]` closes one,
+    and the first opened past ``depth`` is refused, whatever the text holds
+    after it. A text that never closes ends the walk with nothing refused, and
+    the reading of the text as JSON refuses it.
+
+    The pointer names the member of the outermost object the container stands
+    under, the name read from the last text closed in that object before a `:`,
+    when that name is one of ``declared``; otherwise the whole text, ``""``. The
+    bound is ``depth``."""
+    level = 0
+    last_text: Optional[str] = None
+    member: Optional[str] = None
+    at = 0
+    while at < len(text):
+        c = text[at]
+        if c == '"':
+            start = at
+            at += 1
+            while at < len(text) and text[at] != '"':
+                at += 2 if text[at] == "\\" else 1
+            if at >= len(text):
+                return None
+            if level == 1:
+                last_text = text[start:at + 1]
+        elif c == ":" and level == 1:
+            member, last_text = last_text, None
+        elif c == "," and level == 1:
+            member, last_text = None, None
+        elif c in "{[":
+            level += 1
+            if level > depth:
+                pointer = ""
+                if member is not None:
+                    try:
+                        name = _read_json(member)
+                    except ValueError:
+                        name = None
+                    if isinstance(name, str) and name in declared:
+                        pointer = pointer_below("", name)
+                return TypedPayloadError(
+                    f"the text opens a container deeper than the {depth} levels a value "
+                    f"of its schema holds", RefusalCode.TOO_DEEP, pointer, depth)
+        elif c in "}]":
+            level = max(level - 1, 0)
+        at += 1
+    return None
+
+
+def lift_text(text: str, depth: int, declared: Sequence[str]) -> dict:
+    """The text a `<sce:lift>` reads, as the members of the object it is
+    (docs/adr/0087, section 2.1): ``depth`` is the deepest container a value of
+    the schema holds and ``declared`` the ids of its fields.
+
+    Three refusals come before the fields are read, in this order: a text that
+    is empty or only whitespace (`notJson`); a container opened deeper than
+    ``depth``, decided over the text's brackets alone before it is read as JSON
+    (``lift_too_deep``, `tooDeep`); and a text that is not one JSON object, as a
+    delivery is refused (``_decode``)."""
+    if not text.strip(_JSON_WHITESPACE):
+        raise TypedPayloadError("the text is empty", RefusalCode.NOT_JSON, "")
+    refusal = lift_too_deep(text, depth, declared)
+    if refusal is not None:
+        raise refusal
+    return _decode(text)
+
+
+def lift_record(text: str, depth: int, declared: Sequence[str],
+                record: RecordOf) -> Tuple[Any, Optional[TypedPayloadError]]:
+    """What a `<sce:lift>` reads (docs/adr/0087, section 2.1): ``text`` as a
+    value of ``record``, its fields read by the readers a delivery's are, a field
+    a later revision added taking the default ``record`` names; or the refusal
+    of the first place that is not one, its code, pointer and bound the
+    statechart keeps as a record. ``lift_text`` says what is refused before the
+    fields are read. Answers ``(value, None)`` or ``(None, refusal)``. This
+    runtime keeps no log, so neither outcome is written to one."""
+    try:
+        return read_value("", record, lift_text(text, depth, declared), ""), None
+    except TypedPayloadError as refusal:
+        return None, refusal

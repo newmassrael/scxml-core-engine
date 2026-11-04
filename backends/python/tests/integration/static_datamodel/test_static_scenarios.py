@@ -771,6 +771,13 @@ def test_the_payload_of_an_event_is_taken_whole_as_a_record() -> None:
     replay("static_whole_payload")
 
 
+# A text read into a record of a schema, or its refusal kept as a record of the
+# standard refusal document, the same code, pointer and bound on every lane
+# (docs/adr/0087, section 9.1).
+def test_a_lift_reads_a_text_into_a_record_or_keeps_its_refusal() -> None:
+    replay("static_lift")
+
+
 # A delivery written against an earlier revision of a schema that grew lacks the
 # fields a later revision added, and takes their defaults; a delivery that lacks a
 # field of the first revision is refused, and a field the schema does not name is

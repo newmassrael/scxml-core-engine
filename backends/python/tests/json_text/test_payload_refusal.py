@@ -31,6 +31,9 @@ from sce_runtime.event_payload import (
     Whole,
     WideOf,
     lift,
+    lift_record,
+    lift_text,
+    lift_too_deep,
     pointer_below,
 )
 
@@ -91,15 +94,25 @@ def _declared(ty: Any) -> Any:
     raise AssertionError(f"a type of the table names no constructor: {ty!r}")
 
 
+def _read(case: Dict[str, Any]) -> None:
+    """The case read as the table says: a case that gives a depth as a
+    `<sce:lift>` of the record of its one field `v` reads it (docs/adr/0087,
+    section 2.1), any other as a delivery."""
+    spec = [("v", _declared(case["type"]))]
+    if "depth" in case:
+        lift(lift_text(case["data"], case["depth"], ["v"]), spec)
+    else:
+        lift(case["data"], spec)
+
+
 @pytest.mark.parametrize("case", _load(), ids=lambda case: case["name"])
 def test_every_case_is_refused_with_its_code_pointer_and_bound(case: Dict[str, Any]) -> None:
-    spec = [("v", _declared(case["type"]))]
     want = case.get("refusal")
     if want is None:
-        lift(case["data"], spec)
+        _read(case)
         return
     with pytest.raises(TypedPayloadError) as refused:
-        lift(case["data"], spec)
+        _read(case)
     got = refused.value
     assert (got.code.declared_name, got.pointer, got.bound) == (
         want["code"], want["pointer"], want["bound"]), str(got)
@@ -120,6 +133,47 @@ def test_a_pointer_escapes_tilde_and_solidus_in_each_token() -> None:
     assert pointer_below("", "a~b/c") == "/a~0b~1c"
     assert pointer_below("", "~1") == "/~01"
     assert pointer_below("", "") == "/"
+
+
+@pytest.mark.parametrize("text, depth, pointer", [
+    ('{"title":"a","count":1}', 1, None),
+    ('{"title":["a"]}', 1, "/title"),
+    ('{"extra":{"a":1}}', 1, ""),
+    ('{"\\u0074itle":[1]}', 1, "/title"),
+    ("[[1]]", 1, ""),
+    ('{"extra":[[[[[[[', 1, ""),
+    ('{"title":"[[{\\"[","count":1}', 1, None),
+    ('{"title":{"a":1}}', 2, None),
+    ('{"title":"[[', 1, None),
+    ('{"title":"x","extra":[1]}', 1, ""),
+])
+def test_a_lift_refuses_a_container_past_its_depth_before_it_reads_the_text(
+        text: str, depth: int, pointer: Any) -> None:
+    """Over the brackets alone, before the text is read as JSON, naming the
+    declared member the container stands under or the whole text
+    (docs/adr/0087, section 2.1, item 4)."""
+    refusal = lift_too_deep(text, depth, ["title", "count"])
+    if pointer is None:
+        assert refusal is None, str(refusal)
+        return
+    assert refusal is not None
+    assert (refusal.code, refusal.pointer, refusal.bound) == (RefusalCode.TOO_DEEP, pointer, depth)
+
+
+def test_a_lift_reads_a_record_or_answers_its_refusal() -> None:
+    record = RecordOf([("v", Whole(0, 255)), ("w", Whole(0, 255))], '{"w":7}', lambda v, w: (v, w))
+    assert lift_record('{"v":1}', 1, ["v", "w"], record) == ((1, 7), None)
+    strict = RecordOf([("v", Whole(0, 255)), ("w", Whole(0, 255))])
+    for text, code in [
+        (" \t", RefusalCode.NOT_JSON),
+        ("[[", RefusalCode.TOO_DEEP),
+        ("[1]", RefusalCode.NOT_OBJECT),
+        ('{"v":1,"v":2}', RefusalCode.NOT_JSON),
+        ('{"v":256,"w":1}', RefusalCode.OUT_OF_RANGE),
+        ('{"w":1}', RefusalCode.MISSING),
+    ]:
+        value, refusal = lift_record(text, 1, ["v", "w"], strict)
+        assert value is None and refusal is not None and refusal.code is code, text
 
 
 def test_a_repeated_name_is_refused_where_json_loads_would_keep_the_last() -> None:
