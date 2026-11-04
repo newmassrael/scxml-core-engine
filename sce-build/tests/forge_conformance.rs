@@ -2949,12 +2949,11 @@ fn forge_views_are_not_rendered_unless_asked_for() {
         let with = render(&views_options());
         assert!(with.contains("View"), "{name}: no view with the option");
         // Additive: every line of the plain output is still there, in order,
-        // so the eager type and its decode are what they were. The one line it
-        // changes says what judges a frame past a capacity: the view where there
-        // is one, since it holds no entry, and the lent form where there is none
-        // (docs/adr/0077 §7).
+        // so the eager type and its decode are what they were. A decode past a
+        // capacity reads its frame whole in one pass and asks nothing of a view
+        // (docs/adr/0077 §7), so the option changes no line of it.
         let mut lines = with.lines();
-        for line in plain.lines().filter(|l| !l.contains("(&mut _frame")) {
+        for line in plain.lines() {
             assert!(
                 lines.any(|l| l == line),
                 "{name}: the option changed a line of the plain output: {line:?}"

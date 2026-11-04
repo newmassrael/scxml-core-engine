@@ -6,15 +6,17 @@
 # A field's bound is the language and its capacity is the deployment's
 # (docs/adr/0077 §7). The first case drops the capacity, so the eager decode
 # holds the bound and reads a frame the deployment cannot store; the second has
-# a full list say the frame is malformed; the third admits a capacity past the
-# bound; the fourth has a C11 list past its capacity say the frame is malformed.
+# a full list say the frame is malformed; the third has a decode stop at the
+# first field past its capacity, before the frame is read whole; the fourth
+# admits a capacity past the bound; the fifth has a C11 list past its capacity
+# say the frame is malformed.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test forge_conformance
 mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs sce-build/src/lib.rs sce-build/src/forge/deployment.rs tools/codegen/templates/_macros/forge_rust_storage.jinja2 backends/rust/forge-runtime/src/capped.rs
-mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2 backends/rust/forge-runtime/src/storage.rs
+mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2 backends/rust/forge-runtime/src/storage.rs backends/rust/forge-runtime/src/codec.rs
 mutation_oracles sce-build/tests/forge_conformance.rs
 
 mutation_case "a list holds its bound whatever the deployment says" <<'PY'
@@ -25,25 +27,27 @@ edit("sce-build/src/forge/model.rs",
 PY
 
 mutation_case "a full list says its frame is malformed" <<'PY'
-edit("backends/rust/forge-runtime/src/storage.rs",
-     r'''    fn try_push(&mut self, value: T) -> Result<(), CodecError> {
-        self.push(value).map_err(|_| CodecError::CapacityExceeded)
-    }''',
-     r'''    fn try_push(&mut self, value: T) -> Result<(), CodecError> {
-        self.push(value).map_err(|_| CodecError::TooManyElements)
-    }''')
+edit("sce-build/src/forge/generator.rs",
+     r'''        "if {RUST_LIST_FULL} {{\n{indent}    return Err(CodecError::CapacityExceeded);\n{indent}}}\n{indent}Ok(())"''',
+     r'''        "if {RUST_LIST_FULL} {{\n{indent}    return Err(CodecError::TooManyElements);\n{indent}}}\n{indent}Ok(())"''')
 PY
 
 mutation_case "a frame is called too big to hold before it is judged whole" <<'PY'
-edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
-     r'''        match {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }}) {
-{% endif %}
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(refused) => refused,''',
-     r'''        match {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }}) {
-{% endif %}
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(_) => CodecError::CapacityExceeded,''')
+edit("backends/rust/forge-runtime/src/codec.rs",
+     r'''    match result {
+        Err(CodecError::CapacityExceeded) => {
+            *over = true;
+            Ok(())
+        }
+        other => other,
+    }''',
+     r'''    match result {
+        Err(CodecError::CapacityExceeded) => {
+            *over = true;
+            Err(CodecError::CapacityExceeded)
+        }
+        other => other,
+    }''')
 PY
 
 mutation_case "a capacity past the bound is taken" <<'PY'

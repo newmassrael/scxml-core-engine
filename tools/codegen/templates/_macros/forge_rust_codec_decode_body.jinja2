@@ -42,12 +42,22 @@
 
         {{ field.bounded_rebind }}
 {%- endif %}
+{%- if field.is_variable and field.bit_size_kind == "length-ref" %}
+
+        let _{{ field.id }}_read = {{ field.id }}.len();
+{%- endif %}
 {%- if field.store_rebind is defined and not view_decode %}
 
         {{ field.store_rebind }}
 {%- endif %}
 {% endmacro %}
 {% set decode_variant_enum = struct_name ~ ('ViewVariant' if view_decode else ('VariantIn' if emit_owned else 'Variant')) %}
+{% set notes_over = decode_notes_over and not view_decode %}
+{% if notes_over %}
+        // A field past what the profile holds is read on and not held; the
+        // frame says so once it is read whole (docs/adr/0077 §7).
+        let mut _over = false;
+{% endif %}
 {% if has_parent_flags %}
         // RFC §synth-5-B: `parent_flags` is the parent codec's flags
         // carrier value, threaded through by the variant arm dispatcher.
@@ -147,7 +157,11 @@
                 #[allow(irrefutable_let_patterns)]
 {% endif %}
                 if let {{ decode_variant_enum }}::{{ arm.variant_name }}(_b) = &mut _out.body {
+{% if notes_over %}
+                    ::sce_forge_runtime::codec::note_capacity({{ arm_body }}::decode_into(cursor, _b{{ arm.body_decode_args_after_cursor }}), &mut _over)?;
+{% else %}
                     {{ arm_body }}::decode_into(cursor, _b{{ arm.body_decode_args_after_cursor }})?;
+{% endif %}
                 }
             }
 {% if arm.rust_cfg_off %}
@@ -169,7 +183,11 @@
                 #[allow(irrefutable_let_patterns)]
 {% endif %}
                 if let {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} { body: _b, .. } = &mut _out.body {
+{% if notes_over %}
+                    ::sce_forge_runtime::codec::note_capacity({{ default_body }}::decode_into(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }}), &mut _over)?;
+{% else %}
                     {{ default_body }}::decode_into(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }})?;
+{% endif %}
                 }
             }
 {% else %}
@@ -180,16 +198,29 @@
         }
 {# A group the eager decode builds in place has its arm installed already and
    stores in it what it did not build (`assign_stmt`, empty when that is
-   nothing); any other group is built from its elements' locals. #}
+   nothing); any other group is built from its elements' locals, unless a
+   field was past a capacity: the locals then need not make a value of the
+   group's type, and the field keeps the one it held. #}
 {% for field in fields %}
 {% if field.assign_stmt is defined and not view_decode %}
 {% if field.assign_stmt %}
         {{ field.assign_stmt }}
 {% endif %}
 {% elif not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
+{% if field.assign_expr is defined and notes_over %}
+        if !_over {
+            _out.{{ field.id }} = {{ field.assign_expr }};
+        }
+{% else %}
         _out.{{ field.id }} = {{ field.view_assign_expr if (view_decode and field.view_assign_expr is defined) else (field.assign_expr if field.assign_expr is defined else field.id) }};
 {% endif %}
+{% endif %}
 {% endfor %}
+{% if notes_over %}
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
+{% endif %}
         Ok(())
 {% elif needs_streaming %}
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
@@ -230,10 +261,21 @@
         {{ field.assign_stmt }}
 {% endif %}
 {% elif not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
+{% if field.assign_expr is defined and notes_over %}
+        if !_over {
+            _out.{{ field.id }} = {{ field.assign_expr }};
+        }
+{% else %}
 {# A view builds the chain of a membership over its bytes (docs/adr/0065 §6 R6a). #}
         _out.{{ field.id }} = {{ field.view_assign_expr if (view_decode and field.view_assign_expr is defined) else (field.assign_expr if field.assign_expr is defined else field.id) }};
 {% endif %}
+{% endif %}
 {% endfor %}
+{% if notes_over %}
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
+{% endif %}
         Ok(())
 {% elif has_variable_fields %}
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
@@ -273,7 +315,9 @@
 {% for field in fields %}
 {% if field.is_variable and field.bit_size_kind == "length-ref" %}
         {
-            let _end = {{ field.byte_off }}usize + value.{{ field.id }}.{{ "as_text" if field.is_string else "as_bytes" }}().len();
+            // The bytes read, which a field past what the profile holds does
+            // not keep (docs/adr/0077 §7).
+            let _end = {{ field.byte_off }}usize + _{{ field.id }}_read;
             if _end > _consumed { _consumed = _end; }
         }
 {% endif %}
@@ -282,6 +326,11 @@
             return Err(CodecError::NeedMoreBytes);
         }
         cursor.advance(_consumed)?;
+{% endif %}
+{% if notes_over %}
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
 {% endif %}
         Ok(value)
 {% else %}
@@ -295,5 +344,10 @@
 {% endfor %}
         };
         cursor.advance({{ min_bytes }})?;
+{% if notes_over %}
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
+{% endif %}
         Ok(value)
 {% endif %}

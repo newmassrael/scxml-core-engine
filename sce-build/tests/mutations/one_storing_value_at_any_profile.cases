@@ -4,39 +4,57 @@
 # `scripts/mutate sce-build/tests/mutations/one_storing_value_at_any_profile.cases`.
 #
 # A codec has one storing value type, and any profile may hold less than a bound
-# (docs/adr/0077 §7). The first two cases take away the judgement of a frame past
-# a capacity, on a codec that builds in place and on one that does not, so a
-# malformed frame reports `CapacityExceeded`; the third judges with the form that
-# stopped, which says the same again; the fourth has a stored list keep the
-# entries of a failed fill; the fifth lets a stored list stay past its bound.
+# (docs/adr/0077 §7). A storing decode reads its frame whole and says
+# `CapacityExceeded` only of a frame that parses. The first two cases let a decode
+# that noted a capacity answer `Ok`, on a codec that reads by fields one by one
+# and on one whose fields sit at fixed places; the third has a body past its
+# capacity stop the decode that holds it, so a frame malformed after the body
+# reports `CapacityExceeded`; the fourth has a stored list keep the entries of a
+# failed fill; the fifth lets a stored list stay past its bound.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-forge-conformance --features alloc --test forge_view_round_trip
-mutation_targets tools/codegen/templates/forge/rust/codec.rs.jinja2 backends/rust/forge-runtime/src/bounded.rs
+mutation_targets tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2 sce-build/src/forge/generator.rs backends/rust/forge-runtime/src/bounded.rs
 mutation_oracles backends/rust/forge-conformance/tests/forge_view_round_trip.rs
 
-mutation_case "a frame past a capacity in a list is not judged" <<'PY'
-edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
-     r'''        match Self::store_into(cursor, _out{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame{{ decode_forward_args_with_comma }})),''',
-     r'''        match Self::store_into(cursor, _out{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => Err(CodecError::CapacityExceeded),''')
+mutation_case "a decode read past a capacity answers as one that held the frame" <<'PY'
+edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
+     r'''{% if notes_over %}
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
+{% endif %}
+        Ok(())
+{% elif has_variable_fields %}''',
+     r'''        Ok(())
+{% elif has_variable_fields %}''')
 PY
 
-mutation_case "a frame past a capacity in a body with no list is not judged" <<'PY'
-edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
-     r'''        match Self::stored(cursor{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame{{ decode_forward_args_with_comma }})),''',
-     r'''        match Self::stored(cursor{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => Err(CodecError::CapacityExceeded),''')
+mutation_case "a body with no list read past a capacity answers as one that held it" <<'PY'
+edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
+     r'''        cursor.advance(_consumed)?;
+{% endif %}
+{% if notes_over %}
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
+{% endif %}
+        Ok(value)''',
+     r'''        cursor.advance(_consumed)?;
+{% endif %}
+        Ok(value)''')
 PY
 
-mutation_case "a frame is judged by the form that stopped" <<'PY'
-edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
-     r'''        match {{ struct_name }}::stored(&mut _frame{{ decode_forward_args_with_comma }}) {''',
-     r'''        match Self::stored(&mut _frame{{ decode_forward_args_with_comma }}) {''')
+mutation_case "a body past a capacity stops the decode that holds it" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            let decode = |from: &str, into: &str| {
+                rust_noted(&format!("{body_type}::decode_into({from}, {into}{thread_arg})?;"))
+            };''',
+     r'''            let decode = |from: &str, into: &str| {
+                format!("{body_type}::decode_into({from}, {into}{thread_arg})?;")
+            };''')
 PY
 
 mutation_case "a failed fill keeps what it pushed" <<'PY'

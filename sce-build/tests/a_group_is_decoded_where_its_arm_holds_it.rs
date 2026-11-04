@@ -12,7 +12,7 @@
 //! first element it builds and reads each element into the arm's field; the
 //! chain whose memberships are the gates is read through `decode_chain_in` or
 //! `decode_placed_in`, which install the arm and check the chain where it
-//! lives. Here the eager `store_into` of each such codec is read for a local of
+//! lives. Here the eager `decode_into` of each such codec is read for a local of
 //! an element's type and for the writes that build the elements in place.
 //!
 //! What the decode does, frame by frame, is held by the round trips the
@@ -31,9 +31,9 @@ fn resource_dir() -> PathBuf {
 }
 
 /// The eager decode of the codec `name`, generated for Rust from its resource,
-/// with its view: its `store_into`, or its `decode_into` where the codec holds
-/// nothing a storage profile answers for and has no `store_into`.
-fn store_into(name: &str) -> String {
+/// with its view: its `decode_into`, which reads the frame in one pass
+/// (docs/adr/0077 §7).
+fn eager_decode(name: &str) -> String {
     let path = resource_dir().join(format!("{name}.scxml"));
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{} is readable: {e}", path.display()));
@@ -55,8 +55,7 @@ fn store_into(name: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     let start = code
-        .find("fn store_into")
-        .or_else(|| code.find("pub fn decode_into"))
+        .find("pub fn decode_into")
         .unwrap_or_else(|| panic!("{name} has an eager decode"));
     let body = &code[start..];
     let end = body
@@ -78,7 +77,7 @@ fn assert_no_local(name: &str, body: &str, id: &str) {
 fn assert_contains(name: &str, body: &str, needle: &str) {
     assert!(
         body.contains(needle),
-        "{name}'s store_into has no `{needle}`:\n{body}"
+        "{name}'s eager decode has no `{needle}`:\n{body}"
     );
 }
 
@@ -89,7 +88,7 @@ fn assert_contains(name: &str, body: &str, needle: &str) {
 #[test]
 fn a_chain_whose_kinds_decide_the_arm_is_read_where_the_arm_holds_it() {
     let name = "codec_chain_has_envelope";
-    let body = store_into(name);
+    let body = eager_decode(name);
     assert_no_local(name, &body, "extensions");
     assert_no_local(name, &body, "slices");
     assert_contains(
@@ -118,7 +117,7 @@ fn a_chain_whose_kinds_decide_the_arm_is_read_where_the_arm_holds_it() {
 #[test]
 fn a_bare_entrys_chain_is_placed_where_its_arm_holds_it() {
     let name = "codec_chain_has_marker";
-    let body = store_into(name);
+    let body = eager_decode(name);
     assert_no_local(name, &body, "extensions");
     assert_no_local(name, &body, "slices");
     assert_contains(
@@ -142,7 +141,7 @@ fn a_bare_entrys_chain_is_placed_where_its_arm_holds_it() {
 #[test]
 fn a_chain_of_several_memberships_is_read_into_the_arm_they_name() {
     let name = "codec_chain_has_tagged";
-    let body = store_into(name);
+    let body = eager_decode(name);
     assert_no_local(name, &body, "entries");
     assert_contains(
         name,
@@ -162,7 +161,7 @@ fn a_chain_of_several_memberships_is_read_into_the_arm_they_name() {
 #[test]
 fn a_list_of_an_arm_a_flag_input_names_is_read_into_that_arm() {
     let name = "codec_zenoh_value_zbuf";
-    let body = store_into(name);
+    let body = eager_decode(name);
     assert_no_local(name, &body, "slices");
     assert_contains(
         name,
@@ -178,10 +177,10 @@ fn a_list_of_an_arm_a_flag_input_names_is_read_into_that_arm() {
 #[test]
 fn an_embedded_body_of_an_arm_is_decoded_into_that_arm() {
     let name = "codec_zenoh_interest";
-    let body = store_into(name);
+    let body = eager_decode(name);
     assert_no_local(name, &body, "body");
     assert_contains(name, &body, "_out.header_current_or_future = match (");
-    assert_contains(name, &body, "::decode_into(cursor, _p)?;");
+    assert_contains(name, &body, "::decode_into(cursor, _p), &mut _over)?;");
 }
 
 /// Two lists of one count are filled in their pair where the arm holds both, and
@@ -189,7 +188,7 @@ fn an_embedded_body_of_an_arm_is_decoded_into_that_arm() {
 #[test]
 fn two_lists_of_one_count_are_filled_where_their_arm_holds_them() {
     let name = "codec_repeat_unconditional_count";
-    let body = store_into(name);
+    let body = eager_decode(name);
     assert_no_local(name, &body, "links");
     assert_no_local(name, &body, "weights");
     assert_contains(name, &body, "_p.refill_first(|_vec|");
@@ -205,7 +204,49 @@ fn two_lists_of_one_count_are_filled_where_their_arm_holds_them() {
 #[test]
 fn a_group_of_scalars_is_still_assembled_from_its_locals() {
     let name = "codec_present_if_disjunction";
-    let body = store_into(name);
+    let body = eager_decode(name);
     assert_contains(name, &body, "_out.flags_wants_a_or_wants_b = match (");
     assert_contains(name, &body, "seq.unwrap_or_default()");
+}
+
+/// A decode past a capacity reads its frame once: each field and body notes a
+/// capacity it was past and reads on, and the decode answers
+/// `CapacityExceeded` at its end, after every refusal of the frame's own
+/// (docs/adr/0077 §7). No second reading of the frame judges it, so no value
+/// of a second form takes room in the decode's frame.
+#[test]
+fn a_decode_past_a_capacity_reads_its_frame_once() {
+    for name in [
+        "codec_chain_has_envelope",
+        "codec_chain_has_marker",
+        "codec_repeat_unconditional_count",
+        "codec_zenoh_value_zbuf",
+        "codec_zenoh_interest",
+    ] {
+        let body = eager_decode(name);
+        assert_contains(name, &body, "let mut _over = false;");
+        assert_contains(
+            name,
+            &body,
+            "if _over {\n            return Err(CodecError::CapacityExceeded);\n        }\n        Ok(())",
+        );
+        for judge in ["past_capacity", "View::decode", "store_into", "_frame"] {
+            assert!(
+                !body.contains(judge),
+                "{name} judges its frame a second time (`{judge}`):\n{body}"
+            );
+        }
+    }
+    // A list notes the entries it read and did not hold, and says so once it
+    // is read whole.
+    let body = eager_decode("codec_repeat_unconditional_count");
+    assert_contains(
+        "codec_repeat_unconditional_count",
+        &body,
+        "push_keeping(_vec, _entry, &[], &mut _full);",
+    );
+    assert_contains("codec_repeat_unconditional_count", &body, "if _full {");
+    // A chain notes the kinds its gates ask for of every entry it read.
+    let body = eager_decode("codec_chain_has_envelope");
+    assert_contains("codec_chain_has_envelope", &body, "_found_extensions_2 |= ");
 }

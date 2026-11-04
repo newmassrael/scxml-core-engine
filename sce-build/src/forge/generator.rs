@@ -7799,10 +7799,15 @@ fn rust_store_rebind(l: &LangCtx, f: &CodecField, m: &CodecModel) -> Option<Stri
     let id = l.codec_field_id(&f.id);
     let tag = rust_storage_tag(&m.name, &f.id);
     let store = |value: &str| format!("{value}.store::<{STORAGE_PARAM}, {tag}>()");
+    // Past what the profile holds, the field holds its default, inside its
+    // bounds, and the decode notes it and reads on (docs/adr/0077 §7).
+    let held = |stored: String| {
+        format!("let {id} = {RUNTIME_CODEC}::note_held({stored}, &mut {RUST_DECODE_OVER})?;")
+    };
     Some(if f.present_if.is_some() {
-        format!("let {id} = {id}.map(|_v| {}).transpose()?;", store("_v"))
+        held(format!("{id}.map(|_v| {}).transpose()", store("_v")))
     } else {
-        format!("let {id} = {}?;", store(&id))
+        held(store(&id))
     })
 }
 
@@ -9194,7 +9199,7 @@ struct GroupDecode<'a> {
 /// than these, is decoded by value, as it was before (`None`).
 fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
     use crate::forge::codec_roles::GateVar;
-    use crate::forge::generator::rust_source::{aligned_name, chain_optional_in, key_type};
+    use crate::forge::generator::rust_source::{aligned_name, chain_optional_in};
     let GroupDecode {
         m,
         wire,
@@ -9204,7 +9209,6 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
         tests,
         accessor,
     } = *ctx;
-    let struct_name = filters::to_pascal_case(m.name.clone());
     let field_of = |id: &str| m.fields.iter().find(|f| f.id == id);
     let index_of = |id: &str| m.fields.iter().position(|f| f.id == id);
     let acc = |f: &CodecField| l.codec_field_id(&f.id);
@@ -9364,38 +9368,30 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
 
     match chain {
         Some(chain) => {
-            // The memberships the decode reads are the group's gates, so each
-            // has a kind type and an arm.
-            let values: Vec<u64> = group.members().map(|(_, key)| key).collect();
-            if !chain_has_values(&m.fields, &chain.id)
-                .iter()
-                .all(|v| values.contains(v))
+            // The memberships the decode notes of the chain's entries are the
+            // group's gates, so each has an arm.
+            let values = chain_has_values(&m.fields, &chain.id);
+            if !group.members().all(|(_, key)| values.contains(&key))
+                || !values
+                    .iter()
+                    .all(|v| group.members().any(|(_, key)| key == *v))
             {
                 return None;
             }
             let stmt = stmt_of(chain)?;
-            let mut fill = chain_fill_block(&stmt)?;
+            // The chain's fill notes the kind of every entry it reads, held or
+            // not, in the `found` locals (`rust_chain_fill`).
+            let fill = chain_fill_block(&stmt)?;
             let name = codec_field_local_name(&chain.id, l.lang);
             let has = |v: u64| chain_has_local(&chain.id, v, l.lang);
-            let found = |v: u64| format!("_found_{name}_{v}");
-            let (at, first, fill_fn, settled) = (
+            let found = |v: u64| chain_found_local(&chain.id, v);
+            let (at, first, fill_fn, settled, full) = (
                 format!("_{name}_at"),
                 format!("_{name}_first"),
                 format!("_{name}_fill"),
                 format!("_{name}_settled"),
+                format!("_{name}_full"),
             );
-            let found_writes: String = values
-                .iter()
-                .map(|v| {
-                    format!(
-                        "{} = {RUNTIME_CODEC}::OfKind::<{}>::first_of_kind(&*_vec).is_some();\n            ",
-                        found(*v),
-                        key_type(&struct_name, &chain.id, *v)
-                    )
-                })
-                .collect();
-            let ok_at = fill.rfind("Ok(())")?;
-            fill.insert_str(ok_at, &found_writes);
             let owned_ty = wire[index_of(&chain.id)?]
                 .get("rs_owned_type")
                 .and_then(|v| v.as_str())?;
@@ -9450,7 +9446,7 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                         &|arm| defaults_but(arm, Some("None")),
                     );
                     format!(
-                        "if {} {{\n                {present_select}\n            }} else {{\n                {RUST_DECODE_OUT}.{accessor} = {absent_value};\n                true\n            }}",
+                        "if {} {{\n                {present_select}\n            }} else {{\n                {RUST_DECODE_OUT}.{accessor} = {absent_value};\n                (true, false)\n            }}",
                         present_if_test_literal(&m.fields, pred, l.lang)
                     )
                 }
@@ -9466,16 +9462,25 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                 format!(
                     "// The arm is installed before its chain is read, and the chain read\n        \
                      // where the arm holds it; a chain of other kinds is read again into\n        \
-                     // the arm they name.\n        \
+                     // the arm they name. Past what the profile holds the chain keeps an\n        \
+                     // entry of each kind it read while it has room for one of each, and\n        \
+                     // the decode reads on (docs/adr/0077 §7).\n        \
                      let {at} = *cursor;\n        \
                      {}let mut {first} = true;\n        \
                      loop {{\n            \
                          {}let mut {fill_fn} = |_vec: &mut {list_ty}| -> Result<(), CodecError> {fill};\n            \
-                         let {settled} = {select_read};\n            \
+                         let ({settled}, {full}) = {select_read};\n            \
                          {}if {settled} {{\n                \
+                             {RUST_DECODE_OVER} |= {full};\n                \
                              break;\n            \
                          }}\n            \
                          if !{first} {{\n                \
+                             // Read again into the arm its kinds name, the chain holds them\n                \
+                             // all unless it had no room for one of each: the value cannot\n                \
+                             // hold the arm the frame names.\n                \
+                             if {full} {{\n                    \
+                                 return Err(CodecError::CapacityExceeded);\n                \
+                             }}\n                \
                              unreachable!(\"a chain read again holds the kinds it was first read with\");\n            \
                          }}\n            \
                          {first} = false;\n            \
@@ -9999,26 +10004,10 @@ fn render_codec(
     if matches!(lang, crate::generator::Language::C11) {
         c11_refuse_a_field_it_cannot_hold(m)?;
     }
-    // A Rust decode past a profile's capacity judges the frame by the view, or
-    // by the codec's lent form where the tree has no views; the lent form holds
-    // a list as `Inline` does, at its bound, and a list the protocol bounds by
-    // nothing has no such container (docs/adr/0077 §7). It borrows a byte
-    // string or text from the frame, so one with no bound needs no view.
-    if matches!(lang, crate::generator::Language::Rust) && !views {
-        if let Some(f) = m
-            .fields
-            .iter()
-            .find(|f| (f.is_repeat() || f.is_tlv_chain()) && f.bound(&m.fields).is_none())
-        {
-            return Err(GenerateError::unsupported(format!(
-                "codec '{}': the list `{}` states no bound, so a frame past a profile's capacity \
-                 is judged by the codec's view, and its tree is generated with views \
-                 (`generate --views`, `ForgeCompileOptions::views`)",
-                m.name, f.id
-            ))
-            .into());
-        }
-    }
+    // A Rust decode past a profile's capacity reads its frame whole in one pass
+    // and judges it by nothing else (docs/adr/0077 §7, amendment of 2026-11-05),
+    // so a list the protocol bounds by nothing needs no view, and a tree is
+    // generated with or without views alike.
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
@@ -10718,6 +10707,14 @@ fn render_codec(
                     let law_start = matches!(lang, crate::generator::Language::Rust)
                         .then(|| rust_law_start(&roles, f, &entry_thread.inputs))
                         .flatten();
+                    let is_rust = matches!(lang, crate::generator::Language::Rust);
+                    // A Rust decode notes the kinds the gates ask for of every
+                    // entry it reads, held or not (docs/adr/0077 §7).
+                    let kinds = if is_rust {
+                        rust_chain_kinds(f, &m.fields, &chain_masks)
+                    } else {
+                        Vec::new()
+                    };
                     let decode_stmt = if f.present_if.is_some() {
                         tlv_chain_streaming_decode_stmt_gated(TlvChainDecodeGated {
                             field: f,
@@ -10730,6 +10727,7 @@ fn render_codec(
                             terminate_on,
                             law_start: law_start.as_deref(),
                             c11_over,
+                            kinds: &kinds,
                             lang,
                         })
                     } else {
@@ -10743,20 +10741,27 @@ fn render_codec(
                             terminate_on,
                             law_start: law_start.as_deref(),
                             c11_over,
+                            kinds: &kinds,
                             lang,
                         })
                     };
                     // A later field gated on `<chain>.has(…)` reads a boolean
-                    // local that follows the chain (`with_chain_has_decls`);
-                    // nothing is appended when no predicate asks.
-                    let decode_stmt = with_chain_has_decls(
-                        decode_stmt,
-                        f,
-                        &m.fields,
-                        &chain_masks,
-                        lang,
-                        Some(&rust_held_entry(imports, alias, &body_type)),
-                    );
+                    // local that follows the chain: on Rust, the kind noted of
+                    // every entry read, held or not; elsewhere
+                    // (`with_chain_has_decls`) the entries held. Nothing is
+                    // added when no predicate asks.
+                    let decode_stmt = if is_rust {
+                        rust_with_chain_kinds(decode_stmt, &kinds)
+                    } else {
+                        with_chain_has_decls(
+                            decode_stmt,
+                            f,
+                            &m.fields,
+                            &chain_masks,
+                            lang,
+                            Some(&rust_held_entry(imports, alias, &body_type)),
+                        )
+                    };
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
                     if emit_views {
                         let law = rust_source::law_type(
@@ -11575,6 +11580,23 @@ fn render_codec(
     } else {
         (fields.clone(), fields)
     };
+    // Whether a Rust decode notes a capacity in `RUST_DECODE_OVER`, so declares
+    // it and answers it once the frame is read whole (docs/adr/0077 §7): a field
+    // statement does, and so does the decode of a variant's arm.
+    let decode_notes_over = matches!(lang, crate::generator::Language::Rust)
+        && (m.variant.is_some()
+            || wire.iter().any(|field| {
+                [
+                    "repeat_decode_stmt",
+                    "tlv_chain_decode_stmt",
+                    "embed_decode_stmt",
+                    "store_rebind",
+                ]
+                .iter()
+                .filter_map(|key| field.get(*key).and_then(|v| v.as_str()))
+                .any(|stmt| stmt.contains(&format!("&mut {RUST_DECODE_OVER}")))
+            }));
+    ctx.insert("decode_notes_over".into(), decode_notes_over.into());
     ctx.insert("fields".into(), serde_json::json!(stored));
     ctx.insert("wire_fields".into(), serde_json::json!(wire));
     // RFC §synth-5-B flags primitive: codec-level rollup so the template
@@ -14878,27 +14900,41 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             let len_field_snake = filters::to_snake_case(len_field.clone());
             let guard = repeat_count_guard(field, fields, &len_field_snake, lang, "            ");
             // Built in the destination field, not moved into it afterwards;
-            // see `RUST_DECODE_OUT`.
+            // see `RUST_DECODE_OUT`. Every entry the count names is read, held
+            // where the list has room (docs/adr/0077 §7).
+            let entry = chain_loop_body(
+                "                ",
+                Some("            "),
+                &rust_list_entry_lines(body_type, decode_arg, Vec::new(), &[]),
+            );
             format!(
-                "{guard}{RUST_DECODE_OUT}.{id}.{refill}|_vec| {{\n            \
-                     for _ in 0..{len_field_snake} {{\n                \
-                         {RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n            \
-                     }}\n            \
-                     Ok(())\n        \
-                 }})?;"
+                "{guard}{}",
+                rust_noted(&format!(
+                    "{RUST_DECODE_OUT}.{id}.{refill}|_vec| {{\n            \
+                         let mut {RUST_LIST_FULL} = false;\n            \
+                         for _ in 0..{len_field_snake} {{\n{entry}}}\n            \
+                         {}\n        \
+                     }})?;",
+                    rust_list_fill_end("            ")
+                ))
             )
         }
         (Language::Rust, CountRef::UntilEof) => {
-            let count = format!("{RUNTIME_CODEC}::Entries::entry_count(&*_vec)");
-            let room = repeat_room_guard(field, fields, &count, lang, "                ");
-            format!(
+            // The bound is counted on the entries read, held or not.
+            let room = repeat_room_guard(field, fields, "_read", lang, "                ");
+            let mut lines = rust_list_entry_lines(body_type, decode_arg, Vec::new(), &[]);
+            lines[0] = format!("{room}{}", lines[0]);
+            lines.push("_read += 1;".to_string());
+            let entry = chain_loop_body("                ", Some("            "), &lines);
+            rust_noted(&format!(
                 "{RUST_DECODE_OUT}.{id}.{refill}|_vec| {{\n            \
-                     while cursor.remaining() > 0 {{\n                \
-                         {room}{RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n            \
-                     }}\n            \
-                     Ok(())\n        \
-                 }})?;"
-            )
+                     let mut {RUST_LIST_FULL} = false;\n            \
+                     let mut _read = 0usize;\n            \
+                     while cursor.remaining() > 0 {{\n{entry}}}\n            \
+                     {}\n        \
+                 }})?;",
+                rust_list_fill_end("            ")
+            ))
         }
         // Cpp: each `body_type::decode(cursor)` returns
         // `std::optional<body_type>`. Mirror the variant arm pattern:
@@ -15248,40 +15284,50 @@ fn embed_streaming_decode_stmt(
 
     match lang {
         Language::Swift => no_swift_emitter("embed_streaming_decode_stmt"),
-        Language::Rust => match (&test_lit, len_expr(Language::Rust)) {
+        Language::Rust => {
             // The body is decoded into the field where it will live, not
-            // returned and moved into it; see `RUST_DECODE_OUT`.
-            (None, None) => format!(
-                "{body_type}::decode_into(cursor, &mut {RUST_DECODE_OUT}.{id}{thread_arg})?;"
-            ),
-            (Some(test), None) => format!(
-                "if {test} {{\n            \
-                     {body_type}::decode_into(cursor, {RUST_DECODE_OUT}.{id}.insert({body_type}::default()){thread_arg})?;\n        \
-                 }} else {{\n            \
-                     {RUST_DECODE_OUT}.{id} = None;\n        \
-                 }}"
-            ),
-            (None, Some(sibling)) => format!(
-                "{{\n            \
-                     let _len = {sibling} as usize;\n            \
-                     let _raw = cursor.peek_slice(_len)?;\n            \
-                     let mut _inner = SceCursor::new(_raw);\n            \
-                     {body_type}::decode_into(&mut _inner, &mut {RUST_DECODE_OUT}.{id}{thread_arg})?;\n            \
-                     cursor.advance(_len)?;\n        \
-                 }}"
-            ),
-            (Some(test), Some(sibling)) => format!(
-                "if {test} {{\n            \
-                     let _len = {sibling} as usize;\n            \
-                     let _raw = cursor.peek_slice(_len)?;\n            \
-                     let mut _inner = SceCursor::new(_raw);\n            \
-                     {body_type}::decode_into(&mut _inner, {RUST_DECODE_OUT}.{id}.insert({body_type}::default()){thread_arg})?;\n            \
-                     cursor.advance(_len)?;\n        \
-                 }} else {{\n            \
-                     {RUST_DECODE_OUT}.{id} = None;\n        \
-                 }}"
-            ),
-        },
+            // returned and moved into it; see `RUST_DECODE_OUT`. A body past a
+            // capacity has read its own frame whole, and the decode notes it
+            // and reads on (`RUST_DECODE_OVER`).
+            let decode = |from: &str, into: &str| {
+                rust_noted(&format!("{body_type}::decode_into({from}, {into}{thread_arg})?;"))
+            };
+            let held = format!("&mut {RUST_DECODE_OUT}.{id}");
+            let inserted = format!("{RUST_DECODE_OUT}.{id}.insert({body_type}::default())");
+            match (&test_lit, len_expr(Language::Rust)) {
+                (None, None) => decode("cursor", &held),
+                (Some(test), None) => format!(
+                    "if {test} {{\n            \
+                         {}\n        \
+                     }} else {{\n            \
+                         {RUST_DECODE_OUT}.{id} = None;\n        \
+                     }}",
+                    decode("cursor", &inserted)
+                ),
+                (None, Some(sibling)) => format!(
+                    "{{\n            \
+                         let _len = {sibling} as usize;\n            \
+                         let _raw = cursor.peek_slice(_len)?;\n            \
+                         let mut _inner = SceCursor::new(_raw);\n            \
+                         {}\n            \
+                         cursor.advance(_len)?;\n        \
+                     }}",
+                    decode("&mut _inner", &held)
+                ),
+                (Some(test), Some(sibling)) => format!(
+                    "if {test} {{\n            \
+                         let _len = {sibling} as usize;\n            \
+                         let _raw = cursor.peek_slice(_len)?;\n            \
+                         let mut _inner = SceCursor::new(_raw);\n            \
+                         {}\n            \
+                         cursor.advance(_len)?;\n        \
+                     }} else {{\n            \
+                         {RUST_DECODE_OUT}.{id} = None;\n        \
+                     }}",
+                    decode("&mut _inner", &inserted)
+                ),
+            }
+        }
         Language::Cpp => match (&test_lit, len_expr(Language::Cpp)) {
             (None, None) => format!(
                 "auto _emb_{id} = {body_type}::decode(cursor{thread_arg});\n        \
@@ -16329,34 +16375,49 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         (Language::Rust, CountRef::LengthField(len_field)) => {
             let count_read = rust_repeat_count_read(count_is_gated, len_field);
             let guard = repeat_count_guard(field, fields, "_n", lang, "            ");
+            let entry = chain_loop_body(
+                "                    ",
+                Some("                "),
+                &rust_list_entry_lines(body_type, decode_arg, Vec::new(), &[]),
+            );
             format!(
                 "if {test} {{\n            \
                      let _n = {count_read};\n            \
-                     {guard}{RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}|_vec| {{\n                \
-                         for _ in 0.._n {{\n                    \
-                             {RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n                \
-                         }}\n                \
-                         Ok(())\n            \
-                     }})?;\n        \
+                     {guard}{}\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
-                 }}"
+                 }}",
+                rust_noted(&format!(
+                    "{RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}|_vec| {{\n                \
+                         let mut {RUST_LIST_FULL} = false;\n                \
+                         for _ in 0.._n {{\n{entry}}}\n                \
+                         {}\n            \
+                     }})?;",
+                    rust_list_fill_end("                ")
+                ))
             )
         }
         (Language::Rust, CountRef::UntilEof) => {
-            let count = format!("{RUNTIME_CODEC}::Entries::entry_count(&*_vec)");
-            let room = repeat_room_guard(field, fields, &count, lang, "                    ");
+            let room = repeat_room_guard(field, fields, "_read", lang, "                    ");
+            let mut lines = rust_list_entry_lines(body_type, decode_arg, Vec::new(), &[]);
+            lines[0] = format!("{room}{}", lines[0]);
+            lines.push("_read += 1;".to_string());
+            let entry = chain_loop_body("                    ", Some("                "), &lines);
             format!(
                 "if {test} {{\n            \
-                     {RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}|_vec| {{\n                \
-                         while cursor.remaining() > 0 {{\n                    \
-                             {room}{RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n                \
-                         }}\n                \
-                         Ok(())\n            \
-                     }})?;\n        \
+                     {}\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
-                 }}"
+                 }}",
+                rust_noted(&format!(
+                    "{RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}|_vec| {{\n                \
+                         let mut {RUST_LIST_FULL} = false;\n                \
+                         let mut _read = 0usize;\n                \
+                         while cursor.remaining() > 0 {{\n{entry}}}\n                \
+                         {}\n            \
+                     }})?;",
+                    rust_list_fill_end("                ")
+                ))
             )
         }
         // Cpp: pre-declare std::optional<vector>, populate inside the
@@ -16706,25 +16767,12 @@ struct TlvChainDecode<'a> {
     /// Whether the C11 decode is a store after a parse
     /// ([`c11_may_exceed_capacity`]).
     c11_over: bool,
+    /// The kinds of entry later fields' gates ask of the chain, which a Rust
+    /// decode notes of every entry it reads ([`rust_chain_kinds`]); empty on
+    /// any other backend.
+    kinds: &'a [RustChainKind],
     lang: crate::generator::Language,
 }
-
-/// Rust chain emit — the note that rides above `_vec.push(...)`.
-///
-/// On the repeat path `CodecError::TooManyElements` is live: the loop bound
-/// is a runtime count and the capacity is the declared `sce:max-count`, so
-/// the wire can outrun the container. On the chain path it cannot — the loop
-/// count and `_vec`'s capacity are the same `max-depth` literal — and the
-/// arm is there only because `push` returns a `Result`. Saying so in the
-/// emit keeps a reader from reading that arm as the chain's overflow
-/// handling, which lives in the guard after the loop.
-///
-/// Rendered at the 16-space body indent both chain emits use, and closing on
-/// the same indent so the caller can concatenate it straight onto the push.
-const RUST_CHAIN_PUSH_NOTE: &str =
-    "// The loop walks the chain's depth and `_vec` holds the capacity, so\n                \
-     // this push fails only where the deployment holds fewer entries than\n                \
-     // the frame says. An over-long chain is refused after the loop.\n                ";
 
 /// The destination a Rust codec's `decode_into` fills, spelled where a
 /// list, embed or variant statement writes straight into it.
@@ -16739,6 +16787,190 @@ const RUST_CHAIN_PUSH_NOTE: &str =
 /// `_peek`), because an author's field is a local of the same body and may be
 /// called `out`.
 const RUST_DECODE_OUT: &str = "_out";
+
+/// What a Rust storing decode notes a capacity in: past what its profile holds
+/// it reads the frame on and answers `CapacityExceeded` once the frame is read
+/// whole and every refusal of the frame's own has had its turn (docs/adr/0077
+/// §7), the rule the C11 backend reads a frame by (`_over`,
+/// `sce_forge_codec_note_capacity`).
+const RUST_DECODE_OVER: &str = "_over";
+
+/// What a Rust list decode notes inside its fill that it read an entry it did
+/// not hold, or one whose body was past a capacity; the fill answers
+/// `CapacityExceeded` for it once the list is read whole.
+const RUST_LIST_FULL: &str = "_full";
+
+/// A kind of entry the gates on a chain ask for (docs/adr/0065 §6 R6), as a
+/// Rust chain decode notes it of each entry it reads, held or not: the local
+/// it is noted in, its test of the entry being read (`_entry`), and its test of
+/// any entry (`_e`).
+struct RustChainKind {
+    found: String,
+    has: String,
+    of_entry: String,
+    of_any: String,
+}
+
+/// `stmt`, a Rust chain decode, with the locals its kinds are noted in
+/// declared before it and each later gate's local ([`chain_has_local`]) taken
+/// from them after it: an absent chain notes no kind.
+fn rust_with_chain_kinds(stmt: String, kinds: &[RustChainKind]) -> String {
+    let before: String = kinds
+        .iter()
+        .map(|kind| format!("let mut {} = false;\n        ", kind.found))
+        .collect();
+    let after: String = kinds
+        .iter()
+        .map(|kind| format!("\n        let {} = {};", kind.has, kind.found))
+        .collect();
+    format!("{before}{stmt}{after}")
+}
+
+/// The kinds of entry later fields' gates ask of the chain `chain`, one per
+/// identifier ([`chain_has_values`]).
+fn rust_chain_kinds(
+    chain: &CodecField,
+    fields: &[CodecField],
+    masks: &ChainIdentifierMasks,
+) -> Vec<RustChainKind> {
+    use crate::generator::Language;
+    let mask = masks.get(&chain.id).copied();
+    chain_has_values(fields, &chain.id)
+        .into_iter()
+        .map(|value| {
+            let literal = chain_identifier_literal(value, Language::Rust);
+            let test = |entry: &str| {
+                format!(
+                    "{} == {literal}",
+                    chain_entry_identifier(chain, entry, mask, Language::Rust)
+                )
+            };
+            RustChainKind {
+                found: chain_found_local(&chain.id, value),
+                has: chain_has_local(&chain.id, value, Language::Rust),
+                of_entry: test("_entry"),
+                of_any: test("_e"),
+            }
+        })
+        .collect()
+}
+
+/// The local a Rust chain decode notes in whether an entry it read, held or
+/// not, has the identifier `value`; [`chain_has_local`] takes it once the chain
+/// is read.
+fn chain_found_local(chain_id: &str, value: u64) -> String {
+    format!(
+        "_found_{}_{value}",
+        codec_field_local_name(chain_id, crate::generator::Language::Rust)
+    )
+}
+
+/// The lines a Rust list decode reads one entry of `body_type` by and holds it
+/// (docs/adr/0077 §7): the entry decoded in a local of its own, a capacity its
+/// body reports noted, `between` (what the loop reads off the entry before it
+/// is held), the kinds `kinds` it is of noted, and the entry held where the
+/// list has room ([`RUST_LIST_FULL`] noted where it has not).
+fn rust_list_entry_lines(
+    body_type: &str,
+    decode_arg: &str,
+    between: Vec<String>,
+    kinds: &[RustChainKind],
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("let mut _entry = {body_type}::default();"),
+        format!(
+            "{RUNTIME_CODEC}::note_capacity({body_type}::decode_into(cursor, &mut _entry{decode_arg}), &mut {RUST_LIST_FULL})?;"
+        ),
+    ];
+    lines.extend(between);
+    for kind in kinds {
+        lines.push(format!("{} |= {};", kind.found, kind.of_entry));
+    }
+    let tests = kinds
+        .iter()
+        .map(|kind| format!("|_e| {}", kind.of_any))
+        .collect::<Vec<_>>()
+        .join(", ");
+    lines.push(format!(
+        "{RUNTIME_CODEC}::push_keeping(_vec, _entry, &[{tests}], &mut {RUST_LIST_FULL});"
+    ));
+    lines
+}
+
+/// What [`rust_chain_fill`] reads a chain by.
+struct RustChainFill<'a> {
+    field: &'a CodecField,
+    body_type: &'a str,
+    decode_arg: &'a str,
+    entry_binds: &'a ChainEntryBinds,
+    max_depth: Option<u32>,
+    /// The accessor of the flag that ends the chain, when an entry flag does.
+    entry_flag_acc: &'a Option<String>,
+    kinds: &'a [RustChainKind],
+    /// The indentation of the line the fill's closing brace stands on.
+    indent: &'a str,
+}
+
+/// The fill a Rust chain decode hands its list's `refill` (`|_vec| { .. }`):
+/// each entry read until the chain ends ([`rust_list_entry_lines`]), held where
+/// the list has room and the kinds the gates ask for noted of every entry, the
+/// guards after the loop, and the chain said past its capacity once it is read
+/// whole (docs/adr/0077 §7). The ungated and the gated decode share it, and a
+/// group built in place reads its chain through it ([`rust_group_in_place`]).
+fn rust_chain_fill(ctx: &RustChainFill<'_>) -> String {
+    use crate::generator::Language;
+    let RustChainFill {
+        field,
+        body_type,
+        decode_arg,
+        entry_binds,
+        max_depth,
+        entry_flag_acc,
+        kinds,
+        indent,
+    } = *ctx;
+    let block = format!("{indent}    ");
+    let inner = format!("{indent}        ");
+    let overflow_check =
+        tlv_chain_guard(Language::Rust, entry_flag_acc.is_some(), max_depth, &block);
+    let mut lines =
+        chain_end_of_frame_stop(entry_flag_acc, "if cursor.remaining() == 0 { break; }");
+    let mut between = Vec::new();
+    if let Some(acc) = entry_flag_acc {
+        between.push(format!("_more = _entry.{acc}();"));
+    }
+    between.extend(entry_binds.update_lines(field, "_entry", Language::Rust, &inner));
+    lines.extend(rust_list_entry_lines(body_type, decode_arg, between, kinds));
+    if entry_flag_acc.is_some() {
+        lines.push("if !_more { break; }".to_string());
+    }
+    let body = chain_loop_body(&inner, Some(&block), &lines);
+    let loop_head = chain_loop_head(Language::Rust, max_depth);
+    let more_decl = more_decl_line(Language::Rust, entry_flag_acc, entry_binds, &block);
+    format!(
+        "|_vec| {{\n{block}let mut {RUST_LIST_FULL} = false;\n{block}{more_decl}{loop_head}\n{body}}}{overflow_check}\n{block}{}\n{indent}}}",
+        rust_list_fill_end(&block)
+    )
+}
+
+/// The closing lines of a Rust list fill: a list read past its capacity says so
+/// once it is read whole, after the frame's own refusals.
+fn rust_list_fill_end(indent: &str) -> String {
+    format!(
+        "if {RUST_LIST_FULL} {{\n{indent}    return Err(CodecError::CapacityExceeded);\n{indent}}}\n{indent}Ok(())"
+    )
+}
+
+/// `stmt`, a Rust statement that fills a field through one call answering
+/// `Result<(), CodecError>` and ends `)?;` (`_out.x.refill(..)?;`), with that
+/// answer noted in [`RUST_DECODE_OVER`] rather than returned when it is
+/// `CapacityExceeded`: the call has read what it fills whole by then.
+fn rust_noted(stmt: &str) -> String {
+    let body = stmt
+        .strip_suffix(")?;")
+        .expect("a filling statement ends with `)?;`");
+    format!("{RUNTIME_CODEC}::note_capacity({body}), &mut {RUST_DECODE_OVER})?;")
+}
 
 /// "The cursor has no bytes left", in each backend's runtime spelling.
 fn chain_cursor_empty(lang: crate::generator::Language) -> &'static str {
@@ -16940,6 +17172,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         terminate_on,
         law_start,
         c11_over,
+        kinds,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -16964,49 +17197,23 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // temporary, reads the flag accessor into `_more` BEFORE the push
         // (push moves the value), and breaks the loop when clear.
         Language::Rust => {
-            let overflow_check =
-                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "            ");
-            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
-                (None, true) => format!(
-                    "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     {RUST_CHAIN_PUSH_NOTE}{RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n            "
-                ),
-                // The entry is bound to a local when the loop reads something
-                // off it: the flag that ends the chain, the identifier a
-                // per-entry flag-input is waiting for.
-                (acc, _) => {
-                    let indent = "                ";
-                    let mut lines =
-                        chain_end_of_frame_stop(acc, "if cursor.remaining() == 0 { break; }");
-                    lines.push(format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"));
-                    if let Some(acc) = acc {
-                        lines.push(format!("_more = _entry.{acc}();"));
-                    }
-                    lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
-                    lines.push(format!(
-                        "{RUST_CHAIN_PUSH_NOTE}{RUNTIME_CODEC}::SceList::try_push(_vec, _entry)?;"
-                    ));
-                    if acc.is_some() {
-                        lines.push("if !_more { break; }".to_string());
-                    }
-                    chain_loop_body(indent, Some("            "), &lines)
-                }
-            };
-            let loop_head = chain_loop_head(lang, max_depth);
-            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
+            let fill = rust_chain_fill(&RustChainFill {
+                field,
+                body_type,
+                decode_arg,
+                entry_binds,
+                max_depth,
+                entry_flag_acc: &entry_flag_acc,
+                kinds,
+                indent: "        ",
+            });
             // The list is built in the destination field, not in a local that
             // is later moved into it: a `heapless::Vec` moves by copying its
             // whole capacity, so every hop between the local and the returned
             // value would copy the declared maximum however few entries the
             // wire held. See `RUST_DECODE_OUT`. It is a `Bounded`, filled where
             // it sits through its `refill` (docs/adr/0065 §6 R7).
-            format!(
-                "{RUST_DECODE_OUT}.{id}.{refill}|_vec| {{\n            \
-                     {more_decl}{loop_head}\n{body}\
-                     }}{overflow_check}\n            \
-                     Ok(())\n        \
-                 }})?;"
-            )
+            rust_noted(&format!("{RUST_DECODE_OUT}.{id}.{refill}{fill})?;"))
         }
         // C11: same shape as repeat (fixed-array `T elems[max_depth]`
         // paired with `size_t elems_len`) but bounded by max_depth and
@@ -17413,6 +17620,8 @@ struct TlvChainDecodeGated<'a> {
     law_start: Option<&'a str>,
     /// See [`TlvChainDecode::c11_over`].
     c11_over: bool,
+    /// See [`TlvChainDecode::kinds`].
+    kinds: &'a [RustChainKind],
     lang: crate::generator::Language,
 }
 
@@ -17448,6 +17657,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         terminate_on,
         law_start,
         c11_over,
+        kinds,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -17473,43 +17683,26 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             // both a level deeper than the block they sit in, which reads as
             // if the guard were inside the loop. A chain closed by an entry
             // flag is filled inside its list's `refill`, one level deeper.
-            let (block, inner) = ("                ", "                    ");
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, block);
-            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
-                (None, true) => format!(
-                    "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     {RUST_CHAIN_PUSH_NOTE}{RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n            "
-                ),
-                (acc, _) => {
-                    let mut lines =
-                        chain_end_of_frame_stop(acc, "if cursor.remaining() == 0 { break; }");
-                    lines.push(format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"));
-                    if let Some(acc) = acc {
-                        lines.push(format!("_more = _entry.{acc}();"));
-                    }
-                    lines.extend(entry_binds.update_lines(field, "_entry", lang, inner));
-                    lines.push(format!(
-                        "{RUST_CHAIN_PUSH_NOTE}{RUNTIME_CODEC}::SceList::try_push(_vec, _entry)?;"
-                    ));
-                    if acc.is_some() {
-                        lines.push("if !_more { break; }".to_string());
-                    }
-                    chain_loop_body(inner, Some(block), &lines)
-                }
-            };
-            let loop_head = chain_loop_head(lang, max_depth);
-            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, block);
+            let fill = rust_chain_fill(&RustChainFill {
+                field,
+                body_type,
+                decode_arg,
+                entry_binds,
+                max_depth,
+                entry_flag_acc: &entry_flag_acc,
+                kinds,
+                indent: "            ",
+            });
             // Built in the destination field; see the ungated emit above.
             format!(
                 "if {test} {{\n            \
-                     {RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}|_vec| {{\n                \
-                         {more_decl}{loop_head}\n{body}\
-                         }}{overflow_check}\n                \
-                         Ok(())\n            \
-                     }})?;\n        \
+                     {}\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
-                 }}"
+                 }}",
+                rust_noted(&format!(
+                    "{RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}{fill})?;"
+                ))
             )
         }
         Language::Cpp => {

@@ -395,74 +395,16 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
-    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    ///
+    /// A field past what the profile holds is read on and not held, and the
+    /// frame is refused with `CapacityExceeded` only once it is read whole and
+    /// every refusal of its own has had its turn (docs/adr/0077 §7), so this
+    /// node and one that holds more refuse a malformed frame alike. On `Err`,
+    /// `_out` holds the fields decoded so far and is not to be read; each of
+    /// them holds what its type says.
     pub fn decode_into{{ decode_generics }}(cursor: &mut SceCursor<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<(), CodecError>{{ decode_where }} {
-{% if emit_owned %}
-        // A form past its capacity stopped where it could not store, so the
-        // frame is judged by what cannot run out, and only a frame that parses
-        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
-        // less than a bound, so this stands on every codec that takes one.
-        let _frame = *cursor;
-        match Self::store_into(cursor, _out{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame{{ decode_forward_args_with_comma }})),
-            stored => stored,
-        }
-    }
-
-    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
-    /// §7): past the capacity when a form that cannot run out reads it, and
-    /// what that form refuses it as when it does not. Kept out of the decode
-    /// and never inlined into it, so the value the form reads takes no room in
-    /// the decode's frame; it runs only after the decode has stopped.
-    #[cold]
-    #[inline(never)]
-    fn past_capacity{{ decode_generics }}(mut _frame: SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> CodecError{{ decode_where }} {
-{% if emit_views and not view_is_alias %}
-        match {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }}) {
-{% else %}
-        match {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }}) {
-{% endif %}
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(refused) => refused,
-        }
-    }
-
-    /// The reading of [`Self::decode_into`], which stops where a field is past
-    /// its capacity.
-    fn store_into{{ decode_generics }}(cursor: &mut SceCursor<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<(), CodecError>{{ decode_where }} {
-{% endif %}
 {% else %}
     pub fn decode{{ decode_generics }}(cursor: &mut SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError>{{ decode_where }} {
-{% if emit_owned %}
-        // Judged as [`Self::decode_into`] judges a frame past a capacity
-        // (docs/adr/0077 §7).
-        let _frame = *cursor;
-        match Self::stored(cursor{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame{{ decode_forward_args_with_comma }})),
-            stored => stored,
-        }
-    }
-
-    /// What a frame is that stopped [`Self::decode`] past a capacity, judged
-    /// out of the decode's frame as [`Self::decode_into`] judges one
-    /// (docs/adr/0077 §7).
-    #[cold]
-    #[inline(never)]
-    fn past_capacity{{ decode_generics }}(mut _frame: SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> CodecError{{ decode_where }} {
-{% if emit_views and not view_is_alias %}
-        match {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }}) {
-{% else %}
-        match {{ struct_name }}::stored(&mut _frame{{ decode_forward_args_with_comma }}) {
-{% endif %}
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(refused) => refused,
-        }
-    }
-
-    /// The reading of [`Self::decode`], which stops where a field is past its
-    /// capacity.
-    fn stored{{ decode_generics }}(cursor: &mut SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError>{{ decode_where }} {
-{% endif %}
 {% endif %}
 {% set view_decode = false %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
