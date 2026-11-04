@@ -23,6 +23,11 @@
 #   the second half of a character stands alone;
 #   the field an inject seam writes is the bytes as they are.
 #
+# The two cases of a half of a character take the decision from the grammar's walk
+# (`skipWellFormedString`), which refuses the whole text before a field is read, as
+# every runtime's reader does (tests/json_text/payload_refusal.json); the reader of a
+# text keeps the same check behind it.
+#
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
@@ -62,14 +67,14 @@ PY
 
 mutation_case "the second half of a pair is not checked to be one" <<'PY'
 edit("sce/include/common/EventPayloadLift.h",
-     "!readHex4(p + 3, low) || low < 0xDC00u || low > 0xDFFFu) {",
-     "!readHex4(p + 3, low)) {")
+     "!readHex4(p + 3, low) || low < 0xDC00u || low > 0xDFFFu) {\n                            return nullptr;",
+     "!readHex4(p + 3, low)) {\n                            return nullptr;")
 PY
 
 mutation_case "the second half of a character stands alone" <<'PY'
 edit("sce/include/common/EventPayloadLift.h",
-     "                    } else if (code >= 0xDC00u && code <= 0xDFFFu) {",
-     "                    } else if (false && code >= 0xDC00u && code <= 0xDFFFu) {")
+     "                    } else if (code >= 0xDC00u && code <= 0xDFFFu) {\n                        return nullptr;",
+     "                    } else if (false && code >= 0xDC00u && code <= 0xDFFFu) {\n                        return nullptr;")
 PY
 
 mutation_case "the field an inject seam writes is the bytes as they are" <<'PY'
