@@ -24,9 +24,10 @@ fn repo_root() -> PathBuf {
 }
 
 /// `sce-codegen check -l <lang> <document>`, as the regeneration scripts run it
-/// (Go with the module its packages live under): whether it passed, and what it
-/// said.
-fn check(lang: Language, document: &str) -> (bool, String) {
+/// (Go with the module its packages live under): its exit status, and what it
+/// said. A refusal by name is status 7, which a regeneration script reads as
+/// "not lowered for this language" and skips, so only 0 passes.
+fn check(lang: Language, document: &str) -> (Option<i32>, String) {
     let mut command = Command::new(sce_codegen_bin());
     command
         .arg("--workspace-root")
@@ -46,7 +47,7 @@ fn check(lang: Language, document: &str) -> (bool, String) {
         .output()
         .expect("invoke sce-codegen");
     (
-        out.status.success(),
+        out.status.code(),
         String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
     )
 }
@@ -55,8 +56,13 @@ fn check(lang: Language, document: &str) -> (bool, String) {
 fn the_template_and_the_statechart_that_renders_it_pass_check_on_every_language() {
     for &lang in Language::ALL {
         for document in ["text_notice.scxml", "static_render.scxml"] {
-            let (passed, said) = check(lang, document);
-            assert!(passed, "{lang:?}: check {document} refused it:\n{said}");
+            let (status, said) = check(lang, document);
+            assert_eq!(
+                status,
+                Some(0),
+                "{lang:?}: check {document} exited {status:?} (7 is a refusal by name, \
+                 which a regeneration script skips):\n{said}"
+            );
             assert!(!said.contains("unknown-sce-attribute"), "{lang:?}: {said}");
         }
     }

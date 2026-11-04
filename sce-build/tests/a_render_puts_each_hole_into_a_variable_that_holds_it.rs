@@ -174,21 +174,23 @@ fn c11_renders_into_a_buffer_of_the_templates_longest_text() {
     );
 }
 
-/// Go names the template's unit by a module path the build is given, and
-/// refuses the render by name where it is not.
+/// Go names the template's unit by a module path the build is given, as it
+/// names a called document's package, and asks for that path where it is not
+/// given (`generate/invalid-config`), as it does for a callee: a machine that
+/// renders a template is a machine that imports a package.
 #[test]
-fn go_refuses_a_render_without_the_module_its_packages_live_under() {
+fn go_asks_for_the_module_a_rendered_templates_package_lives_under() {
     let err = compile(
         &document(VARIABLES, &render("note", EVERY_HOLE)),
         Language::Go,
     )
     .expect_err("no module prefix");
-    assert!(
-        err.error
-            .to_string()
-            .contains("without the module its packages live under"),
+    assert_eq!(
+        err.error.to_diagnostics()[0].code,
+        DiagnosticCode::GenerateInvalidConfig,
         "{err}"
     );
+    assert!(err.error.to_string().contains("go_module_prefix"), "{err}");
 }
 
 /// The Interpreter's lowering replaces the element with an `<assign>` of the

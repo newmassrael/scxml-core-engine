@@ -10066,7 +10066,10 @@ pub fn lower_go(
     machine: &str,
     go_module_prefix: Option<&str>,
 ) -> Result<StaticLowering, GenerateError> {
-    let calls_an_import = StaticScope::of(model).is_some_and(|scope| !scope.callees.is_empty());
+    // A callee and a text template a `<sce:render>` renders (docs/adr/0087) are
+    // each a package of their own, imported under the module the build names.
+    let calls_an_import = StaticScope::of(model).is_some_and(|scope| !scope.callees.is_empty())
+        || !rendered_templates(model).is_empty();
     let import_root = if calls_an_import {
         Some(crate::forge::generator::go_import_root(go_module_prefix)?)
     } else {
