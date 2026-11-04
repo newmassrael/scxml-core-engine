@@ -10,6 +10,8 @@
 #   scripts/gate --changed-in A..B    the same, the set being what A..B changes
 #   scripts/gate --list               show every gate in run order
 #   scripts/gate --measure --all      run and report each gate's wall clock
+#   scripts/gate --plan <selection>   print the bx check units for a selection
+#   scripts/gate --rust <release> ... run on that Rust release, not on stable
 #
 # The order is derived, never typed: `tools/git-hooks/gate_registry.py`
 # holds each gate's dependencies and measured cost, and the runner sorts by
@@ -18,6 +20,15 @@
 #
 # `--measure` is how `cost_s` in the registry gets its values. They are
 # measurements, not estimates, and re-measuring is a matter of running this.
+#
+# `--plan` runs no gate. It takes the same selection as a run (`--all`,
+# `--changed-in`, `--changed-from`, slugs), syncs the Rust toolchain the way a
+# run does, and prints the units bx runs for it, one JSON object a line: the
+# plan of the set `[checks.gates]` in bx.toml, which the push hook hands to bx.
+# Each unit is this runner on one gate at the release the plan read
+# (`--rust`), so the release is in the unit's argv and therefore in the key bx
+# keeps the unit's pass under. See "Whether a gate's verdict may be kept" and
+# `plan_units` in the registry for what a unit is and when its pass is kept.
 
 set -euo pipefail
 
@@ -31,20 +42,42 @@ ORDER=()
 MODE=""
 CHANGED_FILE=""
 CHANGED_RANGES=()
+PLAN=0
+RUST_WANT=""
 
 while (( $# )); do
     case "$1" in
         --all)          MODE="all" ;;
         --list)         MODE="list" ;;
         --measure)      MEASURE=1 ;;
+        --plan)         PLAN=1 ;;
+        --rust)         RUST_WANT="${2:-}"; shift ;;
         --changed-from) MODE="changed"; CHANGED_FILE="$2"; shift ;;
         --changed-in)   MODE="changed"; CHANGED_RANGES+=("$2"); shift ;;
-        -h|--help)      sed -n '5,21p' "$0"; exit 0 ;;
+        -h|--help)      sed -n '5,31p' "$0"; exit 0 ;;
         -*)             printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
         *)              SLUGS+=("$1"); MODE="${MODE:-named}" ;;
     esac
     shift
 done
+
+# A release is three numbers, the second word of `rustc --version`. Anything
+# else is refused here rather than handed to rustup, which would read a
+# channel name (`stable`, `nightly`) as a release and float again.
+if [[ -n "$RUST_WANT" && ! "$RUST_WANT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf 'gate: --rust takes a release such as 1.91.0, got %q\n' "$RUST_WANT" >&2
+    exit 2
+fi
+# A plan names the release itself, from the stable it syncs; one handed in
+# would be a second answer to the question the plan exists to ask once.
+if (( PLAN )) && [[ -n "$RUST_WANT" ]]; then
+    printf 'gate: --plan reads the Rust release itself; do not pass --rust with it\n' >&2
+    exit 2
+fi
+if (( PLAN )) && [[ "$MODE" == "list" || $MEASURE -eq 1 ]]; then
+    printf 'gate: --plan runs nothing, so it takes neither --list nor --measure\n' >&2
+    exit 2
+fi
 
 # ── A change set named by commits rather than by a file ────────────────
 #
@@ -85,6 +118,94 @@ if (( ${#CHANGED_RANGES[@]} )); then
         "$(wc -l <"$CHANGED_FILE" | tr -d ' ')" "${CHANGED_RANGES[*]}" >&2
 fi
 
+# ── Toolchain parity: mirror CI's dtolnay/rust-toolchain@stable ────
+# Every Rust CI job installs the LATEST stable. rustup does NOT auto-update
+# a developer's local `stable`, so it can silently lag the runner — and the
+# clippy lint set is version-sensitive: a lint newly stabilised in a fresher
+# stable passes locally yet fails the cloud clippy gate. The old policy — a
+# code comment asking developers to run `rustup update stable` by hand — was
+# a silently-broken safeguard: skip it once and every lint gate goes blind
+# to CI's newer lints, which is how a useless_borrows_in_formatting
+# regression reached main red.
+#
+# This lives in the runner rather than in the push hook so that running a
+# gate by hand gets the same toolchain the hook would give it. A gate whose
+# by-hand result can differ from its in-hook result is not a gate you can
+# check with before pushing.
+#
+# A push always has network, so the sync is reliable when it matters; if it
+# fails we fall back to the existing toolchain with a loud warning rather
+# than refusing to run.
+#
+# A toolchain is pinned only when it runs what the gates run: cargo, not
+# just rustc. `rustup toolchain install` does not add a component to a
+# toolchain that is already there, so one left half installed (measured
+# 2026-10-20 on a build host: `stable` holding only `rustc`) passed a rustc
+# probe, was pinned, and failed every cargo gate with "the 'cargo' binary is
+# not applicable". Its missing components are added here, and a toolchain
+# that still cannot run cargo is not pinned.
+#
+# `GATE_RUST_RELEASE` is the release that stable turned out to be, empty when
+# none was pinned. A plan writes it into every unit it prints (`--rust`).
+GATE_RUST_RELEASE=""
+gate_sync_rust() {
+    local version
+    printf '\ngate: syncing "stable" to match CI (dtolnay/rust-toolchain@stable)\n' >&2
+    rustup toolchain install stable --profile minimal \
+        --component clippy --no-self-update >/dev/null 2>&1 || true
+    if ! rustup run stable cargo --version >/dev/null 2>&1; then
+        rustup component add cargo rust-std clippy --toolchain stable >/dev/null 2>&1 || true
+    fi
+    if version="$(rustup run stable rustc --version 2>/dev/null)" \
+        && rustup run stable cargo --version >/dev/null 2>&1; then
+        export RUSTUP_TOOLCHAIN=stable
+        printf '  pinned to %s\n' "$version" >&2
+        # `rustc 1.91.0 (f8297e351 2025-10-28)`: the second word.
+        version="${version#rustc }"
+        version="${version%% *}"
+        if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            GATE_RUST_RELEASE="$version"
+        fi
+    else
+        printf '  WARNING: no "stable" toolchain that runs cargo; clippy lint parity\n  with CI is NOT guaranteed for this run.\n' >&2
+    fi
+}
+
+# ── The release a plan named, and no other ─────────────────────────
+#
+# A unit of the set bx runs carries `--rust <release>`, and bx keeps the
+# unit's pass under a key that holds that argv. A unit that ran on whatever
+# stable its machine synced to would keep a verdict about one compiler under
+# the name of another, and a later run on the named release would take it as
+# its own. So the named release is the one used: stable when stable is it
+# (the usual case, and no second download), that release installed by number
+# when stable has moved on or lags behind, and a refusal with exit 3, "could
+# not run", when neither runs cargo here. bx reads 3 as a unit it could not
+# measure and tries it on another machine; it is never a pass.
+gate_pin_rust() {
+    local want="$1" got
+    gate_sync_rust
+    if [[ "$GATE_RUST_RELEASE" == "$want" ]]; then
+        return 0
+    fi
+    printf '  the plan named Rust %s; stable here is %s, so that release is installed\n' \
+        "$want" "${GATE_RUST_RELEASE:-not runnable}" >&2
+    rustup toolchain install "$want" --profile minimal \
+        --component clippy --no-self-update >/dev/null 2>&1 || true
+    if got="$(rustup run "$want" rustc --version 2>/dev/null)" \
+        && [[ "$got" == "rustc $want "* ]] \
+        && rustup run "$want" cargo --version >/dev/null 2>&1; then
+        export RUSTUP_TOOLCHAIN="$want"
+        GATE_RUST_RELEASE="$want"
+        printf '  pinned to %s\n' "$got" >&2
+        return 0
+    fi
+    printf '\nERROR gate: the plan named Rust %s and this machine cannot run cargo on it.\n' "$want" >&2
+    printf 'A verdict taken on another release would be kept under the wrong key, so\n' >&2
+    printf 'nothing runs here and nothing is claimed about the tree.\n' >&2
+    exit 3
+}
+
 # The registry decides what runs and in what order, so a broken registry is
 # a silent coverage loss rather than a loud failure. Exercise its own cases
 # first — milliseconds, and it is the only thing standing between a table
@@ -93,6 +214,34 @@ if ! python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >/dev/null 2>&1; t
     python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >&2 || true
     printf '\nERROR gate: registry self-test failed — refusing to run.\n' >&2
     exit 1
+fi
+
+# ── The plan: the units bx runs for the selection, and no gate here ────
+#
+# The selection arrives as it does for a run, and the registry turns it into
+# units (`--plan`), so the push picks the same gates whether bx carries them or
+# this runner runs them in place. Only the toolchain sync runs here, because
+# the plan names the release it found. stdout is the plan and nothing else:
+# every message above and below goes to stderr.
+if (( PLAN )); then
+    PLAN_ARGS=(--repo-root "$REPO_ROOT" --plan)
+    case "$MODE" in
+        all)     PLAN_ARGS+=(--all) ;;
+        changed) PLAN_ARGS+=(--changed-from "$CHANGED_FILE") ;;
+        named)   PLAN_ARGS+=(--named "${SLUGS[@]}") ;;
+        *)
+            printf 'gate: --plan needs a selection: --all, --changed-in, --changed-from or slugs\n' >&2
+            exit 2
+            ;;
+    esac
+    gate_sync_rust
+    if [[ -n "$GATE_RUST_RELEASE" ]]; then
+        PLAN_ARGS+=(--rust "$GATE_RUST_RELEASE")
+    fi
+    # Not `exec`: the EXIT trap owns the change-set file of `--changed-in`.
+    plan_rc=0
+    python3 "$REGISTRY" "${PLAN_ARGS[@]}" || plan_rc=$?
+    exit "$plan_rc"
 fi
 
 case "$MODE" in
@@ -222,44 +371,12 @@ if [[ -z "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
     "$REPO_ROOT/scripts/lib/require_submodules.sh" "${ORDER[@]}"
 fi
 
-# ── Toolchain parity: mirror CI's dtolnay/rust-toolchain@stable ────
-# Every Rust CI job installs the LATEST stable. rustup does NOT auto-update
-# a developer's local `stable`, so it can silently lag the runner — and the
-# clippy lint set is version-sensitive: a lint newly stabilised in a fresher
-# stable passes locally yet fails the cloud clippy gate. The old policy — a
-# code comment asking developers to run `rustup update stable` by hand — was
-# a silently-broken safeguard: skip it once and every lint gate goes blind
-# to CI's newer lints, which is how a useless_borrows_in_formatting
-# regression reached main red.
-#
-# This lives in the runner rather than in the push hook so that running a
-# gate by hand gets the same toolchain the hook would give it. A gate whose
-# by-hand result can differ from its in-hook result is not a gate you can
-# check with before pushing.
-#
-# A push always has network, so the sync is reliable when it matters; if it
-# fails we fall back to the existing toolchain with a loud warning rather
-# than refusing to run.
-#
-# A toolchain is pinned only when it runs what the gates run: cargo, not
-# just rustc. `rustup toolchain install` does not add a component to a
-# toolchain that is already there, so one left half installed (measured
-# 2026-10-20 on a build host: `stable` holding only `rustc`) passed a rustc
-# probe, was pinned, and failed every cargo gate with "the 'cargo' binary is
-# not applicable". Its missing components are added here, and a toolchain
-# that still cannot run cargo is not pinned.
-printf '\ngate: syncing "stable" to match CI (dtolnay/rust-toolchain@stable)\n' >&2
-rustup toolchain install stable --profile minimal \
-    --component clippy --no-self-update >/dev/null 2>&1 || true
-if ! rustup run stable cargo --version >/dev/null 2>&1; then
-    rustup component add cargo rust-std clippy --toolchain stable >/dev/null 2>&1 || true
-fi
-if rustup run stable rustc --version >/dev/null 2>&1 \
-    && rustup run stable cargo --version >/dev/null 2>&1; then
-    export RUSTUP_TOOLCHAIN=stable
-    printf '  pinned to %s\n' "$(rustup run stable rustc --version)" >&2
+# The toolchain the gates run on (see "Toolchain parity" above): the release a
+# plan named when this run is one of its units, else today's stable.
+if [[ -n "$RUST_WANT" ]]; then
+    gate_pin_rust "$RUST_WANT"
 else
-    printf '  WARNING: no "stable" toolchain that runs cargo; clippy lint parity\n  with CI is NOT guaranteed for this run.\n' >&2
+    gate_sync_rust
 fi
 
 printf '\ngate: running %d gate(s): %s\n' "${#ORDER[@]}" "${ORDER[*]}" >&2

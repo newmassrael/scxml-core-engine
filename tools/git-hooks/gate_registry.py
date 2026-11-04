@@ -414,6 +414,71 @@ PACE_NORMALISED: dict[str, str] = {
     "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
 }
 
+# ── Whether a gate's verdict may be kept ──────────────────────────
+#
+# A push hands its gates to bx as a set of check units (`[checks.gates]` in
+# bx.toml): one unit per gate the change selects, planned from this table by
+# `scripts/gate --plan` (`plan_units` below). bx keeps a unit's PASS in the
+# site's action cache under a key made of the unit's argv, the content of its
+# inputs and the platform bx.toml declares (bx RFC 0020, section 4), and does
+# not run a unit again whose key already has a kept pass.
+#
+# That is correct only for a gate whose verdict is a function of that key, so
+# every entry says which it is, and nothing defaults (`every-gate-says-whether-
+# its-verdict-is-kept` in the self-test):
+#
+#   `"cache": True`   the verdict is a function of the tracked tree, of the
+#                     platform bx.toml declares (its tools at their pinned
+#                     versions) and of the Rust release the plan names. A fetch
+#                     of content the tree pins (a digest, a revision, a version
+#                     written in a tracked file) keeps that property.
+#   `"cache": False`  it is not, and `no_cache_reason` says what else it reads:
+#                     the clock, git history or refs, an artifact another gate
+#                     leaves in an ignored directory, a tool whose absence makes
+#                     it skip and pass, a host compiler or browser no
+#                     declaration names, or thread interleavings it samples.
+#
+# The residue, stated rather than hidden: a tool bx.toml requires by name only
+# (`needs`, `packages`) is whatever version the machine carries, and a verdict
+# that moved with that version would be kept across it. bx runs one kept pass in
+# sixteen again and blocks a key whose verdict changed (RFC 0020, section 9),
+# which is the instrument that finds such a gate.
+#
+# `inputs` is the other half of the key. `None` is the whole tracked tree; a list
+# of patterns (bx RFC 0003, section 6) narrows the key to those files, and bx
+# then runs the unit in a copy of them alone, under strace, and calls a read
+# outside them "could not measure" (RFC 0020, section 5.2). Every gate is `None`
+# today, and not by default: that copy holds no `.git`, and the runner and the
+# gate library both ask git for the repository root before anything else, so a
+# narrowed unit could only ever end "could not measure".
+# `narrowed-units-need-a-git-free-root` in the self-test refuses a list until
+# that changes.
+#
+# What whole-tree keys buy, measured against what was asked of them: one tree
+# is judged once (a push retried over the same commits, a full run after a
+# scoped one, two sessions verifying the same tree). A rebase over commits that
+# touch nothing a gate reads still moves the tree, so it is a new key for every
+# unit; that reuse needs narrowed inputs, which needs the root above.
+
+# Every unit names this, so a machine runs one gate of a set at a time. The
+# gates were written for a runner that ran them one after another in one
+# checkout, and several share what that checkout holds: the CMake tree under
+# `build/`, the endpoint port the C++ suites bind themselves, Gradle's project
+# directories, and the headers `genmc-queue` rewrites in place while it runs. A
+# batch's units run in one checkout, so two at once could read each other's
+# half-written state, and a kept pass could be one of those readings. Spreading
+# a set over machines is what runs gates side by side.
+UNIT_EXCLUSIVE = "checkout"
+
+# The shape of a Rust release a plan may name (`rustc --version`'s second word).
+RUST_RELEASE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+
+# The name of the one unit a plan carries when the change selects no gate: bx
+# refuses a plan that lists nothing ("a plan that lists nothing has measured
+# nothing"), and a selection that is empty is an answer, so it is said as a
+# unit whose result is already known.
+NOTHING_TO_VERIFY = "no-gate-applies"
+
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
     # Triggered by its own sources, and forced on by its dependents.
@@ -452,6 +517,8 @@ GATES: dict[str, dict] = {
         "cost_s": 25,
         "cost_s_no_op": 0.111,
         "summary": "build target/debug/sce-codegen",
+        "cache": True,
+        "inputs": None,
     },
     # The NL→IR closure ledger, measured against the tree it describes.
     #
@@ -496,6 +563,8 @@ GATES: dict[str, dict] = {
         "deps": ["codegen-build"],
         "cost_s": 1.3,
         "summary": "the NL→IR closure ledger vs the tree it describes",
+        "cache": True,
+        "inputs": None,
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
     # break it, so the Rust trigger set is exactly right.
@@ -510,6 +579,8 @@ GATES: dict[str, dict] = {
                         "coverage.",
         "cost_s": 0,
         "summary": "mod.rs <-> subdirectory drift",
+        "cache": True,
+        "inputs": None,
     },
     # Guards the clang degraded-AST regression in the manifest emitter.
     # Its own lane in the embed workflow rather than a step in the smoke
@@ -523,6 +594,12 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "cost_s": 0,
         "summary": "emit_embed_manifest fail-fast case",
+        "cache": False,
+        "no_cache_reason": "skip-capable: `scripts/test_emit_manifest_fail_fast.sh` "
+                           "exits 0 on a machine without clang++-19, which bx.toml "
+                           "does not require, so a pass there is the machine's and "
+                           "not the tree's",
+        "inputs": None,
     },
     # Whether embed/MANIFEST.json was emitted from the inputs it is committed
     # with, against its stamp embed/MANIFEST.inputs (scripts/embed_manifest.py).
@@ -538,6 +615,11 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "cost_s": 0,
         "summary": "embed manifest emitted from the inputs it is committed with",
+        # Reads HEAD's objects (`check --rev HEAD`), and the key holds the
+        # working tree: the plan keeps no verdict for a tree that differs from
+        # HEAD (`plan_units`), which is what makes the two the same here.
+        "cache": True,
+        "inputs": None,
     },
     # `roadmap_marker_gate` reads every tracked file and
     # `workflow_trigger_coverage` reads every workflow, so tree-hygiene.yml
@@ -569,6 +651,12 @@ GATES: dict[str, dict] = {
                    "copy of the gap to its constant, this one included.",
         "cost_s": 193,
         "summary": "tree-wide marker + trigger + parity gates",
+        "cache": False,
+        "no_cache_reason": "reads git history: `lowering_decision_ledger`, one of "
+                           "the targets it runs, asks git whether each pinned "
+                           "commit is an ancestor of HEAD, and one tree can sit on "
+                           "histories that answer differently",
+        "inputs": None,
     },
     # Rides the same unfiltered workflow, for the same reason in a different
     # alphabet: what this gate reads is the union of every `mutation_targets`
@@ -589,6 +677,8 @@ GATES: dict[str, dict] = {
                    "unfiltered too, so CI runs it on every push regardless.",
         "cost_s": 168,
         "summary": "every mutation casefile still applies",
+        "cache": True,
+        "inputs": None,
     },
     # The other half of the same corpus: whether a case still turns its suite
     # red, which only a build can answer.
@@ -653,6 +743,11 @@ GATES: dict[str, dict] = {
         "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh"],
         "cost_s": 877,
         "summary": "changed mutation targets still turn their suites red",
+        "cache": False,
+        "no_cache_reason": "reads the clock and git refs: it judges each round's "
+                           "duration against the cost model (`date +%s`), and with "
+                           "no change set it takes its base from the upstream ref",
+        "inputs": None,
     },
     "clippy": {
         "workflows": ["clippy-check.yml"],
@@ -668,6 +763,10 @@ GATES: dict[str, dict] = {
                    "was priced at what a loaded machine charges.",
         "cost_s": 82,
         "summary": "cargo clippy --workspace --all-targets",
+        # The lint set moves with each stable release, which is why the plan
+        # names the release in every unit's argv: a new one is a new key.
+        "cache": True,
+        "inputs": None,
     },
     # Shares clippy's workflow because it shares clippy's inputs: the
     # declarations clippy measures its lints against are the ones this keeps
@@ -682,6 +781,9 @@ GATES: dict[str, dict] = {
                    "runs it beside clippy.",
         "cost_s": 451,
         "summary": "every package builds with the Rust it declares",
+        # Each toolchain it installs is the version a tracked manifest declares.
+        "cache": True,
+        "inputs": None,
     },
     "nostd-mcu": {
         "workflows": ["sce-rust-runtime-no-std.yml"],
@@ -695,6 +797,8 @@ GATES: dict[str, dict] = {
         # ceiling holds on unlucky pushes rather than lucky ones.
         "cost_s": 9,
         "summary": "no_std MCU build + clippy + probes; std runtime without http-send",
+        "cache": True,
+        "inputs": None,
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
     # sce-rust-runtime-no-std.yml while the gate's own comment named
@@ -706,6 +810,8 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "cost_s": 4,
         "summary": "cargo doc broken intra-doc links, both profiles",
+        "cache": True,
+        "inputs": None,
     },
     "embed-vendor": {
         "workflows": ["embed-vendor-smoke.yml"],
@@ -728,6 +834,11 @@ GATES: dict[str, dict] = {
                    "because the scratch directories are the point.",
         "cost_s": 311,
         "summary": "embed manifest drift + payload lag + consumer smoke",
+        # The Bazel consumer's versions are pinned in the tree
+        # (`scripts/lib/bazel_pins.sh`), and a machine without bazel ends the
+        # smoke "could not measure" (exit 3) rather than passing.
+        "cache": True,
+        "inputs": None,
     },
     # Mirrors the Rust workspace suite only. `w3c-tests.yml` is deliberately
     # NOT listed: it has no `paths:` filter (it runs on every CI push) and
@@ -897,6 +1008,12 @@ GATES: dict[str, dict] = {
                    "later.",
         "cost_s": 1363,
         "summary": "cargo test --workspace --features cli,sce-rust-mesh/wss",
+        "cache": False,
+        "no_cache_reason": "reads git history: the suite carries "
+                           "`lowering_decision_ledger`, which asks git whether each "
+                           "pinned commit is an ancestor of HEAD, and one tree can "
+                           "sit on histories that answer differently",
+        "inputs": None,
     },
     # The one reader of the content axis. The header's `source-hash` covers
     # the INPUT documents, so an edit to the templates or to the emit code
@@ -918,6 +1035,10 @@ GATES: dict[str, dict] = {
                    "generated code while the branch's own suite was green).",
         "cost_s": 117,
         "summary": "regeneration reproduces every committed tree",
+        # Regenerates in a worktree of HEAD; the plan keeps no verdict for a
+        # tree that differs from HEAD, so HEAD is the tree the key holds.
+        "cache": True,
+        "inputs": None,
     },
     "drift-suites": {
         "workflows": ["drift-verify.yml"],
@@ -926,6 +1047,8 @@ GATES: dict[str, dict] = {
                    "it costs; drift-verify.yml runs it.",
         "cost_s": 146,
         "summary": "committed-tree drift + sourcemap, serial",
+        "cache": True,
+        "inputs": None,
     },
     # forge-conformance.yml verifies the language arms in parallel jobs, and
     # its path filter is workflow-wide: a change under
@@ -948,6 +1071,12 @@ GATES: dict[str, dict] = {
         # that runs before a push.
         "cost_s": 15,
         "summary": "Go forge conformance regenerate + test",
+        "cache": False,
+        "no_cache_reason": "samples thread interleavings: its queue and "
+                           "broadcast-log stress runs under `go test -race` record "
+                           "what the machine's scheduler happened to run, so a pass "
+                           "is one draw and keeping it would stop the drawing",
+        "inputs": None,
     },
     "forge-rust": {
         "workflows": ["forge-conformance.yml"],
@@ -963,6 +1092,12 @@ GATES: dict[str, dict] = {
                    "forge-conformance.yml.",
         "cost_s": 280,
         "summary": "Rust forge conformance (numerical + codec round-trips, release)",
+        "cache": False,
+        "no_cache_reason": "samples thread interleavings: its stress runs record "
+                           "the histories the scheduler happened to produce and "
+                           "ThreadSanitizer reports only the races it saw, so a "
+                           "pass is one draw and keeping it would stop the drawing",
+        "inputs": None,
     },
     "forge-python": {
         "workflows": ["forge-conformance.yml"],
@@ -975,6 +1110,12 @@ GATES: dict[str, dict] = {
                    "time bought attribution and nothing else.",
         "cost_s": 107,
         "summary": "Python forge conformance (numerical)",
+        "cache": False,
+        "no_cache_reason": "samples thread interleavings: its queue and "
+                           "broadcast-log stress runs record what the machine's "
+                           "scheduler happened to run, so a pass is one draw and "
+                           "keeping it would stop the drawing",
+        "inputs": None,
     },
     "forge-cpp": {
         "workflows": ["forge-conformance.yml"],
@@ -996,6 +1137,8 @@ GATES: dict[str, dict] = {
                    "forge-conformance.yml runs it beside the other arms.",
         "cost_s": 59,
         "summary": "C++ forge conformance build + test",
+        "cache": True,
+        "inputs": None,
     },
     # ⚠ The C11 arm existed as a complete standalone CMake project, a harness
     # template and ten per-kind fragments, and NOTHING RAN ANY OF IT —
@@ -1034,6 +1177,8 @@ GATES: dict[str, dict] = {
         "deps": ["codegen-build"],
         "cost_s": 17,
         "summary": "C11 forge conformance build + test",
+        "cache": True,
+        "inputs": None,
     },
     # ⚠ The SIXTH arm, and it was the one the set was missing. Measured
     # 2026-09-18: `forge-conformance.yml` has six jobs — rust, python, go,
@@ -1058,6 +1203,12 @@ GATES: dict[str, dict] = {
                    "forge-conformance.yml.",
         "cost_s": 52,
         "summary": "Kotlin forge conformance (Gradle jvmTest)",
+        "cache": False,
+        "no_cache_reason": "samples thread interleavings: its queue and "
+                           "broadcast-log stress runs record what the JVM's "
+                           "threads happened to do, so a pass is one draw and "
+                           "keeping it would stop the drawing",
+        "inputs": None,
     },
     # ⚠ The Swift backend's own lane, and the one the family tables could not
     # hold. `<family>-<canonical name>` slugs name a backend's arm of a lane the
@@ -1101,6 +1252,10 @@ GATES: dict[str, dict] = {
                    "installs the pin by its digest.",
         "cost_s": 38,
         "summary": "Swift backend: runtime, host features and generated machines",
+        # The toolchain is a pinned tool of the platform, so its version is in
+        # the key, and a machine without it fails the gate loudly.
+        "cache": True,
+        "inputs": None,
     },
     # The Swift W3C arm, the twin of `w3c-go`: `sce-codegen generate-w3c -l swift` writes the
     # suite and the engine runs it. It rides the workflow of `swift-backend` as a second step of
@@ -1126,6 +1281,8 @@ GATES: dict[str, dict] = {
         # 156 tests run. Warm, like `swift-backend`'s figure: a runner starts from nothing.
         "cost_s": 76,
         "summary": "W3C conformance, Swift AOT",
+        "cache": True,
+        "inputs": None,
     },
     # The Swift twin of `ecma262-lowered-kotlin`: one machine that asks every case of the shared
     # ECMA-262 table, generated with the build-time lowering (the only route Swift has), compiled
@@ -1149,6 +1306,8 @@ GATES: dict[str, dict] = {
         # starts from nothing.
         "cost_s": 11,
         "summary": "ECMA-262 lowered artifact, Swift",
+        "cache": True,
+        "inputs": None,
     },
     # The Swift twin of `forge-kotlin`: the forge runtime's own tests and every unit the generator
     # writes for a forge document, held to the numerical oracle. A fourth step of the same job as
@@ -1174,6 +1333,8 @@ GATES: dict[str, dict] = {
         # siblings: a runner starts from nothing.
         "cost_s": 102,
         "summary": "Forge conformance, Swift",
+        "cache": True,
+        "inputs": None,
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs
@@ -1212,6 +1373,10 @@ GATES: dict[str, dict] = {
                    "genmc-queue.yml builds it once per pin and caches it.",
         "cost_s": 72,
         "summary": "C11 and C++ queues under GenMC + weakened-ordering mutants",
+        # GenMC explores every interleaving its model admits rather than
+        # sampling some, and its revision is pinned by the tracked installer.
+        "cache": True,
+        "inputs": None,
     },
     # Catches codegen breakage in the example documents (the namespace
     # migration that broke them shipped green otherwise) and lints every
@@ -1239,6 +1404,8 @@ GATES: dict[str, dict] = {
                    "example-codegen.yml runs it.",
         "cost_s": 99,
         "summary": "example SCXML codegen smoke + authored-document lint",
+        "cache": True,
+        "inputs": None,
     },
     # The lane that starts on a compiled-in INPUT rather than on Rust.
     #
@@ -1262,6 +1429,8 @@ GATES: dict[str, dict] = {
                    "start for. doc-content-gate.yml runs it.",
         "cost_s": 60,
         "summary": "sce-build lib suite, compiled-in inputs",
+        "cache": True,
+        "inputs": None,
     },
     "ledger-citations": {
         "workflows": ["spec-citations.yml"],
@@ -1285,6 +1454,9 @@ GATES: dict[str, dict] = {
                    "sweep. spec-citations.yml runs it.",
         "cost_s": 121,
         "summary": "spec-citation ledgers, 5 workspaces",
+        # The validator is the revision a tracked workflow pins.
+        "cache": True,
+        "inputs": None,
     },
     # The authoring core's claim is that it knows no subject matter. A claim
     # like that decays silently -- one helpful special case at a time -- so it
@@ -1308,6 +1480,8 @@ GATES: dict[str, dict] = {
                    "so the 86 run-driven cases are judged, not skipped.",
         "cost_s": 72,
         "summary": "authoring core is domain-free, and its refusals still fire",
+        "cache": True,
+        "inputs": None,
     },
     # The logical interface every target shares, and the library built from it. The generator and
     # a compiler are needed (the parity cases build and run C++), so unlike authoring-core's
@@ -1320,6 +1494,8 @@ GATES: dict[str, dict] = {
                    "`scripts/gate --measure`, which is refused locally for this repository.",
         "cost_s": 81,
         "summary": "the logical interface is platform-free, and the library judges as verify does",
+        "cache": True,
+        "inputs": None,
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
     # `ledger-citations` runs mnemosyne-cli, this workflow runs a separate
@@ -1329,6 +1505,11 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "cost_s": 13,
         "summary": "spec snapshot integrity + verifies-catalog drift",
+        # `check_spec_drift.py --mode integrity` is the offline mode: it hashes
+        # the snapshot against its recorded provenance. The `upstream` mode,
+        # which fetches the published specification, is not what this runs.
+        "cache": True,
+        "inputs": None,
     },
     # A compliance verdict — an AGPL-3.0 section 4 / MIT section 1 violation in a
     # release tarball — that was reachable only after a push, on a check that
@@ -1338,6 +1519,8 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "cost_s": 0,
         "summary": "license SSOT vs the tree it describes",
+        "cache": True,
+        "inputs": None,
     },
     # The same compliance verdict for the browser visualizer, which
     # `license-ssot` cannot reach: it reads `third_party/`, and the
@@ -1365,6 +1548,8 @@ GATES: dict[str, dict] = {
         ],
         "cost_s": 0,
         "summary": "visualizer vendor libraries vs LICENSE-THIRD-PARTY.md",
+        "cache": True,
+        "inputs": None,
     },
     # Where the W3C BasicHTTP fixture listener answers had come to be spelled in
     # five places at once — twelve C11 runners, two gate helpers, a CI job, the
@@ -1399,6 +1584,8 @@ GATES: dict[str, dict] = {
         # ~40ms, not the seconds it was insured against.
         "cost_s": 0.185,
         "summary": "BasicHTTP fixture endpoint has one owner",
+        "cache": True,
+        "inputs": None,
     },
     # The generated codecs are committed goldens, not workspace members:
     # `cargo metadata` lists eight packages and none of them is a codec, so
@@ -1412,6 +1599,8 @@ GATES: dict[str, dict] = {
                    "sce-forge-codec-clippy.yml runs it.",
         "cost_s": 106,
         "summary": "clippy generated codecs, alloc on",
+        "cache": True,
+        "inputs": None,
     },
     "codec-no-alloc": {
         "workflows": ["sce-forge-codec-no-alloc.yml"],
@@ -1420,6 +1609,8 @@ GATES: dict[str, dict] = {
                    "alloc-on sibling.",
         "cost_s": 90,
         "summary": "generated codecs compile without alloc",
+        "cache": True,
+        "inputs": None,
     },
     # The two conformance surfaces nothing local ran. Both narrow their
     # workflow's catch-all (see `narrows` in `gate_triggers`) and state their
@@ -1455,6 +1646,8 @@ GATES: dict[str, dict] = {
                    "runs this arm on every push regardless.",
         "cost_s": 55,
         "summary": "W3C conformance, C++ Interpreter + AOT",
+        "cache": True,
+        "inputs": None,
     },
     # A deploy workflow whose three build steps are verdicts. Its trigger
     # already includes `sce-build/**`, so a Rust change every other gate passes
@@ -1496,6 +1689,12 @@ GATES: dict[str, dict] = {
         "cost_s": 22,
         "summary": "diagram layout invariants, drag/collapse/stress survival, "
                    "and the shared scenarios on the browser's engine",
+        "cache": False,
+        "no_cache_reason": "reads an artifact another gate leaves: the codegen "
+                           "and engine WASMs `visualizer-wasm` writes into "
+                           "gitignored directories, which the key does not hold "
+                           "and nothing here rebuilds",
+        "inputs": None,
     },
     "visualizer-wasm": {
         "workflows": ["deploy-visualizer.yml"],
@@ -1506,6 +1705,12 @@ GATES: dict[str, dict] = {
                    "filter IS the trigger — the two cannot disagree.",
         "cost_s": 77,
         "summary": "codegen + visualizer + DOOM WASM builds",
+        "cache": False,
+        "no_cache_reason": "skip-capable: the emscripten half runs only where "
+                           "emsdk is found (on PATH or under the home), which "
+                           "bx.toml does not require, so a pass without it judged "
+                           "one artifact of three",
+        "inputs": None,
     },
     # The Rust engine as the module a browser loads, run under Node and in
     # headless Chrome on the scenarios every backend replays. No other lane can
@@ -1536,6 +1741,11 @@ GATES: dict[str, dict] = {
                    "holds, which a push hook cannot assume.",
         "cost_s": 107,
         "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome",
+        "cache": False,
+        "no_cache_reason": "a host browser: the scenarios replay in whatever "
+                           "headless Chrome the machine carries, and no "
+                           "declaration names its version",
+        "inputs": None,
     },
     # The other half of the main tree's ctest partition, and the half nothing
     # ran. Measured 2026-08-12 with a logging shim in place of `ctest` during a
@@ -1569,6 +1779,8 @@ GATES: dict[str, dict] = {
                    "problem rather than an occasional one.",
         "cost_s": 110,
         "summary": "C++ ctest suite (engine + mesh), the non-c11 half",
+        "cache": True,
+        "inputs": None,
     },
     # ADR 0059, section 7: the C++ interface compiled at the standard a
     # consumer compiles it at. Every public header, every Forge C++ golden and
@@ -1609,6 +1821,12 @@ GATES: dict[str, dict] = {
                    "compiler is whatever that host carries.",
         "cost_s": 300,
         "summary": "C++ interface compiled alone at C++17 and C++20 (ADR 0059)",
+        "cache": False,
+        "no_cache_reason": "a host compiler: it compiles every header alone with "
+                           "-Werror under whatever GCC and libstdc++ the machine "
+                           "carries, and its lane pins a GCC 15 container because "
+                           "that verdict moves with the compiler",
+        "inputs": None,
     },
     # An installed SCE builds what its own generator writes. The install
     # exports `sce-codegen`, its templates and `SCECodegen.cmake`, and the C++
@@ -1645,6 +1863,8 @@ GATES: dict[str, dict] = {
                    "it cheaper. install-consumer.yml runs it.",
         "cost_s": 240,
         "summary": "generated C++ built and run against an installed SCE",
+        "cache": True,
+        "inputs": None,
     },
     # The only gate that configures the OTHER value of SCE_SCRIPT_ENGINE.
     #
@@ -1688,6 +1908,8 @@ GATES: dict[str, dict] = {
                    "population comes from.",
         "cost_s": 123,
         "summary": "ECMA-262 through a Lua-lowered C++ artifact",
+        "cache": True,
+        "inputs": None,
     },
     # The Kotlin twin of the row above, and it exists because the argument that
     # row makes applies unchanged to a second backend that had crossed the same
@@ -1743,6 +1965,8 @@ GATES: dict[str, dict] = {
         # a cached green being timed.
         "cost_s": 11,
         "summary": "ECMA-262 through a Lua-lowered Kotlin artifact",
+        "cache": True,
+        "inputs": None,
     },
     "w3c-c11": {
         "workflows": ["w3c-tests.yml"],
@@ -1773,6 +1997,8 @@ GATES: dict[str, dict] = {
                    "push and nothing narrows what CI sees.",
         "cost_s": 258,
         "summary": "W3C conformance, C11 MCU backend",
+        "cache": True,
+        "inputs": None,
     },
     "w3c-go": {
         "workflows": ["w3c-tests.yml"],
@@ -1789,6 +2015,8 @@ GATES: dict[str, dict] = {
         # last pair. Two pushes that day read 15s and 8s, straddling it.
         "cost_s": 10,
         "summary": "W3C conformance, Go AOT",
+        "cache": True,
+        "inputs": None,
     },
     # The Rust arm, and the last W3C lane to get a gate: `test-rust` in
     # w3c-tests.yml carried its generation, fixture server and `cargo test`
@@ -1819,6 +2047,8 @@ GATES: dict[str, dict] = {
                    "unit. w3c-tests.yml declares no `paths:` filter, so CI "
                    "runs this arm on every push.",
         "summary": "W3C conformance, Rust AOT",
+        "cache": True,
+        "inputs": None,
     },
     "w3c-kotlin": {
         "workflows": ["w3c-tests.yml"],
@@ -1856,6 +2086,8 @@ GATES: dict[str, dict] = {
         "cost_s": 152,
         "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS + Lua, "
                    "each over the machines emitted for the language it reads)",
+        "cache": True,
+        "inputs": None,
     },
     "w3c-python": {
         "workflows": ["w3c-tests.yml"],
@@ -1870,6 +2102,8 @@ GATES: dict[str, dict] = {
                    "every push.",
         "cost_s": 72,
         "summary": "W3C conformance, Python AOT",
+        "cache": True,
+        "inputs": None,
     },
     # The wrapper layer, not the engine under it: the trigger is the binding
     # sources, because `w3c-cpp` already judges the same interpreter 404 cases
@@ -1889,6 +2123,11 @@ GATES: dict[str, dict] = {
                    "arm on every push.",
         "cost_s": 184,
         "summary": "W3C conformance, pybind11 -> C++ Interpreter",
+        "cache": False,
+        "no_cache_reason": "skip-capable: it exits 0 on a machine without "
+                           "python3-config, which bx.toml requires by no name, so "
+                           "a pass there is the machine's and not the tree's",
+        "inputs": None,
     },
 }
 
@@ -2750,6 +2989,113 @@ def drop_ci_only(selected) -> set[str]:
     are understood — which is the one case it would matter least.
     """
     return {slug for slug in selected if not GATES[slug].get("ci_only")}
+
+
+def tracked_tree_is_head(repo_root: Path) -> bool:
+    """Whether every tracked file holds what HEAD holds.
+
+    A kept verdict's key is made of the working tree's content, and two gates
+    judge HEAD instead (`embed-manifest-stamp` reads its objects,
+    `regen-reproduces` regenerates in a worktree of it). The two are the same
+    tree only when the working tree is HEAD's, so a plan made over any other
+    keeps no verdict. The push hook already refuses such a tree; this is what
+    makes a set run by hand just as safe. Anything git cannot answer counts as
+    a difference.
+    """
+    try:
+        done = subprocess.run(["git", "diff", "--quiet", "HEAD", "--"],
+                              cwd=repo_root, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, check=False)
+    except OSError:
+        return False
+    return done.returncode == 0
+
+
+def unit_inputs(closure, table=None):
+    """The input patterns of a unit that runs every gate in `closure`.
+
+    `None`, the whole tracked tree, as soon as one of them reads the whole
+    tree: a key narrower than what the unit reads would let a pass outlive
+    a change to the part left out. Otherwise the union of their patterns,
+    sorted so that one closure always yields one key.
+    """
+    table = GATES if table is None else table
+    patterns: set[str] = set()
+    for slug in closure:
+        own = table[slug].get("inputs")
+        if own is None:
+            return None
+        patterns.update(own)
+    return sorted(patterns)
+
+
+def plan_units(selected, rust=None, tree_is_head=True, table=None) -> list[dict]:
+    """The bx check units (bx RFC 0004, section 6) that verify `selected`.
+
+    `selected` is a set the registry already chose: `select` for a change,
+    every gate for `--all`, a named closure. The plan adds no selection of
+    its own, which is what lets the push run the same gates whether bx
+    carries them or the runner runs them in place.
+
+    ONE UNIT PER GATE THAT NO OTHER SELECTED GATE RUNS. A unit is
+    `bash scripts/gate [--rust R] <slug>`, and the runner gives a named gate
+    its dependency closure and stops at the first failure, so a dependency's
+    verdict is part of every dependent's unit. A unit of its own would be
+    the same build again on another machine, measuring nothing new.
+
+    A UNIT'S VERDICT IS KEPT (`cache`) only when all three hold:
+      * the plan names the Rust release (`rust`), because every unit's argv
+        then carries it and a new stable release is a new key. Without it a
+        unit runs whatever stable its machine syncs to, which is not in the
+        key;
+      * the tracked tree is HEAD's (`tree_is_head`, see
+        `tracked_tree_is_head`);
+      * every gate the unit runs declares `cache: True`.
+    Each unit says `cache` either way, because the set in bx.toml keeps
+    verdicts by default and a unit that is not to be kept has to say so.
+
+    `exclusive` is `UNIT_EXCLUSIVE` for every unit, and `secs` is the
+    declared cost of everything the unit runs, a first estimate that bx
+    replaces with its own timings.
+    """
+    table = GATES if table is None else table
+    chosen = set(selected)
+    run_by_another: set[str] = set()
+    for slug in chosen:
+        run_by_another |= transitive_deps(slug, table)
+    units = []
+    for slug in run_order(chosen - run_by_another, table):
+        closure = {slug} | transitive_deps(slug, table)
+        kept = (rust is not None and tree_is_head
+                and all(table[s]["cache"] is True for s in closure))
+        argv = ["bash", "scripts/gate"]
+        if rust is not None:
+            argv += ["--rust", rust]
+        argv.append(slug)
+        unit = {
+            "name": slug,
+            "argv": argv,
+            "exclusive": [UNIT_EXCLUSIVE],
+            "cache": kept,
+            "broke": f"gate {slug} FAILED: run just this one with "
+                     f"`scripts/gate {slug}`",
+            "blind": f"gate {slug} COULD NOT RUN on that machine: its own "
+                     f"tools, or the Rust release the plan named, are missing "
+                     f"there. Nothing is claimed about the tree.",
+        }
+        cost = sum(table[s].get("cost_s") or 0 for s in closure)
+        if cost > 0:
+            unit["secs"] = float(cost)
+        inputs = unit_inputs(closure, table)
+        if kept and inputs:
+            unit["inputs"] = inputs
+        units.append(unit)
+    return units
+
+
+def nothing_to_verify(reason: str) -> dict:
+    """The one unit of a plan whose selection is empty: a known pass."""
+    return {"name": NOTHING_TO_VERIFY, "result": {"exit": 0, "note": reason}}
 
 
 def mapping_table() -> dict[str, dict]:
@@ -4009,11 +4355,246 @@ def self_test(repo_root: Path) -> int:
                 f"not declare deps=['codegen-build'], so it can run before "
                 f"the build and pay for it")
 
+    # ── The gates as bx check units ─────────────────────────────────
+    #
+    # every-gate-says-whether-its-verdict-is-kept. A kept pass is reused for
+    # every later run with the same key, so a gate whose verdict reads
+    # something the key does not hold would pass forever on one reading.
+    # Nothing defaults: a gate that does not say is refused, `cache: False`
+    # carries the reason, and `cache: True` carries none (a reason beside a
+    # True is a doubt somebody wrote down and did not act on).
+    cases += 1
+    for slug, spec in sorted(GATES.items()):
+        if spec.get("cache") not in (True, False):
+            failures.append(
+                f"verdict: {slug} does not say `cache: True` or `cache: False`; "
+                f"a gate whose verdict bx may keep has to claim it, and one "
+                f"that reads the clock, the network or the machine has to say "
+                f"so (see 'Whether a gate's verdict may be kept')")
+        why = spec.get("no_cache_reason")
+        if spec.get("cache") is False and (not isinstance(why, str)
+                                           or len(why.strip()) < 40):
+            failures.append(
+                f"verdict: {slug} is `cache: False` with no `no_cache_reason` "
+                f"saying what it reads that the key does not hold")
+        if spec.get("cache") is True and why is not None:
+            failures.append(
+                f"verdict: {slug} is `cache: True` and still carries a "
+                f"`no_cache_reason`; one of the two is wrong")
+        if "inputs" not in spec:
+            failures.append(
+                f"verdict: {slug} does not declare `inputs` (`None` for the "
+                f"whole tracked tree, or a list of patterns)")
+            continue
+        inputs = spec["inputs"]
+        if inputs is None:
+            continue
+        if not isinstance(inputs, list) or not inputs:
+            failures.append(
+                f"verdict: {slug} declares inputs={inputs!r}; it is `None` or "
+                f"a non-empty list of patterns")
+            continue
+        for pattern in inputs:
+            if (not isinstance(pattern, str) or not pattern
+                    or pattern.startswith("/")
+                    or ".." in pattern.split("/")):
+                failures.append(
+                    f"verdict: {slug} declares the input {pattern!r}, which is "
+                    f"not a pattern under the repository root")
+
+    # narrowed-units-need-a-git-free-root. bx runs a unit with input patterns
+    # in a copy of those files alone, with no `.git` (bx RFC 0020, section
+    # 5.2). A unit is the runner, and every gate sources its library; both
+    # ask git for the repository root before anything else, so a narrowed
+    # unit there would end "could not measure" on every push, and the push
+    # would fail on a property of the copy, not of the tree. Derived from
+    # the two files, so the refusal lifts the day neither asks git.
+    cases += 1
+    narrowed = sorted(s for s, spec in GATES.items() if spec.get("inputs"))
+    if narrowed:
+        asks_git = [rel for rel in ("scripts/gate", "scripts/gates/lib.sh")
+                    if "rev-parse --show-toplevel" in
+                    (repo_root / rel).read_text(encoding="utf-8",
+                                                errors="replace")]
+        if asks_git:
+            failures.append(
+                f"narrowed: {', '.join(narrowed)} declare input patterns, and "
+                f"{' and '.join(asks_git)} ask git for the repository root; "
+                f"bx runs a narrowed unit in a copy of its inputs that holds "
+                f"no .git, so the unit could only end 'could not measure'")
+
+    # the-plan-is-the-selection. The push used to run exactly the gates
+    # `select` chose; it now hands bx the units `plan_units` makes of that
+    # choice. Each path set below must come back as units that cover every
+    # selected gate, name no gate the selection left out, and never make a
+    # unit of a gate another unit already runs. A plan that drifted from the
+    # selection would be the push verifying something else than it says.
+    for label, selection in (
+            ("rust-source", select(repo_root, ["sce-build/src/mesh/deploy.rs"])[0]),
+            ("docs-only", select(repo_root, ["README.md"])[0]),
+            ("go-backend", select(repo_root, ["backends/go/forge-runtime/go.mod"])[0]),
+            ("unclassified", select(repo_root, ["some_new_top_level_dir/x.txt"])[0]),
+            ("every-gate", list(GATES)),
+    ):
+        cases += 1
+        units = plan_units(set(selection), rust="1.0.0")
+        names = [u["name"] for u in units]
+        if len(names) != len(set(names)):
+            failures.append(f"plan[{label}]: a unit is named twice: {names}")
+        covered: set[str] = set()
+        for unit in units:
+            closure = {unit["name"]} | transitive_deps(unit["name"])
+            covered |= closure
+            if unit["name"] not in selection:
+                failures.append(
+                    f"plan[{label}]: unit {unit['name']} is not in the "
+                    f"selection {sorted(selection)}")
+            if unit["argv"] != ["bash", "scripts/gate", "--rust", "1.0.0",
+                                unit["name"]]:
+                failures.append(
+                    f"plan[{label}]: unit {unit['name']} runs {unit['argv']}, "
+                    f"not the runner on its own slug at the planned release")
+            if unit["exclusive"] != [UNIT_EXCLUSIVE]:
+                failures.append(
+                    f"plan[{label}]: unit {unit['name']} may share a checkout "
+                    f"with another unit ({unit['exclusive']})")
+            others = set(names) - {unit["name"]}
+            if others & transitive_deps(unit["name"]):
+                failures.append(
+                    f"plan[{label}]: unit {unit['name']} runs "
+                    f"{sorted(others & transitive_deps(unit['name']))}, which "
+                    f"are units of their own as well")
+        missing = set(selection) - covered
+        if missing:
+            failures.append(
+                f"plan[{label}]: selected and run by no unit: {sorted(missing)}")
+        if selection and not units:
+            failures.append(f"plan[{label}]: a selection of "
+                            f"{len(selection)} gate(s) planned no unit")
+
+    # a-kept-verdict-needs-a-release-a-clean-tree-and-a-kept-closure. Driven
+    # from a fixture so that it keeps measuring whatever the live table
+    # says: `child` keeps its verdict and runs `parent`, which does not.
+    cases += 1
+    fixture = {
+        "parent": {"cost_s": 2, "cache": False, "inputs": None,
+                   "no_cache_reason": "x" * 40},
+        "child": {"cost_s": 3, "deps": ["parent"], "cache": True,
+                  "inputs": None},
+        "alone": {"cost_s": 1, "cache": True, "inputs": ["docs/**"]},
+    }
+    by_name = {u["name"]: u for u in plan_units(
+        {"parent", "child", "alone"}, rust="1.0.0", table=fixture)}
+    if set(by_name) != {"child", "alone"}:
+        failures.append(
+            f"plan-fixture: units {sorted(by_name)}; `parent` is run by "
+            f"`child`'s unit and is no unit of its own")
+    elif by_name["child"]["cache"] is not False:
+        failures.append(
+            "plan-fixture: `child` runs `parent`, whose verdict is not kept, "
+            "and its own unit kept a verdict anyway")
+    elif by_name["alone"]["cache"] is not True \
+            or by_name["alone"].get("inputs") != ["docs/**"]:
+        failures.append(
+            f"plan-fixture: `alone` keeps its verdict over its own inputs and "
+            f"was planned as {by_name['alone']}")
+    elif by_name["child"].get("secs") != 5.0:
+        failures.append(
+            f"plan-fixture: `child` runs 3s of its own and 2s of `parent`, "
+            f"and was planned at {by_name['child'].get('secs')}s")
+    for rust, clean, why in ((None, True, "no Rust release was named"),
+                             ("1.0.0", False, "the tree differs from HEAD")):
+        cases += 1
+        if any(u["cache"] for u in plan_units({"alone"}, rust=rust,
+                                              tree_is_head=clean,
+                                              table=fixture)):
+            failures.append(
+                f"plan-fixture: a unit kept its verdict when {why}")
+    cases += 1
+    unpinned = plan_units({"alone"}, rust=None, table=fixture)
+    if unpinned and "--rust" in unpinned[0]["argv"]:
+        failures.append(
+            "plan-fixture: a plan that named no release still put --rust in "
+            "a unit's argv")
+
+    # an-empty-selection-is-said. bx refuses a plan that lists no unit, so a
+    # change that selects nothing is answered by one unit whose result is
+    # already a pass, and that is the only shape it takes.
+    cases += 1
+    empty = nothing_to_verify("nothing")
+    if plan_units(set()) or set(empty) != {"name", "result"} \
+            or empty["result"].get("exit") != 0:
+        failures.append(
+            f"plan-empty: an empty selection is planned as {plan_units(set())} "
+            f"and said as {empty}")
+
     if failures:
         for f in failures:
             print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
         return 1
     print(f"gate_registry self-test: {cases} cases OK", file=sys.stderr)
+    return 0
+
+
+def print_plan(args, repo_root: Path) -> int:
+    """`--plan`: the units of the selection, one JSON object a line.
+
+    What a plan is FOR is said in `plan_units`. Here is only how the three
+    selections reach it, each through the function that already answers it
+    for the runner: `select` for a change, the whole table for `--all`, and
+    the named gates with their dependencies. The reason goes to stderr, where
+    bx shows a plan command's own words; stdout carries nothing but units.
+
+    A refusal exits 2 and prints no unit: bx runs no part of a plan whose
+    command failed, which is the right answer to a selection that could not
+    be made.
+    """
+    if args.rust is not None and not RUST_RELEASE.match(args.rust):
+        print(f"gate_registry: --rust takes a release such as 1.91.0, got "
+              f"{args.rust!r}", file=sys.stderr)
+        return 2
+    picked = [bool(args.all), bool(args.named),
+              args.changed is not None or args.changed_from is not None]
+    if sum(picked) != 1:
+        print("gate_registry: --plan takes exactly one selection: --all, "
+              "--named, or a change (--changed / --changed-from)",
+              file=sys.stderr)
+        return 2
+    if args.all:
+        selected, reason = set(GATES), "every gate (--all)"
+    elif args.named:
+        unknown = sorted(set(args.named) - set(GATES))
+        if unknown:
+            print("gate_registry: unknown slug(s): " + ", ".join(unknown),
+                  file=sys.stderr)
+            return 2
+        selected = set(args.named)
+        for slug in args.named:
+            selected |= transitive_deps(slug)
+        reason = "the named gate(s): " + " ".join(args.named)
+    else:
+        if args.changed is not None:
+            changed = list(args.changed)
+        else:
+            text = sys.stdin.read() if str(args.changed_from) == "-" \
+                else args.changed_from.read_text(encoding="utf-8")
+            changed = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        keys, reason = select(repo_root, changed)
+        selected = set(keys)
+
+    tree_is_head = tracked_tree_is_head(repo_root)
+    units = plan_units(selected, rust=args.rust, tree_is_head=tree_is_head)
+    print(f"  selection: {reason}", file=sys.stderr)
+    if args.rust is None:
+        print("  no Rust release was named, so no unit's verdict is kept",
+              file=sys.stderr)
+    if not tree_is_head:
+        print("  the tracked tree differs from HEAD, so no unit's verdict is "
+              "kept", file=sys.stderr)
+    if not units:
+        units = [nothing_to_verify(reason)]
+    for unit in units:
+        print(json.dumps(unit, sort_keys=True))
     return 0
 
 
@@ -4045,6 +4626,19 @@ def main() -> int:
                     help="compare a run's timings against the declared costs "
                          "and report when they would have ordered the gates "
                          "differently")
+    ap.add_argument("--plan", action="store_true",
+                    help="print the bx check units (one JSON object a line) "
+                         "that verify the selection: the change's gates "
+                         "(--changed / --changed-from), every gate (--all) or "
+                         "the named gates and their dependencies (--named)")
+    ap.add_argument("--all", action="store_true",
+                    help="with --plan: every gate, ci_only included")
+    ap.add_argument("--named", nargs="+", metavar="SLUG",
+                    help="with --plan: these gates and what they depend on")
+    ap.add_argument("--rust", metavar="RELEASE",
+                    help="with --plan: the Rust release every unit runs, as "
+                         "`rustc --version` prints it (1.91.0); without it no "
+                         "unit's verdict is kept")
     args = ap.parse_args()
 
     repo_root = args.repo_root.resolve()
@@ -4099,6 +4693,12 @@ def main() -> int:
             cost_s = f"{cost:>7.1f}s" if cost is not None else "      ?"
             print(f"{cost_s}  {slug:<26} {GATES[slug].get('summary', '')}")
         return 0
+
+    if args.plan:
+        return print_plan(args, repo_root)
+    if args.all or args.named or args.rust is not None:
+        ap.error("--all, --named and --rust belong to --plan")
+        return 2
 
     if args.changed is not None:
         changed = list(args.changed)
