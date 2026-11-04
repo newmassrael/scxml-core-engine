@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "2d064d0b42",
+  "embed_version": "cc61487b0d",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 480,
+  "symbol_count": 485,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -788,6 +788,33 @@
       "name": "SCE::Core::ConflictResolutionAlgorithms"
     },
     {
+      "header": "core/EngineInbox.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::EngineInbox<T>"
+    },
+    {
+      "header": "core/EngineInbox.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::EngineInboxOwner<T>"
+    },
+    {
+      "header": "core/EngineInbox.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::EngineInboxState<T>"
+    },
+    {
+      "header": "core/EngineInbox.h",
+      "kind": "struct",
+      "members": [
+        "method void (void *, std::size_t, std::size_t) noexcept deallocate",
+        "method void *(std::size_t, std::size_t) noexcept allocate"
+      ],
+      "name": "SCE::Core::HostedSegmentAllocator"
+    },
+    {
       "header": "core/EntryExitHelper.h",
       "kind": "class",
       "members": [],
@@ -1029,6 +1056,8 @@
         "field bool done",
         "field std::string data",
         "field std::string invokeId",
+        "field std::string origin",
+        "field std::string originType",
         "field std::string processorType",
         "field uint64_t token",
         "method HostInvokeEnding &(HostInvokeEnding &&) operator=",
@@ -1046,6 +1075,8 @@
         "field bool done",
         "field std::string data",
         "field std::string invokeId",
+        "field std::string origin",
+        "field std::string originType",
         "field std::string processorType",
         "field uint64_t token",
         "method HostInvokeEnding &(HostInvokeEnding &&) operator=",
@@ -1436,6 +1467,12 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::HasParentDeliveryTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasRemoteChildSessionsTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",
