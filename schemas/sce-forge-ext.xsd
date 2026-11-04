@@ -2373,6 +2373,40 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- Bounded-collection kind: the field of the element document a lookup by
+       index reads (`find_sce_child(root, "index-by")`), named by an attribute.
+       Optional here for the reason `capacity` above is: the parser judges that
+       the field exists in the element and has a type a lookup can compare. -->
+  <xs:element name="index-by">
+    <xs:complexType>
+      <xs:attribute name="field" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Bounded-collection kind: what an insert does when every slot is taken,
+       a word in the element's text (`diagnostic-event`, `reject` or
+       `oldest-wins`). The parser refuses a word outside that set and names the
+       allowed ones, which an enumeration here would only report as a pattern
+       failure; the same reason `producers` below is a string. -->
+  <xs:element name="on-overflow">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Bounded-collection kind: the order an iteration walks the slots in, a
+       word in the element's text (`insertion` or `sorted-by(index-by)`). A
+       string for the reason `on-overflow` above is. -->
+  <xs:element name="ordering">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
   <!-- Queue kind (RFC §synth-5-P). `producers`, `consumers` and `progress`
        are words in the element's text; the parser refuses a word outside
        the closed set and names the allowed ones, which a grammar
