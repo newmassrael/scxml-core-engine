@@ -13092,6 +13092,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     // The text a content-line codec writes and reads for an enum variant
     // (docs/adr/0015).
     "text",
+    // Whether a text hole of a text template is the program's own or came from
+    // outside it, which the fence marks (docs/adr/0087, section 3.1).
+    "trust",
     "type",
     "underlying-type",
     "unhandled",

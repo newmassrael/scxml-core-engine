@@ -1054,6 +1054,15 @@ name = "an_optional_record_is_spelled_by_the_cpp_backend"
 path = "tests/an_optional_record_is_spelled_by_the_cpp_backend.rs"
 required-features = ["cli"]
 
+# The committed text template and the statechart that renders it pass
+# `sce-codegen check` on every language (docs/adr/0087, section 3), the command
+# each regeneration script asks first. It runs `sce-codegen check`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_rendering_statechart_and_its_template_pass_check"
+path = "tests/a_rendering_statechart_and_its_template_pass_check.rs"
+required-features = ["cli"]
+
 # What a C11 codec holds an entry or a gated field that may be absent in
 # (docs/adr/0055, step 14): the struct of its element. It runs `sce-codegen
 # generate`, so it carries the `cli` gate.

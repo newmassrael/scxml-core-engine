@@ -520,6 +520,7 @@ The `sce:` namespace contains attributes from two distinct subsystems. Each attr
 | `sce:max-delta`, `sce:sample-interval` | SCE Forge | Build-time (codegen) | Validator rate-of-change |
 | `sce:plausibility` | SCE Forge | Build-time (codegen) | Validator cross-field check |
 | `sce:filter`, `sce:window`, `sce:alpha` | SCE Forge | Build-time (codegen) | Filter type and parameters |
+| `sce:trust` | SCE Forge | Build-time (codegen) | A text-template text hole: trusted, or untrusted and fenced (docs/adr/0087) |
 | `sce:interpolation`, `sce:out-of-bounds` | SCE Forge | Build-time (codegen) | Interpolation method |
 | `sce:axis-{id}` | SCE Forge | Build-time (codegen) | Interpolation axis points |
 | `<sce:period>`, `<sce:fire-event>` (bodies); `<sce:reset-on event>`, `<sce:cancel-on state-exit>` | SCE Forge | Build-time (codegen) | Timer schedule and lifecycle (§4.10 — elements, not attributes) |
