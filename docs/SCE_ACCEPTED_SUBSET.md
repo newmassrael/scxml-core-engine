@@ -4676,9 +4676,9 @@ and `!==` (SCE_FORGE.md §4.12), so the bound cannot be passed inside the algori
 `sce:capacity`, and a record's `bytes` field is bounded by the `sce:max-size` its
 schema writes (`docs/adr/0005`, decision 2). No default stands in for either: a byte
 string with no bound is refused where it is declared, as
-`scxml/static-datamodel-rule`, by every backend. It starts at a literal of printable
-ASCII with no backslash — the one literal whose bytes every engine spells alike
-(`decode_bytes_literal`) — of at most that many bytes. Measured 2026-10-06, before
+`scxml/static-datamodel-rule`, by every backend. It starts at a literal whose text,
+its escapes read (§3.4), is printable ASCII with no backslash — the one literal whose
+bytes every engine spells alike (`decode_bytes_literal`) — of at most that many bytes. Measured 2026-10-06, before
 any backend held one, `check` had answered ok for a `bytes` variable with no capacity
 on Rust and Kotlin and for a record with a `bytes` field on Rust, Kotlin, Go, C++ and
 Python, while Rust wrote `#[derive(Clone, Copy)]` over a `Vec<u8>`, which does not
