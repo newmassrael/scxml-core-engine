@@ -239,8 +239,10 @@ fn a_refusal_that_is_not_the_standard_refusal_record_is_refused() {
 
 #[test]
 fn a_text_that_is_not_a_present_bounded_text_is_refused() {
-    // A number, an expression, an optional text taken whole.
-    for text in ["count", "said + said", "maybe"] {
+    // A name of a number, of a record that may be absent, and of a text that may be
+    // absent taken whole: each a name the attribute admits, of a type a lift does not
+    // read. An expression is no name at all, refused first as the attribute's.
+    for text in ["count", "answer", "maybe"] {
         let (ok, out) = check(&format!(
             r#"      <sce:lift text="{text}" schema="Answer" location="answer" refusal="why"/>"#
         ));

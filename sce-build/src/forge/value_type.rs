@@ -3823,7 +3823,7 @@ mod tests {
         );
         let longest = |text: &str| longest_pointer(&ty(text), &env).unwrap();
         assert_eq!(longest("uint8"), (String::new(), 0));
-        assert_eq!(longest("list<uint8>[0]"), (String::new(), 0));
+        assert_eq!(longest("list<uint8>[1]"), ("/0".to_string(), 2));
         assert_eq!(longest("list<uint8>[10]"), ("/9".to_string(), 2));
         assert_eq!(longest("record:Flat"), ("/ab".to_string(), 3));
         assert_eq!(longest("record:Item"), ("/amount".to_string(), 7));
