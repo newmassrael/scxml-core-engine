@@ -574,7 +574,8 @@ endfunction()
 #   Ask the generator which files generating DOCUMENT into OUTPUT_DIR writes.
 #
 #   STEM        The name the run gives the machine: the document's own stem,
-#               which names its files.
+#               which names its files. A document of a forge kind names its
+#               files itself, and its plan is read for them.
 #   DOCUMENT    A document on disk now, or the library name of a standard
 #               statechart (`sce:std/...`), which the generator reads from the
 #               library it embeds.
@@ -664,7 +665,11 @@ endfunction()
 #     <PREFIX>_OUTPUTS        the paths of the machine, header first: the
 #                             command's OUTPUT, and the header is the
 #                             depfile's one target, which ninja needs to be
-#                             the edge's first output
+#                             the edge's first output. A document of a forge
+#                             kind writes no machine: its OUTPUT is the first
+#                             file it writes, its primary artefact and the
+#                             depfile's target, and the depfile is named
+#                             after it
 #     <PREFIX>_BYPRODUCTS     the paths of every other file of <PREFIX>_FILES
 #                             no plan of CLAIM declared before
 #     <PREFIX>_BYPRODUCTS_ARG `BYPRODUCTS` followed by them, or nothing when
@@ -999,6 +1004,37 @@ function(sce_codegen_plan PREFIX)
     endif()
 
     _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_STEM}" "${_LANGUAGE}")
+    if(NOT _SCP_FROM)
+        # A document of a forge kind (an algorithm, a schema, an enum, a
+        # bounded collection ...) is generated into files of its own name and
+        # no state machine. What its command produces is then the run's
+        # primary artefact: the first file the answer names, since the answer
+        # lists the files in the order the run wrote them and the generator
+        # writes its primary first and names it the depfile's one target. A
+        # run that writes a state machine is a statechart's, and is held to
+        # the machine its stem names below.
+        set(_WRITES_A_MACHINE FALSE)
+        foreach(_NAME ${_FILES})
+            if("${_NAME}" MATCHES "_sm\\.h$")
+                set(_WRITES_A_MACHINE TRUE)
+            endif()
+        endforeach()
+        if(NOT _WRITES_A_MACHINE)
+            set(_MACHINE "")
+            foreach(_NAME ${_FILES})
+                if(NOT "${_NAME}" MATCHES "\\.scxml$")
+                    set(_MACHINE "${_NAME}")
+                    break()
+                endif()
+            endforeach()
+            if("${_MACHINE}" STREQUAL "")
+                message(FATAL_ERROR
+                    "sce-codegen --plan generate for ${_SCP_DOCUMENT} (${_LANGUAGE}) names "
+                    "no file the run writes, so its command would produce nothing")
+            endif()
+            set(_DEPFILE_NAME "${_MACHINE}.d")
+        endif()
+    endif()
     set(_DEPFILE "${_OUTPUT_DIR}/${_DEPFILE_NAME}")
     foreach(_NAMED ${_MACHINE})
         if(NOT "${_NAMED}" IN_LIST _FILES)

@@ -29,6 +29,27 @@ file(MAKE_DIRECTORY "${SCE_C_GENERATED_DIR}")
 set(SCE_C_INTEGRATION_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_generated")
 file(MAKE_DIRECTORY "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
+# sce_c_integration_generation(<PREFIX> <document> [<sce_codegen_generation option>...])
+#
+#   One generation of <document> into the integration directory, declared
+#   from its plan (`sce_codegen_generation`, cmake/SCECodegenPlan.cmake): the
+#   files its command produces, its depfile and what it requires are the
+#   generator's answer, and nothing about them is written here. It claims in
+#   the list the integration fixtures claim in, so a file a fixture's
+#   generation writes into the same directory is that generation's. Sets
+#   <PREFIX>_HEADERS and <PREFIX>_SOURCES, as generator expressions a target's
+#   sources take.
+function(sce_c_integration_generation PREFIX DOCUMENT)
+    sce_codegen_generation(_GENERATION
+        DOCUMENT "${DOCUMENT}"
+        OUTPUT_DIR "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        LANGUAGE c11
+        CLAIM SCE_C_INTEGRATION_DECLARED_OUTPUTS
+        ${ARGN})
+    set(${PREFIX}_HEADERS "${_GENERATION_HEADERS}" PARENT_SCOPE)
+    set(${PREFIX}_SOURCES "${_GENERATION_SOURCES}" PARENT_SCOPE)
+endfunction()
+
 # ── The W3C conformance suite on the C11 backend ────────────────────
 #
 # Every fixture the conformance registry (tests/w3c/conformance/fixtures.json)
@@ -2221,33 +2242,17 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     # A list variable takes whole what an algorithm returns as a list, whose
     # header is generated once beside the machine that includes it.
-    set(_DAY_RUN_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/day_run.h")
-    set(_DAY_RUN_SOURCE
+    #
+    # Every document the fixtures below generate on its own (an algorithm, a
+    # schema, an enum, a statechart of the library) is declared from its plan,
+    # which names the header its document's name gives it, and claims in the
+    # list the integration fixtures claim in: a header two generations write
+    # into this directory is the first's.
+    sce_c_integration_generation(_DAY_RUN
         "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_day_run.scxml")
-    add_custom_command(
-        OUTPUT "${_DAY_RUN_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${_DAY_RUN_SOURCE}"
-                -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                --write-deps "${_DAY_RUN_HEADER}.d"
-        DEPENDS "${_DAY_RUN_SOURCE}" "${SCE_CODEGEN}"
-        DEPFILE "${_DAY_RUN_HEADER}.d"
-        COMMENT "Generating C11 algorithm: day_run.h"
-        VERBATIM
-    )
     # ... and one that does not declare may-fail, which fails only by its capacity.
-    set(_DAY_REPEAT_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/day_repeat.h")
-    set(_DAY_REPEAT_SOURCE
+    sce_c_integration_generation(_DAY_REPEAT
         "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_day_repeat.scxml")
-    add_custom_command(
-        OUTPUT "${_DAY_REPEAT_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${_DAY_REPEAT_SOURCE}"
-                -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                --write-deps "${_DAY_REPEAT_HEADER}.d"
-        DEPENDS "${_DAY_REPEAT_SOURCE}" "${SCE_CODEGEN}"
-        DEPFILE "${_DAY_REPEAT_HEADER}.d"
-        COMMENT "Generating C11 algorithm: day_repeat.h"
-        VERBATIM
-    )
     sce_generate_static_integration_c_test(static_list_assign
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_assign.scxml"
@@ -2300,18 +2305,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             set(_STATE_SOURCE
                 "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_STATE_HEADER}.scxml")
         endif()
-        set(_STATE_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_STATE_HEADER}.h")
-        add_custom_command(
-            OUTPUT "${_STATE_OUTPUT}"
-            COMMAND "${SCE_CODEGEN}" generate "${_STATE_SOURCE}"
-                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                    --write-deps "${_STATE_OUTPUT}.d"
-            DEPENDS "${_STATE_SOURCE}" "${SCE_CODEGEN}"
-            DEPFILE "${_STATE_OUTPUT}.d"
-            COMMENT "Generating C11 header: ${_STATE_HEADER}.h"
-            VERBATIM
-        )
-        list(APPEND _STATE_ALGORITHM_HEADERS "${_STATE_OUTPUT}")
+        # Kept per document too (`_STATE_<document>_HEADERS`), for a program
+        # that compiles one of them alone.
+        sce_c_integration_generation(_STATE_${_STATE_HEADER} "${_STATE_SOURCE}")
+        list(APPEND _STATE_ALGORITHM_HEADERS ${_STATE_${_STATE_HEADER}_HEADERS})
     endforeach()
     # A record is a struct of its schema's fields, declared in the machine's own
     # header; the schema is the document the machine imports it from.
@@ -2367,19 +2364,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     # A guard over two fields of the record calls an algorithm of the fixtures'
     # own, whose header is generated once beside the machines that include it.
-    set(_MONTH_LENGTH_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/month_length.h")
-    set(_MONTH_LENGTH_SOURCE
+    sce_c_integration_generation(_MONTH_LENGTH
         "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_days_in_month.scxml")
-    add_custom_command(
-        OUTPUT "${_MONTH_LENGTH_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${_MONTH_LENGTH_SOURCE}"
-                -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                --write-deps "${_MONTH_LENGTH_HEADER}.d"
-        DEPENDS "${_MONTH_LENGTH_SOURCE}" "${SCE_CODEGEN}"
-        DEPFILE "${_MONTH_LENGTH_HEADER}.d"
-        COMMENT "Generating C11 algorithm: month_length.h"
-        VERBATIM
-    )
     sce_generate_static_integration_c_test(static_record
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record.scxml"
@@ -2485,20 +2471,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     foreach(_CALLED_DOCUMENT forge_call_high forge_call_offset forge_call_ratio forge_call_code
                              forge_call_limit forge_call_range forge_call_status forge_call_level
                              forge_call_next forge_call_weight forge_call_named)
-        set(_CALLED_SOURCE
+        sce_c_integration_generation(_CALLED_ONE
             "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_CALLED_DOCUMENT}.scxml")
-        set(_CALLED_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_CALLED_DOCUMENT}.h")
-        add_custom_command(
-            OUTPUT "${_CALLED_OUTPUT}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CALLED_SOURCE}"
-                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                    --write-deps "${_CALLED_OUTPUT}.d"
-            DEPENDS "${_CALLED_SOURCE}" "${SCE_CODEGEN}"
-            DEPFILE "${_CALLED_OUTPUT}.d"
-            COMMENT "Generating C11 header: ${_CALLED_DOCUMENT}.h"
-            VERBATIM
-        )
-        list(APPEND _CALLED_HEADERS "${_CALLED_OUTPUT}")
+        list(APPEND _CALLED_HEADERS ${_CALLED_ONE_HEADERS})
     endforeach()
     # A machine that calls imported algorithms includes their headers, and does
     # not generate them: an algorithm is a document of its own kind, generated
@@ -2506,18 +2481,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # calls are the standard library's, named by the generator.
     set(_STATIC_SYNC_ALGORITHM_HEADERS "")
     foreach(_ALGORITHM sync_failure sync_retry_at sync_delete_outcome sync_upload_outcome)
-        set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_ALGORITHM}.h")
-        add_custom_command(
-            OUTPUT "${_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "sce:std/sync/${_ALGORITHM}.scxml"
-                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                    --write-deps "${_HEADER}.d"
-            DEPENDS "${SCE_CODEGEN}"
-            DEPFILE "${_HEADER}.d"
-            COMMENT "Generating C11 algorithm: ${_ALGORITHM}.h"
-            VERBATIM
-        )
-        list(APPEND _STATIC_SYNC_ALGORITHM_HEADERS "${_HEADER}")
+        sce_c_integration_generation(_SYNC_ONE "sce:std/sync/${_ALGORITHM}.scxml")
+        list(APPEND _STATIC_SYNC_ALGORITHM_HEADERS ${_SYNC_ONE_HEADERS})
     endforeach()
     # Its events carry the standard sync schemas, imported by library name.
     sce_generate_static_integration_c_test(sync_client
@@ -2540,18 +2505,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             merkle_node merkle_insert merkle_change_hash
             rga_node rga_gone rga_insert rga_holds rga_remove
             sheet_value sheet_shown sheet_apply sheet_settle sheet_show)
-        set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_MERGE_HEADER}.h")
-        add_custom_command(
-            OUTPUT "${_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "sce:std/merge/${_MERGE_HEADER}.scxml"
-                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                    --write-deps "${_HEADER}.d"
-            DEPENDS "${SCE_CODEGEN}"
-            DEPFILE "${_HEADER}.d"
-            COMMENT "Generating C11 header: ${_MERGE_HEADER}.h"
-            VERBATIM
-        )
-        list(APPEND _STATIC_MERGE_HEADERS "${_HEADER}")
+        sce_c_integration_generation(_MERGE_ONE "sce:std/merge/${_MERGE_HEADER}.scxml")
+        list(APPEND _STATIC_MERGE_HEADERS ${_MERGE_ONE_HEADERS})
     endforeach()
     sce_generate_static_integration_c_test(todo_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2567,18 +2522,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     # Its time zone: the standard rule that reads a table of transitions.
     foreach(_ZONE_HEADER utc_from_local)
-        set(_ZONE_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_ZONE_HEADER}.h")
-        add_custom_command(
-            OUTPUT "${_ZONE_OUTPUT}"
-            COMMAND "${SCE_CODEGEN}" generate "sce:std/time/${_ZONE_HEADER}.scxml"
-                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                    --write-deps "${_ZONE_OUTPUT}.d"
-            DEPENDS "${SCE_CODEGEN}"
-            DEPFILE "${_ZONE_OUTPUT}.d"
-            COMMENT "Generating C11 header: ${_ZONE_HEADER}.h"
-            VERBATIM
-        )
-        list(APPEND _STATIC_MERGE_HEADERS "${_ZONE_OUTPUT}")
+        sce_c_integration_generation(_ZONE_ONE "sce:std/time/${_ZONE_HEADER}.scxml")
+        list(APPEND _STATIC_MERGE_HEADERS ${_ZONE_ONE_HEADERS})
     endforeach()
     # Its schedule: the occurrence record, the rule that orders two writes and the one
     # that expands a repetition, the fixtures of the machine's own directory.
@@ -2586,38 +2531,17 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     foreach(_EVENT_HEADER event_occurrence event_schedule event_later event_latest event_conflict
                           event_selects event_agenda event_settled event_answer event_member
                           event_roster)
-        set(_EVENT_SOURCE
+        sce_c_integration_generation(_EVENT_ONE
             "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_EVENT_HEADER}.scxml")
-        set(_EVENT_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_EVENT_HEADER}.h")
-        add_custom_command(
-            OUTPUT "${_EVENT_OUTPUT}"
-            COMMAND "${SCE_CODEGEN}" generate "${_EVENT_SOURCE}"
-                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                    --write-deps "${_EVENT_OUTPUT}.d"
-            DEPENDS "${_EVENT_SOURCE}" "${SCE_CODEGEN}"
-            DEPFILE "${_EVENT_OUTPUT}.d"
-            COMMENT "Generating C11 header: ${_EVENT_HEADER}.h"
-            VERBATIM
-        )
-        list(APPEND _STATIC_EVENT_HEADERS "${_EVENT_OUTPUT}")
+        list(APPEND _STATIC_EVENT_HEADERS ${_EVENT_ONE_HEADERS})
     endforeach()
     # A machine that hands the standard text rules a record and a list of records
     # that hold text: each rule's header, and the header of the schema they take
     # and give back, is generated once beside the machine that includes them.
     set(_STATIC_TEXT_HEADERS "")
     foreach(_TEXT_HEADER text_slot text_slot_latest text_slot_retitled text_slot_holds)
-        set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_TEXT_HEADER}.h")
-        add_custom_command(
-            OUTPUT "${_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "sce:std/text/${_TEXT_HEADER}.scxml"
-                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                    --write-deps "${_HEADER}.d"
-            DEPENDS "${SCE_CODEGEN}"
-            DEPFILE "${_HEADER}.d"
-            COMMENT "Generating C11 header: ${_TEXT_HEADER}.h"
-            VERBATIM
-        )
-        list(APPEND _STATIC_TEXT_HEADERS "${_HEADER}")
+        sce_c_integration_generation(_TEXT_ONE "sce:std/text/${_TEXT_HEADER}.scxml")
+        list(APPEND _STATIC_TEXT_HEADERS ${_TEXT_ONE_HEADERS})
     endforeach()
     sce_generate_static_integration_c_test(static_text_record
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2645,18 +2569,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # values in the order of their dots.
     set(_STATIC_SHARED_HEADERS "")
     foreach(_SHARED_HEADER record_member record_roster record_settled register_values)
-        set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_SHARED_HEADER}.h")
-        add_custom_command(
-            OUTPUT "${_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "sce:std/shared/${_SHARED_HEADER}.scxml"
-                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                    --write-deps "${_HEADER}.d"
-            DEPENDS "${SCE_CODEGEN}"
-            DEPFILE "${_HEADER}.d"
-            COMMENT "Generating C11 header: ${_SHARED_HEADER}.h"
-            VERBATIM
-        )
-        list(APPEND _STATIC_SHARED_HEADERS "${_HEADER}")
+        sce_c_integration_generation(_SHARED_ONE "sce:std/shared/${_SHARED_HEADER}.scxml")
+        list(APPEND _STATIC_SHARED_HEADERS ${_SHARED_ONE_HEADERS})
     endforeach()
     sce_generate_static_integration_c_test(record_list
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2812,8 +2726,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_list_index_SOURCES}
         ${INTEGRATION_C_TEST_static_list_assign_SOURCES}
-        ${_DAY_RUN_HEADER}
-        ${_DAY_REPEAT_HEADER}
+        ${_DAY_RUN_HEADERS}
+        ${_DAY_REPEAT_HEADERS}
         ${INTEGRATION_C_TEST_static_state_algorithm_SOURCES}
         ${INTEGRATION_C_TEST_static_state_algorithm_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_record_call_SOURCES}
@@ -2838,7 +2752,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_wire_wide_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_record_SOURCES}
-        ${_MONTH_LENGTH_HEADER}
+        ${_MONTH_LENGTH_HEADERS}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_relay_SOURCES}
@@ -2894,28 +2808,20 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     set(_LARGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_generated_large")
     set(_LARGE_FIXTURES "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel")
     file(MAKE_DIRECTORY "${_LARGE_DIR}")
-    add_custom_command(
-        OUTPUT "${_LARGE_DIR}/todo_peer_sm.c" "${_LARGE_DIR}/todo_peer_sm.h"
-        COMMAND "${SCE_CODEGEN}"
-                --limit merge_values=65536 --limit merge_entries=65536 --limit merge_digest=262144
-                generate --with-imports "${_LARGE_FIXTURES}/todo_peer.scxml"
-                -l c11 -o "${_LARGE_DIR}" --input-root "${_LARGE_FIXTURES}"
-                --write-deps "${_LARGE_DIR}/todo_peer_sm.c.d"
-        DEPENDS "${SCE_CODEGEN}" "${_LARGE_FIXTURES}/todo_peer.scxml"
-        DEPFILE "${_LARGE_DIR}/todo_peer_sm.c.d"
-        COMMENT "Generating C11 todo_peer at the bounds of a team"
-        VERBATIM
-    )
+    sce_codegen_generation(_LARGE
+        DOCUMENT "${_LARGE_FIXTURES}/todo_peer.scxml"
+        OUTPUT_DIR "${_LARGE_DIR}"
+        LANGUAGE c11
+        INPUT_ROOT "${_LARGE_FIXTURES}"
+        ARGS --with-imports
+             --limit merge_values=65536 --limit merge_entries=65536 --limit merge_digest=262144
+        COMMENT "Generating C11 todo_peer at the bounds of a team")
     add_executable(sce_c_integration_static_large
         integration/test_static_large.c
-        "${_LARGE_DIR}/todo_peer_sm.c"
+        ${_LARGE_SOURCES}
+        ${_LARGE_HEADERS}
     )
-    # This machine is generated by the command above rather than from a plan,
-    # so no file of it carries what it requires. It is the document the
-    # `todo_peer` fixture's plan generates, with wider limits, which move its
-    # bounds and not what it links: that plan's statement stands for it.
-    sce_c_link_runtime(sce_c_integration_static_large
-        SAME_AS ${INTEGRATION_C_TEST_todo_peer_SOURCES})
+    sce_c_link_runtime(sce_c_integration_static_large)
     target_include_directories(sce_c_integration_static_large PRIVATE
         "${_LARGE_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -2993,10 +2899,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             ${INTEGRATION_C_TEST_static_list_SOURCES}
             ${INTEGRATION_C_TEST_static_optional_SOURCES}
             ${INTEGRATION_C_TEST_static_optional_record_SOURCES}
-            "${SCE_C_INTEGRATION_GENERATED_DIR}/schema_item_pick.h"
-            "${SCE_C_INTEGRATION_GENERATED_DIR}/item_pick_first.h"
+            ${_STATE_schema_item_pick_HEADERS}
+            ${_STATE_item_pick_first_HEADERS}
             ${INTEGRATION_C_TEST_static_record_SOURCES}
-            ${_MONTH_LENGTH_HEADER}
+            ${_MONTH_LENGTH_HEADERS}
             ${INTEGRATION_C_TEST_static_schema_pending_SOURCES}
             ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
             ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
@@ -3969,31 +3875,22 @@ endif()
 # guards on a bad handle (index, pool-state comparison, CPU-ownership
 # tag) — each reached by a shape that the other two cannot reject, so
 # no guard is vouched for by a sibling.
-set(_FP_FIXTURE "${CMAKE_SOURCE_DIR}/tests/forge/resources/buffer_pool_ast_export_min.scxml")
-set(_FP_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/buffer_pool_ast_export_min.h")
-add_custom_command(
-    OUTPUT "${_FP_HEADER}"
-    COMMAND "${SCE_CODEGEN}" generate "${_FP_FIXTURE}"
-            -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-            --write-deps "${_FP_HEADER}.d"
-    DEPENDS "${_FP_FIXTURE}" "${SCE_CODEGEN}"
-    DEPFILE "${_FP_HEADER}.d"
-    COMMENT "Generating forge buffer-pool fixture: buffer_pool_ast_export_min.h"
-    VERBATIM
-)
-add_custom_target(sce_c_forge_buffer_pool_header DEPENDS "${_FP_HEADER}")
+sce_c_integration_generation(_FP
+    "${CMAKE_SOURCE_DIR}/tests/forge/resources/buffer_pool_ast_export_min.scxml")
 
 add_executable(sce_c_integration_forge_buffer_pool
     integration/test_forge_buffer_pool.c
+    ${_FP_HEADERS}
 )
-add_dependencies(sce_c_integration_forge_buffer_pool sce_c_forge_buffer_pool_header)
 target_include_directories(sce_c_integration_forge_buffer_pool PRIVATE
     "${SCE_C_INTEGRATION_GENERATED_DIR}"
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
     "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
 )
 # The pool is header-only `static inline` over file-scope storage, so
-# there is no runtime library to link — the MCU single-TU premise.
+# there is no runtime library to link — the MCU single-TU premise, which
+# the link holds: a generation that came to require one fails the configure.
+sce_c_link_runtime(sce_c_integration_forge_buffer_pool EXCLUDES lua dom http clock)
 target_compile_options(sce_c_integration_forge_buffer_pool PRIVATE
     -Wall -Wextra -Werror -Wpedantic
     -Wconversion -Wsign-conversion -Wshadow -Wcast-align
@@ -4025,37 +3922,19 @@ set_tests_properties(c11_integration_forge_buffer_pool PROPERTIES
 #
 # Three fixtures because the collection's element type is itself a forge
 # document: `subscription_entry` (element) → `local_sub_table`
-# (collection). Generating the collection alone fails on a missing
-# element header.
+# (collection). The collection's header includes the element's, so the
+# program compiles both generations' headers: what the generation of the
+# collection reads, the element's document among it, is its depfile's.
 set(_BC_FIXTURE_DIR "${CMAKE_SOURCE_DIR}/tests/forge/resources")
-set(_BC_ENTRY_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/subscription_entry.h")
-set(_BC_TABLE_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/local_sub_table.h")
-add_custom_command(
-    OUTPUT "${_BC_ENTRY_HEADER}"
-    COMMAND "${SCE_CODEGEN}" generate "${_BC_FIXTURE_DIR}/subscription_entry.scxml"
-            -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-            --write-deps "${_BC_ENTRY_HEADER}.d"
-    DEPENDS "${_BC_FIXTURE_DIR}/subscription_entry.scxml" "${SCE_CODEGEN}"
-    DEPFILE "${_BC_ENTRY_HEADER}.d"
-    COMMENT "Generating forge bounded-collection element: subscription_entry.h"
-    VERBATIM
-)
-add_custom_command(
-    OUTPUT "${_BC_TABLE_HEADER}"
-    COMMAND "${SCE_CODEGEN}" generate "${_BC_FIXTURE_DIR}/local_sub_table.scxml"
-            -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-            --write-deps "${_BC_TABLE_HEADER}.d"
-    DEPENDS "${_BC_FIXTURE_DIR}/local_sub_table.scxml" "${_BC_ENTRY_HEADER}" "${SCE_CODEGEN}"
-    DEPFILE "${_BC_TABLE_HEADER}.d"
-    COMMENT "Generating forge bounded collection: local_sub_table.h"
-    VERBATIM
-)
-add_custom_target(sce_c_forge_bounded_collection_headers DEPENDS "${_BC_TABLE_HEADER}")
+sce_c_integration_generation(_BC_ENTRY "${_BC_FIXTURE_DIR}/subscription_entry.scxml")
+sce_c_integration_generation(_BC_TABLE "${_BC_FIXTURE_DIR}/local_sub_table.scxml")
 
 add_executable(sce_c_integration_forge_bounded_collection
     integration/test_forge_bounded_collection.c
+    ${_BC_ENTRY_HEADERS}
+    ${_BC_TABLE_HEADERS}
 )
-add_dependencies(sce_c_integration_forge_bounded_collection sce_c_forge_bounded_collection_headers)
+sce_c_link_runtime(sce_c_integration_forge_bounded_collection EXCLUDES lua dom http clock)
 target_include_directories(sce_c_integration_forge_bounded_collection PRIVATE
     "${SCE_C_INTEGRATION_GENERATED_DIR}"
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -4093,27 +3972,14 @@ set_tests_properties(c11_integration_forge_bounded_collection PROPERTIES
 # constants), so a successful link is the no-Lua / no-script-engine proof
 # for a bare-metal target.
 set(_ES_FIXTURE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_schema_native")
-set(_ES_PARENT_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_native_sm.c")
-set(_ES_PARENT_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_native_sm.h")
-add_custom_command(
-    OUTPUT "${_ES_PARENT_HEADER}" "${_ES_PARENT_SOURCE}"
-    COMMAND "${SCE_CODEGEN}" generate
-            "${_ES_FIXTURE_ROOT}/event_schema_native.scxml"
-            -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-            --write-deps "${_ES_PARENT_SOURCE}.d"
-    DEPENDS "${_ES_FIXTURE_ROOT}/event_schema_native.scxml"
-            "${_ES_FIXTURE_ROOT}/schema_job_completed.scxml"
-            "${SCE_CODEGEN}"
-    DEPFILE "${_ES_PARENT_SOURCE}.d"
-    COMMENT "Generating C11 EventSchema native-lowering fixture: event_schema_native_sm.{h,c}"
-    VERBATIM
-)
+sce_c_integration_generation(_ES "${_ES_FIXTURE_ROOT}/event_schema_native.scxml")
 
 add_executable(sce_c_integration_event_schema_native
     integration/test_event_schema_native.c
-    "${_ES_PARENT_SOURCE}"
-    "${_ES_PARENT_HEADER}"
+    ${_ES_SOURCES}
+    ${_ES_HEADERS}
 )
+sce_c_link_runtime(sce_c_integration_event_schema_native EXCLUDES lua dom)
 # Intentionally NO target_link_libraries: the native value path links zero
 # runtime — that is the MCU-clean acceptance proof (RFC §10.4 step 5).
 target_include_directories(sce_c_integration_event_schema_native PRIVATE
@@ -4141,27 +4007,14 @@ set_tests_properties(c11_integration_event_schema_native PROPERTIES
 # only the runtime's own include directory is on the path, so a writer that
 # needed a header outside it would not build.
 set(_ESR_FIXTURE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_schema_real")
-set(_ESR_PARENT_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_real_sm.c")
-set(_ESR_PARENT_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_real_sm.h")
-add_custom_command(
-    OUTPUT "${_ESR_PARENT_HEADER}" "${_ESR_PARENT_SOURCE}"
-    COMMAND "${SCE_CODEGEN}" generate
-            "${_ESR_FIXTURE_ROOT}/event_schema_real.scxml"
-            -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-            --write-deps "${_ESR_PARENT_SOURCE}.d"
-    DEPENDS "${_ESR_FIXTURE_ROOT}/event_schema_real.scxml"
-            "${_ESR_FIXTURE_ROOT}/schema_reading.scxml"
-            "${SCE_CODEGEN}"
-    DEPFILE "${_ESR_PARENT_SOURCE}.d"
-    COMMENT "Generating C11 typed-payload real fixture: event_schema_real_sm.{h,c}"
-    VERBATIM
-)
+sce_c_integration_generation(_ESR "${_ESR_FIXTURE_ROOT}/event_schema_real.scxml")
 
 add_executable(sce_c_integration_event_schema_real
     integration/test_event_schema_real.c
-    "${_ESR_PARENT_SOURCE}"
-    "${_ESR_PARENT_HEADER}"
+    ${_ESR_SOURCES}
+    ${_ESR_HEADERS}
 )
+sce_c_link_runtime(sce_c_integration_event_schema_real EXCLUDES lua dom)
 target_include_directories(sce_c_integration_event_schema_real PRIVATE
     "${SCE_C_INTEGRATION_GENERATED_DIR}"
     "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
@@ -4187,27 +4040,14 @@ set_tests_properties(c11_integration_event_schema_real PROPERTIES
 # no-Lua / no-script-engine proof. The driver runs the guard
 # (raw == "ack" → done / raw == "no" → waiting).
 set(_ESB_FIXTURE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_schema_bytes")
-set(_ESB_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_bytes_sm.c")
-set(_ESB_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_bytes_sm.h")
-add_custom_command(
-    OUTPUT "${_ESB_HEADER}" "${_ESB_SOURCE}"
-    COMMAND "${SCE_CODEGEN}" generate
-            "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml"
-            -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-            --write-deps "${_ESB_SOURCE}.d"
-    DEPENDS "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml"
-            "${_ESB_FIXTURE_ROOT}/schema_signal_bytes.scxml"
-            "${SCE_CODEGEN}"
-    DEPFILE "${_ESB_SOURCE}.d"
-    COMMENT "Generating C11 EventSchema bytes-guard fixture: event_schema_bytes_sm.{h,c}"
-    VERBATIM
-)
+sce_c_integration_generation(_ESB "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml")
 
 add_executable(sce_c_integration_event_schema_bytes
     integration/test_event_schema_bytes.c
-    "${_ESB_SOURCE}"
-    "${_ESB_HEADER}"
+    ${_ESB_SOURCES}
+    ${_ESB_HEADERS}
 )
+sce_c_link_runtime(sce_c_integration_event_schema_bytes EXCLUDES lua dom)
 # Intentionally NO target_link_libraries: same MCU-clean acceptance proof.
 target_include_directories(sce_c_integration_event_schema_bytes PRIVATE
     "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -4245,28 +4085,15 @@ set_tests_properties(c11_integration_event_schema_bytes PROPERTIES
 # MCU-clean gate, unchanged by the lift: this target links NO runtime library.
 # `sce/event_payload.h` is header-only for exactly that reason.
 set(_ESL_FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/event_schema")
-set(_ESL_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/statechart_lifted_sm.c")
-set(_ESL_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/statechart_lifted_sm.h")
-add_custom_command(
-    OUTPUT "${_ESL_HEADER}" "${_ESL_SOURCE}"
-    COMMAND "${SCE_CODEGEN}" generate
-            "${_ESL_FIXTURE_ROOT}/statechart_lifted.scxml"
-            -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-            --input-root "${_ESL_FIXTURE_ROOT}"
-            --write-deps "${_ESL_SOURCE}.d"
-    DEPENDS "${_ESL_FIXTURE_ROOT}/statechart_lifted.scxml"
-            "${_ESL_FIXTURE_ROOT}/schema_job_completed_minimal.scxml"
-            "${SCE_CODEGEN}"
-    DEPFILE "${_ESL_SOURCE}.d"
-    COMMENT "Generating C11 EventSchema lifted-payload fixture: statechart_lifted_sm.{h,c}"
-    VERBATIM
-)
+sce_c_integration_generation(_ESL "${_ESL_FIXTURE_ROOT}/statechart_lifted.scxml"
+    INPUT_ROOT "${_ESL_FIXTURE_ROOT}")
 
 add_executable(sce_c_integration_event_schema_lifted
     integration/test_event_schema_lifted.c
-    "${_ESL_SOURCE}"
-    "${_ESL_HEADER}"
+    ${_ESL_SOURCES}
+    ${_ESL_HEADERS}
 )
+sce_c_link_runtime(sce_c_integration_event_schema_lifted EXCLUDES lua dom)
 # Intentionally NO target_link_libraries: same MCU-clean acceptance proof.
 target_include_directories(sce_c_integration_event_schema_lifted PRIVATE
     "${SCE_C_INTEGRATION_GENERATED_DIR}"

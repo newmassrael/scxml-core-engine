@@ -1449,6 +1449,168 @@ fn no_cmake_file_of_the_tree_sends_a_plan_alone() {
     );
 }
 
+/// The CMake projects of the tree that are configured on their own
+/// (`cmake -S <their directory>`), not from the root build, and still declare
+/// their generations by commands of their own, each with why. Every other
+/// CMake file of the tree declares a generation only from its plan
+/// ([`hand_declared_generations`]); an entry leaves this list when its project
+/// is converted, and one whose file no longer declares a generation by hand is
+/// refused, so the list only shrinks.
+const STANDALONE_PROJECTS_NOT_YET_PLANNED: &[(&str, &str)] = &[
+    (
+        "backends/c/forge-runtime/tests/round_trip/CMakeLists.txt",
+        "a project of its own that includes cmake/SCEFindCodegen.cmake and not the plan \
+         module; converting it means bringing the module and its deferred declaration into \
+         a project the root build never configures",
+    ),
+    (
+        "backends/cpp/forge-runtime/tests/round_trip/CMakeLists.txt",
+        "the C++ twin of the C round-trip project, standing on its own for the same reason",
+    ),
+    (
+        "backends/c/forge-runtime/tests/conformance/CMakeLists.txt",
+        "a project of its own whose generations run through a helper of its own \
+         (`generate ${ARGN}`) beside `orchestrate` and `generate-conformance` steps, none of \
+         them planned",
+    ),
+    (
+        "backends/cpp/forge-runtime/tests/conformance/CMakeLists.txt",
+        "the C++ twin of the C conformance project, standing on its own for the same reason",
+    ),
+];
+
+/// Whether `command` runs `sce-codegen generate`, with or without global
+/// options between the program and the subcommand
+/// (`"${SCE_CODEGEN}" --limit n=1 generate`).
+fn runs_generate_at_all(command: &Invocation) -> bool {
+    command
+        .args
+        .iter()
+        .position(|arg| arg.contains("SCE_CODEGEN}"))
+        .is_some_and(|program| {
+            command.args[program + 1..]
+                .iter()
+                .any(|arg| arg == "generate")
+        })
+}
+
+/// Every `add_custom_command` of the CMake files given (each a path and its
+/// text) that runs `sce-codegen generate` and is not declared from a plan the
+/// same file asks: its OUTPUT, DEPFILE and byproducts are not the
+/// `<PREFIX>_OUTPUTS`, `<PREFIX>_DEPFILE` and `<PREFIX>_BYPRODUCTS_ARG` of a
+/// `sce_codegen_plan` call ([`generation_violations`]). The module's own
+/// command, and the routes', are declared so; a generation anywhere else is
+/// declared by `sce_codegen_generation`. A test that runs the generator to see
+/// it refuse is an `add_test`, and no command of the build.
+fn hand_declared_generations(files: &[(String, String)]) -> Vec<String> {
+    let mut found = Vec::new();
+    for (path, text) in files {
+        let code = cmake_code(text);
+        let prefixes: Vec<String> = invocations(&code, "sce_codegen_plan")
+            .iter()
+            .filter_map(|plan| plan.args.first().cloned())
+            .collect();
+        for command in invocations(&code, "add_custom_command") {
+            if !runs_generate_at_all(&command) {
+                continue;
+            }
+            let departures = generation_violations(&command, &prefixes);
+            if !departures.is_empty() {
+                found.push(format!(
+                    "{path}: line {}: a generation declared by a command of its own ({})",
+                    command.line,
+                    departures.join("; ")
+                ));
+            }
+        }
+    }
+    found
+}
+
+/// No CMake file of the tree declares a generation by a command of its own:
+/// the files a generation writes, its depfile and what it requires are its
+/// plan's answer, and a command that names them itself is a second list of
+/// them, which fell out of date each time a document came to write one more
+/// file. The C11 tests declared 19 such commands, among them every algorithm,
+/// schema and library statechart the fixtures call, until 2026-11.
+#[test]
+fn no_cmake_file_of_the_tree_declares_a_generation_by_hand() {
+    let files = tracked_cmake_files();
+    let found = hand_declared_generations(&files);
+    let mut unexplained = Vec::new();
+    for violation in &found {
+        if !STANDALONE_PROJECTS_NOT_YET_PLANNED
+            .iter()
+            .any(|(path, _)| violation.starts_with(&format!("{path}:")))
+        {
+            unexplained.push(violation.as_str());
+        }
+    }
+    assert!(
+        unexplained.is_empty(),
+        "a CMake file of the tree declares a generation by a command of its own:\n  {}\n\n\
+         Declare it with `sce_codegen_generation` (cmake/SCECodegenPlan.cmake), which \
+         declares the command from the generator's plan.",
+        unexplained.join("\n  ")
+    );
+    for (path, why) in STANDALONE_PROJECTS_NOT_YET_PLANNED {
+        assert!(
+            files.iter().any(|(tracked, _)| tracked == path),
+            "{path} is listed as a project still to convert ({why}) and is not tracked"
+        );
+        assert!(
+            found
+                .iter()
+                .any(|violation| violation.starts_with(&format!("{path}:"))),
+            "{path} no longer declares a generation by hand: take it off \
+             STANDALONE_PROJECTS_NOT_YET_PLANNED"
+        );
+    }
+}
+
+/// The C11 tests' former shape, an algorithm's header named and generated by
+/// a command of its own, is refused; so is one with a global option before the
+/// subcommand. The shape that replaced it, and the module's own command, pass.
+#[test]
+fn a_generation_declared_by_a_command_of_its_own_is_refused() {
+    let path = "backends/c/tests/CMakeLists.txt".to_string();
+    assert!(
+        hand_declared_generations(&[(path.clone(), C11_TESTS.to_string())]).is_empty(),
+        "the C11 tests declare a generation by hand"
+    );
+    assert!(
+        hand_declared_generations(&[(PLAN_MODULE_PATH.to_string(), PLAN_MODULE.to_string())])
+            .is_empty(),
+        "the module's own command is not read as declared from its plan"
+    );
+    let by_hand = r#"
+sce_c_integration_generation(_DAY_REPEAT "${FIXTURES}/algorithm_day_repeat.scxml")
+add_custom_command(
+    OUTPUT "${DIR}/day_run.h"
+    COMMAND "${SCE_CODEGEN}" generate "${FIXTURES}/algorithm_day_run.scxml"
+            -l c11 -o "${DIR}" --write-deps "${DIR}/day_run.h.d"
+    DEPENDS "${FIXTURES}/algorithm_day_run.scxml" "${SCE_CODEGEN}"
+    DEPFILE "${DIR}/day_run.h.d"
+    VERBATIM
+)
+add_custom_command(
+    OUTPUT "${DIR}/todo_peer_sm.h" "${DIR}/todo_peer_sm.c"
+    COMMAND "${SCE_CODEGEN}" --limit merge_values=65536
+            generate --with-imports "${FIXTURES}/todo_peer.scxml"
+            -l c11 -o "${DIR}" --write-deps "${DIR}/todo_peer_sm.c.d"
+    DEPFILE "${DIR}/todo_peer_sm.c.d"
+    VERBATIM
+)
+add_test(NAME refuses COMMAND "${SCE_CODEGEN}" generate "${FIXTURES}/broken.scxml")
+"#;
+    let found = hand_declared_generations(&[(path, by_hand.to_string())]);
+    assert_eq!(
+        found.len(),
+        2,
+        "the two hand-declared generations, and not the refusal test: {found:?}"
+    );
+}
+
 /// A plan no request asks ahead is refused in whichever file of the tree it
 /// is written, and a plan a request of the same file asks word for word
 /// passes; so is a generation declared outside the module's deferred
