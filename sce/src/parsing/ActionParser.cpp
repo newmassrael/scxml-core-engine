@@ -579,8 +579,11 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
                 SCE_LOG_DEBUG("ActionParser: Parsed send content expr: '{}'", contentExpr);
             } else {
                 // §scxml-5.10: Use child content as literal
-                // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
-                std::string contentText = XmlSerializationHelper::serializeContent(contentElement);
+                // ARCHITECTURE.md Zero Duplication: the body every inline
+                // <content> has, read by the helper the <invoke> parser and
+                // the build's reading share, so a host and a local delivery
+                // are handed one text for one element.
+                std::string contentText = XmlSerializationHelper::serializeContentBody(contentElement);
 
                 if (!contentText.empty()) {
                     sendAction->setContent(contentText);

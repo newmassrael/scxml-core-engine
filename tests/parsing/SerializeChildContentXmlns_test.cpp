@@ -459,4 +459,56 @@ TEST(SerializeChildContentXmlns, TextOnlyDataContentDoesNotMutate) {
         << "text-only content must not gain a phantom xmlns attribute";
 }
 
+// ── The body of an inline <content> ────────────────────────────────
+//
+// `serializeContentBody` is the reading sce-build's `content_body` gives the
+// generated machines: the markup when the element holds any, its characters
+// otherwise, trimmed either way. A host processor is handed this text by both
+// engines (sce-build/tests/fixtures/host_processor/host_request_cases.json).
+
+// Markup is the element children alone: the text around them is not part of it.
+TEST(SerializeContentBody, ContentWithElementsIsTheirMarkupAlone) {
+    const std::string xml = R"(<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
+  <state id="s0">
+    <onentry>
+      <send event="e">
+        <content>
+          lead <note xmlns="">x</note> tail
+        </content>
+      </send>
+    </onentry>
+  </state>
+</scxml>)";
+
+    auto contentElement = parseAndFindChild(xml, "content");
+    ASSERT_TRUE(contentElement);
+    const std::string body = SCE::XmlSerializationHelper::serializeContentBody(contentElement);
+
+    EXPECT_EQ(body, std::string("<note xmlns=\"\">x</note>"));
+    EXPECT_EQ(body, contentElement->serializeElementChildren());
+    // The whole-children reading keeps the text, which is what the body leaves out.
+    EXPECT_NE(SCE::XmlSerializationHelper::serializeContent(contentElement).find("lead"), std::string::npos);
+}
+
+// Character data is its characters, without the whitespace that lays the
+// element out: an escaped `<` is the character, not its escape.
+TEST(SerializeContentBody, ContentWithTextIsItsCharactersTrimmed) {
+    const std::string xml = R"(<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
+  <state id="s0">
+    <invoke type="x-sce-host">
+      <content>
+        a &lt; b
+      </content>
+    </invoke>
+  </state>
+</scxml>)";
+
+    auto contentElement = parseAndFindChild(xml, "content");
+    ASSERT_TRUE(contentElement);
+
+    EXPECT_EQ(SCE::XmlSerializationHelper::serializeContentBody(contentElement), std::string("a < b"));
+}
+
 }  // namespace

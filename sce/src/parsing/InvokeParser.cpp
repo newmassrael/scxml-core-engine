@@ -236,9 +236,11 @@ void SCE::InvokeParser::parseContentElement(const std::shared_ptr<IXMLElement> &
             return;
         }
 
-        // Serialize internal XML elements
-        // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
-        std::string content = XmlSerializationHelper::serializeContent(contentElement);
+        // ARCHITECTURE.md Zero Duplication: the body every inline <content>
+        // has, as a <send>'s is read and as the build reads it, so a host-run
+        // invocation is handed the text the generated engine hands it; an
+        // in-line child <scxml> is its markup either way.
+        std::string content = XmlSerializationHelper::serializeContentBody(contentElement);
         invokeNode->setContent(content);
         SCE_LOG_DEBUG("Content element parsed with serialized XML");
     }

@@ -16,7 +16,8 @@
              local delivery of the send would carry.
     job    - an <invoke> whose src is evaluated from `srcexpr`, with a
              namelist and a <param> name given twice, both values kept.
-    body   - an <invoke> with an inline <content>.
+    body   - an <invoke> with an inline <content> laid out over lines: the
+             host is handed its text, without the whitespace around it.
     timed  - an <invoke> with a deadline, which the engine keeps and the host
              is not handed among the params.
 
@@ -44,7 +45,9 @@
       <param name="k" expr="n + 1"/>
     </invoke>
     <invoke id="body" type="x-sce-host">
-      <content>hello</content>
+      <content>
+        hello
+      </content>
     </invoke>
     <invoke id="timed" type="x-sce-host">
       <param name="_sce_deadline_ms" expr="60000"/>

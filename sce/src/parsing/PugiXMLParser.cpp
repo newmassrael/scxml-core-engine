@@ -313,6 +313,28 @@ void collectInheritedBindings(pugi::xml_node element, pugi::xml_node root, std::
     }
 }
 
+// Writes `child` to `out` as a fragment read on its own must see it: an
+// element declares on itself every binding its subtree uses and inherits
+// (see `serializeChildContent`), and anything else is written as it is.
+void printWithInheritedBindings(pugi::xml_node child, std::ostringstream &out) {
+    std::vector<NamespaceBinding> inherited;
+    if (child.type() == pugi::node_element) {
+        collectInheritedBindings(child, child, inherited);
+    }
+    if (inherited.empty()) {
+        // Text, CDATA and comment children, and an element that
+        // inherits nothing, are written as they are.
+        child.print(out, "", pugi::format_raw);
+        return;
+    }
+    pugi::xml_document copy;
+    pugi::xml_node root = copy.append_copy(child);
+    for (auto binding = inherited.rbegin(); binding != inherited.rend(); ++binding) {
+        root.prepend_attribute(declarationName(binding->first).c_str()).set_value(binding->second.c_str());
+    }
+    root.print(out, "", pugi::format_raw);
+}
+
 }  // namespace
 
 std::string PugiXMLElement::serializeChildContent() const {
@@ -341,22 +363,26 @@ std::string PugiXMLElement::serializeChildContent() const {
     // unprefixed descendants of a prefixed child lost the default namespace.
     std::ostringstream oss;
     for (const auto &child : node_.children()) {
-        std::vector<NamespaceBinding> inherited;
+        printWithInheritedBindings(child, oss);
+    }
+
+    return oss.str();
+}
+
+std::string PugiXMLElement::serializeElementChildren() const {
+    if (!node_) {
+        return "";
+    }
+
+    // The element children alone, each written as serializeChildContent()
+    // writes it, so a fragment carries the same bindings by either door.
+    // Character data beside them is not part of the markup: sce-build's
+    // `content_body` reads an inline <content> that holds elements the same way.
+    std::ostringstream oss;
+    for (const auto &child : node_.children()) {
         if (child.type() == pugi::node_element) {
-            collectInheritedBindings(child, child, inherited);
+            printWithInheritedBindings(child, oss);
         }
-        if (inherited.empty()) {
-            // Text, CDATA and comment children, and an element that
-            // inherits nothing, are written as they are.
-            child.print(oss, "", pugi::format_raw);
-            continue;
-        }
-        pugi::xml_document copy;
-        pugi::xml_node root = copy.append_copy(child);
-        for (auto binding = inherited.rbegin(); binding != inherited.rend(); ++binding) {
-            root.prepend_attribute(declarationName(binding->first).c_str()).set_value(binding->second.c_str());
-        }
-        root.print(oss, "", pugi::format_raw);
     }
 
     return oss.str();

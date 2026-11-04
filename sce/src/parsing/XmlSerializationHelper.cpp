@@ -19,6 +19,19 @@ std::string XmlSerializationHelper::serializeContent(const std::shared_ptr<IXMLE
     return element->serializeChildContent();
 }
 
+std::string XmlSerializationHelper::serializeContentBody(const std::shared_ptr<IXMLElement> &content) {
+    if (!content) {
+        return "";
+    }
+
+    // The markup when there is any, the character data otherwise. Character
+    // data is read as its characters (`getTextContent`), not as printed XML,
+    // so `a &lt; b` is the three characters the author meant.
+    const std::string body =
+        content->getChildren().empty() ? content->getTextContent() : content->serializeElementChildren();
+    return ParsingCommon::trimString(body);
+}
+
 std::string XmlSerializationHelper::escapeForJavaScript(const std::string &content) {
     std::string escaped;
     escaped.reserve(content.length() * 2);  // Reserve space for potential escapes

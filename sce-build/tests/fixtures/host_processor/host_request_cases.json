@@ -8,7 +8,8 @@
     "they are the engine's own and differ between engines by design; `restarted` is false for",
     "every case. `params` are what the handler is handed: a deadline the engine keeps",
     "(`_sce_deadline_ms`) is taken out, while `eventData` is the pairs as a local delivery",
-    "of a send with them would carry them, the deadline among them.",
+    "of a send with them would carry them, the deadline among them. `content` is the text of an",
+    "inline <content> without the whitespace that lays it out.",
     "",
     "Read by the Interpreter (tests/integration/HostRequestTest.cpp), which runs every",
     "document, and by the generated C++ engine (tests/integration/HostRequestAotTest.cpp),",
@@ -48,7 +49,7 @@
       }
     },
     {
-      "name": "an invoke with inline content",
+      "name": "an invoke with inline content laid out over lines",
       "document": "statechart_host_request.scxml",
       "kind": "invoke",
       "request": {

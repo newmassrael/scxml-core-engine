@@ -34,6 +34,7 @@ public:
     bool remove() override;
     std::shared_ptr<IXMLElement> getParent() const override;
     std::string serializeChildContent() const override;
+    std::string serializeElementChildren() const override;
 
     // Internal: Get raw pugixml node
     pugi::xml_node getRawNode() const {

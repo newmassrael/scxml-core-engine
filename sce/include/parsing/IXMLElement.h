@@ -111,6 +111,18 @@ public:
 
      */
     virtual std::string serializeChildContent() const = 0;
+
+    /**
+     * @brief Serialize the element children only, each as serializeChildContent() writes it
+     * @return The element children in document order, with the namespace
+     *         bindings each one inherits declared on it; no character data
+     *         between or around them. Empty when the element has no element child.
+     *
+     * The child markup of an inline `<content>` is these children
+     * (XmlSerializationHelper::serializeContentBody), the reading sce-build's
+     * `content_body` gives the generated machines.
+     */
+    virtual std::string serializeElementChildren() const = 0;
 };
 
 }  // namespace SCE
