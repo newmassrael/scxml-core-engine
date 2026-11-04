@@ -395,10 +395,10 @@ public:
     std::vector<RunningHostInvoke> running(const Deadlines &deadlines, Now &&nowMs) const {
         static_assert(HostInvokeDeadlineSchedulerTrait<Deadlines>::value,
                       "a host-invoke ledger's scheduler arms, drops and answers a deadline by token");
-        std::vector<RunningHostInvoke> running;
+        std::vector<RunningHostInvoke> listed;
         for (const auto &entry : started_) {
             const StartedHostInvoke &started = entry.second;
-            running.push_back(RunningHostInvoke{&started.request, deadlines.hostInvokeDeadlineDueAt(started.token)});
+            listed.push_back(RunningHostInvoke{&started.request, deadlines.hostInvokeDeadlineDueAt(started.token)});
         }
         for (const auto &restored : restored_) {
             std::optional<uint64_t> dueAt;
@@ -407,13 +407,13 @@ public:
             } else if (restored.deadline == RestoredDeadline::Passed) {
                 dueAt = nowMs();
             }
-            running.push_back(RunningHostInvoke{&restored.request, dueAt});
+            listed.push_back(RunningHostInvoke{&restored.request, dueAt});
         }
-        std::stable_sort(running.begin(), running.end(), [](const RunningHostInvoke &a, const RunningHostInvoke &b) {
+        std::stable_sort(listed.begin(), listed.end(), [](const RunningHostInvoke &a, const RunningHostInvoke &b) {
             return std::tie(a.request->processorType, a.request->invokeId) <
                    std::tie(b.request->processorType, b.request->invokeId);
         });
-        return running;
+        return listed;
     }
 
     /// The token the next start receives: a save writes it, so a restored machine's
