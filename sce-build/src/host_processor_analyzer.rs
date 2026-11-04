@@ -1516,6 +1516,94 @@ mod tests {
         }
     }
 
+    /// docs/adr/0084, D6: the Mesh request the Interpreter hands a router is the
+    /// one this lowering makes for the backends that route Mesh through the
+    /// host. Both are held to the Mesh rows of one table, which the
+    /// Interpreter's test reads too.
+    #[test]
+    fn a_mesh_request_is_lowered_as_the_shared_request_table_says() {
+        let table: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/host_processor/host_request_cases.json"
+        ))
+        .expect("the table is JSON");
+        let model = parse(include_str!(
+            "../tests/fixtures/host_processor/statechart_host_mesh_request.scxml"
+        ));
+        let lowered = lower_mesh(&model, Language::Rust);
+        let rows: Vec<&serde_json::Value> = table["cases"]
+            .as_array()
+            .expect("`cases` is a list")
+            .iter()
+            .filter(|row| row.get("lowered").is_some())
+            .collect();
+        // A floor: a table with no Mesh row would pass every assertion below.
+        assert!(rows.len() >= 2, "the table names {} Mesh rows", rows.len());
+        for row in rows {
+            assert_eq!(row["document"], "statechart_host_mesh_request.scxml");
+            let request = &row["request"];
+            let lowering = &row["lowered"];
+            let id = request["invokeId"]
+                .as_str()
+                .expect("`invokeId` is a string");
+            let info = lowered
+                .invokes
+                .iter()
+                .find_map(|invoke| match invoke {
+                    Invoke::Unsupported(info) if info.base.invoke_id == id => Some(info),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("`{id}` is no host-served invoke after the lowering"));
+            assert!(info.host_served, "{id}");
+            assert_eq!(
+                Some(info.invoke_type.as_str()),
+                request["processorType"].as_str(),
+                "{id}: type"
+            );
+            assert_eq!(
+                Some(info.src.as_str()),
+                lowering["src"].as_str(),
+                "{id}: src"
+            );
+            assert_eq!(
+                Some(info.srcexpr.as_str()),
+                lowering["srcexpr"].as_str(),
+                "{id}: srcexpr"
+            );
+            let names: Vec<&str> = info.base.params.iter().map(|p| p.name.as_str()).collect();
+            let expected: Vec<&str> = lowering["params"]
+                .as_array()
+                .expect("`params` is a list")
+                .iter()
+                .filter_map(|name| name.as_str())
+                .collect();
+            assert_eq!(names, expected, "{id}: the params in order");
+            let envelope: Vec<&str> = info
+                .base
+                .params
+                .iter()
+                .filter(|p| p.envelope_metadata)
+                .map(|p| p.name.as_str())
+                .collect();
+            let expected: Vec<&str> = lowering["envelope"]
+                .as_array()
+                .expect("`envelope` is a list")
+                .iter()
+                .filter_map(|name| name.as_str())
+                .collect();
+            assert_eq!(envelope, expected, "{id}: the envelope fields");
+            // An envelope field is a literal the build wrote, and it is the value
+            // the router receives.
+            for param in info.base.params.iter().filter(|p| p.envelope_metadata) {
+                assert_eq!(
+                    Some(param.static_value.as_str()),
+                    request["params"][param.name.as_str()][0].as_str(),
+                    "{id}: {}",
+                    param.name
+                );
+            }
+        }
+    }
+
     /// Wrap `body` in the smallest document that parses, so each test
     /// reads as the one construct it is about.
     fn doc(body: &str) -> String {

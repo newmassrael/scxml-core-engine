@@ -1866,6 +1866,10 @@ add_executable(integration_tests
     integration/HostProcessorAotTest.cpp
     integration/DelayedHostSendAotTest.cpp
     integration/HostInvokerAotTest.cpp
+    # docs/adr/0084, D4 and D6: the requests both engines hand the host, held to
+    # one table.
+    integration/HostRequestTest.cpp
+    integration/HostRequestAotTest.cpp
     # docs/adr/0084: what another thread has for the generated engine enters
     # through its inbox, while the owner runs macrosteps.
     integration/WhatAnotherThreadPostsEntersThroughTheInboxAotTest.cpp
@@ -2706,6 +2710,17 @@ sce_add_state_machine(
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml
+    HOST_INVOKER x-sce-host
+)
+
+# docs/adr/0084, D4: the requests a host-served <send> and a host-run <invoke>
+# hand the host, which HostRequestAotTest compares with the table the
+# Interpreter's HostRequestTest is held to. Declared as processor and as
+# invoker, since the document makes both kinds of request.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_request.scxml
+    HOST_PROCESSOR x-sce-host
     HOST_INVOKER x-sce-host
 )
 

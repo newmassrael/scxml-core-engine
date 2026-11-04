@@ -1,0 +1,123 @@
+{
+  "about": [
+    "What a host-served <send> and a host-run <invoke> hand the host, written out by hand (docs/adr/0084, D4 and D6).",
+    "",
+    "Each case names a document beside this table and one element of it, and gives the request",
+    "core/HostProcessor.h defines as the host receives it: a HostSendRequest for a send, a",
+    "HostInvokeRequest for an invoke. An invoke's `token` and `sessionId` are left out, since",
+    "they are the engine's own and differ between engines by design; `restarted` is false for",
+    "every case. `params` are what the handler is handed: a deadline the engine keeps",
+    "(`_sce_deadline_ms`) is taken out, while `eventData` is the pairs as a local delivery",
+    "of a send with them would carry them, the deadline among them.",
+    "",
+    "Read by the Interpreter (tests/integration/HostRequestTest.cpp), which runs every",
+    "document, and by the generated C++ engine (tests/integration/HostRequestAotTest.cpp),",
+    "which runs statechart_host_request.scxml. A case with `lowered` is a Mesh request, which",
+    "the generated C++ engine routes through its own router; for it the build's lowering",
+    "(host_processor_analyzer::lower_mesh, SCE_MESH.md section 19) is held to the case",
+    "instead: the invoke's `src` and `srcexpr` after the lowering, its params in order, and",
+    "which of them are envelope fields, whose literal values are the request's."
+  ],
+  "cases": [
+    {
+      "name": "a send to a host processor",
+      "document": "statechart_host_request.scxml",
+      "kind": "send",
+      "request": {
+        "processorType": "x-sce-host",
+        "eventName": "host.note",
+        "target": "pane://note",
+        "content": "",
+        "params": { "k": ["v"], "n": ["7"] },
+        "sendId": "note",
+        "eventData": "{\"k\":\"v\",\"n\":7}",
+        "invokeId": ""
+      }
+    },
+    {
+      "name": "an invoke with an evaluated src, a namelist and a repeated param",
+      "document": "statechart_host_request.scxml",
+      "kind": "invoke",
+      "request": {
+        "processorType": "x-sce-host",
+        "invokeId": "job",
+        "src": "pane://dyn",
+        "params": { "k": ["v", "8"], "n": ["7"] },
+        "eventData": "{\"k\":[\"v\",8],\"n\":7}",
+        "content": ""
+      }
+    },
+    {
+      "name": "an invoke with inline content",
+      "document": "statechart_host_request.scxml",
+      "kind": "invoke",
+      "request": {
+        "processorType": "x-sce-host",
+        "invokeId": "body",
+        "src": "",
+        "params": {},
+        "eventData": "",
+        "content": "hello"
+      }
+    },
+    {
+      "name": "an invoke with a deadline the engine keeps",
+      "document": "statechart_host_request.scxml",
+      "kind": "invoke",
+      "request": {
+        "processorType": "x-sce-host",
+        "invokeId": "timed",
+        "src": "",
+        "params": {},
+        "eventData": "{\"_sce_deadline_ms\":60000}",
+        "content": ""
+      }
+    },
+    {
+      "name": "a Mesh request to a peer named at run time",
+      "document": "statechart_host_mesh_request.scxml",
+      "kind": "invoke",
+      "request": {
+        "processorType": "sce:mesh-rpc",
+        "invokeId": "ask",
+        "src": "#motor",
+        "params": {
+          "_mesh_event": ["service.request.force"],
+          "_mesh_deadline_ms": ["250"],
+          "force": ["6"],
+          "speed": ["busy"]
+        },
+        "eventData": "{\"force\":6,\"speed\":\"busy\"}",
+        "content": ""
+      },
+      "lowered": {
+        "src": "",
+        "srcexpr": "peer",
+        "params": ["_mesh_event", "_mesh_deadline_ms", "force", "speed"],
+        "envelope": ["_mesh_event", "_mesh_deadline_ms"]
+      }
+    },
+    {
+      "name": "a Mesh request to a literal peer, its deadline spelled with the alias",
+      "document": "statechart_host_mesh_request.scxml",
+      "kind": "invoke",
+      "request": {
+        "processorType": "sce:mesh-rpc",
+        "invokeId": "tell",
+        "src": "#brake",
+        "params": {
+          "_mesh_event": ["service.request.stop"],
+          "_mesh_deadline_ms": ["5000"]
+        },
+        "eventData": "",
+        "content": ""
+      },
+      "lowered": {
+        "src": "#brake",
+        "srcexpr": "",
+        "params": ["_mesh_event", "_mesh_deadline_ms"],
+        "envelope": ["_mesh_event", "_mesh_deadline_ms"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  docs/adr/0084, D6: a Mesh request on the Interpreter is a row of the host
+  processor door. The router the host registers receives the request SCE_MESH.md
+  section 19 gives it, which is the request the build lowers the same element to
+  for every backend that routes Mesh through the host
+  (host_processor_analyzer::lower_mesh). The Interpreter's test runs this
+  document and the build's test lowers it, and both are held to the Mesh rows of
+  host_request_cases.json beside it.
+
+    ask   - the peer named by `srcexpr`, evaluated when the request starts; the
+            envelope type and deadline ahead of the author's own pairs, which
+            alone make the event data.
+    tell  - a literal peer, and the deadline spelled with the host-invoke alias
+            and written as a script engine may render a whole number: the
+            router receives it under the Mesh name, as the whole number it is.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="statechart_host_mesh_request" initial="asking">
+
+  <datamodel>
+    <data id="peer" expr="'#motor'"/>
+    <data id="load" expr="3"/>
+  </datamodel>
+
+  <state id="asking">
+    <invoke id="ask" type="sce:mesh-rpc" srcexpr="peer">
+      <param name="_mesh_event" expr="'service.request.force'"/>
+      <param name="_mesh_deadline_ms" expr="250"/>
+      <param name="force" expr="load * 2"/>
+      <param name="speed" expr="'busy'"/>
+    </invoke>
+    <invoke id="tell" type="sce:mesh-rpc" src="#brake">
+      <param name="_mesh_event" expr="'service.request.stop'"/>
+      <param name="_sce_deadline_ms" expr="'5000.0'"/>
+    </invoke>
+
+    <transition event="leave" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

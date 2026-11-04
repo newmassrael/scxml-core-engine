@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  docs/adr/0084, D4: what a host-served <send> and a host-run <invoke> hand the
+  host is the request core/HostProcessor.h defines, and the Interpreter, which
+  evaluates the element itself, hands over the request the generated engine
+  does for the same element. Both engines run this document and hold every
+  request it makes to one table, host_request_cases.json beside it.
+
+  Every request is made as `asking` is entered, with nothing yet asked of the
+  host, so each one is a pure reading of the element and the data model:
+
+    note   - a <send> to the host's processor, with a target, an id, a
+             namelist and a <param>: the pairs as text and as the event data a
+             local delivery of the send would carry.
+    job    - an <invoke> whose src is evaluated from `srcexpr`, with a
+             namelist and a <param> name given twice, both values kept.
+    body   - an <invoke> with an inline <content>.
+    timed  - an <invoke> with a deadline, which the engine keeps and the host
+             is not handed among the params.
+
+  The generated machine is compiled with both host declarations, `x-sce-host`
+  as processor and as invoker (tests/CMakeLists.txt; an XML comment cannot
+  spell the flags' double hyphen).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="statechart_host_request" initial="asking">
+
+  <datamodel>
+    <data id="n" expr="7"/>
+    <data id="where" expr="'pane://dyn'"/>
+  </datamodel>
+
+  <state id="asking">
+    <onentry>
+      <send id="note" type="x-sce-host" event="host.note" target="pane://note" namelist="n">
+        <param name="k" expr="'v'"/>
+      </send>
+    </onentry>
+
+    <invoke id="job" type="x-sce-host" srcexpr="where" namelist="n">
+      <param name="k" expr="'v'"/>
+      <param name="k" expr="n + 1"/>
+    </invoke>
+    <invoke id="body" type="x-sce-host">
+      <content>hello</content>
+    </invoke>
+    <invoke id="timed" type="x-sce-host">
+      <param name="_sce_deadline_ms" expr="60000"/>
+    </invoke>
+
+    <transition event="leave" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>
