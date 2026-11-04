@@ -2678,6 +2678,26 @@
       }
     },
     {
+      "name": "resolve_date",
+      "document": "sce:std/time/resolve_date.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "resolve_date",
+      "args": [
+        "i64",
+        { "enum": "date_kind" },
+        { "optional": "i32" },
+        { "optional": "u8" },
+        { "optional": "u8" },
+        { "optional": "u8" },
+        { "optional": "i32" }
+      ],
+      "output": {
+        "optional": "i64",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "codec_declared_bounds",
       "kind": "codec",
       "ref_section": "codecs",
@@ -3565,6 +3585,24 @@
         { "name": "cbor", "value": 2 },
         { "name": "typed", "value": 3 },
         { "name": "raw", "value": 4 }
+      ]
+    },
+    {
+      "name": "date_kind",
+      "document": "sce:std/time/date_kind.scxml",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "none", "value": 0 },
+        { "name": "absolute", "value": 1 },
+        { "name": "monthDay", "value": 2 },
+        { "name": "relativeDays", "value": 3 },
+        { "name": "relativeWeeks", "value": 4 },
+        { "name": "relativeMonths", "value": 5 },
+        { "name": "relativeYears", "value": 6 },
+        { "name": "comingWeekday", "value": 7 },
+        { "name": "previousWeekday", "value": 8 },
+        { "name": "weekdayOfWeek", "value": 9 }
       ]
     },
     {

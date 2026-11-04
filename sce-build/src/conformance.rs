@@ -4556,6 +4556,58 @@ mod tests {
         assert!(refused.contains("compared for equality"), "{refused}");
     }
 
+    /// `sce:std/time/resolve_date`, which takes a value of an enum and values
+    /// that may be absent and answers one that may be absent, is scheduled and
+    /// rendered on every backend's harness: the library promises it to every
+    /// generator, and a backend that refused it would drop it from its harness
+    /// without a word. The enum argument is built from the member each
+    /// declaration emits, and the C11 slots are the struct the generator names.
+    #[test]
+    fn an_algorithm_of_enum_and_optional_slots_reaches_every_harness() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let catalog = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let manifest = Manifest {
+            version: catalog.version,
+            description: String::new(),
+            fixtures: catalog
+                .fixtures
+                .into_iter()
+                .filter(|f| f.name == "date_kind" || f.name == "resolve_date")
+                .collect(),
+        };
+        assert_eq!(
+            manifest.fixtures.len(),
+            2,
+            "the catalog holds date_kind and resolve_date"
+        );
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        for &lang in Language::ALL
+            .iter()
+            .filter(|lang| crate::forge::codegen_matrix::emits_anything(**lang))
+        {
+            let rendered = render_harness(&manifest, lang, &template_base, &resource_dir)
+                .unwrap_or_else(|e| panic!("{lang:?}: render failed: {e}"));
+            let symbol = crate::forge::generator::forge_algorithm_symbol("resolve_date", lang);
+            assert!(
+                rendered.source.contains(&format!("{symbol}(")),
+                "{lang:?}: the harness does not call `{symbol}`, so resolve_date was not \
+                 scheduled for it"
+            );
+            if lang == Language::C11 {
+                assert!(
+                    rendered.source.contains("sce_optional_int32_t input_arg2;")
+                        && rendered.source.contains("sce_optional_int64_t expected;")
+                        && rendered.source.contains("DateKind_t input_arg1;"),
+                    "C11: the case table does not hold the slots in the types the \
+                     algorithm declares"
+                );
+            }
+        }
+    }
+
     /// Oracle cross-check: verify structural integrity between fixtures.json
     /// and numerical_reference.json.
     ///
