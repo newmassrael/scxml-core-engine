@@ -92,9 +92,18 @@ public final class ReferenceHost {
         "sce-host-notify-post",
         "sce-host-notify-cancel",
         "sce-host-http-fetch",
+        modelGenerate,
     ]
 
     private let clock: any ClockSource
+
+    /// Where a generation's text comes from: a scripted provider until the embedding gives
+    /// another.
+    private var provider: any ModelProvider = ScriptedProvider()
+
+    /// The machine's table of answer schemas, which a generation's `answer_schema` is
+    /// resolved through.
+    private var answerSchemas: [AnswerSchema] = []
 
     /// What carries an HTTP exchange; nil for a host with none, whose every fetch fails
     /// `network`.
@@ -131,6 +140,18 @@ public final class ReferenceHost {
     public init(clock: any ClockSource, transport: (any HostTransport)? = nil) {
         self.clock = clock
         self.transport = transport
+    }
+
+    /// Generates texts with `provider` from here on.
+    public func setModelProvider(_ provider: any ModelProvider) {
+        self.provider = provider
+    }
+
+    /// Resolves a generation's `answer_schema` through `schemas`, the table of the machine
+    /// this host serves (its generated `<Machine>AnswerSchemas.all`). A request that names
+    /// an id the table does not hold is refused.
+    public func setAnswerSchemas(_ schemas: [AnswerSchema]) {
+        answerSchemas = schemas
     }
 
     /// Injects failures: each operation type named fails with the code it maps to, once
@@ -201,6 +222,14 @@ public final class ReferenceHost {
                 url: params["url"] ?? "",
                 headers: params["headers"] ?? ""
             )
+        case modelGenerate:
+            switch judgeGeneration(params) {
+            case .success:
+                refused = false
+            case let .failure(why):
+                sceLog("\(operation) \(id): refused, \(why.reason)")
+                refused = true
+            }
         default:
             refused = false
         }
@@ -208,6 +237,7 @@ public final class ReferenceHost {
             return .refuse(invalidArgument)
         }
         if let code = faults[operation] {
+            sceLog("\(operation) \(id): fails \(code), injected")
             return failure(operation, code: code)
         }
         switch operation {
@@ -236,6 +266,8 @@ public final class ReferenceHost {
             )
         case "sce-host-notify-cancel":
             return notifyCancel(params["id"] ?? "")
+        case modelGenerate:
+            return generateText(id: id, params: params)
         default:
             return httpFetch(
                 id: id,
@@ -282,10 +314,79 @@ public final class ReferenceHost {
             zero = [.text("state", "")]
         case "sce-host-http-fetch":
             zero = [.integer("status", UInt16(0)), .text("headers", ""), .text("body", "")]
+        case modelGenerate:
+            zero = [
+                .text("text", ""), .truth("constrained", false), .text("model", ""),
+                .integer("prompt_tokens", UInt32(0)), .integer("answer_tokens", UInt32(0)), .text("finish", ""),
+            ]
         default:
             zero = [.text("status", "")]
         }
         return .done(payloadJSON(zero + [.text("error", code)]))
+    }
+
+    // MARK: - Generated text
+
+    /// Why the host refuses a generation.
+    struct GenerationRefusal: Error {
+        let reason: String
+    }
+
+    /// The request the host accepts, or why it refuses it: an empty prompt, `max_tokens`
+    /// zero, a temperature past `temperatureMaxMilli`, or an answer schema the table does
+    /// not hold.
+    func judgeGeneration(_ params: HostParams) -> Result<GenerateRequest, GenerationRefusal> {
+        let prompt = params["prompt"] ?? ""
+        guard !prompt.isEmpty else {
+            return .failure(GenerationRefusal(reason: "the prompt is empty"))
+        }
+        guard let maxTokens = UInt32(params["max_tokens"] ?? ""), maxTokens > 0 else {
+            return .failure(GenerationRefusal(reason: "max_tokens is not a count above zero"))
+        }
+        guard let temperature = UInt32(params["temperature_milli"] ?? ""), temperature <= temperatureMaxMilli else {
+            return .failure(GenerationRefusal(reason: "the temperature is past 2000 thousandths"))
+        }
+        let named = params["answer_schema"] ?? ""
+        var schema: AnswerSchema?
+        if !named.isEmpty {
+            schema = answerSchemas.first { $0.id.utf8.elementsEqual(named.utf8) }
+            if schema == nil {
+                return .failure(GenerationRefusal(reason: "the answer schema is not one of the machine's"))
+            }
+        }
+        return .success(
+            GenerateRequest(prompt: prompt, answerSchema: schema, maxTokens: maxTokens, temperatureMilli: temperature)
+        )
+    }
+
+    /// Generates a text for invocation `id`, whose request the host accepted.
+    private func generateText(id: String, params: HostParams) -> HostOutcome {
+        guard case let .success(request) = judgeGeneration(params) else {
+            preconditionFailure("the request was judged before the generation")
+        }
+        switch provider.generate(request) {
+        case let .answer(text, finish, constrained, model, promptTokens, answerTokens):
+            if text.utf8.count > answerMaxBytes {
+                sceLog("\(modelGenerate) \(id): an answer of \(text.utf8.count) bytes is past \(answerMaxBytes)")
+                return failure(modelGenerate, code: "answer_too_large")
+            }
+            sceLog("\(modelGenerate) \(id): answered by \(model), finish \(finish)")
+            return record(
+                .text("text", text), .truth("constrained", constrained), .text("model", model),
+                .integer("prompt_tokens", promptTokens), .integer("answer_tokens", answerTokens),
+                .text("finish", finish)
+            )
+        case let .failure(code):
+            sceLog("\(modelGenerate) \(id): fails \(code)")
+            return failure(modelGenerate, code: code)
+        case .refusal:
+            sceLog("\(modelGenerate) \(id): refused by the provider")
+            return .refuse(invalidArgument)
+        case .hold:
+            sceLog("\(modelGenerate) \(id): held")
+            held.append(id)
+            return .hold
+        }
     }
 
     // MARK: - Clock

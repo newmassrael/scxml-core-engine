@@ -7,8 +7,9 @@ import Foundation
 ///
 /// Only for what a host cannot read anywhere else: a refusal, a ceiling reached, an
 /// anomaly. The engine's counters and `last*` readers are the contract; this is the
-/// line beside them that says it happened when nobody was asking.
-func sceLog(_ message: @autoclosure () -> String) {
+/// line beside them that says it happened when nobody was asking. Public so a reference
+/// host of the standard host features says its branches in the same line.
+public func sceLog(_ message: @autoclosure () -> String) {
     FileHandle.standardError.write(Data("[sce] \(message())\n".utf8))
 }
 

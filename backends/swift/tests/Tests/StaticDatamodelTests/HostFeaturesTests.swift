@@ -107,6 +107,47 @@ private struct HostRig {
     let host: ReferenceHost
     let clock: ScriptedClockSource
     let transport: ScriptedTransport
+    let model = ScriptedProvider()
+
+    /// Applies a `model` directive to the scripted provider: each member it names. An
+    /// answer is `text`, or `text_repeat` as a text and a count, with `finish`, `stop` when
+    /// not written.
+    func applyModel(_ members: [(key: String, value: JSONValue)], at: SourceLocation) {
+        for (member, setting) in members {
+            switch (member, setting) {
+            case ("answers", .array(let answers)):
+                model.answers = answers.compactMap { answer in
+                    var text: String?
+                    if case .text(let written)? = answer.member("text") {
+                        text = written
+                    } else if case .array(let repeat)? = answer.member("text_repeat"), repeat.count == 2,
+                        case .text(let unit) = repeat[0], let count = integerValue(repeat[1], as: Int.self)
+                    {
+                        text = String(repeating: unit, count: count)
+                    }
+                    guard let text else {
+                        fail("an answer of the `model` directive has no text", at)
+                        return nil
+                    }
+                    var finish = "stop"
+                    if case .text(let written)? = answer.member("finish") {
+                        finish = written
+                    }
+                    return ScriptedAnswer(text: text, finish: finish)
+                }
+            case ("constrained", .bool(let constrained)):
+                model.constrained = constrained
+            case ("name", .text(let name)):
+                model.name = name
+            case ("context", _):
+                model.context = integerValue(setting, as: UInt64.self) ?? model.context
+            case ("hold", .bool(let hold)):
+                model.hold = hold
+            default:
+                fail("`\(member)` is not a member of the `model` directive", at)
+            }
+        }
+    }
 
     /// Applies the `host` object of a step. A directive this host does not serve fails the
     /// step that names it, and is never ignored: a step whose host was not set up as it
@@ -169,6 +210,12 @@ private struct HostRig {
                     continue
                 }
                 transport.apply(members, at: at)
+            case "model":
+                guard case .object(let members) = value else {
+                    fail("the `model` directive is an object", at)
+                    continue
+                }
+                applyModel(members, at: at)
             default:
                 fail("`\(name)` is a host directive this host does not serve yet", at)
             }
@@ -219,10 +266,10 @@ private struct HostRig {
     func starts() -> JSONValue {
         .array(
             host.takeStarts().map { start in
-                // The request as the record: `at_ms`, the one integer field a request
-                // has, is a number, and every other field is the text it was handed.
+                // The request as the record: its integer fields are numbers, and every
+                // other field is the text it was handed.
                 let request = start.params.sorted { $0.key < $1.key }.map { member -> (key: String, value: JSONValue) in
-                    if member.key == "at_ms" {
+                    if ["at_ms", "max_tokens", "temperature_milli"].contains(member.key) {
                         return (key: member.key, value: .number(member.value))
                     }
                     return (key: member.key, value: .text(member.value))
@@ -243,6 +290,7 @@ private func replayHost<Policy: StatePolicy>(
     _ name: String,
     policy: Policy,
     variables: [String: () -> JSONValue],
+    answerSchemas: [AnswerSchema] = [],
     sourceLocation: SourceLocation = #_sourceLocation
 ) {
     let path = "\(hostScenarioDirectory)/\(name).json"
@@ -261,6 +309,8 @@ private func replayHost<Policy: StatePolicy>(
     let clock = ScriptedClockSource()
     let transport = ScriptedTransport()
     let rig = HostRig(host: ReferenceHost(clock: clock, transport: transport), clock: clock, transport: transport)
+    rig.host.setModelProvider(rig.model)
+    rig.host.setAnswerSchemas(answerSchemas)
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
     do {
@@ -415,4 +465,236 @@ private func replayHost<Policy: StatePolicy>(
             "existed": { .bool(policy.existed) },
         ]
     )
+}
+
+/// What static_host_model publishes, each as a scenario states it: a record by its fields in
+/// the order the scenario writes them, a 64-bit field as its digits, an enum by its name.
+private func modelVariables(_ policy: StaticHostModelPolicy) -> [String: () -> JSONValue] {
+    let answer = { (a: StaticHostModelAnswerRecord) -> JSONValue in
+        .object([
+            (key: "id", value: integer(a.id)),
+            (key: "amount", value: .text(String(a.amount))),
+            (key: "title", value: .text(a.title)),
+            (key: "kind", value: .text(a.kind.declaredName)),
+            (key: "note", value: optionalText(a.note)),
+            (key: "tag", value: .text(bytesAsPayloadText(a.tag))),
+            (key: "priority", value: integer(a.priority)),
+        ])
+    }
+    let why = { (w: StaticHostModelLiftRefusalRecord) -> JSONValue in
+        .object([
+            (key: "code", value: .text(w.code.declaredName)),
+            (key: "path", value: .text(w.path)),
+            (key: "bound", value: optionalInteger(w.bound)),
+        ])
+    }
+    return [
+        "calls": { integer(policy.calls) },
+        "outcome": { .text(policy.outcome) },
+        "finish": { .text(policy.finish) },
+        "constrained": { .bool(policy.constrained) },
+        "answered_by": { .text(policy.answeredBy) },
+        "prompt_tokens": { integer(policy.promptTokens) },
+        "answer_tokens": { integer(policy.answerTokens) },
+        "answer": { policy.answer.map(answer) ?? .null },
+        "why": { policy.why.map(why) ?? .null },
+    ]
+}
+
+@Test func aMachineAsksItsHostForATextUnderAnAnswerSchema() {
+    let policy = StaticHostModelPolicy()
+    replayHost(
+        "static_host_model",
+        policy: policy,
+        variables: modelVariables(policy),
+        answerSchemas: StaticHostModelAnswerSchemas.all
+    )
+}
+
+/// What the exhaustive provider answers for a class of the table.
+private func outcomeClass(_ cls: JSONValue) -> OutcomeClass {
+    func text(_ name: String) -> String {
+        if case .text(let value)? = cls.member(name) {
+            return value
+        }
+        return ""
+    }
+    switch text("end") {
+    case "answer":
+        return .answer(text: text("text"), finish: text("finish"))
+    case "failure":
+        return .failure(text("error"))
+    case "refusal":
+        return .refusal
+    default:
+        return .hold
+    }
+}
+
+/// Runs static_host_model against the exhaustive provider answering the classes `sequence`
+/// names, one call a class, and holds what the machine publishes after each call to what its
+/// class says.
+private func runSequence(_ table: JSONValue, _ classes: [JSONValue], _ sequence: [Int], at: SourceLocation) {
+    let named = sequence.map { index -> String in
+        if case .text(let name)? = classes[index].member("class") {
+            return name
+        }
+        return "?"
+    }
+    let policy = StaticHostModelPolicy()
+    let host = ReferenceHost(clock: ScriptedClockSource(), transport: ScriptedTransport())
+    host.setAnswerSchemas(StaticHostModelAnswerSchemas.all)
+    host.setModelProvider(ExhaustiveProvider(sequence.map { outcomeClass(classes[$0]) }))
+    let engine = Engine(policy: policy)
+    engine.setClock(ManualClock())
+    do {
+        try serve(host, on: engine)
+    } catch {
+        fail("the reference host could not be registered: \(error)", at)
+        return
+    }
+    engine.initialize()
+    engine.tick()
+    guard case .text(let event)? = table.member("ask")?.member("event"),
+        let data = table.member("ask")?.member("data"),
+        case .text(let leave)? = table.member("leave"),
+        case .number(let deadline)? = table.member("deadline_ms"), let deadlineMs = Int64(deadline)
+    else {
+        fail("the class table names no request, leave event or deadline", at)
+        return
+    }
+    let variables = modelVariables(policy)
+    var answer: JSONValue = .null
+    for (n, index) in sequence.enumerated() {
+        let cls = classes[index]
+        engine.raiseExternalByName(event, eventData: writeJSON(data))
+        engine.tick()
+        if case .text(let then)? = cls.member("then") {
+            if then == "advance" {
+                engine.advanceTimeMs(deadlineMs)
+                engine.tick()
+            } else if then == "leave" {
+                engine.raiseExternalByName(leave, eventData: "")
+                engine.tick()
+            }
+        }
+        guard let expect = cls.member("expect") else {
+            fail("a class states what it expects", at)
+            return
+        }
+        if let read = expect.member("answer") {
+            answer = read
+        }
+        let label = "\(named), call \(n + 1)"
+        if policy.getStateName(engine.getCurrentState()) != "idle" {
+            fail("\(label): the machine is not idle", at)
+        }
+        for name in ["outcome", "why", "finish"] {
+            let got = variables[name]?() ?? .null
+            let want = expect.member(name) ?? .null
+            if !sameValue(byKey(got), byKey(want)) {
+                fail("\(label): `\(name)` is \(got), not \(want)", at)
+            }
+        }
+        let held = variables["answer"]?() ?? .null
+        if !sameValue(byKey(held), byKey(answer)) {
+            fail("\(label): `answer` is \(held), not \(answer)", at)
+        }
+        if !sameValue(variables["calls"]?() ?? .null, integer(n + 1)) {
+            fail("\(label): `calls` is \(variables["calls"]?() ?? .null)", at)
+        }
+    }
+}
+
+/// The machine around a model is tested exhaustively (docs/adr/0087, section 9.4): every
+/// sequence of outcome classes up to the table's bound, each call read as its class says, and
+/// every refusal code of the library either reached by a class or named as deferred with its
+/// reason.
+@Test func everySequenceOfOutcomeClassesIsReadAsItsClassesSay() {
+    let at = #_sourceLocation
+    let table: JSONValue
+    do {
+        table = try parseJSON(
+            String(contentsOfFile: "\(hostScenarioDirectory)/../model_outcome_classes.json", encoding: .utf8)
+        )
+    } catch {
+        fail("the class table is not readable: \(error)", at)
+        return
+    }
+    guard case .array(let classes)? = table.member("classes"), !classes.isEmpty,
+        case .number(let boundText)? = table.member("bound"), let bound = Int(boundText), bound > 0,
+        case .text(let schema)? = table.member("answer_schema"),
+        case .array(let deferred)? = table.member("deferred")
+    else {
+        fail("the class table names nothing to run", at)
+        return
+    }
+    #expect(StaticHostModelAnswerSchemas.all.first?.id == schema)
+    var runs = 0
+    var expected = 0
+    var sequences: [[Int]] = [[]]
+    for _ in 1...bound {
+        sequences = sequences.flatMap { prefix in classes.indices.map { prefix + [$0] } }
+        expected += sequences.count
+        for sequence in sequences {
+            runSequence(table, classes, sequence, at: at)
+            runs += 1
+        }
+    }
+    #expect(runs == expected)
+    var codes = Set<String>()
+    for cls in classes {
+        if case .text(let code)? = cls.member("expect")?.member("why")?.member("code") {
+            codes.insert(code)
+        }
+    }
+    for entry in deferred {
+        if case .text(let code)? = entry.member("code") {
+            codes.insert(code)
+        }
+    }
+    #expect(codes.count == 13, "every refusal code is reached or deferred: \(codes.sorted())")
+}
+
+@Test func theReferenceHostJudgesAGenerationBeforeItsProvider() {
+    let host = ReferenceHost(clock: ScriptedClockSource(), transport: ScriptedTransport())
+    host.setAnswerSchemas([AnswerSchema(id: "urn:sce:schema:answer:1", jsonSchema: "{}", gbnf: "root ::= \"{}\"")])
+    let scripted = ScriptedProvider()
+    scripted.constrained = true
+    scripted.context = 10
+    scripted.answers = [
+        ScriptedAnswer(text: String(repeating: "a", count: answerMaxBytes + 1)), ScriptedAnswer(text: "kept"),
+    ]
+    host.setModelProvider(scripted)
+    func ask(_ prompt: String, _ schema: String = "", _ maxTokens: String = "8", _ temperature: String = "0")
+        -> HostOutcome?
+    {
+        host.start(
+            operation: modelGenerate,
+            id: "gen",
+            params: [
+                "prompt": prompt, "answer_schema": schema, "max_tokens": maxTokens, "temperature_milli": temperature,
+            ]
+        )
+    }
+    func done(_ outcome: HostOutcome?) -> String {
+        if case .done(let data)? = outcome {
+            return data
+        }
+        return ""
+    }
+    for refused in [ask(""), ask("p", "", "0"), ask("p", "", "8", "2001"), ask("p", "urn:sce:schema:other:1")] {
+        #expect(refused == .refuse(#"{"reason":"invalid_argument"}"#))
+    }
+    #expect(done(ask("p")).contains(#""error":"answer_too_large""#))
+    #expect(done(ask("abc")).contains(#""error":"context_exceeded""#))
+    let kept = done(ask("abc", "urn:sce:schema:answer:1", "7", "2000"))
+    #expect(kept.contains(#""text":"kept""#) && kept.contains(#""constrained":true"#))
+    #expect(done(ask("p")).contains(#""error":"unavailable""#))
+    host.setModelProvider(ExhaustiveProvider([.answer(text: "t", finish: "length"), .failure("busy"), .refusal, .hold]))
+    #expect(done(ask("p")).contains(#""model":"exhaustive""#))
+    #expect(done(ask("p")).contains(#""error":"busy""#))
+    #expect(ask("p") == .refuse(#"{"reason":"invalid_argument"}"#))
+    #expect(ask("p") == .hold)
+    #expect(done(ask("p")).contains(#""error":"unavailable""#))
 }
