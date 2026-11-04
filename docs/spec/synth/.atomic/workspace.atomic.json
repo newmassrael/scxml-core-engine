@@ -5408,10 +5408,6 @@
           "kind": "references"
         },
         {
-          "file": "tests/forge/resources/queue_conformance_node.scxml",
-          "kind": "references"
-        },
-        {
           "file": "backends/rust/forge-runtime/src/queue/allocator.rs",
           "kind": "references"
         },
@@ -7539,6 +7535,12 @@
       "target_kind": "section",
       "target_id": "synth-5-B",
       "reason": "ADR 0077 §7 step 4b removed REPEAT_DEFAULT_MAX_COUNT, whose doc was the file's only RFC §synth-5-B B2 citation; the file holds no codec list default any more"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-P",
+      "reason": "ADR 0088 retires the intrusive node codec: the queue links nodes its runtime defines, and the conformance queues hold queue_conformance_event"
     }
   ],
   "frames": {},

@@ -113,7 +113,9 @@ author's to name, so neither can happen. The authoring grammar, the forge AST an
 
 ### 4. Wire surfaces
 
-- `schemas/sce-forge-ext.xsd`: `intrusive` becomes an empty element.
+- `schemas/sce-forge-ext.xsd`: `intrusive` keeps `link-field` as an optional attribute marked removed, so that a
+  document that still writes it reaches the reader and its refusal with a fix, rather than a schema error with
+  none. This is what `worker/inbox-inline-removed` does for the attributes it removed.
 - `apis/forge-ast.v1.schema.json`: the `intrusive` storage variant carries no `link_field`.
 - `schemas/sce-diagnostic.v1.schema.json`, SCE_ERROR_CONTRACT.md and the appendix of docs/SCE_ACCEPTED_SUBSET.md:
   the two retired codes leave, and the new one joins.
