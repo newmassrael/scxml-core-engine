@@ -2799,7 +2799,8 @@ STATIC_SCENARIO(static_text_record, text_record_states, text_record_variables, N
 // records that may be absent, read only where they are present; a record's text is
 // its buffer's text, copied where it outlives the value the reader holds by value,
 // its byte string the Latin-1 text of its bytes, and an enum the name its document
-// declares.
+// declares. An enum's functions carry the stem of the file that declares it, not the
+// alias an import gives it: `enum_lift_kind.scxml` declares `enum_lift_kind_declared_name`.
 VARIABLE_READER(static_lift, lifts)
 VARIABLE_READER(static_lift, errors)
 
@@ -2834,7 +2835,7 @@ static const char *static_lift_text_record_answer(const void *sm, size_t index, 
         return title;
     }
     if (strcmp(field, "kind") == 0) {
-        return lift_kind_declared_name(held.value.kind);
+        return enum_lift_kind_declared_name(held.value.kind);
     }
     /* A 64-bit field is stated as the text of its digits. */
     if (strcmp(field, "amount") == 0) {
