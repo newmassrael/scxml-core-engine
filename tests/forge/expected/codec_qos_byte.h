@@ -12,13 +12,75 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecQosByte {
 
+/// The elements a value of `CodecQosByte` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_qos {
+void qos() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.qos())) -> decltype(s.qos()) {
+    return s.qos();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(qos(s))) -> decltype(qos(s)) {
+    return qos(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_qos
+/// The `qos` element of a source.
+inline constexpr detail_qos::Read qos{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecQosByte`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::qos(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::qos(std::declval<const S&>())), uint8_t>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(source::qos(std::declval<const S&>()))> {};
+
+/// The encode of `CodecQosByte` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecQosByte: qos");
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::qos(src))); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecQosByte {
-    uint8_t qos{};
+    CodecQosByte() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    constexpr CodecQosByte(uint8_t qos) noexcept
+        : qos_(qos) {}
+    /// The `qos` element.
+    [[nodiscard]] constexpr uint8_t qos() const noexcept { return qos_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -44,7 +106,7 @@ struct CodecQosByte {
     // sibling bits. Wire layout is unchanged.
     uint8_t priority() const noexcept {
         return static_cast<uint8_t>(
-            (this->qos >> 0) & static_cast<uint8_t>(0x07)
+            (this->qos_ >> 0) & static_cast<uint8_t>(0x07)
         );
     }
 
@@ -57,26 +119,26 @@ struct CodecQosByte {
             static_cast<uint8_t>(
                 (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x07)) << 0
             );
-        this->qos = static_cast<uint8_t>(
-            (this->qos & static_cast<uint8_t>(~_shifted_mask)) | _val
+        this->qos_ = static_cast<uint8_t>(
+            (this->qos_ & static_cast<uint8_t>(~_shifted_mask)) | _val
         );
     }
 
     bool reliable() const noexcept {
-        return (this->qos & 0x08) != 0;
+        return (this->qos_ & 0x08) != 0;
     }
 
     void set_reliable(bool v) noexcept {
         if (v) {
-            this->qos = static_cast<uint8_t>(this->qos | 0x08);
+            this->qos_ = static_cast<uint8_t>(this->qos_ | 0x08);
         } else {
-            this->qos = static_cast<uint8_t>(this->qos & static_cast<uint8_t>(~0x08));
+            this->qos_ = static_cast<uint8_t>(this->qos_ & static_cast<uint8_t>(~0x08));
         }
     }
 
     uint8_t congestion() const noexcept {
         return static_cast<uint8_t>(
-            (this->qos >> 4) & static_cast<uint8_t>(0x03)
+            (this->qos_ >> 4) & static_cast<uint8_t>(0x03)
         );
     }
 
@@ -89,32 +151,32 @@ struct CodecQosByte {
             static_cast<uint8_t>(
                 (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x03)) << 4
             );
-        this->qos = static_cast<uint8_t>(
-            (this->qos & static_cast<uint8_t>(~_shifted_mask)) | _val
+        this->qos_ = static_cast<uint8_t>(
+            (this->qos_ & static_cast<uint8_t>(~_shifted_mask)) | _val
         );
     }
 
     bool express() const noexcept {
-        return (this->qos & 0x40) != 0;
+        return (this->qos_ & 0x40) != 0;
     }
 
     void set_express(bool v) noexcept {
         if (v) {
-            this->qos = static_cast<uint8_t>(this->qos | 0x40);
+            this->qos_ = static_cast<uint8_t>(this->qos_ | 0x40);
         } else {
-            this->qos = static_cast<uint8_t>(this->qos & static_cast<uint8_t>(~0x40));
+            this->qos_ = static_cast<uint8_t>(this->qos_ & static_cast<uint8_t>(~0x40));
         }
     }
 
     bool reserved() const noexcept {
-        return (this->qos & 0x80) != 0;
+        return (this->qos_ & 0x80) != 0;
     }
 
     void set_reserved(bool v) noexcept {
         if (v) {
-            this->qos = static_cast<uint8_t>(this->qos | 0x80);
+            this->qos_ = static_cast<uint8_t>(this->qos_ | 0x80);
         } else {
-            this->qos = static_cast<uint8_t>(this->qos & static_cast<uint8_t>(~0x80));
+            this->qos_ = static_cast<uint8_t>(this->qos_ & static_cast<uint8_t>(~0x80));
         }
     }
 
@@ -129,8 +191,8 @@ struct CodecQosByte {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (auto _e = w.write_u8(qos); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -145,6 +207,9 @@ struct CodecQosByte {
         (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint8_t qos_{};
 };
 
 }  // namespace SCE::Generated::CodecQosByte

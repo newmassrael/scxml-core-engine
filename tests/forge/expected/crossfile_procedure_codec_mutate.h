@@ -179,7 +179,7 @@ public:
     [[nodiscard]] std::optional<Event> executeTransitionActions([[maybe_unused]] State source, [[maybe_unused]] std::size_t trIndex) {
         if (source == State::Start) {
             if (trIndex == 0) {
-                frame_.msgId = msgId_;
+                frame_ = ::SCE::Generated::CodecSimpleFrame::CodecSimpleFrame(msgId_, frame_.length(), frame_.payload());
             }
         }
         return std::nullopt;

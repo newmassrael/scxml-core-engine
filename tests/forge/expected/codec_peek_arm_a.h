@@ -12,14 +12,99 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecPeekArmA {
 
+/// The elements a value of `CodecPeekArmA` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_header {
+void header() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.header())) -> decltype(s.header()) {
+    return s.header();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(header(s))) -> decltype(header(s)) {
+    return header(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_header
+/// The `header` element of a source.
+inline constexpr detail_header::Read header{};
+namespace detail_payload {
+void payload() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.payload())) -> decltype(s.payload()) {
+    return s.payload();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(payload(s))) -> decltype(payload(s)) {
+    return payload(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_payload
+/// The `payload` element of a source.
+inline constexpr detail_payload::Read payload{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecPeekArmA`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::header(std::declval<const S&>())), decltype(source::payload(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::header(std::declval<const S&>())), uint8_t>, std::is_convertible<decltype(source::payload(std::declval<const S&>())), uint8_t>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(source::header(std::declval<const S&>())) && noexcept(source::payload(std::declval<const S&>()))> {};
+
+/// The encode of `CodecPeekArmA` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecPeekArmA: header, payload");
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::header(src))); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::payload(src))); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecPeekArmA {
-    uint8_t header{0x00u};
-    uint8_t payload{};
+    CodecPeekArmA() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    constexpr CodecPeekArmA(uint8_t header, uint8_t payload) noexcept
+        : header_(header), payload_(payload) {}
+    /// The `header` element.
+    [[nodiscard]] constexpr uint8_t header() const noexcept { return header_; }
+    /// The `payload` element.
+    [[nodiscard]] constexpr uint8_t payload() const noexcept { return payload_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -46,14 +131,14 @@ struct CodecPeekArmA {
     // mask + shift on the way in so out-of-range callers can't corrupt
     // sibling bits. Wire layout is unchanged.
     bool kind() const noexcept {
-        return (this->header & 0x01) != 0;
+        return (this->header_ & 0x01) != 0;
     }
 
     void set_kind(bool v) noexcept {
         if (v) {
-            this->header = static_cast<uint8_t>(this->header | 0x01);
+            this->header_ = static_cast<uint8_t>(this->header_ | 0x01);
         } else {
-            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x01));
+            this->header_ = static_cast<uint8_t>(this->header_ & static_cast<uint8_t>(~0x01));
         }
     }
 
@@ -68,9 +153,8 @@ struct CodecPeekArmA {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (auto _e = w.write_u8(header); _e) return _e;
-        if (auto _e = w.write_u8(payload); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -85,6 +169,10 @@ struct CodecPeekArmA {
         (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint8_t header_{0x00u};
+    uint8_t payload_{};
 };
 
 }  // namespace SCE::Generated::CodecPeekArmA

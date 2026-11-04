@@ -93,7 +93,7 @@ void the_default_arm_is_held_by_every_build() {
     }
     CHECK(cursor.remaining() == 0, "arm A reads the whole frame");
     const ArmA *a = std::get_if<ArmA>(&decoded->body);
-    CHECK(a != nullptr && a->header == 0x01 && a->payload == 0x00, "tag 0x01 decodes into arm A");
+    CHECK(a != nullptr && a->header() == 0x01 && a->payload() == 0x00, "tag 0x01 decodes into arm A");
 
     const NoCatchAll peek_original{};
     CHECK(std::holds_alternative<PeekArmA>(peek_original.body), "a default value holds the peek-byte arm A");
@@ -109,7 +109,7 @@ void a_tag_the_document_does_not_name_reaches_the_catch_all() {
         return;
     }
     const GatedDefault *d = std::get_if<GatedDefault>(&decoded->body);
-    CHECK(d != nullptr && d->tag == 0x03 && d->body.header == 0x03 && d->body.payload == 0x07,
+    CHECK(d != nullptr && d->tag == 0x03 && d->body.header() == 0x03 && d->body.payload() == 0x07,
           "tag 0x03 reaches the catch-all, which keeps the tag");
     CHECK(!cursor.last_refusal().has_value(), "a frame the catch-all reads is not refused");
 }
@@ -124,7 +124,7 @@ void without_a_catch_all_the_ungated_arm_decodes_in_every_build() {
         return;
     }
     const PeekArmA *a = std::get_if<PeekArmA>(&decoded->body);
-    CHECK(a != nullptr && a->header == 0x00 && a->payload == 0x07, "tag 0x00 decodes into arm A");
+    CHECK(a != nullptr && a->header() == 0x00 && a->payload() == 0x07, "tag 0x00 decodes into arm A");
 }
 
 #if SCE_FEATURE_GATED_ARM
@@ -140,7 +140,7 @@ void where_the_feature_is_on_its_tag_decodes_into_its_arm() {
     }
     CHECK(cursor.remaining() == 0, "arm B reads the whole frame");
     const ArmB *b = std::get_if<ArmB>(&decoded->body);
-    CHECK(b != nullptr && b->header == 0x02 && b->payload == 0x1234, "tag 0x02 decodes into arm B");
+    CHECK(b != nullptr && b->header() == 0x02 && b->payload() == 0x1234, "tag 0x02 decodes into arm B");
     CHECK(decoded->encode_to_vec() == kArmBFrame, "arm B's frame re-encodes byte for byte");
 }
 
@@ -154,7 +154,7 @@ void without_a_catch_all_the_feature_on_decodes_the_gated_arm() {
     }
     CHECK(cursor.remaining() == 0, "arm B reads the whole frame");
     const PeekArmB *b = std::get_if<PeekArmB>(&decoded->body);
-    CHECK(b != nullptr && b->header == 0x01 && b->payload == 0x1234, "tag 0x01 decodes into arm B");
+    CHECK(b != nullptr && b->header() == 0x01 && b->payload() == 0x1234, "tag 0x01 decodes into arm B");
 }
 
 #else

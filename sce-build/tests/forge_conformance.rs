@@ -8897,9 +8897,12 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_cpp() {
     )
     .expect("forge codegen for arm B fixture must succeed (cpp)");
     let (_, generated) = &output.files[0];
+    // Arm B is printed from its plan (docs/adr/0081 step 4): it holds the
+    // carrier privately, behind its `header()` accessor, and a default-made
+    // value still holds the declared flag value.
     assert!(
-        generated.contains("header{0x02u}"),
-        "arm B's struct must declare `header` with a default member \
+        generated.contains("header_{0x02u}"),
+        "arm B's value must hold `header` with a default member \
          initializer `{{0x02u}}` (value=\"0x02\" shifted by bit=0). \
          Generated source:\n{generated}"
     );

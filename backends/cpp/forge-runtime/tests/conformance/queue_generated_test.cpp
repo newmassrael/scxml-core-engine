@@ -63,7 +63,7 @@ namespace segmented_many = ::SCE::Generated::QueueConformanceSegmentedMany;
 using Event = element_ns::QueueConformanceEvent;
 
 Event event(std::uint8_t sensor_id, std::uint16_t value) {
-    return Event{.sensor_id = sensor_id, .value = value};
+    return Event{sensor_id, value};
 }
 
 bool contains(std::string_view haystack, std::string_view needle) {
@@ -117,11 +117,11 @@ void the_lamport_ring_hands_elements_over_in_order_and_refuses_when_full() {
     }
     Event refused = event(9, 99);
     CHECK(producer->try_push(std::move(refused)) == queue::PushStatus::Full, "a full queue refuses the push");
-    CHECK(refused.sensor_id == 9 && refused.value == 99, "the refused element comes back as it was");
+    CHECK(refused.sensor_id() == 9 && refused.value() == 99, "the refused element comes back as it was");
 
     for (std::uint16_t i = 0; i < spsc::CAPACITY; ++i) {
         const std::optional<Event> got = consumer->try_pop();
-        CHECK(got.has_value() && got->sensor_id == 1 && got->value == i, "first in, first out");
+        CHECK(got.has_value() && got->sensor_id() == 1 && got->value() == i, "first in, first out");
     }
     CHECK(!consumer->try_pop().has_value(), "drained");
 }
@@ -141,7 +141,7 @@ void the_scq_queue_holds_exactly_its_capacity_at_rest_and_keeps_order() {
           "a seventh element does not fit a queue of six");
     for (std::uint16_t i = 0; i < scq::CAPACITY; ++i) {
         const std::optional<Event> got = consumer->try_pop();
-        CHECK(got.has_value() && got->sensor_id == 2 && got->value == i, "first in, first out");
+        CHECK(got.has_value() && got->sensor_id() == 2 && got->value() == i, "first in, first out");
     }
     CHECK(!consumer->try_pop().has_value(), "drained");
 }
@@ -171,7 +171,7 @@ void the_scq_queue_can_be_a_static() {
     Event pushed = event(3, 7);
     CHECK(producer->try_push(std::move(pushed)) == queue::PushStatus::Ok, "push into a static queue");
     const std::optional<Event> got = consumer->try_pop();
-    CHECK(got.has_value() && got->sensor_id == 3 && got->value == 7, "pop from a static queue");
+    CHECK(got.has_value() && got->sensor_id() == 3 && got->value() == 7, "pop from a static queue");
 }
 
 /// Two producers and two consumers on real threads: nothing is lost, nothing
@@ -221,12 +221,12 @@ void the_scq_queue_loses_nothing_between_threads() {
     for (const std::vector<Event> &log : logs) {
         std::map<std::uint8_t, std::uint16_t> last;
         for (const Event &e : log) {
-            const auto it = last.find(e.sensor_id);
+            const auto it = last.find(e.sensor_id());
             if (it != last.end()) {
-                CHECK(e.value > it->second, "a sensor's elements went backwards");
+                CHECK(e.value() > it->second, "a sensor's elements went backwards");
             }
-            last[e.sensor_id] = e.value;
-            per_sensor[e.sensor_id].push_back(e.value);
+            last[e.sensor_id()] = e.value();
+            per_sensor[e.sensor_id()].push_back(e.value());
         }
     }
     for (std::uint8_t sensor = 1; sensor <= 2; ++sensor) {
@@ -288,7 +288,7 @@ template <typename Queue, typename QueueNode> void an_intrusive_queue_hands_node
     CHECK(!q.try_pop().has_value(), "drained");
     for (std::uint32_t i = 0; i < 4; ++i) {
         const Event expected = intrusive_event(i);
-        CHECK(nodes[i].value.sensor_id == expected.sensor_id && nodes[i].value.value == expected.value,
+        CHECK(nodes[i].value.sensor_id() == expected.sensor_id() && nodes[i].value.value() == expected.value(),
               "the queue left the node's value as it was");
     }
 }
@@ -309,7 +309,7 @@ void a_node_moves_between_queues_over_one_element() {
     CHECK(work.try_pop() == std::optional<std::uint32_t>(1), "the first queue kept the node still in it");
     CHECK(!work.try_pop().has_value() && !spare.try_pop().has_value(), "both queues drained");
     const Event moved = intrusive_event(0);
-    CHECK(nodes[0].value.sensor_id == moved.sensor_id && nodes[0].value.value == moved.value,
+    CHECK(nodes[0].value.sensor_id() == moved.sensor_id() && nodes[0].value.value() == moved.value(),
           "the node's value moved between the queues untouched");
 }
 
@@ -395,7 +395,7 @@ void the_linked_lamport_queue_hands_events_over_in_order_across_segments() {
     }
     for (std::uint16_t i = 0; i < 8; ++i) {
         const std::optional<Event> got = consumer->try_pop();
-        CHECK(got.has_value() && got->sensor_id == 1 && got->value == i, "first in, first out");
+        CHECK(got.has_value() && got->sensor_id() == 1 && got->value() == i, "first in, first out");
     }
     CHECK(!consumer->try_pop().has_value(), "drained");
     CHECK(!q.producer().has_value(), "there is one producer, and it is taken");
@@ -416,7 +416,7 @@ void the_lscq_queue_hands_events_over_in_order_across_segments() {
     }
     for (std::uint16_t i = 0; i < 10; ++i) {
         const std::optional<Event> got = consumer->try_pop();
-        CHECK(got.has_value() && got->sensor_id == 2 && got->value == i, "first in, first out");
+        CHECK(got.has_value() && got->sensor_id() == 2 && got->value() == i, "first in, first out");
     }
     CHECK(!consumer->try_pop().has_value(), "drained");
     // A second producer and a second consumer take the other slots of the domain,
@@ -429,7 +429,7 @@ void the_lscq_queue_hands_events_over_in_order_across_segments() {
     Event pushed = event(3, 9);
     CHECK(second_producer->try_push(std::move(pushed)) == queue::PushStatus::Ok, "the second producer pushes");
     const std::optional<Event> got = second_consumer->try_pop();
-    CHECK(got.has_value() && got->sensor_id == 3 && got->value == 9, "and the second consumer pops it");
+    CHECK(got.has_value() && got->sensor_id() == 3 && got->value() == 9, "and the second consumer pops it");
 }
 
 void a_spent_arena_refuses_the_segment_and_the_event_stays_with_its_owner() {
@@ -450,10 +450,10 @@ void a_spent_arena_refuses_the_segment_and_the_event_stays_with_its_owner() {
     }
     Event refused = event(9, 99);
     CHECK(producer->try_push(std::move(refused)) == queue::PushStatus::OutOfMemory, "the next needs a second segment");
-    CHECK(refused.sensor_id == 9 && refused.value == 99, "the refused event comes back whole");
+    CHECK(refused.sensor_id() == 9 && refused.value() == 99, "the refused event comes back whole");
     for (std::uint16_t i = 0; i < segmented::SEGMENT; ++i) {
         const std::optional<Event> got = consumer->try_pop();
-        CHECK(got.has_value() && got->sensor_id == 1 && got->value == i, "what fit comes out in order");
+        CHECK(got.has_value() && got->sensor_id() == 1 && got->value() == i, "what fit comes out in order");
     }
 
     // The same for the list of rings.
@@ -474,7 +474,7 @@ void a_spent_arena_refuses_the_segment_and_the_event_stays_with_its_owner() {
     Event refused_many = event(9, 99);
     CHECK(many_producer->try_push(std::move(refused_many)) == queue::PushStatus::OutOfMemory,
           "the next needs a second segment");
-    CHECK(refused_many.sensor_id == 9 && refused_many.value == 99, "the refused event comes back whole");
+    CHECK(refused_many.sensor_id() == 9 && refused_many.value() == 99, "the refused event comes back whole");
 }
 
 }  // namespace

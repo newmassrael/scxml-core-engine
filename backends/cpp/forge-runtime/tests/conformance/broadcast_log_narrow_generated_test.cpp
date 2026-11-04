@@ -253,7 +253,7 @@ void the_publishers_place_is_one_whichever_form_takes_it() {
 // ─── The ownership log: a target with loads and stores only ───
 
 Event make_event(std::uint8_t sensor, std::uint16_t value) {
-    return Event{.sensor_id = sensor, .value = value};
+    return Event{sensor, value};
 }
 
 std::uint64_t publish_event(OwnershipLog::Publisher &publisher, std::uint8_t sensor, std::uint16_t value) {
@@ -265,7 +265,7 @@ std::uint64_t publish_event(OwnershipLog::Publisher &publisher, std::uint8_t sen
 
 bool is_event(const OwnershipRead &got, std::uint64_t seq, std::uint8_t sensor, std::uint16_t value) {
     const OwnershipItem *item = std::get_if<OwnershipItem>(&got);
-    return item != nullptr && item->seq == seq && item->element.sensor_id == sensor && item->element.value == value;
+    return item != nullptr && item->seq == seq && item->element.sensor_id() == sensor && item->element.value() == value;
 }
 
 void entries_come_back_through_the_ownership_forms() {

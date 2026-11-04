@@ -256,6 +256,21 @@ target_compile_options(numerical_conformance_test PRIVATE
 enable_testing()
 add_test(NAME numerical_conformance COMMAND numerical_conformance_test)
 
+# A printed codec's encode over a consumer's own types (docs/adr/0081, step 4),
+# at C++17, the standard the interface is for (docs/adr/0059 section 3), and
+# under the same blanket -Werror: which types are sources is asserted at compile
+# time, and that each writes the generated value's bytes at run time. It reads
+# two of the headers the harness's generation writes.
+add_executable(codec_source_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/codec_source_generated_test.cpp")
+add_dependencies(codec_source_generated_test generate_forge_fixtures_cpp)
+set_target_properties(codec_source_generated_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(codec_source_generated_test PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${GENERATED_DIR}"
+)
+target_compile_options(codec_source_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME codec_source_generated COMMAND codec_source_generated_test)
+
 # The runtime's CBOR items on their own (sce/forge/cbor.h), under the same
 # blanket -Werror; what a generated CBOR codec does with them is judged by
 # the harness above (codec_cbor_map).

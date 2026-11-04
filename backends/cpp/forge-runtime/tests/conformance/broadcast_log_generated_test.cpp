@@ -66,13 +66,14 @@ using DeployedEmpty = deployed::BroadcastLogConformanceDeployedEmpty;
 using DeployedRead = deployed::BroadcastLogConformanceDeployedRead;
 
 Event event(std::uint8_t sensor_id, std::uint16_t value) {
-    return Event{.sensor_id = sensor_id, .value = value};
+    return Event{sensor_id, value};
 }
 
 /// Whether `got` is the entry `seq`, holding the event (`sensor_id`, `value`).
 bool is_item(const Read &got, std::uint64_t seq, std::uint8_t sensor_id, std::uint16_t value) {
     const Item *item = std::get_if<Item>(&got);
-    return item != nullptr && item->seq == seq && item->element.sensor_id == sensor_id && item->element.value == value;
+    return item != nullptr && item->seq == seq && item->element.sensor_id() == sensor_id &&
+           item->element.value() == value;
 }
 
 // What the generated headers state about their entries is checked when this file
@@ -123,7 +124,7 @@ void entries_come_back_whole_and_in_order_through_the_typed_functions() {
     }
     for (std::uint64_t n = 0; n < 3; ++n) {
         const Read got = literal::read(log, reader);
-        CHECK(is_item(got, n, sent[n].sensor_id, sent[n].value), "an entry comes back whole, in order");
+        CHECK(is_item(got, n, sent[n].sensor_id(), sent[n].value()), "an entry comes back whole, in order");
     }
     CHECK(std::holds_alternative<Empty>(literal::read(log, reader)), "drained");
     CHECK(reader.lost() == 0, "a reader that kept up lost nothing");

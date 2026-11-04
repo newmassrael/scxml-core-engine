@@ -357,6 +357,31 @@ old encode, the old encode and its templates are removed in the same landing.
    does. That tests the plan against a second interface idiom where the refinements stay static. C11 comes last
    because its interface, a table of functions over a context pointer, is the furthest from the others, and it
    then meets a plan four printers have already read.
+   *The C++ interface, decided by the owner 2026-11-04.* A C++ value presents its elements through accessor
+   functions, as a Rust value does through its trait (ADR 0058 §1), and not through public data members: every form
+   of a codec, the value that holds its elements, one that borrows them and a view that reads them from the frame's
+   bytes on demand, is then one interface, and a view has no member to hold. A generated value is made only by its
+   constructor, which takes the presented elements in declaration order, so `T{a, b}` still reads as ADR 0059 §5's
+   positional initializer while each refinement is checked where the value is made and holds after (Liskov and
+   Zilles, 1974). The encode reads each element through a customization point, as `std::ranges::begin` reads a range
+   (Niebler, N4381): the member function where the type has one, and otherwise a function of that name the type's
+   own namespace declares, found by argument-dependent lookup, so a consumer's type joins without opening an SCE
+   namespace. The requirement is a C++17 trait checked by `static_assert` (ADR 0059 §3). Considered and refused: a
+   traits class the consumer specializes, which every SCE form would then need beside the type it adapts, and
+   public data members alone, which no view can present and which let any value be written past its refinement.
+   The cost is consumer-visible and was accepted: an element read as `frame.msgId` is read as `frame.msgId()`, and
+   a derived element leaves the value (§3). Each landing says how to move (ADR 0078).
+   *The first C++ landing, 2026-11-04:* the codecs whose elements are all integers or flag sets, each always present
+   and none derived, with no flag input, no check and a total encode, written by packed bytes and fixed fields of a
+   width the sink writes whole (`cpp_source::unlowered` names the first form any other codec uses). Each is printed
+   from its plan: the readers of its elements, the trait `is_source`, the encode over any source (`Wire::encode_source`),
+   the constructor and the accessors. Its `encode` is `Wire::encode_source(*this, w)`. A document that imports a printed
+   codec reads its elements through the accessors (a chain's entry identifier, a validator's or a procedure's
+   expression), and a procedure's `<assign>` to one element makes the value again by its constructor, the other
+   elements read from their accessors. The numerical harness makes each
+   printed value by its constructor and reads it by its accessors; `codec_source_generated_test` holds a consumer's
+   types, presenting the elements by member functions, by functions of their namespace, or by both, to the generated
+   value's bytes.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

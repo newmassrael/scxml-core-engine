@@ -272,6 +272,20 @@ private:
 /// would otherwise force every String-bearing codec's signature to
 /// surface the variant (Rust + Go + Python construct the variant
 /// because their decode return types already distinguish error cases).
+// ── Reading an element of a source ───────────────────────────────
+
+/// The priority tags a generated element reader dispatches on (docs/adr/0081,
+/// step 4): an encode reads each element of its source through a
+/// customization point, as `std::ranges::begin` reads a range (N4381). A
+/// call made with `PreferMember{}` takes the overload that calls the type's
+/// member function where it has one; otherwise the tag converts to
+/// `PreferFree`, whose overload calls a function of that name the type's own
+/// namespace declares, found by argument-dependent lookup. A consumer's type
+/// presents a codec's elements either way, without opening an SCE namespace.
+struct PreferFree {};
+
+struct PreferMember : PreferFree {};
+
 // ── Write-side sink ──────────────────────────────────────────────
 
 /// Write-side cursor for codec emit. Object-oriented base class that

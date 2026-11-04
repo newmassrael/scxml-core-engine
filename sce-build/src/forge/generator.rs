@@ -22,6 +22,7 @@ use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
+mod cpp_source;
 mod length_guard;
 mod rust_source;
 mod rust_view;
@@ -377,6 +378,14 @@ pub struct ImportContext {
     /// enrichment.
     #[serde(skip)]
     pub codec_lent_holds: bool,
+
+    /// docs/adr/0081 step 4: `true` when the C++ backend prints the imported
+    /// codec from its plan, so its value presents its elements through
+    /// accessors and a parent reads them by call (`entry.kind()`), not as
+    /// members. `false` on every other backend, for non-codec imports, and
+    /// for a codec the printer does not lower yet.
+    #[serde(skip)]
+    pub cpp_printed: bool,
 
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
@@ -1304,6 +1313,7 @@ fn resolve_single_import(
         codec_is_borrowed: false,
         codec_inline_holds: false,
         codec_lent_holds: false,
+        cpp_printed: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -7510,6 +7520,13 @@ pub(crate) fn codec_inline_holds(m: &CodecModel, imports: &[ImportContext]) -> b
     })
 }
 
+/// Whether the C++ backend prints `m` from its encode plan (docs/adr/0081 step
+/// 4, §6): its plan uses only the forms the C++ printer lowers. Such a value
+/// presents its elements through accessors and is made by its constructor.
+pub(crate) fn cpp_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    cpp_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+}
+
 /// Whether the eager form at the default profile, `{Codec}In<Lent<'a>>`,
 /// holds `m` (`CodecModel::lent_holds_with`, docs/adr/0077 §7), the codecs it
 /// imports answered by their import's [`ImportContext::codec_lent_holds`].
@@ -10184,6 +10201,22 @@ fn render_codec(
     let l = LangCtx::new(lang, imports);
     let type_key = l.codec_type_key();
 
+    // docs/adr/0081 step 4: a C++ codec whose plan uses only the forms the C++
+    // printer lowers is printed from the plan, its value presented through
+    // accessors and encoded over any source of it; any other keeps the
+    // template's encode whole (§6), so no codec has two.
+    let cpp_printed = if matches!(lang, crate::generator::Language::Cpp) {
+        let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
+        match (&plan, cpp_source::unlowered(&plan)) {
+            (crate::forge::encode_plan::CodecPlan::Positional(p), None) => Some(
+                cpp_source::render(p, &l, &filters::to_pascal_case(m.name.clone())),
+            ),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
     // RFC §synth-5-B variant primitive (closures complete): all six
     // backends now emit variant codecs. The historical gate sat here
     // until each per-language closure landed; the final closure
@@ -11268,6 +11301,18 @@ fn render_codec(
                 };
                 obj.insert("py_carrier_max".into(), py_carrier_max.into());
             }
+            // The name the value holds the field under: its own where the
+            // field is a public member, the private one a C++ value printed
+            // from its plan holds behind its accessor (docs/adr/0081 step 4).
+            obj.insert(
+                "member".into(),
+                if cpp_printed.is_some() {
+                    cpp_source::member(&l.codec_field_id(&f.id))
+                } else {
+                    l.codec_field_id(&f.id)
+                }
+                .into(),
+            );
             // RFC §synth-5-B flags primitive: pre-render per-flag accessor
             // context. Each flag carries a language-specific accessor name,
             // setter name, and the precomputed bitmask literal.
@@ -11320,14 +11365,7 @@ fn render_codec(
                 // field declaration. Suffix mirrors stdint typedef
                 // semantics (uint8_t accepts unsigned literals via the
                 // `u` suffix; widening occurs implicitly).
-                let cpp_literal = match f.sce_type.int_bit_width() {
-                    Some(8)  => format!("{{0x{:02x}u}}", acc),
-                    Some(16) => format!("{{0x{:04x}u}}", acc),
-                    Some(32) => format!("{{0x{:08x}u}}", acc),
-                    Some(64) => format!("{{0x{:016x}uLL}}", acc),
-                    _        => format!("{{0x{:02x}u}}", acc),
-                };
-                obj.insert("cpp_default_init".into(), cpp_literal.into());
+                obj.insert("cpp_default_init".into(), cpp_flag_default_init(f).into());
                 // Kotlin default-value expression: emitted as the right-
                 // hand side of the data class primary constructor's
                 // `var id: UByte = …` default. UByte / UShort have no
@@ -11605,6 +11643,16 @@ fn render_codec(
     };
 
     let mut ctx = l.base_context(&m.name);
+    if let Some(printed) = &cpp_printed {
+        ctx.insert(
+            "cpp_source".into(),
+            serde_json::json!({
+                "before": printed.before,
+                "members": printed.members,
+                "private": printed.private,
+            }),
+        );
+    }
     // The fields each form holds and the fields the wire reads: on Rust a group
     // of fields one gate decides is held as one entry (docs/adr/0065 §6 R4b),
     // and every other backend holds the wire's fields as they are.
@@ -13834,13 +13882,35 @@ fn resolve_chain_entry_identifier(
     }
 }
 
-/// Chain id to the bits of an entry's value that are its identifier, for the
-/// chains that leave flags out of it. See [`chain_identifier_masks`].
-pub(crate) type ChainIdentifierMasks = std::collections::BTreeMap<String, u64>;
+/// How a codec reads its chains' entries' identifiers (see
+/// [`chain_identifier_masks`]): for the chains that leave flags out of it, the
+/// bits of an entry's value that are the identifier; and the chains whose entry
+/// codec the C++ backend prints from its plan, whose elements are read through
+/// accessors (docs/adr/0081 step 4).
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ChainIdentifierMasks {
+    masks: std::collections::BTreeMap<String, u64>,
+    accessors: std::collections::BTreeSet<String>,
+}
+
+impl ChainIdentifierMasks {
+    /// The bits of an entry's value that are the identifier, for a chain
+    /// that leaves flags out of it.
+    pub(crate) fn get(&self, chain: &str) -> Option<&u64> {
+        self.masks.get(chain)
+    }
+
+    /// Whether the entries of `chain` present their elements through
+    /// accessors, a C++ codec printed from its plan.
+    pub(crate) fn reads_accessor(&self, chain: &str) -> bool {
+        self.accessors.contains(chain)
+    }
+}
 
 /// For each chain of `parent` that leaves flags out of its entries'
 /// identifier, the bits of an entry's value that are the identifier. A chain
-/// that reads its identifier whole has no entry: nothing is masked.
+/// that reads its identifier whole has no entry: nothing is masked. And each
+/// chain whose entry codec is read through accessors.
 ///
 /// Read after `validate_cross_codec_chain_entry_id`, which has refused every
 /// chain this cannot resolve, so a chain that leaves flags out and is missing
@@ -13849,8 +13919,16 @@ pub(crate) fn chain_identifier_masks(
     parent: &CodecModel,
     imports: &[ImportContext],
 ) -> ChainIdentifierMasks {
-    let mut masks = ChainIdentifierMasks::new();
+    let mut masks = ChainIdentifierMasks::default();
     for chain in parent.fields.iter().filter(|f| f.is_tlv_chain()) {
+        if chain
+            .tlv_chain_body_alias
+            .as_deref()
+            .and_then(|alias| imports.iter().find(|i| i.alias == alias))
+            .is_some_and(|entry| entry.cpp_printed)
+        {
+            masks.accessors.insert(chain.id.clone());
+        }
         let BitSize::TlvChain {
             entry_id: Some(identifier),
             ..
@@ -13869,7 +13947,7 @@ pub(crate) fn chain_identifier_masks(
         let Ok(resolved) = resolve_chain_entry_identifier(identifier, entry_codec) else {
             panic!("validate_cross_codec_chain_entry_id has accepted this identifier");
         };
-        masks.insert(
+        masks.masks.insert(
             chain.id.clone(),
             resolved
                 .mask
@@ -16918,7 +16996,7 @@ fn rust_chain_kinds(
             let test = |entry: &str| {
                 format!(
                     "{} == {literal}",
-                    chain_entry_identifier(chain, entry, mask, Language::Rust)
+                    chain_entry_identifier(chain, entry, mask, false, Language::Rust)
                 )
             };
             RustChainKind {
@@ -16964,7 +17042,7 @@ fn c11_chain_kinds(
             has: chain_has_local(&chain.id, value, Language::C11),
             of_read: format!(
                 "{} == {}",
-                chain_entry_identifier(chain, &read, mask, Language::C11),
+                chain_entry_identifier(chain, &read, mask, false, Language::C11),
                 chain_identifier_literal(value, Language::C11)
             ),
         })
@@ -18239,6 +18317,20 @@ fn rust_bit_extract(carrier: &str, bit: u32, mask_lit: &str, from_ty: &str, to_t
         masked
     } else {
         format!("({masked}) as {to_ty}")
+    }
+}
+
+/// The C++ default member initializer of a flags carrier whose flags declare
+/// values (`<sce:flag value=..>`): the OR of them, as a literal of the
+/// carrier's width (`{0x02u}`), which the template's public member and the
+/// plan printer's private one both take (RFC variant-default-uniformity).
+fn cpp_flag_default_init(field: &CodecField) -> String {
+    let acc = flag_default_carrier_value(field);
+    match field.sce_type.int_bit_width() {
+        Some(16) => format!("{{0x{acc:04x}u}}"),
+        Some(32) => format!("{{0x{acc:08x}u}}"),
+        Some(64) => format!("{{0x{acc:016x}uLL}}"),
+        _ => format!("{{0x{acc:02x}u}}"),
     }
 }
 
@@ -21738,6 +21830,7 @@ fn chain_entry_identifier(
     chain: &CodecField,
     entry: &str,
     mask: Option<u64>,
+    accessor: bool,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -21773,6 +21866,13 @@ fn chain_entry_identifier(
         } else {
             format!("{entry}.{getter}()")
         }
+    } else if accessor {
+        // A C++ entry printed from its plan presents the field through its
+        // accessor (docs/adr/0081 step 4).
+        format!(
+            "{entry}.{}()",
+            codec_field_local_name(&identifier.name, lang)
+        )
     } else {
         format!("{entry}.{}", codec_field_local_name(&identifier.name, lang))
     };
@@ -21845,6 +21945,9 @@ struct ChainEntryBinds {
     /// The bits of an entry's value that are its identifier, when the chain
     /// leaves flags out of it (`entry-id-except`); see [`chain_entry_identifier`].
     mask: Option<u64>,
+    /// Whether an entry presents its elements through accessors, a C++ codec
+    /// printed from its plan (docs/adr/0081 step 4).
+    accessor: bool,
     binds: Vec<ChainEntryBind>,
 }
 
@@ -21863,6 +21966,7 @@ impl ChainEntryBinds {
         };
         Self {
             mask: masks.get(&chain.id).copied(),
+            accessor: masks.reads_accessor(&chain.id),
             binds,
         }
     }
@@ -21930,7 +22034,7 @@ impl ChainEntryBinds {
     ) -> String {
         format!(
             "{} == {}",
-            chain_entry_identifier(chain, entry, self.mask, lang),
+            chain_entry_identifier(chain, entry, self.mask, self.accessor, lang),
             chain_identifier_literal(bind.previous_entry_id, lang)
         )
     }
@@ -22023,7 +22127,7 @@ fn chain_has_decl_lines(
     let test = |entry: &str| {
         format!(
             "{} == {literal}",
-            chain_entry_identifier(chain, entry, mask, lang)
+            chain_entry_identifier(chain, entry, mask, masks.reads_accessor(&chain.id), lang)
         )
     };
     let encode = site == PresentIfSite::Encode;
@@ -30698,6 +30802,7 @@ fn render_procedure_cpp(
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
+        imports,
     )?;
 
     // Collect raw sce:payload expressions for header dependency comment (CR#6)
@@ -31335,6 +31440,7 @@ fn render_procedure_c_l2(
         &procedure_type_ctx,
         &assign_rename_map,
         &import_lowerings,
+        &[],
     )?;
     // States in m.states keep their raw id; pair them up by index so
     // the post-process is independent of how PascalCase rendered.
@@ -31636,6 +31742,12 @@ fn stateful_import_field_renames(
                 None => continue,
             };
             let expansion = match language {
+                // A codec the C++ printer prints presents each element through
+                // its accessor (docs/adr/0081 step 4); an assign to one is a
+                // rebuild ([`cpp_rebuilt_element_assign`]), not this read.
+                generator::Language::Cpp if imp.cpp_printed => {
+                    format!("{}.{}()", imp.member_name, field)
+                }
                 generator::Language::Cpp => {
                     format!("{}.{}", imp.member_name, field)
                 }
@@ -32027,6 +32139,7 @@ fn build_procedure_states_with_assigns(
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     assign_rename_map: &std::collections::HashMap<&str, &str>,
     import_lowerings: &[expr::ImportLowering],
+    cpp_imports: &[ImportContext],
 ) -> Result<Vec<serde_json::Value>, ForgeError> {
     // Bounded-bytes cap contract: bytes-typed slot id → resolved
     // cap. The cpp branch consumes these fields directly; the other
@@ -32125,6 +32238,14 @@ fn build_procedure_states_with_assigns(
                             let is_bytes_with_cap = cap_check_target
                                 && slot_cap.is_some()
                                 && matches!(lhs_ty, crate::forge::types::InferredType::Bytes);
+                            let (location_emitted, wrapped) = match cpp_rebuilt_element_assign(
+                                cpp_imports,
+                                &a.location,
+                                &wrapped,
+                            ) {
+                                Some(rebuild) => rebuild,
+                                None => (location_emitted, wrapped),
+                            };
                             Ok(serde_json::json!({
                                 "location": location_emitted,
                                 "expr": wrapped,
@@ -32145,6 +32266,45 @@ fn build_procedure_states_with_assigns(
             }))
         })
         .collect()
+}
+
+/// The C++ statement that assigns `value` to the element `location` names
+/// (`alias.element`) of an imported codec the C++ printer prints, as
+/// `(member, rebuilt value)`; `None` where `location` names no such element.
+///
+/// A printed codec's value is made only by its constructor (docs/adr/0081
+/// step 4), so an element is not assigned in place: the value is made again,
+/// the assigned element from `value` and every other from its accessor, in
+/// the constructor's order, which is the codec's declaration order. The call
+/// is the parenthesised form, which converts each argument as the assignment
+/// it replaces did. `cpp_imports` is empty for every other backend.
+fn cpp_rebuilt_element_assign(
+    cpp_imports: &[ImportContext],
+    location: &str,
+    value: &str,
+) -> Option<(String, String)> {
+    let (alias, element) = location.trim().split_once('.')?;
+    let imp = cpp_imports
+        .iter()
+        .find(|imp| imp.cpp_printed && imp.is_stateful && imp.alias == alias)?;
+    if !imp.codec_fields.iter().any(|f| f.id == element) {
+        return None;
+    }
+    let arguments: Vec<String> = imp
+        .codec_fields
+        .iter()
+        .map(|f| {
+            if f.id == element {
+                value.to_string()
+            } else {
+                format!("{}.{}()", imp.member_name, f.id)
+            }
+        })
+        .collect();
+    Some((
+        imp.member_name.clone(),
+        format!("{}({})", imp.member_type, arguments.join(", ")),
+    ))
 }
 
 /// Language-specific wrapping for `_event.data` assignment to a Bytes-typed
@@ -32400,6 +32560,7 @@ fn render_procedure_kotlin(
         ExprTarget::Kotlin,
         &procedure_type_ctx,
         &assign_rename_map,
+        &[],
         &[],
     )?;
 
@@ -32734,6 +32895,7 @@ fn render_procedure_swift(
         &procedure_type_ctx,
         &rename_map,
         &[],
+        &[],
     )?;
 
     // An imported unit that keeps state from one call to the next (a filter) is a property of the
@@ -33026,6 +33188,7 @@ fn render_procedure_rust(
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
+        &[],
     )?;
 
     let tmpl = env
@@ -33257,6 +33420,7 @@ fn render_procedure_go(
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
+        &[],
     )?;
 
     // Cross-file imports
@@ -33470,6 +33634,7 @@ fn render_procedure_python(
         ExprTarget::Python,
         &procedure_type_ctx,
         &assign_rename_map,
+        &[],
         &[],
     )?;
 
@@ -43466,6 +43631,7 @@ mod tests {
             codec_is_borrowed: false,
             codec_inline_holds: false,
             codec_lent_holds: false,
+            cpp_printed: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -44375,6 +44541,7 @@ mod tests {
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
                 codec_lent_holds: false,
+                cpp_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -44438,6 +44605,7 @@ mod tests {
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
                 codec_lent_holds: false,
+                cpp_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,

@@ -3173,6 +3173,20 @@ pub fn codec_lent_holds_file(
     })
 }
 
+/// Whether the C++ tree prints the codec at `path` from its encode plan
+/// (docs/adr/0081 step 4): its value presents its elements through accessors
+/// and is made by its constructor. Read as `compile_forge_file` reads it, its
+/// imports resolved. `None` for a document that is not a codec.
+pub fn cpp_codec_printed_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<bool>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file(path, include_dirs, options, |model, imports, _| {
+        forge::generator::cpp_codec_printed(&model, imports)
+    })
+}
+
 /// A codec a codec imports: the alias it is imported as, the file it is read
 /// from, and the names the Rust generator gives it, so a caller can read the
 /// codec it holds as it read the codec holding it.
@@ -7070,6 +7084,14 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut view_visited,
                 );
+                // docs/adr/0081 step 4: whether the C++ backend prints the
+                // import from its plan, so a parent reads its elements through
+                // accessors. Read as the import is generated, its own imports
+                // resolved.
+                if matches!(language, generator::Language::Cpp) {
+                    ctx.cpp_printed =
+                        cpp_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
+                }
                 // ADR 0058: whether the import has a source interface, which
                 // a parent that lists or embeds it is written through.
                 let mut source_visited: HashSet<PathBuf> = HashSet::new();

@@ -63,14 +63,14 @@ struct CodecChainHasTagged {
         if (_more) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
         bool _has_entries_7 = false;
         for (const auto& _e : entries) {
-            if (static_cast<std::uint64_t>(_e.entry_type) == 7ULL) {
+            if (static_cast<std::uint64_t>(_e.entry_type()) == 7ULL) {
                 _has_entries_7 = true;
                 break;
             }
         }
         bool _has_entries_9 = false;
         for (const auto& _e : entries) {
-            if (static_cast<std::uint64_t>(_e.entry_type) == 9ULL) {
+            if (static_cast<std::uint64_t>(_e.entry_type()) == 9ULL) {
                 _has_entries_9 = true;
                 break;
             }
@@ -127,14 +127,14 @@ struct CodecChainHasTagged {
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
         bool _has_entries_7 = false;
         for (const auto& _e : entries) {
-            if (static_cast<std::uint64_t>(_e.entry_type) == 7ULL) {
+            if (static_cast<std::uint64_t>(_e.entry_type()) == 7ULL) {
                 _has_entries_7 = true;
                 break;
             }
         }
         bool _has_entries_9 = false;
         for (const auto& _e : entries) {
-            if (static_cast<std::uint64_t>(_e.entry_type) == 9ULL) {
+            if (static_cast<std::uint64_t>(_e.entry_type()) == 9ULL) {
                 _has_entries_9 = true;
                 break;
             }

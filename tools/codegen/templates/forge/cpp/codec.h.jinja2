@@ -48,6 +48,10 @@
 {% if has_string_fields %}
 #include <string>
 {% endif %}
+{% if cpp_source %}
+#include <type_traits>
+#include <utility>
+{% endif %}
 
 #include "sce/forge/codec.h"
 {% if all_imports %}
@@ -114,15 +118,25 @@ using {{ struct_name }}Variant = std::variant<
 >;
 
 {% endif %}
+{% if cpp_source %}
+{{ cpp_source.before }}
+
+{% endif %}
 struct {{ struct_name }} {
 {# Every field is initialized: its declared default where it has one, else its
    value-initialized zero. A field left without one makes a default-constructed
    codec hold indeterminate bytes, which a copy then reads (C++ Core Guidelines
    ES.20, C.48); gcc's -Wmaybe-uninitialized found it through a variant whose
    first alternative is such a codec. #}
+{% if cpp_source %}
+{# docs/adr/0081 step 4: printed from the plan. The value presents each element
+   through an accessor and is made by its constructor; it holds them privately. #}
+{{ cpp_source.members }}
+{% else %}
 {% for field in fields %}
     {{ field.cpp_type }} {{ field.id }}{% if field.cpp_default_init is defined %}{{ field.cpp_default_init }}{% else %}{}{% endif %};
 {% endfor %}
+{% endif %}
 {% if has_variant %}
 {% if variant.default_arm_index is defined and variant.has_feature_gated_arm %}
     // RFC variant-default-uniformity (Cpp): a freshly-constructed
@@ -350,7 +364,7 @@ struct {{ struct_name }} {
 {% if fl.multi_bit %}
     {{ fl.result_type }} {{ fl.name_acc }}() const noexcept {
         return static_cast<{{ fl.result_type }}>(
-            (this->{{ field.id }} >> {{ fl.bit }}) & static_cast<{{ field.cpp_type }}>({{ fl.value_mask_literal }})
+            (this->{{ field.member }} >> {{ fl.bit }}) & static_cast<{{ field.cpp_type }}>({{ fl.value_mask_literal }})
         );
     }
 
@@ -363,21 +377,21 @@ struct {{ struct_name }} {
             static_cast<{{ field.cpp_type }}>(
                 (static_cast<{{ field.cpp_type }}>(v) & static_cast<{{ field.cpp_type }}>({{ fl.value_mask_literal }})) << {{ fl.bit }}
             );
-        this->{{ field.id }} = static_cast<{{ field.cpp_type }}>(
-            (this->{{ field.id }} & static_cast<{{ field.cpp_type }}>(~_shifted_mask)) | _val
+        this->{{ field.member }} = static_cast<{{ field.cpp_type }}>(
+            (this->{{ field.member }} & static_cast<{{ field.cpp_type }}>(~_shifted_mask)) | _val
         );
     }
 
 {% else %}
     bool {{ fl.name_acc }}() const noexcept {
-        return (this->{{ field.id }} & {{ fl.mask_literal }}) != 0;
+        return (this->{{ field.member }} & {{ fl.mask_literal }}) != 0;
     }
 
     void {{ fl.name_set }}(bool v) noexcept {
         if (v) {
-            this->{{ field.id }} = static_cast<{{ field.cpp_type }}>(this->{{ field.id }} | {{ fl.mask_literal }});
+            this->{{ field.member }} = static_cast<{{ field.cpp_type }}>(this->{{ field.member }} | {{ fl.mask_literal }});
         } else {
-            this->{{ field.id }} = static_cast<{{ field.cpp_type }}>(this->{{ field.id }} & static_cast<{{ field.cpp_type }}>(~{{ fl.mask_literal }}));
+            this->{{ field.member }} = static_cast<{{ field.cpp_type }}>(this->{{ field.member }} & static_cast<{{ field.cpp_type }}>(~{{ fl.mask_literal }}));
         }
     }
 
@@ -399,6 +413,10 @@ struct {{ struct_name }} {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w{{ params_after_first_arg }}) const noexcept {
+{% if cpp_source %}
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
+{% else %}
 {% if has_parent_flags %}
         (void)parent_flags;
 {% endif %}
@@ -500,7 +518,7 @@ struct {{ struct_name }} {
             if (auto _e = w.write_u8(0); _e) return _e;
         }
 {% endif %}
-        if (auto _e = w.write_bytes(this->{{ field.id }}.data(), this->{{ field.id }}.size()); _e) return _e;
+        if (auto _e = w.write_bytes(this->{{ field.member }}.data(), this->{{ field.member }}.size()); _e) return _e;
 {% endif %}
 {% endfor %}
         return std::nullopt;
@@ -509,6 +527,7 @@ struct {{ struct_name }} {
         if (auto _e = w.write_u8({{ expr }}); _e) return _e;
 {% endfor %}
         return std::nullopt;
+{% endif %}
 {% endif %}
     }
 
@@ -586,6 +605,9 @@ struct {{ struct_name }} {
 {% endif %}
         return 0;
     }
+{% endif %}
+{% if cpp_source %}
+{{ cpp_source.private }}
 {% endif %}
 };
 

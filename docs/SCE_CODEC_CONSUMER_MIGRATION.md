@@ -1009,3 +1009,25 @@ Landing: the commit that adds this section; the Rust, C++ and C11 queue trees ar
 - A node popped from one queue may be pushed to another over the same element; it is in one queue at a time. Push
   and pop still name a node by its index in the caller's array.
 
+## A C++ codec printed from its plan presents its elements through accessors (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the simplest positional
+codecs: those whose elements are all integers or flag sets, with no element derived, gated or refused, and no list,
+body, variant or flag input (`cpp_source::unlowered` names, per codec, the first form that keeps it where it was).
+Every other C++ codec is unchanged until the landing that moves it.
+
+- A value of a moved codec reads an element by its accessor: `frame.msgId()` where it read `frame.msgId`. A flag's
+  getter and setter (`header.N()`, `set_N`) are unchanged.
+- It is made by its constructor, its elements in declaration order: `CodecSimpleFrame{1, 2, 0x0304}` reads as before.
+  Assigning a member (`frame.msgId = 1`) does not compile; make the value whole instead. A default-made value holds
+  what it held, the declared flag values of a carrier among them.
+- `encode` and `encode_to_vec` are unchanged in signature and in bytes. Both are written through
+  `Wire::encode_source(src, sink)`, a template over any type that presents the codec's elements: a consumer's own type
+  encodes without a copy into the generated one, by a member function of each element's name, or a function of that
+  name in its own namespace taking it (`std::uint8_t msgId(const MyFrame&)`). `is_source<S>` says whether a type
+  does; a type that does not fails to compile with a message naming the elements.
+- `decode` is unchanged.
+- A generated document that imports such a codec moves with it at regeneration: a validator's or procedure's
+  expression reads `frame_.msgId()`, and a procedure's `<assign location="frame.msgId">` makes the value again,
+  `frame_ = CodecSimpleFrame(msgId_, frame_.length(), frame_.payload())`. The document does not change.
+

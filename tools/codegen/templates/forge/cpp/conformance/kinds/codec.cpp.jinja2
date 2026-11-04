@@ -50,10 +50,20 @@
             expected_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
         }
 
+{% if f.cpp_printed %}
+        {# A codec printed from its plan (docs/adr/0081 step 4) is made by its
+           constructor, its elements in declaration order. #}
+        SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{
+{% for field in f.fields %}
+            /*{{ field.name }}=*/input_{{ field.name }},
+{% endfor %}
+        };
+{% else %}
         SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{};
 {% for field in f.fields %}
         _codec_val.{{ field.name }} = input_{{ field.name }};
 {% endfor %}
+{% endif %}
 {% if f.cbor or f.encode_refuses_bound %}
         {# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a bounded
            field (docs/adr/0077 §3), refuses a value past its declared bound
@@ -73,28 +83,30 @@
         CHECK(round_tripped.has_value(),
               "{{ f.name }} case %d decode returned nullopt", i);
         if (round_tripped.has_value()) {
+{# A printed codec's element is read through its accessor. #}
+{% set acc = "()" if f.cpp_printed else "" %}
 {% for field in f.fields %}
 {% if field.optional %}
-            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+            CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: present actual=%d expected=%d, or the values differ",
-                  i, static_cast<int>(round_tripped->{{ field.name }}.has_value()),
+                  i, static_cast<int>(round_tripped->{{ field.name }}{{ acc }}.has_value()),
                   static_cast<int>(input_{{ field.name }}.has_value()));
 {% elif field.type == "bool" %}
-            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+            CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual=%d expected=%d",
-                  i, static_cast<int>(round_tripped->{{ field.name }}), static_cast<int>(input_{{ field.name }}));
+                  i, static_cast<int>(round_tripped->{{ field.name }}{{ acc }}), static_cast<int>(input_{{ field.name }}));
 {% elif field.type == "bytes" %}
-            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+            CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual_size=%zu expected_size=%zu",
-                  i, round_tripped->{{ field.name }}.size(), input_{{ field.name }}.size());
+                  i, round_tripped->{{ field.name }}{{ acc }}.size(), input_{{ field.name }}.size());
 {% elif field.type == "string" %}
-            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+            CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual=\"%s\" expected=\"%s\"",
-                  i, round_tripped->{{ field.name }}.c_str(), input_{{ field.name }}.c_str());
+                  i, round_tripped->{{ field.name }}{{ acc }}.c_str(), input_{{ field.name }}.c_str());
 {% else %}
-            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+            CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual=%s expected=%s",
-                  i, std::to_string(round_tripped->{{ field.name }}).c_str(), std::to_string(input_{{ field.name }}).c_str());
+                  i, std::to_string(round_tripped->{{ field.name }}{{ acc }}).c_str(), std::to_string(input_{{ field.name }}).c_str());
 {% endif %}
 {% endfor %}
         }

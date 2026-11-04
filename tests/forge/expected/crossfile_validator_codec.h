@@ -27,7 +27,7 @@ struct CrossfileValidatorCodec {
     ValidationResult validate(uint8_t msgId, uint16_t payload) {
         if (payload > 4095)
             return {false, "payload_out_of_range"};
-        if (!(frame_.msgId == msgId && frame_.payload == payload))
+        if (!(frame_.msgId() == msgId && frame_.payload() == payload))
             return {false, "plausibility_failed"};
         return {true, ""};
     }

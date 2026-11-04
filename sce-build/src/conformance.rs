@@ -785,6 +785,12 @@ pub enum FixtureSpec {
         /// states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         encode_refuses_bound: bool,
+        /// The C++ backend prints the codec from its encode plan
+        /// (docs/adr/0081 step 4): the fragment makes a value by its
+        /// constructor and reads each element through its accessor. Derived
+        /// from the document; fixtures.json never states it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        cpp_printed: bool,
     },
     /// Periodic timer (`SCE_FORGE.md` §4.10). ONE per document — the
     /// generated class wraps a single `ITimer&` and exposes `start()`,
@@ -1524,7 +1530,15 @@ impl Manifest {
                     grows,
                     encode_may_fail,
                     encode_refuses_bound,
+                    cpp_printed,
                 } => {
+                    if *cpp_printed {
+                        return Err(format!(
+                            "fixture {}: codec `cpp_printed` is derived from the SCXML \
+                             (its encode plan); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
                     if *grows {
                         return Err(format!(
                             "fixture {}: codec `grows` is derived from the SCXML (the \
@@ -3801,7 +3815,17 @@ pub fn render_harness(
                 grows,
                 encode_may_fail,
                 encode_refuses_bound,
+                cpp_printed,
             } => {
+                if document_exists(&scxml_path) && matches!(language, Language::Cpp) {
+                    *cpp_printed = crate::cpp_codec_printed_file(
+                        &scxml_path,
+                        &[],
+                        &crate::ForgeCompileOptions::default(),
+                    )
+                    .map_err(|e| format!("{}: {e:?}", scxml_path.display()))?
+                    .unwrap_or(false);
+                }
                 if document_exists(&scxml_path) {
                     derive_codec_shape(
                         &scxml_path,
