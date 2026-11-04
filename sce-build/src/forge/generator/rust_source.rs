@@ -282,11 +282,13 @@ fn handed_inputs(
             path.type_name,
             filters::to_snake_case(input.name.clone())
         );
-        let handed = if value == 1 { "true" } else { "false" };
+        // The bool itself, or its negation: a comparison with a literal `true`
+        // or `false` is what clippy's `bool_comparison` refuses in the harness.
+        let not = if value == 1 { "" } else { "!" };
         let holds = if plan.roles.says_input_partly(&input.name) {
-            format!("{says}.is_none_or(|said| said == {handed})")
+            format!("{says}.is_none_or(|said| {not}said)")
         } else {
-            format!("{says} == {handed}")
+            format!("{not}{says}")
         };
         said.push((format!("flag input {}", input.name), holds));
     }
@@ -890,10 +892,23 @@ fn value_same(
         Value::List { codec, law, .. } if !law.is_none() => {
             let (lx, ly) = (format!("{x}_list"), format!("{y}_list"));
             let entries = entries_same(codec, &lx, &ly, held, fresh)?;
-            Ok(format!(
-                "{{ let (({x}_start, {lx}), ({y}_start, {ly})) = ({x}.into_parts(), \
-                 {y}.into_parts()); {x}_start == {y}_start && {entries} }}"
-            ))
+            // A law whose every input the entry before decides starts from
+            // `()`: there is no start to compare.
+            let started = law
+                .inputs
+                .iter()
+                .any(|i| matches!(i.automaton, Automaton::Uniform));
+            Ok(if started {
+                format!(
+                    "{{ let (({x}_start, {lx}), ({y}_start, {ly})) = ({x}.into_parts(), \
+                     {y}.into_parts()); {x}_start == {y}_start && {entries} }}"
+                )
+            } else {
+                format!(
+                    "{{ let ((_, {lx}), (_, {ly})) = ({x}.into_parts(), {y}.into_parts()); \
+                     {entries} }}"
+                )
+            })
         }
         Value::List { codec, .. } => entries_same(codec, x, y, held, fresh),
         _ => Ok(format!("{x} == {y}")),
