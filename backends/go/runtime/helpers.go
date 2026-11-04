@@ -56,7 +56,7 @@ func ToSlice(value interface{}) ([]interface{}, bool) {
 // neither of the two serialisations beside it: [ScriptValueToJSON] would wrap a
 // string in quotes that are not part of it, and an engine literal would put the
 // sender's *language* on the wire, so one value read `nil` from this backend and
-// `` from the C++ one.
+// the empty string from the C++ one.
 //
 // The rendering is ECMAScript's String(value) — §scxml-B-1 makes the data model
 // ECMAScript — with the two amendments C++ ScriptResultUtils::resultToString
