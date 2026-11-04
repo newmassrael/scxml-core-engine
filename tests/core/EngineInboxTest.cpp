@@ -196,6 +196,31 @@ TEST(EngineInbox, AClosedInboxRefusesUntilItIsOpened) {
     EXPECT_EQ(drained(inbox), std::vector<int>{3});
 }
 
+// `isOwnerHere` answers whether a thread may make an owner-thread call, which it
+// may on an engine with no owner; `ownedHere` answers whether it is the owner now,
+// which is the Interpreter's question "is this call made inside a macrostep I am
+// running". The two differ exactly on an engine with no owner.
+TEST(EngineInbox, OwnedHereIsTrueOnlyOnTheOwnerAndNotOnAnEngineWithNone) {
+    Inbox inbox{CountingAllocator(std::make_shared<Ledger>())};
+    EXPECT_TRUE(inbox.isOwnerHere());
+    EXPECT_FALSE(inbox.ownedHere()) << "an engine with no owner answered that this thread owns it";
+
+    ASSERT_TRUE(inbox.claimOwner());
+    EXPECT_TRUE(inbox.ownedHere());
+    bool ownedElsewhere = true;
+    bool mayCallElsewhere = true;
+    std::thread other([&inbox, &ownedElsewhere, &mayCallElsewhere] {
+        ownedElsewhere = inbox.ownedHere();
+        mayCallElsewhere = inbox.isOwnerHere();
+    });
+    other.join();
+    EXPECT_FALSE(ownedElsewhere) << "a thread that does not own the engine answered that it does";
+    EXPECT_FALSE(mayCallElsewhere);
+
+    inbox.releaseOwner();
+    EXPECT_FALSE(inbox.ownedHere()) << "the owner that released the engine still answered that it owns it";
+}
+
 // Every segment the inbox took goes back to its allocator, with the posts still in
 // it, when the inbox goes.
 TEST(EngineInbox, AnInboxGivesEverySegmentBackWhenItGoes) {

@@ -18,8 +18,8 @@
 // posted, and a post never waits for a macrostep.
 //
 // A header of the shared layer because the rule is both C++ engines': the
-// generated engine has its inbox here, and the Interpreter takes the same one
-// when its threading follows the rule.
+// generated engine and the Interpreter (`runtime/StateMachine.h`) each have
+// their inbox here.
 
 #pragma once
 
@@ -250,6 +250,14 @@ public:
     bool isOwnerHere() const noexcept {
         const std::thread::id owner = owner_.load(std::memory_order_acquire);
         return owner == std::thread::id() || owner == std::this_thread::get_id();
+    }
+
+    /// Whether the calling thread is the engine's owner now. Unlike `isOwnerHere`,
+    /// false when the engine has no owner: for an engine whose owner is the thread
+    /// running its macrosteps for as long as it runs them (the Interpreter), this
+    /// is the question "is this call made from inside a macrostep of mine".
+    bool ownedHere() const noexcept {
+        return owner_.load(std::memory_order_acquire) == std::this_thread::get_id();
     }
 
     /// The engine has no owner from now on: its run ended, or was stopped, or a new
