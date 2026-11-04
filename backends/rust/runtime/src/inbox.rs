@@ -380,12 +380,22 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
     pub fn post(&self, input: InboxInputOf<P>) -> Result<(), InboxRefusal<InboxInputOf<P>>> {
         if let Err(input) = self.queue.enqueue(input) {
             // A count that stops at its ceiling rather than wraps to zero, which
-            // would read as no refusal at all.
-            let _ = self
-                .refused
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
-                    Some(count.saturating_add(1))
-                });
+            // would read as no refusal at all. The compare-exchange loop is the
+            // saturating step every toolchain from the workspace's
+            // `rust-version` on spells the same way (`fetch_update` is renamed
+            // in later ones, and its new name is newer than that version).
+            let mut count = self.refused.load(Ordering::Relaxed);
+            while count != usize::MAX {
+                match self.refused.compare_exchange_weak(
+                    count,
+                    count + 1,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(seen) => count = seen,
+                }
+            }
             return Err(InboxRefusal::Full(input));
         }
         W::wake();
