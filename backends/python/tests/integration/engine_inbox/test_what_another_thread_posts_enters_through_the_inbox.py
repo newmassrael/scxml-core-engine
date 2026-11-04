@@ -12,6 +12,10 @@ the rule:
 * many threads post endings, external events and Mesh deliveries while
   macrosteps run, and what the machine takes, and what is left running, are
   those of a single-threaded replay of the same posts;
+* the external queue takes events in the order they arrived: a post made while
+  a macrostep runs is applied before an event that macrostep then puts on the
+  queue itself, a `<send>` to itself or a host-run invocation's `done.invoke`
+  (W3C test 201's shape);
 * an ending posted for a start that was cancelled, or started again, is refused
   by the token check, as a direct one is (§scxml-6.4);
 * a Mesh delivery is applied as `apply_mesh_call` applies it, on the session it
@@ -210,11 +214,13 @@ class _InboxProbe(StatePolicy[_State, _Event]):
 
 def _probe(
     on_cancel: Optional[Callable[["Engine[_State, _Event]"], None]] = None,
+    on_start: Optional[Callable[["Engine[_State, _Event]"], Optional[HostInvokeResponse]]] = None,
 ) -> Tuple["Engine[_State, _Event]", _InboxProbe, List[str]]:
     """A machine of its own, its host's log (``start:<token>`` and
     ``cancel:<token>``) and the host's invoker registered: a start is answered
     with nothing, so `job` runs until it is ended or cancelled. `on_cancel` is
-    what the host also does when it is told to stop."""
+    what the host also does when it is told to stop; `on_start` what it does
+    when it is told to start, and its answer is the start's."""
     script_engine = LuaScriptEngine()
     script_engine.initialize()
     policy = _InboxProbe()
@@ -222,13 +228,16 @@ def _probe(
     log: List[str] = []
 
     def invoker(event: HostInvokeEvent) -> Optional[HostInvokeResponse]:
+        response: Optional[HostInvokeResponse] = None
         if event.start is not None:
             log.append(f"start:{event.start.token}")
+            if on_start is not None:
+                response = on_start(engine)
         if event.cancel is not None:
             log.append(f"cancel:{event.cancel.token}")
             if on_cancel is not None:
                 on_cancel(engine)
-        return None
+        return response
 
     engine.register_invoker(_TYPE, invoker)
     return engine, policy, log
@@ -407,6 +416,42 @@ def test_posts_from_many_threads_during_macrosteps_are_taken_as_a_single_threade
     replay_taken, replay_log = _replay(posted)
     assert policy.taken == replay_taken, "the run differs from a single-threaded replay of its posts"
     assert log == replay_log, "the invocations differ from a single-threaded replay of the posts"
+
+
+@pytest.mark.parametrize(
+    ("own", "expected"),
+    [
+        ("send", ["ping:posted", "ping:own"]),
+        ("done.invoke", ["ping:posted", "done:own"]),
+    ],
+)
+def test_an_event_posted_before_the_owners_own_external_event_is_taken_first(
+    own: str, expected: List[str]
+) -> None:
+    # W3C test 201's shape, without the HTTP listener: inside the macrostep that
+    # entered `working`, the host told to start `job` waits for a thread that
+    # posts `ping` (as a BasicHTTP send waits for the listener that delivers
+    # its event), and the owner then puts an event of its own on the external
+    # queue: a `<send>` to itself, or the `done.invoke` of a start the host
+    # answers as done. The post arrived first, so it is taken first. The join
+    # is the only ordering; nothing sleeps.
+    answers: List[bool] = []
+
+    def start(engine: "Engine[_State, _Event]") -> Optional[HostInvokeResponse]:
+        answers.append(_post_from_another_thread(engine, _ping("posted")))
+        if own == "send":
+            engine.send_to_self(_Event.PING, data="own")
+            return None
+        return HostInvokeResponse(done_data="own")
+
+    engine, policy, _log = _probe(on_start=start)
+    engine.initialize()
+
+    assert answers == [True], "the start was not asked, or the inbox refused the post"
+    assert policy.taken == expected, (
+        "the owner's own event overtook an event posted before it"
+    )
+    assert engine.inbox.refused_posts() == 0
 
 
 def test_a_posted_ending_of_a_cancelled_or_restarted_start_is_refused_as_a_direct_one_is() -> None:

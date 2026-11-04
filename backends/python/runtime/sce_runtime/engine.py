@@ -327,11 +327,15 @@ class Engine(Generic[S, E]):
         self._internal_queue: "deque[EventWithMetadata[E]]" = deque()
         self._external_queue: "deque[EventWithMetadata[E]]" = deque()
         # docs/adr/0084 — what other threads post, held until the owner's next
-        # macrostep boundary (`_drain_inbox`). Open from construction, so what
-        # is posted before the first run is applied at that run's first
-        # boundary; closed with a run that ended or was stopped.
+        # macrostep boundary, or until the owner puts an event of its own on the
+        # external queue (`_drain_inbox`, `_enqueue_external`). Open from
+        # construction, so what is posted before the first run is applied at
+        # that run's first boundary; closed with a run that ended or was stopped.
         self._inbox_state: EngineInboxState[E] = EngineInboxState()
         self._inbox: EngineInbox[E] = EngineInbox(self._inbox_state)
+        # Set while `_drain_inbox` applies what it took, so the external events
+        # those inputs queue do not drain the inbox again (`_drain_inbox`).
+        self._draining_inbox: bool = False
         self._is_running: bool = False
         # §scxml-D-enterStates — the top-level `<final>` the run ended in, set
         # on entering it. See `terminal_state`.
@@ -1122,10 +1126,34 @@ class Engine(Generic[S, E]):
             # taken here as well as there. See `unseen_external_events`.
             self._note_unseen_event(event)
             return False
-        self._external_queue.append(
+        self._enqueue_external(
             EventWithMetadata(event=event, metadata=metadata or EventMetadata())
         )
         return True
+
+    def _enqueue_external(self, queued: "EventWithMetadata[E]") -> None:
+        """The one door onto this machine's external queue while it runs: an
+        event the host raises on the owner, a `<send>` to this session, delayed
+        or not, a host-served send's reply, a host-run invocation's
+        ``done.invoke`` or ``error.invoke``, and what a child this owner drives
+        sends its parent.
+
+        docs/adr/0084, D2: the external queue takes events in the order they
+        arrived. What another thread posted before this event arrived first (a
+        BasicHTTP listener's delivery a synchronous send waited for, W3C test
+        201), so the inbox is applied before this event joins the queue, and not
+        only at the macrostep boundary. While the inbox is being applied this is
+        a plain push: the drain applies what it took in order (`_drain_inbox`).
+        Not before a run starts or once it is over: a post made before the first
+        run waits for that run's first boundary, and the close that ends a run
+        applies what is held then.
+
+        `raise_internal` does not come here, and does not drain: the internal
+        queue is the running macrostep's own, and arrival order is a property
+        of the external queue."""
+        if self._is_running:
+            self._drain_inbox()
+        self._external_queue.append(queued)
 
     # ── The inbox (ARCHITECTURE.md "Engine Threading") ─────────────
 
@@ -1137,7 +1165,8 @@ class Engine(Generic[S, E]):
         engine that changes its state is an owner-thread operation.
 
         What is posted is applied by the owner at its next macrostep boundary,
-        before the external queue is consulted, in the order the inbox took it,
+        before the external queue is consulted, and before the owner puts an
+        event of its own on that queue, in the order the inbox took it,
         each input by the owner-thread operation of the same name. A host that
         drives the engine installs a waker (`EngineInbox.wake_with`) to learn
         when to drive it; ``advance_time(0)`` applies what was posted and moves
@@ -1146,12 +1175,25 @@ class Engine(Generic[S, E]):
         return self._inbox
 
     def _drain_inbox(self) -> None:
-        """The macrostep boundary's half of the inbox (docs/adr/0084): apply what
-        the inbox held when the boundary was reached, in the order it was taken,
-        each by the owner-thread operation of the same name. What is posted
-        meanwhile waits for the next boundary."""
-        for posted in self._inbox_state.take():
-            self._apply_inbox_input(posted)
+        """The owner's half of the inbox (docs/adr/0084): apply what the inbox
+        held when the drain began, in the order it was taken, each by the
+        owner-thread operation of the same name. Reached at the macrostep
+        boundary and before an event of the owner's own joins the external
+        queue (`_enqueue_external`). What is posted meanwhile waits for the next
+        drain."""
+        # One drain at a time. Applying an input is the owner-thread operation
+        # of the same name, and each of those queues its event through
+        # `_enqueue_external`, which drains first: without this flag a drain
+        # would start inside the one applying the inputs before it, and take
+        # what was posted since ahead of the rest of what it took.
+        if self._draining_inbox:
+            return
+        self._draining_inbox = True
+        try:
+            for posted in self._inbox_state.take():
+                self._apply_inbox_input(posted)
+        finally:
+            self._draining_inbox = False
 
     def _close_inbox(self) -> None:
         """Refuse every post from now on, and apply what the inbox still holds as
@@ -1875,7 +1917,7 @@ class Engine(Generic[S, E]):
         event = self._policy.resolve_event_by_name(name)
         if event is None:
             return
-        self._external_queue.append(
+        self._enqueue_external(
             EventWithMetadata(
                 event=event,
                 metadata=EventMetadata(
@@ -2148,7 +2190,7 @@ class Engine(Generic[S, E]):
             # §scxml-5.10: the machine is told the name the event arrived
             # under, not the shorter descriptor it was matched through.
             metadata.name = event_name
-        self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
+        self._enqueue_external(EventWithMetadata(event=event, metadata=metadata))
 
     def send_external(self, event: E, sendid: str = "", data: Any = "") -> None:
         """W3C SCXML 6.2 — enqueue an external event with no delay.
@@ -2169,7 +2211,7 @@ class Engine(Generic[S, E]):
             data=data,
             origin_type=SCXML_EVENT_PROCESSOR_URI,
         )
-        self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
+        self._enqueue_external(EventWithMetadata(event=event, metadata=metadata))
 
     def arrival_name_of(self, event: E, name: str) -> str:
         """§scxml-5.10 — what `EventMetadata.name` is for an event sent as
@@ -2201,7 +2243,7 @@ class Engine(Generic[S, E]):
             origin_type=SCXML_EVENT_PROCESSOR_URI,
             name=name,
         )
-        self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
+        self._enqueue_external(EventWithMetadata(event=event, metadata=metadata))
 
     def deliver_to_child_session(
         self, child_session_id: str, event_name: str, data: Any = ""
@@ -2594,7 +2636,7 @@ class Engine(Generic[S, E]):
                     origin_type=SCXML_EVENT_PROCESSOR_URI,
                     name=entry.name,
                 )
-                self._external_queue.append(
+                self._enqueue_external(
                     EventWithMetadata(event=entry.event, metadata=metadata)
                 )
             if not self._is_running or self._reached_final:
@@ -2766,10 +2808,12 @@ class Engine(Generic[S, E]):
                 continue
             # docs/adr/0084: the macrostep is complete, and this is the point
             # before the external queue is consulted. What other threads posted
-            # since the last boundary is applied here, in the order the inbox
-            # took it, so an event it carries joins the external queue behind
-            # what this macrostep queued. Applying an input queues external
-            # events only, so it leaves the internal queue as it found it.
+            # since the last drain is applied here, in the order the inbox took
+            # it, so an event it carries joins the external queue behind what
+            # this macrostep queued before it arrived (an event the macrostep
+            # queued later drained the inbox first). Applying an input queues
+            # external events only, so it leaves the internal queue as it found
+            # it.
             self._drain_inbox()
             if not self._external_queue:
                 return
