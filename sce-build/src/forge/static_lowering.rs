@@ -17260,7 +17260,7 @@ mod tests {
         assert!(
             write[1]
                 .native_code
-                .contains("self.v_title = sce_algorithm.bounded('abc', 4)"),
+                .contains("self.v_title = sce_algorithm.bounded(\"abc\", 4)"),
             "{}",
             write[1].native_code
         );

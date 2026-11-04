@@ -90,7 +90,7 @@ class ProcedureDiamond(ProcedureStateMachine):
                 return (State.LowPath, 2, False)
         if state == State.HighPath:
             if event == Event.NONE:
-                if self._mode == 'strict':
+                if self._mode == "strict":
                     return (State.Reject, 0, False)
             if event == Event.NONE:
                 return (State.Accept, 1, False)

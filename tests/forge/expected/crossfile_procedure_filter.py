@@ -69,7 +69,7 @@ class CrossfileProcedureFilter(ProcedureStateMachine):
         self, state: int
     ) -> Tuple[int, str]:
         if state == State.Done:
-            self._done_data["result"] = 'success'
+            self._done_data["result"] = "success"
         return (Event.NONE, "")
 
     def _process_transition(

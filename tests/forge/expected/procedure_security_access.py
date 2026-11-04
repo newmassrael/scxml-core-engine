@@ -128,9 +128,9 @@ class ProcedureSecurityAccess(ProcedureStateMachine):
                 event = Event.Ok if resp.success else Event.Fail
                 return (event, resp.data)
         if state == State.Done:
-            self._done_data["result"] = 'success'
+            self._done_data["result"] = "success"
         if state == State.Error:
-            self._done_data["result"] = 'failure'
+            self._done_data["result"] = "failure"
         return (Event.NONE, "")
 
     def _process_transition(
