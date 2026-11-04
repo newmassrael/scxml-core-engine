@@ -74,11 +74,14 @@ class PayloadRefusalTest {
             // A case that gives a depth is read as a `<sce:lift>` of the record of
             // the one field `v` reads it (docs/adr/0087, section 2.1).
             val depth = (fields["depth"] as Json.Number?)?.text?.toInt()
+            // Its pointer is held to `pathBound` bytes, the standard refusal's 256
+            // where the case gives none.
+            val pathBound = (fields["pathBound"] as Json.Number?)?.text?.toInt() ?: 256
             val got = try {
                 val decoded = if (depth == null) {
                     EventPayload.decode(data)
                 } else {
-                    EventPayload.lift(data, depth, listOf("v"), null)
+                    EventPayload.lift(data, depth, pathBound, null)
                 }
                 read(fields["type"], decoded.field("v"))
                 null
@@ -129,32 +132,39 @@ class PayloadRefusalTest {
 
     /**
      * A lift refuses a container past its depth over the brackets alone, before
-     * the text is read as JSON, and names the declared member it stands under or
-     * the whole text (docs/adr/0087, section 2.1, item 4).
+     * the text is read as JSON, and names the container it refused, held to the
+     * room of the refusal's path by whole tokens (docs/adr/0087, sections 2.1
+     * and 2.4).
      */
     @Test
     fun `a lift refuses a container past its depth before it reads the text`() {
-        val declared = listOf("title", "count")
-        fun refused(text: String, depth: Int = 1) =
-            EventPayload.liftTooDeep(text, depth, declared)?.let { Triple(it.code, it.pointer, it.bound) }
-        val tooDeep = { pointer: String -> Triple(EventPayload.RefusalCode.TOO_DEEP, pointer, 1L) }
+        fun refused(text: String, depth: Int = 1, pathBound: Int = 256) =
+            EventPayload.liftTooDeep(text, depth, pathBound)?.let { Triple(it.code, it.pointer, it.bound) }
+        val tooDeep = { pointer: String, depth: Long -> Triple(EventPayload.RefusalCode.TOO_DEEP, pointer, depth) }
         assertNull(refused("{\"title\":\"a\",\"count\":1}"))
-        assertEquals(tooDeep("/title"), refused("{\"title\":[\"a\"]}"))
-        assertEquals(tooDeep(""), refused("{\"extra\":{\"a\":1}}"))
-        assertEquals(tooDeep("/title"), refused("{\"\\u0074itle\":[1]}"))
-        assertEquals(tooDeep(""), refused("[[1]]"))
-        assertEquals(tooDeep(""), refused("{\"extra\":[[[[[[["))
+        assertEquals(tooDeep("/title", 1), refused("{\"title\":[\"a\"]}"))
+        assertEquals(tooDeep("/extra", 1), refused("{\"extra\":{\"a\":1}}"))
+        assertEquals(tooDeep("/title", 1), refused("{\"\\u0074itle\":[1]}"))
+        assertEquals(tooDeep("/0", 1), refused("[[1]]"))
+        assertEquals(tooDeep("/2", 1), refused("[1,2,[3]]"))
+        assertEquals(tooDeep("/extra", 1), refused("{\"extra\":[[[[[[["))
         assertNull(refused("{\"title\":\"[[{\\\"[\",\"count\":1}"))
         assertNull(refused("{\"title\":{\"a\":1}}", 2))
         assertNull(refused("{\"title\":\"[["))
-        assertEquals(tooDeep(""), refused("{\"title\":\"x\",\"extra\":[1]}"))
+        assertEquals(tooDeep("/extra", 1), refused("{\"title\":\"x\",\"extra\":[1]}"))
+        assertEquals(tooDeep("/a/b", 2), refused("{\"a\":{\"b\":[1]}}", 2))
+        assertEquals(tooDeep("/a/1/b", 3), refused("{\"a\":[0,{\"b\":[1]}]}", 3))
+        assertEquals(tooDeep("/a~1b~0c", 1), refused("{\"a/b~c\":[1]}"))
+        assertEquals(tooDeep("", 1), refused("{[1]}"))
+        assertEquals(tooDeep("/a", 2), refused("{\"a\":{\"abcdef\":[1]}}", 2, 4))
+        assertEquals(tooDeep("/a/bc", 2), refused("{\"a\":{\"bc\":[1]}}", 2, 5))
     }
 
     /** A lift reads its record as a delivery's is read, or answers its refusal as data. */
     @Test
     fun `a lift reads a record or answers its refusal`() {
         val read = { fields: EventPayload.Fields -> Pair(fields.uint8("v"), fields.uint8("w")) }
-        val lifted = EventPayload.liftRecord("{\"v\":1}", 1, listOf("v", "w"), "{\"w\":7}", read)
+        val lifted = EventPayload.liftRecord("{\"v\":1}", 1, 256, "{\"w\":7}", read)
         assertTrue(lifted is EventPayload.LiftOutcome.Lifted && lifted.value == Pair(1.toUByte(), 7.toUByte()))
         for ((text, code) in listOf(
             " \t" to EventPayload.RefusalCode.NOT_JSON,
@@ -164,7 +174,7 @@ class PayloadRefusalTest {
             "{\"v\":256,\"w\":1}" to EventPayload.RefusalCode.OUT_OF_RANGE,
             "{\"w\":1}" to EventPayload.RefusalCode.MISSING,
         )) {
-            val outcome = EventPayload.liftRecord(text, 1, listOf("v", "w"), null, read)
+            val outcome = EventPayload.liftRecord(text, 1, 256, null, read)
             assertTrue(outcome is EventPayload.LiftOutcome.Refused && outcome.refusal.code == code, text)
         }
     }

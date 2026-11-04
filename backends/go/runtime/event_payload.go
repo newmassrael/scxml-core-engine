@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Lifting an event's typed `_event.data` view out of the data it carries.
@@ -397,20 +398,21 @@ func LiftPayloadWithDefaults(data, defaults string) (PayloadFields, error) {
 
 // LiftText reads the text a `<sce:lift>` reads as the fields of a record of a
 // schema (docs/adr/0087, section 2.1): depth is the deepest container a value
-// of the schema holds, declared the ids of its fields, and defaults, for a
-// schema a later revision of which added fields, the JSON object of their
-// defaults ("" for none), which a text that lacks one reads in its place.
+// of the schema holds, pathBound the room of the refusal record's `path` a
+// tooDeep pointer is held to (LiftTooDeep), and defaults, for a schema a later
+// revision of which added fields, the JSON object of their defaults ("" for
+// none), which a text that lacks one reads in its place.
 //
 // Three refusals come before the fields are read, in this order: a text that is
 // empty or only whitespace (notJson); a container opened deeper than depth,
 // decided over the text's brackets alone before it is read as JSON (LiftTooDeep,
 // tooDeep); and a text that is not one JSON object, as a delivery is refused
 // (LiftPayload).
-func LiftText(text string, depth uint32, declared []string, defaults string) (PayloadFields, error) {
+func LiftText(text string, depth, pathBound uint32, defaults string) (PayloadFields, error) {
 	if strings.Trim(text, jsonWhitespace) == "" {
 		return nil, refuseAt(RefusalNotJSON, "", "the text is empty")
 	}
-	if refusal := LiftTooDeep(text, depth, declared); refusal != nil {
+	if refusal := LiftTooDeep(text, depth, pathBound); refusal != nil {
 		return nil, refusal
 	}
 	fields, err := LiftPayload(text)
@@ -443,14 +445,20 @@ func LiftText(text string, depth uint32, declared []string, defaults string) (Pa
 // A text that never closes ends the walk with nothing refused, and the reading
 // of the text as JSON refuses it.
 //
-// The pointer names the member of the outermost object the container stands
-// under, the name read from the last text closed in that object before a `:`,
-// when that name is one of declared; otherwise the whole text, "". A container
-// under a key no field declares is no place of the schema. The bound is depth.
-func LiftTooDeep(text string, depth uint32, declared []string) *PayloadRefusal {
-	var level uint32
-	lastText, member := "", ""
+// The pointer names the container refused (docs/adr/0087, section 2.4): for each
+// container it stands in, outermost first, the element's index in an array (the
+// `,` the scan met at that level since the array opened) or the member's name in
+// an object (the last text closed at that level before a `:`, since the object
+// opened or its last `,`), each an RFC 6901 token. It stops before the first
+// place it cannot write: a member with no name before its colon, a name that is
+// no text (no JSON string, not UTF-8, or holding U+0000), or a token that would
+// take the pointer past pathBound UTF-8 bytes, the room of the refusal record's
+// `path`. The bound is depth. The scan keeps one entry per open container, at
+// most depth of them.
+func LiftTooDeep(text string, depth, pathBound uint32) *PayloadRefusal {
+	var open []liftScanLevel
 	for at := 0; at < len(text); at++ {
+		top := len(open) - 1
 		switch text[at] {
 		case '"':
 			start := at
@@ -464,41 +472,67 @@ func LiftTooDeep(text string, depth uint32, declared []string) *PayloadRefusal {
 			if at >= len(text) {
 				return nil
 			}
-			if level == 1 {
-				lastText = text[start : at+1]
+			if top >= 0 {
+				open[top].lastText = text[start : at+1]
 			}
 		case ':':
-			if level == 1 {
-				member, lastText = lastText, ""
+			if top >= 0 {
+				open[top].member, open[top].lastText = open[top].lastText, ""
 			}
 		case ',':
-			if level == 1 {
-				member, lastText = "", ""
+			if top >= 0 {
+				open[top].member, open[top].lastText = "", ""
+				open[top].index++
 			}
 		case '{', '[':
-			level++
-			if level > depth {
-				pointer := ""
-				if name, err := decodeJSON(member); err == nil {
-					if name, ok := name.(string); ok {
-						for _, field := range declared {
-							if field == name {
-								pointer = PointerBelow("", name)
-							}
-						}
-					}
-				}
-				return refuseAt(RefusalTooDeep, pointer, fmt.Sprintf(
+			if uint32(len(open)) >= depth {
+				return refuseAt(RefusalTooDeep, liftScanPointer(open, pathBound), fmt.Sprintf(
 					"the text opens a container deeper than the %d levels a value of its schema holds",
 					depth)).withBound(int(depth))
 			}
+			open = append(open, liftScanLevel{array: text[at] == '['})
 		case '}', ']':
-			if level > 0 {
-				level--
+			if top >= 0 {
+				open = open[:top]
 			}
 		}
 	}
 	return nil
+}
+
+// liftScanLevel is one container LiftTooDeep stands in: whether it is an array,
+// the elements it has passed, the last text closed in it, and the member a `:`
+// after that text named ("" for none).
+type liftScanLevel struct {
+	array            bool
+	index            uint64
+	lastText, member string
+}
+
+// liftScanPointer is the pointer to the place open stands at, as LiftTooDeep
+// writes it.
+func liftScanPointer(open []liftScanLevel, pathBound uint32) string {
+	pointer := ""
+	for _, level := range open {
+		token := strconv.FormatUint(level.index, 10)
+		if !level.array {
+			if level.member == "" || !utf8.ValidString(level.member) {
+				break
+			}
+			decoded, err := decodeJSON(level.member)
+			name, ok := decoded.(string)
+			if err != nil || !ok || strings.ContainsRune(name, 0) {
+				break
+			}
+			token = name
+		}
+		below := PointerBelow(pointer, token)
+		if len(below) > int(pathBound) {
+			break
+		}
+		pointer = below
+	}
+	return pointer
 }
 
 // LiftField is the value of the field name of the record r, read by read: what a
@@ -519,10 +553,10 @@ func LiftField[T any](r PayloadRecord, name string, read func(PayloadValue) (T, 
 // record. LiftText says what is refused before the fields are read. Each outcome
 // is logged with the schema's name and, for a refusal, its code, pointer and
 // bound; the text itself is not, since nothing bounds what a sender writes in it.
-func LiftRecord[T any](text, schema string, depth uint32, declared []string, defaults string,
+func LiftRecord[T any](text, schema string, depth, pathBound uint32, defaults string,
 	read func(PayloadRecord) (T, error)) (T, *PayloadRefusal) {
 	var zero T
-	fields, err := LiftText(text, depth, declared, defaults)
+	fields, err := LiftText(text, depth, pathBound, defaults)
 	value := zero
 	if err == nil {
 		value, err = read(PayloadRecord{members: map[string]any(fields)})

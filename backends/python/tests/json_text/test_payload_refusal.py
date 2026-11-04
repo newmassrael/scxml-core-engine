@@ -97,10 +97,11 @@ def _declared(ty: Any) -> Any:
 def _read(case: Dict[str, Any]) -> None:
     """The case read as the table says: a case that gives a depth as a
     `<sce:lift>` of the record of its one field `v` reads it (docs/adr/0087,
-    section 2.1), any other as a delivery."""
+    section 2.1), its pointer held to ``pathBound`` bytes (the standard
+    refusal's 256 where the case gives none), any other as a delivery."""
     spec = [("v", _declared(case["type"]))]
     if "depth" in case:
-        lift(lift_text(case["data"], case["depth"], ["v"]), spec)
+        lift(lift_text(case["data"], case["depth"], case.get("pathBound", 256)), spec)
     else:
         lift(case["data"], spec)
 
@@ -135,24 +136,31 @@ def test_a_pointer_escapes_tilde_and_solidus_in_each_token() -> None:
     assert pointer_below("", "") == "/"
 
 
-@pytest.mark.parametrize("text, depth, pointer", [
-    ('{"title":"a","count":1}', 1, None),
-    ('{"title":["a"]}', 1, "/title"),
-    ('{"extra":{"a":1}}', 1, ""),
-    ('{"\\u0074itle":[1]}', 1, "/title"),
-    ("[[1]]", 1, ""),
-    ('{"extra":[[[[[[[', 1, ""),
-    ('{"title":"[[{\\"[","count":1}', 1, None),
-    ('{"title":{"a":1}}', 2, None),
-    ('{"title":"[[', 1, None),
-    ('{"title":"x","extra":[1]}', 1, ""),
+@pytest.mark.parametrize("text, depth, path_bound, pointer", [
+    ('{"title":"a","count":1}', 1, 256, None),
+    ('{"title":["a"]}', 1, 256, "/title"),
+    ('{"extra":{"a":1}}', 1, 256, "/extra"),
+    ('{"\\u0074itle":[1]}', 1, 256, "/title"),
+    ("[[1]]", 1, 256, "/0"),
+    ("[1,2,[3]]", 1, 256, "/2"),
+    ('{"extra":[[[[[[[', 1, 256, "/extra"),
+    ('{"title":"[[{\\"[","count":1}', 1, 256, None),
+    ('{"title":{"a":1}}', 2, 256, None),
+    ('{"title":"[[', 1, 256, None),
+    ('{"title":"x","extra":[1]}', 1, 256, "/extra"),
+    ('{"a":{"b":[1]}}', 2, 256, "/a/b"),
+    ('{"a":[0,{"b":[1]}]}', 3, 256, "/a/1/b"),
+    ('{"a/b~c":[1]}', 1, 256, "/a~1b~0c"),
+    ("{[1]}", 1, 256, ""),
+    ('{"a":{"abcdef":[1]}}', 2, 4, "/a"),
+    ('{"a":{"bc":[1]}}', 2, 5, "/a/bc"),
 ])
 def test_a_lift_refuses_a_container_past_its_depth_before_it_reads_the_text(
-        text: str, depth: int, pointer: Any) -> None:
+        text: str, depth: int, path_bound: int, pointer: Any) -> None:
     """Over the brackets alone, before the text is read as JSON, naming the
-    declared member the container stands under or the whole text
-    (docs/adr/0087, section 2.1, item 4)."""
-    refusal = lift_too_deep(text, depth, ["title", "count"])
+    container it refused, held to the room of the refusal's path by whole
+    tokens (docs/adr/0087, sections 2.1 and 2.4)."""
+    refusal = lift_too_deep(text, depth, path_bound)
     if pointer is None:
         assert refusal is None, str(refusal)
         return
@@ -162,7 +170,7 @@ def test_a_lift_refuses_a_container_past_its_depth_before_it_reads_the_text(
 
 def test_a_lift_reads_a_record_or_answers_its_refusal() -> None:
     record = RecordOf([("v", Whole(0, 255)), ("w", Whole(0, 255))], '{"w":7}', lambda v, w: (v, w))
-    assert lift_record('{"v":1}', 1, ["v", "w"], record) == ((1, 7), None)
+    assert lift_record('{"v":1}', 1, 256, record) == ((1, 7), None)
     strict = RecordOf([("v", Whole(0, 255)), ("w", Whole(0, 255))])
     for text, code in [
         (" \t", RefusalCode.NOT_JSON),
@@ -172,7 +180,7 @@ def test_a_lift_reads_a_record_or_answers_its_refusal() -> None:
         ('{"v":256,"w":1}', RefusalCode.OUT_OF_RANGE),
         ('{"w":1}', RefusalCode.MISSING),
     ]:
-        value, refusal = lift_record(text, 1, ["v", "w"], strict)
+        value, refusal = lift_record(text, 1, 256, strict)
         assert value is None and refusal is not None and refusal.code is code, text
 
 

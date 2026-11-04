@@ -26,7 +26,15 @@
 #error "SCE_STDLIB_REFUSAL_CODE names stdlib/lift/refusal_code.scxml; the build defines it"
 #endif
 
-enum { FIELD_CAP = 256, POINTER_CAP = 64, NAME_CAP = 64, MIN_CASES = 40, LIST_CAP = 16 };
+enum {
+    FIELD_CAP = 256,
+    POINTER_CAP = 64,
+    NAME_CAP = 64,
+    MIN_CASES = 40,
+    LIST_CAP = 16,
+    /* The room of the standard refusal record's `path` (sce:std/lift/refusal.scxml). */
+    STANDARD_PATH_BOUND = 256
+};
 
 /* Where a refusal was made, and the bound it broke. */
 typedef struct {
@@ -210,12 +218,13 @@ static int check_case(const char *object, int index) {
     const char *refusal = NULL;
     if (member(object, "depth") != NULL) {
         /* A case that gives a depth is read as a `<sce:lift>` of the record of the one
-           field `v` reads it (docs/adr/0087, section 2.1). */
-        static const char *const declared[] = {"v"};
+           field `v` reads it (docs/adr/0087, section 2.1), its pointer held to `pathBound`
+           bytes, the standard refusal's 256 where the case gives none. */
         const uint32_t depth = bound_of(object, "depth");
-        char lifted_at[POINTER_CAP];
-        refusal = refuse_at(sce_payload_lift(data, depth, declared, 1u, NULL, &fields, lifted_at, sizeof(lifted_at)),
-                            lifted_at, &at);
+        const uint32_t path_bound = member(object, "pathBound") != NULL ? bound_of(object, "pathBound") : 256u;
+        char lifted_at[STANDARD_PATH_BOUND + 1];
+        const size_t cap = path_bound < STANDARD_PATH_BOUND ? path_bound + 1u : sizeof(lifted_at);
+        refusal = refuse_at(sce_payload_lift(data, depth, NULL, &fields, lifted_at, cap), lifted_at, &at);
         at.bound = depth;
     } else {
         refusal = refuse_at(sce_payload_decode(data, &fields), "", &at);
@@ -326,34 +335,38 @@ static int check_pointers(void) {
 }
 
 /* A lift refuses a container past its depth over the brackets alone, before the text is
-   read as JSON, and names the declared member it stands under or the whole text
-   (docs/adr/0087, section 2.1, item 4). */
+   read as JSON, and names the container it refused, held to the room of the refusal's
+   path by whole tokens (docs/adr/0087, sections 2.1 and 2.4). */
 static int check_lift_depth(void) {
-    static const char *const declared[] = {"title", "count"};
-
     const struct {
         const char *text;
         uint32_t depth;
+        uint32_t path_bound;
         const char *pointer; /* NULL: no refusal */
     } cases[] = {
-        {"{\"title\":\"a\",\"count\":1}", 1u, NULL},
-        {"{\"title\":[\"a\"]}", 1u, "/title"},
-        {"{\"extra\":{\"a\":1}}", 1u, ""},
-        {"[[1]]", 1u, ""},
-        {"{\"extra\":[[[[[[[", 1u, ""},
-        {"{\"title\":\"[[{\\\"[\",\"count\":1}", 1u, NULL},
-        {"{\"title\":{\"a\":1}}", 2u, NULL},
-        {"{\"title\":\"[[", 1u, NULL},
-        {"{\"title\":\"x\",\"extra\":[1]}", 1u, ""},
-        {"{\"count\":1,\"title\":[1]}", 1u, "/title"},
-        {"{\"title\":1,\"count\":\"x\",\"extra\":[1]}", 1u, ""},
+        {"{\"title\":\"a\",\"count\":1}", 1u, 256u, NULL},
+        {"{\"title\":[\"a\"]}", 1u, 256u, "/title"},
+        {"{\"extra\":{\"a\":1}}", 1u, 256u, "/extra"},
+        {"[[1]]", 1u, 256u, "/0"},
+        {"[1,2,[3]]", 1u, 256u, "/2"},
+        {"{\"extra\":[[[[[[[", 1u, 256u, "/extra"},
+        {"{\"title\":\"[[{\\\"[\",\"count\":1}", 1u, 256u, NULL},
+        {"{\"title\":{\"a\":1}}", 2u, 256u, NULL},
+        {"{\"title\":\"[[", 1u, 256u, NULL},
+        {"{\"title\":\"x\",\"extra\":[1]}", 1u, 256u, "/extra"},
+        {"{\"a\":{\"b\":[1]}}", 2u, 256u, "/a/b"},
+        {"{\"a\":[0,{\"b\":[1]}]}", 3u, 256u, "/a/1/b"},
+        {"{\"a/b~c\":[1]}", 1u, 256u, "/a~1b~0c"},
+        {"{[1]}", 1u, 256u, ""},
+        {"{\"a\":{\"abcdef\":[1]}}", 2u, 4u, "/a"},
+        {"{\"a\":{\"bc\":[1]}}", 2u, 5u, "/a/bc"},
     };
 
     int failures = 0;
     for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        char pointer[POINTER_CAP];
-        const char *refusal =
-            sce_payload_lift_too_deep(cases[i].text, cases[i].depth, declared, 2u, pointer, sizeof(pointer));
+        char pointer[STANDARD_PATH_BOUND + 1];
+        const size_t cap = cases[i].path_bound + 1u;
+        const char *refusal = sce_payload_lift_too_deep(cases[i].text, cases[i].depth, pointer, cap);
         if (cases[i].pointer == NULL) {
             if (refusal != NULL) {
                 fprintf(stderr, "FAIL: %s: refused as too deep\n", cases[i].text);
@@ -373,24 +386,22 @@ static int check_lift_depth(void) {
 /* A lift's record reads what a delivery's would, a field it lacks out of the schema's
    defaults, and refuses defaults that are no object and a text that is empty. */
 static int check_lift_defaults(void) {
-    static const char *const declared[] = {"v", "w"};
     int failures = 0;
     sce_payload_fields_t fields;
     char pointer[POINTER_CAP];
     uint8_t w = 0u;
-    const char *refusal =
-        sce_payload_lift("{\"v\":1}", 1u, declared, 2u, "{\"w\":7}", &fields, pointer, sizeof(pointer));
+    const char *refusal = sce_payload_lift("{\"v\":1}", 1u, "{\"w\":7}", &fields, pointer, sizeof(pointer));
     if (refusal != NULL || sce_payload_read_u8(&fields, "w", &w) != NULL || w != 7u) {
         fprintf(stderr, "FAIL: a lift did not read its field out of the defaults (%s)\n",
                 refusal != NULL ? refusal : "read");
         failures++;
     }
-    refusal = sce_payload_lift("{\"v\":1}", 1u, declared, 2u, "[]", &fields, pointer, sizeof(pointer));
+    refusal = sce_payload_lift("{\"v\":1}", 1u, "[]", &fields, pointer, sizeof(pointer));
     if (refusal != SCE_PAYLOAD_REFUSE_BAD_DEFAULTS || fields.object != NULL) {
         fprintf(stderr, "FAIL: a lift took defaults that are no object\n");
         failures++;
     }
-    refusal = sce_payload_lift(NULL, 1u, declared, 2u, NULL, &fields, pointer, sizeof(pointer));
+    refusal = sce_payload_lift(NULL, 1u, NULL, &fields, pointer, sizeof(pointer));
     if (sce_payload_refusal_code(refusal) != SCE_PAYLOAD_CODE_NOT_JSON || strcmp(pointer, "") != 0) {
         fprintf(stderr, "FAIL: a lift of no text was not refused as notJson\n");
         failures++;

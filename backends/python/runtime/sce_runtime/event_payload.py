@@ -817,7 +817,45 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
     return values
 
 
-def lift_too_deep(text: str, depth: int, declared: Sequence[str]) -> Optional[TypedPayloadError]:
+class _ScanLevel:
+    """One container ``lift_too_deep`` stands in: whether it is an array, the
+    elements it has passed, the last text closed in it, and the member a `:`
+    after that text named."""
+
+    __slots__ = ("array", "index", "last_text", "member")
+
+    def __init__(self, array: bool) -> None:
+        self.array = array
+        self.index = 0
+        self.last_text: Optional[str] = None
+        self.member: Optional[str] = None
+
+
+def _scan_pointer(open_levels: List[_ScanLevel], path_bound: int) -> str:
+    """The pointer to the place ``open_levels`` stands at, as ``lift_too_deep``
+    writes it."""
+    pointer = ""
+    for level in open_levels:
+        if level.array:
+            token = str(level.index)
+        else:
+            try:
+                name = _read_json(level.member) if level.member is not None else None
+                if isinstance(name, str):
+                    name.encode("utf-8")
+            except (ValueError, UnicodeEncodeError):
+                name = None
+            if not isinstance(name, str) or "\0" in name:
+                break
+            token = name
+        below = pointer_below(pointer, token)
+        if len(below.encode("utf-8")) > path_bound:
+            break
+        pointer = below
+    return pointer
+
+
+def lift_too_deep(text: str, depth: int, path_bound: int) -> Optional[TypedPayloadError]:
     """The refusal of a container ``text`` opens deeper than ``depth``, the
     deepest a value of a lift's schema holds (docs/adr/0087, section 2.1, item
     4), or None when it opens none.
@@ -830,16 +868,21 @@ def lift_too_deep(text: str, depth: int, declared: Sequence[str]) -> Optional[Ty
     after it. A text that never closes ends the walk with nothing refused, and
     the reading of the text as JSON refuses it.
 
-    The pointer names the member of the outermost object the container stands
-    under, the name read from the last text closed in that object before a `:`,
-    when that name is one of ``declared``; otherwise the whole text, ``""``. The
-    bound is ``depth``."""
-    level = 0
-    last_text: Optional[str] = None
-    member: Optional[str] = None
+    The pointer names the container refused (docs/adr/0087, section 2.4): for
+    each container it stands in, outermost first, the element's index in an
+    array (the `,` the scan met at that level since the array opened) or the
+    member's name in an object (the last text closed at that level before a
+    `:`, since the object opened or its last `,`), each an RFC 6901 token. It
+    stops before the first place it cannot write: a member with no name before
+    its colon, a name that is no text (no JSON string, or one holding U+0000),
+    or a token that would take the pointer past ``path_bound`` UTF-8 bytes, the
+    room of the refusal record's `path`. The bound is ``depth``. The scan keeps
+    one entry per open container, at most ``depth`` of them."""
+    open_levels: List[_ScanLevel] = []
     at = 0
     while at < len(text):
         c = text[at]
+        top = open_levels[-1] if open_levels else None
         if c == '"':
             start = at
             at += 1
@@ -847,36 +890,31 @@ def lift_too_deep(text: str, depth: int, declared: Sequence[str]) -> Optional[Ty
                 at += 2 if text[at] == "\\" else 1
             if at >= len(text):
                 return None
-            if level == 1:
-                last_text = text[start:at + 1]
-        elif c == ":" and level == 1:
-            member, last_text = last_text, None
-        elif c == "," and level == 1:
-            member, last_text = None, None
+            if top is not None:
+                top.last_text = text[start:at + 1]
+        elif c == ":" and top is not None:
+            top.member, top.last_text = top.last_text, None
+        elif c == "," and top is not None:
+            top.member, top.last_text = None, None
+            top.index += 1
         elif c in "{[":
-            level += 1
-            if level > depth:
-                pointer = ""
-                if member is not None:
-                    try:
-                        name = _read_json(member)
-                    except ValueError:
-                        name = None
-                    if isinstance(name, str) and name in declared:
-                        pointer = pointer_below("", name)
+            if len(open_levels) >= depth:
                 return TypedPayloadError(
                     f"the text opens a container deeper than the {depth} levels a value "
-                    f"of its schema holds", RefusalCode.TOO_DEEP, pointer, depth)
-        elif c in "}]":
-            level = max(level - 1, 0)
+                    f"of its schema holds", RefusalCode.TOO_DEEP,
+                    _scan_pointer(open_levels, path_bound), depth)
+            open_levels.append(_ScanLevel(c == "["))
+        elif c in "}]" and top is not None:
+            open_levels.pop()
         at += 1
     return None
 
 
-def lift_text(text: str, depth: int, declared: Sequence[str]) -> dict:
+def lift_text(text: str, depth: int, path_bound: int) -> dict:
     """The text a `<sce:lift>` reads, as the members of the object it is
     (docs/adr/0087, section 2.1): ``depth`` is the deepest container a value of
-    the schema holds and ``declared`` the ids of its fields.
+    the schema holds and ``path_bound`` the room of the refusal record's `path`
+    a `tooDeep` pointer is held to (``lift_too_deep``).
 
     Three refusals come before the fields are read, in this order: a text that
     is empty or only whitespace (`notJson`); a container opened deeper than
@@ -885,13 +923,13 @@ def lift_text(text: str, depth: int, declared: Sequence[str]) -> dict:
     delivery is refused (``_decode``)."""
     if not text.strip(_JSON_WHITESPACE):
         raise TypedPayloadError("the text is empty", RefusalCode.NOT_JSON, "")
-    refusal = lift_too_deep(text, depth, declared)
+    refusal = lift_too_deep(text, depth, path_bound)
     if refusal is not None:
         raise refusal
     return _decode(text)
 
 
-def lift_record(text: str, depth: int, declared: Sequence[str],
+def lift_record(text: str, depth: int, path_bound: int,
                 record: RecordOf) -> Tuple[Any, Optional[TypedPayloadError]]:
     """What a `<sce:lift>` reads (docs/adr/0087, section 2.1): ``text`` as a
     value of ``record``, its fields read by the readers a delivery's are, a field
@@ -901,6 +939,6 @@ def lift_record(text: str, depth: int, declared: Sequence[str],
     fields are read. Answers ``(value, None)`` or ``(None, refusal)``. This
     runtime keeps no log, so neither outcome is written to one."""
     try:
-        return read_value("", record, lift_text(text, depth, declared), ""), None
+        return read_value("", record, lift_text(text, depth, path_bound), ""), None
     except TypedPayloadError as refusal:
         return None, refusal

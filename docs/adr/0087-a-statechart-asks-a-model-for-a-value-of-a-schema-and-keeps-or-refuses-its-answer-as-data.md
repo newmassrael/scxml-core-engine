@@ -345,7 +345,15 @@ size is paid in every tree that holds it (Owner's answers, item 4).
    deepest container a value of `R` holds (`depth(R)`, computed by the build: a record or a list adds one level, an
    optional none), a container under a key `R` does not declare included (`tooDeep`, section 2.3). The work of a lift
    is then linear in the text's bound `N` and its stack is bounded by the type, on every runtime; a text that cannot
-   be a value of `R` at any depth is refused before it costs more.
+   be a value of `R` at any depth is refused before it costs more. The bound is decided over the text's brackets
+   alone, before the text is read as JSON: a text is skipped from its opening quote to the next quote no backslash
+   escapes, each `{` and `[` outside one opens a level and each `}` and `]` closes one, and the first opened past
+   `depth(R)` is refused whatever the text holds after it; a text that never closes is left to the grammar. The
+   refusal's pointer names that container (section 2.4).
+5. **The order of the refusals**, the same on every runtime, so that one text gets one refusal everywhere: a text that
+   is empty or only whitespace (`notJson`); then a container past `depth(R)` (`tooDeep`), so a text both too deep and
+   not JSON is refused as too deep; then the text read as JSON by RFC 8259 alone (`notJson`, a repeated name
+   included) and as one object (`notObject`); then the fields, by the reader of a delivery of `R`.
 
 #### 2.2 Reason
 
@@ -399,10 +407,18 @@ byte string may hold the byte zero, since every runtime holds a byte string with
 | `bound` | `optional<uint32>` | the bound the value broke, for `tooLong` (bytes), `tooMany` (elements) and `tooDeep` (levels); absent for every other code |
 
 The ids of the committed schemas hold neither `/` nor `~`, so for each of them the pointer is the sentence's path with
-`/` in front; the readers escape all the same, so the rule does not rest on that. Every path names a place `R`
-declares, so the longest pointer into `R` is a number the build computes from the type (each record's longest id, each
-list's largest index); a schema whose longest pointer is past `lift_path` is refused for a lift
-(`validation/lift-path-bound`, section 8), so a pointer is never cut.
+`/` in front; the readers escape all the same, so the rule does not rest on that. Every path of a refusal other than
+`tooDeep` names a place `R` declares, so the longest pointer into `R` is a number the build computes from the type
+(each record's longest id, each list's largest index); a schema whose longest pointer is past `lift_path` is refused
+for a lift (`validation/lift-path-bound`, section 8), so such a pointer is never cut.
+
+A `tooDeep` pointer names the container refused, which may stand under keys `R` does not declare: for each container
+it stands in, outermost first, the element's index in an array (the `,` the bracket scan met at that level since the
+array opened) or the member's name in an object (the last text closed at that level before a `:`, since the object
+opened or its last `,`). Every runtime is handed `lift_path` and writes the pointer to it by whole tokens: it stops
+before the first place it cannot write, a member with no name before its colon, a name that is no text (no JSON
+string, not UTF-8, or holding U+0000), or a token that would take it past `lift_path` UTF-8 bytes. Such a pointer names
+an enclosing place of the container, never a cut token, and the scan keeps at most `depth(R)` levels to write it.
 
 The record carries no sentence. A sentence would either quote the text that was refused, whose length the type does
 not bound and which would be cut or differ by lane, or be a function of the three fields, which a template renders

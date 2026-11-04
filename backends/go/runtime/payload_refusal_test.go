@@ -26,8 +26,11 @@ type refusalCase struct {
 	Type any    `json:"type"`
 	// Depth, where a case gives one, has the case read as a `<sce:lift>` of the
 	// record of the one field `v` reads it (docs/adr/0087, section 2.1).
-	Depth   *uint32 `json:"depth"`
-	Refusal *struct {
+	Depth *uint32 `json:"depth"`
+	// PathBound holds a lift's tooDeep pointer to its bytes: the standard
+	// refusal's 256 where a case gives none.
+	PathBound *uint32 `json:"pathBound"`
+	Refusal   *struct {
 		Code    string  `json:"code"`
 		Pointer string  `json:"pointer"`
 		Bound   *uint32 `json:"bound"`
@@ -141,7 +144,11 @@ func TestEveryCaseOfTheSharedTableIsRefusedWithItsCodePointerAndBound(t *testing
 			var fields PayloadFields
 			var err error
 			if c.Depth != nil {
-				fields, err = LiftText(c.Data, *c.Depth, []string{"v"}, "")
+				pathBound := uint32(256)
+				if c.PathBound != nil {
+					pathBound = *c.PathBound
+				}
+				fields, err = LiftText(c.Data, *c.Depth, pathBound, "")
 			} else {
 				fields, err = LiftPayload(c.Data)
 			}
@@ -220,28 +227,34 @@ func TestAPointerEscapesTildeAndSolidusInEachToken(t *testing.T) {
 }
 
 // A lift refuses a container past its depth over the brackets alone, before the
-// text is read as JSON, and names the declared member it stands under or the
-// whole text (docs/adr/0087, section 2.1, item 4).
+// text is read as JSON, and names the container it refused, held to the room of
+// the refusal's path by whole tokens (docs/adr/0087, sections 2.1 and 2.4).
 func TestALiftRefusesAContainerPastItsDepthBeforeItReadsTheText(t *testing.T) {
-	declared := []string{"title", "count"}
 	for _, c := range []struct {
-		text    string
-		depth   uint32
-		pointer string
-		refused bool
+		text      string
+		depth     uint32
+		pathBound uint32
+		pointer   string
+		refused   bool
 	}{
-		{`{"title":"a","count":1}`, 1, "", false},
-		{`{"title":["a"]}`, 1, "/title", true},
-		{`{"extra":{"a":1}}`, 1, "", true},
-		{`{"title":[1]}`, 1, "/title", true},
-		{`[[1]]`, 1, "", true},
-		{`{"extra":[[[[[[[`, 1, "", true},
-		{`{"title":"[[{\"[","count":1}`, 1, "", false},
-		{`{"title":{"a":1}}`, 2, "", false},
-		{`{"title":"[[`, 1, "", false},
-		{`{"title":"x","extra":[1]}`, 1, "", true},
+		{`{"title":"a","count":1}`, 1, 256, "", false},
+		{`{"title":["a"]}`, 1, 256, "/title", true},
+		{`{"extra":{"a":1}}`, 1, 256, "/extra", true},
+		{`[[1]]`, 1, 256, "/0", true},
+		{`[1,2,[3]]`, 1, 256, "/2", true},
+		{`{"extra":[[[[[[[`, 1, 256, "/extra", true},
+		{`{"title":"[[{\"[","count":1}`, 1, 256, "", false},
+		{`{"title":{"a":1}}`, 2, 256, "", false},
+		{`{"title":"[[`, 1, 256, "", false},
+		{`{"title":"x","extra":[1]}`, 1, 256, "/extra", true},
+		{`{"a":{"b":[1]}}`, 2, 256, "/a/b", true},
+		{`{"a":[0,{"b":[1]}]}`, 3, 256, "/a/1/b", true},
+		{`{"a/b~c":[1]}`, 1, 256, "/a~1b~0c", true},
+		{`{[1]}`, 1, 256, "", true},
+		{`{"a":{"abcdef":[1]}}`, 2, 4, "/a", true},
+		{`{"a":{"bc":[1]}}`, 2, 5, "/a/bc", true},
 	} {
-		refusal := LiftTooDeep(c.text, c.depth, declared)
+		refusal := LiftTooDeep(c.text, c.depth, c.pathBound)
 		if (refusal != nil) != c.refused {
 			t.Errorf("%s: refused %v, want %v", c.text, refusal, c.refused)
 			continue
@@ -267,7 +280,7 @@ func TestALiftReadsARecordOrAnswersItsRefusal(t *testing.T) {
 		w, err := LiftField(r, "w", ValueUnsigned[uint8])
 		return [2]uint8{v, w}, err
 	}
-	got, refusal := LiftRecord(`{"v":1}`, "Pair", 1, []string{"v", "w"}, `{"w":7}`, read)
+	got, refusal := LiftRecord(`{"v":1}`, "Pair", 1, 256, `{"w":7}`, read)
 	if refusal != nil || got != [2]uint8{1, 7} {
 		t.Fatalf("read %v, refused %v", got, refusal)
 	}
@@ -279,7 +292,7 @@ func TestALiftReadsARecordOrAnswersItsRefusal(t *testing.T) {
 		`{"v":256,"w":1}`: RefusalOutOfRange,
 		`{"w":1}`:         RefusalMissing,
 	} {
-		if _, refusal := LiftRecord(text, "Pair", 1, []string{"v", "w"}, "", read); refusal == nil || refusal.Code() != code {
+		if _, refusal := LiftRecord(text, "Pair", 1, 256, "", read); refusal == nil || refusal.Code() != code {
 			t.Errorf("%q: refused %v, want %s", text, refusal, code.Name())
 		}
 	}

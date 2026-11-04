@@ -330,16 +330,23 @@
      opening quote to the next quote no backslash escapes, each opening bracket
      outside one opens a level and each closing one closes one, and the first
      opened past depth is refused, whatever the text holds after it. A text that
-     never closes ends the walk with nothing refused. The pointer names the
-     member of the outermost object the container stands under, the name read
-     from the last text closed in that object before a colon, when it is one of
-     declared; otherwise the whole text. The bound is depth. */
-  function tooDeep(text, depth, declared) {
-    var level = 0;
-    var lastText = null;
-    var member = null;
+     never closes ends the walk with nothing refused. The bound is depth.
+
+     The pointer names the container refused (docs/adr/0087, section 2.4): for
+     each container it stands in, outermost first, the element's index in an
+     array (the commas the scan met at that level since the array opened) or the
+     member's name in an object (the last text closed at that level before a
+     colon, since the object opened or its last comma), each an RFC 6901 token.
+     It stops before the first place it cannot write: a member with no name
+     before its colon, a name that is no text (no JSON string, or one holding
+     U+0000), or a token that would take the pointer past pathBound UTF-8 bytes,
+     the room of the refusal record's path. The scan keeps one entry per open
+     container, at most depth of them. */
+  function tooDeep(text, depth, pathBound) {
+    var open = [];
     for (var at = 0; at < text.length; at++) {
       var c = text.charAt(at);
+      var top = open.length > 0 ? open[open.length - 1] : null;
       if (c === '"') {
         var start = at;
         at++;
@@ -349,54 +356,95 @@
         if (at >= text.length) {
           return null;
         }
-        if (level === 1) {
-          lastText = text.slice(start, at + 1);
+        if (top !== null) {
+          top.lastText = text.slice(start, at + 1);
         }
-      } else if (c === ':' && level === 1) {
-        member = lastText;
-        lastText = null;
-      } else if (c === ',' && level === 1) {
-        member = null;
-        lastText = null;
+      } else if (c === ':' && top !== null) {
+        top.member = top.lastText;
+        top.lastText = null;
+      } else if (c === ',' && top !== null) {
+        top.member = null;
+        top.lastText = null;
+        top.index++;
       } else if (c === '{' || c === '[') {
-        level++;
-        if (level > depth) {
-          var pointer = '';
-          if (member !== null) {
-            try {
-              var name = parseText(member);
-              if (typeof name === 'string' && declared.indexOf(name) >= 0) {
-                pointer = pointerBelow('', name);
-              }
-            } catch (e) {
-              pointer = '';
-            }
-          }
+        if (open.length >= depth) {
           try {
-            refuse('tooDeep', pointer, 'the text opens a container deeper than the ' + String(depth) + ' levels a value of its schema holds', depth);
+            refuse('tooDeep', scanPointer(open, pathBound), 'the text opens a container deeper than the ' + String(depth) + ' levels a value of its schema holds', depth);
           } catch (refusal) {
             return refusal;
           }
         }
-      } else if ((c === '}' || c === ']') && level > 0) {
-        level--;
+        open.push({ array: c === '[', index: 0, lastText: null, member: null });
+      } else if ((c === '}' || c === ']') && top !== null) {
+        open.pop();
       }
     }
     return null;
+  }
+
+  /* The UTF-8 bytes of text, or -1 for a text holding half of a UTF-16 pair,
+     which no UTF-8 spells. */
+  function utf8Length(text) {
+    var n = 0;
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charCodeAt(i);
+      var next = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
+      if (c < 0x80) {
+        n += 1;
+      } else if (c < 0x800) {
+        n += 2;
+      } else if (c >= 0xD800 && c <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF) {
+        n += 4;
+        i++;
+      } else if (c >= 0xD800 && c <= 0xDFFF) {
+        return -1;
+      } else {
+        n += 3;
+      }
+    }
+    return n;
+  }
+
+  /* The pointer to the place open stands at, as tooDeep() writes it. */
+  function scanPointer(open, pathBound) {
+    var pointer = '';
+    for (var i = 0; i < open.length; i++) {
+      var token;
+      if (open[i].array) {
+        token = String(open[i].index);
+      } else {
+        var name = null;
+        try {
+          name = open[i].member === null ? null : parseText(open[i].member);
+        } catch (e) {
+          name = null;
+        }
+        if (typeof name !== 'string' || name.indexOf(String.fromCharCode(0)) >= 0 || utf8Length(name) < 0) {
+          break;
+        }
+        token = name;
+      }
+      var next = pointerBelow(pointer, token);
+      if (utf8Length(next) > pathBound) {
+        break;
+      }
+      pointer = next;
+    }
+    return pointer;
   }
 
   /* The text a lift reads, as the value of type, a record of its schema
      (docs/adr/0087, section 2.1), or the refusal thrown of the first place
      that is not one: an empty text, a container past depth, a text that is
      not one JSON object, then what a delivery of the schema is refused for. */
-  function liftValue(text, type, depth, declared) {
+  function liftValue(text, type, depth, pathBound) {
     if (typeof text !== 'string') {
       fail('expected the text a lift reads, read ' + String(text));
     }
     if (text.replace(/[ \t\n\r]/g, '') === '') {
       refuse('notJson', '', 'the text is empty');
     }
-    var deep = tooDeep(text, depth, declared);
+    var deep = tooDeep(text, depth, pathBound);
     if (deep !== null) {
       throw deep;
     }
@@ -415,10 +463,10 @@
   /* <sce:lift>: {value, refusal}, one of them null. A value the data model
      cannot hold (a 64-bit integer past what a Number holds exactly) fails as
      unrepresentable, as a variable's does. */
-  function lift(text, type, depth, declared) {
+  function lift(text, type, depth, pathBound) {
     var value;
     try {
-      value = liftValue(text, type, depth, declared);
+      value = liftValue(text, type, depth, pathBound);
     } catch (e) {
       if (e.sceRefusal === undefined) {
         throw e;

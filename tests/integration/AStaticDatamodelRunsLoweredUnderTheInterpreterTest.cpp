@@ -1490,11 +1490,12 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRe
         const std::string data = c.at("data").get<std::string>();
         ++asked;
         // A delivery's text that is no JSON is refused with no data read; a lift's text is
-        // read whole by `SceStatic.lift`, the record of the one field `v` its type.
+        // read whole by `SceStatic.lift`, the record of the one field `v` its type, its
+        // pointer held to `pathBound` bytes, the standard refusal's 256 where none is given.
         const std::string reading =
             c.contains("depth") ? "var lifted = SceStatic.lift(text, {record: {'v': " + c.at("type").dump() + "}}, " +
-                                      c.at("depth").dump() +
-                                      ", ['v']); if (lifted.refusal !== null) { return JSON.stringify({refusal: "
+                                      c.at("depth").dump() + ", " + std::to_string(c.value("pathBound", 256)) +
+                                      "); if (lifted.refusal !== null) { return JSON.stringify({refusal: "
                                       "lifted.refusal}); }"
                                 : "var data; if (text !== '') { try { data = SceStatic.parseText(text); } catch (e) { "
                                   "return JSON.stringify({refusal: {code: 'notJson', pointer: '', bound: null}}); } } "

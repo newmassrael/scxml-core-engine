@@ -240,11 +240,11 @@ pub fn lift_record<T>(
     text: &str,
     schema: &str,
     depth: u32,
-    declared: &[&str],
+    path_bound: u32,
     defaults: Option<&str>,
     read: impl FnOnce(&PayloadRecord<'_>) -> Result<T, PayloadRefusal>,
 ) -> Result<T, PayloadRefusal> {
-    let lifted = PayloadFields::lift(text, depth, declared, defaults)
+    let lifted = PayloadFields::lift(text, depth, path_bound, defaults)
         .and_then(|fields| read(&fields.record()));
     match &lifted {
         Ok(_) => crate::sce_log_info!("<sce:lift>: the text is a record of {schema}"),
@@ -270,20 +270,20 @@ pub fn lift_record<T>(
 /// it. A text that never closes ends the walk with nothing refused, and the
 /// reading of the text as JSON refuses it.
 ///
-/// The pointer names the place the schema declares that the container stands
-/// at: the member of the outermost object it stands under, the name read from
-/// the last text closed in that object before a `:`, when that name is one of
-/// `declared`; otherwise the whole text, `""`. A container under a key no
-/// field declares is no place of the schema, and naming it would make the
-/// pointer as long as the text rather than the schema. The bound is `depth`.
-pub fn lift_too_deep(text: &str, depth: u32, declared: &[&str]) -> Option<PayloadRefusal> {
+/// The pointer names the container refused (docs/adr/0087, section 2.4): for
+/// each container it stands in, outermost first, the element's index in an
+/// array (the `,` the scan met at that level since the array opened) or the
+/// member's name in an object (the last text closed at that level before a
+/// `:`, since the object opened or its last `,`), each an RFC 6901 token. It
+/// stops before the first place it cannot write: a member with no name before
+/// its colon, a name that is no text (no JSON string, or one holding U+0000),
+/// or a token that would take the pointer past `path_bound` UTF-8 bytes, the
+/// room of the refusal record's `path`. The bound is `depth`. The scan keeps
+/// one entry per open container, at most `depth` of them.
+pub fn lift_too_deep(text: &str, depth: u32, path_bound: u32) -> Option<PayloadRefusal> {
     let bytes = text.as_bytes();
-    let mut level: u32 = 0;
+    let mut open: Vec<ScanLevel<'_>> = Vec::new();
     let mut at = 0;
-    // The last text closed in the outermost container, and the member that
-    // text names once a `:` follows it there.
-    let mut last_text: Option<&str> = None;
-    let mut member: Option<&str> = None;
     while at < bytes.len() {
         match bytes[at] {
             b'"' => {
@@ -295,30 +295,28 @@ pub fn lift_too_deep(text: &str, depth: u32, declared: &[&str]) -> Option<Payloa
                 if at >= bytes.len() {
                     return None;
                 }
-                if level == 1 {
-                    last_text = Some(&text[start..=at]);
+                if let Some(level) = open.last_mut() {
+                    level.last_text = Some(&text[start..=at]);
                 }
             }
-            b':' if level == 1 => member = last_text.take(),
-            b',' if level == 1 => {
-                member = None;
-                last_text = None;
+            b':' => {
+                if let Some(level) = open.last_mut() {
+                    level.member = level.last_text.take();
+                }
+            }
+            b',' => {
+                if let Some(level) = open.last_mut() {
+                    level.member = None;
+                    level.last_text = None;
+                    level.index += 1;
+                }
             }
             b'{' | b'[' => {
-                level += 1;
-                if level > depth {
-                    let pointer = member
-                        .and_then(|name| match crate::json::parse(name) {
-                            Ok(Value::Text(name)) => Some(name),
-                            _ => None,
-                        })
-                        .filter(|name| declared.contains(&name.as_str()))
-                        .map(|name| pointer_below("", &name))
-                        .unwrap_or_default();
+                if open.len() >= depth as usize {
                     return Some(
                         PayloadRefusal::new(
                             RefusalCode::TooDeep,
-                            pointer,
+                            scan_pointer(&open, path_bound),
                             format!(
                                 "the text opens a container deeper than the {depth} levels a \
                                  value of its schema holds"
@@ -327,13 +325,52 @@ pub fn lift_too_deep(text: &str, depth: u32, declared: &[&str]) -> Option<Payloa
                         .with_bound(depth as usize),
                     );
                 }
+                open.push(ScanLevel {
+                    array: bytes[at] == b'[',
+                    index: 0,
+                    last_text: None,
+                    member: None,
+                });
             }
-            b'}' | b']' => level = level.saturating_sub(1),
+            b'}' | b']' => {
+                open.pop();
+            }
             _ => {}
         }
         at += 1;
     }
     None
+}
+
+/// One container [`lift_too_deep`] stands in: whether it is an array, the
+/// elements it has passed, the last text closed in it, and the member a `:`
+/// after that text named.
+struct ScanLevel<'t> {
+    array: bool,
+    index: u64,
+    last_text: Option<&'t str>,
+    member: Option<&'t str>,
+}
+
+/// The pointer to the place `open` stands at, as [`lift_too_deep`] writes it.
+fn scan_pointer(open: &[ScanLevel<'_>], path_bound: u32) -> String {
+    let mut pointer = String::new();
+    for level in open {
+        let token = if level.array {
+            level.index.to_string()
+        } else {
+            match level.member.map(crate::json::parse) {
+                Some(Ok(Value::Text(name))) if !name.contains('\0') => name,
+                _ => break,
+            }
+        };
+        let below = pointer_below(&pointer, &token);
+        if below.len() > path_bound as usize {
+            break;
+        }
+        pointer = below;
+    }
+    pointer
 }
 
 use crate::json::{JsonError, Value};
@@ -434,7 +471,8 @@ impl PayloadFields {
 
     /// Read the text a `<sce:lift>` reads as the fields of a record of a schema
     /// (docs/adr/0087, section 2.1): `depth` is the deepest container a value of
-    /// the schema holds, `declared` the ids of its fields, and `defaults`, for
+    /// the schema holds, `path_bound` the room of the refusal record's `path`
+    /// a `tooDeep` pointer is held to ([`lift_too_deep`]), and `defaults`, for
     /// a schema a later revision of which added fields, the JSON object of their
     /// defaults, which a text that lacks one reads in its place.
     ///
@@ -449,7 +487,7 @@ impl PayloadFields {
     pub fn lift(
         text: &str,
         depth: u32,
-        declared: &[&str],
+        path_bound: u32,
         defaults: Option<&str>,
     ) -> Result<Self, PayloadRefusal> {
         if text
@@ -462,7 +500,7 @@ impl PayloadFields {
                 "the text is empty",
             ));
         }
-        if let Some(refusal) = lift_too_deep(text, depth, declared) {
+        if let Some(refusal) = lift_too_deep(text, depth, path_bound) {
             return Err(refusal);
         }
         let mut decoded = Self::decode(text)?;
@@ -1309,11 +1347,17 @@ mod tests {
             };
             // A case that gives a depth is read as a `<sce:lift>` of the record
             // of the one field `v` reads it (docs/adr/0087, section 2.1).
+            // Its pointer is held to `pathBound` bytes, the standard refusal's 256
+            // where the case gives none.
+            let path_bound = match case.member("pathBound") {
+                Some(Value::Number(bound)) => bound.parse::<u32>().expect("a uint32"),
+                _ => 256,
+            };
             let fields = match case.member("depth") {
                 Some(Value::Number(depth)) => PayloadFields::lift(
                     data,
                     depth.parse::<u32>().expect("a depth is a uint32"),
-                    &["v"],
+                    path_bound,
                     None,
                 ),
                 _ => PayloadFields::decode(data),
@@ -1355,33 +1399,54 @@ mod tests {
     }
 
     /// A lift refuses a container past its depth over the brackets alone,
-    /// before the text is read as JSON, and names the declared member it stands
-    /// under or the whole text (docs/adr/0087, section 2.1, item 4).
+    /// before the text is read as JSON, and names the container it refused
+    /// (docs/adr/0087, sections 2.1 and 2.4).
     #[test]
     fn a_lift_refuses_a_container_past_its_depth_before_it_reads_the_text() {
-        let declared = ["title", "count"];
-        let refused = |text: &str, depth: u32| {
-            super::lift_too_deep(text, depth, &declared)
+        let refused = |text: &str, depth: u32, path_bound: u32| {
+            super::lift_too_deep(text, depth, path_bound)
                 .map(|r| (r.code(), r.pointer().to_string(), r.bound()))
         };
         let too_deep = |pointer: &str, bound: u32| {
             Some((RefusalCode::TooDeep, pointer.to_string(), Some(bound)))
         };
-        assert_eq!(refused(r#"{"title":"a","count":1}"#, 1), None);
-        assert_eq!(refused(r#"{"title":["a"]}"#, 1), too_deep("/title", 1));
-        assert_eq!(refused(r#"{"extra":{"a":1}}"#, 1), too_deep("", 1));
-        assert_eq!(refused(r#"{"title":[1]}"#, 1), too_deep("/title", 1));
-        assert_eq!(refused("[[1]]", 1), too_deep("", 1));
+        assert_eq!(refused(r#"{"title":"a","count":1}"#, 1, 256), None);
+        assert_eq!(refused(r#"{"title":["a"]}"#, 1, 256), too_deep("/title", 1));
+        assert_eq!(
+            refused(r#"{"extra":{"a":1}}"#, 1, 256),
+            too_deep("/extra", 1)
+        );
+        assert_eq!(refused("[[1]]", 1, 256), too_deep("/0", 1));
+        assert_eq!(refused("[1,2,[3]]", 1, 256), too_deep("/2", 1));
         // Past the depth and never closed: refused before the grammar is asked.
-        assert_eq!(refused(r#"{"extra":[[[[[[["#, 1), too_deep("", 1));
+        assert_eq!(
+            refused(r#"{"extra":[[[[[[["#, 1, 256),
+            too_deep("/extra", 1)
+        );
         // A bracket in a text is no container, an escaped quote no end of one.
-        assert_eq!(refused(r#"{"title":"[[{\"[","count":1}"#, 1), None);
+        assert_eq!(refused(r#"{"title":"[[{\"[","count":1}"#, 1, 256), None);
         // A container one level deeper than a record is within a depth of 2.
-        assert_eq!(refused(r#"{"title":{"a":1}}"#, 2), None);
+        assert_eq!(refused(r#"{"title":{"a":1}}"#, 2, 256), None);
         // A text that never closes is the grammar's to refuse.
-        assert_eq!(refused(r#"{"title":"[["#, 1), None);
+        assert_eq!(refused(r#"{"title":"[["#, 1, 256), None);
         // A member after a comma is named by its own text, not the one before.
-        assert_eq!(refused(r#"{"title":"x","extra":[1]}"#, 1), too_deep("", 1));
+        assert_eq!(
+            refused(r#"{"title":"x","extra":[1]}"#, 1, 256),
+            too_deep("/extra", 1)
+        );
+        // The container under a nested key, and inside an array.
+        assert_eq!(refused(r#"{"a":{"b":[1]}}"#, 2, 256), too_deep("/a/b", 2));
+        assert_eq!(
+            refused(r#"{"a":[0,{"b":[1]}]}"#, 3, 256),
+            too_deep("/a/1/b", 3)
+        );
+        // RFC 6901: `~` is written `~0` and `/` is written `~1`.
+        assert_eq!(refused(r#"{"a/b~c":[1]}"#, 1, 256), too_deep("/a~1b~0c", 1));
+        // A member with no name before its colon ends the pointer where it stands.
+        assert_eq!(refused("{[1]}", 1, 256), too_deep("", 1));
+        // A token past the room of the refusal's path is not written, nor cut.
+        assert_eq!(refused(r#"{"a":{"abcdef":[1]}}"#, 2, 4), too_deep("/a", 2));
+        assert_eq!(refused(r#"{"a":{"bc":[1]}}"#, 2, 5), too_deep("/a/bc", 2));
     }
 
     /// What a lift reads: an empty text is not JSON, a container past the depth
@@ -1391,22 +1456,22 @@ mod tests {
     fn a_lift_reads_a_text_as_a_delivery_after_its_own_refusals() {
         let code = |r: Result<PayloadFields, PayloadRefusal>| r.map(|_| ()).map_err(|r| r.code());
         assert_eq!(
-            code(PayloadFields::lift(" \t", 1, &["v"], None)),
+            code(PayloadFields::lift(" \t", 1, 256, None)),
             Err(RefusalCode::NotJson)
         );
         assert_eq!(
-            code(PayloadFields::lift("[[", 1, &["v"], None)),
+            code(PayloadFields::lift("[[", 1, 256, None)),
             Err(RefusalCode::TooDeep)
         );
         assert_eq!(
-            code(PayloadFields::lift("[1]", 1, &["v"], None)),
+            code(PayloadFields::lift("[1]", 1, 256, None)),
             Err(RefusalCode::NotObject)
         );
         assert_eq!(
-            code(PayloadFields::lift(r#"{"v":1,"v":2}"#, 1, &["v"], None)),
+            code(PayloadFields::lift(r#"{"v":1,"v":2}"#, 1, 256, None)),
             Err(RefusalCode::NotJson)
         );
-        let read = PayloadFields::lift(r#"{"v":1}"#, 1, &["v", "w"], Some(r#"{"w":7}"#))
+        let read = PayloadFields::lift(r#"{"v":1}"#, 1, 256, Some(r#"{"w":7}"#))
             .expect("a text with a field from the defaults");
         assert_eq!(read.unsigned::<u8>("w"), Ok(7));
         assert_eq!(read.unsigned::<u8>("v"), Ok(1));

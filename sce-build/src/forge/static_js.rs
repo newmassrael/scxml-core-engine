@@ -733,11 +733,7 @@ impl StaticTarget for JsTarget {
             .as_ref()
             .map(|json| format!(", defaults: {json}"))
             .unwrap_or_default();
-        let declared: Vec<String> = lift
-            .field_ids()
-            .iter()
-            .map(|id| format!("'{id}'"))
-            .collect();
+        let path_bound = lift.path_bound()?;
         let refusal = self.record_value(
             "",
             &lift.refusal_members(
@@ -750,13 +746,12 @@ impl StaticTarget for JsTarget {
         let script = format!(
             "(function (sceLift) {{ if (sceLift.refusal === null) {{ {location} = sceLift.value; \
              {absent} = null; }} else {{ {absent} = {refusal}; }} }})({RUNTIME_GLOBAL}.lift({text}, \
-             {{record: {{{fields}}}{defaults}}}, {depth}, [{declared}]));",
+             {{record: {{{fields}}}{defaults}}}, {depth}, {path_bound}));",
             location = lift.location,
             absent = lift.refusal,
             text = lift.text,
             fields = fields.join(", "),
             depth = lift.depth,
-            declared = declared.join(", "),
         );
         Some(format!("<script>{}</script>", xml_attribute_value(&script)))
     }

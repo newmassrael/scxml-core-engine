@@ -72,10 +72,12 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
         var got: PayloadRefusal?
         do {
             // A case that gives a depth is read as a `<sce:lift>` of the record of the
-            // one field `v` reads it (docs/adr/0087, section 2.1).
+            // one field `v` reads it (docs/adr/0087, section 2.1), its pointer held to
+            // `pathBound` bytes, the standard refusal's 256 where the case gives none.
+            let pathBound = c["pathBound"] as? Int ?? 256
             let fields =
                 if let depth = c["depth"] as? Int {
-                    try PayloadFields.lift(data, depth: depth, declared: ["v"], defaults: nil)
+                    try PayloadFields.lift(data, depth: depth, pathBound: pathBound, defaults: nil)
                 } else {
                     try PayloadFields.decode(data)
                 }
@@ -123,24 +125,29 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
 }
 
 /// A lift refuses a container past its depth over the brackets alone, before the
-/// text is read as JSON, and names the declared member it stands under or the whole
-/// text (docs/adr/0087, section 2.1, item 4).
+/// text is read as JSON, and names the container it refused, held to the room of the
+/// refusal's path by whole tokens (docs/adr/0087, sections 2.1 and 2.4).
 @Test func aLiftRefusesAContainerPastItsDepthBeforeItReadsTheText() {
-    let declared = ["title", "count"]
-    let cases: [(String, Int, String?)] = [
-        (#"{"title":"a","count":1}"#, 1, nil),
-        (#"{"title":["a"]}"#, 1, "/title"),
-        (#"{"extra":{"a":1}}"#, 1, ""),
-        (#"{"title":[1]}"#, 1, "/title"),
-        ("[[1]]", 1, ""),
-        (#"{"extra":[[[[[[["#, 1, ""),
-        (#"{"title":"[[{\"[","count":1}"#, 1, nil),
-        (#"{"title":{"a":1}}"#, 2, nil),
-        (#"{"title":"[["#, 1, nil),
-        (#"{"title":"x","extra":[1]}"#, 1, ""),
+    let cases: [(String, Int, Int, String?)] = [
+        (#"{"title":"a","count":1}"#, 1, 256, nil),
+        (#"{"title":["a"]}"#, 1, 256, "/title"),
+        (#"{"extra":{"a":1}}"#, 1, 256, "/extra"),
+        ("[[1]]", 1, 256, "/0"),
+        ("[1,2,[3]]", 1, 256, "/2"),
+        (#"{"extra":[[[[[[["#, 1, 256, "/extra"),
+        (#"{"title":"[[{\"[","count":1}"#, 1, 256, nil),
+        (#"{"title":{"a":1}}"#, 2, 256, nil),
+        (#"{"title":"[["#, 1, 256, nil),
+        (#"{"title":"x","extra":[1]}"#, 1, 256, "/extra"),
+        (#"{"a":{"b":[1]}}"#, 2, 256, "/a/b"),
+        (#"{"a":[0,{"b":[1]}]}"#, 3, 256, "/a/1/b"),
+        (#"{"a/b~c":[1]}"#, 1, 256, "/a~1b~0c"),
+        ("{[1]}", 1, 256, ""),
+        (#"{"a":{"abcdef":[1]}}"#, 2, 4, "/a"),
+        (#"{"a":{"bc":[1]}}"#, 2, 5, "/a/bc"),
     ]
-    for (text, depth, pointer) in cases {
-        let refusal = liftTooDeep(text, depth: depth, declared: declared)
+    for (text, depth, pathBound, pointer) in cases {
+        let refusal = liftTooDeep(text, depth: depth, pathBound: pathBound)
         guard let pointer else {
             #expect(refusal == nil, "\(text): \(refusal?.reason ?? "")")
             continue
@@ -156,7 +163,7 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
     let read = { (fields: PayloadFields) throws -> [UInt8] in
         [try fields.unsigned("v"), try fields.unsigned("w")]
     }
-    let lifted = liftRecord(#"{"v":1}"#, depth: 1, declared: ["v", "w"], defaults: #"{"w":7}"#, read: read)
+    let lifted = liftRecord(#"{"v":1}"#, schema: "Pair", depth: 1, pathBound: 256, defaults: #"{"w":7}"#, read: read)
     #expect((try? lifted.get()) == [1, 7])
     let refused: [(String, RefusalCode)] = [
         (" \t", .notJson),
@@ -167,7 +174,7 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
         (#"{"w":1}"#, .missing),
     ]
     for (text, code) in refused {
-        let outcome = liftRecord(text, depth: 1, declared: ["v", "w"], defaults: nil, read: read)
+        let outcome = liftRecord(text, schema: "Pair", depth: 1, pathBound: 256, defaults: nil, read: read)
         guard case .failure(let refusal) = outcome else {
             Issue.record("\(text): read, the lift refuses it as \(code)")
             continue

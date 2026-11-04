@@ -4480,10 +4480,11 @@ only whitespace (`notJson`); a container opened deeper than the deepest a value 
 holds (`tooDeep`, its bound that depth, which is 1 for every schema a lift reads now),
 decided over the text's brackets alone before the text is read as JSON, so neither the
 work nor the stack of a lift grows with what a text nests; then a text that is not one
-JSON object, as a delivery is refused. A `tooDeep` refusal names the member of the
-outermost object the container stands under when `R` declares it, and the whole text
-(`""`) otherwise: a key a sender added is no place of `R`, and naming it would make the
-pointer as long as the text rather than the schema. Every reader holds the text to RFC
+JSON object, as a delivery is refused. A `tooDeep` refusal names the container it
+refused, by the index of each element and the name of each member it stands in, held
+to the bound of the refusal's `path` by whole tokens: the pointer stops before the first
+place it cannot write (a member with no name before its colon, a name that is no text,
+or a token past the bound), so it names an enclosing place rather than a cut one. Every reader holds the text to RFC
 8259 alone (tests/json_text/payload_refusal.json): whitespace of the four kinds between
 tokens, a number in its grammar (no leading zero, no `+`, a digit on each side of `.`
 and after an exponent), no raw control character in a text, no half of a UTF-16 pair

@@ -112,16 +112,21 @@ public struct PayloadRefusal: Error, Equatable, CustomStringConvertible {
 /// closes ends the walk with nothing refused, and the reading of the text as JSON
 /// refuses it.
 ///
-/// The pointer names the member of the outermost object the container stands under,
-/// the name read from the last text closed in that object before a `:`, when that
-/// name is one of `declared`; otherwise the whole text, `""`. The bound is `depth`.
-public func liftTooDeep(_ text: String, depth: Int, declared: [String]) -> PayloadRefusal? {
+/// The pointer names the container refused (docs/adr/0087, section 2.4): for each
+/// container it stands in, outermost first, the element's index in an array (the `,`
+/// the scan met at that level since the array opened) or the member's name in an
+/// object (the last text closed at that level before a `:`, since the object opened
+/// or its last `,`), each an RFC 6901 token. It stops before the first place it
+/// cannot write: a member with no name before its colon, a name that is no text (no
+/// JSON string, or one holding U+0000), or a token that would take the pointer past
+/// `pathBound` UTF-8 bytes, the room of the refusal record's `path`. The bound is
+/// `depth`. The scan keeps one entry per open container, at most `depth` of them.
+public func liftTooDeep(_ text: String, depth: Int, pathBound: Int) -> PayloadRefusal? {
     let bytes = Array(text.utf8)
-    var level = 0
-    var lastText: ArraySlice<UInt8>?
-    var member: ArraySlice<UInt8>?
+    var open: [LiftScanLevel] = []
     var at = 0
     while at < bytes.count {
+        let top = open.count - 1
         switch bytes[at] {
         case UInt8(ascii: "\""):
             let start = at
@@ -132,34 +137,30 @@ public func liftTooDeep(_ text: String, depth: Int, declared: [String]) -> Paylo
             if at >= bytes.count {
                 return nil
             }
-            if level == 1 {
-                lastText = bytes[start...at]
+            if top >= 0 {
+                open[top].lastText = bytes[start...at]
             }
-        case UInt8(ascii: ":") where level == 1:
-            member = lastText
-            lastText = nil
-        case UInt8(ascii: ",") where level == 1:
-            member = nil
-            lastText = nil
+        case UInt8(ascii: ":") where top >= 0:
+            open[top].member = open[top].lastText
+            open[top].lastText = nil
+        case UInt8(ascii: ",") where top >= 0:
+            open[top].member = nil
+            open[top].lastText = nil
+            open[top].index += 1
         case UInt8(ascii: "{"), UInt8(ascii: "["):
-            level += 1
-            if level > depth {
-                var pointer = ""
-                if let member,
-                    case .text(let name)? = try? parseJSON(String(decoding: member, as: UTF8.self)),
-                    declared.contains(where: { $0.utf8.elementsEqual(name.utf8) })
-                {
-                    pointer = pointerBelow("", name)
-                }
+            if open.count >= depth {
                 return PayloadRefusal(
                     "the text opens a container deeper than the \(depth) levels a value of its schema holds",
                     code: .tooDeep,
-                    pointer: pointer,
+                    pointer: liftScanPointer(open, pathBound: pathBound),
                     bound: depth
                 )
             }
+            open.append(LiftScanLevel(array: bytes[at] == UInt8(ascii: "[")))
         case UInt8(ascii: "}"), UInt8(ascii: "]"):
-            level = max(level - 1, 0)
+            if top >= 0 {
+                open.removeLast()
+            }
         default:
             break
         }
@@ -168,28 +169,76 @@ public func liftTooDeep(_ text: String, depth: Int, declared: [String]) -> Paylo
     return nil
 }
 
+/// One container `liftTooDeep` stands in: whether it is an array, the elements it has
+/// passed, the last text closed in it, and the member a `:` after that text named.
+private struct LiftScanLevel {
+    let array: Bool
+    var index: UInt64 = 0
+    var lastText: ArraySlice<UInt8>?
+    var member: ArraySlice<UInt8>?
+
+    init(array: Bool) {
+        self.array = array
+    }
+}
+
+/// The pointer to the place `open` stands at, as `liftTooDeep` writes it.
+private func liftScanPointer(_ open: [LiftScanLevel], pathBound: Int) -> String {
+    var pointer = ""
+    for level in open {
+        let token: String
+        if level.array {
+            token = String(level.index)
+        } else {
+            guard let member = level.member,
+                case .text(let name)? = try? parseJSON(String(decoding: member, as: UTF8.self)),
+                !name.unicodeScalars.contains("\0")
+            else {
+                break
+            }
+            token = name
+        }
+        let below = pointerBelow(pointer, token)
+        if below.utf8.count > pathBound {
+            break
+        }
+        pointer = below
+    }
+    return pointer
+}
+
 /// What a `<sce:lift>` reads (docs/adr/0087, section 2.1): `text` as a record of a
 /// schema, whose fields `read` reads out of the fields it is handed, as a delivery
 /// of the schema is read; or the refusal of the first place that is not one, its
 /// code, pointer and bound the statechart keeps as a record. `PayloadFields.lift`
-/// says what is refused before the fields are read. This runtime keeps no log, so
-/// neither outcome is written to one.
+/// says what is refused before the fields are read. Each outcome is logged
+/// (`sceLog`) with the schema's name and, for a refusal, its code, pointer and
+/// bound; the text itself is not, since nothing bounds what a sender writes in it.
 public func liftRecord<T>(
     _ text: String,
+    schema: String,
     depth: Int,
-    declared: [String],
+    pathBound: Int,
     defaults: String?,
     read: (PayloadFields) throws -> T
 ) -> Result<T, PayloadRefusal> {
+    let refusal: PayloadRefusal
     do {
-        return .success(try read(PayloadFields.lift(text, depth: depth, declared: declared, defaults: defaults)))
-    } catch let refusal as PayloadRefusal {
-        return .failure(refusal)
+        let lifted = try read(PayloadFields.lift(text, depth: depth, pathBound: pathBound, defaults: defaults))
+        sceLog("<sce:lift>: the text is a record of \(schema)")
+        return .success(lifted)
+    } catch let refused as PayloadRefusal {
+        refusal = refused
     } catch {
         // Every reader of this file refuses with a `PayloadRefusal`; an error of
         // another kind is the text not being JSON at all.
-        return .failure(PayloadRefusal(String(describing: error), code: .notJson, pointer: ""))
+        refusal = PayloadRefusal(String(describing: error), code: .notJson, pointer: "")
     }
+    sceLog(
+        "<sce:lift>: the text is no record of \(schema): \(refusal.code.declaredName) at '\(refusal.pointer)', "
+            + "bound \(refusal.bound.map { String($0) } ?? "none") (\(refusal.reason))"
+    )
+    return .failure(refusal)
 }
 
 /// `token` below the strict RFC 6901 pointer `prefix` (empty for the whole text):
@@ -280,22 +329,23 @@ public struct PayloadFields {
 
     /// Reads the text a `<sce:lift>` reads as the fields of a record of a schema
     /// (docs/adr/0087, section 2.1): `depth` is the deepest container a value of the
-    /// schema holds, `declared` the ids of its fields, and `defaults`, for a schema a
-    /// later revision of which added fields, the JSON object of their defaults, which
-    /// a text that lacks one reads in its place.
+    /// schema holds, `pathBound` the room of the refusal record's `path` a `tooDeep`
+    /// pointer is held to (`liftTooDeep`), and `defaults`, for a schema a later
+    /// revision of which added fields, the JSON object of their defaults, which a text
+    /// that lacks one reads in its place.
     ///
     /// Three refusals come before the fields are read, in this order: a text that is
     /// empty or only whitespace (`notJson`); a container opened deeper than `depth`,
     /// decided over the text's brackets alone before it is read as JSON
     /// (`liftTooDeep`, `tooDeep`); and a text that is not one JSON object, as a
     /// delivery is refused (`decode`).
-    public static func lift(_ text: String, depth: Int, declared: [String], defaults: String?) throws
+    public static func lift(_ text: String, depth: Int, pathBound: Int, defaults: String?) throws
         -> PayloadFields
     {
         if trimmingJSONWhitespace(text).isEmpty {
             throw PayloadRefusal("the text is empty", code: .notJson, pointer: "")
         }
-        if let refusal = liftTooDeep(text, depth: depth, declared: declared) {
+        if let refusal = liftTooDeep(text, depth: depth, pathBound: pathBound) {
             throw refusal
         }
         let decoded = try decode(text)

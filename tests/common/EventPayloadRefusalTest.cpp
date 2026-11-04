@@ -144,10 +144,12 @@ TEST(EventPayloadRefusal, EveryCaseOfTheSharedTableIsRefusedWithItsCodePointerAn
         const std::string data = c.at("data").get<std::string>();
         EventPayloadFields fields;
         // A case that gives a depth is read as a `<sce:lift>` of the record of the one field `v`
-        // reads it (docs/adr/0087, section 2.1).
-        Refusal refusal = c.contains("depth")
-                              ? EventPayloadFields::lift(data, c.at("depth").get<uint32_t>(), {"v"}, nullptr, fields)
-                              : EventPayloadFields::decode(data, fields);
+        // reads it (docs/adr/0087, section 2.1), its pointer held to `pathBound` bytes, the
+        // standard refusal's 256 where the case gives none.
+        const uint32_t pathBound = c.contains("pathBound") ? c.at("pathBound").get<uint32_t>() : 256u;
+        Refusal refusal = c.contains("depth") ? EventPayloadFields::lift(data, c.at("depth").get<uint32_t>(), pathBound,
+                                                                         nullptr, fields)
+                                              : EventPayloadFields::decode(data, fields);
         if (refusal.empty()) {
             EventPayloadValue v;
             refusal = fields.value("v", v);
@@ -203,31 +205,36 @@ TEST(EventPayloadRefusal, APointerEscapesTildeAndSolidusInEachToken) {
 }
 
 // A lift refuses a container past its depth over the brackets alone, before the text is
-// read as JSON, and names the declared member it stands under or the whole text
-// (docs/adr/0087, section 2.1, item 4).
+// read as JSON, and names the container it refused, held to the room of the refusal's
+// path by whole tokens (docs/adr/0087, sections 2.1 and 2.4).
 TEST(EventPayloadRefusal, ALiftRefusesAContainerPastItsDepthBeforeItReadsTheText) {
-    const std::vector<std::string> declared = {"title", "count"};
-
     struct Case {
         const char *text;
         uint32_t depth;
+        uint32_t pathBound;
         const char *pointer;  // nullptr: no refusal
     };
 
     const Case cases[] = {
-        {R"({"title":"a","count":1})", 1, nullptr},
-        {R"({"title":["a"]})", 1, "/title"},
-        {R"({"extra":{"a":1}})", 1, ""},
-        {R"({"title":[1]})", 1, "/title"},
-        {"[[1]]", 1, ""},
-        {R"({"extra":[[[[[[[)", 1, ""},
-        {R"({"title":"[[{\"[","count":1})", 1, nullptr},
-        {R"({"title":{"a":1}})", 2, nullptr},
-        {R"({"title":"[[)", 1, nullptr},
-        {R"({"title":"x","extra":[1]})", 1, ""},
+        {R"({"title":"a","count":1})", 1, 256, nullptr},
+        {R"({"title":["a"]})", 1, 256, "/title"},
+        {R"({"extra":{"a":1}})", 1, 256, "/extra"},
+        {"[[1]]", 1, 256, "/0"},
+        {"[1,2,[3]]", 1, 256, "/2"},
+        {R"({"extra":[[[[[[[)", 1, 256, "/extra"},
+        {R"({"title":"[[{\"[","count":1})", 1, 256, nullptr},
+        {R"({"title":{"a":1}})", 2, 256, nullptr},
+        {R"({"title":"[[)", 1, 256, nullptr},
+        {R"({"title":"x","extra":[1]})", 1, 256, "/extra"},
+        {R"({"a":{"b":[1]}})", 2, 256, "/a/b"},
+        {R"({"a":[0,{"b":[1]}]})", 3, 256, "/a/1/b"},
+        {R"({"a/b~c":[1]})", 1, 256, "/a~1b~0c"},
+        {"{[1]}", 1, 256, ""},
+        {R"({"a":{"abcdef":[1]}})", 2, 4, "/a"},
+        {R"({"a":{"bc":[1]}})", 2, 5, "/a/bc"},
     };
     for (const Case &c : cases) {
-        const Refusal refusal = EventPayloadFields::liftTooDeep(c.text, c.depth, declared);
+        const Refusal refusal = EventPayloadFields::liftTooDeep(c.text, c.depth, c.pathBound);
         if (c.pointer == nullptr) {
             EXPECT_TRUE(refusal.empty()) << c.text << ": " << refusal.reason();
             continue;
@@ -250,8 +257,7 @@ TEST(EventPayloadRefusal, ALiftReadsARecordOrAnswersItsRefusal) {
         return refusal.empty() ? fields.readInteger("w", out.w) : refusal;
     };
     Pair lifted;
-    ASSERT_TRUE(
-        EventPayloadFields::liftRecord(R"({"v":1})", "Pair", 1, {"v", "w"}, R"({"w":7})", lifted, read).empty());
+    ASSERT_TRUE(EventPayloadFields::liftRecord(R"({"v":1})", "Pair", 1, 256, R"({"w":7})", lifted, read).empty());
     EXPECT_EQ(lifted.v, 1);
     EXPECT_EQ(lifted.w, 7);
     const std::pair<const char *, RefusalCode> refused[] = {
@@ -264,7 +270,7 @@ TEST(EventPayloadRefusal, ALiftReadsARecordOrAnswersItsRefusal) {
     };
     for (const auto &[text, code] : refused) {
         Pair untouched{9, 9};
-        const Refusal refusal = EventPayloadFields::liftRecord(text, "Pair", 1, {"v", "w"}, nullptr, untouched, read);
+        const Refusal refusal = EventPayloadFields::liftRecord(text, "Pair", 1, 256, nullptr, untouched, read);
         EXPECT_EQ(refusal.code(), code) << text << ": " << refusal.reason();
         EXPECT_FALSE(refusal.empty()) << text;
         EXPECT_EQ(untouched.v, 9) << text << ": a refused lift writes nothing";

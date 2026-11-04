@@ -9,9 +9,10 @@
   - `code`: the class of the refusal (refusal_code.scxml);
   - `path`: the place, as a strict RFC 6901 pointer: empty for the whole text,
     otherwise `/` before each reference token, `~` written `~0` and `/` written
-    `~1` (`/items/2/tags/0`). Every path names a place the schema declares, so
-    its length is one the build computes from the schema, and a pointer is never
-    cut;
+    `~1` (`/items/2/tags/0`). Every path but a `tooDeep` one names a place the
+    schema declares, so its length is one the build computes from the schema; a
+    `tooDeep` path names the container refused, written to this bound by whole
+    tokens, so a pointer is never cut;
   - `bound`: the bound the value broke, for `tooLong` (bytes), `tooMany`
     (elements) and `tooDeep` (levels); absent for every other code.
 

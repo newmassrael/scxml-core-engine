@@ -1155,7 +1155,8 @@ public:
      * (docs/adr/0087, section 2.1)
      * @param text The text read, which must outlive `out`: `out` borrows its characters
      * @param depth The deepest container a value of the schema holds
-     * @param declared The ids of the schema's fields
+     * @param pathBound The room of the refusal record's `path`, which a `tooDeep` pointer is
+     *        held to (`liftTooDeep`)
      * @param defaults For a schema a later revision of which added fields, the JSON object of
      *        their defaults, a literal that outlives `out`; nullptr for none
      * @param out Receives the fields when the read succeeds
@@ -1166,12 +1167,12 @@ public:
      * text's brackets alone before it is read as JSON (`liftTooDeep`, `tooDeep`); and a text
      * that is not one JSON object, as a delivery is refused (`decode`).
      */
-    static EventPayloadRefusal lift(const std::string &text, uint32_t depth, const std::vector<std::string> &declared,
-                                    const char *defaults, EventPayloadFields &out) {
+    static EventPayloadRefusal lift(const std::string &text, uint32_t depth, uint32_t pathBound, const char *defaults,
+                                    EventPayloadFields &out) {
         if (*detail::EventPayloadScan::skipSpace(text.c_str()) == '\0') {
             return EventPayloadRefusal(RefusalCode::NotJson, "", "the text is empty");
         }
-        EventPayloadRefusal refusal = liftTooDeep(text, depth, declared);
+        EventPayloadRefusal refusal = liftTooDeep(text, depth, pathBound);
         if (refusal.empty()) {
             refusal = decode(text, out);
         }
@@ -1192,17 +1193,20 @@ public:
      * text holds after it. A text that never closes ends the walk with nothing refused, and the
      * reading of the text as JSON refuses it.
      *
-     * The pointer names the member of the outermost object the container stands under, the name
-     * read from the last text closed in that object before a `:`, when that name is one of
-     * `declared`; otherwise the whole text, `""`. The bound is `depth`.
+     * The pointer names the container refused (docs/adr/0087, section 2.4): for each container it
+     * stands in, outermost first, the element's index in an array (the `,` the scan met at that
+     * level since the array opened) or the member's name in an object (the last text closed at
+     * that level before a `:`, since the object opened or its last `,`), each an RFC 6901 token.
+     * It stops before the first place it cannot write: a member with no name before its colon, a
+     * name that is no text (no JSON string, not UTF-8, or holding U+0000), or a token that would
+     * take the pointer past `pathBound` UTF-8 bytes, the room of the refusal record's `path`. The
+     * bound is `depth`. The scan keeps one entry per open container, at most `depth` of them.
      */
-    static EventPayloadRefusal liftTooDeep(const std::string &text, uint32_t depth,
-                                           const std::vector<std::string> &declared) {
-        uint32_t level = 0;
-        std::string_view lastText;
-        std::string_view member;
+    static EventPayloadRefusal liftTooDeep(const std::string &text, uint32_t depth, uint32_t pathBound) {
+        std::vector<LiftScanLevel> open;
         for (size_t at = 0; at < text.size(); ++at) {
             const char c = text[at];
+            LiftScanLevel *top = open.empty() ? nullptr : &open.back();
             if (c == '"') {
                 const size_t start = at;
                 ++at;
@@ -1212,38 +1216,106 @@ public:
                 if (at >= text.size()) {
                     return {};
                 }
-                if (level == 1u) {
-                    lastText = std::string_view(text).substr(start, at + 1 - start);
+                if (top != nullptr) {
+                    top->lastText = std::string_view(text).substr(start, at + 1 - start);
                 }
-            } else if (c == ':' && level == 1u) {
-                member = lastText;
-                lastText = {};
-            } else if (c == ',' && level == 1u) {
-                member = {};
-                lastText = {};
+            } else if (c == ':' && top != nullptr) {
+                top->member = top->lastText;
+                top->lastText = {};
+            } else if (c == ',' && top != nullptr) {
+                top->member = {};
+                top->lastText = {};
+                ++top->index;
             } else if (c == '{' || c == '[') {
-                ++level;
-                if (level > depth) {
-                    std::string pointer;
-                    std::string name;
-                    if (!member.empty() &&
-                        detail::EventPayloadScan::skipWellFormedString(std::string(member).c_str()) != nullptr &&
-                        detail::EventPayloadScan::walkText(std::string(member).c_str(), name).empty() &&
-                        std::find(declared.begin(), declared.end(), name) != declared.end()) {
-                        pointer = EventPayloadRefusal::pointerBelow("", name);
-                    }
-                    return EventPayloadRefusal(RefusalCode::TooDeep, std::move(pointer),
+                if (open.size() >= depth) {
+                    return EventPayloadRefusal(RefusalCode::TooDeep, liftScanPointer(open, pathBound),
                                                "the text opens a container deeper than the " + std::to_string(depth) +
                                                    " levels a value of its schema holds",
                                                depth);
                 }
-            } else if ((c == '}' || c == ']') && level > 0u) {
-                --level;
+                open.push_back(LiftScanLevel{c == '[', 0, {}, {}});
+            } else if ((c == '}' || c == ']') && top != nullptr) {
+                open.pop_back();
             }
         }
         return {};
     }
 
+private:
+    /** One container `liftTooDeep` stands in: whether it is an array, the elements it has passed,
+     * the last text closed in it, and the member a `:` after that text named. */
+    struct LiftScanLevel {
+        bool array;
+        uint64_t index;
+        std::string_view lastText;
+        std::string_view member;
+    };
+
+    /** Whether `bytes` are UTF-8: no stray continuation, no overlong form, no surrogate, nothing
+     * past U+10FFFF. */
+    static bool isUtf8(std::string_view bytes) {
+        size_t at = 0;
+        while (at < bytes.size()) {
+            const auto lead = static_cast<unsigned char>(bytes[at]);
+            size_t more = 0;
+            uint32_t code = lead;
+            if (lead >= 0xF0u && lead <= 0xF4u) {
+                more = 3;
+                code = lead & 0x07u;
+            } else if (lead >= 0xE0u && lead <= 0xEFu) {
+                more = 2;
+                code = lead & 0x0Fu;
+            } else if (lead >= 0xC2u && lead <= 0xDFu) {
+                more = 1;
+                code = lead & 0x1Fu;
+            } else if (lead >= 0x80u) {
+                return false;
+            }
+            if (more > 0 && at + more >= bytes.size()) {
+                return false;
+            }
+            for (size_t i = 1; i <= more; ++i) {
+                const auto next = static_cast<unsigned char>(bytes[at + i]);
+                if ((next & 0xC0u) != 0x80u) {
+                    return false;
+                }
+                code = (code << 6) | (next & 0x3Fu);
+            }
+            if ((more == 2 && (code < 0x800u || (code >= 0xD800u && code <= 0xDFFFu))) ||
+                (more == 3 && (code < 0x10000u || code > 0x10FFFFu))) {
+                return false;
+            }
+            at += more + 1;
+        }
+        return true;
+    }
+
+    /** The pointer to the place `open` stands at, as `liftTooDeep` writes it. */
+    static std::string liftScanPointer(const std::vector<LiftScanLevel> &open, uint32_t pathBound) {
+        std::string pointer;
+        for (const LiftScanLevel &level : open) {
+            std::string token;
+            if (level.array) {
+                token = std::to_string(level.index);
+            } else {
+                const std::string member(level.member);
+                if (member.empty() || !isUtf8(member) ||
+                    detail::EventPayloadScan::skipWellFormedString(member.c_str()) != member.c_str() + member.size() ||
+                    !detail::EventPayloadScan::walkText(member.c_str(), token).empty() ||
+                    token.find('\0') != std::string::npos) {
+                    break;
+                }
+            }
+            std::string below = EventPayloadRefusal::pointerBelow(pointer, token);
+            if (below.size() > pathBound) {
+                break;
+            }
+            pointer = std::move(below);
+        }
+        return pointer;
+    }
+
+public:
     /**
      * @brief What a `<sce:lift>` reads (docs/adr/0087, section 2.1): `text` as a record of the
      * schema named `schema`, whose fields `read(fields, out)` reads, as a delivery of the schema is
@@ -1256,10 +1328,9 @@ public:
      */
     template <typename T, typename Read>
     static EventPayloadRefusal liftRecord(const std::string &text, const char *schema, uint32_t depth,
-                                          const std::vector<std::string> &declared, const char *defaults, T &out,
-                                          Read read) {
+                                          uint32_t pathBound, const char *defaults, T &out, Read read) {
         EventPayloadFields fields;
-        EventPayloadRefusal refusal = lift(text, depth, declared, defaults, fields);
+        EventPayloadRefusal refusal = lift(text, depth, pathBound, defaults, fields);
         T lifted{};
         if (refusal.empty()) {
             refusal = read(static_cast<const EventPayloadFields &>(fields), lifted);

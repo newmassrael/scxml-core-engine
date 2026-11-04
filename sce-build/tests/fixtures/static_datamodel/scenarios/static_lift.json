@@ -69,7 +69,7 @@
       "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"a\\u0000b\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "nulInText", "path": "/title", "bound": null}, "lifts": 21, "errors": 0}} },
 
     { "note": "a container under a key the schema does not declare, past the depth of 1",
-      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1,\"extra\":[1]}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooDeep", "path": "", "bound": 1}, "lifts": 22, "errors": 0}} },
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1,\"extra\":[1]}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooDeep", "path": "/extra", "bound": 1}, "lifts": 22, "errors": 0}} },
 
     { "note": "a container under a declared field, past the depth of 1",
       "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":[\"Plan\"],\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooDeep", "path": "/title", "bound": 1}, "lifts": 23, "errors": 0}} },
@@ -78,7 +78,7 @@
       "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1,\"id\":8}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 24, "errors": 0}} },
 
     { "note": "brackets nested far past the depth under an unknown key, never closed",
-      "event": "text.given", "data": {"text": "{\"id\":7,\"extra\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooDeep", "path": "", "bound": 1}, "lifts": 25, "errors": 0}} },
+      "event": "text.given", "data": {"text": "{\"id\":7,\"extra\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooDeep", "path": "/extra", "bound": 1}, "lifts": 25, "errors": 0}} },
 
     { "note": "a lone surrogate escape in a text",
       "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"\\ud800\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 26, "errors": 0}} },

@@ -1537,6 +1537,179 @@ SCE_C_UNUSED static inline bool sce_payload_pointer_index(char *out, size_t cap,
 
 /* ── Reading a text as a record: `<sce:lift>` (docs/adr/0087, section 2.1) ── */
 
+/* The place, in the container open at `level` when the scan of a lift reaches `refused`,
+   that the scan stands at: whether the container is an array, the elements it has passed,
+   and the text of the member a `:` named (NULL for none). */
+typedef struct {
+    bool array;
+    uint64_t index;
+    const char *member;
+} sce_payload_scan_place_t;
+
+/* The place at `level` (1 for the outermost container) when the scan of `text` reaches
+   `refused`, walked as `sce_payload_lift_too_deep` walks it: the container at `level` is
+   the last opened there, a text closed at that level is the name a `:` after it takes, and
+   a `,` there passes an element. */
+SCE_C_UNUSED static inline void sce_payload_scan_place(const char *text, const char *refused, uint32_t level,
+                                                       sce_payload_scan_place_t *place) {
+    uint32_t open = 0u;
+    const char *last_text = NULL;
+    place->array = false;
+    place->index = 0u;
+    place->member = NULL;
+    for (const char *p = text; p < refused; ++p) {
+        if (*p == '"') {
+            const char *start = p;
+            ++p;
+            while (*p != '\0' && *p != '"') {
+                p += (*p == '\\' && p[1] != '\0') ? 2 : 1;
+            }
+            if (open == level) {
+                last_text = start;
+            }
+        } else if (*p == ':' && open == level) {
+            place->member = last_text;
+            last_text = NULL;
+        } else if (*p == ',' && open == level) {
+            place->member = NULL;
+            last_text = NULL;
+            place->index++;
+        } else if (*p == '{' || *p == '[') {
+            ++open;
+            if (open == level) {
+                place->array = (*p == '[');
+                place->index = 0u;
+                place->member = NULL;
+                last_text = NULL;
+            }
+        } else if ((*p == '}' || *p == ']') && open > 0u) {
+            --open;
+        }
+    }
+}
+
+/* The code point of the UTF-8 sequence at `*p`, `*p` moved past it; false when the bytes
+   are no UTF-8: a stray continuation, an overlong form, a surrogate, or past U+10FFFF. */
+SCE_C_UNUSED static inline bool sce_payload_utf8_at(const char **p, unsigned long *code) {
+    const unsigned char lead = (unsigned char)**p;
+    size_t more = 0u;
+    unsigned long value = lead;
+    if (lead >= 0xF0u && lead <= 0xF4u) {
+        more = 3u;
+        value = lead & 0x07u;
+    } else if (lead >= 0xE0u && lead <= 0xEFu) {
+        more = 2u;
+        value = lead & 0x0Fu;
+    } else if (lead >= 0xC2u && lead <= 0xDFu) {
+        more = 1u;
+        value = lead & 0x1Fu;
+    } else if (lead >= 0x80u) {
+        return false;
+    }
+    for (size_t i = 1u; i <= more; ++i) {
+        const unsigned char next = (unsigned char)(*p)[i];
+        if ((next & 0xC0u) != 0x80u) {
+            return false;
+        }
+        value = (value << 6) | (next & 0x3Fu);
+    }
+    if ((more == 2u && (value < 0x800u || (value >= 0xD800u && value <= 0xDFFFu))) ||
+        (more == 3u && (value < 0x10000u || value > 0x10FFFFu))) {
+        return false;
+    }
+    *p += more + 1u;
+    *code = value;
+    return true;
+}
+
+/* `/` and the name the JSON string at `name` spells, as an RFC 6901 token (`~` written `~0`,
+   `/` written `~1`), after the `*len` bytes of `pointer`, which holds `cap` bytes with its
+   terminator; `*len` moves past it. False, and `pointer` cut back to its `*len` bytes, when
+   the name is no text (no JSON string, not UTF-8, or holding U+0000) or the token does not
+   fit. */
+SCE_C_UNUSED static inline bool sce_payload_pointer_append_name(char *pointer, size_t cap, size_t *len,
+                                                                const char *name) {
+    size_t at = *len;
+    bool written = sce_payload_past_string(name) != NULL && at + 1u < cap;
+    if (written) {
+        pointer[at++] = '/';
+    }
+    for (const char *c = name + 1; written && *c != '"';) {
+        unsigned long code = 0u;
+        if ((unsigned char)*c >= 0x80u) {
+            written = sce_payload_utf8_at(&c, &code);
+        } else {
+            code = sce_payload_next_character(&c);
+        }
+        char bytes[4];
+        size_t count = 0u;
+        if (code == '~' || code == '/') {
+            bytes[count++] = '~';
+            bytes[count++] = (code == '~') ? '0' : '1';
+        } else if (code < 0x80u) {
+            bytes[count++] = (char)code;
+        } else if (code < 0x800u) {
+            bytes[count++] = (char)(0xC0u | (code >> 6));
+            bytes[count++] = (char)(0x80u | (code & 0x3Fu));
+        } else if (code < 0x10000u) {
+            bytes[count++] = (char)(0xE0u | (code >> 12));
+            bytes[count++] = (char)(0x80u | ((code >> 6) & 0x3Fu));
+            bytes[count++] = (char)(0x80u | (code & 0x3Fu));
+        } else {
+            bytes[count++] = (char)(0xF0u | (code >> 18));
+            bytes[count++] = (char)(0x80u | ((code >> 12) & 0x3Fu));
+            bytes[count++] = (char)(0x80u | ((code >> 6) & 0x3Fu));
+            bytes[count++] = (char)(0x80u | (code & 0x3Fu));
+        }
+        written = written && code != 0u && at + count < cap;
+        for (size_t i = 0u; written && i < count; ++i) {
+            pointer[at++] = bytes[i];
+        }
+    }
+    if (cap > 0u) {
+        pointer[written ? at : *len] = '\0';
+    }
+    if (written) {
+        *len = at;
+    }
+    return written;
+}
+
+/* The pointer to the container `sce_payload_lift_too_deep` refused at `refused`, which
+   stands in `levels` containers, written into `pointer` of `cap` bytes as that function
+   says. */
+SCE_C_UNUSED static inline void sce_payload_scan_pointer(const char *text, const char *refused, uint32_t levels,
+                                                         char *pointer, size_t cap) {
+    size_t len = 0u;
+    if (cap == 0u) {
+        return;
+    }
+    pointer[0] = '\0';
+    for (uint32_t level = 1u; level <= levels; ++level) {
+        sce_payload_scan_place_t place;
+        sce_payload_scan_place(text, refused, level, &place);
+        if (place.array) {
+            char digits[21];
+            size_t n = 0u;
+            uint64_t index = place.index;
+            do {
+                digits[n++] = (char)('0' + (int)(index % 10u));
+                index /= 10u;
+            } while (index != 0u);
+            if (len + 1u + n >= cap) {
+                break;
+            }
+            pointer[len++] = '/';
+            while (n > 0u) {
+                pointer[len++] = digits[--n];
+            }
+            pointer[len] = '\0';
+        } else if (place.member == NULL || !sce_payload_pointer_append_name(pointer, cap, &len, place.member)) {
+            break;
+        }
+    }
+}
+
 /* The refusal of a container `text` opens deeper than `depth`, the deepest a value of
    a lift's schema holds (docs/adr/0087, section 2.1, item 4), or NULL when it opens
    none. The bound of the refusal is `depth`.
@@ -1548,21 +1721,27 @@ SCE_C_UNUSED static inline bool sce_payload_pointer_index(char *out, size_t cap,
    refused, whatever the text holds after it. A text that never closes ends the walk with
    nothing refused, and the reading of the text as JSON refuses it.
 
-   `pointer`, of `cap` bytes, receives the member of the outermost object the container
-   stands under, the name of the last text closed in that object before a `:`, when that
-   name is one of the `count` names of `declared`; otherwise the whole text, "". */
-SCE_C_UNUSED static inline const char *sce_payload_lift_too_deep(const char *text, uint32_t depth,
-                                                                 const char *const *declared, size_t count,
-                                                                 char *pointer, size_t cap) {
-    uint32_t level = 0u;
-    const char *last_text = NULL;
-    const char *member = NULL;
+   `pointer`, of `cap` bytes, receives the place of the container refused (docs/adr/0087,
+   section 2.4): for each container it stands in, outermost first, the element's index in
+   an array (the `,` the scan met at that level since the array opened) or the member's
+   name in an object (the last text closed at that level before a `:`, since the object
+   opened or its last `,`), each an RFC 6901 token. It stops before the first place it
+   cannot write: a member with no name before its colon, a name that is no text (no JSON
+   string, not UTF-8, or holding U+0000), or a token that would take the pointer past
+   `cap - 1` bytes, the room of the refusal record's `path`.
+
+   No allocator and no stack of levels: the scan counts brackets, and once it refuses, the
+   place at each level is found by walking the text again up to the refused bracket
+   (`sce_payload_scan_place`), so the memory is the same for any depth and the work is
+   bounded by `depth` walks of the text. */
+SCE_C_UNUSED static inline const char *sce_payload_lift_too_deep(const char *text, uint32_t depth, char *pointer,
+                                                                 size_t cap) {
+    uint32_t open = 0u;
     if (cap > 0u) {
         pointer[0] = '\0';
     }
     for (const char *p = text; *p != '\0'; ++p) {
         if (*p == '"') {
-            const char *start = p;
             ++p;
             while (*p != '\0' && *p != '"') {
                 p += (*p == '\\' && p[1] != '\0') ? 2 : 1;
@@ -1570,49 +1749,33 @@ SCE_C_UNUSED static inline const char *sce_payload_lift_too_deep(const char *tex
             if (*p == '\0') {
                 return NULL;
             }
-            if (level == 1u) {
-                last_text = start;
-            }
-        } else if (*p == ':' && level == 1u) {
-            member = last_text;
-            last_text = NULL;
-        } else if (*p == ',' && level == 1u) {
-            member = NULL;
-            last_text = NULL;
         } else if (*p == '{' || *p == '[') {
-            ++level;
-            if (level > depth) {
-                if (member != NULL && sce_payload_past_string(member) != NULL) {
-                    for (size_t i = 0u; i < count; ++i) {
-                        if (sce_payload_string_is(member, declared[i])) {
-                            (void)sce_payload_pointer_join(pointer, cap, "", declared[i]);
-                            break;
-                        }
-                    }
-                }
+            if (open >= depth) {
+                sce_payload_scan_pointer(text, p, open, pointer, cap);
                 return sce_payload_refuse_too_deep;
             }
-        } else if ((*p == '}' || *p == ']') && level > 0u) {
-            --level;
+            ++open;
+        } else if ((*p == '}' || *p == ']') && open > 0u) {
+            --open;
         }
     }
     return NULL;
 }
 
-/* Read the text a `<sce:lift>` reads as the fields of a record of a schema whose `count`
-   field ids are `declared`, and whose deepest value holds `depth` levels of containers.
-   `defaults`, for a schema a later revision of which added fields, is the JSON object of
-   their defaults, a literal the generated machine holds; NULL for none. Answers NULL when
-   `out` was filled, else a static sentence of the refusal, `pointer` (of `cap` bytes)
-   holding its place: "" but for a container past the depth under a declared member.
+/* Read the text a `<sce:lift>` reads as the fields of a record of a schema whose deepest
+   value holds `depth` levels of containers. `defaults`, for a schema a later revision of
+   which added fields, is the JSON object of their defaults, a literal the generated machine
+   holds; NULL for none. Answers NULL when `out` was filled, else a static sentence of the
+   refusal, `pointer` (of `cap` bytes, the room of the refusal record's `path` and its
+   terminator) holding its place: "" but for a container past the depth
+   (`sce_payload_lift_too_deep`).
 
    Three refusals come before the fields are read, in this order: a text that is NULL,
    empty or only whitespace (`notJson`); a container opened deeper than `depth`
    (`sce_payload_lift_too_deep`, `tooDeep`); and a text that is not one JSON object, as a
    delivery is refused (`sce_payload_decode`). */
-SCE_C_UNUSED static inline const char *sce_payload_lift(const char *text, uint32_t depth, const char *const *declared,
-                                                        size_t count, const char *defaults, sce_payload_fields_t *out,
-                                                        char *pointer, size_t cap) {
+SCE_C_UNUSED static inline const char *sce_payload_lift(const char *text, uint32_t depth, const char *defaults,
+                                                        sce_payload_fields_t *out, char *pointer, size_t cap) {
     out->object = NULL;
     out->defaults = NULL;
     if (cap > 0u) {
@@ -1621,7 +1784,7 @@ SCE_C_UNUSED static inline const char *sce_payload_lift(const char *text, uint32
     if (text == NULL || *sce_payload_skip_space(text) == '\0') {
         return sce_payload_refuse_empty_text;
     }
-    const char *refusal = sce_payload_lift_too_deep(text, depth, declared, count, pointer, cap);
+    const char *refusal = sce_payload_lift_too_deep(text, depth, pointer, cap);
     if (refusal == NULL) {
         refusal = sce_payload_decode(text, out);
     }

@@ -558,7 +558,8 @@ object EventPayload {
     /**
      * Read the text a `<sce:lift>` reads as the fields of a record of a schema
      * (docs/adr/0087, section 2.1): [depth] is the deepest container a value of
-     * the schema holds, [declared] the ids of its fields, and [defaults], for a
+     * the schema holds, [pathBound] the room of the refusal record's `path` a
+     * `tooDeep` pointer is held to ([liftTooDeep]), and [defaults], for a
      * schema a later revision of which added fields, the JSON object of their
      * defaults, which a text that lacks one reads in its place.
      *
@@ -568,11 +569,11 @@ object EventPayload {
      * JSON ([liftTooDeep], `tooDeep`); and a text that is not one JSON object,
      * as a delivery is refused ([decode]).
      */
-    fun lift(text: String, depth: Int, declared: List<String>, defaults: String?): Fields {
+    fun lift(text: String, depth: Int, pathBound: Int, defaults: String?): Fields {
         if (Json.trimWhitespace(text).isEmpty()) {
             throw Refusal("the text is empty", RefusalCode.NOT_JSON, "")
         }
-        liftTooDeep(text, depth, declared)?.let { throw it }
+        liftTooDeep(text, depth, pathBound)?.let { throw it }
         val delivered = decode(text).values
         return Fields(if (defaults == null) delivered else defaultsOf(defaults) + delivered)
     }
@@ -590,17 +591,22 @@ object EventPayload {
      * text holds after it. A text that never closes ends the walk with nothing
      * refused, and the reading of the text as JSON refuses it.
      *
-     * The pointer names the member of the outermost object the container
-     * stands under, the name read from the last text closed in that object
-     * before a `:`, when that name is one of [declared]; otherwise the whole
-     * text, `""`. The bound is [depth].
+     * The pointer names the container refused (docs/adr/0087, section 2.4):
+     * for each container it stands in, outermost first, the element's index in
+     * an array (the `,` the scan met at that level since the array opened) or
+     * the member's name in an object (the last text closed at that level before
+     * a `:`, since the object opened or its last `,`), each an RFC 6901 token.
+     * It stops before the first place it cannot write: a member with no name
+     * before its colon, a name that is no text (no JSON string, or one holding
+     * U+0000), or a token that would take the pointer past [pathBound] UTF-8
+     * bytes, the room of the refusal record's `path`. The bound is [depth]. The
+     * scan keeps one entry per open container, at most [depth] of them.
      */
-    fun liftTooDeep(text: String, depth: Int, declared: List<String>): Refusal? {
-        var level = 0
-        var lastText: String? = null
-        var member: String? = null
+    fun liftTooDeep(text: String, depth: Int, pathBound: Int): Refusal? {
+        val open = ArrayList<LiftScanLevel>()
         var at = 0
         while (at < text.length) {
+            val top = open.lastOrNull()
             when (text[at]) {
                 '"' -> {
                     val start = at
@@ -609,40 +615,68 @@ object EventPayload {
                         at += if (text[at] == '\\') 2 else 1
                     }
                     if (at >= text.length) return null
-                    if (level == 1) lastText = text.substring(start, at + 1)
+                    top?.lastText = text.substring(start, at + 1)
                 }
-                ':' -> if (level == 1) {
-                    member = lastText
-                    lastText = null
+                ':' -> if (top != null) {
+                    top.member = top.lastText
+                    top.lastText = null
                 }
-                ',' -> if (level == 1) {
-                    member = null
-                    lastText = null
+                ',' -> if (top != null) {
+                    top.member = null
+                    top.lastText = null
+                    top.index++
                 }
                 '{', '[' -> {
-                    level++
-                    if (level > depth) {
-                        val name = member?.let {
-                            try {
-                                Json.parse(it) as? String
-                            } catch (e: Json.Error) {
-                                null
-                            }
-                        }
-                        val pointer = if (name != null && name in declared) pointerBelow("", name) else ""
+                    if (open.size >= depth) {
                         return Refusal(
                             "the text opens a container deeper than the $depth levels a value of its schema holds",
                             RefusalCode.TOO_DEEP,
-                            pointer,
+                            liftScanPointer(open, pathBound),
                             depth.toLong(),
                         )
                     }
+                    open.add(LiftScanLevel(array = text[at] == '['))
                 }
-                '}', ']' -> if (level > 0) level--
+                '}', ']' -> if (top != null) open.removeAt(open.size - 1)
             }
             at++
         }
         return null
+    }
+
+    /**
+     * One container [liftTooDeep] stands in: whether it is an array, the
+     * elements it has passed, the last text closed in it, and the member a `:`
+     * after that text named.
+     */
+    private class LiftScanLevel(val array: Boolean) {
+        var index = 0L
+        var lastText: String? = null
+        var member: String? = null
+    }
+
+    /** The pointer to the place [open] stands at, as [liftTooDeep] writes it. */
+    private fun liftScanPointer(open: List<LiftScanLevel>, pathBound: Int): String {
+        var pointer = ""
+        for (level in open) {
+            val token = if (level.array) {
+                level.index.toString()
+            } else {
+                val name = level.member?.let {
+                    try {
+                        Json.parse(it) as? String
+                    } catch (e: Json.Error) {
+                        null
+                    }
+                }
+                if (name == null || name.contains('\u0000')) break
+                name
+            }
+            val below = pointerBelow(pointer, token)
+            if (below.encodeToByteArray().size > pathBound) break
+            pointer = below
+        }
+        return pointer
     }
 
     /** What a `<sce:lift>` answers: a record of its schema, or the refusal of the text. */
@@ -665,12 +699,12 @@ object EventPayload {
     fun <T> liftRecord(
         text: String,
         depth: Int,
-        declared: List<String>,
+        pathBound: Int,
         defaults: String?,
         read: (Fields) -> T,
     ): LiftOutcome<T> =
         try {
-            LiftOutcome.Lifted(read(lift(text, depth, declared, defaults)))
+            LiftOutcome.Lifted(read(lift(text, depth, pathBound, defaults)))
         } catch (refusal: Refusal) {
             LiftOutcome.Refused(refusal)
         }

@@ -926,13 +926,6 @@ pub struct LiftStatement<'a> {
 }
 
 impl LiftStatement<'_> {
-    /// The ids of the schema's fields, in its order: the places a lift names in
-    /// a pointer, and the members a `tooDeep` refusal names a container under
-    /// where the schema declares them.
-    pub fn field_ids(&self) -> Vec<&str> {
-        self.schema.fields.iter().map(|f| f.id.as_str()).collect()
-    }
-
     /// The enum the refusal record's `code` holds a value of: the alias the
     /// machine holds it by, and the enum document.
     pub fn refusal_code(&self) -> Option<(&str, &EnumModel)> {
@@ -947,7 +940,9 @@ impl LiftStatement<'_> {
 
     /// The bound of the refusal record's `path`, the room the pointer is
     /// written into, which the judge held to be at least the longest pointer of
-    /// the schema ([`crate::forge::lift::longest_pointer`]).
+    /// the schema ([`crate::forge::lift::longest_pointer`]). Every runtime is
+    /// handed it, and holds a `tooDeep` pointer, which may name places the schema
+    /// does not declare, to it by whole tokens.
     pub fn path_bound(&self) -> Option<u32> {
         self.refusal_schema
             .fields
@@ -2866,11 +2861,7 @@ impl StaticTarget for KotlinTarget {
             ));
         }
         let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
-        let declared: Vec<String> = lift
-            .field_ids()
-            .iter()
-            .map(|id| format!("\"{id}\""))
-            .collect();
+        let path_bound = lift.path_bound()?;
         let defaults = lift.defaults.as_ref().map_or_else(
             || "null".to_string(),
             |json| format!("\"{}\"", filters::escape_kotlin(json.clone())),
@@ -2897,12 +2888,11 @@ impl StaticTarget for KotlinTarget {
             &members_of_refusal,
         );
         Some(format!(
-            "when (val sceLift = {PAYLOAD}.liftRecord({text}, {depth}, listOf({declared}), \
+            "when (val sceLift = {PAYLOAD}.liftRecord({text}, {depth}, {path_bound}, \
              {defaults}) {{ r -> {record} }}) {{ is {PAYLOAD}.LiftOutcome.Lifted -> {{ {write}; \
              {absent} }}; is {PAYLOAD}.LiftOutcome.Refused -> {{ {refused} }} }}",
             text = lift.text,
             depth = lift.depth,
-            declared = declared.join(", "),
             write = self.assign(lift.location, "sceLift.value"),
             absent = self.assign(lift.refusal, &self.optional_none("")?),
             refused = self.assign(lift.refusal, &refusal_record),
@@ -3999,11 +3989,7 @@ impl StaticTarget for RustTarget {
             ));
         }
         let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
-        let declared: Vec<String> = lift
-            .field_ids()
-            .iter()
-            .map(|id| format!("\"{id}\""))
-            .collect();
+        let path_bound = lift.path_bound()?;
         let defaults = lift.defaults.as_ref().map_or_else(
             || "None".to_string(),
             |json| format!("Some(\"{}\")", filters::escape_rust(json.clone())),
@@ -4022,10 +4008,10 @@ impl StaticTarget for RustTarget {
                 )
             })
             .collect();
+        // The runtime holds every pointer to `path_bound` bytes, so the text fits.
         let path = format!(
-            "{}::SceString::<{}>::from_text(sce_refusal.pointer()).unwrap_or_default()",
+            "{}::SceString::<{path_bound}>::from_text(sce_refusal.pointer()).unwrap_or_default()",
             crate::forge::composed_lowering::RUST_PORTABLE,
-            lift.path_bound()?
         );
         let members = lift.refusal_members(
             self,
@@ -4044,13 +4030,12 @@ impl StaticTarget for RustTarget {
             "sce_lifted".to_string()
         };
         Some(format!(
-            "match {PAYLOAD}::lift_record(&{text}, \"{schema}\", {depth}, &[{declared}], {defaults}, \
+            "match {PAYLOAD}::lift_record(&{text}, \"{schema}\", {depth}, {path_bound}, {defaults}, \
              |r| Ok({record})) {{ Ok(sce_lifted) => {{ {write} {absent} }} Err(sce_refusal) => {{ \
              {refused} }} }}",
             text = lift.text,
             schema = filters::escape_rust(lift.alias.to_string()),
             depth = lift.depth,
-            declared = declared.join(", "),
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none("")?),
             refused = self.assign(lift.refusal, &refusal_present),
@@ -8280,11 +8265,7 @@ impl StaticTarget for CppTarget {
                 field.id
             ));
         }
-        let declared: Vec<String> = lift
-            .field_ids()
-            .iter()
-            .map(|id| format!("\"{id}\""))
-            .collect();
+        let path_bound = lift.path_bound()?;
         let defaults = lift.defaults.as_ref().map_or_else(
             || "nullptr".to_string(),
             |json| format!("\"{}\"", filters::escape_cpp(json.clone())),
@@ -8307,7 +8288,7 @@ impl StaticTarget for CppTarget {
         };
         Some(format!(
             "{{ {record_ty} sceLifted{{}}; const {COMMON}::EventPayloadRefusal sceRefusal = \
-             {COMMON}::EventPayloadFields::liftRecord({text}, \"{schema}\", {depth}u, {{{declared}}}, \
+             {COMMON}::EventPayloadFields::liftRecord({text}, \"{schema}\", {depth}u, {path_bound}u, \
              {defaults}, sceLifted, [](const {COMMON}::EventPayloadFields &r, {record_ty} &out) -> \
              {COMMON}::EventPayloadRefusal {{ {COMMON}::EventPayloadValue v; {COMMON}::EventPayloadRefusal \
              refused; {reads}return {{}}; }}); if (sceRefusal.empty()) {{ {write} {absent} }} else {{ \
@@ -8315,7 +8296,6 @@ impl StaticTarget for CppTarget {
             text = lift.text,
             schema = filters::escape_cpp(lift.alias.to_string()),
             depth = lift.depth,
-            declared = declared.join(", "),
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
             refused = self.assign(
@@ -9598,11 +9578,7 @@ impl StaticTarget for GoTarget<'_> {
             ));
             members.push((self.record_field(&field.id), format!("sceField{index}")));
         }
-        let declared: Vec<String> = lift
-            .field_ids()
-            .iter()
-            .map(|id| format!("\"{id}\""))
-            .collect();
+        let path_bound = lift.path_bound()?;
         let defaults = lift
             .defaults
             .as_ref()
@@ -9637,13 +9613,12 @@ impl StaticTarget for GoTarget<'_> {
         };
         Some(format!(
             "if sceLifted, sceRefusal := sce.LiftRecord({text}, \"{schema}\", {depth}, \
-             []string{{{declared}}}, \"{defaults}\", func(r sce.PayloadRecord) ({record_ty}, error) \
+             {path_bound}, \"{defaults}\", func(r sce.PayloadRecord) ({record_ty}, error) \
              {{ {reads}return {record}, nil }}); sceRefusal == nil {{ {write}; {absent} }} else \
              {{ {refused} }}",
             text = lift.text,
             schema = filters::escape_go(lift.alias.to_string()),
             depth = lift.depth,
-            declared = declared.join(", "),
             record = self.record_value(&record_ty, &members),
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
@@ -10653,11 +10628,7 @@ impl StaticTarget for PythonTarget {
             || "None".to_string(),
             |json| filters::py_string_literal(json.clone()),
         );
-        let declared: Vec<String> = lift
-            .field_ids()
-            .iter()
-            .map(|id| filters::py_string_literal((*id).to_string()))
-            .collect();
+        let path_bound = lift.path_bound()?;
         let (code_alias, _) = lift.refusal_code()?;
         let code_ty = self.enum_type(lift.machine, code_alias)?;
         let members = lift.refusal_members(
@@ -10675,10 +10646,9 @@ impl StaticTarget for PythonTarget {
                 format!("import sce_runtime.event_payload as {PAYLOAD}"),
                 format!(
                     "sce_lifted, sce_refusal = {PAYLOAD}.lift_record({text}, {depth}, \
-                     [{declared}], {PAYLOAD}.RecordOf([{fields}], {defaults}, {record_ty}))",
+                     {path_bound}, {PAYLOAD}.RecordOf([{fields}], {defaults}, {record_ty}))",
                     text = lift.text,
                     depth = lift.depth,
-                    declared = declared.join(", "),
                     fields = fields.join(", "),
                 ),
                 "if sce_refusal is None:".to_string(),
@@ -12611,11 +12581,6 @@ impl StaticTarget for CTarget {
                     .map_or_else(String::new, |max| format!(" sce_bound = {max}u;")),
             ));
         }
-        let declared: Vec<String> = lift
-            .field_ids()
-            .iter()
-            .map(|id| format!("\"{}\"", filters::escape_c(id.to_string())))
-            .collect();
         let defaults = lift.defaults.as_ref().map_or_else(
             || "NULL".to_string(),
             |json| format!("\"{}\"", filters::escape_c(json.clone())),
@@ -12644,9 +12609,9 @@ impl StaticTarget for CTarget {
         };
         let schema = filters::escape_c(lift.alias.to_string());
         Some(format!(
-            "{{ static const char *const sce_declared[] = {{ {declared} }}; sce_payload_fields_t sce_fields; \
+            "{{ sce_payload_fields_t sce_fields; \
              char sce_path[{path_cap}u]; {record_ty} sce_lifted; memset(&sce_lifted, 0, sizeof(sce_lifted)); \
-             const char *sce_refusal = sce_payload_lift({text}, {depth}u, sce_declared, {count}u, {defaults}, \
+             const char *sce_refusal = sce_payload_lift({text}, {depth}u, {defaults}, \
              &sce_fields, sce_path, sizeof(sce_path)); uint32_t sce_bound = {depth}u; {reads}\
              if (sce_refusal == NULL) {{ (void)fprintf(stderr, \"<sce:lift>: the text is a record of %s\\n\", \
              \"{schema}\"); {write} {absent} }} else {{ const uint8_t sce_code = \
@@ -12654,11 +12619,9 @@ impl StaticTarget for CTarget {
              of %s: %s at '%s', bound %lu (%s)\\n\", \"{schema}\", sce_payload_code_name(sce_code), sce_path, \
              sce_payload_code_has_bound(sce_code) ? (unsigned long)sce_bound : 0ul, sce_refusal); \
              {refusal_ty} sce_why = {why}; {refused} }} }}",
-            declared = declared.join(", "),
             path_cap = u64::from(path_bound) + 1,
             text = lift.text,
             depth = lift.depth,
-            count = declared.len(),
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
             why = self.record_value(&refusal_ty, &members),
@@ -14113,11 +14076,7 @@ impl StaticTarget for SwiftTarget {
             members.push((self.record_field(&field.id), reader));
         }
         let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
-        let declared: Vec<String> = lift
-            .field_ids()
-            .iter()
-            .map(|id| format!("\"{id}\""))
-            .collect();
+        let path_bound = lift.path_bound()?;
         let defaults = lift.defaults.as_ref().map_or_else(
             || "nil".to_string(),
             |json| format!("\"{}\"", filters::escape_swift(json.clone())),
@@ -14144,12 +14103,12 @@ impl StaticTarget for SwiftTarget {
             &members_of_refusal,
         );
         Some(format!(
-            "switch liftRecord({text}, depth: {depth}, declared: [{declared}], defaults: \
-             {defaults}, read: {{ r in {record} }}) {{ case .success(let sceLifted): {write}; \
+            "switch liftRecord({text}, schema: \"{schema}\", depth: {depth}, pathBound: {path_bound}, \
+             defaults: {defaults}, read: {{ r in {record} }}) {{ case .success(let sceLifted): {write}; \
              {absent}; case .failure(let sceRefusal): {refused} }}",
             text = lift.text,
+            schema = filters::escape_swift(lift.alias.to_string()),
             depth = lift.depth,
-            declared = declared.join(", "),
             write = self.assign(lift.location, "sceLifted"),
             absent = self.assign(lift.refusal, &self.optional_none("")?),
             refused = self.assign(lift.refusal, &refusal_record),
