@@ -154,6 +154,6 @@ PY
 
 mutation_case "a payload's enum field takes a name no variant declares" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "                 return 0, fmt.Errorf(\\\"%q (%s) is not a variant of {alias}\\\", \\\"{id}\\\", name) }}()\",\n",
-     "                 return 0, nil /* {alias} */ }}()\",\n")
+     "                 return 0, sce.PayloadUnknownVariant(\\\"{id}\\\", name, \\\"{alias}\\\") }}()\",\n",
+     "                 return 0, nil /* {id} {alias} */ }}()\",\n")
 PY

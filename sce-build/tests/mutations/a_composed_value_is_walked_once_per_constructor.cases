@@ -71,8 +71,10 @@ PY
 mutation_case "an unknown variant name is not refused" <<'PY'
 edit("sce-build/src/forge/composed_lowering.rs",
      r'''            "{value}.name().and_then(|name| match name {{ {arms}other => \
-             Err({value}.refuse(&format!(\"({{other}}) is not a variant of {}\"))) }})",''',
-     r'''            "{value}.name().and_then(|name| match name {{ {arms}_ => Err({value}.refuse({:?})) }})",''')
+             Err({value}.unknown_variant(other, \"{}\")) }})",
+            crate::filters::escape_rust(held.alias.clone())''',
+     r'''            "{value}.name().and_then(|name| match name {{ {arms}_ => Ok({}::{}) }})",
+            held.ty, held.variants[0].1''')
 PY
 
 # A record whose schema grew reads a delivery of its first revision as refused.
