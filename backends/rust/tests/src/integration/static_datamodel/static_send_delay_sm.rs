@@ -379,6 +379,7 @@ impl StaticSendDelayPersist for Engine<StaticSendDelayPolicy> {
             format2_revised: "0f1c5653ad66d39e7577e79f285e18c08b7143f72e60ca9e774beafbb9602739",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

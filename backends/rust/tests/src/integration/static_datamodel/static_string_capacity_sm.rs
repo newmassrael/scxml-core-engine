@@ -391,6 +391,7 @@ impl StaticStringCapacityPersist for Engine<StaticStringCapacityPolicy> {
             format2_revised: "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

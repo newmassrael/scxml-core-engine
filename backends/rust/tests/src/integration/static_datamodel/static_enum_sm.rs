@@ -469,6 +469,7 @@ impl StaticEnumPersist for Engine<StaticEnumPolicy> {
                     },
                 ],
             }],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

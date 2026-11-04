@@ -369,6 +369,7 @@ impl StaticInvokeParamsPersist for Engine<StaticInvokeParamsPolicy> {
             format2_revised: "7e605508ff2f4284ef9bb702b856d86b91d58fa56e933f10a11e727f9553c9c2",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

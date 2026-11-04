@@ -387,6 +387,7 @@ impl StaticCancelExprPersist for Engine<StaticCancelExprPolicy> {
             format2_revised: "17bda9c93136de5ecc612c39876f588c68fca5ef1340164058fe13f2de780e16",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

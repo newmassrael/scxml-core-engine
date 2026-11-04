@@ -340,6 +340,7 @@ impl StaticMeshRelayPersist for Engine<StaticMeshRelayPolicy> {
             format2_revised: "3bba4cf36f6c537811121f0618bcdf648a685c1fe51ab027cf283e142dd5ab9f",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

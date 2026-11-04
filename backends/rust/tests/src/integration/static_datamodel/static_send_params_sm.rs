@@ -444,6 +444,7 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
             format2_revised: "7e38631c4ad4fb4e0086252d3257a27fbbe316fe81cc222ff55b9a23a0a9825e",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

@@ -389,6 +389,7 @@ impl StaticBlockEndsPersist for Engine<StaticBlockEndsPolicy> {
             format2_revised: "49722041863d35d2b2ef736d0a7663d2462f845efe740a017d404a4897ec0292",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

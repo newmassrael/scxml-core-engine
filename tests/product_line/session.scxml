@@ -12,10 +12,12 @@
     - a value the document computes, not copies: the machine names no `initial`,
       so its default state is the first child in document order, and `probe` is
       the first child exactly when `session-unicast` is on;
-    - events only a gated transition or state names (`connect`, `done`).
+    - events only a gated transition or state names (`connect`, `done`);
+    - a saved state, which records the configuration it was taken in
+      (docs/adr/0057 §7): the machine is `sce-static`, so it saves and restores.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" name="session" datamodel="null">
+       version="1.0" name="session" datamodel="sce-static">
   <sce:import kind="feature-model" src="features.scxml" as="features"/>
   <state id="probe" sce:requires="session-unicast">
     <transition event="ready" target="idle"/>

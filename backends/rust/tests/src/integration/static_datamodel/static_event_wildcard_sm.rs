@@ -360,6 +360,7 @@ impl StaticEventWildcardPersist for Engine<StaticEventWildcardPolicy> {
             format2_revised: "304fba8306d0087182ef0d9a58369c76da774d8d11e8cd144304072574eaa505",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

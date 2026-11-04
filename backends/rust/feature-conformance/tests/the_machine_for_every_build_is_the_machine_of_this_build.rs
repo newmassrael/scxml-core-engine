@@ -16,7 +16,8 @@
 //! workspace-tests.sh` does), since a test cannot choose its own features.
 
 use sce_feature_conformance::{lifted, variant};
-use sce_rust_runtime::{Engine, StatePolicy};
+use sce_rust_runtime::saved_state::SavedState;
+use sce_rust_runtime::{Engine, SceClock, StatePolicy};
 
 /// Every event name either machine knows, and one neither does: a name a build
 /// does not hold is discarded by both.
@@ -116,6 +117,91 @@ fn every_run_of_events_is_observed_alike() {
         all.iter()
             .any(|sequence| !observe!(variant, sequence.iter().copied()).calls.is_empty()),
         "no run called the host"
+    );
+}
+
+/// The features this build turns on, sorted: the configuration a saved state
+/// of either machine records (docs/adr/0057 §7).
+fn this_build() -> Vec<String> {
+    [
+        ("session-unicast", cfg!(feature = "session-unicast")),
+        (
+            "session-unicast-accept",
+            cfg!(feature = "session-unicast-accept"),
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, on)| *on)
+    .map(|(feature, _)| feature.to_string())
+    .collect()
+}
+
+/// The wall-clock moment the states below are saved and restored at.
+const SAVED_AT_MS: u64 = 1_700_000_000_000;
+
+macro_rules! saved {
+    ($module:ident) => {{
+        use machine::SessionPersist as _;
+        use $module as machine;
+        let policy = machine::SessionPolicy::new_with_session_id(
+            "fixture-root",
+            machine::RecordingSessionActions::default(),
+        )
+        .expect("an Nmtoken");
+        let mut engine =
+            Engine::<machine::SessionPolicy<machine::RecordingSessionActions>>::new(policy);
+        engine.set_clock(SceClock::Manual(0));
+        engine.initialize();
+        engine.save_at(SAVED_AT_MS).expect("saves")
+    }};
+}
+
+macro_rules! restored {
+    ($module:ident, $saved:expr) => {{
+        use machine::SessionPersist as _;
+        use $module as machine;
+        Engine::<machine::SessionPolicy<machine::RecordingSessionActions>>::restore_with(
+            machine::SessionPolicy::new(machine::RecordingSessionActions::default()),
+            $saved,
+            SceClock::Manual(0),
+            SAVED_AT_MS,
+        )
+        .map(|_| ())
+        .map_err(|refused| refused.reason().to_string())
+    }};
+}
+
+/// A saved state records the configuration it was taken in, and the machine
+/// for every build saves exactly what this build's own machine saves: the same
+/// text, its features this build's. A state of another configuration is refused
+/// by the features that differ, before the shape is judged.
+#[test]
+fn a_saved_state_records_this_builds_configuration() {
+    let lifted_state = saved!(lifted);
+    let alone = saved!(variant);
+    assert_eq!(lifted_state.to_json(), alone.to_json());
+    assert_eq!(lifted_state.features, Some(this_build()));
+    assert_eq!(restored!(lifted, &alone), Ok(()));
+    assert_eq!(restored!(variant, &lifted_state), Ok(()));
+
+    let other: Vec<String> = if this_build().is_empty() {
+        vec!["session-unicast".to_string()]
+    } else {
+        Vec::new()
+    };
+    let elsewhere = SavedState {
+        features: Some(other.clone()),
+        ..lifted_state
+    };
+    let refused = restored!(lifted, &elsewhere).expect_err("another configuration is refused");
+    assert!(
+        refused.starts_with(&format!(
+            "the saved state was taken with the features [{}] on, and this machine is built \
+             with [{}]",
+            other.join(", "),
+            this_build().join(", ")
+        )),
+        "{refused}"
     );
 }
 

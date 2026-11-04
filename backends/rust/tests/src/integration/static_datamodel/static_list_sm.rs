@@ -415,6 +415,7 @@ impl StaticListPersist for Engine<StaticListPolicy> {
             format2_revised: "8aa0f9aed42bda64f1637b1852cbd2b0e2641bc6998c82f0b07ad4b7bad23b6b",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

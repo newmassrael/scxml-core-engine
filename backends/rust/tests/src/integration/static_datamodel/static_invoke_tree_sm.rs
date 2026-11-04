@@ -403,6 +403,7 @@ impl StaticInvokeTreePersist for Engine<StaticInvokeTreePolicy> {
             format2_revised: "bab0ea6d6e2cb56b20d3028d098f17045fe20a45f1abd9eb838ead2d8c701998",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

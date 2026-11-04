@@ -387,6 +387,7 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPersist
             format2_revised: "45c5ae841923b95967f51b12ef271c7439133cf013284e4149f4bcea20128716",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

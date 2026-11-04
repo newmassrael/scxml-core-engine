@@ -409,6 +409,7 @@ impl StaticForeachPersist for Engine<StaticForeachPolicy> {
             format2_revised: "c5cf66a11bd05de77e01ceaa0675c38b3551d147105fbb8e9542254dd6df39d4",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

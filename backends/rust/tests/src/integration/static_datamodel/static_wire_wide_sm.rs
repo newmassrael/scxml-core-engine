@@ -435,6 +435,7 @@ impl StaticWireWidePersist for Engine<StaticWireWidePolicy> {
             format2_revised: "e5554aa626dd97594f1f67371b7e9975e5ac74460f1206f3003d8988dbbfdf93",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

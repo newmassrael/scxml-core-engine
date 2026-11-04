@@ -383,6 +383,7 @@ impl StaticSendIdlocationPersist for Engine<StaticSendIdlocationPolicy> {
             format2_revised: "8443f060192bbbaa9a2fd887bcd03d301bb1035728e69b1d529101eebf084cc4",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

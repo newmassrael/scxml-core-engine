@@ -374,6 +374,7 @@ impl StaticWrappingCounterPersist for Engine<StaticWrappingCounterPolicy> {
             format2_revised: "adc0903083cc91825d88b7093752ede4ac5ce845a6e44cbd42b46c601014eed6",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

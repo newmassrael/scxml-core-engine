@@ -511,6 +511,7 @@ impl StaticHistoryPersist for Engine<StaticHistoryPolicy> {
             format2_revised: "c389dbae2c171ae0448bcc1888d41b21d85b54e0c576fba7a5c56fe11f31580b",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

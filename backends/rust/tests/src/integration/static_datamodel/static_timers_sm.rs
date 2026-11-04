@@ -375,6 +375,7 @@ impl StaticTimersPersist for Engine<StaticTimersPolicy> {
             format2_revised: "2731bb99fc2272ab231f5242141b5f33d19d42112b0aded156f8f129fc40e0dc",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

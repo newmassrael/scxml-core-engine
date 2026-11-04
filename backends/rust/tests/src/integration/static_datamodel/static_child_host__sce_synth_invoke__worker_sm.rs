@@ -361,6 +361,7 @@ impl<A: StaticChildHostSceSynthInvokeWorkerActions + 'static>
             format2_revised: "8162d77c6da05a3991246dc77ee21b84f84edba5cf19a4c2177e0471f15b9678",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

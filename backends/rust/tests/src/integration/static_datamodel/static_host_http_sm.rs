@@ -438,6 +438,7 @@ impl StaticHostHttpPersist for Engine<StaticHostHttpPolicy> {
             format2_revised: "4ea95f1cb7f5532c4fb84d343bb273dae3034a36d54fa2c946a9b541f7508478",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

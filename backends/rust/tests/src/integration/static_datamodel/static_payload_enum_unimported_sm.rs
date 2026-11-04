@@ -691,6 +691,7 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
                     ],
                 },
             ],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

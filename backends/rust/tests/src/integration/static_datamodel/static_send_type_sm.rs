@@ -377,6 +377,7 @@ impl StaticSendTypePersist for Engine<StaticSendTypePolicy> {
             format2_revised: "c5e2c82cd425c5ff0bedf673e2f87ffcef97e26d90392e64ec8cdc55aec71d0c",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

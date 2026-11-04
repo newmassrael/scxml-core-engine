@@ -343,6 +343,7 @@ impl StaticHybridWatcherPersist for Engine<StaticHybridWatcherPolicy> {
             format2_revised: "96e854dbf8707bf513784c0788fbf785e2280fa487963cf50fd8ff090a58912c",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

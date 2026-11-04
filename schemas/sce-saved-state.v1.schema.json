@@ -39,6 +39,12 @@
         }
       }
     },
+    "features": {
+      "description": "The configuration of a product line the machine was built for (docs/adr/0057 §7): the features it turns on, by name, sorted, each once; empty for the configuration that turns none on. Absent for a machine of no product line, which is every machine of a document that imports no feature model. A restore judges it before the shape and refuses a state taken in another configuration, naming the features on only where it was saved and those on only in the restoring build. It refuses a state with no `features` in a machine of a product line, and one with `features` in a machine of none. Carrying a state across configurations is a migration, which a restore does not do.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
     "configuration": {
       "description": "The active configuration as state ids, in document order. A restore refuses one that is not a configuration of the document.",
       "type": "array",

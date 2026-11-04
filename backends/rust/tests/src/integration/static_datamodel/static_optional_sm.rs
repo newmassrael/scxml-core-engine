@@ -704,6 +704,7 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
                     },
                 ],
             }],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

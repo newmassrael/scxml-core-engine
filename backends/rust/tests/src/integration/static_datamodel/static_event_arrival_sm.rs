@@ -362,6 +362,7 @@ impl StaticEventArrivalPersist for Engine<StaticEventArrivalPolicy> {
             format2_revised: "b2b27da7c053410d9d935db94a7672a9167844a5d8c0ac1ead305a6df3156464",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

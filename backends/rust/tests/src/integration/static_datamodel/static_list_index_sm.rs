@@ -450,6 +450,7 @@ impl StaticListIndexPersist for Engine<StaticListIndexPolicy> {
             format2_revised: "d229329fa1f24558f82650d7947582795dbc2f535893cb7186b5bd44f3a29a69",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

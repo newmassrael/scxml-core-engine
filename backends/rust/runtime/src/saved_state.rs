@@ -186,6 +186,11 @@ pub struct SavedState {
     /// is every state saved before schemas had revisions; [`upgrade`] reads a
     /// state saved at an earlier revision as the machine's own.
     pub revisions: Vec<(String, SavedRevision)>,
+    /// The configuration of a product line the machine was built for (docs/adr/0057
+    /// §7): the features it turns on, sorted, each once. `None` for a machine of
+    /// no product line, which is every machine of a document that imports no
+    /// feature model. A restore judges it before the shape ([`check_features`]).
+    pub features: Option<Vec<String>>,
 }
 
 /// The running child sessions of a saved session, as the format it was written
@@ -309,6 +314,11 @@ pub struct SavedShape {
     pub records: &'static [RecordLineage],
     /// Each enum a value of the state is of, by its key, ordered by it.
     pub enums: &'static [EnumLineage],
+    /// The configuration of a product line the machine was built for, sorted
+    /// ([`SavedState::features`]); `None` for a machine of no product line. A
+    /// machine generated for every build of one states it per build, under the
+    /// build's own condition.
+    pub features: Option<&'static [&'static str]>,
 }
 
 /// An enum a value of a machine's state is of, as a saved state names it
@@ -1082,6 +1092,14 @@ impl SavedState {
                 ),
             ));
         }
+        // Absent for a machine of no product line, so the text of every other
+        // machine is the text it was before configurations were recorded.
+        if let Some(features) = &self.features {
+            members.push((
+                "features".to_string(),
+                Value::Array(features.iter().cloned().map(Value::Text).collect()),
+            ));
+        }
         members
     }
 
@@ -1235,9 +1253,29 @@ impl SavedState {
                 .collect::<Result<Vec<_>, _>>()?,
             Some(_) => return Err(StateRefusal::new("'revisions' is not an object")),
         };
+        // Optional too: only a machine of a product line records the features
+        // it was built with, as a set, so each is named once and in order.
+        let features = match value.member("features") {
+            None => None,
+            Some(Value::Array(items)) => {
+                let features = items
+                    .iter()
+                    .map(|v| text_of(v, "features"))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if features.windows(2).any(|pair| pair[0] >= pair[1]) {
+                    return Err(StateRefusal::new(
+                        "'features' is not in order or names a feature twice; it is a set, \
+                         sorted",
+                    ));
+                }
+                Some(features)
+            }
+            Some(_) => return Err(StateRefusal::new("'features' is not an array")),
+        };
         Ok(Self {
             shape: text_of(field("shape")?, "shape")?,
             revisions,
+            features,
             configuration,
             current: text_of(field("current")?, "current")?,
             variables,
@@ -1746,6 +1784,9 @@ pub fn save<P: StatePolicy>(
         }
         .to_string(),
         revisions,
+        features: shape
+            .features
+            .map(|features| features.iter().map(|f| f.to_string()).collect()),
         configuration: active
             .iter()
             .map(|s| P::get_state_name(*s).to_string())
@@ -2080,6 +2121,64 @@ fn describe_history<P: StatePolicy>(
     }
 }
 
+/// Refuse `saved` unless it was taken in the configuration `features` of a
+/// product line, or both are of none (docs/adr/0057 §7) — judged before the
+/// shape, which differs too between builds that differ in states or
+/// variables, so a state of another build is refused by the features that
+/// differ and not by a digest. A build with fewer features lacks states or data
+/// the state may hold, and one with more has data and invocations the saved run
+/// never initialised or started: either is refused. Carrying a state across
+/// configurations is a migration, which a restore does not do.
+pub fn check_features(saved: &SavedState, features: Option<&[&str]>) -> Result<(), StateRefusal> {
+    let list = |features: &[&str]| format!("[{}]", features.join(", "));
+    match (saved.features.as_deref(), features) {
+        (None, None) => Ok(()),
+        (Some(saved), Some(built)) => {
+            let saved: Vec<&str> = saved.iter().map(String::as_str).collect();
+            if saved == built {
+                return Ok(());
+            }
+            let only_saved: Vec<&str> = saved
+                .iter()
+                .copied()
+                .filter(|f| !built.contains(f))
+                .collect();
+            let only_built: Vec<&str> = built
+                .iter()
+                .copied()
+                .filter(|f| !saved.contains(f))
+                .collect();
+            let mut differ = Vec::new();
+            if !only_saved.is_empty() {
+                differ.push(format!("{} on only where it was saved", list(&only_saved)));
+            }
+            if !only_built.is_empty() {
+                differ.push(format!("{} on only in this build", list(&only_built)));
+            }
+            Err(StateRefusal::new(format!(
+                "the saved state was taken with the features {} on, and this machine is \
+                 built with {}: {}",
+                list(&saved),
+                list(built),
+                differ.join(", ")
+            )))
+        }
+        (None, Some(built)) => Err(StateRefusal::new(format!(
+            "the saved state records no features, and this machine is built with the \
+             features {} on",
+            list(built)
+        ))),
+        (Some(saved), None) => {
+            let saved: Vec<&str> = saved.iter().map(String::as_str).collect();
+            Err(StateRefusal::new(format!(
+                "the saved state was taken with the features {} on, and this machine is \
+                 built from a document of no feature model",
+                list(&saved)
+            )))
+        }
+    }
+}
+
 /// Refuse `saved` unless it was saved from a document of this `shape` —
 /// judged before any variable is read, so a state saved from another document
 /// is refused for that and not for whichever variable it happens to lack.
@@ -2120,6 +2219,7 @@ pub fn check_shape(saved: &SavedState, shape: &str) -> Result<(), StateRefusal> 
 /// by its document rather than by its alias (docs/adr/0045, section 2), and a
 /// format-1 state against the format-1 ones, exactly as before.
 pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, StateRefusal> {
+    check_features(saved, shape.features)?;
     let (first, revised) = match saved.format() {
         FORMAT_1 => (shape.first, shape.revised),
         _ => (shape.format2_first, shape.format2_revised),
@@ -3031,9 +3131,18 @@ mod tests {
                     fields: "0".repeat(64),
                 },
             )],
+            features: Some(vec!["session-unicast".to_string(), "tls".to_string()]),
         };
         let back = SavedState::from_json(&state.to_json()).expect("reads");
         assert_eq!(back, state);
+        // A machine of no product line records no configuration, and its text
+        // is the one it was before configurations were recorded.
+        let plain = SavedState {
+            features: None,
+            ..state.clone()
+        };
+        assert!(!plain.to_json().contains("features"), "{}", plain.to_json());
+        assert_eq!(SavedState::from_json(&plain.to_json()), Ok(plain));
         // With no revision past the first, the member is left out, and the text
         // is the one every state saved before schemas had revisions is.
         let first = SavedState {
@@ -3072,7 +3181,84 @@ mod tests {
             auto_send_seq: 0,
             external: Vec::new(),
             revisions: Vec::new(),
+            features: None,
         }
+    }
+
+    /// A restore judges the configuration a state was taken in before its
+    /// shape, and names the features that differ (docs/adr/0057 §7).
+    #[test]
+    fn a_state_of_another_configuration_is_refused_by_the_features_that_differ() {
+        let taken = |features: Option<&[&str]>| SavedState {
+            features: features.map(|f| f.iter().map(|f| f.to_string()).collect()),
+            ..session('a', "s", Vec::new())
+        };
+        let refused = |saved: SavedState, built: Option<&[&str]>| {
+            check_features(&saved, built)
+                .expect_err("refused")
+                .reason()
+                .to_string()
+        };
+        assert_eq!(check_features(&taken(None), None), Ok(()));
+        assert_eq!(check_features(&taken(Some(&[])), Some(&[])), Ok(()));
+        assert_eq!(
+            check_features(&taken(Some(&["a", "b"])), Some(&["a", "b"])),
+            Ok(())
+        );
+        assert_eq!(
+            refused(taken(Some(&["a", "b"])), Some(&["a", "c"])),
+            "the saved state was taken with the features [a, b] on, and this machine is built \
+             with [a, c]: [b] on only where it was saved, [c] on only in this build"
+        );
+        assert_eq!(
+            refused(taken(Some(&["a"])), Some(&[])),
+            "the saved state was taken with the features [a] on, and this machine is built \
+             with []: [a] on only where it was saved"
+        );
+        assert_eq!(
+            refused(taken(None), Some(&["a"])),
+            "the saved state records no features, and this machine is built with the \
+             features [a] on"
+        );
+        assert_eq!(
+            refused(taken(Some(&[])), None),
+            "the saved state was taken with the features [] on, and this machine is built \
+             from a document of no feature model"
+        );
+        // Judged before the shape: a state of another build is refused for its
+        // features even where its shape differs too.
+        let shape = SavedShape {
+            features: Some(&["a"]),
+            ..LAYOUT_SHAPE
+        };
+        assert!(upgrade(&taken(Some(&["b"])), &shape)
+            .expect_err("refused")
+            .reason()
+            .starts_with("the saved state was taken with the features [b] on"));
+    }
+
+    /// `features` is a set, written sorted: a text that repeats a feature or
+    /// names them out of order is refused as it is read.
+    #[test]
+    fn the_features_of_a_saved_state_are_a_sorted_set() {
+        let text = |features: &str| {
+            format!(
+                r#"{{"format":1,"shape":"s","configuration":["s"],"current":"s","variables":{{}},"history":{{}},"pending":[],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[],"features":{features}}}"#
+            )
+        };
+        assert_eq!(
+            SavedState::from_json(&text(r#"["a","b"]"#))
+                .expect("reads")
+                .features,
+            Some(vec!["a".to_string(), "b".to_string()])
+        );
+        for unordered in [r#"["b","a"]"#, r#"["a","a"]"#] {
+            assert!(
+                SavedState::from_json(&text(unordered)).is_err(),
+                "{unordered}"
+            );
+        }
+        assert!(SavedState::from_json(&text(r#""a""#)).is_err());
     }
 
     /// A root running a child that runs a grandchild, with a send waiting each
@@ -3278,6 +3464,7 @@ mod tests {
             ],
         }],
         enums: &[],
+        features: None,
     };
 
     /// The same machine whose third revision widened two fields to optional:
@@ -3321,6 +3508,7 @@ mod tests {
             ],
         }],
         enums: &[],
+        features: None,
     };
 
     /// A machine holding a variable `layout` of the enum `ViewMode` and a list
@@ -3353,6 +3541,7 @@ mod tests {
                 },
             ],
         }],
+        features: None,
     };
 
     /// A saved state of shape `shape` holding `layout` and `seen`, with the

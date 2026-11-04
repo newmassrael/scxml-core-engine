@@ -366,6 +366,7 @@ impl StaticOverflowPersist for Engine<StaticOverflowPolicy> {
             format2_revised: "c9149ea7ca6640067163c12b233a0cbbba485e8e488f6c63351c63b6c2823101",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

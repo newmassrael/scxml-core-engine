@@ -348,6 +348,7 @@ impl<A: StaticHostDutyActions + 'static> StaticHostDutyPersist for Engine<Static
             format2_revised: "4c7995c5d033d96a315e1875fae1059c6dd6971fad03cd0a0a8e70b72b749d1a",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

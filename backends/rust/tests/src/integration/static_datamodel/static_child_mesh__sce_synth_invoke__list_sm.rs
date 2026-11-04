@@ -352,6 +352,7 @@ impl StaticChildMeshSceSynthInvokeListPersist for Engine<StaticChildMeshSceSynth
             format2_revised: "d99f34c48133b948c9fb435a8a811deca997a01968f8e13825f23343e2f4614f",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

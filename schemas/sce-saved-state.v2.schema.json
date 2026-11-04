@@ -14,6 +14,7 @@
     },
     "shape": { "$ref": "#/definitions/shape" },
     "revisions": { "$ref": "#/definitions/revisions" },
+    "features": { "$ref": "#/definitions/features" },
     "sessionid": { "$ref": "#/definitions/sessionid" },
     "configuration": { "$ref": "#/definitions/configuration" },
     "current": { "$ref": "#/definitions/current" },
@@ -28,6 +29,12 @@
     "external": { "$ref": "#/definitions/external" }
   },
   "definitions": {
+    "features": {
+      "description": "The configuration of a product line this session's machine was built for (docs/adr/0057 §7): the features it turns on, by name, sorted, each once; empty for the configuration that turns none on. Absent for a machine of no product line, which is every machine of a document that imports no feature model. A restore judges it before the shape and refuses a state taken in another configuration, naming the features on only where it was saved and those on only in the restoring build: a build with fewer lacks states or data the state may hold, and one with more has data and invocations the saved run never initialised or started. It refuses a state with no `features` in a machine of a product line, and one with `features` in a machine of none. Carrying a state across configurations is a migration, which a restore does not do.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
     "session": {
       "description": "One session of the tree: what the root holds, without `format`, which the document states once. A child's session is judged against the document its parent's <invoke> names there, by that document's own shape and revisions.",
       "type": "object",
@@ -36,6 +43,7 @@
       "properties": {
         "shape": { "$ref": "#/definitions/shape" },
         "revisions": { "$ref": "#/definitions/revisions" },
+        "features": { "$ref": "#/definitions/features" },
         "sessionid": { "$ref": "#/definitions/sessionid" },
         "configuration": { "$ref": "#/definitions/configuration" },
         "current": { "$ref": "#/definitions/current" },

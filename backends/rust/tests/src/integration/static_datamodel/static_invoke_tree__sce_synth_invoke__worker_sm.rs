@@ -538,6 +538,7 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPersist
                     list: false,
                 }],
             }],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

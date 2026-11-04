@@ -387,6 +387,7 @@ impl StaticInvokeHybridPersist for Engine<StaticInvokeHybridPolicy> {
             format2_revised: "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

@@ -4005,6 +4005,14 @@ pub struct SCXMLModel {
     /// fields each of those surfaces declares for them.
     #[serde(skip)]
     pub product_line: Option<crate::product_line::ProductLine>,
+    /// The configuration this model is the variant of (ADR 0057 §7): the
+    /// features a selection turns on, sorted, when the document was read for
+    /// one (`--features`, or each variant a backend that keeps the variability
+    /// derives). `None` for any other parse. A saved state of the machine
+    /// records it, and a restore into a machine of another configuration is
+    /// refused. Not serialized, as [`Self::product_line`] is not.
+    #[serde(skip)]
+    pub configuration: Option<Vec<String>>,
     /// `<sce:kind-basis>` on the root — why the document is a statechart
     /// ([`crate::forge::kind_basis`]). `None` when it states none. Moved
     /// to [`crate::forge::model::ParsedForge::kind_basis`] on the AST

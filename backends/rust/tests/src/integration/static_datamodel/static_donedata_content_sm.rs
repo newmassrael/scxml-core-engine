@@ -385,6 +385,7 @@ impl StaticDonedataContentPersist for Engine<StaticDonedataContentPolicy> {
             format2_revised: "f9aabedc97ffc5a6ec9a10b5f043898f4f86a0ce8c168e2aa8dfe35c689cac1c",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

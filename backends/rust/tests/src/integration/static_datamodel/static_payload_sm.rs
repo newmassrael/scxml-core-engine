@@ -407,6 +407,7 @@ impl StaticPayloadPersist for Engine<StaticPayloadPolicy> {
             format2_revised: "10510c0c03e13e2c651d3e5231f709161ec7022b59c103a2d61b1b31733d78a3",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

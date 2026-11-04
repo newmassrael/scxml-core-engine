@@ -395,6 +395,7 @@ impl StaticBytesPersist for Engine<StaticBytesPolicy> {
             format2_revised: "ee9457b9f547d6f6e940839a148d86a62fc21b6f656ea74ab5d368c162cf3487",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

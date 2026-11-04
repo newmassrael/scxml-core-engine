@@ -375,6 +375,7 @@ impl StaticInvokeOptionalPersist for Engine<StaticInvokeOptionalPolicy> {
             format2_revised: "0c3699e9d5792b59d2b8867ecd6d350d058df394138b0605552a7c5350b7e8f0",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

@@ -389,6 +389,7 @@ impl StatechartStaticMeshRequestPersist for Engine<StatechartStaticMeshRequestPo
             format2_revised: "d3738709582b65e60555168c61077ca2d1dc40123f6c88652f8d4882a10a3e3c",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

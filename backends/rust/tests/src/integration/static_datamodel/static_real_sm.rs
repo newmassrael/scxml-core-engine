@@ -392,6 +392,7 @@ impl StaticRealPersist for Engine<StaticRealPolicy> {
             format2_revised: "2587ba0a8cc82b3651360f544a67d759659dde6552f8fcdf2cc117fe60bbdf1f",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

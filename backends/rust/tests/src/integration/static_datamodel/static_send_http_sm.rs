@@ -368,6 +368,7 @@ impl StaticSendHttpPersist for Engine<StaticSendHttpPolicy> {
             format2_revised: "d427bc0c830426e6e58b59700bf6df2e93a80bd1c187d436535a9a141233963f",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

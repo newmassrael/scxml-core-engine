@@ -510,6 +510,7 @@ impl SyncClientPersist for Engine<SyncClientPolicy> {
             format2_revised: "59efa08979bdda6f4ee18d6353512b4c4be9f0964013cc38a9000088eddfdeda",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

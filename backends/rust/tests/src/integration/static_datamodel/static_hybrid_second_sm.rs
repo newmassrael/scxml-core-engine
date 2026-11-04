@@ -343,6 +343,7 @@ impl StaticHybridSecondPersist for Engine<StaticHybridSecondPolicy> {
             format2_revised: "657eb997cc3609461a6e6c92e51d465fc2202432d5977d38c9e16d032ce371f5",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

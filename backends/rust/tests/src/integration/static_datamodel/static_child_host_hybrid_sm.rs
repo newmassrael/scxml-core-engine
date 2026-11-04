@@ -370,6 +370,7 @@ impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPersist
             format2_revised: "a9ff088d356eecf3d7894cb19058246e32c6f105acea5a0cee1c3f6edee1665a",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

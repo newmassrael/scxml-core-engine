@@ -347,6 +347,7 @@ impl<A: StaticHostedFirstActions + 'static> StaticHostedFirstPersist
             format2_revised: "da4f10dbc725e150480434141037c5d47edc7058fea8db62a2eefeccd593aba2",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

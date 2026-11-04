@@ -364,6 +364,7 @@ impl StatechartStaticDelayedHostSendPersist for Engine<StatechartStaticDelayedHo
             format2_revised: "eeef36f37f7020ec93667ca4414f5eb99e868b95be3aac83cee972aebde5cce9",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

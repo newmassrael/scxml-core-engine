@@ -235,6 +235,13 @@ pub struct SavedShape {
     /// Each enum a value of the state is of — a variable's, or a record
     /// field's — by its key (`enum:` and its document's key), ordered by it.
     pub enums: Vec<SavedEnumLineage>,
+    /// The configuration the machine was generated for (ADR 0057 §7;
+    /// [`SCXMLModel::configuration`]): the features it turns on, sorted. A
+    /// saved state records it as `features`, and a restore judges it before
+    /// the shape, so a state of another build of the product line is refused
+    /// by the features that differ rather than by a digest. `None` for a
+    /// machine of no configuration, whose saved state carries no `features`.
+    pub features: Option<Vec<String>>,
 }
 
 impl SavedShape {
@@ -245,6 +252,7 @@ impl SavedShape {
             first: self.format2_first.clone(),
             revised: self.format2_revised.clone(),
             enum_keys: self.enums.iter().map(|e| e.key.clone()).collect(),
+            features: self.features.clone(),
         }
     }
 }
@@ -262,6 +270,8 @@ pub struct SavedFormat2Keys {
     pub revised: String,
     /// [`SavedEnumLineage::key`] of each of [`SavedShape::enums`], in order.
     pub enum_keys: Vec<String>,
+    /// [`SavedShape::features`].
+    pub features: Option<Vec<String>>,
 }
 
 /// An enum a value of a machine's state is of, as a saved state names it.
@@ -5805,6 +5815,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         format2_revised,
         records: records.into_values().collect(),
         enums: enums.into_values().collect(),
+        features: model.configuration.clone(),
     })
 }
 

@@ -343,6 +343,7 @@ impl StaticHybridFirstPersist for Engine<StaticHybridFirstPolicy> {
             format2_revised: "ad6abd5a260bd8977fcbe375d2ed5d177275abbf601331001d9c4d33d0302abc",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

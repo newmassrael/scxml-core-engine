@@ -354,6 +354,7 @@ impl StaticInvokeOptionalSceSynthInvokeLiftedPersist
             format2_revised: "b6e22e3b6c4c1a37c7210573ff2f5fa0ccfb36fab551eccae1792185e850f67d",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

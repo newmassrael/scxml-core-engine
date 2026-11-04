@@ -386,6 +386,7 @@ impl StatechartStaticHostInvokePersist for Engine<StatechartStaticHostInvokePoli
             format2_revised: "919f78480d6684c23f3346c8c52ce39ea292a6c52e231bbd5e748199175b2f42",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

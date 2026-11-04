@@ -521,6 +521,7 @@ impl StaticEnumNumberPersist for Engine<StaticEnumNumberPolicy> {
                     list: false,
                 }],
             }],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

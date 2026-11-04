@@ -6088,6 +6088,31 @@ waiting in `pending`, and a `<cancel>` of that id would cancel both. The field
 is a text of digits within a signed 64-bit count and is always present, as
 `hostinvoketoken` is; a state saved before the field existed is not this format.
 
+**The configuration a state was taken in** (docs/adr/0057 §7). A machine of a
+product line, one generated from a document written against a feature model, is
+built for one configuration: the features its build turns on. Its saved state
+records them as `features`, by name, sorted, each once (`[]` for the
+configuration that turns none on), in the root and in each session of a tree
+whose document is one; a machine of no product line leaves the member out, so
+its text is the one it was before. A machine generated for every build of the
+product line records the configuration of the build it was compiled in, and
+saves the text the machine of that configuration generated alone saves. A
+restore judges `features` before the shape, and refuses a state taken in
+another configuration with a reason naming the features on only where it was
+saved and those on only in the restoring build: a build with fewer lacks states
+or data the state may hold, and one with more has data and invocations the saved
+run never initialised or started, and the shape, which differs too between
+builds that differ in states or variables, would name only a digest. It refuses
+a state with no `features` in a machine of a product line, and one with
+`features` in a machine of none. Carrying a state across configurations is a
+migration, which a restore does not do. The Rust backend records and judges the
+configuration (`saved_state::check_features`), and
+`backends/rust/feature-conformance` holds the machine for every build to each
+build's own machine on it. The Kotlin, Go, Python, C++ and C11 runtimes do not
+read the member yet: they neither write it nor judge it, so until each takes it
+in a step of its own, a state taken in another configuration is refused there
+only where its shape differs.
+
 The request's `event_data` is a JSON object whose members are written in one
 order on every backend — ascending by name, whatever order the document declared
 its `<param>`s in (ARCHITECTURE.md, "JSON Object Key Order") — so a host that

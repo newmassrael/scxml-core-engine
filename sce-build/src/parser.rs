@@ -2863,6 +2863,15 @@ impl SCXMLParser {
                 self.variant = Some(text);
                 parsed
             });
+            // The variant knows the configuration it is (ADR 0057 §7): the
+            // selection, which the derivation held to the model, as a set.
+            let parsed = parsed.map(|mut model| {
+                let mut configuration = features.clone();
+                configuration.sort();
+                configuration.dedup();
+                model.configuration = Some(configuration);
+                model
+            });
             self.features = Some(features);
             return parsed;
         }

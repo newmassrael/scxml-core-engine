@@ -385,6 +385,7 @@ impl StaticSendTargetPersist for Engine<StaticSendTargetPolicy> {
             format2_revised: "60bbf82df8219cee9dfc10640d609b39d8f38d3101bb4758e6d5e5665cb9236e",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

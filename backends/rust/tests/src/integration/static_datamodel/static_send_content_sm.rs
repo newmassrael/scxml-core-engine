@@ -589,6 +589,7 @@ impl StaticSendContentPersist for Engine<StaticSendContentPolicy> {
                     },
                 ],
             }],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

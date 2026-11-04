@@ -576,6 +576,7 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
             format2_revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

@@ -398,6 +398,7 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
             format2_revised: "a4380b325483055654bfe0eb91b7aa8dfa0ae8bc7a9c7dbf2af667525727a907",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

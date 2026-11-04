@@ -173,7 +173,8 @@ fn the_schema_refuses_what_no_backend_writes() {
         ],
         "revisions": {
             "reading.taken": {"revision": 3, "fields": "0".repeat(64)}
-        }
+        },
+        "features": ["session-unicast", "tls"]
     });
     assert!(
         errors(&validator, &good).is_empty(),
@@ -361,6 +362,21 @@ fn the_schema_refuses_what_no_backend_writes() {
             "revisions",
             serde_json::json!({"reading.taken": {"revision": "2", "fields": "0".repeat(64)}}),
         ),
+        (
+            "a configuration that names a feature twice",
+            "features",
+            serde_json::json!(["tls", "tls"]),
+        ),
+        (
+            "a configuration that names a feature by no name",
+            "features",
+            serde_json::json!([""]),
+        ),
+        (
+            "a configuration that is not a list of names",
+            "features",
+            serde_json::json!("tls"),
+        ),
     ];
     for (what, key, value) in broken {
         let mut instance = good.clone();
@@ -393,18 +409,27 @@ fn the_schema_refuses_what_no_backend_writes() {
         );
     }
 
-    // `revisions` is the one member a state may leave out: one whose record
-    // schemas are all in their first revision does, which is every state saved
-    // before schemas had revisions (docs/adr/0044).
-    let mut first_revision = good.clone();
-    first_revision
-        .as_object_mut()
-        .expect("an object")
-        .remove("revisions");
+    // `revisions` and `features` are the members a state may leave out: one
+    // whose record schemas are all in their first revision leaves out the
+    // first, which is every state saved before schemas had revisions
+    // (docs/adr/0044), and a machine of no product line the second, as every
+    // state saved before configurations were recorded does (docs/adr/0057 §7).
+    // The configuration that turns no feature on is `[]`, not an absence.
+    for optional in ["revisions", "features"] {
+        let mut without = good.clone();
+        without.as_object_mut().expect("an object").remove(optional);
+        assert!(
+            errors(&validator, &without).is_empty(),
+            "{optional}: {:?}",
+            errors(&validator, &without)
+        );
+    }
+    let mut none_on = good.clone();
+    none_on["features"] = serde_json::json!([]);
     assert!(
-        errors(&validator, &first_revision).is_empty(),
+        errors(&validator, &none_on).is_empty(),
         "{:?}",
-        errors(&validator, &first_revision)
+        errors(&validator, &none_on)
     );
 }
 
@@ -511,6 +536,10 @@ fn a_tree() -> serde_json::Value {
     root["revisions"] = serde_json::json!({
         "todo.write": {"revision": 2, "fields": "d".repeat(64)}
     });
+    // Each session records the configuration of its own document's product
+    // line (docs/adr/0057 §7): the root's, and the child's, which turns none on.
+    root["features"] = serde_json::json!(["session-unicast"]);
+    root["invokes"][0]["session"]["features"] = serde_json::json!([]);
     root["pending"] = serde_json::json!([{
         "due": "1700000006000", "act": "child", "invokeid": "worker", "event": "nudge",
         "data": "", "sendid": "poke", "origin": "planner-1"
@@ -549,7 +578,7 @@ fn the_format_2_schema_refuses_what_no_backend_writes() {
     );
 
     type Change = fn(&mut serde_json::Value);
-    let broken: [(&str, Change); 20] = [
+    let broken: [(&str, Change); 22] = [
         // docs/adr/0045, "Questions the owner answered" 2: a session id is an
         // Nmtoken, so never empty and never a text an address cannot carry.
         ("a root with the empty session id", |t| {
@@ -619,6 +648,12 @@ fn the_format_2_schema_refuses_what_no_backend_writes() {
         }),
         ("revisions that name none", |t| {
             t["revisions"] = serde_json::json!({})
+        }),
+        ("a configuration that names a feature twice", |t| {
+            t["features"] = serde_json::json!(["tls", "tls"])
+        }),
+        ("a child's configuration that is not a list of names", |t| {
+            t["invokes"][0]["session"]["features"] = serde_json::json!({"tls": true})
         }),
     ];
     for (what, change) in broken {

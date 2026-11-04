@@ -386,6 +386,7 @@ impl StatechartStaticHostParamsPersist for Engine<StatechartStaticHostParamsPoli
             format2_revised: "93ef05f6eb9aadfc384df76112d432c484e071a161d90eb0cbd084451f589d59",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

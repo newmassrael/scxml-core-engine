@@ -425,6 +425,7 @@ impl StaticHostClockPersist for Engine<StaticHostClockPolicy> {
             format2_revised: "9e2c0126d926e2df92012105a0f1d3d2582fa4ceb0b69a155973d005b28fb879",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

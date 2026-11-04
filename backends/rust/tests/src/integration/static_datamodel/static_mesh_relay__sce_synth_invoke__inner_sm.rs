@@ -350,6 +350,7 @@ impl StaticMeshRelaySceSynthInvokeInnerPersist
             format2_revised: "4ea0e0e30338d81d9fbe2eabbbf391c38461f625b495ef1c6480c3c246ff5130",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

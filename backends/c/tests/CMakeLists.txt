@@ -5153,9 +5153,11 @@ if(SCE_C_RUNTIME_POSIX)
             ${_SCE_DEFINES_${_SET}}
         )
         # The program names each machine by its directory: `lifted/` beside
-        # the feature sets' own, and `alone/` in this set's.
+        # the feature sets' own, and `alone/` in this set's. An `sce-static`
+        # machine reads the forge runtime's headers as well.
         target_include_directories(sce_c_feature_conformance_${_SET} PRIVATE
             "${_SCE_FEATURE_DIR}" "${_SCE_FEATURE_DIR}/${_SET}"
+            "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
         )
         target_link_libraries(sce_c_feature_conformance_${_SET} PRIVATE
             sce_c_runtime sce_c_runtime_posix sce_c_base
@@ -5178,6 +5180,7 @@ if(SCE_C_RUNTIME_POSIX)
         add_test(NAME c11_feature_conformance_refuses_a_broken_edge
             COMMAND ${CMAKE_C_COMPILER} -std=c11 -fsyntax-only
                     "-I$<JOIN:$<TARGET_PROPERTY:sce_c_runtime,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
+                    "-I${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
                     -DSCE_FEATURE_SESSION_UNICAST_ACCEPT
                     ${_SCE_FEATURE_LIFTED_SOURCES}
             COMMAND_EXPAND_LISTS

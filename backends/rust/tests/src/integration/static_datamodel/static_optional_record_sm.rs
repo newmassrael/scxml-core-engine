@@ -534,6 +534,7 @@ impl StaticOptionalRecordPersist for Engine<StaticOptionalRecordPolicy> {
                 ],
             }],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

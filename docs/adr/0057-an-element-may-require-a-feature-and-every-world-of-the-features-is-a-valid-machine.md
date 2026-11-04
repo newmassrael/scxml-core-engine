@@ -499,7 +499,17 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   leading text is taken from a version in which the slot follows the one written before it, so a comment over a
   member only some variants write is written once rather than again before the next member; and a refusal names the
   deepest list that could not be merged, not the member that holds it.
-- Still to do: Swift.
+- **The saved state records its configuration** (§7, 2026-11-04). A variant's model knows the configuration it is
+  (`SCXMLModel::configuration`), the generator's `SavedShape` carries it, and a saved state writes it as `features`,
+  sorted, in the root and each session whose document is of a product line (both formats, an optional member added
+  additively). The Rust runtime judges it before the shape (`saved_state::check_features`) and names the features
+  on only where the state was saved and those on only in the restoring build. The machine for every build states
+  each feature under its own `#[cfg]` in one array, so each build records its own set. `tests/product_line/session.scxml`
+  is now `sce-static`, and the Rust conformance crate holds the machine for every build to each build's own on the
+  saved text and on the refusal. The Kotlin, Go, Python, C++ and C11 runtimes neither write nor judge the member
+  yet; each takes it in a step of its own.
+- Still to do: Swift; `features` in the other five runtimes; the featured transition table; conditions in the
+  forge AST and the sourcemap.
 
 ## Questions left open
 

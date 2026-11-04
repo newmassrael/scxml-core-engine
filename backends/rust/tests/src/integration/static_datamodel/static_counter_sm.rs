@@ -363,6 +363,7 @@ impl StaticCounterPersist for Engine<StaticCounterPolicy> {
             format2_revised: "9e81e07793879a193c502fb56f49ebf7e9ef54bf8e9258775a47df18e340aac0",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

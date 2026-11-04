@@ -653,6 +653,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
             },
 {% endfor %}
         ],
+        features: {% if static_saved_shape.features is not none %}Some(&[{% for feature in static_saved_shape.features %}"{{ feature | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}]){% else %}None{% endif %},
     };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<{{ history_type }}>] = &[

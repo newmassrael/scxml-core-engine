@@ -380,6 +380,7 @@ impl StaticChildMeshPersist for Engine<StaticChildMeshPolicy> {
             format2_revised: "b428739571d63d80edb7874f3bddb4b4c6c3d1f4c245f5a2cc0f5c72da4fd05e",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

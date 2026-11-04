@@ -355,6 +355,7 @@ impl StaticInvokeSceSynthInvokeWorkerPersist for Engine<StaticInvokeSceSynthInvo
             format2_revised: "38159d9913b229e5a218bb8a42f452ceb1fa0452b7aef974b612de1e5fabbd74",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

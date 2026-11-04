@@ -561,6 +561,7 @@ impl StaticHostNotifyPersist for Engine<StaticHostNotifyPolicy> {
             format2_revised: "f69e00d7b93736246a373797c7ed9feb7becad59326b3a6f673ffa13fd0c1c0c",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

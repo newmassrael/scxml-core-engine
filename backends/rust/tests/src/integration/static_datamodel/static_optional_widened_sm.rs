@@ -415,6 +415,7 @@ impl StaticOptionalWidenedPersist for Engine<StaticOptionalWidenedPolicy> {
             format2_revised: "3ccffe0f17d5d5f88c7cc7659f03f10cab579a3feefd728f043b8703b520e696",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

@@ -387,6 +387,7 @@ impl StaticSendEventPersist for Engine<StaticSendEventPolicy> {
             format2_revised: "943653a32b02da535a6dbb290e6eeeb21d217692ab23f22c59ffbb9a3af0a52a",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

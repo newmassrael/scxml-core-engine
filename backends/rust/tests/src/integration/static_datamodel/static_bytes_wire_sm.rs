@@ -448,6 +448,7 @@ impl StaticBytesWirePersist for Engine<StaticBytesWirePolicy> {
             format2_revised: "feac77ce380918573f6ee3aca8512f290e18a8fa719b2ab1a65cd60e549bcb0d",
             records: &[],
             enums: &[],
+            features: None,
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
