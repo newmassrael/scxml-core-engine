@@ -40,29 +40,16 @@ wasm-pack build sce-build-wasm \
     --out-name sce_build \
     || sce_gate_fail "codegen WASM build — the browser generator would ship broken or stale"
 
-# `emcc` reaches PATH through `source emsdk_env.sh`, which the lane does in the
-# same step that calls this gate. A local pre-push run has no such step, so an
-# emsdk that IS installed still read as absent, and the skip's own advice
-# ("install emsdk") sent a developer to install what they already had. Measured
-# 2026-08-21: four pushes shipped a red visualizer lane because the only
-# compiler that rejects them is the one this block runs.
-if ! command -v emcmake >/dev/null 2>&1; then
-    for emsdk_env in "${EMSDK:-}/emsdk_env.sh" "${HOME}/emsdk/emsdk_env.sh"; do
-        [ -f "${emsdk_env}" ] || continue
-        # shellcheck disable=SC1090
-        source "${emsdk_env}" >/dev/null 2>&1 || true
-        break
-    done
-fi
+# An emsdk that is installed and not active is found (lib.sh says why this
+# matters for a local run), and the tree is configured the way `w3c-wasm`
+# configures it, because the two build in the same directory.
+sce_gate_activate_emsdk
 
 if sce_gate_requires_tool emcmake emsdk; then
     sce_gate_step "building the visualizer (emscripten)"
-    GENERATOR=()
-    command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
-    emcmake cmake -S . -B build_wasm -DCMAKE_BUILD_TYPE=Release \
-        ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null \
+    sce_gate_configure_wasm_tree \
         || sce_gate_fail "visualizer emcmake configure"
-    sce_gate_build build_wasm --target visualizer \
+    sce_gate_build "$SCE_WASM_BUILD_DIR" --target visualizer \
         || sce_gate_fail "visualizer WASM build"
 
     sce_gate_step "building the DOOM example (emscripten)"

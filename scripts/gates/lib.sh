@@ -441,6 +441,113 @@ sce_main_build_dir() {
     fi
 }
 
+# Judge a run of the W3C runner (`w3c_test_cli`) by both of its verdicts: the
+# JUnit report it wrote and the status it exited with.
+#
+# Two runs of the one runner are judged this way, the native build (`w3c-cpp`)
+# and the emscripten build under Node (`w3c-wasm`), and the rules are the
+# runner's rather than either gate's, so they are written once.
+#
+# The exit status is the primary verdict, and the report is checked
+# independently: a suite that reports failures while exiting 0 is the exact
+# regression the C++ lane already shipped once (233 of 234 cases failing for
+# three weeks under a green check), and a gate that trusted the exit status
+# alone would not see it come back. The floor on the case count covers the
+# other direction: a suite that registers nothing exits 0 with an empty report,
+# which reads as success in both channels. The cases are registered from
+# `tests/w3c/conformance/fixtures.json` through generated runners, so a
+# registration that stops matching leaves the suite green on a fraction of
+# itself.
+#
+# Usage: sce_gate_judge_w3c_report <report.xml> <run log> <exit status> <floor>
+# Fails the gate on any finding; on a pass it sets SCE_GATE_W3C_CASES to the
+# number of cases the report holds.
+SCE_GATE_W3C_CASES=0
+sce_gate_judge_w3c_report() {
+    local xml="$1" log="$2" status="$3" floor="$4"
+
+    [[ -f "$xml" ]] || {
+        tail -n 30 "$log" >&2
+        sce_gate_fail "the suite wrote no report — it died before finishing"
+    }
+
+    # One `<testsuites>` header carries the totals; the per-engine `<testsuite>`
+    # elements repeat the attribute, so only the first line that has it is
+    # read, and `sed` stops there rather than handing the rest to a pipe.
+    local total failures errors bad
+    total="$(_sce_gate_w3c_report_attr "$xml" tests)"
+    failures="$(_sce_gate_w3c_report_attr "$xml" failures)"
+    errors="$(_sce_gate_w3c_report_attr "$xml" errors)"
+    total="${total:-0}"; failures="${failures:-0}"; errors="${errors:-0}"
+    bad=$(( failures + errors ))
+
+    if (( total < floor )); then
+        sce_gate_fail "only $total W3C case(s) ran (expected at least $floor) — the suite reported on a smaller set than its name claims"
+    fi
+
+    if (( bad > 0 )); then
+        grep -E '<failure|<error' "$xml" | head -n 20 >&2 || true
+        sce_gate_fail "$bad of $total W3C case(s) failed"
+    fi
+
+    # Failures in the report and success in the exit status is the regression
+    # above; checked in both directions so neither channel carries the verdict
+    # alone.
+    if (( status != 0 )); then
+        tail -n 30 "$log" >&2
+        sce_gate_fail "the suite exited $status while its report showed no failure — the two verdicts disagree"
+    fi
+
+    SCE_GATE_W3C_CASES="$total"
+}
+
+_sce_gate_w3c_report_attr() {
+    sed -n "/[^a-z]$2=\"[0-9]\{1,\}\"/{s/.*[^a-z]$2=\"\([0-9]\{1,\}\)\".*/\1/p;q;}" "$1"
+}
+
+# Put emscripten's tools on PATH when emsdk is installed and not active.
+#
+# `emcc` reaches PATH through `source emsdk_env.sh`, which a lane does in the
+# same step that calls its gate. A local run has no such step, so an emsdk that
+# IS installed still read as absent, and the skip's own advice ("install
+# emsdk") sent a developer to install what they already had. Measured
+# 2026-08-21: four pushes shipped a red visualizer lane because the only
+# compiler that rejects them is the one `visualizer-wasm` runs.
+#
+# Never fails: whether the tools are now there is the caller's question, asked
+# through `sce_gate_requires_tool`, which knows whether a missing one is a skip
+# or a failure.
+sce_gate_activate_emsdk() {
+    command -v emcmake >/dev/null 2>&1 && return 0
+    local emsdk_env
+    for emsdk_env in "${EMSDK:-}/emsdk_env.sh" "${HOME}/emsdk/emsdk_env.sh"; do
+        [ -f "${emsdk_env}" ] || continue
+        # shellcheck disable=SC1090
+        source "${emsdk_env}" >/dev/null 2>&1 || true
+        break
+    done
+    return 0
+}
+
+# The emscripten build tree, and the one configure every gate that builds in it
+# runs.
+#
+# `visualizer-wasm` and `w3c-wasm` build different targets of the same tree.
+# Two spellings of its configure would be two trees in one directory: a
+# generator chosen by one gate and refused by the next ("Does not match the
+# generator used previously"), or a build type that flips the whole tree from
+# one gate to the other. Gitignored (`build_wasm/`), so building in it touches
+# no tracked file.
+#
+# Returns the configure's status; the caller names what failed.
+SCE_WASM_BUILD_DIR="build_wasm"
+sce_gate_configure_wasm_tree() {
+    local GENERATOR=()
+    command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
+    emcmake cmake -S . -B "$SCE_WASM_BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
+        ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null
+}
+
 # Remove ctest log temporaries that interrupted runs left behind.
 #
 # ctest writes `Testing/Temporary/LastTest.log.tmpNNNNN` while a suite runs and

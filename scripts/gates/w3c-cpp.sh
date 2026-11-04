@@ -14,12 +14,9 @@
 # configured `fail_on_failure: false`. The gating is repaired, but a repaired
 # lane still only speaks after a push. This is where it speaks before one.
 #
-# Two verdicts are read, not one. The exit status is the primary gate, and the
-# XML is checked independently — a suite that reports failures while exiting 0
-# is the exact regression this lane already shipped once, and a gate that
-# trusted the exit status alone would not see it come back. The floor on the
-# case count covers the other direction: a suite that registers nothing exits
-# 0 with an empty report, which reads as success in both channels.
+# Two verdicts are read, not one: the exit status and the JUnit report, with a
+# floor on the case count. `sce_gate_judge_w3c_report` holds the rules, since
+# `w3c-wasm` judges the emscripten build of the same runner by them.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -53,40 +50,9 @@ status=0
 ( cd "$BUILD_DIR/tests" && SPDLOG_LEVEL="${SPDLOG_LEVEL:-off}" \
     ./w3c_test_cli --output "$REPORT/w3c_test_results.xml" ) >"$REPORT/w3c_test_output.log" 2>&1 || status=$?
 
-xml="$REPORT/w3c_test_results.xml"
-[[ -f "$xml" ]] || {
-    tail -n 30 "$REPORT/w3c_test_output.log" >&2
-    sce_gate_fail "the suite wrote no report — it died before finishing"
-}
+# The floor is 400 against a current 404 (the helper says what each verdict
+# guards against).
+sce_gate_judge_w3c_report "$REPORT/w3c_test_results.xml" \
+    "$REPORT/w3c_test_output.log" "$status" 400
 
-# One `<testsuites>` header carries the totals; the per-engine `<testsuite>`
-# elements repeat the attribute, so only the first line is read.
-read_attr() { sed -n "s/.*[^a-z]$1=\"\([0-9]\+\)\".*/\1/p" "$xml" | head -1; }
-total="$(read_attr tests)"
-failures="$(read_attr failures)"
-errors="$(read_attr errors)"
-total="${total:-0}"; failures="${failures:-0}"; errors="${errors:-0}"
-bad=$(( failures + errors ))
-
-# The floor is 400 against a current 404. These cases are registered from
-# `tests/w3c/conformance/fixtures.json` through generated runners, so a
-# registration that stops matching leaves the suite reporting green on a
-# fraction of itself.
-if (( total < 400 )); then
-    sce_gate_fail "only $total W3C case(s) ran (expected at least 400) — the suite reported on a smaller set than its name claims"
-fi
-
-if (( bad > 0 )); then
-    grep -E '<failure|<error' "$xml" | head -n 20 >&2 || true
-    sce_gate_fail "$bad of $total W3C case(s) failed"
-fi
-
-# The regression this lane already shipped: failures in the report, success in
-# the exit status. Checked in both directions so neither channel can carry the
-# verdict alone.
-if (( status != 0 )); then
-    tail -n 30 "$REPORT/w3c_test_output.log" >&2
-    sce_gate_fail "the suite exited $status while its report showed no failure — the two verdicts disagree"
-fi
-
-sce_gate_step "$total W3C case(s) passed"
+sce_gate_step "$SCE_GATE_W3C_CASES W3C case(s) passed"
