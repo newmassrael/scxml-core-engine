@@ -76,10 +76,14 @@ jobs:
     # majors only. Without it the procedure stops at that stage, and a lane
     # that cannot finish the procedure says nothing about whether any tree
     # reproduces.
+    #
+    # clang-19: the procedure emits embed/MANIFEST.json, clang's reading of
+    # the public headers, and its stamp (scripts/emit_embed_manifest.sh), and
+    # the emitter refuses without it for the same reason.
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
+        sudo apt-get install -y pkg-config libxml2-dev clang-format-19 clang-19
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable

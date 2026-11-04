@@ -70,10 +70,10 @@ if [ ! -f "${SOURCES_CMAKE}" ]; then
     exit 1
 fi
 
-# Parse SCE_BASE_INCLUDE_DIRS from cmake file
-INCLUDE_DIRS=$(grep -oP '(?<=^    )\w+' "${SOURCES_CMAKE}" | tail -n +1)
-# More robust: extract from the set(SCE_BASE_INCLUDE_DIRS ...) block
-INCLUDE_DIRS=$(sed -n '/set(SCE_BASE_INCLUDE_DIRS/,/)/{ s/^[[:space:]]*//; /^set\|^)/d; p; }' "${SOURCES_CMAKE}")
+# SCE_BASE_INCLUDE_DIRS, read by the one reader of what the manifest is made
+# of (scripts/embed_manifest.py), so the headers copied here and the inputs
+# embed/MANIFEST.inputs records are one list.
+INCLUDE_DIRS=$(python3 "${SCRIPT_DIR}/embed_manifest.py" include-dirs)
 
 # Parse all .cpp files from SCE_BASE_SOURCES and SCE_BASE_SPDLOG_SOURCES
 SOURCE_FILES=$(grep '\.cpp' "${SOURCES_CMAKE}" | sed 's/^[[:space:]]*//' | grep -v '^#')
@@ -314,8 +314,8 @@ if [ ! -f "${LICENSES_CMAKE}" ]; then
     exit 1
 fi
 
-# Parse a single set(<NAME> ...) block from sce_licenses.cmake. Mirrors
-# the SCE_BASE_INCLUDE_DIRS extraction above (sed range + strip).
+# Parse a single set(<NAME> ...) block from sce_licenses.cmake (sed range +
+# strip).
 parse_license_group() {
     local var_name="$1"
     sed -n "/set(${var_name}/,/^)/{

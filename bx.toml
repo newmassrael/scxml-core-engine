@@ -359,4 +359,8 @@ outputs = [
     "sce/src/mesh/generated/**",
     "sce-specs/src/*/generated/**",
     "tests/forge/expected/*",
+    # The embed manifest and the stamp of what it was emitted from. The stage
+    # needs clang++-19; the emitter refuses without it rather than skip.
+    "embed/MANIFEST.json",
+    "embed/MANIFEST.inputs",
 ]

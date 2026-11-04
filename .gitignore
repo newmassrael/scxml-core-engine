@@ -273,10 +273,14 @@ resources/**/*_hybrid[0-9]*.scxml
 # embed/MANIFEST.json records the public-header API surface and is
 # checked in so consumers vendoring embed/ can diff old-vs-new across
 # sync points, and so verify_embed_manifest.sh can drift-guard changes.
+# embed/MANIFEST.inputs records what the manifest was emitted from, so a
+# commit that moves an input without regenerating is refused at the commit
+# (scripts/embed_manifest.py).
 # The /embed/** pattern is required (not embed/) — git cannot re-include
 # a file under a directory that is ignored as a whole.
 /embed/**
 !/embed/MANIFEST.json
+!/embed/MANIFEST.inputs
 
 # Codegen WASM for the visualizer (build via:
 # ./scripts/build_visualizer_wasm.sh, or the Deploy Visualizer workflow).

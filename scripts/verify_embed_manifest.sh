@@ -41,8 +41,26 @@ fi
 # starts with `rm -rf "${OUTPUT_DIR}"` and would wipe the committed
 # manifest along with the rest of embed/.
 SNAPSHOT="$(mktemp --suffix=.json)"
-trap 'rm -f "${SNAPSHOT}"' EXIT
 cp "${MANIFEST}" "${SNAPSHOT}"
+# The emit also writes its stamp, embed/MANIFEST.inputs, which is tracked
+# too: it is snapshotted and restored with the manifest, so this verifier
+# leaves both as the commit holds them.
+STAMP="${EMBED_DIR}/MANIFEST.inputs"
+STAMP_SNAPSHOT="$(mktemp --suffix=.inputs)"
+HAD_STAMP=false
+if [[ -f "${STAMP}" ]]; then
+    cp "${STAMP}" "${STAMP_SNAPSHOT}"
+    HAD_STAMP=true
+fi
+trap 'rm -f "${SNAPSHOT}" "${STAMP_SNAPSHOT}"' EXIT
+restore_committed() {
+    cp "${SNAPSHOT}" "${MANIFEST}"
+    if ${HAD_STAMP}; then
+        cp "${STAMP_SNAPSHOT}" "${STAMP}"
+    else
+        rm -f "${STAMP}"
+    fi
+}
 
 # Bootstrap: /embed/** is gitignored except for MANIFEST.json, so
 # embed/include/ is a derived copy of the public headers. Run
@@ -68,24 +86,18 @@ echo "Bootstrapping ${INCLUDE_DIR} via package_embed.sh --skip-manifest..." >&2
 # Canonicalise both sides by stripping label-only fields before comparison:
 #   embed_version — HEAD-derived; legitimately lags between regen commits.
 #   clang_version — toolchain-derived; differs across machines/runners.
-# Mirrors verify_embed_payload.sh's filter (lines 67-85): both verifiers
-# share the "API surface vs label" axis and must agree on which fields
-# count as drift signal vs noise. Without this, every push from a SHA
-# that the committed manifest does not pin would fail spuriously even
-# when the header surface is byte-identical.
+# verify_embed_payload.sh and the regeneration (regen_all_committed_trees.sh)
+# read the same fields as labels: all three call scripts/embed_manifest.py,
+# the one place that names them. Without this, every push from a SHA that
+# the committed manifest does not pin would fail spuriously even when the
+# header surface is byte-identical.
 canon_manifest() {
-    python3 -c '
-import json, sys
-d = json.load(open(sys.argv[1]))
-d.pop("embed_version", None)
-d.pop("clang_version", None)
-json.dump(d, sys.stdout, sort_keys=True, indent=2)
-' "$1"
+    python3 "${SCRIPT_DIR}/embed_manifest.py" canon "$1"
 }
 
 CANON_SNAPSHOT="$(mktemp --suffix=.committed.json)"
 CANON_FRESH="$(mktemp --suffix=.fresh.json)"
-trap 'rm -f "${SNAPSHOT}" "${CANON_SNAPSHOT}" "${CANON_FRESH}"' EXIT
+trap 'rm -f "${SNAPSHOT}" "${STAMP_SNAPSHOT}" "${CANON_SNAPSHOT}" "${CANON_FRESH}"' EXIT
 canon_manifest "${SNAPSHOT}" > "${CANON_SNAPSHOT}"
 canon_manifest "${MANIFEST}" > "${CANON_FRESH}"
 
@@ -101,15 +113,16 @@ if ! diff -q "${CANON_SNAPSHOT}" "${CANON_FRESH}" >/dev/null 2>&1; then
     echo "" >&2
     echo "--- diff (first 80 lines, excluding embed_version + clang_version) ---" >&2
     diff -u "${CANON_SNAPSHOT}" "${CANON_FRESH}" | head -n 80 >&2 || true
-    # Restore the checked-in copy so subsequent CI steps see a clean tree.
-    cp "${SNAPSHOT}" "${MANIFEST}"
+    # Restore the checked-in copies so subsequent CI steps see a clean tree.
+    restore_committed
     exit 1
 fi
 
-# Restore the checked-in copy: emit_embed_manifest.sh overwrote it
-# with a label-bumped (embed_version/clang_version) variant that is
-# API-equivalent but not byte-identical, and downstream CI steps
-# (verify_embed_payload.sh) snapshot the committed copy themselves.
-cp "${SNAPSHOT}" "${MANIFEST}"
+# Restore the checked-in copies: emit_embed_manifest.sh overwrote the
+# manifest with a label-bumped (embed_version/clang_version) variant that is
+# API-equivalent but not byte-identical, and its stamp with the working
+# tree's; downstream CI steps (verify_embed_payload.sh) snapshot the
+# committed copy themselves.
+restore_committed
 
 echo "OK: embed/MANIFEST.json is up to date."

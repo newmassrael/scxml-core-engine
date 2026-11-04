@@ -114,8 +114,12 @@ fi
 #      (committer's machine: yes; ubuntu-latest CI: no), masking the
 #      defect locally and surfacing it only at PR-merge time.
 # Cheap directory probe, runs once before parallel emit kicks off.
-for dep_dir in "${SCE_ROOT}/third_party/quickjs" \
-               "${SCE_ROOT}/third_party/cpp-httplib"; do
+#
+# The roots are the ones scripts/embed_manifest.py names, the same list
+# embed/MANIFEST.inputs records the pinned commits of, so what clang reads
+# and what the stamp says it read cannot come apart.
+mapfile -t INCLUDE_ROOTS < <(python3 "${SCRIPT_DIR}/embed_manifest.py" include-roots)
+for dep_dir in "${INCLUDE_ROOTS[@]}"; do
     if [[ ! -d "${dep_dir}" ]]; then
         echo "ERROR: required third_party include root missing: ${dep_dir}" >&2
         echo "       The manifest emitter -I's into sce/third_party/ for" >&2
@@ -151,8 +155,14 @@ process_one() {
     local clang_bin="$3"
     local filter="$4"
     local work_dir="$5"
-    local sce_root="$6"
+    local include_roots="$6"
     local header="$7"
+    local root_flags=()
+    local root
+    IFS=':' read -r -a roots <<< "${include_roots}"
+    for root in "${roots[@]}"; do
+        root_flags+=(-I "${root}")
+    done
 
     local rel="${header#${include_dir}/}"
     local key="${rel//\//__}"
@@ -160,7 +170,8 @@ process_one() {
     local clang_stderr
     clang_stderr="$(mktemp)"
     set +e
-    # -I "${sce_root}/third_party/quickjs": embed/include/scripting/JSEngine.h
+    # The source-tree include roots (root_flags, from embed_manifest.py):
+    # -I third_party/quickjs: embed/include/scripting/JSEngine.h
     # transitively #include "quickjs.h" but the embed package does not vendor
     # QuickJS (it's a consumer-provided scripting tier dep, see
     # package_embed.sh §3 comment). Without this -I the standalone parse of
@@ -171,14 +182,15 @@ process_one() {
     # committer's. The manifest emitter is a source-repo tool (lives in
     # scripts/ and reads SCE_ROOT), so reaching into sce/third_party/ here
     # is a deliberate coupling, not a layering break.
-    # sce_root is passed in as a positional parameter rather than read from
-    # the parent shell's SCE_ROOT — xargs spawns a fresh `bash -c` for each
-    # worker, and that subshell does not inherit unexported variables, so an
-    # ambient ${SCE_ROOT} would expand to empty and the -I would become
-    # `-I /third_party/quickjs`. Locally that silently fell through to the
-    # system include path (when clang already had quickjs/httplib resolved);
-    # on CI it surfaced as "fatal error: 'quickjs.h' file not found".
-    # -I "${sce_root}/third_party/cpp-httplib": embed/include/events/
+    # The roots are passed in as a positional parameter (colon-joined
+    # absolute paths) rather than read from the parent shell — xargs spawns a
+    # fresh `bash -c` for each worker, and that subshell does not inherit
+    # unexported variables, so an ambient ${SCE_ROOT} would expand to empty
+    # and the -I would become `-I /third_party/quickjs`. Locally that silently
+    # fell through to the system include path (when clang already had
+    # quickjs/httplib resolved); on CI it surfaced as "fatal error:
+    # 'quickjs.h' file not found".
+    # -I third_party/cpp-httplib: embed/include/events/
     # HttpResponseUtils.h transitively `#include <httplib.h>`. Like
     # quickjs (see the comment above), httplib is a consumer-provided
     # HTTP client tier — embed does not vendor it. The manifest emitter
@@ -203,8 +215,7 @@ process_one() {
         -I "${include_dir}" \
         -I "${embed_dir}/third_party/nlohmann_json/include" \
         -I "${embed_dir}/third_party/pugixml/src" \
-        -I "${sce_root}/third_party/quickjs" \
-        -I "${sce_root}/third_party/cpp-httplib" \
+        "${root_flags[@]}" \
         "${header}" 2>"${clang_stderr}" \
         | python3 "${filter}" "${include_dir}" > "${out_lines}"
     local pipe_status=("${PIPESTATUS[@]}")
@@ -276,7 +287,8 @@ export -f process_one
 printf '%s\0' "${HEADERS[@]}" \
     | xargs -0 -n1 -P "${JOBS}" \
         bash -c 'process_one "$@"' _ \
-            "${INCLUDE_DIR}" "${EMBED_DIR}" "${CLANG}" "${FILTER}" "${TMP_WORK_DIR}" "${SCE_ROOT}"
+            "${INCLUDE_DIR}" "${EMBED_DIR}" "${CLANG}" "${FILTER}" "${TMP_WORK_DIR}" \
+            "$(IFS=':'; echo "${INCLUDE_ROOTS[*]}")"
 
 # Merge per-worker outputs in HEADERS order. The python merger below dedups
 # and sorts anyway, so order is not load-bearing — but preserving it keeps
@@ -354,3 +366,10 @@ with open(manifest_path, "w", encoding="utf-8") as fh:
 print(f"Wrote {manifest_path} ({len(symbols)} symbols, "
       "all headers self-contained)")
 PY
+
+# The inputs this manifest was emitted from, beside it: what a commit is
+# checked against (scripts/embed_manifest.py, scripts/gates/
+# embed-manifest-stamp.sh). They are the source tree's, read here at the
+# moment of the emit.
+python3 "${SCRIPT_DIR}/embed_manifest.py" stamp > "${EMBED_DIR}/MANIFEST.inputs"
+echo "Wrote ${EMBED_DIR}/MANIFEST.inputs"

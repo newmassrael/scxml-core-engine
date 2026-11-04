@@ -22,6 +22,9 @@
 #                                              `ledger-citations` gate, scoped
 #                                              to the staged content (see
 #                                              below)
+#   4. embed manifest stamp                  — the staged inputs of
+#                                              embed/MANIFEST.json against
+#                                              its stamp (see below)
 #
 # Why this stage exists (2026-06-03, rescoped 2026-08-10):
 # commit_audit.sh started as a Claude Code *PreToolUse* hook, which the
@@ -95,7 +98,7 @@ fail_step() { printf '\nERROR pre-commit: %s FAILED — commit aborted.\n  Run `
 # past the hook because no previous stage exercised rustfmt; running
 # at commit time means fmt-only fix-up commits never land in local
 # history.
-log_step "Stage 0/3 — cargo fmt --all -- --check (mirrors CI fmt gate)"
+log_step "Stage 0/4 — cargo fmt --all -- --check (mirrors CI fmt gate)"
 cargo fmt --all -- --check \
     || fail_step "Stage 0 (cargo fmt --all --check)"
 
@@ -107,7 +110,7 @@ cargo fmt --all -- --check \
 # single source of truth). Skipped with a diagnostic when clang-format
 # is not installed; the CI gate stays the authoritative enforcement
 # point, matching the rustfmt doctrine above.
-log_step "Stage 1/3 — clang-format --dry-run on staged C/C++ files"
+log_step "Stage 1/4 — clang-format --dry-run on staged C/C++ files"
 mapfile -t staged_cxx < <(git diff --cached --name-only --diff-filter=ACMR \
     -- '*.c' '*.cc' '*.cpp' '*.h' '*.hpp')
 if [[ ${#staged_cxx[@]} -eq 0 ]]; then
@@ -128,7 +131,7 @@ fi
 # duplication. The synthesized payload carries a bare `git commit`
 # command (no -m), so message-based checks self-skip while the
 # diff/state gates run against the real staged index.
-log_step "Stage 2/3 — staged-diff gates (.claude/hooks/commit_audit.sh)"
+log_step "Stage 2/4 — staged-diff gates (.claude/hooks/commit_audit.sh)"
 AUDIT_HOOK="$REPO_ROOT/.claude/hooks/commit_audit.sh"
 if [[ -x "$AUDIT_HOOK" ]]; then
     AUDIT_PAYLOAD="$(REPO_ROOT="$REPO_ROOT" python3 -c \
@@ -163,7 +166,7 @@ fi
 #
 # The gate script owns the scope, so commit time and push time cannot
 # come to disagree about which trees are covered.
-log_step "Stage 3/3 — staged citation existence and form (scripts/gates/ledger-citations.sh --staged)"
+log_step "Stage 3/4 — staged citation existence and form (scripts/gates/ledger-citations.sh --staged)"
 CITE_GATE="$REPO_ROOT/scripts/gates/ledger-citations.sh"
 if [[ -x "$CITE_GATE" ]]; then
     if ! "$CITE_GATE" --staged; then
@@ -172,6 +175,31 @@ if [[ -x "$CITE_GATE" ]]; then
     fi
 else
     printf 'pre-commit: citation gate not found at %s — stage skipped.\n' "$CITE_GATE" >&2
+fi
+
+# ── Stage 4: embed manifest stamp ─────────────────────────────────
+# embed/MANIFEST.json is generated from the public headers, and nothing at
+# the commit used to ask whether a header edit had moved it: the check was
+# the CI lane `embed-vendor`, 311s and CI-only, so the drift was found after
+# the push and repaired by a later commit (five of eight manifest commits in
+# October and November 2026). Its stamp, embed/MANIFEST.inputs, records the
+# git object id of every input; this compares the index with it, in well
+# under a second, so the commit that moves an input carries the regenerated
+# manifest or is refused. `scripts/gates/embed-manifest-stamp.sh` runs the
+# same comparison over HEAD at the push and in CI.
+#
+# The hooks are the main checkout's and every worktree shares them, so a tree
+# that predates the stamp has no scripts/embed_manifest.py; the stage is
+# skipped there, as Stage 3 is without its gate.
+log_step "Stage 4/4 — embed manifest stamp (scripts/embed_manifest.py check --staged)"
+STAMP_TOOL="$REPO_ROOT/scripts/embed_manifest.py"
+if [[ -f "$STAMP_TOOL" ]]; then
+    if ! python3 "$STAMP_TOOL" check --staged; then
+        printf '\nERROR pre-commit: Stage 4 (embed manifest stamp) FAILED — commit aborted.\n  Regenerate with `bx --action regen` and stage embed/MANIFEST.json and embed/MANIFEST.inputs.\n  Bypass with SKIP_PRECOMMIT=1 for genuine emergencies.\n' >&2
+        exit 1
+    fi
+else
+    printf 'pre-commit: %s not found (a tree before the stamp) — stage skipped.\n' "$STAMP_TOOL" >&2
 fi
 
 printf '\npre-commit: all gates passed — commit allowed.\n' >&2

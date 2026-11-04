@@ -20,13 +20,38 @@ scripts/package_embed.sh                 (regenerates embed/)
               │
               ├── clang++-19 -Xclang -ast-dump=json … per header
               ├── scripts/_embed_manifest_filter.py   (JSON → per-symbol lines)
-              └── write embed/MANIFEST.json          (sorted, deterministic)
+              ├── write embed/MANIFEST.json          (sorted, deterministic)
+              └── write embed/MANIFEST.inputs        (what it was emitted from)
 ```
 
-The manifest lives inside the otherwise-gitignored `embed/` tree and is
-un-ignored via a `!embed/MANIFEST.json` entry in `.gitignore`, so that
-consumers receive it with the vendored copy and so CI can drift-guard it
-against the checked-in version.
+`scripts/embed_manifest.py` is the one place that says what the manifest is
+made of: the headers `package_embed.sh` copies (`sce/include/*.h`, each
+directory `SCE_BASE_INCLUDE_DIRS` names in `sce/sce_base_sources.cmake`, and
+the Forge C++ runtime's headers), the third-party include roots the emitter
+adds, and the tools. `package_embed.sh` reads `SCE_BASE_INCLUDE_DIRS` through
+it and the emitter its include roots, so the files copied, the files parsed
+and the files the stamp records are one list.
+
+The manifest and its stamp live inside the otherwise-gitignored `embed/` tree
+and are un-ignored by `.gitignore`, so that consumers receive the manifest with
+the vendored copy and so CI can drift-guard both against the checked-in
+versions.
+
+## Regenerating
+
+Both files are committed generated output, regenerated with every other
+committed tree:
+
+```bash
+bx --action regen        # scripts/regen_all_committed_trees.sh, on a build machine
+git add embed/MANIFEST.json embed/MANIFEST.inputs
+```
+
+The stage packages into a scratch directory and emits there. The label fields
+(`embed_version`, `clang_version`) change with every emit, so where the rest of
+the manifest is unchanged the committed bytes are kept; the stamp holds no
+label and is taken as emitted. The emitter needs `clang++-19`, which every
+build machine has.
 
 ## Schema
 
@@ -116,11 +141,27 @@ the consumer. Humans read the diff and decide.
 
 ## SCE-side drift guard
 
-`scripts/verify_embed_manifest.sh` re-emits the manifest to a temp file
-and byte-compares against `embed/MANIFEST.json`. Any mismatch exits
-non-zero with the diff. Intended for CI on changes touching
-`sce/include/` (the canonical source) or any file that feeds into
-`scripts/package_embed.sh`.
+Two questions, asked at different costs:
+
+- **Was the manifest emitted from the inputs it is committed with?**
+  `embed/MANIFEST.inputs` lists the git object id and path of each input, a
+  submodule as the commit it pins. `scripts/embed_manifest.py check` compares
+  a snapshot's inputs with the stamp in it, with no clang and in well under a
+  second, and names each input that differs. The pre-commit hook asks it of
+  the index (`check --staged`), so the commit that edits a public header
+  carries the regenerated manifest or is refused; the gate
+  `embed-manifest-stamp` asks it of HEAD at the push and in CI, the backstop
+  for a commit made with the hook skipped. Until this check the drift was
+  found after the push, and five of eight manifest commits in October and
+  November 2026 were repairs made after the fact.
+- **Is the manifest's content right?** `scripts/verify_embed_manifest.sh`
+  packages, re-emits and compares against `embed/MANIFEST.json`, label fields
+  aside; any mismatch exits non-zero with the diff. It runs in the CI lane
+  `embed-vendor`, and `regen-reproduces` asks the same of the regeneration.
+
+The stamp answers the first from git alone, so a header edit, even to a
+comment, asks for a regeneration; a regeneration that changes nothing but the
+stamp keeps the manifest's bytes.
 
 ## Limitations
 

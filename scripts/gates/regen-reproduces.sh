@@ -45,6 +45,23 @@ sce_gate_on_exit "git worktree remove --force '$WT' 2>/dev/null || rm -rf '$WT'"
 # content. An uncommitted edit is the developer's business, not this gate's.
 git worktree add --detach --quiet "$WT" HEAD \
     || sce_gate_fail "could not create a worktree of HEAD"
+
+# The submodules, at the commits HEAD pins, from this checkout's own copies:
+# a linked worktree starts with each one an empty directory, and the procedure
+# emits the embed manifest, which parses the public headers with QuickJS,
+# cpp-httplib and pugixml on the include path. The URL is overridden for the
+# one command, never written: the worktree shares this checkout's config, and
+# a written URL would repoint the checkout's own submodules. Cloning from the
+# local copy needs no network and is what makes a run here mean what CI's does.
+while read -r key path; do
+    name="${key#submodule.}"
+    name="${name%.path}"
+    [[ -e "$SCE_REPO_ROOT/$path/.git" ]] \
+        || sce_gate_fail "submodule $path is not checked out here (git submodule update --init)"
+    git -C "$WT" -c protocol.file.allow=always -c "submodule.${name}.url=$SCE_REPO_ROOT/$path" \
+        submodule update --init --quiet -- "$path" \
+        || sce_gate_fail "could not check out submodule $path in the worktree"
+done < <(git config -f .gitmodules --get-regexp '^submodule\..*\.path$')
 sce_gate_step "regenerating every committed tree in a worktree of HEAD"
 
 mkdir -p "$WT/target/debug"

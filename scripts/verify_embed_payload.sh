@@ -73,15 +73,11 @@ fi
 # describes is still accurate. Strict-mode (forcing a regen commit
 # per src commit) would generate ~2× commit churn for zero
 # correctness gain — see the "stale embed window" discussion in the
-# tc8-harness feedback thread.
+# tc8-harness feedback thread. The label fields are named in one place,
+# scripts/embed_manifest.py, which verify_embed_manifest.sh and the
+# regeneration read too.
 canon_manifest() {
-    python3 -c '
-import json, sys
-d = json.load(open(sys.argv[1]))
-d.pop("embed_version", None)
-d.pop("clang_version", None)
-json.dump(d, sys.stdout, sort_keys=True, indent=2)
-' "$1"
+    python3 "${SCRIPT_DIR}/embed_manifest.py" canon "$1"
 }
 
 CANON_COMMITTED="$(mktemp --suffix=.committed.json)"

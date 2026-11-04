@@ -317,6 +317,30 @@ cargo fmt -p sce-rust-tests
 stage "Regenerating the forge conformance goldens"
 UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance --quiet
 
+# The embed manifest is a committed generated file too: clang's reading of the
+# public headers package_embed.sh ships. It was outside this script, so a
+# header edit left it stale until the CI lane `embed-vendor` noticed after the
+# push, and five of eight manifest commits in October and November 2026 were
+# repairs made after the fact. Its stamp, embed/MANIFEST.inputs, records what
+# it was emitted from, and the pre-commit and push gates refuse a commit whose
+# inputs moved without it (scripts/embed_manifest.py).
+#
+# Packaged into a scratch directory, not over embed/: package_embed.sh starts
+# by removing its output. The manifest's label fields (the HEAD of the emit and
+# the compiler) change with every run, so where the rest of it is unchanged the
+# committed bytes are kept, as every other stage keeps a file it writes with
+# the same content; the stamp holds no label and is taken as emitted.
+stage "Emitting the embed manifest and its stamp (clang-19)"
+EMBED_SCRATCH="$(mktemp -d --suffix=.embed)"
+"$REPO_ROOT/scripts/package_embed.sh" -o "$EMBED_SCRATCH" --skip-manifest >/dev/null
+"$REPO_ROOT/scripts/emit_embed_manifest.sh" -d "$EMBED_SCRATCH"
+if [[ "$(python3 scripts/embed_manifest.py canon "$EMBED_SCRATCH/MANIFEST.json")" \
+      != "$(python3 scripts/embed_manifest.py canon embed/MANIFEST.json)" ]]; then
+    cp "$EMBED_SCRATCH/MANIFEST.json" embed/MANIFEST.json
+fi
+cp "$EMBED_SCRATCH/MANIFEST.inputs" embed/MANIFEST.inputs
+rm -rf "$EMBED_SCRATCH"
+
 # Last, after the format pass: a file is judged on the bytes it is committed
 # with, and rustfmt is part of those.
 stage "Settling every tree: what no stage wrote again is removed"

@@ -251,6 +251,9 @@ COST_MEASURED: dict[str, str] = {
     # header: warm is the basis, cold is paid once and out of scope.
     "codegen-build": "2026-09-02",
     "embed-manifest-failfast": "2026-09-02",
+    # 0.04s on 2026-11-04 (`check --rev HEAD` over 196 inputs): two git
+    # listings and a comparison, no build and no clang.
+    "embed-manifest-stamp": "2026-11-04",
     # `forge-go` left `PACE_NORMALISED` on 2026-09-02, the second entry to go.
     # Seven readings: five `--measure` runs at 27 17 16 15 10 and two real
     # pushes at 10 and 12. Drop the first — caches were still filling — and
@@ -520,6 +523,21 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "cost_s": 0,
         "summary": "emit_embed_manifest fail-fast case",
+    },
+    # Whether embed/MANIFEST.json was emitted from the inputs it is committed
+    # with, against its stamp embed/MANIFEST.inputs (scripts/embed_manifest.py).
+    # `embed-vendor` checks the content and is CI-only at 311s, so until this
+    # gate a header edit reached the push and the CI run before anything said
+    # the manifest had not moved with it; five of eight manifest commits in
+    # October and November 2026 were repairs made after the fact. This one is
+    # a list of git object ids against another, under a second, so it runs at
+    # the push. The pre-commit hook runs the same comparison over the index;
+    # this is its backstop for a commit made with the hook skipped.
+    "embed-manifest-stamp": {
+        "workflows": ["embed-vendor-smoke.yml"],
+        "runner_workflow": True,
+        "cost_s": 0,
+        "summary": "embed manifest emitted from the inputs it is committed with",
     },
     # `roadmap_marker_gate` reads every tracked file and
     # `workflow_trigger_coverage` reads every workflow, so tree-hygiene.yml
