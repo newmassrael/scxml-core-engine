@@ -157,6 +157,15 @@ impl Language {
         matches!(self, Language::C11)
     }
 
+    /// Whether this backend states what each machine it generates needs
+    /// linked beside it ([`RuntimeRequirement`]), so that a machine stating
+    /// nothing needs nothing beyond the header-only runtime. C11 alone: every
+    /// other backend links its engine through libraries a build names for
+    /// every machine, and its empty statement says nothing.
+    pub fn states_runtime_requirements(self) -> bool {
+        matches!(self, Language::C11)
+    }
+
     /// Whether this backend keeps a product line's variability in one output
     /// for every build (docs/adr/0057 §9 and §10), so that a gated document is
     /// generated without a selection. Every other backend generates one
@@ -801,15 +810,17 @@ pub struct GeneratedOutput {
 /// exactly when the machine's set names the requirement
 /// ([`c11_runtime_requirements`]), so the set is the reason for each include
 /// rather than a second account of it. A build reads the set (`sce-codegen
-/// --plan --plan-requires`) and links each requirement with the library of its runtime that
+/// --plan --plan-requires`, or the `runtime_requires` field of the generate
+/// manifest) and links each requirement with the library of its runtime that
 /// implements it (`backends/c/runtime/CMakeLists.txt`,
 /// `SCE_C_RUNTIME_REQUIREMENTS`, `sce_c_link_runtime`). A
 /// list of the machines that need a library, kept in the build, is a second
 /// copy of this decision: the C11 conformance suite kept one as flags on 202
 /// hand-written registrations until 2026-11.
 ///
-/// Stated by the C11 backend. Every other backend links its engine through
-/// libraries a build names for every machine, and states none.
+/// Stated by the C11 backend ([`Language::states_runtime_requirements`]).
+/// Every other backend links its engine through libraries a build names for
+/// every machine, and states none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RuntimeRequirement {
     /// Lua 5.4 (`lua.h`, `lualib.h`, `lauxlib.h`): the machine embeds the

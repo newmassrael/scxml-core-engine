@@ -21,9 +21,13 @@
 //!   DOM binding for a script, the client for a BasicHTTP send, the clock
 //!   for a delayed one, and nothing for a machine that does none of these;
 //! * nothing is stated without the flag, the flag is refused without
-//!   `--plan`, and a backend that states nothing (C++) states nothing.
+//!   `--plan`, and a backend that states nothing (C++) states nothing;
+//! * the run that writes the machines publishes the same set in its
+//!   manifest's `runtime_requires`, `[]` included, and a backend that states
+//!   nothing publishes no field.
 //!
-//! The documents are written here, so the test reads no tracked file.
+//! The documents are written here; the one tracked file the test reads is
+//! the manifest's schema.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -341,6 +345,78 @@ fn a_backend_that_states_nothing_states_nothing() {
         stated.is_empty(),
         "the C++ backend links its engine for every machine and states nothing, yet the plan \
          states {stated:?}"
+    );
+}
+
+/// The manifest of the run that writes `document`, validated against the
+/// checked-in schema before it is returned.
+fn generate_manifest(document: &str, language: &str) -> serde_json::Value {
+    let (dir, root) = authored();
+    let out = dir.path().join("out");
+    let lines = succeeded(
+        &run(&[], &root, document, language, &out),
+        "the run that writes the machine",
+    );
+    let line = lines.last().expect("the run writes its manifest");
+    let manifest: serde_json::Value =
+        serde_json::from_str(line).expect("the manifest is one JSON line");
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../schemas/sce-manifest.v1.schema.json"),
+        )
+        .expect("read the manifest schema"),
+    )
+    .expect("the manifest schema is JSON");
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema)
+        .expect("the manifest schema compiles");
+    let violations: Vec<String> = match validator.validate(&manifest) {
+        Ok(()) => Vec::new(),
+        Err(errors) => errors.map(|e| e.to_string()).collect(),
+    };
+    assert!(violations.is_empty(), "{violations:?}\n{manifest}");
+    manifest
+}
+
+/// The run that writes the machine publishes in its manifest the set the plan
+/// states, so a build that generates first and links after reads the same
+/// answer as one that asks first; the empty set is published as `[]`, and a
+/// backend that states nothing publishes no field.
+#[test]
+fn the_manifest_publishes_what_the_plan_states() {
+    for (document, expected) in [("timed.scxml", vec!["clock"]), ("plain.scxml", Vec::new())] {
+        let manifest = generate_manifest(document, "c11");
+        assert_eq!(
+            manifest["runtime_requires"],
+            serde_json::json!(expected),
+            "{document}: {manifest}"
+        );
+    }
+
+    let scripted = generate_manifest("scripted.scxml", "c11");
+    let (dir, root) = authored();
+    let planned = succeeded(
+        &run(
+            &["--plan", "--plan-requires"],
+            &root,
+            "scripted.scxml",
+            "c11",
+            &dir.path().join("out"),
+        ),
+        "the plan of the scripted machine",
+    );
+    let (stated, _) = split(&planned);
+    assert_eq!(
+        scripted["runtime_requires"],
+        serde_json::json!(stated_for(&stated, "")),
+        "the manifest and the plan disagree about the scripted machine"
+    );
+
+    let cpp = generate_manifest("scripted.scxml", "cpp");
+    assert!(
+        cpp.get("runtime_requires").is_none(),
+        "the C++ backend states nothing, yet its manifest says {cpp}"
     );
 }
 

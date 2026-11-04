@@ -452,6 +452,31 @@ pub struct Manifest<'a> {
     /// consumer reads `false` as an answer rather than as a field it
     /// has to guess the absence of.
     pub needs_event_scheduler: bool,
+    /// What the machines this run wrote need linked beside them that the
+    /// header-only contracts of their runtime do not provide, by the names of
+    /// [`crate::generator::RuntimeRequirement::wire_name`] (`lua`, `dom`,
+    /// `http`, `clock`), in that order: the set the backend decided while
+    /// rendering them, and the reason for each interface they include.
+    ///
+    /// The flags above do not answer it. `needs_script_engine` says a host
+    /// supplies an engine, not whether the machine also embeds the DOM
+    /// binding; nothing else says it posts over BasicHTTP; and
+    /// `needs_event_scheduler` says how the machine is driven, not that it
+    /// reads the link-time clock. A build outside this repository that links
+    /// a generated machine would otherwise have to guess what to link from
+    /// the document, which is the guess this set replaced in the conformance
+    /// suite (`--plan --plan-requires` states the same set to a build that
+    /// asks before generating).
+    ///
+    /// Present exactly when a `generate` or `orchestrate` run has one target
+    /// language whose backend states its machines' requirements
+    /// ([`crate::generator::Language::states_runtime_requirements`]), and
+    /// then present when empty: `[]` is the answer that the machines link
+    /// nothing but the header-only runtime. Absent for any other backend,
+    /// whose empty statement would read as that answer and be false, and on
+    /// `check`, which writes no machine and may span backends.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_requires: Option<Vec<&'static str>>,
     /// Whether any `<send>` / `<invoke>` in this run names an Event I/O
     /// Processor or invoker type the build has no lowering path for.
     ///
@@ -953,6 +978,7 @@ mod tests {
                 script_engine_causes: &[],
                 script_engine_language: None,
                 needs_event_scheduler: false,
+                runtime_requires: None,
                 needs_host_processor: false,
                 needs_mesh_router: None,
                 child_mesh_routers: &[],
@@ -1019,6 +1045,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: None,
             needs_event_scheduler: false,
+            runtime_requires: None,
             needs_host_processor: false,
             needs_mesh_router: None,
             child_mesh_routers: &[],
@@ -1058,6 +1085,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: None,
             needs_event_scheduler: false,
+            runtime_requires: None,
             needs_host_processor: false,
             needs_mesh_router: None,
             child_mesh_routers: &[],
@@ -1103,6 +1131,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: None,
             needs_event_scheduler: false,
+            runtime_requires: None,
             needs_host_processor: false,
             needs_mesh_router: None,
             child_mesh_routers: &[],
@@ -1169,6 +1198,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: None,
             needs_event_scheduler: false,
+            runtime_requires: None,
             needs_host_processor: true,
             needs_mesh_router: None,
             child_mesh_routers: &[],
@@ -1220,6 +1250,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: Some(SCRIPT_ENGINE_LANGUAGE_LUA),
             needs_event_scheduler: false,
+            runtime_requires: None,
             needs_host_processor: false,
             needs_mesh_router: None,
             child_mesh_routers: &[],
@@ -1279,6 +1310,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: None,
             needs_event_scheduler: false,
+            runtime_requires: None,
             needs_host_processor: false,
             needs_mesh_router: None,
             child_mesh_routers: &[],
@@ -1322,6 +1354,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: None,
             needs_event_scheduler: false,
+            runtime_requires: None,
             needs_host_processor: false,
             needs_mesh_router: None,
             child_mesh_routers: &[],
@@ -1368,6 +1401,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: None,
             needs_event_scheduler: false,
+            runtime_requires: None,
             // A declared type is served, so it is NOT a cause — the two
             // fields are the two halves of one answer and a record that
             // showed a type in both would be reporting a refusal the
@@ -1424,6 +1458,7 @@ mod tests {
             script_engine_causes: &[],
             script_engine_language: None,
             needs_event_scheduler: false,
+            runtime_requires: None,
             needs_host_processor: false,
             needs_mesh_router: None,
             child_mesh_routers: &[],
@@ -1491,5 +1526,107 @@ mod tests {
             r#"{"v":1,"kind":"check","generator":"deadbeefcafe","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false,"languages":[{"language":"haskell","status":"ok"}]}"#,
             "language outside the backend set",
         );
+    }
+
+    /// A generate manifest stating `runtime_requires`, as a JSON value.
+    fn stating_requirements(requires: Option<Vec<&'static str>>) -> serde_json::Value {
+        let m = Manifest {
+            v: MANIFEST_SCHEMA_VERSION,
+            kind: ManifestKind::Generate.as_str(),
+            generator: "deadbeefcafe",
+            document_kind: None,
+            artifacts: vec![ArtifactEntry {
+                path: "out/timed_sm.c".to_string(),
+            }],
+            needs_script_engine: false,
+            script_engine_causes: &[],
+            script_engine_language: None,
+            needs_event_scheduler: true,
+            runtime_requires: requires,
+            needs_host_processor: false,
+            needs_mesh_router: Some(false),
+            child_mesh_routers: &[],
+            needs_parent: None,
+            parent_sends: &[],
+            computed_routes: &[],
+            surface: None,
+            unresolved: &[],
+            open: Vec::new(),
+            profile: None,
+            host_processor_causes: &[],
+            host_duties: &[],
+            host_processor_types: &[],
+            host_invoker_types: &[],
+            unreadable_variables: &[],
+            holder: None,
+            rejected: None,
+            rejected_documents: &[],
+            deploy: None,
+            formatter: None,
+            languages: None,
+        };
+        serde_json::from_str(&m.to_line()).expect("manifest line is JSON")
+    }
+
+    /// Every requirement the generator can state is one the schema admits, in
+    /// the generator's spelling, and the schema admits no other.
+    #[test]
+    fn json_schema_runtime_requires_enum_matches_the_generator() {
+        use crate::generator::RuntimeRequirement;
+        let schema = schema();
+        let declared: Vec<&str> = schema["properties"]["runtime_requires"]["items"]["enum"]
+            .as_array()
+            .expect("runtime_requires.items.enum is an array")
+            .iter()
+            .map(|v| v.as_str().expect("a requirement is a string"))
+            .collect();
+        assert_eq!(
+            declared,
+            RuntimeRequirement::ALL
+                .map(RuntimeRequirement::wire_name)
+                .to_vec(),
+            "schemas/sce-manifest.v1.schema.json runtime_requires.items.enum drifted from \
+             RuntimeRequirement::ALL",
+        );
+    }
+
+    /// A backend that states its machines' requirements publishes them, the
+    /// empty set as `[]`; one that states none publishes no field, so its
+    /// silence is not read as "links nothing".
+    #[test]
+    fn a_manifest_says_what_its_machines_link_when_its_backend_states_it() {
+        use crate::generator::RuntimeRequirement;
+        let every = stating_requirements(Some(
+            RuntimeRequirement::ALL
+                .map(RuntimeRequirement::wire_name)
+                .to_vec(),
+        ));
+        assert_eq!(
+            every["runtime_requires"],
+            serde_json::json!(["lua", "dom", "http", "clock"])
+        );
+        assert_valid(&every.to_string());
+
+        let nothing = stating_requirements(Some(Vec::new()));
+        assert_eq!(nothing["runtime_requires"], serde_json::json!([]));
+        assert_valid(&nothing.to_string());
+
+        let unstated = stating_requirements(None);
+        assert!(
+            unstated.get("runtime_requires").is_none(),
+            "a backend that states nothing published {unstated}"
+        );
+        assert_valid(&unstated.to_string());
+    }
+
+    #[test]
+    fn schema_rejects_a_requirement_no_runtime_links_or_one_stated_twice() {
+        let mut unknown = stating_requirements(Some(vec!["lua"]));
+        unknown["runtime_requires"] = serde_json::json!(["libc"]);
+        assert_invalid(&unknown.to_string(), "a requirement outside the vocabulary");
+
+        let mut twice = stating_requirements(Some(vec!["lua"]));
+        twice["runtime_requires"] = serde_json::json!(["clock", "clock"]);
+        assert_invalid(&twice.to_string(), "a requirement stated twice");
     }
 }

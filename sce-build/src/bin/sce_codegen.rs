@@ -1493,6 +1493,18 @@ fn build_manifest<'a>(
             })
             .flatten(),
         needs_event_scheduler: report.needs_event_scheduler.unwrap_or(false),
+        // The TARGET's answer too: only a backend that states what its
+        // machines link has an empty set that means "nothing", so any other
+        // backend, and a run spanning several, reports none.
+        runtime_requires: target
+            .filter(|language| language.states_runtime_requirements())
+            .map(|_| {
+                report
+                    .runtime_requires
+                    .iter()
+                    .map(|requirement| requirement.wire_name())
+                    .collect()
+            }),
         needs_host_processor: report.needs_host_processor.unwrap_or(false),
         // The TARGET's answer, like the engine language above: whether the
         // host must register a Mesh router depends on the backend (C++
@@ -4764,6 +4776,11 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     // is written here and listed in the manifest. A file two documents of
     // the set would both write was refused by the compile.
     for (basename, generated) in &outputs {
+        // What the set's machines link is the union of what each states, as
+        // `generate` unions it over a document and its children.
+        report
+            .runtime_requires
+            .extend(generated.requires.iter().copied());
         for (file_name, code) in &maybe_format_files(generated.files.clone(), &cpp_formatter) {
             let path = out_root.join(file_name);
             write_drift_aware(&path, code, &drift_ctx);
