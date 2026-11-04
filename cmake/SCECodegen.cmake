@@ -24,23 +24,35 @@
 # consumer's own standard may be C++17; a tier never raises it.
 # tests/install_tree_consumer builds a generated machine from an installed SCE
 # this way.
+#
+# Every function below declares its generation through
+# `sce_codegen_generation` (SCECodegenPlan.cmake, installed beside this file),
+# the one declaration the SCE tree's own builds use: the files a generation
+# writes are the generator's answer when the build is configured
+# (`sce-codegen --plan generate`), not names written here, so a document that
+# writes more than its machine (a child an inline `<invoke>` synthesizes, the
+# header of a declared transition function, a hybrid `<invoke>`'s stub and the
+# child generated from it) builds as it does in the tree. Each file has one
+# command as its producer, which asks the generator for a depfile, depends on
+# the document and the generator, and is declared when the directory it is
+# called in ends, after the plans of every generation of that directory were
+# asked in one batch. A target is handed the files as generator expressions,
+# which is why the functions add them to the target rather than return their
+# names. What the machines need linked is recorded against each file
+# (`SCE_GENERATED_REQUIRES:<path>`, `<PREFIX>_REQUIRES` in SCECodegenPlan.cmake).
 
-# The functions below give their commands a DEPFILE. A consumer's own
+# The declaration gives each command a DEPFILE. A consumer's own
 # cmake_minimum_required can be lower than this repository's, so the floor is
 # enforced here, where a consumer meets it, and not left to surface as
 # "Option DEPFILE not supported by Unix Makefiles" from inside a function (see
-# the top CMakeLists.txt for the measurements behind 3.20).
+# the top CMakeLists.txt for the measurements behind 3.20). The policy the
+# depfile reaches Ninja under (CMP0116) is set where the declaration is
+# defined, in SCECodegenPlan.cmake.
 if(CMAKE_VERSION VERSION_LESS 3.20)
     message(FATAL_ERROR
         "SCE: sce_add_state_machine() needs CMake 3.20 or newer for "
         "add_custom_command(DEPFILE); this is CMake ${CMAKE_VERSION}")
 endif()
-
-# What Ninja does with a DEPFILE depends on this policy as it stood where the
-# function was DEFINED, not on the consumer's cmake_minimum_required. Unset, the
-# depfile reaches Ninja with absolute targets that never match the command's
-# relative outputs, and every build regenerates.
-cmake_policy(SET CMP0116 NEW)
 
 # Find sce-codegen binary. The search itself lives in SCEFindCodegen so
 # the forge conformance and round-trip harnesses — which need the
@@ -60,6 +72,8 @@ message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 #   System install: lib/cmake/SCE/ <-> ../../share/sce/codegen/templates
 #
 # Consumer-set SCE_TEMPLATE_DIR wins; auto-detection only runs when unset.
+# Detected before SCECodegenPlan.cmake is included below, which gives it to
+# every run of the generator, a plan and a generation alike.
 if(NOT SCE_TEMPLATE_DIR)
     if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../tools/codegen/templates/state_machine.jinja2")
         set(SCE_TEMPLATE_DIR "${CMAKE_CURRENT_LIST_DIR}/../tools/codegen/templates")
@@ -73,8 +87,64 @@ if(NOT SCE_TEMPLATE_DIR)
     endif()
 endif()
 
-# clang-format integration for generated C++ code
-include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
+# The one declaration of a generation (and, through it, the build's
+# formatting of generated C++, SCEClangFormat.cmake).
+include("${CMAKE_CURRENT_LIST_DIR}/SCECodegenPlan.cmake")
+
+# _sce_codegen_document(<VAR> <file> <caller>)
+#
+#   The document a public function is handed, as the generator reads it: the
+#   library name of a standard statechart (sce:std/shared/record_list.scxml)
+#   as written, since the generator resolves it from the library it embeds
+#   and the build depends on the generator; any other path made absolute and
+#   refused when there is no such file.
+function(_sce_codegen_document VAR FILE CALLER)
+    if("${FILE}" MATCHES "^sce:")
+        set(${VAR} "${FILE}" PARENT_SCOPE)
+        return()
+    endif()
+    get_filename_component(_ABSOLUTE "${FILE}" ABSOLUTE)
+    if(NOT EXISTS "${_ABSOLUTE}")
+        message(FATAL_ERROR "${CALLER}: SCXML file not found: ${_ABSOLUTE}")
+    endif()
+    set(${VAR} "${_ABSOLUTE}" PARENT_SCOPE)
+endfunction()
+
+# _sce_codegen_consumer_claim(<VAR> <output dir>)
+#
+#   The list the generations of a public function claim in: one per output
+#   directory, so a file two of them would write into it (a child two machines
+#   start, a machine added to two targets) has the first's command as its one
+#   producer, and the second declares none of its own.
+function(_sce_codegen_consumer_claim VAR OUTPUT_DIR)
+    get_filename_component(_DIR "${OUTPUT_DIR}" ABSOLUTE)
+    set(${VAR} "SCE_CODEGEN_DECLARED_OUTPUTS:${_DIR}" PARENT_SCOPE)
+endfunction()
+
+# _sce_codegen_add_generation(<target> <PREFIX> <language> <output dir> <name>)
+#
+#   Give <target> what the generation `sce_codegen_generation(<PREFIX> ...)`
+#   declared: a C++ or C11 target compiles its headers and C sources
+#   (`<PREFIX>_HEADERS`, `<PREFIX>_SOURCES`) and finds them on its include
+#   path. The code of another language (Kotlin, Rust, Go, Python) is compiled
+#   by a build of its own, so the target only waits for it: a custom target
+#   named `<target>_<name>_kt` for Kotlin, `<target>_<name>_<language>`
+#   otherwise, lists every file the generation writes (`<PREFIX>_FILES`).
+function(_sce_codegen_add_generation TARGET PREFIX LANGUAGE OUTPUT_DIR NAME)
+    if(LANGUAGE STREQUAL "cpp" OR LANGUAGE STREQUAL "c11" OR LANGUAGE STREQUAL "c")
+        target_sources(${TARGET} PRIVATE ${${PREFIX}_HEADERS} ${${PREFIX}_SOURCES})
+        target_include_directories(${TARGET} PRIVATE "${OUTPUT_DIR}")
+        return()
+    endif()
+    set(_SUFFIX "${LANGUAGE}")
+    if(LANGUAGE STREQUAL "kotlin")
+        set(_SUFFIX kt)
+    endif()
+    set(_WAITED_FOR "${TARGET}_${NAME}_${_SUFFIX}")
+    add_custom_target(${_WAITED_FOR})
+    target_sources(${_WAITED_FOR} PRIVATE ${${PREFIX}_FILES})
+    add_dependencies(${TARGET} ${_WAITED_FOR})
+endfunction()
 
 #[=============================================================================[
 sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir] [LANGUAGE lang] [CPP_NAMESPACE_PREFIX prefix] [AS_CHILD])
@@ -92,10 +162,12 @@ Arguments:
                 one — the parent refers to it as
                 `::SCE::Generated::<name>::<name><SelfType>` — so it is
                 generated this way and not as a machine of its own (optional,
-                cpp only)
+                cpp only). The parent's own generation already declares the
+                generation of every child it names (see below), so a target
+                that compiles the parent needs no call for its children.
   OUTPUT_DIR  - Output directory for generated files (optional, defaults to
                 ${CMAKE_CURRENT_BINARY_DIR}/generated)
-  LANGUAGE    - Target language: cpp (default), rust, kotlin, or go
+  LANGUAGE    - Target language: cpp (default), c11, rust, kotlin, go or python
   SCRIPT_ENGINE_LANGUAGE - Which language the generated machine hands its script
                 engine: `lua` (the build-time frontend lowers every expression)
                 or `ecmascript` (the author's text crosses to the engine, which
@@ -113,6 +185,19 @@ Arguments:
                 SCE::Generated::<machine>, so a separate catalog can reuse
                 in-tree machine names without an ODR clash (optional, cpp only;
                 ignored for other languages and when unset)
+  HOST_PROCESSOR / HOST_INVOKER - The Event I/O Processor types and the
+                `<invoke>` types the build's host serves (optional,
+                multi-valued; `--host-processor`, `--host-invoker`)
+
+What the target is given: for cpp and c11, every header (and C11 source) the
+generation writes, the machine's and those of every child generation its plan
+holds (a child an inline `<invoke>` synthesizes, a `src` or candidate child
+the machine starts as a class template over its type), and the output
+directory on its include path. For another language, whose code a build of
+its own compiles, the target waits for the generation: it depends on a custom
+target `<target>_<name>_kt` (Kotlin) or `<target>_<name>_<language>` that lists
+every file the generation writes. Machines added into one output directory
+share it: a file two of them would write is generated once.
 
 Example:
   add_executable(my_app main.cpp)
@@ -151,6 +236,11 @@ function(sce_add_state_machine)
             "entry, so an omitted SCRIPT_ENGINE_LANGUAGE argument would inherit "
             "it instead of leaving the backend's default. Rename the cache entry "
             "or the keyword.")
+    endif()
+
+    if(SCE_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "sce_add_state_machine: unexpected argument(s): ${SCE_UNPARSED_ARGUMENTS}")
     endif()
 
     # Validate required arguments
@@ -213,60 +303,28 @@ function(sce_add_state_machine)
         set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     endif()
 
-    # Get absolute path and extract name. A library name (sce:std/shared/record_list.scxml)
-    # is resolved by the generator, not the file system, as sce_add_algorithm's is: it is
-    # handed on as written, and the build depends on the generator that embeds it.
     get_filename_component(SCXML_NAME "${SCE_SCXML_FILE}" NAME_WE)
-    if(SCE_SCXML_FILE MATCHES "^sce:")
-        set(SCXML_ABS_PATH "${SCE_SCXML_FILE}")
-        set(_SCE_SCXML_DEPENDS "")
-    else()
-        get_filename_component(SCXML_ABS_PATH "${SCE_SCXML_FILE}" ABSOLUTE)
-        set(_SCE_SCXML_DEPENDS "${SCXML_ABS_PATH}")
-    endif()
+    _sce_codegen_document(_SCE_DOCUMENT "${SCE_SCXML_FILE}" sce_add_state_machine)
 
-    # Language-specific output file naming
-    if(SCE_LANGUAGE STREQUAL "kotlin")
-        set(GENERATED_OUTPUT "${SCE_OUTPUT_DIR}/${SCXML_NAME}Sm.kt")
-    else()
-        set(GENERATED_OUTPUT "${SCE_OUTPUT_DIR}/${SCXML_NAME}_sm.h")
-    endif()
-
-    # Verify SCXML file exists
-    if(_SCE_SCXML_DEPENDS AND NOT EXISTS "${SCXML_ABS_PATH}")
-        message(FATAL_ERROR "sce_add_state_machine: SCXML file not found: ${SCXML_ABS_PATH}")
-    endif()
-
-    # Create output directory
-    file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
-
-    # DEPFILE path for incremental build tracking (must be set before use in command)
-    set(_SCE_DEPFILE "${GENERATED_OUTPUT}.d")
-
-    # Build codegen command with optional template dir (installed package scenario)
-    set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
-        "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
-        -l "${SCE_LANGUAGE}"
-        --write-deps "${_SCE_DEPFILE}")
+    # The arguments that change what the run emits, each given only when
+    # asked, so a call that names none runs the generation it did before the
+    # argument existed.
+    set(_SCE_ARGS "")
     # Optional C++ namespace nesting: SCE::Generated::<prefix>::<machine>.
     # Lets a separate catalog reuse in-tree machine names without an ODR clash
     # when both link into one binary. cpp-only (mirrors sce-codegen's
-    # --cpp-namespace-prefix, which is meaningful only with -l cpp); skipped
-    # for other languages and when unset, leaving the command byte-identical.
+    # --cpp-namespace-prefix, which is meaningful only with -l cpp).
     if(SCE_CPP_NAMESPACE_PREFIX AND SCE_LANGUAGE STREQUAL "cpp")
-        list(APPEND _SCE_CODEGEN_CMD --cpp-namespace-prefix "${SCE_CPP_NAMESPACE_PREFIX}")
+        list(APPEND _SCE_ARGS --cpp-namespace-prefix "${SCE_CPP_NAMESPACE_PREFIX}")
     endif()
     # A machine another one invokes, as the parent names it (a class template
-    # over the parent's type). Appended only when asked, so a call that does
-    # not name it produces the same command it did before this argument existed.
+    # over the parent's type).
     if(SCE_AS_CHILD)
-        list(APPEND _SCE_CODEGEN_CMD --as-child)
+        list(APPEND _SCE_ARGS --as-child)
     endif()
-    # Which language the artifact hands its engine. Appended only when asked,
-    # so a call that does not name one produces the same command it did before
-    # this argument existed — the same rule sce-codegen's own flag follows.
+    # Which language the artifact hands its engine.
     if(SCE_SCRIPT_ENGINE_LANGUAGE)
-        list(APPEND _SCE_CODEGEN_CMD --script-engine "${SCE_SCRIPT_ENGINE_LANGUAGE}")
+        list(APPEND _SCE_ARGS --script-engine "${SCE_SCRIPT_ENGINE_LANGUAGE}")
     endif()
     # §scxml-6.2.5: the Event I/O Processor types this build's HOST serves.
     # Multi-valued because the identifier set is open and a host may serve
@@ -275,54 +333,43 @@ function(sce_add_state_machine)
     # declaring the type here still meets the refusal — which is the point:
     # the two halves have to agree, and only one of them is in the build.
     foreach(_sce_host_processor IN LISTS SCE_HOST_PROCESSOR)
-        list(APPEND _SCE_CODEGEN_CMD --host-processor "${_sce_host_processor}")
+        list(APPEND _SCE_ARGS --host-processor "${_sce_host_processor}")
     endforeach()
     # §scxml-6.4.1: the invoke half, declared separately for the reason the
     # flags are separate — delivering an event is not the same capability as
     # running a process with a lifetime, and one list would make declaring
     # either silently claim both.
     foreach(_sce_host_invoker IN LISTS SCE_HOST_INVOKER)
-        list(APPEND _SCE_CODEGEN_CMD --host-invoker "${_sce_host_invoker}")
+        list(APPEND _SCE_ARGS --host-invoker "${_sce_host_invoker}")
     endforeach()
-    # C++ is formatted by sce-codegen itself, with the pinned clang-format —
-    # the build only says whether, and in which style (SCEClangFormat.cmake).
-    if(SCE_LANGUAGE STREQUAL "cpp")
-        sce_codegen_format_args(_SCE_FORMAT_ARGS)
-        list(APPEND _SCE_CODEGEN_CMD ${_SCE_FORMAT_ARGS})
-    endif()
-    if(SCE_TEMPLATE_DIR)
-        set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
+
+    # The children a C++ or C11 machine starts are planned and declared with
+    # it: a target that compiles the machine compiles the headers the machine
+    # includes. The module names the machine of no other language, and their
+    # builds compile what the generation writes on their own.
+    set(_SCE_CHILDREN "")
+    if(SCE_LANGUAGE STREQUAL "cpp" OR SCE_LANGUAGE STREQUAL "c11")
+        set(_SCE_CHILDREN CHILD_GENERATIONS)
     endif()
 
-    # Add custom command to generate state machine code
-    # Uses DEPFILE for fine-grained template dependency tracking
-    add_custom_command(
-        OUTPUT "${GENERATED_OUTPUT}"
-        COMMAND ${_SCE_CODEGEN_CMD}
-        DEPENDS ${_SCE_SCXML_DEPENDS} "${SCE_CODEGEN}"
-        DEPFILE "${_SCE_DEPFILE}"
+    file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
+    _sce_codegen_consumer_claim(_SCE_CLAIM "${SCE_OUTPUT_DIR}")
+    sce_codegen_generation(_SCE_MACHINE
+        DOCUMENT "${_SCE_DOCUMENT}"
+        OUTPUT_DIR "${SCE_OUTPUT_DIR}"
+        LANGUAGE "${SCE_LANGUAGE}"
+        ${_SCE_CHILDREN}
+        CLAIM "${_SCE_CLAIM}"
         COMMENT "SCE: Generating ${SCXML_NAME} (${SCE_LANGUAGE}) from SCXML"
-        VERBATIM
-    )
-
-    # Language-specific target integration
-    if(SCE_LANGUAGE STREQUAL "kotlin")
-        # Kotlin: .kt files are not compiled by CMake — Gradle handles Kotlin compilation.
-        # Create a custom target so CMake tracks the generation dependency.
-        add_custom_target(${SCE_TARGET}_${SCXML_NAME}_kt DEPENDS "${GENERATED_OUTPUT}")
-        add_dependencies(${SCE_TARGET} ${SCE_TARGET}_${SCXML_NAME}_kt)
-    else()
-        # C++: Add generated header to target sources and include path
-        target_sources(${SCE_TARGET} PRIVATE "${GENERATED_OUTPUT}")
-        target_include_directories(${SCE_TARGET} PRIVATE "${SCE_OUTPUT_DIR}")
-        set_source_files_properties("${GENERATED_OUTPUT}" PROPERTIES GENERATED TRUE)
-    endif()
+        ARGS ${_SCE_ARGS})
+    _sce_codegen_add_generation(${SCE_TARGET} _SCE_MACHINE "${SCE_LANGUAGE}"
+        "${SCE_OUTPUT_DIR}" "${SCXML_NAME}")
 
     message(STATUS "SCE: Added state machine '${SCXML_NAME}' (${SCE_LANGUAGE}) to target '${SCE_TARGET}'")
 endfunction()
 
 #[=============================================================================[
-sce_add_algorithm(TARGET target SCXML_FILE file.scxml HEADER name.h [OUTPUT_DIR dir])
+sce_add_algorithm(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir])
 
 Generates the C++ header of a forge algorithm and adds it to target.
 
@@ -335,20 +382,32 @@ Arguments:
   TARGET      - CMake target the header is added to (required)
   SCXML_FILE  - Path to the algorithm's SCXML file, or a library name such as
                 sce:std/sync/sync_failure.scxml (required)
-  HEADER      - The file name the generator gives the header: the algorithm's
-                `name` in snake_case with `.h`, which the including machine
-                spells in its `#include` (required)
   OUTPUT_DIR  - Output directory (optional, defaults to the one
                 sce_add_state_machine uses, so a machine finds its algorithms)
 
+The header is named by the generator (the algorithm's `name` in snake_case
+with `.h`, which the including machine spells in its `#include`), and its
+plan says so: the build does not name it. HEADER, which used to name it here,
+is refused, since a second spelling of the generator's name is one that falls
+behind it.
+
 Example:
   sce_add_state_machine(TARGET my_app SCXML_FILE thermostat.scxml)
-  sce_add_algorithm(TARGET my_app SCXML_FILE clamp.scxml HEADER clamp.h)
+  sce_add_algorithm(TARGET my_app SCXML_FILE clamp.scxml)
 #]=============================================================================]
 function(sce_add_algorithm)
-    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;HEADER;OUTPUT_DIR" "" ${ARGN})
+    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;HEADER" "" ${ARGN})
 
-    foreach(_sce_required TARGET SCXML_FILE HEADER)
+    if(SCE_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "sce_add_algorithm: unexpected argument(s): ${SCE_UNPARSED_ARGUMENTS}")
+    endif()
+    if(DEFINED SCE_HEADER)
+        message(FATAL_ERROR
+            "sce_add_algorithm: HEADER ${SCE_HEADER} is the generator's to name, and its "
+            "plan names it when the build is configured: drop HEADER from the call")
+    endif()
+    foreach(_sce_required TARGET SCXML_FILE)
         if(NOT SCE_${_sce_required})
             message(FATAL_ERROR "sce_add_algorithm: ${_sce_required} is required")
         endif()
@@ -360,46 +419,21 @@ function(sce_add_algorithm)
         set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     endif()
 
-    # A library name is resolved by the generator, not the file system.
-    if(SCE_SCXML_FILE MATCHES "^sce:")
-        set(_SCE_ALGORITHM_SOURCE "${SCE_SCXML_FILE}")
-        set(_SCE_ALGORITHM_DEPENDS "")
-    else()
-        get_filename_component(_SCE_ALGORITHM_SOURCE "${SCE_SCXML_FILE}" ABSOLUTE)
-        if(NOT EXISTS "${_SCE_ALGORITHM_SOURCE}")
-            message(FATAL_ERROR "sce_add_algorithm: SCXML file not found: ${_SCE_ALGORITHM_SOURCE}")
-        endif()
-        set(_SCE_ALGORITHM_DEPENDS "${_SCE_ALGORITHM_SOURCE}")
-    endif()
+    get_filename_component(_SCE_ALGORITHM_NAME "${SCE_SCXML_FILE}" NAME_WE)
+    _sce_codegen_document(_SCE_ALGORITHM_DOCUMENT "${SCE_SCXML_FILE}" sce_add_algorithm)
 
     file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
-    set(_SCE_ALGORITHM_OUTPUT "${SCE_OUTPUT_DIR}/${SCE_HEADER}")
-    set(_SCE_ALGORITHM_DEPFILE "${_SCE_ALGORITHM_OUTPUT}.d")
+    _sce_codegen_consumer_claim(_SCE_CLAIM "${SCE_OUTPUT_DIR}")
+    sce_codegen_generation(_SCE_ALGORITHM
+        DOCUMENT "${_SCE_ALGORITHM_DOCUMENT}"
+        OUTPUT_DIR "${SCE_OUTPUT_DIR}"
+        LANGUAGE cpp
+        CLAIM "${_SCE_CLAIM}"
+        COMMENT "SCE: Generating algorithm ${_SCE_ALGORITHM_NAME} from ${SCE_SCXML_FILE}")
+    _sce_codegen_add_generation(${SCE_TARGET} _SCE_ALGORITHM cpp
+        "${SCE_OUTPUT_DIR}" "${_SCE_ALGORITHM_NAME}")
 
-    set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
-        "${_SCE_ALGORITHM_SOURCE}" -o "${SCE_OUTPUT_DIR}"
-        -l cpp
-        --write-deps "${_SCE_ALGORITHM_DEPFILE}")
-    sce_codegen_format_args(_SCE_FORMAT_ARGS)
-    list(APPEND _SCE_CODEGEN_CMD ${_SCE_FORMAT_ARGS})
-    if(SCE_TEMPLATE_DIR)
-        set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
-    endif()
-
-    add_custom_command(
-        OUTPUT "${_SCE_ALGORITHM_OUTPUT}"
-        COMMAND ${_SCE_CODEGEN_CMD}
-        DEPENDS ${_SCE_ALGORITHM_DEPENDS} "${SCE_CODEGEN}"
-        DEPFILE "${_SCE_ALGORITHM_DEPFILE}"
-        COMMENT "SCE: Generating algorithm ${SCE_HEADER} from ${SCE_SCXML_FILE}"
-        VERBATIM
-    )
-
-    target_sources(${SCE_TARGET} PRIVATE "${_SCE_ALGORITHM_OUTPUT}")
-    target_include_directories(${SCE_TARGET} PRIVATE "${SCE_OUTPUT_DIR}")
-    set_source_files_properties("${_SCE_ALGORITHM_OUTPUT}" PROPERTIES GENERATED TRUE)
-
-    message(STATUS "SCE: Added algorithm '${SCE_HEADER}' to target '${SCE_TARGET}'")
+    message(STATUS "SCE: Added algorithm '${_SCE_ALGORITHM_NAME}' to target '${SCE_TARGET}'")
 endfunction()
 
 #[=============================================================================[
@@ -411,7 +445,7 @@ Arguments:
   TARGET      - CMake target to add generated code to (required)
   SCXML_DIR   - Directory containing SCXML files (required)
   OUTPUT_DIR  - Output directory for generated files (optional)
-  LANGUAGE    - Target language: cpp (default), rust, kotlin, or go
+  LANGUAGE    - Target language: cpp (default), c11, rust, kotlin, go or python
                 (forwarded to each per-file sce_add_state_machine call)
   SCRIPT_ENGINE_LANGUAGE - Forwarded to each per-file sce_add_state_machine call
                 (optional; see sce_add_state_machine)
@@ -481,8 +515,14 @@ Useful when you want to share generated code between multiple targets.
 
 Arguments:
   NAME        - Name for the generated library (required)
-  SCXML_FILE  - Path to SCXML file (required)
+  SCXML_FILE  - Path to SCXML file, or the library name of a standard
+                statechart (required)
   OUTPUT_DIR  - Output directory for generated files (optional)
+
+The library carries the output directory on its interface include path and
+depends on a custom target `<name>_gen` that lists every file the generation
+writes, its child generations' included, so a target linking it waits for
+them.
 
 Example:
   sce_create_state_machine_library(NAME player_sm SCXML_FILE player.scxml)
@@ -491,6 +531,12 @@ Example:
 #]=============================================================================]
 function(sce_create_state_machine_library)
     cmake_parse_arguments(SCE "" "NAME;SCXML_FILE;OUTPUT_DIR" "" ${ARGN})
+
+    if(SCE_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "sce_create_state_machine_library: unexpected argument(s): "
+            "${SCE_UNPARSED_ARGUMENTS}")
+    endif()
 
     # Validate required arguments
     if(NOT SCE_NAME)
@@ -506,43 +552,24 @@ function(sce_create_state_machine_library)
         set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     endif()
 
-    # Get absolute path and extract name
-    get_filename_component(SCXML_ABS_PATH "${SCE_SCXML_FILE}" ABSOLUTE)
     get_filename_component(SCXML_NAME "${SCE_SCXML_FILE}" NAME_WE)
-    set(GENERATED_HEADER "${SCE_OUTPUT_DIR}/${SCXML_NAME}_sm.h")
+    _sce_codegen_document(_SCE_DOCUMENT "${SCE_SCXML_FILE}" sce_create_state_machine_library)
 
-    # Verify SCXML file exists
-    if(NOT EXISTS "${SCXML_ABS_PATH}")
-        message(FATAL_ERROR "sce_create_state_machine_library: SCXML file not found: ${SCXML_ABS_PATH}")
-    endif()
-
-    # Create output directory
     file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
+    _sce_codegen_consumer_claim(_SCE_CLAIM "${SCE_OUTPUT_DIR}")
+    sce_codegen_generation(_SCE_LIBRARY
+        DOCUMENT "${_SCE_DOCUMENT}"
+        OUTPUT_DIR "${SCE_OUTPUT_DIR}"
+        LANGUAGE cpp
+        CHILD_GENERATIONS
+        CLAIM "${_SCE_CLAIM}"
+        COMMENT "SCE: Generating the ${SCXML_NAME} library")
 
-    # Build codegen command with optional template dir (installed package scenario)
-    set(_SCE_DEPFILE "${GENERATED_HEADER}.d")
-    set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
-        "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
-        --write-deps "${_SCE_DEPFILE}")
-    if(SCE_TEMPLATE_DIR)
-        set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
-    endif()
+    # Every file the generation writes, for a target linking the library to
+    # wait for.
+    add_custom_target(${SCE_NAME}_gen)
+    target_sources(${SCE_NAME}_gen PRIVATE ${_SCE_LIBRARY_FILES})
 
-    # Add custom command to generate state machine header
-    # Uses DEPFILE for fine-grained template dependency tracking
-    add_custom_command(
-        OUTPUT "${GENERATED_HEADER}"
-        COMMAND ${_SCE_CODEGEN_CMD}
-        DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN}"
-        DEPFILE "${_SCE_DEPFILE}"
-        COMMENT "SCE: Generating ${SCXML_NAME}_sm.h library"
-        VERBATIM
-    )
-
-    # Create custom target to ensure generation happens
-    add_custom_target(${SCE_NAME}_gen DEPENDS "${GENERATED_HEADER}")
-
-    # Create INTERFACE library
     add_library(${SCE_NAME} INTERFACE)
     add_dependencies(${SCE_NAME} ${SCE_NAME}_gen)
     target_include_directories(${SCE_NAME} INTERFACE "${SCE_OUTPUT_DIR}")

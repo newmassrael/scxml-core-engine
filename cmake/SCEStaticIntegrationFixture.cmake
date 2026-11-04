@@ -263,9 +263,13 @@ function(_sce_static_integration_fixture MODE STEM)
     # silently — measured, by editing a template and watching zero of the
     # generated headers change. `SCECodegen.cmake` has always done this;
     # this generator had not.
+    #
+    # Run with the environment its plan was asked with (the templates the
+    # build names, `_sce_codegen_launcher` in SCECodegenPlan.cmake).
+    _sce_codegen_launcher(_LAUNCH)
     add_custom_command(
         OUTPUT ${_PLAN_OUTPUTS}
-        COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
+        COMMAND ${_LAUNCH} "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l cpp -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
                 --write-deps "${_PLAN_DEPFILE}"
@@ -293,7 +297,7 @@ function(_sce_static_integration_fixture MODE STEM)
         sce_codegen_plan(_CHILD_PLAN FROM _PLAN CHILD "${_CHILD}")
         add_custom_command(
             OUTPUT ${_CHILD_PLAN_OUTPUTS}
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
+            COMMAND ${_LAUNCH} "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
                     ${_CHILD_PLAN_ARGS}
                     -l cpp -o "${OUTPUT_DIR}"
                     --input-root "${FIXTURE_ROOT}"
@@ -569,10 +573,12 @@ function(_sce_static_integration_c_fixture MODE STEM)
     # manual `rm` of the generated `.c` to get a template fix compiled.
     #
     # The header comes first in OUTPUT because it is the depfile's one
-    # target (`sce_codegen_plan` says why).
+    # target (`sce_codegen_plan` says why). Run with the environment its plan
+    # was asked with (`_sce_codegen_launcher` in SCECodegenPlan.cmake).
+    _sce_codegen_launcher(_LAUNCH)
     add_custom_command(
         OUTPUT ${_PLAN_OUTPUTS}
-        COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
+        COMMAND ${_LAUNCH} "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l c11 -o "${OUTPUT_DIR}"
                 ${_INPUT_ROOT_ARGS}
                 ${_HOST_PROCESSOR_ARGS}
@@ -601,7 +607,7 @@ function(_sce_static_integration_c_fixture MODE STEM)
         if(NOT _CHILD_PLAN_DECLARED_ELSEWHERE)
             add_custom_command(
                 OUTPUT ${_CHILD_PLAN_OUTPUTS}
-                COMMAND "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
+                COMMAND ${_LAUNCH} "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
                         ${_CHILD_PLAN_ARGS}
                         -l c11 -o "${OUTPUT_DIR}"
                         ${_INPUT_ROOT_ARGS}

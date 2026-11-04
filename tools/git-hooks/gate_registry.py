@@ -760,6 +760,11 @@ GATES: dict[str, dict] = {
             # The policy documents `forge_conformance` compiles into its
             # per-language run tests.
             "tests/forge/resources/**",
+            # The forge conformance catalog and the document sets beside it,
+            # which `generation_can_be_planned` and
+            # `configure_plans_are_kept_and_asked_together` plan and generate a
+            # harness and a set from.
+            "tests/forge/conformance/**",
             # The integration stems `the_emitted_transition_function_equals_the_producer`
             # generates and states the table of.
             "integration_resources/flat_lifecycle/**",
@@ -780,6 +785,9 @@ GATES: dict[str, dict] = {
             # `a_configure_asks_each_plan_once_per_input_state` configures a
             # project through with a real `cmake`.
             "cmake/SCEClangFormat.cmake",
+            # The locator the plan module resolves the generator through when
+            # no includer did.
+            "cmake/SCEFindCodegen.cmake",
             # The test tree's build, whose Mesh rule-3 override and every
             # command it declares from a plan the same suite compiles in and
             # holds to declaring what the generator plans.
@@ -961,7 +969,10 @@ GATES: dict[str, dict] = {
         # type (and Ninja where installed), which cost 6s -> 22s and is what
         # the mirror is for.
         "runner_workflow": True,
-        "extra": ["backends/cpp/**", "sce/**"],
+        # The modules its projects declare every generation through, resolve
+        # the generator through, and format generated C++ by.
+        "extra": ["backends/cpp/**", "sce/**", "cmake/SCECodegenPlan.cmake",
+                  "cmake/SCEFindCodegen.cmake", "cmake/SCEClangFormat.cmake"],
         "deps": ["codegen-build"],
         "ci_only": "59s, the last move needed to fit the ceiling. "
                    "forge-conformance.yml runs it beside the other arms.",
@@ -998,7 +1009,10 @@ GATES: dict[str, dict] = {
     "forge-c11": {
         "workflows": ["forge-conformance.yml"],
         "runner_workflow": True,
-        "extra": ["backends/c/**"],
+        # The modules its projects declare every generation through, resolve
+        # the generator through, and format generated code by.
+        "extra": ["backends/c/**", "cmake/SCECodegenPlan.cmake",
+                  "cmake/SCEFindCodegen.cmake", "cmake/SCEClangFormat.cmake"],
         "deps": ["codegen-build"],
         "cost_s": 17,
         "summary": "C11 forge conformance build + test",

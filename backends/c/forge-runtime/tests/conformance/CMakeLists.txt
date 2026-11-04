@@ -10,9 +10,10 @@
 #   cmake --build build_conformance_c
 #   ctest --test-dir build_conformance_c --output-on-failure
 #
-# Invokes sce-codegen at configure time on each fixture SCXML
-# and writes the generated C headers into ${CMAKE_CURRENT_BINARY_DIR}/
-# generated/, which is added to the test target's include path. The
+# Asks sce-codegen at configure time for the plan of each generation
+# (cmake/SCECodegenPlan.cmake), and generates each fixture's C header at
+# build time into ${CMAKE_CURRENT_BINARY_DIR}/generated/, which is added
+# to the test target's include path. The
 # test binary then links against sce_forge_runtime_c (header-only
 # INTERFACE library) and runs against pre-baked
 # oracle arrays emitted directly by the harness template (C has no
@@ -64,11 +65,15 @@ if(CARGO_EXECUTABLE)
     endif()
 endif()
 
-# Resolve the generator. The search lives in cmake/SCEFindCodegen.cmake
-# so every harness finds it the same way and none of them names a
-# build profile; it aborts with the build command when no profile
-# holds a binary, which is what the hand-written check here used to do.
-include("${REPO_ROOT}/cmake/SCEFindCodegen.cmake")
+# Every generation this project builds from is declared from the
+# generator's plan of it (`sce_codegen_generation`, cmake/SCECodegenPlan.cmake),
+# as the tree declares its own: a fixture's document, a document set compiled
+# together (`orchestrate`) and the harness (`generate-conformance`) alike. The
+# files each writes, its depfile and its one command are the plan's answer,
+# and no file name is written here. The module resolves the generator through
+# cmake/SCEFindCodegen.cmake, which every harness finds it by and which aborts
+# with the build command when no profile holds a binary.
+include("${REPO_ROOT}/cmake/SCECodegenPlan.cmake")
 
 if(NOT EXISTS "${REFERENCE_JSON}")
     message(FATAL_ERROR "reference JSON not found at ${REFERENCE_JSON}")
@@ -122,29 +127,6 @@ if(NOT _documents_rc EQUAL 0)
         "${FIXTURE_MANIFEST}")
 endif()
 
-# RFC §synth-5-B B2-test-vector: ask sce-codegen for the subset of C11
-# fixtures whose SCXML carries `<sce:test-vector>` rows. Each such
-# fixture emits `<fixture>_test.h` alongside `<fixture>.h`, so the
-# per-fixture custom_command must declare both as OUTPUT for cmake's
-# dependency tracker to pick them up. The harness template includes
-# the sidecar conditionally on `f.has_test_vectors`.
-execute_process(
-    COMMAND "${SCE_CODEGEN}" list-fixtures
-            --manifest "${FIXTURE_MANIFEST}"
-            --format cmake
-            --language c11
-            --has-test-vectors
-            --resource-dir "${RESOURCE_DIR}"
-    OUTPUT_VARIABLE C11_FIXTURES_WITH_TV
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE _tv_rc
-)
-if(NOT _tv_rc EQUAL 0)
-    message(FATAL_ERROR
-        "sce-codegen list-fixtures --has-test-vectors --language c11 failed for "
-        "${FIXTURE_MANIFEST}")
-endif()
-
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 
@@ -153,12 +135,13 @@ file(MAKE_DIRECTORY "${GENERATED_DIR}")
 # no array of this run could hold, takes its capacity from this deploy input.
 set(CONFORMANCE_DEPLOY "${REPO_ROOT}/tests/forge/conformance/deploy.yaml")
 
-# Step 1: per-fixture product code generation. Each fixture's SCXML is
-# fed to sce-codegen --language c11 to produce a single header. RFC §synth-5-B
-# B2-test-vector: fixtures whose SCXML carries `<sce:test-vector>` rows
-# emit a sibling `<fixture>_test.h` sidecar; the OUTPUT list is widened
-# so cmake's dependency tracker rebuilds the harness when either file
-# moves.
+# Step 1: per-fixture product code generation, each fixture's document
+# generated for C11 with the deploy. What a generation writes is its plan's
+# answer: a fixture whose document carries `<sce:test-vector>` rows (RFC
+# §synth-5-B B2-test-vector) writes a `<fixture>_test.h` sidecar beside its
+# header, which the harness includes, and its plan names it. Every fixture is
+# generated into one directory, so they claim in one list: a file two
+# generations would write is the first's.
 set(GENERATED_HEADERS "")
 list(LENGTH C11_FIXTURES _fixture_count)
 foreach(_fixture_index RANGE ${_fixture_count})
@@ -167,66 +150,36 @@ foreach(_fixture_index RANGE ${_fixture_count})
     endif()
     list(GET C11_FIXTURES ${_fixture_index} fixture)
     list(GET C11_FIXTURE_DOCUMENTS ${_fixture_index} scxml)
-    set(out_header "${GENERATED_DIR}/${fixture}.h")
-    # A standard document is in the generator, which is already a
-    # prerequisite; naming it here would name a file that never exists.
-    set(_document_deps "${scxml}")
-    if(scxml MATCHES "^sce:std/")
-        set(_document_deps "")
-    endif()
-    set(_outputs "${out_header}")
-    list(FIND C11_FIXTURES_WITH_TV "${fixture}" _tv_idx)
-    if(NOT _tv_idx EQUAL -1)
-        set(_sidecar "${GENERATED_DIR}/${fixture}_test.h")
-        list(APPEND _outputs "${_sidecar}")
-    endif()
-    # DEPFILE carries the ~120 jinja2 templates that rendered the output;
-    # `DEPENDS` alone names only the SCXML, so a template edit would
-    # leave the fixture stale and the build would reuse it silently.
-    add_custom_command(
-        OUTPUT ${_outputs}
-        COMMAND "${SCE_CODEGEN}" generate "${scxml}"
-                --language c11
-                --deploy "${CONFORMANCE_DEPLOY}"
-                --output-dir "${GENERATED_DIR}"
-                --write-deps "${GENERATED_DIR}/${fixture}.h.d"
-        DEPENDS ${_document_deps} "${CONFORMANCE_DEPLOY}" "${SCE_CODEGEN}"
-        DEPFILE "${GENERATED_DIR}/${fixture}.h.d"
-        COMMENT "Generating C11 fixture ${fixture}.h"
-        VERBATIM
-    )
-    list(APPEND GENERATED_HEADERS ${_outputs})
+    sce_codegen_generation(_FIXTURE
+        STEM "${fixture}"
+        DOCUMENT "${scxml}"
+        OUTPUT_DIR "${GENERATED_DIR}"
+        LANGUAGE c11
+        DEPLOY "${CONFORMANCE_DEPLOY}"
+        CLAIM SCE_FORGE_CONFORMANCE_C_DECLARED_OUTPUTS
+        COMMENT "Generating C11 fixture ${fixture}")
+    list(APPEND GENERATED_HEADERS ${_FIXTURE_HEADERS})
 endforeach()
 
-# Step 2: render the test harness from the shared template. The
-# scaffold pulls in per-kind fragments via dynamic Jinja2 include, and
-# folds every fixture document under tests/forge/resources into the
-# harness `source-hash` — so the generator states its own prerequisites
-# through a DEPFILE, as every other codegen step in the tree does. The
-# `file(GLOB ... CONFIGURE_DEPENDS)` this replaced named the fragments
-# the scaffold includes directly and nothing they pull in, and named no
-# fixture document at all.
-set(HARNESS_SRC "${GENERATED_DIR}/numerical_conformance_test.c")
-add_custom_command(
-    OUTPUT "${HARNESS_SRC}"
-    COMMAND "${SCE_CODEGEN}" generate-conformance
-            --language c11
-            --manifest "${FIXTURE_MANIFEST}"
-            --output-dir "${GENERATED_DIR}"
-            --write-deps "${HARNESS_SRC}.d"
-    DEPENDS "${FIXTURE_MANIFEST}"
-            "${REFERENCE_JSON}"
-            "${SCE_CODEGEN}"
-    DEPFILE "${HARNESS_SRC}.d"
-    COMMENT "Generating C11 conformance harness from template"
-    VERBATIM
-)
+# Step 2: render the test harness from the shared template, a generation of
+# the fixture catalog (`generate-conformance`). The scaffold pulls in
+# per-kind fragments through a dynamic Jinja2 include, folds every fixture
+# document under tests/forge/resources into the harness `source-hash`, and
+# bakes the oracle of the reference JSON into the source: all of it is what
+# the generator's depfile and its plan name.
+sce_codegen_generation(_HARNESS
+    MANIFEST "${FIXTURE_MANIFEST}"
+    OUTPUT_DIR "${GENERATED_DIR}"
+    LANGUAGE c11
+    CLAIM SCE_FORGE_CONFORMANCE_C_DECLARED_OUTPUTS
+    COMMENT "Generating C11 conformance harness from template")
 
-add_custom_target(generate_forge_fixtures_c
-    DEPENDS ${GENERATED_HEADERS} "${HARNESS_SRC}"
-)
+# Every fixture's header and the harness, for the programs that include
+# them to wait for.
+add_custom_target(generate_forge_fixtures_c)
+target_sources(generate_forge_fixtures_c PRIVATE ${GENERATED_HEADERS} ${_HARNESS_FILES})
 
-add_executable(numerical_conformance_test_c "${HARNESS_SRC}")
+add_executable(numerical_conformance_test_c ${_HARNESS_SOURCES})
 add_dependencies(numerical_conformance_test_c generate_forge_fixtures_c)
 
 target_include_directories(numerical_conformance_test_c PRIVATE
@@ -618,19 +571,17 @@ sce_queue_variant(queue_conformance_segmented queue_c_segmented "")
 sce_queue_variant(queue_conformance_segmented_many queue_c_segmented_many "")
 
 # The elements every queue holds, then each queue for the machine whose atomics it
-# is built for. The intrusive queues hold a node that carries its own link.
+# is built for. The intrusive queues hold a node that carries its own link. All of
+# them are generated into one directory, and claim in one list.
 set(QUEUE_C_HEADERS "")
 foreach(_element queue_conformance_event queue_conformance_node)
-    add_custom_command(
-        OUTPUT "${QUEUE_C_GENERATED_DIR}/${_element}.h"
-        COMMAND "${SCE_CODEGEN}" generate "${RESOURCE_DIR}/${_element}.scxml"
-                --language c11 --output-dir "${QUEUE_C_GENERATED_DIR}"
-                --write-deps "${QUEUE_C_GENERATED_DIR}/${_element}.h.d"
-        DEPENDS "${RESOURCE_DIR}/${_element}.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${QUEUE_C_GENERATED_DIR}/${_element}.h.d"
-        COMMENT "Generating C11 queue element ${_element}.h"
-        VERBATIM)
-    list(APPEND QUEUE_C_HEADERS "${QUEUE_C_GENERATED_DIR}/${_element}.h")
+    sce_codegen_generation(_QUEUE_ELEMENT
+        DOCUMENT "${RESOURCE_DIR}/${_element}.scxml"
+        OUTPUT_DIR "${QUEUE_C_GENERATED_DIR}"
+        LANGUAGE c11
+        CLAIM SCE_QUEUE_C_DECLARED_OUTPUTS
+        COMMENT "Generating C11 queue element ${_element}")
+    list(APPEND QUEUE_C_HEADERS ${_QUEUE_ELEMENT_HEADERS})
 endforeach()
 foreach(_pair
         "queue_c_spsc:mcu64" "queue_c_scq64:mcu64" "queue_c_scq32:mcu32"
@@ -640,19 +591,18 @@ foreach(_pair
     string(REPLACE ":" ";" _parts "${_pair}")
     list(GET _parts 0 _queue)
     list(GET _parts 1 _machine)
-    add_custom_command(
-        OUTPUT "${QUEUE_C_GENERATED_DIR}/${_queue}.h"
-        COMMAND "${SCE_CODEGEN}" generate "${QUEUE_C_DOCS_DIR}/${_queue}.scxml"
-                --language c11 --output-dir "${QUEUE_C_GENERATED_DIR}"
-                --deploy "${QUEUE_C_DEPLOY}" --target-machine ${_machine}
-                --write-deps "${QUEUE_C_GENERATED_DIR}/${_queue}.h.d"
-        DEPENDS "${QUEUE_C_DOCS_DIR}/${_queue}.scxml" "${QUEUE_C_DEPLOY}" "${SCE_CODEGEN}"
-        DEPFILE "${QUEUE_C_GENERATED_DIR}/${_queue}.h.d"
-        COMMENT "Generating C11 queue ${_queue}.h for ${_machine}"
-        VERBATIM)
-    list(APPEND QUEUE_C_HEADERS "${QUEUE_C_GENERATED_DIR}/${_queue}.h")
+    sce_codegen_generation(_QUEUE
+        DOCUMENT "${QUEUE_C_DOCS_DIR}/${_queue}.scxml"
+        OUTPUT_DIR "${QUEUE_C_GENERATED_DIR}"
+        LANGUAGE c11
+        DEPLOY "${QUEUE_C_DEPLOY}"
+        CLAIM SCE_QUEUE_C_DECLARED_OUTPUTS
+        ARGS --target-machine ${_machine}
+        COMMENT "Generating C11 queue ${_queue} for ${_machine}")
+    list(APPEND QUEUE_C_HEADERS ${_QUEUE_HEADERS})
 endforeach()
-add_custom_target(generate_queue_headers_c DEPENDS ${QUEUE_C_HEADERS})
+add_custom_target(generate_queue_headers_c)
+target_sources(generate_queue_headers_c PRIVATE ${QUEUE_C_HEADERS})
 
 add_executable(queue_generated_test_c "${CMAKE_CURRENT_SOURCE_DIR}/queue_generated_test.c")
 add_dependencies(queue_generated_test_c generate_queue_headers_c)
@@ -797,22 +747,19 @@ set(BLOG_C_RESOURCE_SET
     broadcast_log_conformance_record
     broadcast_log_conformance_literal
     broadcast_log_conformance_deployed)
-set(BLOG_C_RESOURCE_ARGS "")
-set(BLOG_C_RESOURCE_DEPENDS "")
-set(BLOG_C_RESOURCE_HEADERS "")
+set(BLOG_C_RESOURCE_DOCUMENTS "")
 foreach(_document IN LISTS BLOG_C_RESOURCE_SET)
-    list(APPEND BLOG_C_RESOURCE_ARGS --forge "${RESOURCE_DIR}/${_document}.scxml")
-    list(APPEND BLOG_C_RESOURCE_DEPENDS "${RESOURCE_DIR}/${_document}.scxml")
-    list(APPEND BLOG_C_RESOURCE_HEADERS "${BLOG_C_GENERATED_DIR}/${_document}.h")
+    list(APPEND BLOG_C_RESOURCE_DOCUMENTS "${RESOURCE_DIR}/${_document}.scxml")
 endforeach()
-add_custom_command(
-    OUTPUT ${BLOG_C_RESOURCE_HEADERS}
-    COMMAND "${SCE_CODEGEN}" orchestrate ${BLOG_C_RESOURCE_ARGS}
-            --language c11 --output-dir "${BLOG_C_GENERATED_DIR}"
-            --deploy "${BLOG_C_DEPLOY}" --target-machine mcu_node
-    DEPENDS ${BLOG_C_RESOURCE_DEPENDS} "${BLOG_C_DEPLOY}" "${SCE_CODEGEN}"
-    COMMENT "Generating C11 broadcast logs and their elements"
-    VERBATIM)
+# Both sets are generated into one directory, and claim in one list.
+sce_codegen_generation(_BLOG_C_RESOURCE
+    DOCUMENTS ${BLOG_C_RESOURCE_DOCUMENTS}
+    OUTPUT_DIR "${BLOG_C_GENERATED_DIR}"
+    LANGUAGE c11
+    DEPLOY "${BLOG_C_DEPLOY}"
+    CLAIM SCE_BLOG_C_DECLARED_OUTPUTS
+    ARGS --target-machine mcu_node
+    COMMENT "Generating C11 broadcast logs and their elements")
 
 # The derived set: the literal document with its name and its element replaced.
 configure_file("${RESOURCE_DIR}/codec_cbor_map.scxml" "${BLOG_C_DOCS_DIR}/codec_cbor_map.scxml" COPYONLY)
@@ -821,21 +768,16 @@ string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_lo
 string(REPLACE "<sce:element-type>broadcast_log_conformance_event</sce:element-type>"
        "<sce:element-type>codec_cbor_map</sce:element-type>" _blog_text "${_blog_text}")
 file(WRITE "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml" "${_blog_text}")
-set(BLOG_C_CBOR_HEADERS
-    "${BLOG_C_GENERATED_DIR}/codec_cbor_map.h"
-    "${BLOG_C_GENERATED_DIR}/broadcast_log_c_cbor.h")
-add_custom_command(
-    OUTPUT ${BLOG_C_CBOR_HEADERS}
-    COMMAND "${SCE_CODEGEN}" orchestrate
-            --forge "${BLOG_C_DOCS_DIR}/codec_cbor_map.scxml"
-            --forge "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml"
-            --language c11 --output-dir "${BLOG_C_GENERATED_DIR}"
-    DEPENDS "${BLOG_C_DOCS_DIR}/codec_cbor_map.scxml" "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml"
-            "${SCE_CODEGEN}"
-    COMMENT "Generating C11 broadcast log over a CBOR element"
-    VERBATIM)
-add_custom_target(generate_broadcast_log_headers_c
-    DEPENDS ${BLOG_C_RESOURCE_HEADERS} ${BLOG_C_CBOR_HEADERS})
+sce_codegen_generation(_BLOG_C_CBOR
+    DOCUMENTS "${BLOG_C_DOCS_DIR}/codec_cbor_map.scxml"
+              "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml"
+    OUTPUT_DIR "${BLOG_C_GENERATED_DIR}"
+    LANGUAGE c11
+    CLAIM SCE_BLOG_C_DECLARED_OUTPUTS
+    COMMENT "Generating C11 broadcast log over a CBOR element")
+add_custom_target(generate_broadcast_log_headers_c)
+target_sources(generate_broadcast_log_headers_c PRIVATE
+    ${_BLOG_C_RESOURCE_HEADERS} ${_BLOG_C_CBOR_HEADERS})
 
 add_executable(broadcast_log_generated_test_c "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_generated_test.c")
 add_dependencies(broadcast_log_generated_test_c generate_broadcast_log_headers_c)
@@ -908,38 +850,28 @@ topology:
             min_wrap_ops: 1000000
 ]=])
 
-set(BLOGN_C_NARROW_HEADERS
-    "${BLOGN_C_GENERATED_DIR}/broadcast_log_conformance_record.h"
-    "${BLOGN_C_GENERATED_DIR}/broadcast_log_c_narrow.h")
-add_custom_command(
-    OUTPUT ${BLOGN_C_NARROW_HEADERS}
-    COMMAND "${SCE_CODEGEN}" orchestrate
-            --forge "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_conformance_record.scxml"
-            --forge "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml"
-            --language c11 --output-dir "${BLOGN_C_GENERATED_DIR}"
-            --deploy "${BLOGN_C_NARROW_DOCS_DIR}/deploy.yaml" --target-machine mcu_node
-    DEPENDS "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_conformance_record.scxml"
-            "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml"
-            "${BLOGN_C_NARROW_DOCS_DIR}/deploy.yaml" "${SCE_CODEGEN}"
-    COMMENT "Generating the C11 broadcast log of a target with a 32-bit compare-and-swap"
-    VERBATIM)
-set(BLOGN_C_OWNERSHIP_HEADERS
-    "${BLOGN_C_GENERATED_DIR}/broadcast_log_conformance_event.h"
-    "${BLOGN_C_GENERATED_DIR}/broadcast_log_c_ownership.h")
-add_custom_command(
-    OUTPUT ${BLOGN_C_OWNERSHIP_HEADERS}
-    COMMAND "${SCE_CODEGEN}" orchestrate
-            --forge "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_conformance_event.scxml"
-            --forge "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_c_ownership.scxml"
-            --language c11 --output-dir "${BLOGN_C_GENERATED_DIR}"
-            --deploy "${BLOGN_C_OWNERSHIP_DOCS_DIR}/deploy.yaml" --target-machine mcu_node
-    DEPENDS "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_conformance_event.scxml"
-            "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_c_ownership.scxml"
-            "${BLOGN_C_OWNERSHIP_DOCS_DIR}/deploy.yaml" "${SCE_CODEGEN}"
-    COMMENT "Generating the C11 broadcast log of a target with loads and stores only"
-    VERBATIM)
-add_custom_target(generate_broadcast_log_narrow_headers_c
-    DEPENDS ${BLOGN_C_NARROW_HEADERS} ${BLOGN_C_OWNERSHIP_HEADERS})
+# Both sets are generated into one directory, and claim in one list.
+sce_codegen_generation(_BLOGN_C_NARROW
+    DOCUMENTS "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_conformance_record.scxml"
+              "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml"
+    OUTPUT_DIR "${BLOGN_C_GENERATED_DIR}"
+    LANGUAGE c11
+    DEPLOY "${BLOGN_C_NARROW_DOCS_DIR}/deploy.yaml"
+    CLAIM SCE_BLOGN_C_DECLARED_OUTPUTS
+    ARGS --target-machine mcu_node
+    COMMENT "Generating the C11 broadcast log of a target with a 32-bit compare-and-swap")
+sce_codegen_generation(_BLOGN_C_OWNERSHIP
+    DOCUMENTS "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_conformance_event.scxml"
+              "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_c_ownership.scxml"
+    OUTPUT_DIR "${BLOGN_C_GENERATED_DIR}"
+    LANGUAGE c11
+    DEPLOY "${BLOGN_C_OWNERSHIP_DOCS_DIR}/deploy.yaml"
+    CLAIM SCE_BLOGN_C_DECLARED_OUTPUTS
+    ARGS --target-machine mcu_node
+    COMMENT "Generating the C11 broadcast log of a target with loads and stores only")
+add_custom_target(generate_broadcast_log_narrow_headers_c)
+target_sources(generate_broadcast_log_narrow_headers_c PRIVATE
+    ${_BLOGN_C_NARROW_HEADERS} ${_BLOGN_C_OWNERSHIP_HEADERS})
 
 add_executable(broadcast_log_narrow_generated_test_c
     "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_narrow_generated_test.c")
@@ -976,22 +908,17 @@ set(BLOG_CONTEXT_C_SET
     broadcast_log_conformance_choice_large
     broadcast_log_conformance_choice
     broadcast_log_conformance_chosen)
-set(BLOG_CONTEXT_C_ARGS "")
-set(BLOG_CONTEXT_C_DEPENDS "")
-set(BLOG_CONTEXT_C_HEADERS "")
+set(BLOG_CONTEXT_C_DOCUMENTS "")
 foreach(_document IN LISTS BLOG_CONTEXT_C_SET)
-    list(APPEND BLOG_CONTEXT_C_ARGS --forge "${BLOG_CONTEXT_DIR}/${_document}.scxml")
-    list(APPEND BLOG_CONTEXT_C_DEPENDS "${BLOG_CONTEXT_DIR}/${_document}.scxml")
-    list(APPEND BLOG_CONTEXT_C_HEADERS "${BLOG_CONTEXT_C_GENERATED_DIR}/${_document}.h")
+    list(APPEND BLOG_CONTEXT_C_DOCUMENTS "${BLOG_CONTEXT_DIR}/${_document}.scxml")
 endforeach()
-add_custom_command(
-    OUTPUT ${BLOG_CONTEXT_C_HEADERS}
-    COMMAND "${SCE_CODEGEN}" orchestrate ${BLOG_CONTEXT_C_ARGS}
-            --language c11 --output-dir "${BLOG_CONTEXT_C_GENERATED_DIR}"
-    DEPENDS ${BLOG_CONTEXT_C_DEPENDS} "${SCE_CODEGEN}"
-    COMMENT "Generating C11 broadcast logs over elements that ask their caller for inputs"
-    VERBATIM)
-add_custom_target(generate_broadcast_log_context_headers_c DEPENDS ${BLOG_CONTEXT_C_HEADERS})
+sce_codegen_generation(_BLOG_CONTEXT_C
+    DOCUMENTS ${BLOG_CONTEXT_C_DOCUMENTS}
+    OUTPUT_DIR "${BLOG_CONTEXT_C_GENERATED_DIR}"
+    LANGUAGE c11
+    COMMENT "Generating C11 broadcast logs over elements that ask their caller for inputs")
+add_custom_target(generate_broadcast_log_context_headers_c)
+target_sources(generate_broadcast_log_context_headers_c PRIVATE ${_BLOG_CONTEXT_C_HEADERS})
 
 add_executable(broadcast_log_context_generated_test_c
     "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_context_generated_test.c")

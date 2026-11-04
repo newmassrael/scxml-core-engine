@@ -65,7 +65,7 @@ echo "[smoke] Regenerating embed payload into ${EMBED_FRESH}"
 # ----------------------------------------------------------------------------
 echo "[smoke] Verifying SSOT-listed assets landed in embed/"
 MISSING=()
-for required in SCECodegen.cmake SCEClangFormat.cmake \
+for required in SCECodegen.cmake SCECodegenPlan.cmake SCEFindCodegen.cmake SCEClangFormat.cmake \
                 tools/codegen/templates/state_machine.jinja2 \
                 tools/codegen/default.clang-format; do
     if [ ! -e "${EMBED_FRESH}/${required}" ]; then

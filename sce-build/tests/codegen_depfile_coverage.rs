@@ -54,8 +54,14 @@ const SCAN_ROOTS: &[&str] = &["cmake", "tests", "backends"];
 /// until 2026-11-03, are now every one declared by the single command in
 /// `_sce_codegen_generation_declare` (cmake/SCECodegenPlan.cmake), which
 /// every `sce_codegen_generation` call is declared by, which is why the
-/// floor fell from 150 to the 38 sites measured then.
-const MIN_CODEGEN_INVOCATIONS: usize = 38;
+/// floor fell from 150 to the 38 sites measured then. The C11 tests' 19
+/// commands, the four projects configured on their own (`backends/<c|cpp>/
+/// forge-runtime/tests/<round_trip|conformance>`) and the public functions
+/// of `cmake/SCECodegen.cmake` went the same way on 2026-11-04: the sites
+/// left are that one command and the six the W3C and integration routes
+/// declare from their own plans, counted by reading every file the scan
+/// reads.
+const MIN_CODEGEN_INVOCATIONS: usize = 7;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -97,18 +103,25 @@ fn custom_command_bodies(text: &str) -> Vec<String> {
     out
 }
 
-/// Does this command body invoke the generator?
+/// Does this command body invoke the generator to write files a build
+/// compiles?
 ///
-/// Two spellings, and matching only the first would have left a whole
-/// file unscanned: `SCEStaticW3CTest.cmake` inlines the binary and its
-/// subcommand on the COMMAND line, while `SCECodegen.cmake` assembles
-/// them into `_SCE_CODEGEN_CMD` beforehand and expands the variable.
-/// Targeting one spelling reads as full coverage while silently skipping
-/// the other — the failure mode of aiming a scan at a single name.
+/// Every spelling a generation has, and matching only the first would leave
+/// a site unscanned: the routes inline the binary and `generate` on the
+/// COMMAND line (`generate-conformance` spells the same prefix), a document
+/// set is `orchestrate`, and the one command of `sce_codegen_generation`
+/// (cmake/SCECodegenPlan.cmake) runs the command its plan names
+/// (`"${SCE_CODEGEN}" ${<PREFIX>_RUN}`), which is any of the three.
+/// Targeting one spelling reads as full coverage while silently skipping the
+/// others — the failure mode of aiming a scan at a single name. A command
+/// assembled in a variable before it is run is refused outright by
+/// `no_cmake_file_of_the_tree_declares_a_generation_by_hand`.
 fn runs_codegen(body: &str) -> bool {
     body.contains("SCE_CODEGEN}\" generate")
         || body.contains("SCE_CODEGEN} generate")
-        || body.contains("_SCE_CODEGEN_CMD}")
+        || body.contains("SCE_CODEGEN}\" orchestrate")
+        || body.contains("SCE_CODEGEN} orchestrate")
+        || (body.contains("SCE_CODEGEN}\" ${") && body.contains("_RUN}"))
 }
 
 /// Every `CMakeLists.txt` / `*.cmake` under `SCAN_ROOTS`, skipping build
@@ -167,12 +180,11 @@ fn every_codegen_step_declares_its_template_inputs() {
             // reads, and `DEPFILE` without `--write-deps` points CMake
             // at a file that is never produced.
             //
-            // `--write-deps` is looked up at file scope, not in the
-            // command body, because a generator may build its argv into
-            // a variable first (`SCECodegen.cmake`) — checking the body
-            // alone reported that file as violating when it is in fact
-            // the pattern the others were brought up to.
-            let writes = body.contains("--write-deps") || text.contains("--write-deps");
+            // In the command itself: every command that runs the generator
+            // names its arguments on its COMMAND line, and one assembled
+            // in a variable first is refused by
+            // `no_cmake_file_of_the_tree_declares_a_generation_by_hand`.
+            let writes = body.contains("--write-deps");
             // `DEPFILE` as a CMake keyword, which is an argument of its
             // own on its own line — not as a substring. Substring
             // matching passed unconditionally because the depfile paths

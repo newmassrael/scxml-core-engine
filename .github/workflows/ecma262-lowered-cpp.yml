@@ -52,6 +52,8 @@ on:
       - 'tests/engine/LoweredEcma262Test.cpp'
       - 'tests/CMakeLists.txt'
       - 'cmake/SCECodegen.cmake'
+      # What `sce_add_state_machine` declares its generations through.
+      - 'cmake/SCECodegenPlan.cmake'
       - 'scripts/gates/ecma262-lowered-cpp.sh'
       - '.github/workflows/ecma262-lowered-cpp.yml'
   pull_request:

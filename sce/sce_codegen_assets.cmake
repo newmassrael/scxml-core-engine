@@ -12,9 +12,12 @@
 # keep the SSOT authoritative.
 
 # CMake utility files shipped with the Codegen install component.
-# Paths are relative to the SCE source root.
+# Paths are relative to the SCE source root. SCECodegen.cmake includes each of
+# the others from its own directory: SCECodegenPlan.cmake declares every
+# generation its functions make from the generator's plan of it.
 set(SCE_CODEGEN_CMAKE_FILES
     cmake/SCECodegen.cmake
+    cmake/SCECodegenPlan.cmake
     cmake/SCEFindCodegen.cmake
     cmake/SCEClangFormat.cmake
 )

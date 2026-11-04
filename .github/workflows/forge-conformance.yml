@@ -41,6 +41,12 @@ on:
       - 'backends/python/**'
       - 'backends/c/**'
       - 'backends/kotlin/**'
+      # The modules the C++ and C11 arms' projects declare every generation
+      # through (`sce_codegen_generation`), resolve the generator through, and
+      # format generated C++ by.
+      - 'cmake/SCECodegenPlan.cmake'
+      - 'cmake/SCEFindCodegen.cmake'
+      - 'cmake/SCEClangFormat.cmake'
       # The Kotlin arm's build, which lives at the root rather than under
       # backends/kotlin/: the version catalog, the wrapper and the settings.
       # Without these a dependency bump classified to no gate at all.
@@ -73,6 +79,12 @@ on:
       - 'backends/python/**'
       - 'backends/c/**'
       - 'backends/kotlin/**'
+      # The modules the C++ and C11 arms' projects declare every generation
+      # through (`sce_codegen_generation`), resolve the generator through, and
+      # format generated C++ by.
+      - 'cmake/SCECodegenPlan.cmake'
+      - 'cmake/SCEFindCodegen.cmake'
+      - 'cmake/SCEClangFormat.cmake'
       # The Kotlin arm's build, which lives at the root rather than under
       # backends/kotlin/: the version catalog, the wrapper and the settings.
       # Without these a dependency bump classified to no gate at all.

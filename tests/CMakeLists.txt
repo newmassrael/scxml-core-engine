@@ -545,19 +545,16 @@ endforeach()
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_days_in_month.scxml
-    HEADER month_length.h
 )
 # static_list_assign's `day_run`, whose list a list variable takes whole.
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_day_run.scxml
-    HEADER day_run.h
 )
 # ... and one that does not declare may-fail, which fails only by its capacity.
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_day_repeat.scxml
-    HEADER day_repeat.h
 )
 # static_state_algorithm's: the records they take and return are the event-schemas
 # the first two imports name (an algorithm's header includes the schema's), and
@@ -567,7 +564,6 @@ foreach(_STATE_SCHEMA schema_entry schema_total)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_SCHEMA}.scxml
-        HEADER ${_STATE_SCHEMA}.h
     )
 endforeach()
 foreach(_STATE_ALGORITHM ledger_add ledger_total ledger_amount ledger_bump ledger_ids
@@ -575,7 +571,6 @@ foreach(_STATE_ALGORITHM ledger_add ledger_total ledger_amount ledger_bump ledge
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_STATE_ALGORITHM}.scxml
-        HEADER ${_STATE_ALGORITHM}.h
     )
 endforeach()
 # static_state_algorithm_enum's: the record whose field is a value of an enum, the
@@ -584,18 +579,15 @@ endforeach()
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/schema_item.scxml
-    HEADER schema_item.h
 )
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/enum_item_status.scxml
-    HEADER enum_item_status.h
 )
 foreach(_STATE_ALGORITHM item_status_set item_status_count item_status_of)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_STATE_ALGORITHM}.scxml
-        HEADER ${_STATE_ALGORITHM}.h
     )
 endforeach()
 # static_state_algorithm_optional's: the record whose `day` may be absent, and the
@@ -604,13 +596,11 @@ endforeach()
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/schema_goal.scxml
-    HEADER schema_goal.h
 )
 foreach(_STATE_ALGORITHM goal_earliest goal_until goal_undated goal_day_sum)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_STATE_ALGORITHM}.scxml
-        HEADER ${_STATE_ALGORITHM}.h
     )
 endforeach()
 # static_optional_record's `item_pick_first`: the record it answers is the record of
@@ -619,18 +609,15 @@ endforeach()
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/schema_item_pick.scxml
-    HEADER schema_item_pick.h
 )
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_item_pick_first.scxml
-    HEADER item_pick_first.h
 )
 foreach(_STD_SYNC_RULE sync_failure sync_retry_at sync_delete_outcome sync_upload_outcome)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/sync/${_STD_SYNC_RULE}.scxml
-        HEADER ${_STD_SYNC_RULE}.h
     )
 endforeach()
 # todo_peer's and sheet_peer's: the standard merge rules a copy of a shared list or
@@ -641,7 +628,6 @@ foreach(_STD_MERGE_SCHEMA hlc_timestamp lww_cell rga_node rga_gone orset_entry m
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/merge/${_STD_MERGE_SCHEMA}.scxml
-        HEADER ${_STD_MERGE_SCHEMA}.h
     )
 endforeach()
 foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rga_holds rga_remove
@@ -650,7 +636,6 @@ foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rg
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/merge/${_STD_MERGE_RULE}.scxml
-        HEADER ${_STD_MERGE_RULE}.h
     )
 endforeach()
 # The standard shared record list's own rules (sce:std/shared/record_list, a
@@ -661,7 +646,6 @@ foreach(_STD_SHARED_DOCUMENT record_member record_roster record_settled register
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/shared/${_STD_SHARED_DOCUMENT}.scxml
-        HEADER ${_STD_SHARED_DOCUMENT}.h
     )
 endforeach()
 # todo_peer's time zone: the standard rule that reads a table of transitions.
@@ -669,7 +653,6 @@ foreach(_STD_TIME_RULE utc_from_local)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/time/${_STD_TIME_RULE}.scxml
-        HEADER ${_STD_TIME_RULE}.h
     )
 endforeach()
 # todo_peer's schedule: the occurrence record, the rule that orders two writes and the one
@@ -680,7 +663,6 @@ foreach(_EVENT_DOCUMENT event_occurrence event_schedule event_later event_latest
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_EVENT_DOCUMENT}.scxml
-        HEADER ${_EVENT_DOCUMENT}.h
     )
 endforeach()
 # static_text_record's: the standard text rules over a record that holds text, and
@@ -689,7 +671,6 @@ foreach(_STD_TEXT_DOCUMENT text_slot text_slot_latest text_slot_retitled text_sl
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/text/${_STD_TEXT_DOCUMENT}.scxml
-        HEADER ${_STD_TEXT_DOCUMENT}.h
     )
 endforeach()
 # static_forge_calls's: a condition, a transform, two lookups, an interpolation and a
@@ -702,7 +683,6 @@ foreach(_CALLED_DOCUMENT forge_call_high forge_call_offset forge_call_ratio forg
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_CALLED_DOCUMENT}.scxml
-        HEADER ${_CALLED_DOCUMENT}.h
     )
 endforeach()
 

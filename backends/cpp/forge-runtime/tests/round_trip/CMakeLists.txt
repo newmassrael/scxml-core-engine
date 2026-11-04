@@ -55,11 +55,14 @@ if(CARGO_EXECUTABLE)
     endif()
 endif()
 
-# Resolve the generator. The search lives in cmake/SCEFindCodegen.cmake
-# so every harness finds it the same way and none of them names a
-# build profile; it aborts with the build command when no profile
-# holds a binary, which is what the hand-written check here used to do.
-include("${REPO_ROOT}/cmake/SCEFindCodegen.cmake")
+# Every generation is declared from the generator's plan of it
+# (`sce_codegen_generation`, cmake/SCECodegenPlan.cmake), as the tree
+# declares its own: the files a fixture's generation writes, its depfile and
+# its one command are the plan's answer, and nothing about them is written
+# here. The module resolves the generator through cmake/SCEFindCodegen.cmake,
+# which every harness finds it by and which aborts with the build command
+# when no profile holds a binary.
+include("${REPO_ROOT}/cmake/SCECodegenPlan.cmake")
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
@@ -73,28 +76,21 @@ set(FIXTURES
     codec_variant_default_marker
 )
 
+# The fixtures are generated into one directory, so they claim in one list: a
+# file two of their generations would write is the first's.
 set(GENERATED_HEADERS "")
 foreach(fixture IN LISTS FIXTURES)
-    set(out_header "${GENERATED_DIR}/${fixture}.h")
-    set(scxml "${RESOURCE_DIR}/${fixture}.scxml")
-    add_custom_command(
-        OUTPUT "${out_header}"
-        COMMAND "${SCE_CODEGEN}" generate "${scxml}"
-                --language cpp
-                --output-dir "${GENERATED_DIR}"
-                --write-deps "${out_header}.d"
-        DEPENDS "${scxml}" "${SCE_CODEGEN}"
-        DEPFILE "${out_header}.d"
-        COMMENT "Generating round-trip fixture ${fixture}.h (cpp)"
-        VERBATIM
-    )
-    list(APPEND GENERATED_HEADERS "${out_header}")
+    sce_codegen_generation(_FIXTURE
+        DOCUMENT "${RESOURCE_DIR}/${fixture}.scxml"
+        OUTPUT_DIR "${GENERATED_DIR}"
+        LANGUAGE cpp
+        CLAIM SCE_ROUND_TRIP_CPP_DECLARED_OUTPUTS
+        COMMENT "Generating round-trip fixture ${fixture} (cpp)")
+    list(APPEND GENERATED_HEADERS ${_FIXTURE_HEADERS})
 endforeach()
 
-add_custom_target(generate_round_trip_fixtures_cpp DEPENDS ${GENERATED_HEADERS})
-
-add_executable(default_round_trip_test default_round_trip_test.cpp)
-add_dependencies(default_round_trip_test generate_round_trip_fixtures_cpp)
+# The headers are the program's sources, so it waits for their generations.
+add_executable(default_round_trip_test default_round_trip_test.cpp ${GENERATED_HEADERS})
 
 target_include_directories(default_round_trip_test PRIVATE
     "${RUNTIME_INCLUDE_DIR}"

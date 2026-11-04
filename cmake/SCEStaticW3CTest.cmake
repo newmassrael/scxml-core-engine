@@ -231,9 +231,12 @@ function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
     # `--write-deps` + DEPFILE: the generated source depends on every jinja2
     # template that rendered it, not just on the SCXML. Without it a template
     # edit leaves the artefact stale and the build reuses it silently.
+    # Run with the environment its plan was asked with (the templates the
+    # build names, `_sce_codegen_launcher` in SCECodegenPlan.cmake).
+    _sce_codegen_launcher(_LAUNCH)
     add_custom_command(
         OUTPUT ${_PLAN_OUTPUTS}
-        COMMAND "${SCE_CODEGEN}" generate "${OUTPUT_DIR}/${_STEM}.scxml"
+        COMMAND ${_LAUNCH} "${SCE_CODEGEN}" generate "${OUTPUT_DIR}/${_STEM}.scxml"
                 -l ${LANGUAGE} -o "${OUTPUT_DIR}"
                 --input-root "${RESOURCE_DIR}"
                 --write-deps "${_PLAN_DEPFILE}"
@@ -264,7 +267,7 @@ function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
         endforeach()
         add_custom_command(
             OUTPUT ${_CHILD_PLAN_OUTPUTS}
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
+            COMMAND ${_LAUNCH} "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
                     ${_CHILD_PLAN_ARGS}
                     -l ${LANGUAGE} -o "${OUTPUT_DIR}"
                     --input-root "${RESOURCE_DIR}"

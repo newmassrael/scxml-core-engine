@@ -123,14 +123,85 @@
 # What the cache cannot see is what no list names, and a file put back with
 # an older date than the answer. A depfile has the same blind spots;
 # removing `<build>/sce-codegen-plans` asks every plan again.
+#
+# ── Three steps a build compiles the files of ──────────────────────────
+#
+# A generation is one of the three commands whose files a target compiles,
+# and each is planned and declared the same way: one document (`generate`,
+# DOCUMENT), a document set compiled together (`orchestrate`, DOCUMENTS: a
+# broadcast log is sized from its element's document, which only the set's
+# compile reads), and a conformance harness rendered from a fixture catalog
+# (`generate-conformance`, MANIFEST). The generator answers `--plan` for each,
+# writes a depfile for each, and lists what each plan read. A set's or a
+# harness's step produces the first file its plan names, as a forge
+# document's does, and the rest are its byproducts.
+#
+# ── Who includes this ───────────────────────────────────────────────────
+#
+# The tree's routes and test directories; the projects configured on their
+# own (`cmake -S backends/<c|cpp>/forge-runtime/tests/<round_trip|
+# conformance>`), which declare every generation through
+# `sce_codegen_generation` as the tree does; and `SCECodegen.cmake`, whose
+# public functions (`sce_add_state_machine` and the rest) are declared
+# through it too, so a consumer's build gets each generation's files from the
+# plan, one producer per file, its depfile, its children and what its
+# machines require. It is installed beside `SCECodegen.cmake` for that
+# (`SCE_CODEGEN_CMAKE_FILES`, sce/sce_codegen_assets.cmake).
 
 include_guard(GLOBAL)
 
-if(NOT SCE_CODEGEN)
+# `cmake_language(DEFER)` is 3.19; a DEPFILE under the Makefile generators is
+# 3.20 (the top CMakeLists.txt of SCE has the measurements).
+if(CMAKE_VERSION VERSION_LESS 3.20)
     message(FATAL_ERROR
-        "SCECodegenPlan.cmake: SCE_CODEGEN unset. Include SCEStaticW3CTest.cmake "
-        "first (it resolves the binary through SCEFindCodegen.cmake).")
+        "SCECodegenPlan.cmake declares each generation with a DEPFILE and at the end of "
+        "its directory, which needs CMake 3.20 or newer; this is CMake ${CMAKE_VERSION}")
 endif()
+
+# The policies the functions below are run with, recorded where they are
+# defined: an includer's own `cmake_minimum_required` may be older. A DEPFILE
+# reaches Ninja with targets that match the command's outputs (CMP0116), and
+# `if(... IN_LIST ...)` is a condition (CMP0057). An `include()` pushes a
+# policy scope of its own, so neither leaks into the includer.
+cmake_policy(SET CMP0057 NEW)
+cmake_policy(SET CMP0116 NEW)
+
+# The generator: the one an includer resolved, or the one
+# `SCEFindCodegen.cmake` resolves as every harness does, which refuses with the
+# command that builds it when there is none. A cached path whose file is gone
+# is resolved again there.
+if(NOT SCE_CODEGEN OR NOT EXISTS "${SCE_CODEGEN}")
+    include(${CMAKE_CURRENT_LIST_DIR}/SCEFindCodegen.cmake)
+endif()
+
+# The environment every run of the generator this module makes is given, a
+# plan or a generation alike, and which a kept answer is keyed on
+# (`_sce_codegen_plan_entry`): the templates it renders with, when the build
+# names them (`SCE_TEMPLATE_DIR`, which `SCECodegen.cmake` finds beside an
+# installed or vendored generator, whose own fallback finds none). Read once,
+# when the module is first included, so a plan asked ahead and the plan it
+# declares are asked with the one environment whatever scope each is called
+# from.
+set_property(GLOBAL PROPERTY _SCE_CODEGEN_ENVIRONMENT "")
+if(SCE_TEMPLATE_DIR)
+    get_filename_component(_SCE_CODEGEN_TEMPLATES "${SCE_TEMPLATE_DIR}" ABSOLUTE)
+    set_property(GLOBAL PROPERTY _SCE_CODEGEN_ENVIRONMENT
+        "SCE_TEMPLATE_DIR=${_SCE_CODEGEN_TEMPLATES}")
+    unset(_SCE_CODEGEN_TEMPLATES)
+endif()
+
+# _sce_codegen_launcher(<VAR>)
+#
+#   What a command that runs the generator is prefixed with: nothing, or
+#   `cmake -E env` and the environment the module gives the generator.
+function(_sce_codegen_launcher VAR)
+    get_property(_GIVEN GLOBAL PROPERTY _SCE_CODEGEN_ENVIRONMENT)
+    if(_GIVEN)
+        set(${VAR} "${CMAKE_COMMAND}" -E env ${_GIVEN} PARENT_SCOPE)
+    else()
+        set(${VAR} "" PARENT_SCOPE)
+    endif()
+endfunction()
 
 # What a generation's command is given to format what it writes
 # (`sce_codegen_format_args`), which `sce_codegen_generation` gives every one.
@@ -158,14 +229,74 @@ function(_sce_codegen_plan_count COUNTER BY)
     set_property(GLOBAL PROPERTY "_SCE_CODEGEN_PLAN_${COUNTER}" "${_NOW}")
 endfunction()
 
-# _sce_codegen_plan_arguments(<VAR> <document> <language> <output dir>
+# _sce_codegen_plan_run(<RUN_VAR> <FORMATS_VAR> <PARSED> <CALLER>)
+#
+#   The command a generation is run with and what it reads, from the options
+#   `cmake_parse_arguments` parsed into `<PARSED>_*` in the caller's scope:
+#   exactly one of
+#     DOCUMENT  <document>      `generate <document>`
+#     DOCUMENTS <document>...   `orchestrate --document <document>...`, a set
+#                               compiled together
+#     MANIFEST  <catalog>       `generate-conformance --manifest <catalog>`, a
+#                               conformance harness
+#   and whether that command formats what it writes (`--no-format`,
+#   `--format-style`): a harness is C or C++ as its templates write it. The
+#   options of one document's generation alone (STEM, CHILDREN_HELD_IN,
+#   CHILD_GENERATIONS) are refused with the other two, which have no child to
+#   hold, and an input root with a harness, whose source set is its catalog's.
+#   CALLER names the call in a refusal.
+function(_sce_codegen_plan_run RUN_VAR FORMATS_VAR PARSED CALLER)
+    set(_FORMS "")
+    foreach(_FORM DOCUMENT DOCUMENTS MANIFEST)
+        if(NOT "${${PARSED}_${_FORM}}" STREQUAL "")
+            list(APPEND _FORMS ${_FORM})
+        endif()
+    endforeach()
+    list(LENGTH _FORMS _COUNT)
+    if(NOT _COUNT EQUAL 1)
+        message(FATAL_ERROR
+            "${CALLER}: a generation reads one DOCUMENT, a set of DOCUMENTS or the MANIFEST "
+            "of a harness, exactly one of them (given: ${_FORMS})")
+    endif()
+    set(_FORMATS TRUE)
+    if(_FORMS STREQUAL "DOCUMENT")
+        set(_RUN generate "${${PARSED}_DOCUMENT}")
+    else()
+        foreach(_ONE_DOCUMENTS STEM CHILDREN_HELD_IN CHILD_GENERATIONS)
+            if(${PARSED}_${_ONE_DOCUMENTS})
+                message(FATAL_ERROR
+                    "${CALLER}: ${_ONE_DOCUMENTS} is one document's generation's; a set "
+                    "and a harness name their files themselves and start no child")
+            endif()
+        endforeach()
+        if(_FORMS STREQUAL "DOCUMENTS")
+            set(_RUN orchestrate)
+            foreach(_MEMBER IN LISTS ${PARSED}_DOCUMENTS)
+                list(APPEND _RUN --document "${_MEMBER}")
+            endforeach()
+        else()
+            if(NOT "${${PARSED}_INPUT_ROOT}" STREQUAL "")
+                message(FATAL_ERROR
+                    "${CALLER}: a harness takes no INPUT_ROOT; its source set is the "
+                    "resources beside its MANIFEST")
+            endif()
+            set(_RUN generate-conformance --manifest "${${PARSED}_MANIFEST}")
+            set(_FORMATS FALSE)
+        endif()
+    endif()
+    set(${RUN_VAR} "${_RUN}" PARENT_SCOPE)
+    set(${FORMATS_VAR} "${_FORMATS}" PARENT_SCOPE)
+endfunction()
+
+# _sce_codegen_plan_arguments(<VAR> <run> <formats> <language> <output dir>
 #     <input root> <child generations> [<argument>...])
 #
 #   The arguments `sce-codegen` is run with to plan one generation, after the
 #   program: the one spelling of a plan's request, which `sce_codegen_plan`
-#   asks and `sce_codegen_plan_request` asks ahead. An empty input root passes
-#   none; a true <child generations> asks for the plans of the children too
-#   (`--plan-children`).
+#   asks and `sce_codegen_plan_request` asks ahead. <run> is the command and
+#   what it reads (`_sce_codegen_plan_run`), <formats> whether it takes a
+#   formatting flag. An empty input root passes none; a true <child
+#   generations> asks for the plans of the children too (`--plan-children`).
 #
 #   `--plan-requires`: every plan states what the machines of each of its
 #   generations need linked (`<PREFIX>_REQUIRES`), so a route that links a
@@ -174,17 +305,49 @@ endfunction()
 #   `--no-format`: formatting changes bytes and never which files, and a plan
 #   is asked once per generation when the tree is configured, so it neither
 #   waits for clang-format on every file nor needs one there.
-function(_sce_codegen_plan_arguments VAR DOCUMENT LANGUAGE OUTPUT_DIR INPUT_ROOT CHILD_GENERATIONS)
+function(_sce_codegen_plan_arguments VAR RUN FORMATS LANGUAGE OUTPUT_DIR INPUT_ROOT CHILD_GENERATIONS)
     set(_ARGUMENTS --plan --plan-requires)
     if(CHILD_GENERATIONS)
         list(APPEND _ARGUMENTS --plan-children)
     endif()
-    list(APPEND _ARGUMENTS generate "${DOCUMENT}" -l "${LANGUAGE}" -o "${OUTPUT_DIR}")
+    list(APPEND _ARGUMENTS ${RUN} -l "${LANGUAGE}" -o "${OUTPUT_DIR}")
     if(INPUT_ROOT)
         list(APPEND _ARGUMENTS --input-root "${INPUT_ROOT}")
     endif()
-    list(APPEND _ARGUMENTS --no-format ${ARGN})
+    if(FORMATS)
+        list(APPEND _ARGUMENTS --no-format)
+    endif()
+    list(APPEND _ARGUMENTS ${ARGN})
     set(${VAR} "${_ARGUMENTS}" PARENT_SCOPE)
+endfunction()
+
+# _sce_codegen_plan_options_judged(<PARSED> <CALLER>)
+#
+#   Refuse the options parsed into `<PARSED>_*` that no plan can be asked
+#   with: an output directory and a language are always given, a document's
+#   generation names its STEM, and the children of a generation are planned
+#   only in a language whose machine this module names
+#   (`_sce_codegen_plan_machine`), since a child's command waits for the
+#   machine of the generation that writes its document.
+function(_sce_codegen_plan_options_judged PARSED CALLER)
+    foreach(_REQUIRED OUTPUT_DIR LANGUAGE)
+        if("${${PARSED}_${_REQUIRED}}" STREQUAL "")
+            message(FATAL_ERROR "${CALLER}: ${_REQUIRED} is required")
+        endif()
+    endforeach()
+    if(NOT "${${PARSED}_DOCUMENT}" STREQUAL "" AND "${${PARSED}_STEM}" STREQUAL "")
+        message(FATAL_ERROR "${CALLER}: STEM is required with DOCUMENT")
+    endif()
+    if(${PARSED}_CHILD_GENERATIONS)
+        _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${${PARSED}_STEM}"
+            "${${PARSED}_LANGUAGE}")
+        if("${_MACHINE}" STREQUAL "")
+            message(FATAL_ERROR
+                "${CALLER}: CHILD_GENERATIONS plans the children of a ${${PARSED}_LANGUAGE} "
+                "generation, a language whose machine this module does not name; the "
+                "languages it names are cpp and c11")
+        endif()
+    endif()
 endfunction()
 
 # _sce_codegen_plan_entry(<ENTRY_VAR> <LINE_VAR> <argument>...)
@@ -199,7 +362,8 @@ endfunction()
 #   installation and its confinement through, and the arguments. Each
 #   variable of `_ENVIRONMENT` is one the generator reads when it plans, and
 #   `the_conformance_cmake_route_declares_what_the_generator_plans` holds the
-#   list to the generator's sources.
+#   list to the generator's sources. A variable the module gives the generator
+#   itself (`_SCE_CODEGEN_ENVIRONMENT`) is keyed on the value it gives.
 function(_sce_codegen_plan_entry ENTRY_VAR LINE_VAR)
     foreach(_ARGUMENT IN LISTS ARGN)
         if("${_ARGUMENT}" MATCHES "[\t\n]")
@@ -209,9 +373,16 @@ function(_sce_codegen_plan_entry ENTRY_VAR LINE_VAR)
         endif()
     endforeach()
     set(_ENVIRONMENT SCE_FILE_ROOT SCE_SCHEMAS_DIR SCE_TEMPLATE_DIR SCE_WORKSPACE_ROOT)
+    get_property(_GIVEN GLOBAL PROPERTY _SCE_CODEGEN_ENVIRONMENT)
     set(_IDENTITY "${SCE_CODEGEN}")
     foreach(_NAME IN LISTS _ENVIRONMENT)
-        string(APPEND _IDENTITY "\n${_NAME}=$ENV{${_NAME}}")
+        set(_VALUE "$ENV{${_NAME}}")
+        foreach(_ASSIGNMENT IN LISTS _GIVEN)
+            if("${_ASSIGNMENT}" MATCHES "^${_NAME}=(.*)$")
+                set(_VALUE "${CMAKE_MATCH_1}")
+            endif()
+        endforeach()
+        string(APPEND _IDENTITY "\n${_NAME}=${_VALUE}")
     endforeach()
     string(JOIN "\t" _REQUEST ${ARGN})
     string(SHA256 _KEY "${_IDENTITY}\n${_REQUEST}")
@@ -265,9 +436,11 @@ function(_sce_codegen_plan_fresh VAR ENTRY)
     if(NOT "${_WHY}" STREQUAL "")
         set(_DOCUMENT "${ENTRY}")
         if(EXISTS "${ENTRY}.request")
+            # The document a plan generates, the first of a set, or the
+            # catalog of a harness (`_sce_codegen_plan_arguments`).
             file(READ "${ENTRY}.request" _ASKED)
-            if("${_ASKED}" MATCHES "\tgenerate\t([^\t\n]*)")
-                set(_DOCUMENT "${CMAKE_MATCH_1}")
+            if("${_ASKED}" MATCHES "\t(generate|--document|--manifest)\t([^\t\n]*)")
+                set(_DOCUMENT "${CMAKE_MATCH_2}")
             endif()
         endif()
         set_property(GLOBAL APPEND PROPERTY _SCE_CODEGEN_PLAN_STALE "${_DOCUMENT}: ${_WHY}")
@@ -296,8 +469,11 @@ function(_sce_codegen_plan_ask)
     if(SCE_CODEGEN_PLAN_JOBS)
         set(_JOBS --jobs "${SCE_CODEGEN_PLAN_JOBS}")
     endif()
+    # Each plan of the batch is a process of its own, which inherits the
+    # environment the batch is run with.
+    _sce_codegen_launcher(_LAUNCH)
     execute_process(
-        COMMAND "${SCE_CODEGEN}" plan-batch
+        COMMAND ${_LAUNCH} "${SCE_CODEGEN}" plan-batch
                 --requests "${_CACHE}/requests.txt"
                 --results "${_CACHE}/entries"
                 ${_JOBS}
@@ -453,8 +629,9 @@ function(_sce_codegen_plan_settle)
     endif()
 endfunction()
 
-# sce_codegen_plan_request(STEM <stem> DOCUMENT <document> OUTPUT_DIR <dir>
-#     LANGUAGE <cpp|c11>
+# sce_codegen_plan_request(
+#     STEM <stem> DOCUMENT <document> | DOCUMENTS <document>... | MANIFEST <catalog>
+#     OUTPUT_DIR <dir> LANGUAGE <language>
 #     [INPUT_ROOT <dir>]
 #     [CHILDREN_HELD_IN <dir>]
 #     [CHILD_GENERATIONS]
@@ -471,20 +648,16 @@ endfunction()
 #   so a request asked ahead that the plan does not match only costs a plan.
 function(sce_codegen_plan_request)
     cmake_parse_arguments(PARSE_ARGV 0 _SCR "CHILD_GENERATIONS"
-        "STEM;DOCUMENT;OUTPUT_DIR;LANGUAGE;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM"
-        "ARGS")
+        "STEM;DOCUMENT;MANIFEST;OUTPUT_DIR;LANGUAGE;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM"
+        "DOCUMENTS;ARGS")
     if(_SCR_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR
             "sce_codegen_plan_request: unexpected argument(s): ${_SCR_UNPARSED_ARGUMENTS}")
     endif()
-    foreach(_REQUIRED STEM DOCUMENT OUTPUT_DIR LANGUAGE)
-        if("${_SCR_${_REQUIRED}}" STREQUAL "")
-            message(FATAL_ERROR "sce_codegen_plan_request: ${_REQUIRED} is required")
-        endif()
-    endforeach()
-    # The language is judged as `sce_codegen_plan` judges it.
-    _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_SCR_STEM}" "${_SCR_LANGUAGE}")
-    _sce_codegen_plan_arguments(_REQUEST "${_SCR_DOCUMENT}" "${_SCR_LANGUAGE}"
+    # Judged as `sce_codegen_plan` judges them.
+    _sce_codegen_plan_options_judged(_SCR "sce_codegen_plan_request")
+    _sce_codegen_plan_run(_RUN _FORMATS _SCR "sce_codegen_plan_request")
+    _sce_codegen_plan_arguments(_REQUEST "${_RUN}" "${_FORMATS}" "${_SCR_LANGUAGE}"
         "${_SCR_OUTPUT_DIR}" "${_SCR_INPUT_ROOT}" "${_SCR_CHILD_GENERATIONS}" ${_SCR_ARGS})
     _sce_codegen_plan_entry(_ENTRY _LINE ${_REQUEST})
     get_filename_component(_KEY "${_ENTRY}" NAME)
@@ -545,6 +718,12 @@ endif()
 #   STEM, header first, and the name of the depfile it is asked to write
 #   beside it. The one place a build names them: every declaration of a
 #   machine reads them from here, and every plan is held to naming them.
+#
+#   A language a target compiles at build time is C++ or C11; a generation
+#   of another one (Rust, Kotlin, Go, Python, which `sce_add_state_machine`
+#   generates for a build of their own) has no machine named here, both are
+#   empty, and its step produces the first file its plan names, as a forge
+#   document's does.
 function(_sce_codegen_plan_machine MACHINE_VAR DEPFILE_VAR STEM LANGUAGE)
     if(LANGUAGE STREQUAL "cpp")
         set(${MACHINE_VAR} "${STEM}_sm.h" PARENT_SCOPE)
@@ -557,21 +736,22 @@ function(_sce_codegen_plan_machine MACHINE_VAR DEPFILE_VAR STEM LANGUAGE)
         set(${MACHINE_VAR} "${STEM}_sm.h" "${STEM}_sm.c" PARENT_SCOPE)
         set(${DEPFILE_VAR} "${STEM}_sm.c.d" PARENT_SCOPE)
     else()
-        message(FATAL_ERROR
-            "sce_codegen_plan: LANGUAGE ${LANGUAGE} is generated at build time by no "
-            "CMake route; the routes generate cpp and c11")
+        set(${MACHINE_VAR} "" PARENT_SCOPE)
+        set(${DEPFILE_VAR} "" PARENT_SCOPE)
     endif()
 endfunction()
 
 # sce_codegen_plan(<PREFIX>
-#     STEM <stem> DOCUMENT <document> OUTPUT_DIR <dir> LANGUAGE <cpp|c11>
+#     STEM <stem> DOCUMENT <document> | DOCUMENTS <document>... | MANIFEST <catalog>
+#     OUTPUT_DIR <dir> LANGUAGE <language>
 #     [INPUT_ROOT <dir>]
 #     [CHILDREN_HELD_IN <dir>]
 #     [CHILD_GENERATIONS]
 #     [CLAIM <global property>]
 #     [ARGS <arg>...])
 #
-#   Ask the generator which files generating DOCUMENT into OUTPUT_DIR writes.
+#   Ask the generator which files generating DOCUMENT (or compiling the set
+#   DOCUMENTS, or rendering the harness of MANIFEST) into OUTPUT_DIR writes.
 #
 #   STEM        The name the run gives the machine: the document's own stem,
 #               which names its files. A document of a forge kind names its
@@ -579,9 +759,17 @@ endfunction()
 #   DOCUMENT    A document on disk now, or the library name of a standard
 #               statechart (`sce:std/...`), which the generator reads from the
 #               library it embeds.
+#   DOCUMENTS   A document set compiled together (`orchestrate`), each a
+#               document on disk or a library name. The step produces the
+#               first file the plan names.
+#   MANIFEST    A forge fixture catalog, whose conformance harness
+#               (`generate-conformance`) is the one file the step produces.
 #   OUTPUT_DIR  Where the run writes. Every file of the answer has to land
 #               directly in it: this declares the outputs of a flat directory.
-#   LANGUAGE    `cpp` or `c11`, the two languages generated at build time.
+#   LANGUAGE    The language generated: `cpp` and `c11`, which a target
+#               compiles, have the machine of a statechart named here
+#               (`_sce_codegen_plan_machine`); another language's step
+#               produces the first file its plan names.
 #   INPUT_ROOT  The `--input-root` the run is given; empty passes none, as the
 #               run of a library name passes none.
 #   CHILDREN_HELD_IN
@@ -631,13 +819,22 @@ endfunction()
 #                             document depends on, which rewrites it)
 #
 #   Sets, in the caller's scope:
+#     <PREFIX>_RUN            the command the run is and what it reads:
+#                             `generate <document>`, `orchestrate --document
+#                             <document>...` or `generate-conformance
+#                             --manifest <catalog>`; for a plan FROM another,
+#                             `generate` and the child document
+#     <PREFIX>_FORMATS        TRUE when that command takes a formatting flag
+#                             (a harness does not)
 #     <PREFIX>_DOCUMENT       the document the run reads: DOCUMENT, or for a
-#                             plan FROM another, the child document
+#                             plan FROM another, the child document; empty
+#                             for a set and a harness
 #     <PREFIX>_DEPENDS        what the command depends on before its depfile
 #                             is written: the document (unless it is a
 #                             library name) and each document staged from
-#                             CHILDREN_HELD_IN, or for a plan FROM another,
-#                             as above
+#                             CHILDREN_HELD_IN, each document of a set that
+#                             is not a library name, or a harness's catalog;
+#                             or for a plan FROM another, as above
 #     <PREFIX>_INPUT_ROOT     the input root the run's generations are planned
 #                             with: INPUT_ROOT, or the document's directory
 #                             when none is given (empty for a library name),
@@ -700,8 +897,8 @@ endfunction()
 # commands declaring one file as an output is an error of its own.
 function(sce_codegen_plan PREFIX)
     cmake_parse_arguments(PARSE_ARGV 1 _SCP "CHILD_GENERATIONS"
-        "STEM;DOCUMENT;OUTPUT_DIR;LANGUAGE;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM;FROM;CHILD"
-        "ARGS")
+        "STEM;DOCUMENT;MANIFEST;OUTPUT_DIR;LANGUAGE;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM;FROM;CHILD"
+        "DOCUMENTS;ARGS")
     if(_SCP_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR
             "sce_codegen_plan(${PREFIX}): unexpected argument(s): ${_SCP_UNPARSED_ARGUMENTS}")
@@ -715,10 +912,14 @@ function(sce_codegen_plan PREFIX)
     set(_DOCUMENT "")
     set(_DEPENDS "")
     set(_REQUIRES "")
+    # Whether the run is one document's generation, whose machine its stem
+    # names; a set's and a harness's step produces the first file it writes.
+    set(_ONE_DOCUMENT TRUE)
 
     if(_SCP_FROM)
         # ── A generation another plan holds ─────────────────────────────
-        foreach(_GIVEN STEM DOCUMENT OUTPUT_DIR LANGUAGE INPUT_ROOT CHILDREN_HELD_IN CLAIM ARGS)
+        foreach(_GIVEN STEM DOCUMENT DOCUMENTS MANIFEST OUTPUT_DIR LANGUAGE INPUT_ROOT
+                CHILDREN_HELD_IN CLAIM ARGS)
             if(NOT "${_SCP_${_GIVEN}}" STREQUAL "")
                 message(FATAL_ERROR
                     "sce_codegen_plan(${PREFIX} FROM ${_SCP_FROM}): ${_GIVEN} is the plan's "
@@ -746,6 +947,8 @@ function(sce_codegen_plan PREFIX)
         set(_CLAIM "${${_SCP_FROM}_CLAIM}")
         set(_INPUT_ROOT "${${_SCP_FROM}_INPUT_ROOT}")
         set(_DOCUMENT "${${_FROM}_DOCUMENT}")
+        set(_RUN generate "${_DOCUMENT}")
+        set(_FORMATS TRUE)
         set(_ARGS "${${_FROM}_ARGS}")
         set(_REQUIRES "${${_FROM}_REQUIRES}")
         set(_DEPENDS "${_DOCUMENT}")
@@ -769,42 +972,50 @@ function(sce_codegen_plan PREFIX)
             message(FATAL_ERROR
                 "sce_codegen_plan(${PREFIX}): CHILD names a generation of the plan FROM names")
         endif()
-        foreach(_REQUIRED STEM DOCUMENT OUTPUT_DIR LANGUAGE)
-            if("${_SCP_${_REQUIRED}}" STREQUAL "")
-                message(FATAL_ERROR "sce_codegen_plan(${PREFIX}): ${_REQUIRED} is required")
-            endif()
-        endforeach()
+        _sce_codegen_plan_options_judged(_SCP "sce_codegen_plan(${PREFIX})")
+        _sce_codegen_plan_run(_RUN _FORMATS _SCP "sce_codegen_plan(${PREFIX})")
         set(_STEM "${_SCP_STEM}")
         set(_OUTPUT_DIR "${_SCP_OUTPUT_DIR}")
         set(_LANGUAGE "${_SCP_LANGUAGE}")
         set(_CLAIM "${_SCP_CLAIM}")
         set(_ARGS "${_SCP_ARGS}")
-        # The language is judged before the generator is asked.
-        _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_STEM}" "${_LANGUAGE}")
-
         set(_INPUT_ROOT "${_SCP_INPUT_ROOT}")
-        set(_DOCUMENT "${_SCP_DOCUMENT}")
-        if(NOT _SCP_INPUT_ROOT AND NOT "${_SCP_DOCUMENT}" MATCHES "^sce:")
-            # The root the generator takes when it is given none: the
-            # document's own directory, which a child's generation, reading
-            # its document from the output directory, is given explicitly.
-            get_filename_component(_INPUT_ROOT "${_SCP_DOCUMENT}" DIRECTORY)
-        endif()
-        if(NOT "${_SCP_DOCUMENT}" MATCHES "^sce:")
-            set(_DEPENDS "${_SCP_DOCUMENT}")
+
+        if(NOT "${_SCP_DOCUMENT}" STREQUAL "")
+            set(_DOCUMENT "${_SCP_DOCUMENT}")
+            if(NOT _SCP_INPUT_ROOT AND NOT "${_SCP_DOCUMENT}" MATCHES "^sce:")
+                # The root the generator takes when it is given none: the
+                # document's own directory, which a child's generation,
+                # reading its document from the output directory, is given
+                # explicitly.
+                get_filename_component(_INPUT_ROOT "${_SCP_DOCUMENT}" DIRECTORY)
+            endif()
+            if(NOT "${_SCP_DOCUMENT}" MATCHES "^sce:")
+                set(_DEPENDS "${_SCP_DOCUMENT}")
+            endif()
+        else()
+            set(_ONE_DOCUMENT FALSE)
+            # What a set reads before its depfile is written: each document
+            # of it on disk (a library name is in the generator); a
+            # harness's, its catalog.
+            foreach(_MEMBER IN LISTS _SCP_DOCUMENTS _SCP_MANIFEST)
+                if(NOT "${_MEMBER}" MATCHES "^sce:")
+                    list(APPEND _DEPENDS "${_MEMBER}")
+                endif()
+            endforeach()
         endif()
         # The answer kept for this request while it is current, the
         # generator's otherwise (`_sce_codegen_plan_answer`).
-        _sce_codegen_plan_arguments(_REQUEST "${_SCP_DOCUMENT}" "${_LANGUAGE}"
+        _sce_codegen_plan_arguments(_REQUEST "${_RUN}" "${_FORMATS}" "${_LANGUAGE}"
             "${_OUTPUT_DIR}" "${_SCP_INPUT_ROOT}" "${_SCP_CHILD_GENERATIONS}" ${_SCP_ARGS})
         _sce_codegen_plan_answer(_PLAN_RESULT _PLAN_OUTPUT _PLAN_ERROR ${_REQUEST})
         if(NOT _PLAN_RESULT EQUAL 0)
             message(FATAL_ERROR
-                "sce-codegen --plan generate failed for ${_SCP_DOCUMENT} (${_LANGUAGE}), "
-                "so the outputs of its generation cannot be declared. A sce-codegen older "
-                "than --plan (or, asked with CHILD_GENERATIONS, than --plan-children, or "
-                "than --plan-reads) answers with a usage error: rebuild it from this tree.\n"
-                "${_PLAN_ERROR}")
+                "sce-codegen --plan ${_RUN} failed (${_LANGUAGE}), so the outputs of its "
+                "generation cannot be declared. A sce-codegen older than --plan (or, asked "
+                "with CHILD_GENERATIONS, than --plan-children, or than --plan-reads, or "
+                "asked of a set or a harness, than their plans) answers with a usage error: "
+                "rebuild it from this tree.\n${_PLAN_ERROR}")
         endif()
 
         # A line that begins with a tab names no file: it states what the
@@ -834,9 +1045,9 @@ function(sce_codegen_plan PREFIX)
             file(RELATIVE_PATH _RELATIVE "${_OUTPUT_DIR}" "${_PATH}")
             if("${_RELATIVE}" MATCHES "/")
                 message(FATAL_ERROR
-                    "sce-codegen --plan generate for ${_SCP_DOCUMENT} (${_LANGUAGE}) names "
-                    "${_PATH}, which is not directly in ${_OUTPUT_DIR}: sce_codegen_plan "
-                    "declares the outputs of a flat output directory")
+                    "sce-codegen --plan ${_RUN} (${_LANGUAGE}) names ${_PATH}, which is not "
+                    "directly in ${_OUTPUT_DIR}: sce_codegen_plan declares the outputs of a "
+                    "flat output directory")
             endif()
             if("${_NAME}" MATCHES "\\.scxml$")
                 string(REGEX REPLACE "\\.scxml$" "" _CHILD "${_NAME}")
@@ -914,7 +1125,7 @@ function(sce_codegen_plan PREFIX)
         foreach(_LINE ${_REQUIREMENT_LINES})
             if(NOT "${_LINE}" MATCHES "^\trequires\t([^\t]*)\t([^\t]+)$")
                 message(FATAL_ERROR
-                    "sce-codegen --plan generate for ${_SCP_DOCUMENT} (${_LANGUAGE}) answers "
+                    "sce-codegen --plan ${_RUN} (${_LANGUAGE}) answers "
                     "a line this module cannot read: \"${_LINE}\". A line that begins with a "
                     "tab states what a generation requires, "
                     "`\\trequires\\t<generation>\\t<requirement>`.")
@@ -1012,13 +1223,17 @@ function(sce_codegen_plan PREFIX)
         # lists the files in the order the run wrote them and the generator
         # writes its primary first and names it the depfile's one target. A
         # run that writes a state machine is a statechart's, and is held to
-        # the machine its stem names below.
+        # the machine its stem names below. So is a set's run and a harness's
+        # (whose primary the generator likewise writes first), and a run of a
+        # language whose machine this module does not name.
         set(_WRITES_A_MACHINE FALSE)
-        foreach(_NAME ${_FILES})
-            if("${_NAME}" MATCHES "_sm\\.h$")
-                set(_WRITES_A_MACHINE TRUE)
-            endif()
-        endforeach()
+        if(_ONE_DOCUMENT AND NOT "${_MACHINE}" STREQUAL "")
+            foreach(_NAME ${_FILES})
+                if("${_NAME}" MATCHES "_sm\\.h$")
+                    set(_WRITES_A_MACHINE TRUE)
+                endif()
+            endforeach()
+        endif()
         if(NOT _WRITES_A_MACHINE)
             set(_MACHINE "")
             foreach(_NAME ${_FILES})
@@ -1029,8 +1244,8 @@ function(sce_codegen_plan PREFIX)
             endforeach()
             if("${_MACHINE}" STREQUAL "")
                 message(FATAL_ERROR
-                    "sce-codegen --plan generate for ${_SCP_DOCUMENT} (${_LANGUAGE}) names "
-                    "no file the run writes, so its command would produce nothing")
+                    "sce-codegen --plan ${_RUN} (${_LANGUAGE}) names no file the run "
+                    "writes, so its command would produce nothing")
             endif()
             set(_DEPFILE_NAME "${_MACHINE}.d")
         endif()
@@ -1125,7 +1340,7 @@ endfunction()
 macro(_sce_codegen_plan_publish TO FROM)
     foreach(_SCPP_NAME FILES SYNTH CHILDREN STAGED GENERATIONS OUTPUTS BYPRODUCTS
             BYPRODUCTS_ARG DEPFILE HEADERS SOURCES REQUIRES DECLARED_ELSEWHERE DOCUMENT
-            DEPENDS ARGS STEM OUTPUT_DIR LANGUAGE CLAIM INPUT_ROOT)
+            RUN FORMATS DEPENDS ARGS STEM OUTPUT_DIR LANGUAGE CLAIM INPUT_ROOT)
         set(${TO}_${_SCPP_NAME} "${${FROM}${_SCPP_NAME}}" PARENT_SCOPE)
     endforeach()
     foreach(_SCPP_CHILD ${${FROM}GENERATIONS})
@@ -1141,22 +1356,27 @@ endmacro()
 #   The options `sce_codegen_plan` is asked with for one generation whose
 #   options `cmake_parse_arguments` parsed into `<PARSED>_*` in the caller's
 #   scope: the one list `sce_codegen_generation` asks ahead with and keeps for
-#   the declaration to plan with. The stem is the document's name when not
+#   the declaration to plan with. A document's stem is its name when not
 #   given, and the deploy is passed as the run's `--deploy`. CALLER names the
 #   call in a refusal.
 function(_sce_codegen_generation_plan_options VAR PARSED CALLER)
-    foreach(_REQUIRED DOCUMENT OUTPUT_DIR LANGUAGE)
-        if("${${PARSED}_${_REQUIRED}}" STREQUAL "")
-            message(FATAL_ERROR "${CALLER}: ${_REQUIRED} is required")
+    set(_OPTIONS "")
+    if(NOT "${${PARSED}_DOCUMENT}" STREQUAL "")
+        set(_STEM "${${PARSED}_STEM}")
+        if("${_STEM}" STREQUAL "")
+            get_filename_component(_STEM "${${PARSED}_DOCUMENT}" NAME_WLE)
         endif()
-    endforeach()
-    set(_STEM "${${PARSED}_STEM}")
-    if("${_STEM}" STREQUAL "")
-        get_filename_component(_STEM "${${PARSED}_DOCUMENT}" NAME_WLE)
+        list(APPEND _OPTIONS STEM "${_STEM}" DOCUMENT "${${PARSED}_DOCUMENT}")
+    elseif(NOT "${${PARSED}_STEM}" STREQUAL "")
+        list(APPEND _OPTIONS STEM "${${PARSED}_STEM}")
     endif()
-    set(_OPTIONS
-        STEM "${_STEM}"
-        DOCUMENT "${${PARSED}_DOCUMENT}"
+    if(NOT "${${PARSED}_DOCUMENTS}" STREQUAL "")
+        list(APPEND _OPTIONS DOCUMENTS ${${PARSED}_DOCUMENTS})
+    endif()
+    if(NOT "${${PARSED}_MANIFEST}" STREQUAL "")
+        list(APPEND _OPTIONS MANIFEST "${${PARSED}_MANIFEST}")
+    endif()
+    list(APPEND _OPTIONS
         OUTPUT_DIR "${${PARSED}_OUTPUT_DIR}"
         LANGUAGE "${${PARSED}_LANGUAGE}")
     if(${PARSED}_CHILD_GENERATIONS)
@@ -1176,7 +1396,8 @@ function(_sce_codegen_generation_plan_options VAR PARSED CALLER)
 endfunction()
 
 # sce_codegen_generation(<PREFIX>
-#     DOCUMENT <document> OUTPUT_DIR <dir> LANGUAGE <cpp|c11>
+#     DOCUMENT <document> | DOCUMENTS <document>... | MANIFEST <catalog>
+#     OUTPUT_DIR <dir> LANGUAGE <language>
 #     [STEM <stem>]
 #     [DEPLOY <deploy.yaml>]
 #     [INPUT_ROOT <dir>]
@@ -1186,14 +1407,17 @@ endfunction()
 #     [ARGS <arg>...]
 #     [COMMENT <text>])
 #
-#   One generation of DOCUMENT into OUTPUT_DIR, declared from its plan: the
-#   command that runs it is declared with exactly the files the plan names as
-#   its OUTPUT and BYPRODUCTS, the depfile it asks the generator for as its
-#   DEPFILE, and what it reads before that depfile exists (the document, the
-#   deploy, the staged children, the generator) as its DEPENDS. Every file of
-#   the run has this command as its one producer, and no file name is written
-#   at the call: a run with a deploy declares the transport it writes beside
-#   the machine because the plan names it.
+#   One generation into OUTPUT_DIR, declared from its plan: of DOCUMENT
+#   (`generate`), of the document set DOCUMENTS compiled together
+#   (`orchestrate`), or of the conformance harness of the fixture catalog
+#   MANIFEST (`generate-conformance`). The command that runs it is declared
+#   with exactly the files the plan names as its OUTPUT and BYPRODUCTS, the
+#   depfile it asks the generator for as its DEPFILE, and what it reads before
+#   that depfile exists (the documents or the catalog, the deploy, the staged
+#   children, the generator) as its DEPENDS. Every file of the run has this
+#   command as its one producer, and no file name is written at the call: a
+#   run with a deploy declares the transport it writes beside the machine
+#   because the plan names it.
 #
 #   The call asks the plan ahead (`sce_codegen_plan_request`) and declares
 #   nothing. Every generation called in a directory is declared when the
@@ -1204,7 +1428,7 @@ endfunction()
 #   build would never run.
 #
 #   STEM     The machine's name, which names its files: the document's name
-#            without `.scxml` when not given.
+#            without `.scxml` when not given. One document's alone.
 #   DEPLOY   The deploy the run is generated with (`--deploy`), which the
 #            plan is asked with too and the command depends on.
 #   CHILD_GENERATIONS
@@ -1228,10 +1452,15 @@ endfunction()
 #                        CHILD_GENERATIONS every header its child generations
 #                        write: what a target compiles of it
 #     <PREFIX>_SOURCES   likewise every C translation unit
+#     <PREFIX>_FILES     likewise every file, whatever it is: a C++
+#                        harness's translation unit, and what a generation
+#                        of a language no target here compiles writes, which a
+#                        target that has to wait for it lists as sources it
+#                        does not compile
 function(sce_codegen_generation PREFIX)
     cmake_parse_arguments(PARSE_ARGV 1 _SCGA "CHILD_GENERATIONS"
-        "STEM;DOCUMENT;OUTPUT_DIR;LANGUAGE;DEPLOY;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM;COMMENT"
-        "ARGS")
+        "STEM;DOCUMENT;MANIFEST;OUTPUT_DIR;LANGUAGE;DEPLOY;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM;COMMENT"
+        "DOCUMENTS;ARGS")
     if(_SCGA_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR
             "sce_codegen_generation(${PREFIX}): unexpected argument(s): "
@@ -1277,7 +1506,7 @@ function(sce_codegen_generation PREFIX)
     foreach(_KEPT DEPLOY INPUT_ROOT COMMENT)
         set_property(GLOBAL PROPERTY "_SCE_CODEGEN_GENERATION_${_ID}_${_KEPT}" "${_SCGA_${_KEPT}}")
     endforeach()
-    foreach(_KIND HEADERS SOURCES)
+    foreach(_KIND HEADERS SOURCES FILES)
         set(${PREFIX}_${_KIND}
             "$<TARGET_PROPERTY:sce_codegen_generations,SCE_GENERATION_${_ID}_${_KIND}>"
             PARENT_SCOPE)
@@ -1289,8 +1518,8 @@ endfunction()
 #   At the end of a directory: send every plan queued and not kept to the
 #   generator in one batch, then declare every generation
 #   `sce_codegen_generation` was called for in the directory, with every
-#   child generation a CHILD_GENERATIONS plan holds, and fill the headers and
-#   sources each call's generator expressions name.
+#   child generation a CHILD_GENERATIONS plan holds, and fill the headers,
+#   sources and files each call's generator expressions name.
 function(_sce_codegen_generations_declare)
     set_property(DIRECTORY PROPERTY _SCE_CODEGEN_GENERATIONS_DECLARED TRUE)
     sce_codegen_plan_prefetch()
@@ -1299,16 +1528,34 @@ function(_sce_codegen_generations_declare)
         _sce_codegen_generation_declare(_RUN ${_ID})
         set(_HEADERS ${_RUN_HEADERS})
         set(_SOURCES ${_RUN_SOURCES})
+        _sce_codegen_generation_files(_FILES _RUN)
         foreach(_CHILD IN LISTS _RUN_GENERATIONS)
             _sce_codegen_generation_declare(_CHILD_RUN ${_ID} FROM _RUN CHILD "${_CHILD}")
             list(APPEND _HEADERS ${_CHILD_RUN_HEADERS})
             list(APPEND _SOURCES ${_CHILD_RUN_SOURCES})
+            _sce_codegen_generation_files(_CHILD_FILES _CHILD_RUN)
+            list(APPEND _FILES ${_CHILD_FILES})
         endforeach()
+        list(REMOVE_DUPLICATES _FILES)
         set_property(TARGET sce_codegen_generations
             PROPERTY "SCE_GENERATION_${_ID}_HEADERS" ${_HEADERS})
         set_property(TARGET sce_codegen_generations
             PROPERTY "SCE_GENERATION_${_ID}_SOURCES" ${_SOURCES})
+        set_property(TARGET sce_codegen_generations
+            PROPERTY "SCE_GENERATION_${_ID}_FILES" ${_FILES})
     endforeach()
+endfunction()
+
+# _sce_codegen_generation_files(<VAR> <PLAN>)
+#
+#   The path of every file the generation the plan <PLAN> declares writes:
+#   each of `<PLAN>_FILES` in its output directory.
+function(_sce_codegen_generation_files VAR PLAN)
+    set(_PATHS "")
+    foreach(_NAME IN LISTS ${PLAN}_FILES)
+        list(APPEND _PATHS "${${PLAN}_OUTPUT_DIR}/${_NAME}")
+    endforeach()
+    set(${VAR} "${_PATHS}" PARENT_SCOPE)
 endfunction()
 
 # _sce_codegen_generation_declare(<PREFIX> <ID> [FROM <plan> CHILD <name>])
@@ -1348,7 +1595,14 @@ function(_sce_codegen_generation_declare PREFIX ID)
             set(_INPUT_ROOT_ARGS --input-root "${_INPUT_ROOT}")
         endif()
         if("${_COMMENT}" STREQUAL "")
-            set(_COMMENT "Generating ${_SCGA_PLAN_STEM} (${_SCGA_PLAN_LANGUAGE})")
+            # A document's machine by its name; a set or a harness by the
+            # first file it writes.
+            set(_NAMED "${_SCGA_PLAN_STEM}")
+            if("${_NAMED}" STREQUAL "")
+                list(GET _SCGA_PLAN_OUTPUTS 0 _PRIMARY)
+                get_filename_component(_NAMED "${_PRIMARY}" NAME)
+            endif()
+            set(_COMMENT "Generating ${_NAMED} (${_SCGA_PLAN_LANGUAGE})")
         endif()
     endif()
     list(APPEND _DEPENDS ${_SCGA_PLAN_DEPENDS})
@@ -1356,10 +1610,17 @@ function(_sce_codegen_generation_declare PREFIX ID)
     # A machine another plan of the same claim declared is that plan's
     # command's to write.
     if(NOT _SCGA_PLAN_DECLARED_ELSEWHERE)
-        sce_codegen_format_args(_FORMAT_ARGS)
+        # The build's formatting, for a command that formats what it writes
+        # (a harness is written as its templates write it), and the
+        # environment the module gives every run of the generator.
+        set(_FORMAT_ARGS "")
+        if(_SCGA_PLAN_FORMATS)
+            sce_codegen_format_args(_FORMAT_ARGS)
+        endif()
+        _sce_codegen_launcher(_LAUNCH)
         add_custom_command(
             OUTPUT ${_SCGA_PLAN_OUTPUTS}
-            COMMAND "${SCE_CODEGEN}" generate "${_SCGA_PLAN_DOCUMENT}"
+            COMMAND ${_LAUNCH} "${SCE_CODEGEN}" ${_SCGA_PLAN_RUN}
                     ${_SCGA_PLAN_ARGS}
                     -l "${_SCGA_PLAN_LANGUAGE}" -o "${_SCGA_PLAN_OUTPUT_DIR}"
                     ${_INPUT_ROOT_ARGS}

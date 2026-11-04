@@ -825,17 +825,17 @@ if(SCE_ENABLE_HTTP AND NOT EMSCRIPTEN AND TARGET httplib)
 endif()
 
 # Stage SCECodegen.cmake into the build tree so find_package(SCE PATHS build)
-# can include() it from the same directory as SCEConfig.cmake
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/SCECodegen.cmake"
-    COPYONLY
-)
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEClangFormat.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/SCEClangFormat.cmake"
-    COPYONLY
-)
+# can include() it from the same directory as SCEConfig.cmake, with every
+# module it includes from its own directory beside it: the list the install
+# ships (sce/sce_codegen_assets.cmake), so the two cannot name different files.
+foreach(_sce_codegen_cmake IN LISTS SCE_CODEGEN_CMAKE_FILES)
+    get_filename_component(_sce_codegen_cmake_name "${_sce_codegen_cmake}" NAME)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_codegen_cmake}"
+        "${CMAKE_CURRENT_BINARY_DIR}/${_sce_codegen_cmake_name}"
+        COPYONLY
+    )
+endforeach()
 
 # ---------------------------------------------------------------------------
 # Install-tree package config (staged under _install/ to avoid overwriting
@@ -900,7 +900,8 @@ install(FILES
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
     COMPONENT Core
 )
-# SCECodegen.cmake + SCEClangFormat.cmake — file list in
+# SCECodegen.cmake and the modules it includes (SCECodegenPlan.cmake,
+# SCEFindCodegen.cmake, SCEClangFormat.cmake) — file list in
 # sce/sce_codegen_assets.cmake (SSOT shared with package_embed.sh).
 foreach(_sce_codegen_cmake IN LISTS SCE_CODEGEN_CMAKE_FILES)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_codegen_cmake}"

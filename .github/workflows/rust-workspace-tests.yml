@@ -125,6 +125,10 @@ on:
       # The policy documents `forge_conformance` compiles into its per-language
       # run tests: an edit to one changes what those tests assert.
       - 'tests/forge/resources/**'
+      # The forge conformance catalog and the document sets beside it, which
+      # `generation_can_be_planned` and `configure_plans_are_kept_and_asked_together`
+      # plan and generate a harness and a set from.
+      - 'tests/forge/conformance/**'
       # The product line every backend that keeps the variability is held to
       # (docs/adr/0057 §10); `sce-feature-conformance`'s build.rs generates it.
       - 'tests/product_line/**'
@@ -147,6 +151,9 @@ on:
       # `a_configure_asks_each_plan_once_per_input_state` configures a project
       # through with a real `cmake`.
       - 'cmake/SCEClangFormat.cmake'
+      # The locator the plan module resolves the generator through when no
+      # includer did.
+      - 'cmake/SCEFindCodegen.cmake'
       # The test tree's build, whose Mesh rule-3 override and every command
       # it declares from a plan the same suite compiles in and holds.
       - 'tests/CMakeLists.txt'
@@ -248,6 +255,10 @@ on:
       # The policy documents `forge_conformance` compiles into its per-language
       # run tests: an edit to one changes what those tests assert.
       - 'tests/forge/resources/**'
+      # The forge conformance catalog and the document sets beside it, which
+      # `generation_can_be_planned` and `configure_plans_are_kept_and_asked_together`
+      # plan and generate a harness and a set from.
+      - 'tests/forge/conformance/**'
       # The product line every backend that keeps the variability is held to
       # (docs/adr/0057 §10); `sce-feature-conformance`'s build.rs generates it.
       - 'tests/product_line/**'
@@ -270,6 +281,9 @@ on:
       # `a_configure_asks_each_plan_once_per_input_state` configures a project
       # through with a real `cmake`.
       - 'cmake/SCEClangFormat.cmake'
+      # The locator the plan module resolves the generator through when no
+      # includer did.
+      - 'cmake/SCEFindCodegen.cmake'
       # The test tree's build, whose Mesh rule-3 override and every command
       # it declares from a plan the same suite compiles in and holds.
       - 'tests/CMakeLists.txt'
