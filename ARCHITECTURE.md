@@ -1166,9 +1166,10 @@ this one; it holds only one event at a time in a chain that sends the next.
 **Out of scope, and why.** Kotlin's coroutine mode (`start(scope)`) never
 returns to the host, so there is no call to hand back, and a cut there would
 need a different signal. The C++ Interpreter has no `tick` or `advance_time`:
-its scheduler delivers from a thread, so only `processEvent` and `start` are
-bound by it. Measured 2026-10-02 on the Interpreter: a delay that is zero,
-written out or evaluated from an expression, is delivered straight to the
+its scheduler delivers from a thread, so only `processEvent`, `start` and each
+run an input from another thread starts on an idle machine are bound by it
+("Engine Threading"). Measured 2026-10-02 on the Interpreter: a delay that is
+zero, written out or evaluated from an expression, is delivered straight to the
 external queue and never reaches that scheduler, so a chain through one is cut by
 item 1 and the call returns (`zero` and `zero_expr` hold there); a chain that
 bounces between a parent and the child it invoked is cut on the parent's budget,
@@ -1236,7 +1237,19 @@ and hands to `Engine::attach_inbox`, which refuses a post when full
 (`backends/rust/runtime/src/inbox.rs`). Neither closes when a run ends: a post
 taken after it is applied where the owner next reaches the end of its loop, as
 the direct call would be, since a bare-metal owner sharing a core with its
-posters cannot wait for a closing gate.
+posters cannot wait for a closing gate. The C++ Interpreter follows the rule
+too, the last (ADR 0084, D8 as amended at step 8), and closes its inbox when a
+run ends as the generated engine does. No thread loops on it, so its owner is the
+thread running its macrosteps, for as long as it runs them, recorded in its
+inbox (`core/EngineInbox.h`, the generated engine's). A call that finds no
+thread running it runs it, the main event loop included; one from a thread
+that finds another running it is posted, and a post that finds the machine
+free by then runs it, which is how an engine with no loop of its own wakes
+itself. Its raiser posts a raise from another thread rather than queue it
+(`EventRaiserImpl::ForeignEntry`). Every door is safe from any thread, so it
+hands a host no inbox handle and refuses no call; `start`, `stop` and the
+destructor, which cannot be posted, wait for a drive another thread is running
+(`StateMachine.h`).
 
 **The invariant.** A macrostep runs to completion: no input is observed in the
 middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
@@ -1278,12 +1291,23 @@ middle of the step. Leaving serialisation to the host is not this rule either:
 it is the Go and Python contract before their step, and SCE's own Mesh deadline
 on the generated C++ engine does not keep it.
 
-The C++ Interpreter has not taken its step yet (ADR 0084, D8): its scheduler
-delivers on a thread of its own and enters under the machine's macrostep mutex,
-and an ending of a host-run invocation (`completeHostInvoke`, `failHostInvoke`,
-`endHostInvokeIn`) is applied the way a host's event is, inside the macrostep
-that runs on the calling thread or as a macrostep of its own. The invocation
-table it judges an ending against is already the shared ledger.
+On the C++ Interpreter the owner of item 1 is not one thread for a run but the
+thread running the macrosteps, and items 3 to 5 hold as follows. What enters
+from another thread, and how:
+
+| Input | Thread it comes from | How it enters |
+|-------|----------------------|---------------|
+| A host's event (`processEvent`, `raiseExternalEvent`, the raiser's `processQueuedEvents`) | the host's | a drive of the calling thread, or a post when another thread runs the machine |
+| A delayed `<send>` to the session, its parent or a child | the scheduler's | through the target's raiser: a drive when the machine is idle, a post otherwise |
+| A host-served send's reply after a delay | the scheduler's | the same |
+| A host-run invocation's deadline | the scheduler's | `expireHostInvoke`: a drive, or a post |
+| An ending (`completeHostInvoke`, `failHostInvoke`, `endHostInvokeIn`) | any | a drive, or a post to the session it names |
+| A child's event to its parent, a child's `done.invoke` | the child's drive | through the parent's raiser: queued when the parent's own drive made it or the parent is idle (an event that is not `done.*` or `error.*` then runs it), a post when another thread runs the parent |
+| A Mesh delivery (`IChildMeshRouter`'s raiser), an HTTP request | the transport's | through the raiser, as a delayed send |
+| `advanceTime` in MANUAL mode | the caller's | the caller is the owner of each delivery it releases |
+| `start`, `stop`, destruction | the host's | wait for a drive another thread runs; never posted |
+
+The invocation table an ending is judged against is the shared ledger.
 
 ### Host Processor Door (Single Source of Truth)
 
@@ -1297,7 +1321,7 @@ Decided by `docs/adr/0084-what-reaches-an-engine-from-outside-enters-through-one
 | Who serves a type | | the build's declaration and the registration | the platform's processor, then the registration, then `error.execution` (`InvokeHandlerFactory`, `ActionExecutorImpl`'s send) |
 | Sessions served | | the tree (`TreeInvokers`) | the tree (`TreeInvokers`, `TreeEventProcessors`, `adoptHostProcessorsOf`) |
 | A running invocation | `core/HostInvokeLedger.h` | one ledger per session, on `PullScheduler`, its deadlines moments of the clock it pops with | one ledger per `StateMachine`, on its scheduler through `StateMachine::HostInvokeDeadlines`, its deadlines moments of that scheduler's clock (`IEventScheduler::now`, the logical clock in MANUAL mode) |
-| Endings | | `completeHostInvoke`, `failHostInvoke`, `endHostInvokeIn` | the same names |
+| Endings | | `completeHostInvoke`, `failHostInvoke`, `endHostInvokeIn` | the same names, safe from any thread ("Engine Threading") |
 
 The request is built by each engine from its own evaluation of the element (the
 generated invoke and send sites; `HostRunInvokeHandler` and `ActionExecutorImpl`

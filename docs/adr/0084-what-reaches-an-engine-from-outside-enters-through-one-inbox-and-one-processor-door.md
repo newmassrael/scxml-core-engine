@@ -6,6 +6,10 @@
   Step 7 done (2026-11-04): `sce-codegen lower` lowers a host-run `<invoke>` and a Mesh request, and the four
   `static_host_*` scenarios replay on the Interpreter with the standard host registered through the door. The
   replay found two gaps in the door, both closed in step 7 (see D7).
+  Step 8 done (2026-11-05), the last: the Interpreter's `processEventMutex_` is gone. Its owner is the thread
+  running its macrosteps, and an input from a thread that finds another one running them is posted to its inbox
+  (`core/EngineInbox.h`) and applied at the next macrostep boundary. How the rule is held on an engine with no
+  loop of a thread of its own is recorded in D8.
 - Date: 2026-11-03
 - Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
   `main` first.
@@ -224,6 +228,44 @@ The Interpreter's scheduler thread posts to the inbox instead of entering under 
 runs the macrosteps is the owner. When nothing enters the Interpreter except through its owner and its inbox, the
 mutex is removed. This is the last step, after the Interpreter's existing W3C and integration suites have run on the
 inbox, because it changes the engine every other test depends on.
+
+Amended at step 8. The Interpreter differs from every other engine in one way the rule had not named: no thread
+loops on it. A host calls `start` and then may only wait, and the scheduler delivers on threads of its own, so
+between two macrosteps no thread is its owner, and a post nobody applies would never be applied. The rule is held
+there as follows (`StateMachine.h`, `StateMachine.cpp`):
+- **The owner is the thread running the macrosteps, for as long as it runs them.** It is recorded in the inbox
+  (`claimOwner`, `releaseOwner`, and `ownedHere`, which this step adds to `core/EngineInbox.h`). A call that finds
+  no thread running the machine claims it and runs its macrostep and the main event loop after it, a drive, and
+  releases it when the loop is done; the loop drains the inbox at each macrostep boundary, before the external
+  queue is consulted.
+- **A post wakes the machine by running it.** This is the D2 "runtime with its own loop wakes itself" for an engine
+  whose loop has no thread: a thread that posts and then finds the machine free drives it, and a thread that ends
+  its drive releases the machine and then drives what was posted meanwhile. A sequentially consistent fence on each
+  side of that handover makes one of the two see the other, so no post is left unapplied.
+- **The inbox is the engine's own, and every door is safe from any thread.** `processEvent` and the raiser's
+  dispatch, `completeHostInvoke`, `failHostInvoke` and `endHostInvokeIn` (whose session takes the ending through
+  its own door, D2), and a deadline the scheduler fires are each taken inside the macrostep the calling thread runs,
+  as a drive of the calling thread, or as a post. So the Interpreter hands a host no inbox handle and has no
+  owner-thread refusal: no call a host makes can be made from the wrong thread. A posted call answers what a post
+  answers (`processEvent` a result that says it was posted, an ending whether the inbox took it); the owner-only
+  steps (`runMainEventLoop`, the drain) check the owner in debug builds.
+- **A raise from another thread is a post.** The raiser (`EventRaiserImpl`) holds the Interpreter's queues and is
+  thread-safe, and a raise it would queue while another thread runs the machine (a delayed `<send>`, a child's
+  report or completion, a Mesh router's or an HTTP listener's delivery, a host-served send's reply) used to land on
+  the queue the running macrostep was reading. The machine installs its inbox on its raiser
+  (`EventRaiserImpl::ForeignEntry`), and such a raise is posted.
+- **A call that finds posts still held applies them first.** A thread's earlier call may have been posted and its
+  next one find the machine free; that call drains the inbox before its own input, and in auto mode its event joins
+  the queue behind what it drained, so no thread sees its inputs taken out of order.
+- **`start`, `stop` and the destructor wait.** They cannot be posted, and each must have happened when it returns,
+  so a drive another thread is running is waited for. They are the only waits left; no input waits for a macrostep.
+- **Clock.** In MANUAL mode `advanceTime` releases what came due on the calling thread, and that thread is the
+  owner of each delivery it makes: a drive of its own when no thread runs the machine, inside the drive when called
+  from one, a post only when another thread runs it. The clock is pulled on the owner, as D2's timers rule says.
+
+What closes with the run is the generated engine's: the inbox closes at `stop` and at a top-level final, after
+what it holds is applied as a direct call would be then (an event counted as unseen, an ending refused by the token
+check, since the exit cancelled its invocation), and a later post is refused and counted.
 
 ## Consequences
 
