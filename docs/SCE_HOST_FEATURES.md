@@ -294,6 +294,13 @@ machine and replays the scenarios:
 | C++ | `sce/include/host/StandardHost.h` | `tests/integration/AStandardHostScenarioTest.cpp` | system, scripted | cpp-httplib (`HttplibTransport.h`) |
 | C | `backends/c/host-features` | `backends/c/tests/integration/test_host_features.c` | system, scripted | none |
 | Swift | `backends/swift/host-features` | `backends/swift/tests/Tests/StaticDatamodelTests/HostFeaturesTests.swift` | system, scripted | none |
+| C++ Interpreter | `sce/include/host/StandardHost.h` | `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp` | scripted | none |
+
+The two C++ drivers read a scenario, set the host and judge it through one replay
+(`tests/integration/StandardHostScenarioReplay.h`); the Interpreter's runs the
+document `sce-codegen lower` makes of the machine, with the reference host registered
+on the `StateMachine` as it is on the generated engine (`SCE::StandardHost::serve`;
+docs/adr/0084, D7), and moves its scheduler's logical clock for `advance_ms`.
 
 Each driver runs the machine on a manual clock and the host on a scripted one, so a
 scenario is deterministic. The transports that exist are held by a test against a

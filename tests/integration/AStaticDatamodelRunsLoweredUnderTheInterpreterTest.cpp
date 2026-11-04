@@ -30,6 +30,8 @@
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
+#include "host/StandardHost.h"
+#include "integration/StandardHostScenarioReplay.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IChildMeshRouter.h"
 #include "runtime/INativeActionHost.h"
@@ -914,6 +916,63 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
         << "Interpreter";
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
+    }
+}
+
+// docs/adr/0084, D7: the scenarios of the standard host features
+// (tests/host_features/scenarios), replayed on the lowered documents of the machines
+// the generated C++ engine runs them on, with the reference host registered on the
+// Interpreter as it is registered there (`SCE::StandardHost::serve`), and each scenario
+// read, its host set and judged by the replay the two engines share
+// (integration/StandardHostScenarioReplay.h). A step's `advance_ms` moves the
+// scheduler's logical clock, which the deadline of a host-run invocation is a moment
+// of, as the generated machine's clock is moved there.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheStandardHostServesTheInterpreterAsItServesGeneratedCode) {
+    const auto names = HostScenario::scenarioNames();
+    ASSERT_EQ(names, (std::vector<std::string>{"static_host_clock", "static_host_http", "static_host_kv",
+                                               "static_host_notify"}))
+        << "every scenario of the directory is replayed here";
+    for (const auto &name : names) {
+        SCOPED_TRACE(name);
+        const auto scenario = HostScenario::readScenario(name);
+        const std::string machineName = scenario.at("machine").get<std::string>();
+        const auto dir =
+            std::filesystem::temp_directory_path() / ("sce-host-scenario-" + std::to_string(::getpid()) + "-" + name);
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+        const LoweredSet set = lowerSet(kFixtures / (machineName + ".scxml"), dir);
+        ASSERT_TRUE(set.ok) << "`sce-codegen lower` refused " << machineName << ": " << set.refusal.dump();
+
+        // Declared before the machine, so it outlives every call the machine makes of it.
+        HostScenario::Rig rig;
+        const auto machine = std::make_shared<StateMachine>(*engine_);
+        SCE::StandardHost::serve(*machine, rig.host);
+        const auto scheduler = makeScheduler(SchedulerMode::MANUAL);
+        const auto eventRaiser = wire(*machine, nullptr, scheduler);
+        ASSERT_TRUE(machine->loadSCXML(set.documents.at(0).string()))
+            << "the Interpreter does not load the lowered document";
+        ASSERT_TRUE(machine->start());
+        eventRaiser->processQueuedEvents();
+
+        HostScenario::HostScenarioDriver driver;
+        driver.advance = [&](uint64_t ms) {
+            scheduler->advanceTime(std::chrono::milliseconds(static_cast<int64_t>(ms)));
+            eventRaiser->processQueuedEvents();
+        };
+        driver.raise = [&](const std::string &, const std::string &event, const std::string &data) {
+            machine->processEvent(event, data);
+            eventRaiser->processQueuedEvents();
+        };
+        driver.state = [&]() { return machine->getCurrentState(); };
+        driver.expectVariable = [&](const std::string &where, const std::string &variableName,
+                                    const nlohmann::json &want) {
+            const auto got = variable(*machine, variableName);
+            EXPECT_TRUE(holds(got, want))
+                << where << ": variable `" << variableName << "` is " << got.dump() << ", not " << want.dump();
+        };
+        HostScenario::replay(scenario, rig, driver);
+        machine->stop();
+        std::filesystem::remove_all(dir, ec);
     }
 }
 
