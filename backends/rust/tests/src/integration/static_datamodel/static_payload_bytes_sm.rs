@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -261,7 +261,7 @@ impl StaticPayloadBytesInject for ::sce_rust_runtime::Engine<StaticPayloadBytesP
 #[allow(non_snake_case)]
 pub struct StaticPayloadBytesFramedRecord {
     pub sensor: u8,
-    pub frame: Vec<u8>,
+    pub frame: ::sce_rust_runtime::portable::SceBytes<8>,
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
@@ -272,8 +272,8 @@ pub struct StaticPayloadBytesFramedRecord {
 #[allow(non_snake_case)]
 pub struct StaticPayloadBytesData {
     pub last: StaticPayloadBytesFramedRecord,
-    pub held: Vec<u8>,
-    pub frames: Vec<StaticPayloadBytesFramedRecord>,
+    pub held: ::sce_rust_runtime::portable::SceBytes<4>,
+    pub frames: ::sce_rust_runtime::portable::BoundedList<StaticPayloadBytesFramedRecord, 3>,
     pub size: u32,
     pub matches: u32,
     pub misses: u32,
@@ -342,7 +342,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadBytesFramedRec
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         Ok(Self {
             sensor: ::sce_rust_runtime::saved_state::record_field(value, what, "sensor")?,
-            frame: ::sce_rust_runtime::saved_state::record_bounded_bytes(value, what, "frame", 8)?,
+            frame: ::sce_rust_runtime::saved_state::record_bounded_bytes(value, what, "frame")?,
         })
     }
 }
@@ -542,10 +542,13 @@ impl StaticPayloadBytesPersist for Engine<StaticPayloadBytesPolicy> {
                 saved.variable("last")?,
                 "last",
             )?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("held")?, "held", 4)?;
-        let _: Vec<StaticPayloadBytesFramedRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("frames")?, "frames", 3)?;
+        let _: ::sce_rust_runtime::portable::SceBytes<4> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("held")?, "held")?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticPayloadBytesFramedRecord, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("frames")?,
+                "frames",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("size")?,
             "size",
@@ -587,9 +590,11 @@ impl StaticPayloadBytesPersist for Engine<StaticPayloadBytesPolicy> {
             "last",
         )?;
         policy.held =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("held")?, "held", 4)?;
-        policy.frames =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("frames")?, "frames", 3)?;
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("held")?, "held")?;
+        policy.frames = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("frames")?,
+            "frames",
+        )?;
         policy.size = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("size")?,
             "size",
@@ -633,9 +638,9 @@ pub struct StaticPayloadBytesPolicy {
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
     last: StaticPayloadBytesFramedRecord,
     /// W3C SCXML 5.2: the `held` datamodel variable, published (`sce:direction="out"`).
-    held: Vec<u8>,
+    held: ::sce_rust_runtime::portable::SceBytes<4>,
     /// W3C SCXML 5.2: the `frames` datamodel variable, published (`sce:direction="out"`).
-    frames: Vec<StaticPayloadBytesFramedRecord>,
+    frames: ::sce_rust_runtime::portable::BoundedList<StaticPayloadBytesFramedRecord, 3>,
     /// W3C SCXML 5.2: the `size` datamodel variable, published (`sce:direction="out"`).
     size: u32,
     /// W3C SCXML 5.2: the `matches` datamodel variable, published (`sce:direction="out"`).
@@ -667,10 +672,12 @@ impl StaticPayloadBytesPolicy {
     fn build(session_id: String) -> Self {
         let last: StaticPayloadBytesFramedRecord = StaticPayloadBytesFramedRecord {
             sensor: 1,
-            frame: b"ab".to_vec(),
+            frame: ::sce_rust_runtime::portable::sce_bytes!(8, b"ab"),
         };
-        let held: Vec<u8> = b"z".to_vec();
-        let frames: Vec<StaticPayloadBytesFramedRecord> = Vec::new();
+        let held: ::sce_rust_runtime::portable::SceBytes<4> =
+            ::sce_rust_runtime::portable::sce_bytes!(4, b"z");
+        let frames: ::sce_rust_runtime::portable::BoundedList<StaticPayloadBytesFramedRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let size: u32 = 0;
         let matches: u32 = 0;
         let misses: u32 = 0;
@@ -1185,7 +1192,9 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last = StaticPayloadBytesFramedRecord {
                                 sensor: ev.sensor,
-                                frame: sce_forge_runtime::algorithm::bounded(ev.frame.to_vec(), 8)?,
+                                frame: ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                    &&ev.frame[..],
+                                )?,
                             };
                             Ok(())
                         })() {
@@ -1203,14 +1212,16 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                     let sce_failed =
                         match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
                             if self.frames.len() < 3 {
-                                self.frames.push(StaticPayloadBytesFramedRecord {
-                                    sensor: ev.sensor,
-                                    frame: sce_forge_runtime::algorithm::bounded(
-                                        ev.frame.to_vec(),
-                                        8,
-                                    )?,
-                                });
-                                Ok(false)
+                                Ok(self
+                                    .frames
+                                    .push(StaticPayloadBytesFramedRecord {
+                                        sensor: ev.sensor,
+                                        frame:
+                                            ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                                &&ev.frame[..],
+                                            )?,
+                                    })
+                                    .is_err())
                             } else {
                                 Ok(true)
                             }
@@ -1243,8 +1254,9 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                     // W3C SCXML 5.3: <assign location="held">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.held =
-                                sce_forge_runtime::algorithm::bounded(ev.frame.to_vec(), 4)?;
+                            self.held = ::sce_rust_runtime::portable::SceBytes::<4>::from_slice(
+                                &&ev.frame[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1275,7 +1287,9 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last.frame =
-                                sce_forge_runtime::algorithm::bounded(ev.frame.to_vec(), 8)?;
+                                ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                    &&ev.frame[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

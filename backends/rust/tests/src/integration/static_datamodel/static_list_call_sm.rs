@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -280,8 +280,8 @@ fn call_Has__v(p0: &[StaticListCallEntryRecord], p1: u32) -> bool {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticListCallData {
-    pub entries: Vec<StaticListCallEntryRecord>,
-    pub ids: Vec<u32>,
+    pub entries: ::sce_rust_runtime::portable::BoundedList<StaticListCallEntryRecord, 8>,
+    pub ids: ::sce_rust_runtime::portable::BoundedList<u32, 8>,
     pub line: StaticListCallEntryRecord,
     pub repeats: u32,
     pub high: u32,
@@ -534,10 +534,13 @@ impl StaticListCallPersist for Engine<StaticListCallPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<StaticListCallEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("entries")?, "entries", 8)?;
-        let _: Vec<u32> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("ids")?, "ids", 8)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticListCallEntryRecord, 8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("entries")?,
+                "entries",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<u32, 8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ids")?, "ids")?;
         let _: StaticListCallEntryRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("line")?,
             "line",
@@ -570,9 +573,12 @@ impl StaticListCallPersist for Engine<StaticListCallPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.entries =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("entries")?, "entries", 8)?;
-        policy.ids = ::sce_rust_runtime::saved_state::bounded(saved.variable("ids")?, "ids", 8)?;
+        policy.entries = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("entries")?,
+            "entries",
+        )?;
+        policy.ids =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ids")?, "ids")?;
         policy.line = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("line")?,
             "line",
@@ -608,9 +614,9 @@ pub struct StaticListCallPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticListCallPayload,
     /// W3C SCXML 5.2: the `entries` datamodel variable, published (`sce:direction="out"`).
-    entries: Vec<StaticListCallEntryRecord>,
+    entries: ::sce_rust_runtime::portable::BoundedList<StaticListCallEntryRecord, 8>,
     /// W3C SCXML 5.2: the `ids` datamodel variable, published (`sce:direction="out"`).
-    ids: Vec<u32>,
+    ids: ::sce_rust_runtime::portable::BoundedList<u32, 8>,
     /// W3C SCXML 5.2: the `line` datamodel variable, published (`sce:direction="out"`).
     line: StaticListCallEntryRecord,
     /// W3C SCXML 5.2: the `repeats` datamodel variable, published (`sce:direction="out"`).
@@ -638,8 +644,10 @@ pub struct StaticListCallPolicy {
 
 impl StaticListCallPolicy {
     fn build(session_id: String) -> Self {
-        let entries: Vec<StaticListCallEntryRecord> = Vec::new();
-        let ids: Vec<u32> = Vec::new();
+        let entries: ::sce_rust_runtime::portable::BoundedList<StaticListCallEntryRecord, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let ids: ::sce_rust_runtime::portable::BoundedList<u32, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let line: StaticListCallEntryRecord = StaticListCallEntryRecord { id: 0, amount: 0 };
         let repeats: u32 = 0;
         let high: u32 = 0;
@@ -1066,19 +1074,18 @@ impl StatePolicy for StaticListCallPolicy {
                     };
 
                     // SCE Accepted Subset §2.15: <sce:append target="entries">
-                    let sce_failed = if self.entries.len() < 8 {
-                        self.entries.push(self.line);
-                        false
-                    } else {
-                        true
-                    };
+                    let sce_failed =
+                        if self.entries.len() < 8 && self.entries.push(self.line).is_ok() {
+                            false
+                        } else {
+                            true
+                        };
                     if sce_failed {
                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
 
                     // SCE Accepted Subset §2.15: <sce:append target="ids">
-                    let sce_failed = if self.ids.len() < 8 {
-                        self.ids.push(ev.id);
+                    let sce_failed = if self.ids.len() < 8 && self.ids.push(ev.id).is_ok() {
                         false
                     } else {
                         true

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -427,8 +427,11 @@ impl StaticSendTypePersist for Engine<StaticSendTypePolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("kind")?, "kind", 64)?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("kind")?,
+                "kind",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("landed")?,
             "landed",
@@ -457,8 +460,10 @@ impl StaticSendTypePersist for Engine<StaticSendTypePolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.kind =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("kind")?, "kind", 64)?;
+        policy.kind = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("kind")?,
+            "kind",
+        )?;
         policy.landed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("landed")?,
             "landed",
@@ -476,7 +481,7 @@ impl StaticSendTypePersist for Engine<StaticSendTypePolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticSendTypeInvokeParams {
-    pub kind: Option<String>,
+    pub kind: Option<::sce_rust_runtime::portable::SceString<64>>,
     pub landed: Option<u32>,
     pub refused: Option<u32>,
 }
@@ -487,7 +492,7 @@ pub struct StaticSendTypeInvokeParams {
 
 pub struct StaticSendTypePolicy {
     /// W3C SCXML 5.2: the `kind` datamodel variable.
-    kind: String,
+    kind: ::sce_rust_runtime::portable::SceString<64>,
     /// W3C SCXML 5.2: the `landed` datamodel variable, published (`sce:direction="out"`).
     landed: u32,
     /// W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`).
@@ -513,7 +518,10 @@ pub struct StaticSendTypePolicy {
 
 impl StaticSendTypePolicy {
     fn build(session_id: String) -> Self {
-        let kind: String = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor".to_string();
+        let kind: ::sce_rust_runtime::portable::SceString<64> = ::sce_rust_runtime::portable::sce_text!(
+            64,
+            "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+        );
         let landed: u32 = 0;
         let refused: u32 = 0;
         Self {
@@ -950,9 +958,8 @@ impl StatePolicy for StaticSendTypePolicy {
                     // W3C SCXML 5.3: <assign location="kind">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.kind = sce_forge_runtime::algorithm::bounded(
-                                "http://www.w3.org/TR/scxml/#SCXMLEventProcessor".to_string(),
-                                64,
+                            self.kind = ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                &"http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
                             )?;
                             Ok(())
                         })() {
@@ -976,9 +983,8 @@ impl StatePolicy for StaticSendTypePolicy {
                     // W3C SCXML 5.3: <assign location="kind">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.kind = sce_forge_runtime::algorithm::bounded(
-                                "urn:example:no-such-processor".to_string(),
-                                64,
+                            self.kind = ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                &"urn:example:no-such-processor",
                             )?;
                             Ok(())
                         })() {
@@ -1002,9 +1008,8 @@ impl StatePolicy for StaticSendTypePolicy {
                     // W3C SCXML 5.3: <assign location="kind">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.kind = sce_forge_runtime::algorithm::bounded(
-                                "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor".to_string(),
-                                64,
+                            self.kind = ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                &"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor",
                             )?;
                             Ok(())
                         })() {

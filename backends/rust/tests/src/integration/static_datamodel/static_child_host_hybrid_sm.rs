@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -417,8 +417,11 @@ impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPersist
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("pick")?, "pick", 48)?;
+        let _: ::sce_rust_runtime::portable::SceString<48> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("pick")?,
+                "pick",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("completed")?,
             "completed",
@@ -443,8 +446,10 @@ impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPersist
             saved,
             Self::HISTORIES,
         )?;
-        policy.pick =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("pick")?, "pick", 48)?;
+        policy.pick = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("pick")?,
+            "pick",
+        )?;
         policy.completed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("completed")?,
             "completed",
@@ -562,7 +567,7 @@ impl<
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticChildHostHybridInvokeParams {
-    pub pick: Option<String>,
+    pub pick: Option<::sce_rust_runtime::portable::SceString<48>>,
     pub completed: Option<u32>,
 }
 
@@ -576,7 +581,7 @@ pub struct StaticChildHostHybridPolicy<A: StaticChildHostHybridActions + 'static
     // (`self.actions.<op>(…)`) instead of a runtime script engine.
     actions: A,
     /// W3C SCXML 5.2: the `pick` datamodel variable.
-    pick: String,
+    pick: ::sce_rust_runtime::portable::SceString<48>,
     /// W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`).
     completed: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -631,7 +636,8 @@ pub struct StaticChildHostHybridPolicy<A: StaticChildHostHybridActions + 'static
 
 impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPolicy<A> {
     fn build(session_id: String, actions: A) -> Self {
-        let pick: String = "static_hosted_first.scxml".to_string();
+        let pick: ::sce_rust_runtime::portable::SceString<48> =
+            ::sce_rust_runtime::portable::sce_text!(48, "static_hosted_first.scxml");
         let completed: u32 = 0;
         Self {
             actions,
@@ -1580,9 +1586,8 @@ impl<A: StaticChildHostHybridActions + 'static> StatePolicy for StaticChildHostH
                     // W3C SCXML 5.3: <assign location="pick">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.pick = sce_forge_runtime::algorithm::bounded(
-                                "static_hosted_second.scxml".to_string(),
-                                48,
+                            self.pick = ::sce_rust_runtime::portable::SceString::<48>::from_text(
+                                &"static_hosted_second.scxml",
                             )?;
                             Ok(())
                         })() {

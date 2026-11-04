@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -385,7 +385,7 @@ pub struct StaticForgeCallsData {
     pub highs: u32,
     pub phase: StaticForgeCallsStatusEnum,
     pub weight: StaticForgeCallsLevelEnum,
-    pub customer: String,
+    pub customer: ::sce_rust_runtime::portable::SceString<16>,
     pub known: bool,
 }
 
@@ -772,11 +772,11 @@ impl StaticForgeCallsPersist for Engine<StaticForgeCallsPolicy> {
             saved.variable("weight")?,
             "weight",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("customer")?,
-            "customer",
-            16,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("customer")?,
+                "customer",
+            )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("known")?,
             "known",
@@ -847,10 +847,9 @@ impl StaticForgeCallsPersist for Engine<StaticForgeCallsPolicy> {
             saved.variable("weight")?,
             "weight",
         )?;
-        policy.customer = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.customer = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("customer")?,
             "customer",
-            16,
         )?;
         policy.known = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("known")?,
@@ -875,7 +874,7 @@ pub struct StaticForgeCallsInvokeParams {
     pub rpm: Option<u16>,
     pub limit: Option<f64>,
     pub highs: Option<u32>,
-    pub customer: Option<String>,
+    pub customer: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub known: Option<bool>,
 }
 
@@ -909,7 +908,7 @@ pub struct StaticForgeCallsPolicy {
     /// W3C SCXML 5.2: the `weight` datamodel variable, published (`sce:direction="out"`).
     weight: StaticForgeCallsLevelEnum,
     /// W3C SCXML 5.2: the `customer` datamodel variable, published (`sce:direction="out"`).
-    customer: String,
+    customer: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `known` datamodel variable, published (`sce:direction="out"`).
     known: bool,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -945,7 +944,8 @@ impl StaticForgeCallsPolicy {
         let highs: u32 = 0;
         let phase: StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnum::Open;
         let weight: StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnum::Light;
-        let customer: String = "anna".to_string();
+        let customer: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "anna");
         let known: bool = false;
         Self {
             gear,
@@ -1636,7 +1636,7 @@ impl StatePolicy for StaticForgeCallsPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.customer =
-                                sce_forge_runtime::algorithm::bounded("".to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"")?;
                             Ok(())
                         })() {
                             Ok(()) => false,

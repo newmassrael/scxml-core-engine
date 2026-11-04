@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -445,13 +445,16 @@ impl StaticSendIdlocationPersist for Engine<StaticSendIdlocationPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("first")?, "first", 32)?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("second")?,
-            "second",
-            32,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<32> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("first")?,
+                "first",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<32> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("second")?,
+                "second",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("scale")?,
             "scale",
@@ -488,12 +491,13 @@ impl StaticSendIdlocationPersist for Engine<StaticSendIdlocationPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.first =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("first")?, "first", 32)?;
-        policy.second = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.first = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("first")?,
+            "first",
+        )?;
+        policy.second = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("second")?,
             "second",
-            32,
         )?;
         policy.scale = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("scale")?,
@@ -520,8 +524,8 @@ impl StaticSendIdlocationPersist for Engine<StaticSendIdlocationPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticSendIdlocationInvokeParams {
-    pub first: Option<String>,
-    pub second: Option<String>,
+    pub first: Option<::sce_rust_runtime::portable::SceString<32>>,
+    pub second: Option<::sce_rust_runtime::portable::SceString<32>>,
     pub scale: Option<u32>,
     pub first_fired: Option<u32>,
     pub second_fired: Option<u32>,
@@ -534,9 +538,9 @@ pub struct StaticSendIdlocationInvokeParams {
 
 pub struct StaticSendIdlocationPolicy {
     /// W3C SCXML 5.2: the `first` datamodel variable.
-    first: String,
+    first: ::sce_rust_runtime::portable::SceString<32>,
     /// W3C SCXML 5.2: the `second` datamodel variable.
-    second: String,
+    second: ::sce_rust_runtime::portable::SceString<32>,
     /// W3C SCXML 5.2: the `scale` datamodel variable.
     scale: u32,
     /// W3C SCXML 5.2: the `first_fired` datamodel variable, published (`sce:direction="out"`).
@@ -566,8 +570,10 @@ pub struct StaticSendIdlocationPolicy {
 
 impl StaticSendIdlocationPolicy {
     fn build(session_id: String) -> Self {
-        let first: String = "".to_string();
-        let second: String = "".to_string();
+        let first: ::sce_rust_runtime::portable::SceString<32> =
+            ::sce_rust_runtime::portable::sce_text!(32, "");
+        let second: ::sce_rust_runtime::portable::SceString<32> =
+            ::sce_rust_runtime::portable::sce_text!(32, "");
         let scale: u32 = 3;
         let first_fired: u32 = 0;
         let second_fired: u32 = 0;
@@ -988,27 +994,56 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         // W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates the
                         // id and writes it to the variable `idlocation` names before it reads any
                         // other argument (`Action::native_idlocation`); that variable is then the
-                        // id the send is known by (`Action::native_sendid`).
-                        self.first = engine.next_auto_send_id().to_string();
+                        // id the send is known by (`Action::native_sendid`). The id is held to the
+                        // variable's bound as any text written to it is (docs/adr/0086, section
+                        // 7.4): an id it cannot hold is refused whole and is the argument error
+                        // below, raised as error.execution, and nothing is sent.
+                        let _send_id_refused: bool =
+                            match ::sce_rust_runtime::portable::SceString::from_text(
+                                &engine.next_auto_send_id(),
+                            ) {
+                                Ok(sce_id) => {
+                                    self.first = sce_id;
+                                    false
+                                }
+                                Err(_) => true,
+                            };
                         let send_id_text: String = self.first.to_string();
                         let send_id: &str = &send_id_text;
 
-                        let event_data: &str = "";
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        if _send_id_refused {
+                            _send_arg_error =
+                                Some("<send idlocation='first'> could not take the send id");
+                        }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                StaticSendIdlocationEvent::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
-                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-                        // origin is this session, as on the immediate path.
-                        // The id is known here, so it is handed over and none is handed back: the
-                        // returned owned string was a buffer of the string bound to drop.
-                        engine.schedule_event_as(
-                            StaticSendIdlocationEvent::FirstDue,
-                            core::time::Duration::from_millis(200_u64),
-                            &send_id,
-                            event_data,
-                            &self.session_id.as_deref().unwrap_or(""),
-                        );
+                            // W3C SCXML 6.2: Default send (no target = external event)
+                            // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                            // origin is this session, as on the immediate path.
+                            // The id is known here, so it is handed over and none is handed back: the
+                            // returned owned string was a buffer of the string bound to drop.
+                            engine.schedule_event_as(
+                                StaticSendIdlocationEvent::FirstDue,
+                                core::time::Duration::from_millis(200_u64),
+                                &send_id,
+                                event_data,
+                                &self.session_id.as_deref().unwrap_or(""),
+                            );
 
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
@@ -1016,27 +1051,56 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         // W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates the
                         // id and writes it to the variable `idlocation` names before it reads any
                         // other argument (`Action::native_idlocation`); that variable is then the
-                        // id the send is known by (`Action::native_sendid`).
-                        self.second = engine.next_auto_send_id().to_string();
+                        // id the send is known by (`Action::native_sendid`). The id is held to the
+                        // variable's bound as any text written to it is (docs/adr/0086, section
+                        // 7.4): an id it cannot hold is refused whole and is the argument error
+                        // below, raised as error.execution, and nothing is sent.
+                        let _send_id_refused: bool =
+                            match ::sce_rust_runtime::portable::SceString::from_text(
+                                &engine.next_auto_send_id(),
+                            ) {
+                                Ok(sce_id) => {
+                                    self.second = sce_id;
+                                    false
+                                }
+                                Err(_) => true,
+                            };
                         let send_id_text: String = self.second.to_string();
                         let send_id: &str = &send_id_text;
 
-                        let event_data: &str = "";
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        if _send_id_refused {
+                            _send_arg_error =
+                                Some("<send idlocation='second'> could not take the send id");
+                        }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                StaticSendIdlocationEvent::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
-                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-                        // origin is this session, as on the immediate path.
-                        // The id is known here, so it is handed over and none is handed back: the
-                        // returned owned string was a buffer of the string bound to drop.
-                        engine.schedule_event_as(
-                            StaticSendIdlocationEvent::SecondDue,
-                            core::time::Duration::from_millis(200_u64),
-                            &send_id,
-                            event_data,
-                            &self.session_id.as_deref().unwrap_or(""),
-                        );
+                            // W3C SCXML 6.2: Default send (no target = external event)
+                            // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                            // origin is this session, as on the immediate path.
+                            // The id is known here, so it is handed over and none is handed back: the
+                            // returned owned string was a buffer of the string bound to drop.
+                            engine.schedule_event_as(
+                                StaticSendIdlocationEvent::SecondDue,
+                                core::time::Duration::from_millis(200_u64),
+                                &send_id,
+                                event_data,
+                                &self.session_id.as_deref().unwrap_or(""),
+                            );
 
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
@@ -1051,12 +1115,28 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         // W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates the
                         // id and writes it to the variable `idlocation` names before it reads any
                         // other argument (`Action::native_idlocation`); that variable is then the
-                        // id the send is known by (`Action::native_sendid`).
-                        self.first = engine.next_auto_send_id().to_string();
+                        // id the send is known by (`Action::native_sendid`). The id is held to the
+                        // variable's bound as any text written to it is (docs/adr/0086, section
+                        // 7.4): an id it cannot hold is refused whole and is the argument error
+                        // below, raised as error.execution, and nothing is sent.
+                        let _send_id_refused: bool =
+                            match ::sce_rust_runtime::portable::SceString::from_text(
+                                &engine.next_auto_send_id(),
+                            ) {
+                                Ok(sce_id) => {
+                                    self.first = sce_id;
+                                    false
+                                }
+                                Err(_) => true,
+                            };
                         let send_id_text: String = self.first.to_string();
                         let send_id: &str = &send_id_text;
 
                         let mut _send_arg_error: Option<&'static str> = None;
+                        if _send_id_refused {
+                            _send_arg_error =
+                                Some("<send idlocation='first'> could not take the send id");
+                        }
                         // The delay is a string computed from the machine's fields now, and read as
                         // the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an operation that
                         // fails, or a value that is no time, is the argument error, and the message

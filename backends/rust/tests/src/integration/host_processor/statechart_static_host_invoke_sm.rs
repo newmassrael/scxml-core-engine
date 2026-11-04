@@ -442,10 +442,16 @@ impl StatechartStaticHostInvokePersist for Engine<StatechartStaticHostInvokePoli
         )?;
         let _: u32 =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("place")?, "place", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("place")?,
+                "place",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("seen")?,
             "seen",
@@ -472,10 +478,14 @@ impl StatechartStaticHostInvokePersist for Engine<StatechartStaticHostInvokePoli
         )?;
         policy.job =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
-        policy.place =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("place")?, "place", 16)?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
+        policy.place = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("place")?,
+            "place",
+        )?;
         policy.seen = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("seen")?,
             "seen",
@@ -490,8 +500,8 @@ impl StatechartStaticHostInvokePersist for Engine<StatechartStaticHostInvokePoli
 #[derive(Default)]
 pub struct StatechartStaticHostInvokeInvokeParams {
     pub job: Option<u32>,
-    pub label: Option<String>,
-    pub place: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<16>>,
+    pub place: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub seen: Option<u32>,
 }
 
@@ -503,9 +513,9 @@ pub struct StatechartStaticHostInvokePolicy {
     /// W3C SCXML 5.2: the `job` datamodel variable.
     job: u32,
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: String,
+    label: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `place` datamodel variable.
-    place: String,
+    place: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`).
     seen: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -536,8 +546,10 @@ pub struct StatechartStaticHostInvokePolicy {
 impl StatechartStaticHostInvokePolicy {
     fn build(session_id: String) -> Self {
         let job: u32 = 7;
-        let label: String = "report".to_string();
-        let place: String = "job://report".to_string();
+        let label: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "report");
+        let place: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "job://report");
         let seen: u32 = 0;
         Self {
             job,

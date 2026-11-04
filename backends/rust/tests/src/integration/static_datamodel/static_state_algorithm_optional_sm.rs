@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -337,7 +337,7 @@ fn call_Undated__v(
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticStateAlgorithmOptionalData {
-    pub goals: Vec<StaticStateAlgorithmOptionalGoalRecord>,
+    pub goals: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmOptionalGoalRecord, 4>,
     pub first: Option<i64>,
     pub left: Option<i64>,
     pub undated: u32,
@@ -610,8 +610,13 @@ impl StaticStateAlgorithmOptionalPersist for Engine<StaticStateAlgorithmOptional
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<StaticStateAlgorithmOptionalGoalRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("goals")?, "goals", 4)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            StaticStateAlgorithmOptionalGoalRecord,
+            4,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("goals")?,
+            "goals",
+        )?;
         let _: StaticStateAlgorithmOptionalGoalRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("draft")?,
@@ -661,8 +666,10 @@ impl StaticStateAlgorithmOptionalPersist for Engine<StaticStateAlgorithmOptional
             saved,
             Self::HISTORIES,
         )?;
-        policy.goals =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("goals")?, "goals", 4)?;
+        policy.goals = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("goals")?,
+            "goals",
+        )?;
         policy.draft = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("draft")?,
             "draft",
@@ -718,7 +725,7 @@ pub struct StaticStateAlgorithmOptionalPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticStateAlgorithmOptionalPayload,
     /// W3C SCXML 5.2: the `goals` datamodel variable, published (`sce:direction="out"`).
-    goals: Vec<StaticStateAlgorithmOptionalGoalRecord>,
+    goals: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmOptionalGoalRecord, 4>,
     /// W3C SCXML 5.2: the `draft` datamodel variable.
     draft: StaticStateAlgorithmOptionalGoalRecord,
     /// W3C SCXML 5.2: the `today` datamodel variable.
@@ -754,7 +761,10 @@ pub struct StaticStateAlgorithmOptionalPolicy {
 
 impl StaticStateAlgorithmOptionalPolicy {
     fn build(session_id: String) -> Self {
-        let goals: Vec<StaticStateAlgorithmOptionalGoalRecord> = Vec::new();
+        let goals: ::sce_rust_runtime::portable::BoundedList<
+            StaticStateAlgorithmOptionalGoalRecord,
+            4,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let draft: StaticStateAlgorithmOptionalGoalRecord =
             StaticStateAlgorithmOptionalGoalRecord {
                 id: 0,
@@ -1236,8 +1246,8 @@ impl StatePolicy for StaticStateAlgorithmOptionalPolicy {
                     };
 
                     // SCE Accepted Subset §2.15: <sce:append target="goals">
-                    let sce_failed = if self.goals.len() < 4 {
-                        self.goals.push(self.draft);
+                    let sce_failed = if self.goals.len() < 4 && self.goals.push(self.draft).is_ok()
+                    {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -402,10 +402,11 @@ impl StaticInvokeOptionalSceSynthInvokeGivenPersist
             saved.variable("size")?,
             "size",
         )?;
-        let _: Option<String> =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("label")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "label", 8)
-            })?;
+        let _: Option<::sce_rust_runtime::portable::SceString<8>> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         ::sce_rust_runtime::saved_state::judge::<StaticInvokeOptionalSceSynthInvokeGivenPolicy>(
             saved,
         )
@@ -431,10 +432,10 @@ impl StaticInvokeOptionalSceSynthInvokeGivenPersist
             saved.variable("size")?,
             "size",
         )?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("label")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "label", 8)
-            })?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -445,7 +446,7 @@ impl StaticInvokeOptionalSceSynthInvokeGivenPersist
 #[derive(Default)]
 pub struct StaticInvokeOptionalSceSynthInvokeGivenInvokeParams {
     pub size: Option<i32>,
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<8>>,
 }
 
 // ======================================================================
@@ -456,7 +457,7 @@ pub struct StaticInvokeOptionalSceSynthInvokeGivenPolicy {
     /// W3C SCXML 5.2: the `size` datamodel variable.
     size: Option<i32>,
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: Option<String>,
+    label: Option<::sce_rust_runtime::portable::SceString<8>>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -479,7 +480,7 @@ pub struct StaticInvokeOptionalSceSynthInvokeGivenPolicy {
 impl StaticInvokeOptionalSceSynthInvokeGivenPolicy {
     fn build(session_id: String) -> Self {
         let size: Option<i32> = None;
-        let label: Option<String> = None;
+        let label: Option<::sce_rust_runtime::portable::SceString<8>> = None;
         Self {
             size,
             label,

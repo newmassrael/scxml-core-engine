@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -238,8 +238,8 @@ impl StaticBytesEvent {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticBytesData {
-    pub frame: Vec<u8>,
-    pub tail: Vec<u8>,
+    pub frame: ::sce_rust_runtime::portable::SceBytes<8>,
+    pub tail: ::sce_rust_runtime::portable::SceBytes<4>,
     pub size: u32,
     pub matches: u32,
     pub misses: u32,
@@ -457,10 +457,10 @@ impl StaticBytesPersist for Engine<StaticBytesPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("frame")?, "frame", 8)?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("tail")?, "tail", 4)?;
+        let _: ::sce_rust_runtime::portable::SceBytes<8> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("frame")?, "frame")?;
+        let _: ::sce_rust_runtime::portable::SceBytes<4> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("tail")?, "tail")?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("size")?,
             "size",
@@ -498,9 +498,9 @@ impl StaticBytesPersist for Engine<StaticBytesPolicy> {
             Self::HISTORIES,
         )?;
         policy.frame =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("frame")?, "frame", 8)?;
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("frame")?, "frame")?;
         policy.tail =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("tail")?, "tail", 4)?;
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("tail")?, "tail")?;
         policy.size = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("size")?,
             "size",
@@ -538,9 +538,9 @@ pub struct StaticBytesInvokeParams {
 
 pub struct StaticBytesPolicy {
     /// W3C SCXML 5.2: the `frame` datamodel variable, published (`sce:direction="out"`).
-    frame: Vec<u8>,
+    frame: ::sce_rust_runtime::portable::SceBytes<8>,
     /// W3C SCXML 5.2: the `tail` datamodel variable, published (`sce:direction="out"`).
-    tail: Vec<u8>,
+    tail: ::sce_rust_runtime::portable::SceBytes<4>,
     /// W3C SCXML 5.2: the `size` datamodel variable, published (`sce:direction="out"`).
     size: u32,
     /// W3C SCXML 5.2: the `matches` datamodel variable, published (`sce:direction="out"`).
@@ -570,8 +570,10 @@ pub struct StaticBytesPolicy {
 
 impl StaticBytesPolicy {
     fn build(session_id: String) -> Self {
-        let frame: Vec<u8> = b"ab".to_vec();
-        let tail: Vec<u8> = b"xy".to_vec();
+        let frame: ::sce_rust_runtime::portable::SceBytes<8> =
+            ::sce_rust_runtime::portable::sce_bytes!(8, b"ab");
+        let tail: ::sce_rust_runtime::portable::SceBytes<4> =
+            ::sce_rust_runtime::portable::sce_bytes!(4, b"xy");
         let size: u32 = 0;
         let matches: u32 = 0;
         let misses: u32 = 0;
@@ -1019,8 +1021,9 @@ impl StatePolicy for StaticBytesPolicy {
                     // W3C SCXML 5.3: <assign location="frame">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.frame =
-                                sce_forge_runtime::algorithm::bounded(b"abcdefgh".to_vec(), 8)?;
+                            self.frame = ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                &&b"abcdefgh"[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1043,8 +1046,9 @@ impl StatePolicy for StaticBytesPolicy {
                     // W3C SCXML 5.3: <assign location="frame">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.frame =
-                                sce_forge_runtime::algorithm::bounded(b"abcdefghi".to_vec(), 8)?;
+                            self.frame = ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                &&b"abcdefghi"[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1067,7 +1071,9 @@ impl StatePolicy for StaticBytesPolicy {
                     // W3C SCXML 5.3: <assign location="frame">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.frame = sce_forge_runtime::algorithm::bounded(b"ab".to_vec(), 8)?;
+                            self.frame = ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                &&b"ab"[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1090,7 +1096,9 @@ impl StatePolicy for StaticBytesPolicy {
                     // W3C SCXML 5.3: <assign location="frame">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.frame = sce_forge_runtime::algorithm::bounded(b"ba".to_vec(), 8)?;
+                            self.frame = ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                &&b"ba"[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1113,8 +1121,9 @@ impl StatePolicy for StaticBytesPolicy {
                     // W3C SCXML 5.3: <assign location="tail">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.tail =
-                                sce_forge_runtime::algorithm::bounded(self.frame.to_vec(), 4)?;
+                            self.tail = ::sce_rust_runtime::portable::SceBytes::<4>::from_slice(
+                                &&self.frame[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

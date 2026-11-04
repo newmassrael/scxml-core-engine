@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -435,8 +435,11 @@ impl StaticSendTargetPersist for Engine<StaticSendTargetPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("route")?, "route", 24)?;
+        let _: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("route")?,
+                "route",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("landed")?,
             "landed",
@@ -465,8 +468,10 @@ impl StaticSendTargetPersist for Engine<StaticSendTargetPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.route =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("route")?, "route", 24)?;
+        policy.route = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("route")?,
+            "route",
+        )?;
         policy.landed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("landed")?,
             "landed",
@@ -484,7 +489,7 @@ impl StaticSendTargetPersist for Engine<StaticSendTargetPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticSendTargetInvokeParams {
-    pub route: Option<String>,
+    pub route: Option<::sce_rust_runtime::portable::SceString<24>>,
     pub landed: Option<u32>,
     pub refused: Option<u32>,
 }
@@ -497,7 +502,7 @@ pub struct StaticSendTargetPolicy {
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: ::sce_rust_runtime::SceString,
     /// W3C SCXML 5.2: the `route` datamodel variable.
-    route: String,
+    route: ::sce_rust_runtime::portable::SceString<24>,
     /// W3C SCXML 5.2: the `landed` datamodel variable, published (`sce:direction="out"`).
     landed: u32,
     /// W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`).
@@ -523,7 +528,8 @@ pub struct StaticSendTargetPolicy {
 
 impl StaticSendTargetPolicy {
     fn build(session_id: String) -> Self {
-        let route: String = "#_internal".to_string();
+        let route: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::portable::sce_text!(24, "#_internal");
         let landed: u32 = 0;
         let refused: u32 = 0;
         Self {
@@ -1137,9 +1143,8 @@ impl StatePolicy for StaticSendTargetPolicy {
                     // W3C SCXML 5.3: <assign location="route">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.route = sce_forge_runtime::algorithm::bounded(
-                                "#_internal".to_string(),
-                                24,
+                            self.route = ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                &"#_internal",
                             )?;
                             Ok(())
                         })() {
@@ -1163,8 +1168,9 @@ impl StatePolicy for StaticSendTargetPolicy {
                     // W3C SCXML 5.3: <assign location="route">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.route =
-                                sce_forge_runtime::algorithm::bounded("#_parent".to_string(), 24)?;
+                            self.route = ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                &"#_parent",
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1187,9 +1193,8 @@ impl StatePolicy for StaticSendTargetPolicy {
                     // W3C SCXML 5.3: <assign location="route">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.route = sce_forge_runtime::algorithm::bounded(
-                                "#_scxml_stranger".to_string(),
-                                24,
+                            self.route = ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                &"#_scxml_stranger",
                             )?;
                             Ok(())
                         })() {

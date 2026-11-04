@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -392,10 +392,11 @@ impl StaticInvokeOptionalSceSynthInvokeOverPersist
         ::sce_rust_runtime::saved_state::restore_history::<
             StaticInvokeOptionalSceSynthInvokeOverPolicy,
         >(saved, Self::HISTORIES)?;
-        let _: Option<String> =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("label")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "label", 4)
-            })?;
+        let _: Option<::sce_rust_runtime::portable::SceString<4>> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         ::sce_rust_runtime::saved_state::judge::<StaticInvokeOptionalSceSynthInvokeOverPolicy>(
             saved,
         )
@@ -417,10 +418,10 @@ impl StaticInvokeOptionalSceSynthInvokeOverPersist
         ::sce_rust_runtime::saved_state::restore_history::<
             StaticInvokeOptionalSceSynthInvokeOverPolicy,
         >(saved, Self::HISTORIES)?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("label")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "label", 4)
-            })?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -430,7 +431,7 @@ impl StaticInvokeOptionalSceSynthInvokeOverPersist
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticInvokeOptionalSceSynthInvokeOverInvokeParams {
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<4>>,
 }
 
 // ======================================================================
@@ -439,7 +440,7 @@ pub struct StaticInvokeOptionalSceSynthInvokeOverInvokeParams {
 
 pub struct StaticInvokeOptionalSceSynthInvokeOverPolicy {
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: Option<String>,
+    label: Option<::sce_rust_runtime::portable::SceString<4>>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -461,7 +462,8 @@ pub struct StaticInvokeOptionalSceSynthInvokeOverPolicy {
 
 impl StaticInvokeOptionalSceSynthInvokeOverPolicy {
     fn build(session_id: String) -> Self {
-        let label: Option<String> = Some("ab".to_string());
+        let label: Option<::sce_rust_runtime::portable::SceString<4>> =
+            Some(::sce_rust_runtime::portable::sce_text!(4, "ab"));
         Self {
             label,
             session_id: Some(session_id),

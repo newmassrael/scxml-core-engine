@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -270,10 +270,10 @@ pub enum StaticHostClockPayload {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticHostClockData {
-    pub outcome: String,
+    pub outcome: ::sce_rust_runtime::portable::SceString<24>,
     pub utc_ms: i64,
     pub monotonic_ms: i64,
-    pub zone_id: String,
+    pub zone_id: ::sce_rust_runtime::portable::SceString<64>,
     pub utc_offset_s: i32,
 }
 
@@ -483,11 +483,11 @@ impl StaticHostClockPersist for Engine<StaticHostClockPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("outcome")?,
-            "outcome",
-            24,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("outcome")?,
+                "outcome",
+            )?;
         let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("utc_ms")?,
             "utc_ms",
@@ -496,11 +496,11 @@ impl StaticHostClockPersist for Engine<StaticHostClockPolicy> {
             saved.variable("monotonic_ms")?,
             "monotonic_ms",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("zone_id")?,
-            "zone_id",
-            64,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zone_id")?,
+                "zone_id",
+            )?;
         let _: i32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("utc_offset_s")?,
             "utc_offset_s",
@@ -525,10 +525,9 @@ impl StaticHostClockPersist for Engine<StaticHostClockPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.outcome = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.outcome = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("outcome")?,
             "outcome",
-            24,
         )?;
         policy.utc_ms = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("utc_ms")?,
@@ -538,10 +537,9 @@ impl StaticHostClockPersist for Engine<StaticHostClockPolicy> {
             saved.variable("monotonic_ms")?,
             "monotonic_ms",
         )?;
-        policy.zone_id = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.zone_id = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zone_id")?,
             "zone_id",
-            64,
         )?;
         policy.utc_offset_s = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("utc_offset_s")?,
@@ -707,10 +705,10 @@ impl StaticHostClockHostInvokers for ::sce_rust_runtime::Engine<StaticHostClockP
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticHostClockInvokeParams {
-    pub outcome: Option<String>,
+    pub outcome: Option<::sce_rust_runtime::portable::SceString<24>>,
     pub utc_ms: Option<i64>,
     pub monotonic_ms: Option<i64>,
-    pub zone_id: Option<String>,
+    pub zone_id: Option<::sce_rust_runtime::portable::SceString<64>>,
     pub utc_offset_s: Option<i32>,
 }
 
@@ -724,13 +722,13 @@ pub struct StaticHostClockPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticHostClockPayload,
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    outcome: String,
+    outcome: ::sce_rust_runtime::portable::SceString<24>,
     /// W3C SCXML 5.2: the `utc_ms` datamodel variable, published (`sce:direction="out"`).
     utc_ms: i64,
     /// W3C SCXML 5.2: the `monotonic_ms` datamodel variable, published (`sce:direction="out"`).
     monotonic_ms: i64,
     /// W3C SCXML 5.2: the `zone_id` datamodel variable, published (`sce:direction="out"`).
-    zone_id: String,
+    zone_id: ::sce_rust_runtime::portable::SceString<64>,
     /// W3C SCXML 5.2: the `utc_offset_s` datamodel variable, published (`sce:direction="out"`).
     utc_offset_s: i32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -760,10 +758,12 @@ pub struct StaticHostClockPolicy {
 
 impl StaticHostClockPolicy {
     fn build(session_id: String) -> Self {
-        let outcome: String = "".to_string();
+        let outcome: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::portable::sce_text!(24, "");
         let utc_ms: i64 = 0;
         let monotonic_ms: i64 = 0;
-        let zone_id: String = "".to_string();
+        let zone_id: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
         let utc_offset_s: i32 = 0;
         Self {
             pending_payload: StaticHostClockPayload::default(),
@@ -1519,7 +1519,9 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.zone_id =
-                                sce_forge_runtime::algorithm::bounded(ev.zone_id.to_string(), 64)?;
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.zone_id[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1539,7 +1541,7 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1567,7 +1569,9 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1591,7 +1595,9 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1615,7 +1621,9 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1649,7 +1657,7 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1677,7 +1685,9 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1701,7 +1711,9 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1725,7 +1737,9 @@ impl StatePolicy for StaticHostClockPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

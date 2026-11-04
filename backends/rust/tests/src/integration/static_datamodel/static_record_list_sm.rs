@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -285,8 +285,8 @@ pub struct StaticRecordListDayRecord {
 pub struct StaticRecordListData {
     pub draft: StaticRecordListDayRecord,
     pub last: StaticRecordListDayRecord,
-    pub days: Vec<StaticRecordListDayRecord>,
-    pub copies: Vec<StaticRecordListDayRecord>,
+    pub days: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3>,
+    pub copies: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3>,
     pub total: u32,
     pub errors: u32,
 }
@@ -564,10 +564,16 @@ impl StaticRecordListPersist for Engine<StaticRecordListPolicy> {
             saved.variable("last")?,
             "last",
         )?;
-        let _: Vec<StaticRecordListDayRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("days")?, "days", 3)?;
-        let _: Vec<StaticRecordListDayRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("copies")?, "copies", 3)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("days")?,
+                "days",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("copies")?,
+                "copies",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -604,9 +610,14 @@ impl StaticRecordListPersist for Engine<StaticRecordListPolicy> {
             saved.variable("last")?,
             "last",
         )?;
-        policy.days = ::sce_rust_runtime::saved_state::bounded(saved.variable("days")?, "days", 3)?;
-        policy.copies =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("copies")?, "copies", 3)?;
+        policy.days = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("days")?,
+            "days",
+        )?;
+        policy.copies = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("copies")?,
+            "copies",
+        )?;
         policy.total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -642,9 +653,9 @@ pub struct StaticRecordListPolicy {
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
     last: StaticRecordListDayRecord,
     /// W3C SCXML 5.2: the `days` datamodel variable, published (`sce:direction="out"`).
-    days: Vec<StaticRecordListDayRecord>,
+    days: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3>,
     /// W3C SCXML 5.2: the `copies` datamodel variable, published (`sce:direction="out"`).
-    copies: Vec<StaticRecordListDayRecord>,
+    copies: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3>,
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
     total: u32,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
@@ -680,8 +691,10 @@ impl StaticRecordListPolicy {
             month: 1,
             dayOfMonth: 1,
         };
-        let days: Vec<StaticRecordListDayRecord> = Vec::new();
-        let copies: Vec<StaticRecordListDayRecord> = Vec::new();
+        let days: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let copies: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let total: u32 = 0;
         let errors: u32 = 0;
         Self {
@@ -1157,8 +1170,7 @@ impl StatePolicy for StaticRecordListPolicy {
                     self.draft.dayOfMonth = ev.dayOfMonth;
 
                     // SCE Accepted Subset §2.15: <sce:append target="days">
-                    let sce_failed = if self.days.len() < 3 {
-                        self.days.push(self.draft);
+                    let sce_failed = if self.days.len() < 3 && self.days.push(self.draft).is_ok() {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
@@ -1215,8 +1227,7 @@ impl StatePolicy for StaticRecordListPolicy {
                         let _ = (&d, &i);
 
                         // SCE Accepted Subset §2.15: <sce:append target="copies">
-                        let sce_failed = if self.copies.len() < 3 {
-                            self.copies.push(d);
+                        let sce_failed = if self.copies.len() < 3 && self.copies.push(d).is_ok() {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListEvent::ErrorExecution, "<sce:append target='copies'>: the list already holds its capacity of 3"));

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -734,7 +734,7 @@ pub struct TodoPeerValueRecord {
     pub id: u64,
     pub field: u64,
     pub value: i64,
-    pub text: String,
+    pub text: ::sce_rust_runtime::portable::SceString<96>,
     pub wallTime: i64,
     pub counter: u32,
     pub nodeId: u64,
@@ -861,7 +861,7 @@ fn call_EventAgenda__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -942,7 +942,7 @@ fn call_EventConflict__v(p0: &[TodoPeerValueRecord], p1: u64) -> bool {
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -960,7 +960,7 @@ fn call_EventLatest__v(p0: &[TodoPeerValueRecord], p1: u64, p2: u64, p3: i64) ->
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -1141,7 +1141,7 @@ fn call_MvValueDrop__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -1154,7 +1154,7 @@ fn call_MvValueDrop__vv(
             id: p1.id,
             field: p1.field,
             value: p1.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&p1.text),
+            text: p1.text.clone(),
             wall_time: p1.wallTime,
             counter: p1.counter,
             node_id: p1.nodeId,
@@ -1166,7 +1166,7 @@ fn call_MvValueDrop__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: r.text.as_str().to_string(),
+            text: r.text.clone(),
             wallTime: r.wall_time,
             counter: r.counter,
             nodeId: r.node_id,
@@ -1182,7 +1182,7 @@ fn call_MvValueHolds__vv(p0: &[TodoPeerValueRecord], p1: &TodoPeerValueRecord) -
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -1194,7 +1194,7 @@ fn call_MvValueHolds__vv(p0: &[TodoPeerValueRecord], p1: &TodoPeerValueRecord) -
             id: p1.id,
             field: p1.field,
             value: p1.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&p1.text),
+            text: p1.text.clone(),
             wall_time: p1.wallTime,
             counter: p1.counter,
             node_id: p1.nodeId,
@@ -1214,7 +1214,7 @@ fn call_MvValueKeep__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -1227,7 +1227,7 @@ fn call_MvValueKeep__vv(
             id: p1.id,
             field: p1.field,
             value: p1.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&p1.text),
+            text: p1.text.clone(),
             wall_time: p1.wallTime,
             counter: p1.counter,
             node_id: p1.nodeId,
@@ -1239,7 +1239,7 @@ fn call_MvValueKeep__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: r.text.as_str().to_string(),
+            text: r.text.clone(),
             wallTime: r.wall_time,
             counter: r.counter,
             nodeId: r.node_id,
@@ -1337,12 +1337,12 @@ pub struct TodoPeerData {
     pub node: u64,
     pub hub: bool,
     pub clock: TodoPeerHlcRecord,
-    pub adds: Vec<TodoPeerEntryRecord>,
-    pub tombstones: Vec<TodoPeerEntryRecord>,
-    pub values: Vec<TodoPeerValueRecord>,
-    pub digest: Vec<TodoPeerNodeRecord>,
+    pub adds: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024>,
+    pub tombstones: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024>,
+    pub values: ::sce_rust_runtime::portable::BoundedList<TodoPeerValueRecord, 512>,
+    pub digest: ::sce_rust_runtime::portable::BoundedList<TodoPeerNodeRecord, 2048>,
     pub refusals: u32,
-    pub agenda: Vec<TodoPeerOccurrenceRecord>,
+    pub agenda: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64>,
     pub agenda_next: u32,
     pub floor: i64,
     pub stale: bool,
@@ -1508,7 +1508,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for TodoPeerValueRecord {
             id: ::sce_rust_runtime::saved_state::record_field(value, what, "id")?,
             field: ::sce_rust_runtime::saved_state::record_field(value, what, "field")?,
             value: ::sce_rust_runtime::saved_state::record_field(value, what, "value")?,
-            text: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "text", 96)?,
+            text: ::sce_rust_runtime::saved_state::record_field(value, what, "text")?,
             wallTime: ::sce_rust_runtime::saved_state::record_field(value, what, "wallTime")?,
             counter: ::sce_rust_runtime::saved_state::record_field(value, what, "counter")?,
             nodeId: ::sce_rust_runtime::saved_state::record_field(value, what, "nodeId")?,
@@ -2416,31 +2416,46 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("stamp")?,
             "stamp",
         )?;
-        let _: Vec<TodoPeerEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("adds")?, "adds", 1024)?;
-        let _: Vec<TodoPeerEntryRecord> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("tombstones")?,
-            "tombstones",
-            1024,
-        )?;
-        let _: Vec<TodoPeerEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("one")?, "one", 1024)?;
-        let _: Vec<TodoPeerEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("stable")?, "stable", 1024)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("adds")?,
+                "adds",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("tombstones")?,
+                "tombstones",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("one")?, "one")?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("stable")?,
+                "stable",
+            )?;
         let _: TodoPeerEntryRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("entry")?,
             "entry",
         )?;
-        let _: Vec<TodoPeerValueRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("values")?, "values", 512)?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("typed")?, "typed", 32)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerValueRecord, 512> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("values")?,
+                "values",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<32> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("typed")?,
+                "typed",
+            )?;
         let _: TodoPeerValueRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("held")?,
             "held",
         )?;
-        let _: Vec<TodoPeerNodeRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("digest")?, "digest", 2048)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerNodeRecord, 2048> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("digest")?,
+                "digest",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("mine")?,
             "mine",
@@ -2473,66 +2488,72 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("refusals")?,
             "refusals",
         )?;
-        let _: Vec<TodoPeerOccurrenceRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("agenda")?, "agenda", 64)?;
-        let _: Vec<TodoPeerOccurrenceRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("local")?, "local", 64)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("agenda")?,
+                "agenda",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("local")?,
+                "local",
+            )?;
         let _: TodoPeerOccurrenceRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("occ")?, "occ")?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("agendaNext")?,
             "agendaNext",
         )?;
-        let _: Vec<i64> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneStarts1")?,
-            "zoneStarts1",
-            64,
-        )?;
-        let _: Vec<i32> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneOffsets1")?,
-            "zoneOffsets1",
-            64,
-        )?;
-        let _: Vec<i64> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneStarts2")?,
-            "zoneStarts2",
-            64,
-        )?;
-        let _: Vec<i32> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneOffsets2")?,
-            "zoneOffsets2",
-            64,
-        )?;
-        let _: Vec<i64> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneStarts3")?,
-            "zoneStarts3",
-            64,
-        )?;
-        let _: Vec<i32> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneOffsets3")?,
-            "zoneOffsets3",
-            64,
-        )?;
-        let _: Vec<i64> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneStarts4")?,
-            "zoneStarts4",
-            64,
-        )?;
-        let _: Vec<i32> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneOffsets4")?,
-            "zoneOffsets4",
-            64,
-        )?;
-        let _: Vec<i64> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneStarts")?,
-            "zoneStarts",
-            64,
-        )?;
-        let _: Vec<i32> = ::sce_rust_runtime::saved_state::bounded(
-            saved.variable("zoneOffsets")?,
-            "zoneOffsets",
-            64,
-        )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneStarts1")?,
+                "zoneStarts1",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneOffsets1")?,
+                "zoneOffsets1",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneStarts2")?,
+                "zoneStarts2",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneOffsets2")?,
+                "zoneOffsets2",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneStarts3")?,
+                "zoneStarts3",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneOffsets3")?,
+                "zoneOffsets3",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneStarts4")?,
+                "zoneStarts4",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneOffsets4")?,
+                "zoneOffsets4",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneStarts")?,
+                "zoneStarts",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("zoneOffsets")?,
+                "zoneOffsets",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneRows")?,
             "zoneRows",
@@ -2589,8 +2610,11 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("agreeing")?,
             "agreeing",
         )?;
-        let _: Vec<TodoPeerAnswerRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("answers")?, "answers", 512)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerAnswerRecord, 512> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("answers")?,
+                "answers",
+            )?;
         let _: TodoPeerAnswerRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("answer")?,
             "answer",
@@ -2623,8 +2647,11 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("blocked")?,
             "blocked",
         )?;
-        let _: Vec<TodoPeerMemberRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("roster")?, "roster", 64)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<TodoPeerMemberRecord, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("roster")?,
+                "roster",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("denied")?,
             "denied",
@@ -2668,30 +2695,40 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("stamp")?,
             "stamp",
         )?;
-        policy.adds =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("adds")?, "adds", 1024)?;
-        policy.tombstones = ::sce_rust_runtime::saved_state::bounded(
+        policy.adds = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("adds")?,
+            "adds",
+        )?;
+        policy.tombstones = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("tombstones")?,
             "tombstones",
-            1024,
         )?;
-        policy.one = ::sce_rust_runtime::saved_state::bounded(saved.variable("one")?, "one", 1024)?;
-        policy.stable =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("stable")?, "stable", 1024)?;
+        policy.one =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("one")?, "one")?;
+        policy.stable = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("stable")?,
+            "stable",
+        )?;
         policy.entry = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("entry")?,
             "entry",
         )?;
-        policy.values =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("values")?, "values", 512)?;
-        policy.typed =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("typed")?, "typed", 32)?;
+        policy.values = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("values")?,
+            "values",
+        )?;
+        policy.typed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("typed")?,
+            "typed",
+        )?;
         policy.held = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("held")?,
             "held",
         )?;
-        policy.digest =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("digest")?, "digest", 2048)?;
+        policy.digest = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("digest")?,
+            "digest",
+        )?;
         policy.mine = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("mine")?,
             "mine",
@@ -2724,65 +2761,59 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("refusals")?,
             "refusals",
         )?;
-        policy.agenda =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("agenda")?, "agenda", 64)?;
-        policy.local =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("local")?, "local", 64)?;
+        policy.agenda = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("agenda")?,
+            "agenda",
+        )?;
+        policy.local = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("local")?,
+            "local",
+        )?;
         policy.occ =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("occ")?, "occ")?;
         policy.agenda_next = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("agendaNext")?,
             "agendaNext",
         )?;
-        policy.zone_starts1 = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_starts1 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneStarts1")?,
             "zoneStarts1",
-            64,
         )?;
-        policy.zone_offsets1 = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_offsets1 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneOffsets1")?,
             "zoneOffsets1",
-            64,
         )?;
-        policy.zone_starts2 = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_starts2 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneStarts2")?,
             "zoneStarts2",
-            64,
         )?;
-        policy.zone_offsets2 = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_offsets2 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneOffsets2")?,
             "zoneOffsets2",
-            64,
         )?;
-        policy.zone_starts3 = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_starts3 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneStarts3")?,
             "zoneStarts3",
-            64,
         )?;
-        policy.zone_offsets3 = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_offsets3 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneOffsets3")?,
             "zoneOffsets3",
-            64,
         )?;
-        policy.zone_starts4 = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_starts4 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneStarts4")?,
             "zoneStarts4",
-            64,
         )?;
-        policy.zone_offsets4 = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_offsets4 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneOffsets4")?,
             "zoneOffsets4",
-            64,
         )?;
-        policy.zone_starts = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_starts = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneStarts")?,
             "zoneStarts",
-            64,
         )?;
-        policy.zone_offsets = ::sce_rust_runtime::saved_state::bounded(
+        policy.zone_offsets = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneOffsets")?,
             "zoneOffsets",
-            64,
         )?;
         policy.zone_rows = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("zoneRows")?,
@@ -2840,8 +2871,10 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("agreeing")?,
             "agreeing",
         )?;
-        policy.answers =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("answers")?, "answers", 512)?;
+        policy.answers = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("answers")?,
+            "answers",
+        )?;
         policy.answer = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("answer")?,
             "answer",
@@ -2874,8 +2907,10 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("blocked")?,
             "blocked",
         )?;
-        policy.roster =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("roster")?, "roster", 64)?;
+        policy.roster = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("roster")?,
+            "roster",
+        )?;
         policy.denied = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("denied")?,
             "denied",
@@ -2899,7 +2934,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
 pub struct TodoPeerInvokeParams {
     pub node: Option<u64>,
     pub hub: Option<bool>,
-    pub typed: Option<String>,
+    pub typed: Option<::sce_rust_runtime::portable::SceString<32>>,
     pub mine: Option<u32>,
     pub share_id: Option<u32>,
     pub share_field: Option<u16>,
@@ -2954,23 +2989,23 @@ pub struct TodoPeerPolicy {
     /// W3C SCXML 5.2: the `stamp` datamodel variable.
     stamp: TodoPeerHlcRecord,
     /// W3C SCXML 5.2: the `adds` datamodel variable, published (`sce:direction="out"`).
-    adds: Vec<TodoPeerEntryRecord>,
+    adds: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024>,
     /// W3C SCXML 5.2: the `tombstones` datamodel variable, published (`sce:direction="out"`).
-    tombstones: Vec<TodoPeerEntryRecord>,
+    tombstones: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024>,
     /// W3C SCXML 5.2: the `one` datamodel variable.
-    one: Vec<TodoPeerEntryRecord>,
+    one: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024>,
     /// W3C SCXML 5.2: the `stable` datamodel variable.
-    stable: Vec<TodoPeerEntryRecord>,
+    stable: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024>,
     /// W3C SCXML 5.2: the `entry` datamodel variable.
     entry: TodoPeerEntryRecord,
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
-    values: Vec<TodoPeerValueRecord>,
+    values: ::sce_rust_runtime::portable::BoundedList<TodoPeerValueRecord, 512>,
     /// W3C SCXML 5.2: the `typed` datamodel variable.
-    typed: String,
+    typed: ::sce_rust_runtime::portable::SceString<32>,
     /// W3C SCXML 5.2: the `held` datamodel variable.
     held: TodoPeerValueRecord,
     /// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
-    digest: Vec<TodoPeerNodeRecord>,
+    digest: ::sce_rust_runtime::portable::BoundedList<TodoPeerNodeRecord, 2048>,
     /// W3C SCXML 5.2: the `mine` datamodel variable.
     mine: u32,
     /// W3C SCXML 5.2: the `shareId` datamodel variable.
@@ -2988,33 +3023,33 @@ pub struct TodoPeerPolicy {
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
     refusals: u32,
     /// W3C SCXML 5.2: the `agenda` datamodel variable, published (`sce:direction="out"`).
-    agenda: Vec<TodoPeerOccurrenceRecord>,
+    agenda: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64>,
     /// W3C SCXML 5.2: the `local` datamodel variable.
-    local: Vec<TodoPeerOccurrenceRecord>,
+    local: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64>,
     /// W3C SCXML 5.2: the `occ` datamodel variable.
     occ: TodoPeerOccurrenceRecord,
     /// W3C SCXML 5.2: the `agendaNext` datamodel variable, published (`sce:direction="out"`).
     agenda_next: u32,
     /// W3C SCXML 5.2: the `zoneStarts1` datamodel variable.
-    zone_starts1: Vec<i64>,
+    zone_starts1: ::sce_rust_runtime::portable::BoundedList<i64, 64>,
     /// W3C SCXML 5.2: the `zoneOffsets1` datamodel variable.
-    zone_offsets1: Vec<i32>,
+    zone_offsets1: ::sce_rust_runtime::portable::BoundedList<i32, 64>,
     /// W3C SCXML 5.2: the `zoneStarts2` datamodel variable.
-    zone_starts2: Vec<i64>,
+    zone_starts2: ::sce_rust_runtime::portable::BoundedList<i64, 64>,
     /// W3C SCXML 5.2: the `zoneOffsets2` datamodel variable.
-    zone_offsets2: Vec<i32>,
+    zone_offsets2: ::sce_rust_runtime::portable::BoundedList<i32, 64>,
     /// W3C SCXML 5.2: the `zoneStarts3` datamodel variable.
-    zone_starts3: Vec<i64>,
+    zone_starts3: ::sce_rust_runtime::portable::BoundedList<i64, 64>,
     /// W3C SCXML 5.2: the `zoneOffsets3` datamodel variable.
-    zone_offsets3: Vec<i32>,
+    zone_offsets3: ::sce_rust_runtime::portable::BoundedList<i32, 64>,
     /// W3C SCXML 5.2: the `zoneStarts4` datamodel variable.
-    zone_starts4: Vec<i64>,
+    zone_starts4: ::sce_rust_runtime::portable::BoundedList<i64, 64>,
     /// W3C SCXML 5.2: the `zoneOffsets4` datamodel variable.
-    zone_offsets4: Vec<i32>,
+    zone_offsets4: ::sce_rust_runtime::portable::BoundedList<i32, 64>,
     /// W3C SCXML 5.2: the `zoneStarts` datamodel variable.
-    zone_starts: Vec<i64>,
+    zone_starts: ::sce_rust_runtime::portable::BoundedList<i64, 64>,
     /// W3C SCXML 5.2: the `zoneOffsets` datamodel variable.
-    zone_offsets: Vec<i32>,
+    zone_offsets: ::sce_rust_runtime::portable::BoundedList<i32, 64>,
     /// W3C SCXML 5.2: the `zoneRows` datamodel variable.
     zone_rows: u32,
     /// W3C SCXML 5.2: the `split` datamodel variable.
@@ -3044,7 +3079,7 @@ pub struct TodoPeerPolicy {
     /// W3C SCXML 5.2: the `agreeing` datamodel variable.
     agreeing: u32,
     /// W3C SCXML 5.2: the `answers` datamodel variable.
-    answers: Vec<TodoPeerAnswerRecord>,
+    answers: ::sce_rust_runtime::portable::BoundedList<TodoPeerAnswerRecord, 512>,
     /// W3C SCXML 5.2: the `answer` datamodel variable.
     answer: TodoPeerAnswerRecord,
     /// W3C SCXML 5.2: the `agreed` datamodel variable.
@@ -3062,7 +3097,7 @@ pub struct TodoPeerPolicy {
     /// W3C SCXML 5.2: the `blocked` datamodel variable.
     blocked: bool,
     /// W3C SCXML 5.2: the `roster` datamodel variable.
-    roster: Vec<TodoPeerMemberRecord>,
+    roster: ::sce_rust_runtime::portable::BoundedList<TodoPeerMemberRecord, 64>,
     /// W3C SCXML 5.2: the `denied` datamodel variable, published (`sce:direction="out"`).
     denied: u32,
     /// W3C SCXML 5.2: the `forbidden` datamodel variable.
@@ -3102,28 +3137,35 @@ impl TodoPeerPolicy {
             counter: 0,
             nodeId: 0,
         };
-        let adds: Vec<TodoPeerEntryRecord> = Vec::new();
-        let tombstones: Vec<TodoPeerEntryRecord> = Vec::new();
-        let one: Vec<TodoPeerEntryRecord> = Vec::new();
-        let stable: Vec<TodoPeerEntryRecord> = Vec::new();
+        let adds: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let tombstones: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let one: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let stable: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let entry: TodoPeerEntryRecord = TodoPeerEntryRecord {
             element: 0,
             wallTime: 0,
             counter: 0,
             nodeId: 0,
         };
-        let values: Vec<TodoPeerValueRecord> = Vec::new();
-        let typed: String = "".to_string();
+        let values: ::sce_rust_runtime::portable::BoundedList<TodoPeerValueRecord, 512> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let typed: ::sce_rust_runtime::portable::SceString<32> =
+            ::sce_rust_runtime::portable::sce_text!(32, "");
         let held: TodoPeerValueRecord = TodoPeerValueRecord {
             id: 0,
             field: 0,
             value: 0,
-            text: "".to_string(),
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
             wallTime: 0,
             counter: 0,
             nodeId: 0,
         };
-        let digest: Vec<TodoPeerNodeRecord> = Vec::new();
+        let digest: ::sce_rust_runtime::portable::BoundedList<TodoPeerNodeRecord, 2048> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let mine: u32 = 0;
         let share_id: u32 = 0;
         let share_field: u16 = 0;
@@ -3132,8 +3174,10 @@ impl TodoPeerPolicy {
         let is_live: bool = false;
         let present: bool = false;
         let refusals: u32 = 0;
-        let agenda: Vec<TodoPeerOccurrenceRecord> = Vec::new();
-        let local: Vec<TodoPeerOccurrenceRecord> = Vec::new();
+        let agenda: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let local: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let occ: TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord {
             id: 0,
             start: 0,
@@ -3142,16 +3186,26 @@ impl TodoPeerPolicy {
             conflict: 0,
         };
         let agenda_next: u32 = 0;
-        let zone_starts1: Vec<i64> = Vec::new();
-        let zone_offsets1: Vec<i32> = Vec::new();
-        let zone_starts2: Vec<i64> = Vec::new();
-        let zone_offsets2: Vec<i32> = Vec::new();
-        let zone_starts3: Vec<i64> = Vec::new();
-        let zone_offsets3: Vec<i32> = Vec::new();
-        let zone_starts4: Vec<i64> = Vec::new();
-        let zone_offsets4: Vec<i32> = Vec::new();
-        let zone_starts: Vec<i64> = Vec::new();
-        let zone_offsets: Vec<i32> = Vec::new();
+        let zone_starts1: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets1: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_starts2: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets2: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_starts3: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets3: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_starts4: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets4: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_starts: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let zone_rows: u32 = 0;
         let split: bool = false;
         let sched: TodoPeerScheduleRecord = TodoPeerScheduleRecord {
@@ -3212,7 +3266,8 @@ impl TodoPeerPolicy {
         let pending: i64 = -1;
         let members: u32 = 0;
         let agreeing: u32 = 0;
-        let answers: Vec<TodoPeerAnswerRecord> = Vec::new();
+        let answers: ::sce_rust_runtime::portable::BoundedList<TodoPeerAnswerRecord, 512> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let answer: TodoPeerAnswerRecord = TodoPeerAnswerRecord { sender: 0, hash: 0 };
         let agreed: u32 = 0;
         let room_values: u32 = 0;
@@ -3221,7 +3276,8 @@ impl TodoPeerPolicy {
         let full: u32 = 0;
         let fresh: bool = false;
         let blocked: bool = false;
-        let roster: Vec<TodoPeerMemberRecord> = Vec::new();
+        let roster: ::sce_rust_runtime::portable::BoundedList<TodoPeerMemberRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let denied: u32 = 0;
         let forbidden: bool = false;
         let authorized: bool = true;
@@ -4208,11 +4264,9 @@ impl StatePolicy for TodoPeerPolicy {
                     // W3C SCXML 5.3: <assign location="roster">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.roster = sce_forge_runtime::algorithm::within(
+                            self.roster = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_EventRoster__v(&self.roster, ev.node, ev.role)?).as_slice(),
-                                64,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -4239,8 +4293,9 @@ impl StatePolicy for TodoPeerPolicy {
                     // W3C SCXML 5.3: <assign location="typed">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.typed =
-                                sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 32)?;
+                            self.typed = ::sce_rust_runtime::portable::SceString::<32>::from_text(
+                                &&ev.text[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -4257,7 +4312,9 @@ impl StatePolicy for TodoPeerPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.held.text =
-                                sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 96)?;
+                                ::sce_rust_runtime::portable::SceString::<96>::from_text(
+                                    &&ev.text[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -4828,7 +4885,7 @@ impl StatePolicy for TodoPeerPolicy {
                     if self.authorized {
                         // W3C SCXML 5.3: <assign location="held.text">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.held.text = sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 96)?;
+    self.held.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&&ev.text[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -4930,8 +4987,9 @@ impl StatePolicy for TodoPeerPolicy {
                             // SCE Accepted Subset §2.15: <sce:clear target="one">
                             self.one.clear();
                             // SCE Accepted Subset §2.15: <sce:append target="one">
-                            let sce_failed = if self.one.len() < 1024 {
-                                self.one.push(self.entry);
+                            let sce_failed = if self.one.len() < 1024
+                                && self.one.push(self.entry).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
@@ -4943,7 +5001,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="adds">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.adds = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.adds, &self.one)?).as_slice(), 1024)?.to_vec();
+    self.adds = ::sce_rust_runtime::portable::BoundedList::from_slice((call_OrsetUnion__vv(&self.adds, &self.one)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -4982,7 +5040,7 @@ impl StatePolicy for TodoPeerPolicy {
                         if self.is_live && !self.present {
                             // W3C SCXML 5.3: <assign location="values">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.values = sce_forge_runtime::algorithm::within((call_MvValueKeep__vv(&self.values, &self.held)?).as_slice(), 512)?.to_vec();
+    self.values = ::sce_rust_runtime::portable::BoundedList::from_slice((call_MvValueKeep__vv(&self.values, &self.held)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5354,8 +5412,9 @@ impl StatePolicy for TodoPeerPolicy {
                         // SCE Accepted Subset §2.15: <sce:clear target="one">
                         self.one.clear();
                         // SCE Accepted Subset §2.15: <sce:append target="one">
-                        let sce_failed = if self.one.len() < 1024 {
-                            self.one.push(self.entry);
+                        let sce_failed = if self.one.len() < 1024
+                            && self.one.push(self.entry).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
@@ -5367,7 +5426,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                         // W3C SCXML 5.3: <assign location="tombstones">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.tombstones, &self.one)?).as_slice(), 1024)?.to_vec();
+    self.tombstones = ::sce_rust_runtime::portable::BoundedList::from_slice((call_OrsetUnion__vv(&self.tombstones, &self.one)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5382,7 +5441,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                         // W3C SCXML 5.3: <assign location="adds">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.adds = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.adds, &self.one)?).as_slice(), 1024)?.to_vec();
+    self.adds = ::sce_rust_runtime::portable::BoundedList::from_slice((call_OrsetLive__vv(&self.adds, &self.one)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5415,7 +5474,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                         // W3C SCXML 5.3: <assign location="values">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.values = sce_forge_runtime::algorithm::within((call_MvValueDrop__vv(&self.values, &self.held)?).as_slice(), 512)?.to_vec();
+    self.values = ::sce_rust_runtime::portable::BoundedList::from_slice((call_MvValueDrop__vv(&self.values, &self.held)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5789,16 +5848,14 @@ impl StatePolicy for TodoPeerPolicy {
                     // W3C SCXML 5.3: <assign location="digest">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.digest = sce_forge_runtime::algorithm::within(
+                            self.digest = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_MerkleInsert__v(
                                     &self.digest,
                                     sce_forge_runtime::algorithm::div::<i64>(ev.wallTime, 60000)?,
                                     self.mine,
                                 )?)
                                 .as_slice(),
-                                2048,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -5834,8 +5891,9 @@ impl StatePolicy for TodoPeerPolicy {
                         // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
                         if t.wallTime <= ev.before {
                             // SCE Accepted Subset §2.15: <sce:append target="stable">
-                            let sce_failed = if self.stable.len() < 1024 {
-                                self.stable.push(t);
+                            let sce_failed = if self.stable.len() < 1024
+                                && self.stable.push(t).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
@@ -5862,7 +5920,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="digest">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
+    self.digest = ::sce_rust_runtime::portable::BoundedList::from_slice((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5880,11 +5938,11 @@ impl StatePolicy for TodoPeerPolicy {
                     // W3C SCXML 5.3: <assign location="tombstones">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.tombstones = sce_forge_runtime::algorithm::within(
-                                (call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice(),
-                                1024,
-                            )?
-                            .to_vec();
+                            self.tombstones =
+                                ::sce_rust_runtime::portable::BoundedList::from_slice(
+                                    (call_OrsetLive__vv(&self.tombstones, &self.stable)?)
+                                        .as_slice(),
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -6116,8 +6174,9 @@ impl StatePolicy for TodoPeerPolicy {
                             // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
                             if t.wallTime <= ev.before {
                                 // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                let sce_failed = if self.stable.len() < 1024 {
-                                    self.stable.push(t);
+                                let sce_failed = if self.stable.len() < 1024
+                                    && self.stable.push(t).is_ok()
+                                {
                                     false
                                 } else {
                                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
@@ -6274,8 +6333,9 @@ impl StatePolicy for TodoPeerPolicy {
                             self.answer.hash = ev.hash;
 
                             // SCE Accepted Subset §2.15: <sce:append target="answers">
-                            let sce_failed = if self.answers.len() < 512 {
-                                self.answers.push(self.answer);
+                            let sce_failed = if self.answers.len() < 512
+                                && self.answers.push(self.answer).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='answers'>: the list already holds its capacity of 512"));
@@ -6321,8 +6381,9 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="t.wallTime <= pending"
                                 if t.wallTime <= self.pending {
                                     // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                    let sce_failed = if self.stable.len() < 1024 {
-                                        self.stable.push(t);
+                                    let sce_failed = if self.stable.len() < 1024
+                                        && self.stable.push(t).is_ok()
+                                    {
                                         false
                                     } else {
                                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
@@ -6697,8 +6758,9 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
                                 if t.wallTime <= ev.before {
                                     // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                    let sce_failed = if self.stable.len() < 1024 {
-                                        self.stable.push(t);
+                                    let sce_failed = if self.stable.len() < 1024
+                                        && self.stable.push(t).is_ok()
+                                    {
                                         false
                                     } else {
                                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
@@ -6772,7 +6834,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                                 // W3C SCXML 5.3: <assign location="digest">
                                 let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
+    self.digest = ::sce_rust_runtime::portable::BoundedList::from_slice((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -6788,7 +6850,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="tombstones">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice(), 1024)?.to_vec();
+    self.tombstones = ::sce_rust_runtime::portable::BoundedList::from_slice((call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -8330,8 +8392,9 @@ if self.hub && ev.to == 2 {
                             let _ = &s1;
 
                             // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
-                            let sce_failed = if self.zone_starts.len() < 64 {
-                                self.zone_starts.push(s1);
+                            let sce_failed = if self.zone_starts.len() < 64
+                                && self.zone_starts.push(s1).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
@@ -8361,8 +8424,9 @@ if self.hub && ev.to == 2 {
                             let _ = &o1;
 
                             // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
-                            let sce_failed = if self.zone_offsets.len() < 64 {
-                                self.zone_offsets.push(o1);
+                            let sce_failed = if self.zone_offsets.len() < 64
+                                && self.zone_offsets.push(o1).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
@@ -8380,8 +8444,9 @@ if self.hub && ev.to == 2 {
                             let _ = &s2;
 
                             // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
-                            let sce_failed = if self.zone_starts.len() < 64 {
-                                self.zone_starts.push(s2);
+                            let sce_failed = if self.zone_starts.len() < 64
+                                && self.zone_starts.push(s2).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
@@ -8411,8 +8476,9 @@ if self.hub && ev.to == 2 {
                             let _ = &o2;
 
                             // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
-                            let sce_failed = if self.zone_offsets.len() < 64 {
-                                self.zone_offsets.push(o2);
+                            let sce_failed = if self.zone_offsets.len() < 64
+                                && self.zone_offsets.push(o2).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
@@ -8430,8 +8496,9 @@ if self.hub && ev.to == 2 {
                             let _ = &s3;
 
                             // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
-                            let sce_failed = if self.zone_starts.len() < 64 {
-                                self.zone_starts.push(s3);
+                            let sce_failed = if self.zone_starts.len() < 64
+                                && self.zone_starts.push(s3).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
@@ -8461,8 +8528,9 @@ if self.hub && ev.to == 2 {
                             let _ = &o3;
 
                             // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
-                            let sce_failed = if self.zone_offsets.len() < 64 {
-                                self.zone_offsets.push(o3);
+                            let sce_failed = if self.zone_offsets.len() < 64
+                                && self.zone_offsets.push(o3).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
@@ -8480,8 +8548,9 @@ if self.hub && ev.to == 2 {
                             let _ = &s4;
 
                             // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
-                            let sce_failed = if self.zone_starts.len() < 64 {
-                                self.zone_starts.push(s4);
+                            let sce_failed = if self.zone_starts.len() < 64
+                                && self.zone_starts.push(s4).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
@@ -8511,8 +8580,9 @@ if self.hub && ev.to == 2 {
                             let _ = &o4;
 
                             // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
-                            let sce_failed = if self.zone_offsets.len() < 64 {
-                                self.zone_offsets.push(o4);
+                            let sce_failed = if self.zone_offsets.len() < 64
+                                && self.zone_offsets.push(o4).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
@@ -8528,7 +8598,7 @@ if self.hub && ev.to == 2 {
                     if self.zone_rows == 0 {
                         // W3C SCXML 5.3: <assign location="agenda">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.agenda = sce_forge_runtime::algorithm::within((call_EventAgenda__vv(&self.sched, &self.values, ev.id as u64, ev.windowStart, ev.windowEnd, ev.skip)?).as_slice(), 64)?.to_vec();
+    self.agenda = ::sce_rust_runtime::portable::BoundedList::from_slice((call_EventAgenda__vv(&self.sched, &self.values, ev.id as u64, ev.windowStart, ev.windowEnd, ev.skip)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -8568,7 +8638,7 @@ if self.hub && ev.to == 2 {
                     if self.zone_rows != 0 {
                         // W3C SCXML 5.3: <assign location="local">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.local = sce_forge_runtime::algorithm::within((call_EventAgenda__vv(&self.sched, &self.values, ev.id as u64, sce_forge_runtime::algorithm::sub::<i64>(ev.windowStart, 86400000)?, sce_forge_runtime::algorithm::add::<i64>(ev.windowEnd, 86400000)?, ev.skip)?).as_slice(), 64)?.to_vec();
+    self.local = ::sce_rust_runtime::portable::BoundedList::from_slice((call_EventAgenda__vv(&self.sched, &self.values, ev.id as u64, sce_forge_runtime::algorithm::sub::<i64>(ev.windowStart, 86400000)?, sce_forge_runtime::algorithm::add::<i64>(ev.windowEnd, 86400000)?, ev.skip)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -8661,8 +8731,9 @@ if self.hub && ev.to == 2 {
                                 && self.occ.start < ev.windowEnd
                             {
                                 // SCE Accepted Subset §2.15: <sce:append target="agenda">
-                                let sce_failed = if self.agenda.len() < 64 {
-                                    self.agenda.push(self.occ);
+                                let sce_failed = if self.agenda.len() < 64
+                                    && self.agenda.push(self.occ).is_ok()
+                                {
                                     false
                                 } else {
                                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='agenda'>: the list already holds its capacity of 64"));
@@ -8707,8 +8778,9 @@ if self.hub && ev.to == 2 {
                     // W3C SCXML 5.9: cond="_event.data.zone === 1"
                     if ev.zone == 1 {
                         // SCE Accepted Subset §2.15: <sce:append target="zoneStarts1">
-                        let sce_failed = if self.zone_starts1.len() < 64 {
-                            self.zone_starts1.push(ev.start);
+                        let sce_failed = if self.zone_starts1.len() < 64
+                            && self.zone_starts1.push(ev.start).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts1'>: the list already holds its capacity of 64"));
@@ -8719,8 +8791,9 @@ if self.hub && ev.to == 2 {
                         }
 
                         // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets1">
-                        let sce_failed = if self.zone_offsets1.len() < 64 {
-                            self.zone_offsets1.push(ev.offset);
+                        let sce_failed = if self.zone_offsets1.len() < 64
+                            && self.zone_offsets1.push(ev.offset).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets1'>: the list already holds its capacity of 64"));
@@ -8734,8 +8807,9 @@ if self.hub && ev.to == 2 {
                     // W3C SCXML 5.9: cond="_event.data.zone === 2"
                     if ev.zone == 2 {
                         // SCE Accepted Subset §2.15: <sce:append target="zoneStarts2">
-                        let sce_failed = if self.zone_starts2.len() < 64 {
-                            self.zone_starts2.push(ev.start);
+                        let sce_failed = if self.zone_starts2.len() < 64
+                            && self.zone_starts2.push(ev.start).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts2'>: the list already holds its capacity of 64"));
@@ -8746,8 +8820,9 @@ if self.hub && ev.to == 2 {
                         }
 
                         // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets2">
-                        let sce_failed = if self.zone_offsets2.len() < 64 {
-                            self.zone_offsets2.push(ev.offset);
+                        let sce_failed = if self.zone_offsets2.len() < 64
+                            && self.zone_offsets2.push(ev.offset).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets2'>: the list already holds its capacity of 64"));
@@ -8761,8 +8836,9 @@ if self.hub && ev.to == 2 {
                     // W3C SCXML 5.9: cond="_event.data.zone === 3"
                     if ev.zone == 3 {
                         // SCE Accepted Subset §2.15: <sce:append target="zoneStarts3">
-                        let sce_failed = if self.zone_starts3.len() < 64 {
-                            self.zone_starts3.push(ev.start);
+                        let sce_failed = if self.zone_starts3.len() < 64
+                            && self.zone_starts3.push(ev.start).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts3'>: the list already holds its capacity of 64"));
@@ -8773,8 +8849,9 @@ if self.hub && ev.to == 2 {
                         }
 
                         // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets3">
-                        let sce_failed = if self.zone_offsets3.len() < 64 {
-                            self.zone_offsets3.push(ev.offset);
+                        let sce_failed = if self.zone_offsets3.len() < 64
+                            && self.zone_offsets3.push(ev.offset).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets3'>: the list already holds its capacity of 64"));
@@ -8788,8 +8865,9 @@ if self.hub && ev.to == 2 {
                     // W3C SCXML 5.9: cond="_event.data.zone === 4"
                     if ev.zone == 4 {
                         // SCE Accepted Subset §2.15: <sce:append target="zoneStarts4">
-                        let sce_failed = if self.zone_starts4.len() < 64 {
-                            self.zone_starts4.push(ev.start);
+                        let sce_failed = if self.zone_starts4.len() < 64
+                            && self.zone_starts4.push(ev.start).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts4'>: the list already holds its capacity of 64"));
@@ -8800,8 +8878,9 @@ if self.hub && ev.to == 2 {
                         }
 
                         // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets4">
-                        let sce_failed = if self.zone_offsets4.len() < 64 {
-                            self.zone_offsets4.push(ev.offset);
+                        let sce_failed = if self.zone_offsets4.len() < 64
+                            && self.zone_offsets4.push(ev.offset).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets4'>: the list already holds its capacity of 64"));

@@ -241,7 +241,7 @@ pub struct StatechartHostInvokerOptionalData {
     pub at_present: bool,
     pub at_value: i64,
     pub label_present: bool,
-    pub label_value: String,
+    pub label_value: ::sce_rust_runtime::portable::SceString<16>,
     pub hit_known: bool,
     pub hit_true: bool,
 }
@@ -486,10 +486,11 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
         )?;
         let _: Option<i64> =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("at")?, "at")?;
-        let _: Option<String> =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("label")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "label", 16)
-            })?;
+        let _: Option<::sce_rust_runtime::portable::SceString<16>> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         let _: Option<bool> =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("hit")?, "hit")?;
         let _: u8 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
@@ -516,11 +517,11 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
             saved.variable("label_present")?,
             "label_present",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("label_value")?,
-            "label_value",
-            16,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label_value")?,
+                "label_value",
+            )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("hit_known")?,
             "hit_known",
@@ -551,10 +552,10 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
         )?;
         policy.at =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("at")?, "at")?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("label")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "label", 16)
-            })?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         policy.hit =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("hit")?, "hit")?;
         policy.answered = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
@@ -581,10 +582,9 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
             saved.variable("label_present")?,
             "label_present",
         )?;
-        policy.label_value = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.label_value = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("label_value")?,
             "label_value",
-            16,
         )?;
         policy.hit_known = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("hit_known")?,
@@ -705,7 +705,7 @@ impl StatechartHostInvokerOptionalHostInvokers
 #[derive(Default)]
 pub struct StatechartHostInvokerOptionalInvokeParams {
     pub at: Option<i64>,
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub hit: Option<bool>,
     pub answered: Option<u8>,
     pub rows_seen: Option<u8>,
@@ -713,7 +713,7 @@ pub struct StatechartHostInvokerOptionalInvokeParams {
     pub at_present: Option<bool>,
     pub at_value: Option<i64>,
     pub label_present: Option<bool>,
-    pub label_value: Option<String>,
+    pub label_value: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub hit_known: Option<bool>,
     pub hit_true: Option<bool>,
 }
@@ -730,7 +730,7 @@ pub struct StatechartHostInvokerOptionalPolicy {
     /// W3C SCXML 5.2: the `at` datamodel variable.
     at: Option<i64>,
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: Option<String>,
+    label: Option<::sce_rust_runtime::portable::SceString<16>>,
     /// W3C SCXML 5.2: the `hit` datamodel variable.
     hit: Option<bool>,
     /// W3C SCXML 5.2: the `answered` datamodel variable, published (`sce:direction="out"`).
@@ -746,7 +746,7 @@ pub struct StatechartHostInvokerOptionalPolicy {
     /// W3C SCXML 5.2: the `label_present` datamodel variable, published (`sce:direction="out"`).
     label_present: bool,
     /// W3C SCXML 5.2: the `label_value` datamodel variable, published (`sce:direction="out"`).
-    label_value: String,
+    label_value: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `hit_known` datamodel variable, published (`sce:direction="out"`).
     hit_known: bool,
     /// W3C SCXML 5.2: the `hit_true` datamodel variable, published (`sce:direction="out"`).
@@ -780,7 +780,7 @@ pub struct StatechartHostInvokerOptionalPolicy {
 impl StatechartHostInvokerOptionalPolicy {
     fn build(session_id: String) -> Self {
         let at: Option<i64> = None;
-        let label: Option<String> = None;
+        let label: Option<::sce_rust_runtime::portable::SceString<16>> = None;
         let hit: Option<bool> = None;
         let answered: u8 = 0;
         let rows_seen: u8 = 0;
@@ -788,7 +788,8 @@ impl StatechartHostInvokerOptionalPolicy {
         let at_present: bool = false;
         let at_value: i64 = 0;
         let label_present: bool = false;
-        let label_value: String = "".to_string();
+        let label_value: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "");
         let hit_known: bool = false;
         let hit_true: bool = false;
         Self {
@@ -1432,9 +1433,11 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
                     // W3C SCXML 5.3: <assign location="label">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.label = match ev.label.as_deref().map(str::to_string) {
+                            self.label = match ev.label.as_deref() {
                                 Some(sce_present) => {
-                                    Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)
+                                    Some(::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                        &sce_present,
+                                    )?)
                                 }
                                 None => None,
                             };
@@ -1476,7 +1479,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
                     if self.label.as_deref().is_some() {
                         // W3C SCXML 5.3: <assign location="label_value">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.label_value = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::optional::proven(self.label.as_deref()).to_string(), 16)?;
+    self.label_value = ::sce_rust_runtime::portable::SceString::<16>::from_text(&&sce_forge_runtime::optional::proven(self.label.as_deref())[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -1491,7 +1494,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
                     } else {
                         // W3C SCXML 5.3: <assign location="label_value">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.label_value = sce_forge_runtime::algorithm::bounded("".to_string(), 16)?;
+    self.label_value = ::sce_rust_runtime::portable::SceString::<16>::from_text(&"")?;
     Ok(())
 })() {
     Ok(()) => false,

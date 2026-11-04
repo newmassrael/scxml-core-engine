@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -442,19 +442,20 @@ impl StaticInvokeOptionalPersist for Engine<StaticInvokeOptionalPolicy> {
             saved.variable("size")?,
             "size",
         )?;
-        let _: Option<String> =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("label")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "label", 8)
-            })?;
+        let _: Option<::sce_rust_runtime::portable::SceString<8>> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         let _: Option<i32> = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("nosize")?,
             "nosize",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("lengthy")?,
-            "lengthy",
-            8,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("lengthy")?,
+                "lengthy",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("completed")?,
             "completed",
@@ -487,18 +488,17 @@ impl StaticInvokeOptionalPersist for Engine<StaticInvokeOptionalPolicy> {
             saved.variable("size")?,
             "size",
         )?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("label")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "label", 8)
-            })?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         policy.nosize = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("nosize")?,
             "nosize",
         )?;
-        policy.lengthy = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.lengthy = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("lengthy")?,
             "lengthy",
-            8,
         )?;
         policy.completed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("completed")?,
@@ -530,9 +530,9 @@ impl StaticInvokeOptionalPersist for Engine<StaticInvokeOptionalPolicy> {
 #[derive(Default)]
 pub struct StaticInvokeOptionalInvokeParams {
     pub size: Option<i32>,
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<8>>,
     pub nosize: Option<i32>,
-    pub lengthy: Option<String>,
+    pub lengthy: Option<::sce_rust_runtime::portable::SceString<8>>,
     pub completed: Option<u32>,
     pub errors: Option<u32>,
 }
@@ -545,11 +545,11 @@ pub struct StaticInvokeOptionalPolicy {
     /// W3C SCXML 5.2: the `size` datamodel variable.
     size: Option<i32>,
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: Option<String>,
+    label: Option<::sce_rust_runtime::portable::SceString<8>>,
     /// W3C SCXML 5.2: the `nosize` datamodel variable.
     nosize: Option<i32>,
     /// W3C SCXML 5.2: the `lengthy` datamodel variable.
-    lengthy: String,
+    lengthy: ::sce_rust_runtime::portable::SceString<8>,
     /// W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`).
     completed: u32,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
@@ -624,9 +624,11 @@ pub struct StaticInvokeOptionalPolicy {
 impl StaticInvokeOptionalPolicy {
     fn build(session_id: String) -> Self {
         let size: Option<i32> = Some(7);
-        let label: Option<String> = Some("abc".to_string());
+        let label: Option<::sce_rust_runtime::portable::SceString<8>> =
+            Some(::sce_rust_runtime::portable::sce_text!(8, "abc"));
         let nosize: Option<i32> = None;
-        let lengthy: String = "abcdefgh".to_string();
+        let lengthy: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::portable::sce_text!(8, "abcdefgh");
         let completed: u32 = 0;
         let errors: u32 = 0;
         Self {
@@ -937,9 +939,11 @@ impl StaticInvokeOptionalPolicy {
                     let mut seed = super::static_invoke_optional__sce_synth_invoke__given_sm::StaticInvokeOptionalSceSynthInvokeGivenInvokeParams::default();
                     seed.size = self.size;
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok(match self.label.as_deref().map(str::to_string) {
+                        Ok(match self.label.as_deref() {
                             Some(sce_present) => {
-                                Some(sce_forge_runtime::algorithm::bounded(sce_present, 8)?)
+                                Some(::sce_rust_runtime::portable::SceString::<8>::from_text(
+                                    &sce_present,
+                                )?)
                             }
                             None => None,
                         })
@@ -1034,10 +1038,9 @@ impl StaticInvokeOptionalPolicy {
                     let mut seed = super::static_invoke_optional__sce_synth_invoke__lifted_sm::StaticInvokeOptionalSceSynthInvokeLiftedInvokeParams::default();
                     seed.size = Some(5);
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok(Some(sce_forge_runtime::algorithm::bounded(
-                            "xy".to_string(),
-                            8,
-                        )?))
+                        Ok(Some(
+                            ::sce_rust_runtime::portable::SceString::<8>::from_text(&"xy")?,
+                        ))
                     })() {
                         Ok(value) => seed.label = value,
                         Err(_) => {
@@ -1286,10 +1289,11 @@ impl StaticInvokeOptionalPolicy {
                 {
                     let mut seed = super::static_invoke_optional__sce_synth_invoke__over_sm::StaticInvokeOptionalSceSynthInvokeOverInvokeParams::default();
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok(Some(sce_forge_runtime::algorithm::bounded(
-                            self.lengthy.to_string(),
-                            4,
-                        )?))
+                        Ok(Some(
+                            ::sce_rust_runtime::portable::SceString::<4>::from_text(
+                                &&self.lengthy[..],
+                            )?,
+                        ))
                     })() {
                         Ok(value) => seed.label = value,
                         Err(_) => {
@@ -1380,10 +1384,9 @@ impl StaticInvokeOptionalPolicy {
                 {
                     let mut seed = super::static_invoke_optional__sce_synth_invoke__fits_sm::StaticInvokeOptionalSceSynthInvokeFitsInvokeParams::default();
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok(Some(sce_forge_runtime::algorithm::bounded(
-                            "wxyz".to_string(),
-                            4,
-                        )?))
+                        Ok(Some(
+                            ::sce_rust_runtime::portable::SceString::<4>::from_text(&"wxyz")?,
+                        ))
                     })() {
                         Ok(value) => seed.label = value,
                         Err(_) => {

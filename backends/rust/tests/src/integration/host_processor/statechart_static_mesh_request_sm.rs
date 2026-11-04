@@ -455,10 +455,16 @@ impl StatechartStaticMeshRequestPersist for Engine<StatechartStaticMeshRequestPo
             saved.variable("load")?,
             "load",
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("peer")?, "peer", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("peer")?,
+                "peer",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("answered")?,
             "answered",
@@ -495,10 +501,14 @@ impl StatechartStaticMeshRequestPersist for Engine<StatechartStaticMeshRequestPo
             saved.variable("load")?,
             "load",
         )?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
-        policy.peer =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("peer")?, "peer", 16)?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
+        policy.peer = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("peer")?,
+            "peer",
+        )?;
         policy.answered = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("answered")?,
             "answered",
@@ -521,8 +531,8 @@ impl StatechartStaticMeshRequestPersist for Engine<StatechartStaticMeshRequestPo
 #[derive(Default)]
 pub struct StatechartStaticMeshRequestInvokeParams {
     pub load: Option<u32>,
-    pub label: Option<String>,
-    pub peer: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<16>>,
+    pub peer: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub answered: Option<u32>,
     pub failed: Option<u32>,
     pub refused: Option<u32>,
@@ -536,9 +546,9 @@ pub struct StatechartStaticMeshRequestPolicy {
     /// W3C SCXML 5.2: the `load` datamodel variable.
     load: u32,
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: String,
+    label: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `peer` datamodel variable.
-    peer: String,
+    peer: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `answered` datamodel variable, published (`sce:direction="out"`).
     answered: u32,
     /// W3C SCXML 5.2: the `failed` datamodel variable, published (`sce:direction="out"`).
@@ -573,8 +583,10 @@ pub struct StatechartStaticMeshRequestPolicy {
 impl StatechartStaticMeshRequestPolicy {
     fn build(session_id: String) -> Self {
         let load: u32 = 3;
-        let label: String = "idle".to_string();
-        let peer: String = "#motor".to_string();
+        let label: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "idle");
+        let peer: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "#motor");
         let answered: u32 = 0;
         let failed: u32 = 0;
         let refused: u32 = 0;
@@ -1272,7 +1284,7 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.label =
-                                sce_forge_runtime::algorithm::bounded("busy".to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"busy")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1295,8 +1307,9 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
                     // W3C SCXML 5.3: <assign location="peer">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.peer =
-                                sce_forge_runtime::algorithm::bounded("#ghost".to_string(), 16)?;
+                            self.peer = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &"#ghost",
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

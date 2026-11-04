@@ -93,6 +93,7 @@ pub mod static_child_host_hybrid_sm;
 pub mod static_child_host_sm;
 pub mod static_child_mesh__sce_synth_invoke__list_sm;
 pub mod static_child_mesh_sm;
+pub mod static_composed_payload_sm;
 pub mod static_counter_sm;
 pub mod static_donedata_content_sm;
 pub mod static_donedata_record_sm;

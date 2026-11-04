@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -392,8 +392,11 @@ impl StaticInvokeStringSceSynthInvokeFitsPersist
         ::sce_rust_runtime::saved_state::restore_history::<
             StaticInvokeStringSceSynthInvokeFitsPolicy,
         >(saved, Self::HISTORIES)?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("title")?, "title", 4)?;
+        let _: ::sce_rust_runtime::portable::SceString<4> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("title")?,
+                "title",
+            )?;
         ::sce_rust_runtime::saved_state::judge::<StaticInvokeStringSceSynthInvokeFitsPolicy>(saved)
     }
 
@@ -413,8 +416,10 @@ impl StaticInvokeStringSceSynthInvokeFitsPersist
         ::sce_rust_runtime::saved_state::restore_history::<
             StaticInvokeStringSceSynthInvokeFitsPolicy,
         >(saved, Self::HISTORIES)?;
-        policy.title =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("title")?, "title", 4)?;
+        policy.title = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("title")?,
+            "title",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -424,7 +429,7 @@ impl StaticInvokeStringSceSynthInvokeFitsPersist
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticInvokeStringSceSynthInvokeFitsInvokeParams {
-    pub title: Option<String>,
+    pub title: Option<::sce_rust_runtime::portable::SceString<4>>,
 }
 
 // ======================================================================
@@ -433,7 +438,7 @@ pub struct StaticInvokeStringSceSynthInvokeFitsInvokeParams {
 
 pub struct StaticInvokeStringSceSynthInvokeFitsPolicy {
     /// W3C SCXML 5.2: the `title` datamodel variable.
-    title: String,
+    title: ::sce_rust_runtime::portable::SceString<4>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -455,7 +460,8 @@ pub struct StaticInvokeStringSceSynthInvokeFitsPolicy {
 
 impl StaticInvokeStringSceSynthInvokeFitsPolicy {
     fn build(session_id: String) -> Self {
-        let title: String = "ab".to_string();
+        let title: ::sce_rust_runtime::portable::SceString<4> =
+            ::sce_rust_runtime::portable::sce_text!(4, "ab");
         Self {
             title,
             session_id: Some(session_id),

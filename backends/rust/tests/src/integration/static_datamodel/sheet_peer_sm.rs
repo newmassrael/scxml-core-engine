@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -915,12 +915,12 @@ pub struct SheetPeerData {
     pub node: u64,
     pub hub: bool,
     pub clock: SheetPeerHlcRecord,
-    pub cells: Vec<SheetPeerLwwCellRecord>,
-    pub rows: Vec<SheetPeerRgaNodeRecord>,
-    pub gone: Vec<SheetPeerRgaGoneRecord>,
-    pub cols: Vec<SheetPeerRgaNodeRecord>,
-    pub gone_cols: Vec<SheetPeerRgaGoneRecord>,
-    pub shown: Vec<SheetPeerShownRecord>,
+    pub cells: ::sce_rust_runtime::portable::BoundedList<SheetPeerLwwCellRecord, 256>,
+    pub rows: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256>,
+    pub gone: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256>,
+    pub cols: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256>,
+    pub gone_cols: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256>,
+    pub shown: ::sce_rust_runtime::portable::BoundedList<SheetPeerShownRecord, 256>,
     pub lamport: u64,
     pub orphans: u32,
     pub refusals: u32,
@@ -1506,20 +1506,41 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
             saved.variable("stamp")?,
             "stamp",
         )?;
-        let _: Vec<SheetPeerLwwCellRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("cells")?, "cells", 256)?;
-        let _: Vec<SheetPeerRgaNodeRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("rows")?, "rows", 256)?;
-        let _: Vec<SheetPeerRgaGoneRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("gone")?, "gone", 256)?;
-        let _: Vec<SheetPeerRgaNodeRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("cols")?, "cols", 256)?;
-        let _: Vec<SheetPeerRgaGoneRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("goneCols")?, "goneCols", 256)?;
-        let _: Vec<i64> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("trail")?, "trail", 768)?;
-        let _: Vec<SheetPeerShownRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("shown")?, "shown", 256)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<SheetPeerLwwCellRecord, 256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("cells")?,
+                "cells",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("rows")?,
+                "rows",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("gone")?,
+                "gone",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("cols")?,
+                "cols",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("goneCols")?,
+                "goneCols",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<i64, 768> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("trail")?,
+                "trail",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<SheetPeerShownRecord, 256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("shown")?,
+                "shown",
+            )?;
         let _: SheetPeerLwwCellRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("write")?,
             "write",
@@ -1590,20 +1611,34 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
             saved.variable("stamp")?,
             "stamp",
         )?;
-        policy.cells =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("cells")?, "cells", 256)?;
-        policy.rows =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("rows")?, "rows", 256)?;
-        policy.gone =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("gone")?, "gone", 256)?;
-        policy.cols =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("cols")?, "cols", 256)?;
-        policy.gone_cols =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("goneCols")?, "goneCols", 256)?;
-        policy.trail =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("trail")?, "trail", 768)?;
-        policy.shown =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("shown")?, "shown", 256)?;
+        policy.cells = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("cells")?,
+            "cells",
+        )?;
+        policy.rows = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("rows")?,
+            "rows",
+        )?;
+        policy.gone = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("gone")?,
+            "gone",
+        )?;
+        policy.cols = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("cols")?,
+            "cols",
+        )?;
+        policy.gone_cols = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("goneCols")?,
+            "goneCols",
+        )?;
+        policy.trail = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("trail")?,
+            "trail",
+        )?;
+        policy.shown = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("shown")?,
+            "shown",
+        )?;
         policy.write = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("write")?,
             "write",
@@ -1679,19 +1714,19 @@ pub struct SheetPeerPolicy {
     /// W3C SCXML 5.2: the `stamp` datamodel variable.
     stamp: SheetPeerHlcRecord,
     /// W3C SCXML 5.2: the `cells` datamodel variable, published (`sce:direction="out"`).
-    cells: Vec<SheetPeerLwwCellRecord>,
+    cells: ::sce_rust_runtime::portable::BoundedList<SheetPeerLwwCellRecord, 256>,
     /// W3C SCXML 5.2: the `rows` datamodel variable, published (`sce:direction="out"`).
-    rows: Vec<SheetPeerRgaNodeRecord>,
+    rows: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256>,
     /// W3C SCXML 5.2: the `gone` datamodel variable, published (`sce:direction="out"`).
-    gone: Vec<SheetPeerRgaGoneRecord>,
+    gone: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256>,
     /// W3C SCXML 5.2: the `cols` datamodel variable, published (`sce:direction="out"`).
-    cols: Vec<SheetPeerRgaNodeRecord>,
+    cols: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256>,
     /// W3C SCXML 5.2: the `goneCols` datamodel variable, published (`sce:direction="out"`).
-    gone_cols: Vec<SheetPeerRgaGoneRecord>,
+    gone_cols: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256>,
     /// W3C SCXML 5.2: the `trail` datamodel variable.
-    trail: Vec<i64>,
+    trail: ::sce_rust_runtime::portable::BoundedList<i64, 768>,
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    shown: Vec<SheetPeerShownRecord>,
+    shown: ::sce_rust_runtime::portable::BoundedList<SheetPeerShownRecord, 256>,
     /// W3C SCXML 5.2: the `write` datamodel variable.
     write: SheetPeerLwwCellRecord,
     /// W3C SCXML 5.2: the `placed` datamodel variable.
@@ -1743,13 +1778,20 @@ impl SheetPeerPolicy {
             counter: 0,
             nodeId: 0,
         };
-        let cells: Vec<SheetPeerLwwCellRecord> = Vec::new();
-        let rows: Vec<SheetPeerRgaNodeRecord> = Vec::new();
-        let gone: Vec<SheetPeerRgaGoneRecord> = Vec::new();
-        let cols: Vec<SheetPeerRgaNodeRecord> = Vec::new();
-        let gone_cols: Vec<SheetPeerRgaGoneRecord> = Vec::new();
-        let trail: Vec<i64> = Vec::new();
-        let shown: Vec<SheetPeerShownRecord> = Vec::new();
+        let cells: ::sce_rust_runtime::portable::BoundedList<SheetPeerLwwCellRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let rows: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let gone: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let cols: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let gone_cols: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let trail: ::sce_rust_runtime::portable::BoundedList<i64, 768> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let shown: ::sce_rust_runtime::portable::BoundedList<SheetPeerShownRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let write: SheetPeerLwwCellRecord = SheetPeerLwwCellRecord {
             row: 0,
             col: 0,
@@ -3094,11 +3136,9 @@ impl StatePolicy for SheetPeerPolicy {
                     // W3C SCXML 5.3: <assign location="cells">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.cells = sce_forge_runtime::algorithm::within(
+                            self.cells = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_LwwWrite__vv(&self.cells, &self.write)?).as_slice(),
-                                256,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3396,7 +3436,7 @@ impl StatePolicy for SheetPeerPolicy {
                     // W3C SCXML 5.3: <assign location="trail">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.trail = sce_forge_runtime::algorithm::within(
+                            self.trail = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_SheetSettle__vvvvv(
                                     &self.cells,
                                     &self.rows,
@@ -3405,9 +3445,7 @@ impl StatePolicy for SheetPeerPolicy {
                                     &self.gone_cols,
                                 )?)
                                 .as_slice(),
-                                768,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3423,11 +3461,9 @@ impl StatePolicy for SheetPeerPolicy {
                     // W3C SCXML 5.3: <assign location="shown">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.shown = sce_forge_runtime::algorithm::within(
+                            self.shown = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_SheetShow__vv(&self.cells, &self.trail)?).as_slice(),
-                                256,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3676,11 +3712,9 @@ if sce_failed {
                     // W3C SCXML 5.3: <assign location="rows">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.rows = sce_forge_runtime::algorithm::within(
+                            self.rows = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_RgaInsert__vv(&self.rows, &self.placed)?).as_slice(),
-                                256,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -4016,11 +4050,9 @@ if sce_failed {
                     // W3C SCXML 5.3: <assign location="gone">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.gone = sce_forge_runtime::algorithm::within(
+                            self.gone = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_RgaRemove__vv(&self.gone, &self.removal)?).as_slice(),
-                                256,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -4426,11 +4458,9 @@ if sce_failed {
                     // W3C SCXML 5.3: <assign location="cols">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.cols = sce_forge_runtime::algorithm::within(
+                            self.cols = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_RgaInsert__vv(&self.cols, &self.placed)?).as_slice(),
-                                256,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -4767,11 +4797,9 @@ if sce_failed {
                     // W3C SCXML 5.3: <assign location="goneCols">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.gone_cols = sce_forge_runtime::algorithm::within(
+                            self.gone_cols = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_RgaRemove__vv(&self.gone_cols, &self.removal)?).as_slice(),
-                                256,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

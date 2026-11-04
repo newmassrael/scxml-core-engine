@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -257,7 +257,7 @@ impl StaticOptionalUnwidenedStatusEnum {
 pub struct StaticOptionalUnwidenedDueRecord {
     pub id: u32,
     pub due: i64,
-    pub title: String,
+    pub title: ::sce_rust_runtime::portable::SceString<16>,
     pub status: StaticOptionalUnwidenedStatusEnum,
 }
 
@@ -270,15 +270,15 @@ pub struct StaticOptionalUnwidenedDueRecord {
 pub struct StaticOptionalUnwidenedData {
     pub due: i64,
     pub other: i64,
-    pub title: String,
+    pub title: ::sce_rust_runtime::portable::SceString<16>,
     pub status: StaticOptionalUnwidenedStatusEnum,
     pub item: StaticOptionalUnwidenedDueRecord,
-    pub items: Vec<StaticOptionalUnwidenedDueRecord>,
+    pub items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalUnwidenedDueRecord, 3>,
     pub days: i64,
     pub following: i64,
     pub late: bool,
     pub early: bool,
-    pub label: String,
+    pub label: ::sce_rust_runtime::portable::SceString<16>,
     pub plain: StaticOptionalUnwidenedStatusEnum,
     pub kept: i64,
     pub listed: i64,
@@ -287,7 +287,7 @@ pub struct StaticOptionalUnwidenedData {
     pub absent: bool,
     pub status_done: bool,
     pub echoed: i64,
-    pub echo_title: String,
+    pub echo_title: ::sce_rust_runtime::portable::SceString<16>,
     pub echo_status: StaticOptionalUnwidenedStatusEnum,
     pub fallbacks: u32,
     pub errors: u32,
@@ -412,9 +412,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticOptionalUnwidenedDueR
         Ok(Self {
             id: ::sce_rust_runtime::saved_state::record_field(value, what, "id")?,
             due: ::sce_rust_runtime::saved_state::record_field(value, what, "due")?,
-            title: ::sce_rust_runtime::saved_state::record_bounded_string(
-                value, what, "title", 16,
-            )?,
+            title: ::sce_rust_runtime::saved_state::record_field(value, what, "title")?,
             status: ::sce_rust_runtime::saved_state::record_field(value, what, "status")?,
         })
     }
@@ -716,8 +714,11 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
             saved.variable("other")?,
             "other",
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("title")?, "title", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("title")?,
+                "title",
+            )?;
         let _: StaticOptionalUnwidenedStatusEnum =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("status")?,
@@ -728,8 +729,11 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
                 saved.variable("item")?,
                 "item",
             )?;
-        let _: Vec<StaticOptionalUnwidenedDueRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 3)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticOptionalUnwidenedDueRecord, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("items")?,
+                "items",
+            )?;
         let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("days")?,
             "days",
@@ -746,8 +750,11 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
             saved.variable("early")?,
             "early",
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         let _: StaticOptionalUnwidenedStatusEnum =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("plain")?,
@@ -781,11 +788,11 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
             saved.variable("echoed")?,
             "echoed",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("echoTitle")?,
-            "echoTitle",
-            16,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("echoTitle")?,
+                "echoTitle",
+            )?;
         let _: StaticOptionalUnwidenedStatusEnum =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("echoStatus")?,
@@ -829,8 +836,10 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
             saved.variable("other")?,
             "other",
         )?;
-        policy.title =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("title")?, "title", 16)?;
+        policy.title = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("title")?,
+            "title",
+        )?;
         policy.status = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("status")?,
             "status",
@@ -839,8 +848,10 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
             saved.variable("item")?,
             "item",
         )?;
-        policy.items =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 3)?;
+        policy.items = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("items")?,
+            "items",
+        )?;
         policy.days = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("days")?,
             "days",
@@ -857,8 +868,10 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
             saved.variable("early")?,
             "early",
         )?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         policy.plain = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("plain")?,
             "plain",
@@ -891,10 +904,9 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
             saved.variable("echoed")?,
             "echoed",
         )?;
-        policy.echo_title = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.echo_title = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("echoTitle")?,
             "echoTitle",
-            16,
         )?;
         policy.echo_status = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("echoStatus")?,
@@ -923,12 +935,12 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
 pub struct StaticOptionalUnwidenedInvokeParams {
     pub due: Option<i64>,
     pub other: Option<i64>,
-    pub title: Option<String>,
+    pub title: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub days: Option<i64>,
     pub following: Option<i64>,
     pub late: Option<bool>,
     pub early: Option<bool>,
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub kept: Option<i64>,
     pub listed: Option<i64>,
     pub missing: Option<u32>,
@@ -936,7 +948,7 @@ pub struct StaticOptionalUnwidenedInvokeParams {
     pub absent: Option<bool>,
     pub status_done: Option<bool>,
     pub echoed: Option<i64>,
-    pub echo_title: Option<String>,
+    pub echo_title: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub fallbacks: Option<u32>,
     pub errors: Option<u32>,
     pub huge: Option<i64>,
@@ -952,13 +964,13 @@ pub struct StaticOptionalUnwidenedPolicy {
     /// W3C SCXML 5.2: the `other` datamodel variable, published (`sce:direction="out"`).
     other: i64,
     /// W3C SCXML 5.2: the `title` datamodel variable, published (`sce:direction="out"`).
-    title: String,
+    title: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `status` datamodel variable, published (`sce:direction="out"`).
     status: StaticOptionalUnwidenedStatusEnum,
     /// W3C SCXML 5.2: the `item` datamodel variable, published (`sce:direction="out"`).
     item: StaticOptionalUnwidenedDueRecord,
     /// W3C SCXML 5.2: the `items` datamodel variable, published (`sce:direction="out"`).
-    items: Vec<StaticOptionalUnwidenedDueRecord>,
+    items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalUnwidenedDueRecord, 3>,
     /// W3C SCXML 5.2: the `days` datamodel variable, published (`sce:direction="out"`).
     days: i64,
     /// W3C SCXML 5.2: the `following` datamodel variable, published (`sce:direction="out"`).
@@ -968,7 +980,7 @@ pub struct StaticOptionalUnwidenedPolicy {
     /// W3C SCXML 5.2: the `early` datamodel variable, published (`sce:direction="out"`).
     early: bool,
     /// W3C SCXML 5.2: the `label` datamodel variable, published (`sce:direction="out"`).
-    label: String,
+    label: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `plain` datamodel variable, published (`sce:direction="out"`).
     plain: StaticOptionalUnwidenedStatusEnum,
     /// W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`).
@@ -986,7 +998,7 @@ pub struct StaticOptionalUnwidenedPolicy {
     /// W3C SCXML 5.2: the `echoed` datamodel variable, published (`sce:direction="out"`).
     echoed: i64,
     /// W3C SCXML 5.2: the `echoTitle` datamodel variable, published (`sce:direction="out"`).
-    echo_title: String,
+    echo_title: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `echoStatus` datamodel variable, published (`sce:direction="out"`).
     echo_status: StaticOptionalUnwidenedStatusEnum,
     /// W3C SCXML 5.2: the `fallbacks` datamodel variable, published (`sce:direction="out"`).
@@ -1018,21 +1030,24 @@ impl StaticOptionalUnwidenedPolicy {
     fn build(session_id: String) -> Self {
         let due: i64 = 12;
         let other: i64 = 7;
-        let title: String = "later".to_string();
+        let title: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "later");
         let status: StaticOptionalUnwidenedStatusEnum =
             StaticOptionalUnwidenedStatusEnum::InProgress;
         let item: StaticOptionalUnwidenedDueRecord = StaticOptionalUnwidenedDueRecord {
             id: 2,
             due: 3,
-            title: "first".to_string(),
+            title: ::sce_rust_runtime::portable::sce_text!(16, "first"),
             status: StaticOptionalUnwidenedStatusEnum::Open,
         };
-        let items: Vec<StaticOptionalUnwidenedDueRecord> = Vec::new();
+        let items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalUnwidenedDueRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let days: i64 = 0;
         let following: i64 = 0;
         let late: bool = false;
         let early: bool = false;
-        let label: String = "".to_string();
+        let label: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "");
         let plain: StaticOptionalUnwidenedStatusEnum = StaticOptionalUnwidenedStatusEnum::Open;
         let kept: i64 = 0;
         let listed: i64 = 0;
@@ -1041,7 +1056,8 @@ impl StaticOptionalUnwidenedPolicy {
         let absent: bool = false;
         let status_done: bool = false;
         let echoed: i64 = 0;
-        let echo_title: String = "echo".to_string();
+        let echo_title: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "echo");
         let echo_status: StaticOptionalUnwidenedStatusEnum =
             StaticOptionalUnwidenedStatusEnum::Done;
         let fallbacks: u32 = 0;
@@ -1598,12 +1614,12 @@ impl StatePolicy for StaticOptionalUnwidenedPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="items">
-                    let sce_failed = if self.items.len() < 3 {
-                        self.items.push(self.item.clone());
-                        false
-                    } else {
-                        true
-                    };
+                    let sce_failed =
+                        if self.items.len() < 3 && self.items.push(self.item.clone()).is_ok() {
+                            false
+                        } else {
+                            true
+                        };
                     if sce_failed {
                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }

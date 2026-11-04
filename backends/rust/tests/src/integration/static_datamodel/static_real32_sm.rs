@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -240,7 +240,7 @@ pub struct StaticReal32Data {
     pub level: f32,
     pub drift: f32,
     pub wide: f64,
-    pub samples: Vec<f32>,
+    pub samples: ::sce_rust_runtime::portable::BoundedList<f32, 3>,
     pub total: f32,
 }
 
@@ -470,8 +470,11 @@ impl StaticReal32Persist for Engine<StaticReal32Policy> {
             saved.variable("wide")?,
             "wide",
         )?;
-        let _: Vec<f32> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("samples")?, "samples", 3)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<f32, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("samples")?,
+                "samples",
+            )?;
         let _: f32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -512,8 +515,10 @@ impl StaticReal32Persist for Engine<StaticReal32Policy> {
             saved.variable("wide")?,
             "wide",
         )?;
-        policy.samples =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("samples")?, "samples", 3)?;
+        policy.samples = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("samples")?,
+            "samples",
+        )?;
         policy.total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -548,7 +553,7 @@ pub struct StaticReal32Policy {
     /// W3C SCXML 5.2: the `wide` datamodel variable, published (`sce:direction="out"`).
     wide: f64,
     /// W3C SCXML 5.2: the `samples` datamodel variable, published (`sce:direction="out"`).
-    samples: Vec<f32>,
+    samples: ::sce_rust_runtime::portable::BoundedList<f32, 3>,
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
     total: f32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -576,7 +581,8 @@ impl StaticReal32Policy {
         let tenth: f32 = 0.1;
         let drift: f32 = 0.0;
         let wide: f64 = 0.0;
-        let samples: Vec<f32> = Vec::new();
+        let samples: ::sce_rust_runtime::portable::BoundedList<f32, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let total: f32 = 0.0;
         Self {
             level,
@@ -1060,12 +1066,12 @@ impl StatePolicy for StaticReal32Policy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="samples">
-                    let sce_failed = if self.samples.len() < 3 {
-                        self.samples.push(self.tenth + 0.2);
-                        false
-                    } else {
-                        true
-                    };
+                    let sce_failed =
+                        if self.samples.len() < 3 && self.samples.push(self.tenth + 0.2).is_ok() {
+                            false
+                        } else {
+                            true
+                        };
                     if sce_failed {
                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
@@ -1078,12 +1084,12 @@ impl StatePolicy for StaticReal32Policy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="samples">
-                    let sce_failed = if self.samples.len() < 3 {
-                        self.samples.push(self.wide as f32);
-                        false
-                    } else {
-                        true
-                    };
+                    let sce_failed =
+                        if self.samples.len() < 3 && self.samples.push(self.wide as f32).is_ok() {
+                            false
+                        } else {
+                            true
+                        };
                     if sce_failed {
                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }

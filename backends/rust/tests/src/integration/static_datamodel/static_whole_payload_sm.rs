@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -316,7 +316,7 @@ pub struct StaticWholePayloadViewRecord {
 #[allow(non_snake_case)]
 pub struct StaticWholePayloadData {
     pub shown: StaticWholePayloadViewRecord,
-    pub seen: Vec<StaticWholePayloadViewRecord>,
+    pub seen: ::sce_rust_runtime::portable::BoundedList<StaticWholePayloadViewRecord, 4>,
     pub updates: u32,
     pub agendas: u32,
     pub others: u32,
@@ -625,8 +625,11 @@ impl StaticWholePayloadPersist for Engine<StaticWholePayloadPolicy> {
                 saved.variable("shown")?,
                 "shown",
             )?;
-        let _: Vec<StaticWholePayloadViewRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("seen")?, "seen", 4)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticWholePayloadViewRecord, 4> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("seen")?,
+                "seen",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("updates")?,
             "updates",
@@ -663,7 +666,10 @@ impl StaticWholePayloadPersist for Engine<StaticWholePayloadPolicy> {
             saved.variable("shown")?,
             "shown",
         )?;
-        policy.seen = ::sce_rust_runtime::saved_state::bounded(saved.variable("seen")?, "seen", 4)?;
+        policy.seen = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("seen")?,
+            "seen",
+        )?;
         policy.updates = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("updates")?,
             "updates",
@@ -702,7 +708,7 @@ pub struct StaticWholePayloadPolicy {
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
     shown: StaticWholePayloadViewRecord,
     /// W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`).
-    seen: Vec<StaticWholePayloadViewRecord>,
+    seen: ::sce_rust_runtime::portable::BoundedList<StaticWholePayloadViewRecord, 4>,
     /// W3C SCXML 5.2: the `updates` datamodel variable, published (`sce:direction="out"`).
     updates: u32,
     /// W3C SCXML 5.2: the `agendas` datamodel variable, published (`sce:direction="out"`).
@@ -734,7 +740,8 @@ impl StaticWholePayloadPolicy {
             layout: StaticWholePayloadViewModeEnum::Month,
             zoom: 1,
         };
-        let seen: Vec<StaticWholePayloadViewRecord> = Vec::new();
+        let seen: ::sce_rust_runtime::portable::BoundedList<StaticWholePayloadViewRecord, 4> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let updates: u32 = 0;
         let agendas: u32 = 0;
         let others: u32 = 0;
@@ -1174,11 +1181,15 @@ impl StatePolicy for StaticWholePayloadPolicy {
                     };
 
                     // SCE Accepted Subset §2.15: <sce:append target="seen">
-                    let sce_failed = if self.seen.len() < 4 {
-                        self.seen.push(StaticWholePayloadViewRecord {
-                            layout: ev.layout,
-                            zoom: ev.zoom,
-                        });
+                    let sce_failed = if self.seen.len() < 4
+                        && self
+                            .seen
+                            .push(StaticWholePayloadViewRecord {
+                                layout: ev.layout,
+                                zoom: ev.zoom,
+                            })
+                            .is_ok()
+                    {
                         false
                     } else {
                         true

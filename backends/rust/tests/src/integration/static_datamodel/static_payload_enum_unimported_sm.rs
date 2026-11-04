@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -390,7 +390,8 @@ pub struct StaticPayloadEnumUnimportedRefusedRecord {
 #[allow(non_snake_case)]
 pub struct StaticPayloadEnumUnimportedData {
     pub last: Option<StaticPayloadEnumUnimportedWhyEnum>,
-    pub kept: Vec<StaticPayloadEnumUnimportedRefusedRecord>,
+    pub kept:
+        ::sce_rust_runtime::portable::BoundedList<StaticPayloadEnumUnimportedRefusedRecord, 2>,
     pub row: u32,
     pub refusals: u32,
 }
@@ -750,8 +751,13 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
                 saved.variable("last")?,
                 "last",
             )?;
-        let _: Vec<StaticPayloadEnumUnimportedRefusedRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("kept")?, "kept", 2)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            StaticPayloadEnumUnimportedRefusedRecord,
+            2,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("kept")?,
+            "kept",
+        )?;
         let _: u32 =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("row")?, "row")?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
@@ -782,7 +788,10 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
             saved.variable("last")?,
             "last",
         )?;
-        policy.kept = ::sce_rust_runtime::saved_state::bounded(saved.variable("kept")?, "kept", 2)?;
+        policy.kept = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("kept")?,
+            "kept",
+        )?;
         policy.row =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("row")?, "row")?;
         policy.refusals = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
@@ -814,7 +823,7 @@ pub struct StaticPayloadEnumUnimportedPolicy {
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
     last: Option<StaticPayloadEnumUnimportedWhyEnum>,
     /// W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`).
-    kept: Vec<StaticPayloadEnumUnimportedRefusedRecord>,
+    kept: ::sce_rust_runtime::portable::BoundedList<StaticPayloadEnumUnimportedRefusedRecord, 2>,
     /// W3C SCXML 5.2: the `row` datamodel variable, published (`sce:direction="out"`).
     row: u32,
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
@@ -841,7 +850,10 @@ pub struct StaticPayloadEnumUnimportedPolicy {
 impl StaticPayloadEnumUnimportedPolicy {
     fn build(session_id: String) -> Self {
         let last: Option<StaticPayloadEnumUnimportedWhyEnum> = None;
-        let kept: Vec<StaticPayloadEnumUnimportedRefusedRecord> = Vec::new();
+        let kept: ::sce_rust_runtime::portable::BoundedList<
+            StaticPayloadEnumUnimportedRefusedRecord,
+            2,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let row: u32 = 0;
         let refusals: u32 = 0;
         Self {
@@ -1278,13 +1290,17 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                     self.row = ev.id;
 
                     // SCE Accepted Subset §2.15: <sce:append target="kept">
-                    let sce_failed = if self.kept.len() < 2 {
-                        self.kept.push(StaticPayloadEnumUnimportedRefusedRecord {
-                            id: ev.id,
-                            field: ev.field,
-                            kind: ev.kind,
-                            reason: ev.reason,
-                        });
+                    let sce_failed = if self.kept.len() < 2
+                        && self
+                            .kept
+                            .push(StaticPayloadEnumUnimportedRefusedRecord {
+                                id: ev.id,
+                                field: ev.field,
+                                kind: ev.kind,
+                                reason: ev.reason,
+                            })
+                            .is_ok()
+                    {
                         false
                     } else {
                         true

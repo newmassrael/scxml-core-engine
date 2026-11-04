@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -211,7 +211,7 @@ impl StaticBlockEndsListEvent {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticBlockEndsListData {
-    pub picked: Vec<u8>,
+    pub picked: ::sce_rust_runtime::portable::BoundedList<u8, 2>,
     pub after_append: u8,
     pub errors: u8,
 }
@@ -412,8 +412,11 @@ impl StaticBlockEndsListPersist for Engine<StaticBlockEndsListPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("picked")?, "picked", 2)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<u8, 2> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("picked")?,
+                "picked",
+            )?;
         let _: u8 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("afterAppend")?,
             "afterAppend",
@@ -442,8 +445,10 @@ impl StaticBlockEndsListPersist for Engine<StaticBlockEndsListPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.picked =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("picked")?, "picked", 2)?;
+        policy.picked = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("picked")?,
+            "picked",
+        )?;
         policy.after_append = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("afterAppend")?,
             "afterAppend",
@@ -471,7 +476,7 @@ pub struct StaticBlockEndsListInvokeParams {
 
 pub struct StaticBlockEndsListPolicy {
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
-    picked: Vec<u8>,
+    picked: ::sce_rust_runtime::portable::BoundedList<u8, 2>,
     /// W3C SCXML 5.2: the `afterAppend` datamodel variable, published (`sce:direction="out"`).
     after_append: u8,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
@@ -497,7 +502,8 @@ pub struct StaticBlockEndsListPolicy {
 
 impl StaticBlockEndsListPolicy {
     fn build(session_id: String) -> Self {
-        let picked: Vec<u8> = Vec::new();
+        let picked: ::sce_rust_runtime::portable::BoundedList<u8, 2> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let after_append: u8 = 0;
         let errors: u8 = 0;
         Self {
@@ -854,8 +860,7 @@ impl StatePolicy for StaticBlockEndsListPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="picked">
-                    let sce_failed = if self.picked.len() < 2 {
-                        self.picked.push(7);
+                    let sce_failed = if self.picked.len() < 2 && self.picked.push(7).is_ok() {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticBlockEndsListEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 2"));

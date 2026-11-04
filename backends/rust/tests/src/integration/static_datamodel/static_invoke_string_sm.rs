@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -417,11 +417,11 @@ impl StaticInvokeStringPersist for Engine<StaticInvokeStringPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("lengthy")?,
-            "lengthy",
-            8,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("lengthy")?,
+                "lengthy",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("completed")?,
             "completed",
@@ -450,10 +450,9 @@ impl StaticInvokeStringPersist for Engine<StaticInvokeStringPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.lengthy = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.lengthy = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("lengthy")?,
             "lengthy",
-            8,
         )?;
         policy.completed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("completed")?,
@@ -478,7 +477,7 @@ impl StaticInvokeStringPersist for Engine<StaticInvokeStringPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticInvokeStringInvokeParams {
-    pub lengthy: Option<String>,
+    pub lengthy: Option<::sce_rust_runtime::portable::SceString<8>>,
     pub completed: Option<u32>,
     pub errors: Option<u32>,
 }
@@ -489,7 +488,7 @@ pub struct StaticInvokeStringInvokeParams {
 
 pub struct StaticInvokeStringPolicy {
     /// W3C SCXML 5.2: the `lengthy` datamodel variable.
-    lengthy: String,
+    lengthy: ::sce_rust_runtime::portable::SceString<8>,
     /// W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`).
     completed: u32,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
@@ -542,7 +541,8 @@ pub struct StaticInvokeStringPolicy {
 
 impl StaticInvokeStringPolicy {
     fn build(session_id: String) -> Self {
-        let lengthy: String = "abcdefgh".to_string();
+        let lengthy: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::portable::sce_text!(8, "abcdefgh");
         let completed: u32 = 0;
         let errors: u32 = 0;
         Self {
@@ -761,9 +761,8 @@ impl StaticInvokeStringPolicy {
                 {
                     let mut seed = super::static_invoke_string__sce_synth_invoke__fits_sm::StaticInvokeStringSceSynthInvokeFitsInvokeParams::default();
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok(sce_forge_runtime::algorithm::bounded(
-                            "wxyz".to_string(),
-                            4,
+                        Ok(::sce_rust_runtime::portable::SceString::<4>::from_text(
+                            &"wxyz",
                         )?)
                     })() {
                         Ok(value) => seed.title = Some(value),
@@ -855,9 +854,8 @@ impl StaticInvokeStringPolicy {
                 {
                     let mut seed = super::static_invoke_string__sce_synth_invoke__over_sm::StaticInvokeStringSceSynthInvokeOverInvokeParams::default();
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok(sce_forge_runtime::algorithm::bounded(
-                            self.lengthy.to_string(),
-                            4,
+                        Ok(::sce_rust_runtime::portable::SceString::<4>::from_text(
+                            &&self.lengthy[..],
                         )?)
                     })() {
                         Ok(value) => seed.title = Some(value),
@@ -949,7 +947,9 @@ impl StaticInvokeStringPolicy {
                 {
                     let mut seed = super::static_invoke_string__sce_synth_invoke__wide_sm::StaticInvokeStringSceSynthInvokeWideInvokeParams::default();
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok(sce_forge_runtime::algorithm::bounded("é€".to_string(), 4)?)
+                        Ok(::sce_rust_runtime::portable::SceString::<4>::from_text(
+                            &"é€",
+                        )?)
                     })() {
                         Ok(value) => seed.title = Some(value),
                         Err(_) => {

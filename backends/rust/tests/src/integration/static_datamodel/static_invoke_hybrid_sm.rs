@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -446,8 +446,11 @@ impl StaticInvokeHybridPersist for Engine<StaticInvokeHybridPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("pick")?, "pick", 48)?;
+        let _: ::sce_rust_runtime::portable::SceString<48> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("pick")?,
+                "pick",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("base")?,
             "base",
@@ -484,8 +487,10 @@ impl StaticInvokeHybridPersist for Engine<StaticInvokeHybridPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.pick =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("pick")?, "pick", 48)?;
+        policy.pick = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("pick")?,
+            "pick",
+        )?;
         policy.base = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("base")?,
             "base",
@@ -519,7 +524,7 @@ impl StaticInvokeHybridPersist for Engine<StaticInvokeHybridPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticInvokeHybridInvokeParams {
-    pub pick: Option<String>,
+    pub pick: Option<::sce_rust_runtime::portable::SceString<48>>,
     pub base: Option<u32>,
     pub enabled: Option<bool>,
     pub completed: Option<u32>,
@@ -532,7 +537,7 @@ pub struct StaticInvokeHybridInvokeParams {
 
 pub struct StaticInvokeHybridPolicy {
     /// W3C SCXML 5.2: the `pick` datamodel variable.
-    pick: String,
+    pick: ::sce_rust_runtime::portable::SceString<48>,
     /// W3C SCXML 5.2: the `base` datamodel variable.
     base: u32,
     /// W3C SCXML 5.2: the `enabled` datamodel variable.
@@ -620,7 +625,8 @@ pub struct StaticInvokeHybridPolicy {
 
 impl StaticInvokeHybridPolicy {
     fn build(session_id: String) -> Self {
-        let pick: String = "file:static_hybrid_first.scxml".to_string();
+        let pick: ::sce_rust_runtime::portable::SceString<48> =
+            ::sce_rust_runtime::portable::sce_text!(48, "file:static_hybrid_first.scxml");
         let base: u32 = 4;
         let enabled: bool = true;
         let completed: u32 = 0;
@@ -3093,9 +3099,8 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                     // W3C SCXML 5.3: <assign location="pick">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.pick = sce_forge_runtime::algorithm::bounded(
-                                "./static_hybrid_first.scxml".to_string(),
-                                48,
+                            self.pick = ::sce_rust_runtime::portable::SceString::<48>::from_text(
+                                &"./static_hybrid_first.scxml",
                             )?;
                             Ok(())
                         })() {
@@ -3123,9 +3128,8 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                     // W3C SCXML 5.3: <assign location="pick">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.pick = sce_forge_runtime::algorithm::bounded(
-                                "static_hybrid_missing.scxml".to_string(),
-                                48,
+                            self.pick = ::sce_rust_runtime::portable::SceString::<48>::from_text(
+                                &"static_hybrid_missing.scxml",
                             )?;
                             Ok(())
                         })() {
@@ -3153,9 +3157,8 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                     // W3C SCXML 5.3: <assign location="pick">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.pick = sce_forge_runtime::algorithm::bounded(
-                                "/opt/charts/static_hybrid_second.scxml".to_string(),
-                                48,
+                            self.pick = ::sce_rust_runtime::portable::SceString::<48>::from_text(
+                                &"/opt/charts/static_hybrid_second.scxml",
                             )?;
                             Ok(())
                         })() {

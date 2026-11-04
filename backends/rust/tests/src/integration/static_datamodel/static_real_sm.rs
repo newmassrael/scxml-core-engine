@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -240,7 +240,7 @@ pub struct StaticRealData {
     pub level: f64,
     pub total: f64,
     pub drift: f64,
-    pub samples: Vec<f64>,
+    pub samples: ::sce_rust_runtime::portable::BoundedList<f64, 3>,
     pub errors: u32,
 }
 
@@ -478,8 +478,11 @@ impl StaticRealPersist for Engine<StaticRealPolicy> {
             saved.variable("drift")?,
             "drift",
         )?;
-        let _: Vec<f64> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("samples")?, "samples", 3)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<f64, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("samples")?,
+                "samples",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("errors")?,
             "errors",
@@ -524,8 +527,10 @@ impl StaticRealPersist for Engine<StaticRealPolicy> {
             saved.variable("drift")?,
             "drift",
         )?;
-        policy.samples =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("samples")?, "samples", 3)?;
+        policy.samples = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("samples")?,
+            "samples",
+        )?;
         policy.errors = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("errors")?,
             "errors",
@@ -563,7 +568,7 @@ pub struct StaticRealPolicy {
     /// W3C SCXML 5.2: the `drift` datamodel variable, published (`sce:direction="out"`).
     drift: f64,
     /// W3C SCXML 5.2: the `samples` datamodel variable, published (`sce:direction="out"`).
-    samples: Vec<f64>,
+    samples: ::sce_rust_runtime::portable::BoundedList<f64, 3>,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
     errors: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -592,7 +597,8 @@ impl StaticRealPolicy {
         let total: f64 = 0.0;
         let tenth: f64 = 0.1;
         let drift: f64 = 0.0;
-        let samples: Vec<f64> = Vec::new();
+        let samples: ::sce_rust_runtime::portable::BoundedList<f64, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let errors: u32 = 0;
         Self {
             level,
@@ -1045,8 +1051,9 @@ impl StatePolicy for StaticRealPolicy {
                     self.level = self.level * 2.0 + self.rate;
 
                     // SCE Accepted Subset §2.15: <sce:append target="samples">
-                    let sce_failed = if self.samples.len() < 3 {
-                        self.samples.push(self.level);
+                    let sce_failed = if self.samples.len() < 3
+                        && self.samples.push(self.level).is_ok()
+                    {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRealEvent::ErrorExecution, "<sce:append target='samples'>: the list already holds its capacity of 3"));

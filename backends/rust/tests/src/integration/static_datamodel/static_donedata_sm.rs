@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -520,8 +520,11 @@ impl StaticDonedataPersist for Engine<StaticDonedataPolicy> {
             saved.variable("small")?,
             "small",
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         let _: StaticDonedataViewModeEnum =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("layout")?,
@@ -555,8 +558,10 @@ impl StaticDonedataPersist for Engine<StaticDonedataPolicy> {
             saved.variable("small")?,
             "small",
         )?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         policy.layout = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("layout")?,
             "layout",
@@ -572,7 +577,7 @@ impl StaticDonedataPersist for Engine<StaticDonedataPolicy> {
 pub struct StaticDonedataInvokeParams {
     pub count: Option<u32>,
     pub small: Option<u8>,
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<16>>,
 }
 
 // ======================================================================
@@ -585,7 +590,7 @@ pub struct StaticDonedataPolicy {
     /// W3C SCXML 5.2: the `small` datamodel variable.
     small: u8,
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: String,
+    label: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `layout` datamodel variable.
     layout: StaticDonedataViewModeEnum,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -611,7 +616,8 @@ impl StaticDonedataPolicy {
     fn build(session_id: String) -> Self {
         let count: u32 = 0;
         let small: u8 = 250;
-        let label: String = "tally".to_string();
+        let label: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "tally");
         let layout: StaticDonedataViewModeEnum = StaticDonedataViewModeEnum::Month;
         Self {
             count,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -417,13 +417,13 @@ impl StaticHostKvInject for ::sce_rust_runtime::Engine<StaticHostKvPolicy> {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticHostKvData {
-    pub outcome: String,
+    pub outcome: ::sce_rust_runtime::portable::SceString<24>,
     pub found: bool,
-    pub got: String,
+    pub got: ::sce_rust_runtime::portable::SceString<4096>,
     pub replaced: bool,
     pub existed: bool,
     pub next_found: bool,
-    pub next: String,
+    pub next: ::sce_rust_runtime::portable::SceString<256>,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -658,34 +658,34 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("key")?, "key", 256)?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("value")?,
-            "value",
-            4096,
-        )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("after")?,
-            "after",
-            256,
-        )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("prefix")?,
-            "prefix",
-            256,
-        )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("outcome")?,
-            "outcome",
-            24,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("key")?, "key")?;
+        let _: ::sce_rust_runtime::portable::SceString<4096> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("value")?,
+                "value",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("after")?,
+                "after",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("prefix")?,
+                "prefix",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("outcome")?,
+                "outcome",
+            )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("found")?,
             "found",
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("got")?, "got", 4096)?;
+        let _: ::sce_rust_runtime::portable::SceString<4096> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("got")?, "got")?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("replaced")?,
             "replaced",
@@ -698,8 +698,11 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
             saved.variable("next_found")?,
             "next_found",
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("next")?, "next", 256)?;
+        let _: ::sce_rust_runtime::portable::SceString<256> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("next")?,
+                "next",
+            )?;
         ::sce_rust_runtime::saved_state::judge::<StaticHostKvPolicy>(saved)
     }
 
@@ -721,33 +724,29 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
             Self::HISTORIES,
         )?;
         policy.key =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("key")?, "key", 256)?;
-        policy.value = ::sce_rust_runtime::saved_state::bounded_string(
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("key")?, "key")?;
+        policy.value = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("value")?,
             "value",
-            4096,
         )?;
-        policy.after = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.after = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("after")?,
             "after",
-            256,
         )?;
-        policy.prefix = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.prefix = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("prefix")?,
             "prefix",
-            256,
         )?;
-        policy.outcome = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.outcome = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("outcome")?,
             "outcome",
-            24,
         )?;
         policy.found = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("found")?,
             "found",
         )?;
         policy.got =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("got")?, "got", 4096)?;
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("got")?, "got")?;
         policy.replaced = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("replaced")?,
             "replaced",
@@ -760,8 +759,10 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
             saved.variable("next_found")?,
             "next_found",
         )?;
-        policy.next =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("next")?, "next", 256)?;
+        policy.next = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("next")?,
+            "next",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -1128,17 +1129,17 @@ impl StaticHostKvHostInvokers for ::sce_rust_runtime::Engine<StaticHostKvPolicy>
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticHostKvInvokeParams {
-    pub key: Option<String>,
-    pub value: Option<String>,
-    pub after: Option<String>,
-    pub prefix: Option<String>,
-    pub outcome: Option<String>,
+    pub key: Option<::sce_rust_runtime::portable::SceString<256>>,
+    pub value: Option<::sce_rust_runtime::portable::SceString<4096>>,
+    pub after: Option<::sce_rust_runtime::portable::SceString<256>>,
+    pub prefix: Option<::sce_rust_runtime::portable::SceString<256>>,
+    pub outcome: Option<::sce_rust_runtime::portable::SceString<24>>,
     pub found: Option<bool>,
-    pub got: Option<String>,
+    pub got: Option<::sce_rust_runtime::portable::SceString<4096>>,
     pub replaced: Option<bool>,
     pub existed: Option<bool>,
     pub next_found: Option<bool>,
-    pub next: Option<String>,
+    pub next: Option<::sce_rust_runtime::portable::SceString<256>>,
 }
 
 // ======================================================================
@@ -1151,19 +1152,19 @@ pub struct StaticHostKvPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticHostKvPayload,
     /// W3C SCXML 5.2: the `key` datamodel variable.
-    key: String,
+    key: ::sce_rust_runtime::portable::SceString<256>,
     /// W3C SCXML 5.2: the `value` datamodel variable.
-    value: String,
+    value: ::sce_rust_runtime::portable::SceString<4096>,
     /// W3C SCXML 5.2: the `after` datamodel variable.
-    after: String,
+    after: ::sce_rust_runtime::portable::SceString<256>,
     /// W3C SCXML 5.2: the `prefix` datamodel variable.
-    prefix: String,
+    prefix: ::sce_rust_runtime::portable::SceString<256>,
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    outcome: String,
+    outcome: ::sce_rust_runtime::portable::SceString<24>,
     /// W3C SCXML 5.2: the `found` datamodel variable, published (`sce:direction="out"`).
     found: bool,
     /// W3C SCXML 5.2: the `got` datamodel variable, published (`sce:direction="out"`).
-    got: String,
+    got: ::sce_rust_runtime::portable::SceString<4096>,
     /// W3C SCXML 5.2: the `replaced` datamodel variable, published (`sce:direction="out"`).
     replaced: bool,
     /// W3C SCXML 5.2: the `existed` datamodel variable, published (`sce:direction="out"`).
@@ -1171,7 +1172,7 @@ pub struct StaticHostKvPolicy {
     /// W3C SCXML 5.2: the `next_found` datamodel variable, published (`sce:direction="out"`).
     next_found: bool,
     /// W3C SCXML 5.2: the `next` datamodel variable, published (`sce:direction="out"`).
-    next: String,
+    next: ::sce_rust_runtime::portable::SceString<256>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -1199,17 +1200,24 @@ pub struct StaticHostKvPolicy {
 
 impl StaticHostKvPolicy {
     fn build(session_id: String) -> Self {
-        let key: String = "".to_string();
-        let value: String = "".to_string();
-        let after: String = "".to_string();
-        let prefix: String = "".to_string();
-        let outcome: String = "".to_string();
+        let key: ::sce_rust_runtime::portable::SceString<256> =
+            ::sce_rust_runtime::portable::sce_text!(256, "");
+        let value: ::sce_rust_runtime::portable::SceString<4096> =
+            ::sce_rust_runtime::portable::sce_text!(4096, "");
+        let after: ::sce_rust_runtime::portable::SceString<256> =
+            ::sce_rust_runtime::portable::sce_text!(256, "");
+        let prefix: ::sce_rust_runtime::portable::SceString<256> =
+            ::sce_rust_runtime::portable::sce_text!(256, "");
+        let outcome: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::portable::sce_text!(24, "");
         let found: bool = false;
-        let got: String = "".to_string();
+        let got: ::sce_rust_runtime::portable::SceString<4096> =
+            ::sce_rust_runtime::portable::sce_text!(4096, "");
         let replaced: bool = false;
         let existed: bool = false;
         let next_found: bool = false;
-        let next: String = "".to_string();
+        let next: ::sce_rust_runtime::portable::SceString<256> =
+            ::sce_rust_runtime::portable::sce_text!(256, "");
         Self {
             pending_payload: StaticHostKvPayload::default(),
             key,
@@ -2461,7 +2469,7 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2489,7 +2497,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2513,7 +2523,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2537,7 +2549,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2567,8 +2581,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     // W3C SCXML 5.3: <assign location="got">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.got =
-                                sce_forge_runtime::algorithm::bounded(ev.value.to_string(), 4096)?;
+                            self.got = ::sce_rust_runtime::portable::SceString::<4096>::from_text(
+                                &&ev.value[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2585,7 +2600,7 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2613,7 +2628,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2637,7 +2654,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2661,7 +2680,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2688,8 +2709,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     // W3C SCXML 5.3: <assign location="key">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.key =
-                                sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
+                            self.key = ::sce_rust_runtime::portable::SceString::<256>::from_text(
+                                &&ev.key[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2716,8 +2738,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     // W3C SCXML 5.3: <assign location="key">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.key =
-                                sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
+                            self.key = ::sce_rust_runtime::portable::SceString::<256>::from_text(
+                                &&ev.key[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2734,7 +2757,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.value =
-                                sce_forge_runtime::algorithm::bounded(ev.value.to_string(), 4096)?;
+                                ::sce_rust_runtime::portable::SceString::<4096>::from_text(
+                                    &&ev.value[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2761,8 +2786,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     // W3C SCXML 5.3: <assign location="key">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.key =
-                                sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
+                            self.key = ::sce_rust_runtime::portable::SceString::<256>::from_text(
+                                &&ev.key[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2789,8 +2815,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     // W3C SCXML 5.3: <assign location="after">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.after =
-                                sce_forge_runtime::algorithm::bounded(ev.after.to_string(), 256)?;
+                            self.after = ::sce_rust_runtime::portable::SceString::<256>::from_text(
+                                &&ev.after[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2807,7 +2834,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.prefix =
-                                sce_forge_runtime::algorithm::bounded(ev.prefix.to_string(), 256)?;
+                                ::sce_rust_runtime::portable::SceString::<256>::from_text(
+                                    &&ev.prefix[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2838,7 +2867,7 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2866,7 +2895,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2890,7 +2921,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2914,7 +2947,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2944,8 +2979,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     // W3C SCXML 5.3: <assign location="next">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.next =
-                                sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
+                            self.next = ::sce_rust_runtime::portable::SceString::<256>::from_text(
+                                &&ev.key[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2962,7 +2998,7 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2990,7 +3026,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3014,7 +3052,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3038,7 +3078,9 @@ impl StatePolicy for StaticHostKvPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

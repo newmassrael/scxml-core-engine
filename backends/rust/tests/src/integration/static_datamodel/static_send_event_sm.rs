@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -445,8 +445,11 @@ impl StaticSendEventPersist for Engine<StaticSendEventPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("name")?, "name", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("name")?,
+                "name",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("scale")?,
             "scale",
@@ -483,8 +486,10 @@ impl StaticSendEventPersist for Engine<StaticSendEventPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.name =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("name")?, "name", 16)?;
+        policy.name = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("name")?,
+            "name",
+        )?;
         policy.scale = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("scale")?,
             "scale",
@@ -510,7 +515,7 @@ impl StaticSendEventPersist for Engine<StaticSendEventPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticSendEventInvokeParams {
-    pub name: Option<String>,
+    pub name: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub scale: Option<u32>,
     pub pings: Option<u32>,
     pub pongs: Option<u32>,
@@ -523,7 +528,7 @@ pub struct StaticSendEventInvokeParams {
 
 pub struct StaticSendEventPolicy {
     /// W3C SCXML 5.2: the `name` datamodel variable.
-    name: String,
+    name: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `scale` datamodel variable.
     scale: u32,
     /// W3C SCXML 5.2: the `pings` datamodel variable, published (`sce:direction="out"`).
@@ -553,7 +558,8 @@ pub struct StaticSendEventPolicy {
 
 impl StaticSendEventPolicy {
     fn build(session_id: String) -> Self {
-        let name: String = "ping".to_string();
+        let name: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "ping");
         let scale: u32 = 3;
         let pings: u32 = 0;
         let pongs: u32 = 0;
@@ -1092,7 +1098,7 @@ impl StatePolicy for StaticSendEventPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.name =
-                                sce_forge_runtime::algorithm::bounded("pong".to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"pong")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1116,7 +1122,7 @@ impl StatePolicy for StaticSendEventPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.name =
-                                sce_forge_runtime::algorithm::bounded("ping".to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"ping")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1139,7 +1145,8 @@ impl StatePolicy for StaticSendEventPolicy {
                     // W3C SCXML 5.3: <assign location="name">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.name = sce_forge_runtime::algorithm::bounded("".to_string(), 16)?;
+                            self.name =
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"")?;
                             Ok(())
                         })() {
                             Ok(()) => false,

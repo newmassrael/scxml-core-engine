@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -601,8 +601,11 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPersist
                 saved.variable("last")?,
                 "last",
             )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("pick")?, "pick", 48)?;
+        let _: ::sce_rust_runtime::portable::SceString<48> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("pick")?,
+                "pick",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("base")?,
             "base",
@@ -611,11 +614,11 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPersist
             saved.variable("steps")?,
             "steps",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("helper_id")?,
-            "helper_id",
-            64,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("helper_id")?,
+                "helper_id",
+            )?;
         ::sce_rust_runtime::saved_state::judge::<StaticInvokeTreeSceSynthInvokeWorkerPolicy>(saved)
     }
 
@@ -639,8 +642,10 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPersist
             saved.variable("last")?,
             "last",
         )?;
-        policy.pick =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("pick")?, "pick", 48)?;
+        policy.pick = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("pick")?,
+            "pick",
+        )?;
         policy.base = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("base")?,
             "base",
@@ -649,10 +654,9 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPersist
             saved.variable("steps")?,
             "steps",
         )?;
-        policy.helper_id = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.helper_id = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("helper_id")?,
             "helper_id",
-            64,
         )?;
         // A start after the restore is numbered on from the saved count.
         policy.invoke_starts_invoke_0 = saved.invoke_start("_invoke_0");
@@ -760,10 +764,10 @@ impl StaticInvokeTreeSceSynthInvokeWorkerHostInvokers
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticInvokeTreeSceSynthInvokeWorkerInvokeParams {
-    pub pick: Option<String>,
+    pub pick: Option<::sce_rust_runtime::portable::SceString<48>>,
     pub base: Option<u32>,
     pub steps: Option<u32>,
-    pub helper_id: Option<String>,
+    pub helper_id: Option<::sce_rust_runtime::portable::SceString<64>>,
 }
 
 // ======================================================================
@@ -774,13 +778,13 @@ pub struct StaticInvokeTreeSceSynthInvokeWorkerPolicy {
     /// W3C SCXML 5.2: the `last` datamodel variable.
     last: StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord,
     /// W3C SCXML 5.2: the `pick` datamodel variable.
-    pick: String,
+    pick: ::sce_rust_runtime::portable::SceString<48>,
     /// W3C SCXML 5.2: the `base` datamodel variable.
     base: u32,
     /// W3C SCXML 5.2: the `steps` datamodel variable.
     steps: u32,
     /// W3C SCXML 5.2: the `helper_id` datamodel variable.
-    helper_id: String,
+    helper_id: ::sce_rust_runtime::portable::SceString<64>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -828,10 +832,12 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                 layout: StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum::Month,
                 urgent: false,
             };
-        let pick: String = "static_hybrid_watcher.scxml".to_string();
+        let pick: ::sce_rust_runtime::portable::SceString<48> =
+            ::sce_rust_runtime::portable::sce_text!(48, "static_hybrid_watcher.scxml");
         let base: u32 = 7;
         let steps: u32 = 0;
-        let helper_id: String = "".to_string();
+        let helper_id: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
         Self {
             last,
             pick,
@@ -920,7 +926,7 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
     }
 
     // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 'second' to macrostep end
-    fn defer_invoke_invoke_0(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn defer_invoke_invoke_0(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         {
             // docs/adr/0045: the id is the state's, the number of this start and
             // the `<invoke>`'s, so it comes from the tree alone and is the same
@@ -930,10 +936,26 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
             let generated_invoke_id =
                 format!("{}.{}._invoke_0", "second", self.invoke_starts_invoke_0);
             // docs/adr/0045: under `datamodel="sce-static"` the id is
-            // written to the string variable `idlocation` names, whose
-            // bound the build held to one the id fits.
-            self.helper_id = generated_invoke_id.clone();
-            let id_stored = true;
+            // written to the string variable `idlocation` names, held to
+            // that variable's bound as any text written to it is
+            // (docs/adr/0086, section 7.4): an id it cannot hold is
+            // refused whole, raises error.execution and the invocation
+            // does not start, as a location that cannot take it does.
+            // `native_idlocation` answers whether the variable refused it.
+            let id_stored =
+                !(match ::sce_rust_runtime::portable::SceString::from_text(&generated_invoke_id) {
+                    Ok(sce_id) => {
+                        self.helper_id = sce_id;
+                        false
+                    }
+                    Err(_) => true,
+                });
+            if !id_stored {
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution,
+                    "<invoke idlocation='helper_id'> could not take the invoke id",
+                ));
+            }
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
                     &mut self.pending_invokes,
@@ -2031,9 +2053,8 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                     // W3C SCXML 5.3: <assign location="pick">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.pick = sce_forge_runtime::algorithm::bounded(
-                                "static_hybrid_holder.scxml".to_string(),
-                                48,
+                            self.pick = ::sce_rust_runtime::portable::SceString::<48>::from_text(
+                                &"static_hybrid_holder.scxml",
                             )?;
                             Ok(())
                         })() {

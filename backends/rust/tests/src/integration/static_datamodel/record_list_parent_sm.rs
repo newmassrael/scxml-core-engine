@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -563,7 +563,7 @@ pub struct RecordListParentToldRecord {
     pub field: u16,
     pub count: u32,
     pub value: i64,
-    pub text: String,
+    pub text: ::sce_rust_runtime::portable::SceString<96>,
     pub wallTime: i64,
     pub counter: u32,
     pub nodeId: u64,
@@ -577,7 +577,7 @@ pub struct RecordListParentToldValueRecord {
     pub field: u16,
     pub ordinal: u32,
     pub value: i64,
-    pub text: String,
+    pub text: ::sce_rust_runtime::portable::SceString<96>,
     pub wallTime: i64,
     pub counter: u32,
     pub nodeId: u64,
@@ -716,7 +716,7 @@ impl RecordListParentLimits {
 pub struct RecordListParentData {
     pub told: u32,
     pub shown: RecordListParentToldRecord,
-    pub others: Vec<RecordListParentToldValueRecord>,
+    pub others: ::sce_rust_runtime::portable::BoundedList<RecordListParentToldValueRecord, 8>,
     pub refused: Option<RecordListParentRefusedRecord>,
     pub refused_count: u32,
 }
@@ -882,7 +882,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentToldRecord 
             field: ::sce_rust_runtime::saved_state::record_field(value, what, "field")?,
             count: ::sce_rust_runtime::saved_state::record_field(value, what, "count")?,
             value: ::sce_rust_runtime::saved_state::record_field(value, what, "value")?,
-            text: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "text", 96)?,
+            text: ::sce_rust_runtime::saved_state::record_field(value, what, "text")?,
             wallTime: ::sce_rust_runtime::saved_state::record_field(value, what, "wallTime")?,
             counter: ::sce_rust_runtime::saved_state::record_field(value, what, "counter")?,
             nodeId: ::sce_rust_runtime::saved_state::record_field(value, what, "nodeId")?,
@@ -937,7 +937,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentToldValueRe
             field: ::sce_rust_runtime::saved_state::record_field(value, what, "field")?,
             ordinal: ::sce_rust_runtime::saved_state::record_field(value, what, "ordinal")?,
             value: ::sce_rust_runtime::saved_state::record_field(value, what, "value")?,
-            text: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "text", 96)?,
+            text: ::sce_rust_runtime::saved_state::record_field(value, what, "text")?,
             wallTime: ::sce_rust_runtime::saved_state::record_field(value, what, "wallTime")?,
             counter: ::sce_rust_runtime::saved_state::record_field(value, what, "counter")?,
             nodeId: ::sce_rust_runtime::saved_state::record_field(value, what, "nodeId")?,
@@ -1223,8 +1223,11 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
                 saved.variable("shown")?,
                 "shown",
             )?;
-        let _: Vec<RecordListParentToldValueRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("others")?, "others", 8)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<RecordListParentToldValueRecord, 8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("others")?,
+                "others",
+            )?;
         let _: RecordListParentToldValueRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("other")?,
@@ -1267,8 +1270,10 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
             saved.variable("shown")?,
             "shown",
         )?;
-        policy.others =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("others")?, "others", 8)?;
+        policy.others = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("others")?,
+            "others",
+        )?;
         policy.other = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("other")?,
             "other",
@@ -1310,7 +1315,7 @@ pub struct RecordListParentPolicy {
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
     shown: RecordListParentToldRecord,
     /// W3C SCXML 5.2: the `others` datamodel variable, published (`sce:direction="out"`).
-    others: Vec<RecordListParentToldValueRecord>,
+    others: ::sce_rust_runtime::portable::BoundedList<RecordListParentToldValueRecord, 8>,
     /// W3C SCXML 5.2: the `other` datamodel variable.
     other: RecordListParentToldValueRecord,
     /// W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`).
@@ -1357,18 +1362,19 @@ impl RecordListParentPolicy {
             field: 0,
             count: 0,
             value: 0,
-            text: "".to_string(),
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
             wallTime: 0,
             counter: 0,
             nodeId: 0,
         };
-        let others: Vec<RecordListParentToldValueRecord> = Vec::new();
+        let others: ::sce_rust_runtime::portable::BoundedList<RecordListParentToldValueRecord, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let other: RecordListParentToldValueRecord = RecordListParentToldValueRecord {
             id: 0,
             field: 0,
             ordinal: 0,
             value: 0,
-            text: "".to_string(),
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
             wallTime: 0,
             counter: 0,
             nodeId: 0,
@@ -3068,7 +3074,9 @@ impl StatePolicy for RecordListParentPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.shown.text =
-                                sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 96)?;
+                                ::sce_rust_runtime::portable::SceString::<96>::from_text(
+                                    &&ev.text[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3136,7 +3144,9 @@ impl StatePolicy for RecordListParentPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.other.text =
-                                sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 96)?;
+                                ::sce_rust_runtime::portable::SceString::<96>::from_text(
+                                    &&ev.text[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3159,8 +3169,9 @@ impl StatePolicy for RecordListParentPolicy {
                     self.other.nodeId = ev.nodeId;
 
                     // SCE Accepted Subset §2.15: <sce:append target="others">
-                    let sce_failed = if self.others.len() < 8 {
-                        self.others.push(self.other.clone());
+                    let sce_failed = if self.others.len() < 8
+                        && self.others.push(self.other.clone()).is_ok()
+                    {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<sce:append target='others'>: the list already holds its capacity of 8"));

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -457,7 +457,7 @@ fn call_StatusOf__v(
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticStateAlgorithmEnumData {
-    pub items: Vec<StaticStateAlgorithmEnumItemRecord>,
+    pub items: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmEnumItemRecord, 4>,
     pub last: StaticStateAlgorithmEnumStatusEnum,
     pub open_count: u32,
     pub started_count: u32,
@@ -781,8 +781,11 @@ impl StaticStateAlgorithmEnumPersist for Engine<StaticStateAlgorithmEnumPolicy> 
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<StaticStateAlgorithmEnumItemRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 4)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmEnumItemRecord, 4> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("items")?,
+                "items",
+            )?;
         let _: StaticStateAlgorithmEnumItemRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("draft")?,
@@ -833,8 +836,10 @@ impl StaticStateAlgorithmEnumPersist for Engine<StaticStateAlgorithmEnumPolicy> 
             saved,
             Self::HISTORIES,
         )?;
-        policy.items =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 4)?;
+        policy.items = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("items")?,
+            "items",
+        )?;
         policy.draft = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("draft")?,
             "draft",
@@ -889,7 +894,7 @@ pub struct StaticStateAlgorithmEnumPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticStateAlgorithmEnumPayload,
     /// W3C SCXML 5.2: the `items` datamodel variable, published (`sce:direction="out"`).
-    items: Vec<StaticStateAlgorithmEnumItemRecord>,
+    items: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmEnumItemRecord, 4>,
     /// W3C SCXML 5.2: the `draft` datamodel variable.
     draft: StaticStateAlgorithmEnumItemRecord,
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
@@ -925,7 +930,10 @@ pub struct StaticStateAlgorithmEnumPolicy {
 
 impl StaticStateAlgorithmEnumPolicy {
     fn build(session_id: String) -> Self {
-        let items: Vec<StaticStateAlgorithmEnumItemRecord> = Vec::new();
+        let items: ::sce_rust_runtime::portable::BoundedList<
+            StaticStateAlgorithmEnumItemRecord,
+            4,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let draft: StaticStateAlgorithmEnumItemRecord = StaticStateAlgorithmEnumItemRecord {
             id: 0,
             status: StaticStateAlgorithmEnumStatusEnum::Open,
@@ -1433,8 +1441,8 @@ impl StatePolicy for StaticStateAlgorithmEnumPolicy {
                     };
 
                     // SCE Accepted Subset §2.15: <sce:append target="items">
-                    let sce_failed = if self.items.len() < 4 {
-                        self.items.push(self.draft);
+                    let sce_failed = if self.items.len() < 4 && self.items.push(self.draft).is_ok()
+                    {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
@@ -1461,11 +1469,9 @@ impl StatePolicy for StaticStateAlgorithmEnumPolicy {
                     // W3C SCXML 5.3: <assign location="items">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.items = sce_forge_runtime::algorithm::within(
+                            self.items = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_SetStatus__v(&self.items, ev.id, ev.status)?).as_slice(),
-                                4,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

@@ -563,10 +563,10 @@ impl RequestLifeVerdictEnum {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct RequestLifeData {
-    pub holder: String,
+    pub holder: ::sce_rust_runtime::portable::SceString<64>,
     pub attempt: u32,
     pub expires_at: u64,
-    pub outcome: String,
+    pub outcome: ::sce_rust_runtime::portable::SceString<64>,
     pub verdict: RequestLifeVerdictEnum,
 }
 
@@ -830,11 +830,11 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("holder")?,
-            "holder",
-            64,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("holder")?,
+                "holder",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("attempt")?,
             "attempt",
@@ -843,11 +843,11 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
             saved.variable("expiresAt")?,
             "expiresAt",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("outcome")?,
-            "outcome",
-            64,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("outcome")?,
+                "outcome",
+            )?;
         let _: RequestLifeVerdictEnum = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("verdict")?,
             "verdict",
@@ -872,10 +872,9 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.holder = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.holder = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("holder")?,
             "holder",
-            64,
         )?;
         policy.attempt = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("attempt")?,
@@ -885,10 +884,9 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
             saved.variable("expiresAt")?,
             "expiresAt",
         )?;
-        policy.outcome = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.outcome = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("outcome")?,
             "outcome",
-            64,
         )?;
         policy.verdict = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("verdict")?,
@@ -903,10 +901,10 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct RequestLifeInvokeParams {
-    pub holder: Option<String>,
+    pub holder: Option<::sce_rust_runtime::portable::SceString<64>>,
     pub attempt: Option<u32>,
     pub expires_at: Option<u64>,
-    pub outcome: Option<String>,
+    pub outcome: Option<::sce_rust_runtime::portable::SceString<64>>,
 }
 
 // ======================================================================
@@ -919,13 +917,13 @@ pub struct RequestLifePolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: RequestLifePayload,
     /// W3C SCXML 5.2: the `holder` datamodel variable, published (`sce:direction="out"`).
-    holder: String,
+    holder: ::sce_rust_runtime::portable::SceString<64>,
     /// W3C SCXML 5.2: the `attempt` datamodel variable, published (`sce:direction="out"`).
     attempt: u32,
     /// W3C SCXML 5.2: the `expiresAt` datamodel variable, published (`sce:direction="out"`).
     expires_at: u64,
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    outcome: String,
+    outcome: ::sce_rust_runtime::portable::SceString<64>,
     /// W3C SCXML 5.2: the `verdict` datamodel variable, published (`sce:direction="out"`).
     verdict: RequestLifeVerdictEnum,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -949,10 +947,12 @@ pub struct RequestLifePolicy {
 
 impl RequestLifePolicy {
     fn build(session_id: String) -> Self {
-        let holder: String = "".to_string();
+        let holder: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
         let attempt: u32 = 0;
         let expires_at: u64 = 0;
-        let outcome: String = "".to_string();
+        let outcome: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
         let verdict: RequestLifeVerdictEnum = RequestLifeVerdictEnum::Unanswered;
         Self {
             pending_payload: RequestLifePayload::default(),
@@ -1808,7 +1808,9 @@ impl StatePolicy for RequestLifePolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.bundle.to_string(), 64)?;
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.bundle[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1935,8 +1937,9 @@ impl StatePolicy for RequestLifePolicy {
                     // W3C SCXML 5.3: <assign location="holder">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.holder =
-                                sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
+                            self.holder = ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                &&ev.holder[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1991,8 +1994,9 @@ impl StatePolicy for RequestLifePolicy {
                     // W3C SCXML 5.3: <assign location="holder">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.holder =
-                                sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
+                            self.holder = ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                &&ev.holder[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2057,8 +2061,9 @@ impl StatePolicy for RequestLifePolicy {
                     // W3C SCXML 5.3: <assign location="holder">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.holder =
-                                sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
+                            self.holder = ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                &&ev.holder[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2182,7 +2187,9 @@ impl StatePolicy for RequestLifePolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.bundle.to_string(), 64)?;
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.bundle[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

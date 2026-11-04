@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -408,9 +408,9 @@ impl StaticHostNotifyInject for ::sce_rust_runtime::Engine<StaticHostNotifyPolic
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticHostNotifyData {
-    pub outcome: String,
-    pub permission: String,
-    pub status: String,
+    pub outcome: ::sce_rust_runtime::portable::SceString<24>,
+    pub permission: ::sce_rust_runtime::portable::SceString<16>,
+    pub status: ::sce_rust_runtime::portable::SceString<16>,
     pub existed: bool,
 }
 
@@ -631,34 +631,37 @@ impl StaticHostNotifyPersist for Engine<StaticHostNotifyPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("id")?, "id", 64)?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("title")?,
-            "title",
-            128,
-        )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("body")?, "body", 512)?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("id")?, "id")?;
+        let _: ::sce_rust_runtime::portable::SceString<128> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("title")?,
+                "title",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<512> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("body")?,
+                "body",
+            )?;
         let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("at_ms")?,
             "at_ms",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("outcome")?,
-            "outcome",
-            24,
-        )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("permission")?,
-            "permission",
-            16,
-        )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("status")?,
-            "status",
-            16,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("outcome")?,
+                "outcome",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("permission")?,
+                "permission",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("status")?,
+                "status",
+            )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("existed")?,
             "existed",
@@ -684,32 +687,30 @@ impl StaticHostNotifyPersist for Engine<StaticHostNotifyPolicy> {
             Self::HISTORIES,
         )?;
         policy.id =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("id")?, "id", 64)?;
-        policy.title = ::sce_rust_runtime::saved_state::bounded_string(
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("id")?, "id")?;
+        policy.title = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("title")?,
             "title",
-            128,
         )?;
-        policy.body =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("body")?, "body", 512)?;
+        policy.body = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("body")?,
+            "body",
+        )?;
         policy.at_ms = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("at_ms")?,
             "at_ms",
         )?;
-        policy.outcome = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.outcome = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("outcome")?,
             "outcome",
-            24,
         )?;
-        policy.permission = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.permission = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("permission")?,
             "permission",
-            16,
         )?;
-        policy.status = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.status = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("status")?,
             "status",
-            16,
         )?;
         policy.existed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("existed")?,
@@ -1121,13 +1122,13 @@ impl StaticHostNotifyHostInvokers for ::sce_rust_runtime::Engine<StaticHostNotif
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticHostNotifyInvokeParams {
-    pub id: Option<String>,
-    pub title: Option<String>,
-    pub body: Option<String>,
+    pub id: Option<::sce_rust_runtime::portable::SceString<64>>,
+    pub title: Option<::sce_rust_runtime::portable::SceString<128>>,
+    pub body: Option<::sce_rust_runtime::portable::SceString<512>>,
     pub at_ms: Option<i64>,
-    pub outcome: Option<String>,
-    pub permission: Option<String>,
-    pub status: Option<String>,
+    pub outcome: Option<::sce_rust_runtime::portable::SceString<24>>,
+    pub permission: Option<::sce_rust_runtime::portable::SceString<16>>,
+    pub status: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub existed: Option<bool>,
 }
 
@@ -1141,19 +1142,19 @@ pub struct StaticHostNotifyPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticHostNotifyPayload,
     /// W3C SCXML 5.2: the `id` datamodel variable.
-    id: String,
+    id: ::sce_rust_runtime::portable::SceString<64>,
     /// W3C SCXML 5.2: the `title` datamodel variable.
-    title: String,
+    title: ::sce_rust_runtime::portable::SceString<128>,
     /// W3C SCXML 5.2: the `body` datamodel variable.
-    body: String,
+    body: ::sce_rust_runtime::portable::SceString<512>,
     /// W3C SCXML 5.2: the `at_ms` datamodel variable.
     at_ms: i64,
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    outcome: String,
+    outcome: ::sce_rust_runtime::portable::SceString<24>,
     /// W3C SCXML 5.2: the `permission` datamodel variable, published (`sce:direction="out"`).
-    permission: String,
+    permission: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `status` datamodel variable, published (`sce:direction="out"`).
-    status: String,
+    status: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `existed` datamodel variable, published (`sce:direction="out"`).
     existed: bool,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -1183,13 +1184,19 @@ pub struct StaticHostNotifyPolicy {
 
 impl StaticHostNotifyPolicy {
     fn build(session_id: String) -> Self {
-        let id: String = "".to_string();
-        let title: String = "".to_string();
-        let body: String = "".to_string();
+        let id: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
+        let title: ::sce_rust_runtime::portable::SceString<128> =
+            ::sce_rust_runtime::portable::sce_text!(128, "");
+        let body: ::sce_rust_runtime::portable::SceString<512> =
+            ::sce_rust_runtime::portable::sce_text!(512, "");
         let at_ms: i64 = 0;
-        let outcome: String = "".to_string();
-        let permission: String = "".to_string();
-        let status: String = "".to_string();
+        let outcome: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::portable::sce_text!(24, "");
+        let permission: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "");
+        let status: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "");
         let existed: bool = false;
         Self {
             pending_payload: StaticHostNotifyPayload::default(),
@@ -2578,7 +2585,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.permission =
-                                sce_forge_runtime::algorithm::bounded(ev.state.to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                    &&ev.state[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2595,7 +2604,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2623,7 +2632,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2647,7 +2658,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2671,7 +2684,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2702,7 +2717,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2730,7 +2745,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2754,7 +2771,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2778,7 +2797,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2805,7 +2826,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     // W3C SCXML 5.3: <assign location="id">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.id = sce_forge_runtime::algorithm::bounded(ev.id.to_string(), 64)?;
+                            self.id = ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                &&ev.id[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2821,8 +2844,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     // W3C SCXML 5.3: <assign location="title">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.title =
-                                sce_forge_runtime::algorithm::bounded(ev.title.to_string(), 128)?;
+                            self.title = ::sce_rust_runtime::portable::SceString::<128>::from_text(
+                                &&ev.title[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2838,8 +2862,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     // W3C SCXML 5.3: <assign location="body">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.body =
-                                sce_forge_runtime::algorithm::bounded(ev.body.to_string(), 512)?;
+                            self.body = ::sce_rust_runtime::portable::SceString::<512>::from_text(
+                                &&ev.body[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2869,7 +2894,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     // W3C SCXML 5.3: <assign location="id">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.id = sce_forge_runtime::algorithm::bounded(ev.id.to_string(), 64)?;
+                            self.id = ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                &&ev.id[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2906,8 +2933,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     // W3C SCXML 5.3: <assign location="status">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.status =
-                                sce_forge_runtime::algorithm::bounded(ev.status.to_string(), 16)?;
+                            self.status = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &&ev.status[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2924,7 +2952,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2952,7 +2980,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -2976,7 +3006,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3000,7 +3032,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3027,8 +3061,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     // W3C SCXML 5.3: <assign location="status">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.status =
-                                sce_forge_runtime::algorithm::bounded(ev.status.to_string(), 16)?;
+                            self.status = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &&ev.status[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3045,7 +3080,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3073,7 +3108,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3097,7 +3134,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3125,7 +3164,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.permission =
-                                sce_forge_runtime::algorithm::bounded(ev.state.to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                    &&ev.state[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3142,7 +3183,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3170,7 +3211,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3194,7 +3237,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -3218,7 +3263,9 @@ impl StatePolicy for StaticHostNotifyPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

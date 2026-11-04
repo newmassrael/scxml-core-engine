@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -378,7 +378,7 @@ impl StaticOptionalStatusEnum {
 pub struct StaticOptionalDueRecord {
     pub id: u32,
     pub due: Option<i64>,
-    pub title: Option<String>,
+    pub title: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub status: Option<StaticOptionalStatusEnum>,
 }
 
@@ -391,15 +391,15 @@ pub struct StaticOptionalDueRecord {
 pub struct StaticOptionalData {
     pub due: Option<i64>,
     pub other: Option<i64>,
-    pub title: Option<String>,
+    pub title: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub status: Option<StaticOptionalStatusEnum>,
     pub item: StaticOptionalDueRecord,
-    pub items: Vec<StaticOptionalDueRecord>,
+    pub items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalDueRecord, 3>,
     pub days: i64,
     pub following: i64,
     pub late: bool,
     pub early: bool,
-    pub label: String,
+    pub label: ::sce_rust_runtime::portable::SceString<16>,
     pub plain: StaticOptionalStatusEnum,
     pub kept: i64,
     pub listed: i64,
@@ -408,7 +408,7 @@ pub struct StaticOptionalData {
     pub absent: bool,
     pub status_done: bool,
     pub echoed: i64,
-    pub echo_title: Option<String>,
+    pub echo_title: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub echo_status: Option<StaticOptionalStatusEnum>,
     pub fallbacks: u32,
     pub errors: u32,
@@ -533,16 +533,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticOptionalDueRecord {
         Ok(Self {
             id: ::sce_rust_runtime::saved_state::record_field(value, what, "id")?,
             due: ::sce_rust_runtime::saved_state::record_field(value, what, "due")?,
-            title: ::sce_rust_runtime::saved_state::optional(
-                ::sce_rust_runtime::saved_state::record_member(value, what, "title")?,
-                |present| {
-                    ::sce_rust_runtime::saved_state::bounded_string(
-                        present,
-                        &format!("{what}.title"),
-                        16,
-                    )
-                },
-            )?,
+            title: ::sce_rust_runtime::saved_state::record_field(value, what, "title")?,
             status: ::sce_rust_runtime::saved_state::record_field(value, what, "status")?,
         })
     }
@@ -844,10 +835,11 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
             saved.variable("other")?,
             "other",
         )?;
-        let _: Option<String> =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("title")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "title", 16)
-            })?;
+        let _: Option<::sce_rust_runtime::portable::SceString<16>> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("title")?,
+                "title",
+            )?;
         let _: Option<StaticOptionalStatusEnum> =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("status")?,
@@ -857,8 +849,11 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
             saved.variable("item")?,
             "item",
         )?;
-        let _: Vec<StaticOptionalDueRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 3)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticOptionalDueRecord, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("items")?,
+                "items",
+            )?;
         let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("days")?,
             "days",
@@ -875,8 +870,11 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
             saved.variable("early")?,
             "early",
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         let _: StaticOptionalStatusEnum = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("plain")?,
             "plain",
@@ -909,10 +907,11 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
             saved.variable("echoed")?,
             "echoed",
         )?;
-        let _: Option<String> =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("echoTitle")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "echoTitle", 16)
-            })?;
+        let _: Option<::sce_rust_runtime::portable::SceString<16>> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("echoTitle")?,
+                "echoTitle",
+            )?;
         let _: Option<StaticOptionalStatusEnum> =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("echoStatus")?,
@@ -956,10 +955,10 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
             saved.variable("other")?,
             "other",
         )?;
-        policy.title =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("title")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "title", 16)
-            })?;
+        policy.title = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("title")?,
+            "title",
+        )?;
         policy.status = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("status")?,
             "status",
@@ -968,8 +967,10 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
             saved.variable("item")?,
             "item",
         )?;
-        policy.items =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 3)?;
+        policy.items = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("items")?,
+            "items",
+        )?;
         policy.days = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("days")?,
             "days",
@@ -986,8 +987,10 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
             saved.variable("early")?,
             "early",
         )?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         policy.plain = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("plain")?,
             "plain",
@@ -1020,10 +1023,10 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
             saved.variable("echoed")?,
             "echoed",
         )?;
-        policy.echo_title =
-            ::sce_rust_runtime::saved_state::optional(saved.variable("echoTitle")?, |present| {
-                ::sce_rust_runtime::saved_state::bounded_string(present, "echoTitle", 16)
-            })?;
+        policy.echo_title = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("echoTitle")?,
+            "echoTitle",
+        )?;
         policy.echo_status = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("echoStatus")?,
             "echoStatus",
@@ -1051,12 +1054,12 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
 pub struct StaticOptionalInvokeParams {
     pub due: Option<i64>,
     pub other: Option<i64>,
-    pub title: Option<String>,
+    pub title: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub days: Option<i64>,
     pub following: Option<i64>,
     pub late: Option<bool>,
     pub early: Option<bool>,
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub kept: Option<i64>,
     pub listed: Option<i64>,
     pub missing: Option<u32>,
@@ -1064,7 +1067,7 @@ pub struct StaticOptionalInvokeParams {
     pub absent: Option<bool>,
     pub status_done: Option<bool>,
     pub echoed: Option<i64>,
-    pub echo_title: Option<String>,
+    pub echo_title: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub fallbacks: Option<u32>,
     pub errors: Option<u32>,
     pub huge: Option<i64>,
@@ -1084,13 +1087,13 @@ pub struct StaticOptionalPolicy {
     /// W3C SCXML 5.2: the `other` datamodel variable, published (`sce:direction="out"`).
     other: Option<i64>,
     /// W3C SCXML 5.2: the `title` datamodel variable, published (`sce:direction="out"`).
-    title: Option<String>,
+    title: Option<::sce_rust_runtime::portable::SceString<16>>,
     /// W3C SCXML 5.2: the `status` datamodel variable, published (`sce:direction="out"`).
     status: Option<StaticOptionalStatusEnum>,
     /// W3C SCXML 5.2: the `item` datamodel variable, published (`sce:direction="out"`).
     item: StaticOptionalDueRecord,
     /// W3C SCXML 5.2: the `items` datamodel variable, published (`sce:direction="out"`).
-    items: Vec<StaticOptionalDueRecord>,
+    items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalDueRecord, 3>,
     /// W3C SCXML 5.2: the `days` datamodel variable, published (`sce:direction="out"`).
     days: i64,
     /// W3C SCXML 5.2: the `following` datamodel variable, published (`sce:direction="out"`).
@@ -1100,7 +1103,7 @@ pub struct StaticOptionalPolicy {
     /// W3C SCXML 5.2: the `early` datamodel variable, published (`sce:direction="out"`).
     early: bool,
     /// W3C SCXML 5.2: the `label` datamodel variable, published (`sce:direction="out"`).
-    label: String,
+    label: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `plain` datamodel variable, published (`sce:direction="out"`).
     plain: StaticOptionalStatusEnum,
     /// W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`).
@@ -1118,7 +1121,7 @@ pub struct StaticOptionalPolicy {
     /// W3C SCXML 5.2: the `echoed` datamodel variable, published (`sce:direction="out"`).
     echoed: i64,
     /// W3C SCXML 5.2: the `echoTitle` datamodel variable, published (`sce:direction="out"`).
-    echo_title: Option<String>,
+    echo_title: Option<::sce_rust_runtime::portable::SceString<16>>,
     /// W3C SCXML 5.2: the `echoStatus` datamodel variable, published (`sce:direction="out"`).
     echo_status: Option<StaticOptionalStatusEnum>,
     /// W3C SCXML 5.2: the `fallbacks` datamodel variable, published (`sce:direction="out"`).
@@ -1150,20 +1153,22 @@ impl StaticOptionalPolicy {
     fn build(session_id: String) -> Self {
         let due: Option<i64> = None;
         let other: Option<i64> = Some(7);
-        let title: Option<String> = None;
+        let title: Option<::sce_rust_runtime::portable::SceString<16>> = None;
         let status: Option<StaticOptionalStatusEnum> = Some(StaticOptionalStatusEnum::Open);
         let item: StaticOptionalDueRecord = StaticOptionalDueRecord {
             id: 0,
             due: None,
-            title: Some("first".to_string()),
+            title: Some(::sce_rust_runtime::portable::sce_text!(16, "first")),
             status: None,
         };
-        let items: Vec<StaticOptionalDueRecord> = Vec::new();
+        let items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalDueRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let days: i64 = 0;
         let following: i64 = 0;
         let late: bool = false;
         let early: bool = false;
-        let label: String = "".to_string();
+        let label: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "");
         let plain: StaticOptionalStatusEnum = StaticOptionalStatusEnum::Open;
         let kept: i64 = 0;
         let listed: i64 = 0;
@@ -1172,7 +1177,7 @@ impl StaticOptionalPolicy {
         let absent: bool = false;
         let status_done: bool = false;
         let echoed: i64 = 0;
-        let echo_title: Option<String> = None;
+        let echo_title: Option<::sce_rust_runtime::portable::SceString<16>> = None;
         let echo_status: Option<StaticOptionalStatusEnum> = None;
         let fallbacks: u32 = 0;
         let errors: u32 = 0;
@@ -1957,9 +1962,11 @@ impl StatePolicy for StaticOptionalPolicy {
                     // W3C SCXML 5.3: <assign location="title">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.title = match ev.title.as_deref().map(str::to_string) {
+                            self.title = match ev.title.as_deref() {
                                 Some(sce_present) => {
-                                    Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)
+                                    Some(::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                        &sce_present,
+                                    )?)
                                 }
                                 None => None,
                             };
@@ -1984,9 +1991,11 @@ impl StatePolicy for StaticOptionalPolicy {
                             self.item = StaticOptionalDueRecord {
                                 id: ev.id,
                                 due: ev.due,
-                                title: match ev.title.as_deref().map(str::to_string) {
+                                title: match ev.title.as_deref() {
                                     Some(sce_present) => Some(
-                                        sce_forge_runtime::algorithm::bounded(sce_present, 16)?,
+                                        ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                            &sce_present,
+                                        )?,
                                     ),
                                     None => None,
                                 },
@@ -2005,16 +2014,16 @@ impl StatePolicy for StaticOptionalPolicy {
                     }
 
                     // SCE Accepted Subset §2.15: <sce:append target="items">
-                    let sce_failed = if self.items.len() < 3 {
-                        self.items.push(self.item.clone());
-                        false
-                    } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    let sce_failed =
+                        if self.items.len() < 3 && self.items.push(self.item.clone()).is_ok() {
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StaticOptionalEvent::ErrorExecution,
                             "<sce:append target='items'>: the list already holds its capacity of 3",
                         ));
-                        true
-                    };
+                            true
+                        };
                     if sce_failed {
                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
@@ -2087,7 +2096,7 @@ impl StatePolicy for StaticOptionalPolicy {
                     if self.title.as_deref().is_none() {
                         // W3C SCXML 5.3: <assign location="label">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.label = sce_forge_runtime::algorithm::bounded("untitled".to_string(), 16)?;
+    self.label = ::sce_rust_runtime::portable::SceString::<16>::from_text(&"untitled")?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -2102,7 +2111,7 @@ impl StatePolicy for StaticOptionalPolicy {
                     } else if sce_forge_runtime::optional::proven(self.title.as_deref()) == "soon" {
                         // W3C SCXML 5.3: <assign location="label">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.label = sce_forge_runtime::algorithm::bounded("due soon".to_string(), 16)?;
+    self.label = ::sce_rust_runtime::portable::SceString::<16>::from_text(&"due soon")?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -2117,7 +2126,7 @@ impl StatePolicy for StaticOptionalPolicy {
                     } else {
                         // W3C SCXML 5.3: <assign location="label">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.label = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::optional::proven(self.title.as_deref()).to_string(), 16)?;
+    self.label = ::sce_rust_runtime::portable::SceString::<16>::from_text(&&sce_forge_runtime::optional::proven(self.title.as_deref())[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -2219,13 +2228,11 @@ impl StatePolicy for StaticOptionalPolicy {
                     // W3C SCXML 5.3: <assign location="label">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.label = sce_forge_runtime::algorithm::bounded(
-                                (match self.title.as_deref() {
+                            self.label = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &&(match self.title.as_deref() {
                                     Some(sce_present) => sce_present,
                                     None => "none",
-                                })
-                                .to_string(),
-                                16,
+                                })[..],
                             )?;
                             Ok(())
                         })() {
@@ -2371,9 +2378,11 @@ impl StatePolicy for StaticOptionalPolicy {
                     // W3C SCXML 5.3: <assign location="echoTitle">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.echo_title = match ev.title.as_deref().map(str::to_string) {
+                            self.echo_title = match ev.title.as_deref() {
                                 Some(sce_present) => {
-                                    Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)
+                                    Some(::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                        &sce_present,
+                                    )?)
                                 }
                                 None => None,
                             };
@@ -2409,9 +2418,11 @@ impl StatePolicy for StaticOptionalPolicy {
                     // W3C SCXML 5.3: <assign location="echoTitle">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.echo_title = match ev.title.as_deref().map(str::to_string) {
+                            self.echo_title = match ev.title.as_deref() {
                                 Some(sce_present) => {
-                                    Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)
+                                    Some(::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                        &sce_present,
+                                    )?)
                                 }
                                 None => None,
                             };

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -236,8 +236,8 @@ impl StaticStringCapacityEvent {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticStringCapacityData {
-    pub title: String,
-    pub body: String,
+    pub title: ::sce_rust_runtime::portable::SceString<4>,
+    pub body: ::sce_rust_runtime::portable::SceString<16>,
     pub copied: u32,
     pub measured: u32,
     pub refusals: u32,
@@ -449,10 +449,16 @@ impl StaticStringCapacityPersist for Engine<StaticStringCapacityPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("title")?, "title", 4)?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("body")?, "body", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<4> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("title")?,
+                "title",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("body")?,
+                "body",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("copied")?,
             "copied",
@@ -485,10 +491,14 @@ impl StaticStringCapacityPersist for Engine<StaticStringCapacityPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.title =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("title")?, "title", 4)?;
-        policy.body =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("body")?, "body", 16)?;
+        policy.title = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("title")?,
+            "title",
+        )?;
+        policy.body = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("body")?,
+            "body",
+        )?;
         policy.copied = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("copied")?,
             "copied",
@@ -510,8 +520,8 @@ impl StaticStringCapacityPersist for Engine<StaticStringCapacityPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticStringCapacityInvokeParams {
-    pub title: Option<String>,
-    pub body: Option<String>,
+    pub title: Option<::sce_rust_runtime::portable::SceString<4>>,
+    pub body: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub copied: Option<u32>,
     pub measured: Option<u32>,
     pub refusals: Option<u32>,
@@ -523,9 +533,9 @@ pub struct StaticStringCapacityInvokeParams {
 
 pub struct StaticStringCapacityPolicy {
     /// W3C SCXML 5.2: the `title` datamodel variable, published (`sce:direction="out"`).
-    title: String,
+    title: ::sce_rust_runtime::portable::SceString<4>,
     /// W3C SCXML 5.2: the `body` datamodel variable, published (`sce:direction="out"`).
-    body: String,
+    body: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `copied` datamodel variable, published (`sce:direction="out"`).
     copied: u32,
     /// W3C SCXML 5.2: the `measured` datamodel variable, published (`sce:direction="out"`).
@@ -553,8 +563,10 @@ pub struct StaticStringCapacityPolicy {
 
 impl StaticStringCapacityPolicy {
     fn build(session_id: String) -> Self {
-        let title: String = "ab".to_string();
-        let body: String = "hello".to_string();
+        let title: ::sce_rust_runtime::portable::SceString<4> =
+            ::sce_rust_runtime::portable::sce_text!(4, "ab");
+        let body: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "hello");
         let copied: u32 = 0;
         let measured: u32 = 0;
         let refusals: u32 = 0;
@@ -992,7 +1004,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.title =
-                                sce_forge_runtime::algorithm::bounded("abcd".to_string(), 4)?;
+                                ::sce_rust_runtime::portable::SceString::<4>::from_text(&"abcd")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1016,7 +1028,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.title =
-                                sce_forge_runtime::algorithm::bounded("ab".to_string(), 4)?;
+                                ::sce_rust_runtime::portable::SceString::<4>::from_text(&"ab")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1040,7 +1052,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.body =
-                                sce_forge_runtime::algorithm::bounded("hello".to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"hello")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1064,7 +1076,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.body =
-                                sce_forge_runtime::algorithm::bounded("éé".to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"éé")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1088,7 +1100,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.body =
-                                sce_forge_runtime::algorithm::bounded("é€".to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"é€")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1111,8 +1123,9 @@ impl StatePolicy for StaticStringCapacityPolicy {
                     // W3C SCXML 5.3: <assign location="title">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.title =
-                                sce_forge_runtime::algorithm::bounded(self.body.to_string(), 4)?;
+                            self.title = ::sce_rust_runtime::portable::SceString::<4>::from_text(
+                                &&self.body[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

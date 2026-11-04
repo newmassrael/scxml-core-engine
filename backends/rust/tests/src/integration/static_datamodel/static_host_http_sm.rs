@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -285,10 +285,10 @@ impl StaticHostHttpInject for ::sce_rust_runtime::Engine<StaticHostHttpPolicy> {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticHostHttpData {
-    pub outcome: String,
+    pub outcome: ::sce_rust_runtime::portable::SceString<24>,
     pub status: u16,
-    pub response_headers: String,
-    pub response_body: String,
+    pub response_headers: ::sce_rust_runtime::portable::SceString<4096>,
+    pub response_body: ::sce_rust_runtime::portable::SceString<16384>,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -508,42 +508,42 @@ impl StaticHostHttpPersist for Engine<StaticHostHttpPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("method")?,
-            "method",
-            8,
-        )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("url")?, "url", 2048)?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("request_headers")?,
-            "request_headers",
-            2048,
-        )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("request_body")?,
-            "request_body",
-            16384,
-        )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("outcome")?,
-            "outcome",
-            24,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("method")?,
+                "method",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<2048> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("url")?, "url")?;
+        let _: ::sce_rust_runtime::portable::SceString<2048> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("request_headers")?,
+                "request_headers",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<16384> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("request_body")?,
+                "request_body",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("outcome")?,
+                "outcome",
+            )?;
         let _: u16 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("status")?,
             "status",
         )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("response_headers")?,
-            "response_headers",
-            4096,
-        )?;
-        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
-            saved.variable("response_body")?,
-            "response_body",
-            16384,
-        )?;
+        let _: ::sce_rust_runtime::portable::SceString<4096> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("response_headers")?,
+                "response_headers",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<16384> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("response_body")?,
+                "response_body",
+            )?;
         ::sce_rust_runtime::saved_state::judge::<StaticHostHttpPolicy>(saved)
     }
 
@@ -564,41 +564,35 @@ impl StaticHostHttpPersist for Engine<StaticHostHttpPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.method = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.method = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("method")?,
             "method",
-            8,
         )?;
         policy.url =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("url")?, "url", 2048)?;
-        policy.request_headers = ::sce_rust_runtime::saved_state::bounded_string(
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("url")?, "url")?;
+        policy.request_headers = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("request_headers")?,
             "request_headers",
-            2048,
         )?;
-        policy.request_body = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.request_body = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("request_body")?,
             "request_body",
-            16384,
         )?;
-        policy.outcome = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.outcome = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("outcome")?,
             "outcome",
-            24,
         )?;
         policy.status = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("status")?,
             "status",
         )?;
-        policy.response_headers = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.response_headers = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("response_headers")?,
             "response_headers",
-            4096,
         )?;
-        policy.response_body = ::sce_rust_runtime::saved_state::bounded_string(
+        policy.response_body = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("response_body")?,
             "response_body",
-            16384,
         )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
@@ -713,14 +707,14 @@ impl StaticHostHttpHostInvokers for ::sce_rust_runtime::Engine<StaticHostHttpPol
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticHostHttpInvokeParams {
-    pub method: Option<String>,
-    pub url: Option<String>,
-    pub request_headers: Option<String>,
-    pub request_body: Option<String>,
-    pub outcome: Option<String>,
+    pub method: Option<::sce_rust_runtime::portable::SceString<8>>,
+    pub url: Option<::sce_rust_runtime::portable::SceString<2048>>,
+    pub request_headers: Option<::sce_rust_runtime::portable::SceString<2048>>,
+    pub request_body: Option<::sce_rust_runtime::portable::SceString<16384>>,
+    pub outcome: Option<::sce_rust_runtime::portable::SceString<24>>,
     pub status: Option<u16>,
-    pub response_headers: Option<String>,
-    pub response_body: Option<String>,
+    pub response_headers: Option<::sce_rust_runtime::portable::SceString<4096>>,
+    pub response_body: Option<::sce_rust_runtime::portable::SceString<16384>>,
 }
 
 // ======================================================================
@@ -733,21 +727,21 @@ pub struct StaticHostHttpPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticHostHttpPayload,
     /// W3C SCXML 5.2: the `method` datamodel variable.
-    method: String,
+    method: ::sce_rust_runtime::portable::SceString<8>,
     /// W3C SCXML 5.2: the `url` datamodel variable.
-    url: String,
+    url: ::sce_rust_runtime::portable::SceString<2048>,
     /// W3C SCXML 5.2: the `request_headers` datamodel variable.
-    request_headers: String,
+    request_headers: ::sce_rust_runtime::portable::SceString<2048>,
     /// W3C SCXML 5.2: the `request_body` datamodel variable.
-    request_body: String,
+    request_body: ::sce_rust_runtime::portable::SceString<16384>,
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    outcome: String,
+    outcome: ::sce_rust_runtime::portable::SceString<24>,
     /// W3C SCXML 5.2: the `status` datamodel variable, published (`sce:direction="out"`).
     status: u16,
     /// W3C SCXML 5.2: the `response_headers` datamodel variable, published (`sce:direction="out"`).
-    response_headers: String,
+    response_headers: ::sce_rust_runtime::portable::SceString<4096>,
     /// W3C SCXML 5.2: the `response_body` datamodel variable, published (`sce:direction="out"`).
-    response_body: String,
+    response_body: ::sce_rust_runtime::portable::SceString<16384>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -775,14 +769,21 @@ pub struct StaticHostHttpPolicy {
 
 impl StaticHostHttpPolicy {
     fn build(session_id: String) -> Self {
-        let method: String = "".to_string();
-        let url: String = "".to_string();
-        let request_headers: String = "".to_string();
-        let request_body: String = "".to_string();
-        let outcome: String = "".to_string();
+        let method: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::portable::sce_text!(8, "");
+        let url: ::sce_rust_runtime::portable::SceString<2048> =
+            ::sce_rust_runtime::portable::sce_text!(2048, "");
+        let request_headers: ::sce_rust_runtime::portable::SceString<2048> =
+            ::sce_rust_runtime::portable::sce_text!(2048, "");
+        let request_body: ::sce_rust_runtime::portable::SceString<16384> =
+            ::sce_rust_runtime::portable::sce_text!(16384, "");
+        let outcome: ::sce_rust_runtime::portable::SceString<24> =
+            ::sce_rust_runtime::portable::sce_text!(24, "");
         let status: u16 = 0;
-        let response_headers: String = "".to_string();
-        let response_body: String = "".to_string();
+        let response_headers: ::sce_rust_runtime::portable::SceString<4096> =
+            ::sce_rust_runtime::portable::sce_text!(4096, "");
+        let response_body: ::sce_rust_runtime::portable::SceString<16384> =
+            ::sce_rust_runtime::portable::sce_text!(16384, "");
         Self {
             pending_payload: StaticHostHttpPayload::default(),
             method,
@@ -1493,10 +1494,10 @@ impl StatePolicy for StaticHostHttpPolicy {
                     // W3C SCXML 5.3: <assign location="response_headers">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.response_headers = sce_forge_runtime::algorithm::bounded(
-                                ev.headers.to_string(),
-                                4096,
-                            )?;
+                            self.response_headers =
+                                ::sce_rust_runtime::portable::SceString::<4096>::from_text(
+                                    &&ev.headers[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1513,7 +1514,9 @@ impl StatePolicy for StaticHostHttpPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.response_body =
-                                sce_forge_runtime::algorithm::bounded(ev.body.to_string(), 16384)?;
+                                ::sce_rust_runtime::portable::SceString::<16384>::from_text(
+                                    &&ev.body[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1530,7 +1533,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1558,7 +1561,9 @@ impl StatePolicy for StaticHostHttpPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1582,7 +1587,9 @@ impl StatePolicy for StaticHostHttpPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1606,7 +1613,9 @@ impl StatePolicy for StaticHostHttpPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.outcome =
-                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1633,8 +1642,9 @@ impl StatePolicy for StaticHostHttpPolicy {
                     // W3C SCXML 5.3: <assign location="method">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.method =
-                                sce_forge_runtime::algorithm::bounded(ev.method.to_string(), 8)?;
+                            self.method = ::sce_rust_runtime::portable::SceString::<8>::from_text(
+                                &&ev.method[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1650,8 +1660,9 @@ impl StatePolicy for StaticHostHttpPolicy {
                     // W3C SCXML 5.3: <assign location="url">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.url =
-                                sce_forge_runtime::algorithm::bounded(ev.url.to_string(), 2048)?;
+                            self.url = ::sce_rust_runtime::portable::SceString::<2048>::from_text(
+                                &&ev.url[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1667,10 +1678,10 @@ impl StatePolicy for StaticHostHttpPolicy {
                     // W3C SCXML 5.3: <assign location="request_headers">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.request_headers = sce_forge_runtime::algorithm::bounded(
-                                ev.headers.to_string(),
-                                2048,
-                            )?;
+                            self.request_headers =
+                                ::sce_rust_runtime::portable::SceString::<2048>::from_text(
+                                    &&ev.headers[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1687,7 +1698,9 @@ impl StatePolicy for StaticHostHttpPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.request_body =
-                                sce_forge_runtime::algorithm::bounded(ev.body.to_string(), 16384)?;
+                                ::sce_rust_runtime::portable::SceString::<16384>::from_text(
+                                    &&ev.body[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

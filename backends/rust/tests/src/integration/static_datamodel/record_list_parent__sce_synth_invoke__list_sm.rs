@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -888,7 +888,7 @@ pub struct RecordListParentSceSynthInvokeListValueRecord {
     pub id: u64,
     pub field: u64,
     pub value: i64,
-    pub text: String,
+    pub text: ::sce_rust_runtime::portable::SceString<96>,
     pub wallTime: i64,
     pub counter: u32,
     pub nodeId: u64,
@@ -927,7 +927,7 @@ pub struct RecordListParentSceSynthInvokeListPartRecord {
     pub id: u32,
     pub field: u16,
     pub value: i64,
-    pub text: String,
+    pub text: ::sce_rust_runtime::portable::SceString<96>,
     pub wallTime: i64,
     pub counter: u32,
     pub nodeId: u64,
@@ -1196,7 +1196,7 @@ fn call_MvValueDrop__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -1209,7 +1209,7 @@ fn call_MvValueDrop__vv(
             id: p1.id,
             field: p1.field,
             value: p1.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&p1.text),
+            text: p1.text.clone(),
             wall_time: p1.wallTime,
             counter: p1.counter,
             node_id: p1.nodeId,
@@ -1221,7 +1221,7 @@ fn call_MvValueDrop__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: r.text.as_str().to_string(),
+            text: r.text.clone(),
             wallTime: r.wall_time,
             counter: r.counter,
             nodeId: r.node_id,
@@ -1240,7 +1240,7 @@ fn call_MvValueHolds__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -1252,7 +1252,7 @@ fn call_MvValueHolds__vv(
             id: p1.id,
             field: p1.field,
             value: p1.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&p1.text),
+            text: p1.text.clone(),
             wall_time: p1.wallTime,
             counter: p1.counter,
             node_id: p1.nodeId,
@@ -1275,7 +1275,7 @@ fn call_MvValueKeep__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -1288,7 +1288,7 @@ fn call_MvValueKeep__vv(
             id: p1.id,
             field: p1.field,
             value: p1.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&p1.text),
+            text: p1.text.clone(),
             wall_time: p1.wallTime,
             counter: p1.counter,
             node_id: p1.nodeId,
@@ -1300,7 +1300,7 @@ fn call_MvValueKeep__vv(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: r.text.as_str().to_string(),
+            text: r.text.clone(),
             wallTime: r.wall_time,
             counter: r.counter,
             nodeId: r.node_id,
@@ -1453,7 +1453,7 @@ fn call_RegisterValues__v(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: ::sce_portable_bytes::SceString::<96>::held(&r.text),
+            text: r.text.clone(),
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
@@ -1466,7 +1466,7 @@ fn call_RegisterValues__v(
             id: r.id,
             field: r.field,
             value: r.value,
-            text: r.text.as_str().to_string(),
+            text: r.text.clone(),
             wallTime: r.wall_time,
             counter: r.counter,
             nodeId: r.node_id,
@@ -1484,10 +1484,22 @@ pub struct RecordListParentSceSynthInvokeListData {
     pub node: u64,
     pub hub: bool,
     pub clock: RecordListParentSceSynthInvokeListHlcRecord,
-    pub adds: Vec<RecordListParentSceSynthInvokeListEntryRecord>,
-    pub tombstones: Vec<RecordListParentSceSynthInvokeListEntryRecord>,
-    pub values: Vec<RecordListParentSceSynthInvokeListValueRecord>,
-    pub digest: Vec<RecordListParentSceSynthInvokeListNodeRecord>,
+    pub adds: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListEntryRecord,
+        1024,
+    >,
+    pub tombstones: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListEntryRecord,
+        1024,
+    >,
+    pub values: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListValueRecord,
+        512,
+    >,
+    pub digest: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListNodeRecord,
+        2048,
+    >,
     pub refusals: u32,
     pub floor: i64,
     pub stale: bool,
@@ -1729,7 +1741,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentSceSynthInv
             id: ::sce_rust_runtime::saved_state::record_field(value, what, "id")?,
             field: ::sce_rust_runtime::saved_state::record_field(value, what, "field")?,
             value: ::sce_rust_runtime::saved_state::record_field(value, what, "value")?,
-            text: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "text", 96)?,
+            text: ::sce_rust_runtime::saved_state::record_field(value, what, "text")?,
             wallTime: ::sce_rust_runtime::saved_state::record_field(value, what, "wallTime")?,
             counter: ::sce_rust_runtime::saved_state::record_field(value, what, "counter")?,
             nodeId: ::sce_rust_runtime::saved_state::record_field(value, what, "nodeId")?,
@@ -1884,7 +1896,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentSceSynthInv
             id: ::sce_rust_runtime::saved_state::record_field(value, what, "id")?,
             field: ::sce_rust_runtime::saved_state::record_field(value, what, "field")?,
             value: ::sce_rust_runtime::saved_state::record_field(value, what, "value")?,
-            text: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "text", 96)?,
+            text: ::sce_rust_runtime::saved_state::record_field(value, what, "text")?,
             wallTime: ::sce_rust_runtime::saved_state::record_field(value, what, "wallTime")?,
             counter: ::sce_rust_runtime::saved_state::record_field(value, what, "counter")?,
             nodeId: ::sce_rust_runtime::saved_state::record_field(value, what, "nodeId")?,
@@ -2518,34 +2530,60 @@ impl RecordListParentSceSynthInvokeListPersist
                 saved.variable("stamp")?,
                 "stamp",
             )?;
-        let _: Vec<RecordListParentSceSynthInvokeListEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("adds")?, "adds", 1024)?;
-        let _: Vec<RecordListParentSceSynthInvokeListEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(
-                saved.variable("tombstones")?,
-                "tombstones",
-                1024,
-            )?;
-        let _: Vec<RecordListParentSceSynthInvokeListEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("one")?, "one", 1024)?;
-        let _: Vec<RecordListParentSceSynthInvokeListEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("stable")?, "stable", 1024)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListEntryRecord,
+            1024,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("adds")?,
+            "adds",
+        )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListEntryRecord,
+            1024,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("tombstones")?,
+            "tombstones",
+        )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListEntryRecord,
+            1024,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("one")?, "one")?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListEntryRecord,
+            1024,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("stable")?,
+            "stable",
+        )?;
         let _: RecordListParentSceSynthInvokeListEntryRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("entry")?,
                 "entry",
             )?;
-        let _: Vec<RecordListParentSceSynthInvokeListValueRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("values")?, "values", 512)?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("typed")?, "typed", 32)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListValueRecord,
+            512,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("values")?,
+            "values",
+        )?;
+        let _: ::sce_rust_runtime::portable::SceString<32> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("typed")?,
+                "typed",
+            )?;
         let _: RecordListParentSceSynthInvokeListValueRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("held")?,
                 "held",
             )?;
-        let _: Vec<RecordListParentSceSynthInvokeListNodeRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("digest")?, "digest", 2048)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListNodeRecord,
+            2048,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("digest")?,
+            "digest",
+        )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("mine")?,
             "mine",
@@ -2610,8 +2648,13 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("agreeing")?,
             "agreeing",
         )?;
-        let _: Vec<RecordListParentSceSynthInvokeListAnswerRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("answers")?, "answers", 512)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListAnswerRecord,
+            512,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("answers")?,
+            "answers",
+        )?;
         let _: RecordListParentSceSynthInvokeListAnswerRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("answer")?,
@@ -2637,8 +2680,13 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("full")?,
             "full",
         )?;
-        let _: Vec<RecordListParentSceSynthInvokeListMemberRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("roster")?, "roster", 64)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListMemberRecord,
+            64,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("roster")?,
+            "roster",
+        )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("denied")?,
             "denied",
@@ -2659,14 +2707,22 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("announced")?,
             "announced",
         )?;
-        let _: Vec<u64> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("moved")?, "moved", 64)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<u64, 64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("moved")?,
+                "moved",
+            )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("listed")?,
             "listed",
         )?;
-        let _: Vec<RecordListParentSceSynthInvokeListValueRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("live")?, "live", 512)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListValueRecord,
+            512,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("live")?,
+            "live",
+        )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("ordinal")?,
             "ordinal",
@@ -2676,8 +2732,13 @@ impl RecordListParentSceSynthInvokeListPersist
                 saved.variable("empty")?,
                 "empty",
             )?;
-        let _: Vec<RecordListParentSceSynthInvokeListPartRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("staged")?, "staged", 32)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            32,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("staged")?,
+            "staged",
+        )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("holding")?,
             "holding",
@@ -2729,22 +2790,42 @@ impl RecordListParentSceSynthInvokeListPersist
                 saved.variable("namedKind")?,
                 "namedKind",
             )?;
-        let _: Vec<RecordListParentSceSynthInvokeListPartRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("taking")?, "taking", 64)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            64,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("taking")?,
+            "taking",
+        )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("took")?,
             "took",
         )?;
-        let _: Vec<RecordListParentSceSynthInvokeListPartRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("passing")?, "passing", 64)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            64,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("passing")?,
+            "passing",
+        )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("passed")?,
             "passed",
         )?;
-        let _: Vec<RecordListParentSceSynthInvokeListPartRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("waiting")?, "waiting", 64)?;
-        let _: Vec<RecordListParentSceSynthInvokeListPartRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("kept")?, "kept", 64)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            64,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("waiting")?,
+            "waiting",
+        )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            64,
+        > = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("kept")?,
+            "kept",
+        )?;
         let _: RecordListParentSceSynthInvokeListPartRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("part")?,
@@ -2794,30 +2875,40 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("stamp")?,
             "stamp",
         )?;
-        policy.adds =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("adds")?, "adds", 1024)?;
-        policy.tombstones = ::sce_rust_runtime::saved_state::bounded(
+        policy.adds = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("adds")?,
+            "adds",
+        )?;
+        policy.tombstones = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("tombstones")?,
             "tombstones",
-            1024,
         )?;
-        policy.one = ::sce_rust_runtime::saved_state::bounded(saved.variable("one")?, "one", 1024)?;
-        policy.stable =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("stable")?, "stable", 1024)?;
+        policy.one =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("one")?, "one")?;
+        policy.stable = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("stable")?,
+            "stable",
+        )?;
         policy.entry = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("entry")?,
             "entry",
         )?;
-        policy.values =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("values")?, "values", 512)?;
-        policy.typed =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("typed")?, "typed", 32)?;
+        policy.values = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("values")?,
+            "values",
+        )?;
+        policy.typed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("typed")?,
+            "typed",
+        )?;
         policy.held = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("held")?,
             "held",
         )?;
-        policy.digest =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("digest")?, "digest", 2048)?;
+        policy.digest = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("digest")?,
+            "digest",
+        )?;
         policy.mine = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("mine")?,
             "mine",
@@ -2882,8 +2973,10 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("agreeing")?,
             "agreeing",
         )?;
-        policy.answers =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("answers")?, "answers", 512)?;
+        policy.answers = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("answers")?,
+            "answers",
+        )?;
         policy.answer = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("answer")?,
             "answer",
@@ -2908,8 +3001,10 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("full")?,
             "full",
         )?;
-        policy.roster =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("roster")?, "roster", 64)?;
+        policy.roster = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("roster")?,
+            "roster",
+        )?;
         policy.denied = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("denied")?,
             "denied",
@@ -2930,14 +3025,18 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("announced")?,
             "announced",
         )?;
-        policy.moved =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("moved")?, "moved", 64)?;
+        policy.moved = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("moved")?,
+            "moved",
+        )?;
         policy.listed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("listed")?,
             "listed",
         )?;
-        policy.live =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("live")?, "live", 512)?;
+        policy.live = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("live")?,
+            "live",
+        )?;
         policy.ordinal = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("ordinal")?,
             "ordinal",
@@ -2946,8 +3045,10 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("empty")?,
             "empty",
         )?;
-        policy.staged =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("staged")?, "staged", 32)?;
+        policy.staged = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("staged")?,
+            "staged",
+        )?;
         policy.holding = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("holding")?,
             "holding",
@@ -2996,22 +3097,30 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("namedKind")?,
             "namedKind",
         )?;
-        policy.taking =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("taking")?, "taking", 64)?;
+        policy.taking = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("taking")?,
+            "taking",
+        )?;
         policy.took = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("took")?,
             "took",
         )?;
-        policy.passing =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("passing")?, "passing", 64)?;
+        policy.passing = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("passing")?,
+            "passing",
+        )?;
         policy.passed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("passed")?,
             "passed",
         )?;
-        policy.waiting =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("waiting")?, "waiting", 64)?;
-        policy.kept =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("kept")?, "kept", 64)?;
+        policy.waiting = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("waiting")?,
+            "waiting",
+        )?;
+        policy.kept = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("kept")?,
+            "kept",
+        )?;
         policy.part = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("part")?,
             "part",
@@ -3037,7 +3146,7 @@ impl RecordListParentSceSynthInvokeListPersist
 pub struct RecordListParentSceSynthInvokeListInvokeParams {
     pub node: Option<u64>,
     pub hub: Option<bool>,
-    pub typed: Option<String>,
+    pub typed: Option<::sce_rust_runtime::portable::SceString<32>>,
     pub mine: Option<u32>,
     pub share_id: Option<u32>,
     pub share_field: Option<u16>,
@@ -3101,23 +3210,41 @@ pub struct RecordListParentSceSynthInvokeListPolicy {
     /// W3C SCXML 5.2: the `stamp` datamodel variable.
     stamp: RecordListParentSceSynthInvokeListHlcRecord,
     /// W3C SCXML 5.2: the `adds` datamodel variable, published (`sce:direction="out"`).
-    adds: Vec<RecordListParentSceSynthInvokeListEntryRecord>,
+    adds: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListEntryRecord,
+        1024,
+    >,
     /// W3C SCXML 5.2: the `tombstones` datamodel variable, published (`sce:direction="out"`).
-    tombstones: Vec<RecordListParentSceSynthInvokeListEntryRecord>,
+    tombstones: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListEntryRecord,
+        1024,
+    >,
     /// W3C SCXML 5.2: the `one` datamodel variable.
-    one: Vec<RecordListParentSceSynthInvokeListEntryRecord>,
+    one: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListEntryRecord,
+        1024,
+    >,
     /// W3C SCXML 5.2: the `stable` datamodel variable.
-    stable: Vec<RecordListParentSceSynthInvokeListEntryRecord>,
+    stable: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListEntryRecord,
+        1024,
+    >,
     /// W3C SCXML 5.2: the `entry` datamodel variable.
     entry: RecordListParentSceSynthInvokeListEntryRecord,
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
-    values: Vec<RecordListParentSceSynthInvokeListValueRecord>,
+    values: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListValueRecord,
+        512,
+    >,
     /// W3C SCXML 5.2: the `typed` datamodel variable.
-    typed: String,
+    typed: ::sce_rust_runtime::portable::SceString<32>,
     /// W3C SCXML 5.2: the `held` datamodel variable.
     held: RecordListParentSceSynthInvokeListValueRecord,
     /// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
-    digest: Vec<RecordListParentSceSynthInvokeListNodeRecord>,
+    digest: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListNodeRecord,
+        2048,
+    >,
     /// W3C SCXML 5.2: the `mine` datamodel variable.
     mine: u32,
     /// W3C SCXML 5.2: the `shareId` datamodel variable.
@@ -3151,7 +3278,10 @@ pub struct RecordListParentSceSynthInvokeListPolicy {
     /// W3C SCXML 5.2: the `agreeing` datamodel variable.
     agreeing: u32,
     /// W3C SCXML 5.2: the `answers` datamodel variable.
-    answers: Vec<RecordListParentSceSynthInvokeListAnswerRecord>,
+    answers: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListAnswerRecord,
+        512,
+    >,
     /// W3C SCXML 5.2: the `answer` datamodel variable.
     answer: RecordListParentSceSynthInvokeListAnswerRecord,
     /// W3C SCXML 5.2: the `agreed` datamodel variable.
@@ -3165,7 +3295,10 @@ pub struct RecordListParentSceSynthInvokeListPolicy {
     /// W3C SCXML 5.2: the `full` datamodel variable, published (`sce:direction="out"`).
     full: u32,
     /// W3C SCXML 5.2: the `roster` datamodel variable.
-    roster: Vec<RecordListParentSceSynthInvokeListMemberRecord>,
+    roster: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListMemberRecord,
+        64,
+    >,
     /// W3C SCXML 5.2: the `denied` datamodel variable, published (`sce:direction="out"`).
     denied: u32,
     /// W3C SCXML 5.2: the `forbidden` datamodel variable.
@@ -3177,17 +3310,21 @@ pub struct RecordListParentSceSynthInvokeListPolicy {
     /// W3C SCXML 5.2: the `announced` datamodel variable, published (`sce:direction="out"`).
     announced: u32,
     /// W3C SCXML 5.2: the `moved` datamodel variable.
-    moved: Vec<u64>,
+    moved: ::sce_rust_runtime::portable::BoundedList<u64, 64>,
     /// W3C SCXML 5.2: the `listed` datamodel variable.
     listed: bool,
     /// W3C SCXML 5.2: the `live` datamodel variable.
-    live: Vec<RecordListParentSceSynthInvokeListValueRecord>,
+    live: ::sce_rust_runtime::portable::BoundedList<
+        RecordListParentSceSynthInvokeListValueRecord,
+        512,
+    >,
     /// W3C SCXML 5.2: the `ordinal` datamodel variable.
     ordinal: u32,
     /// W3C SCXML 5.2: the `empty` datamodel variable.
     empty: RecordListParentSceSynthInvokeListValueRecord,
     /// W3C SCXML 5.2: the `staged` datamodel variable.
-    staged: Vec<RecordListParentSceSynthInvokeListPartRecord>,
+    staged:
+        ::sce_rust_runtime::portable::BoundedList<RecordListParentSceSynthInvokeListPartRecord, 32>,
     /// W3C SCXML 5.2: the `holding` datamodel variable.
     holding: bool,
     /// W3C SCXML 5.2: the `closingNow` datamodel variable.
@@ -3213,17 +3350,21 @@ pub struct RecordListParentSceSynthInvokeListPolicy {
     /// W3C SCXML 5.2: the `namedKind` datamodel variable.
     named_kind: RecordListParentSceSynthInvokeListCommandEnum,
     /// W3C SCXML 5.2: the `taking` datamodel variable.
-    taking: Vec<RecordListParentSceSynthInvokeListPartRecord>,
+    taking:
+        ::sce_rust_runtime::portable::BoundedList<RecordListParentSceSynthInvokeListPartRecord, 64>,
     /// W3C SCXML 5.2: the `took` datamodel variable.
     took: u32,
     /// W3C SCXML 5.2: the `passing` datamodel variable.
-    passing: Vec<RecordListParentSceSynthInvokeListPartRecord>,
+    passing:
+        ::sce_rust_runtime::portable::BoundedList<RecordListParentSceSynthInvokeListPartRecord, 64>,
     /// W3C SCXML 5.2: the `passed` datamodel variable.
     passed: u32,
     /// W3C SCXML 5.2: the `waiting` datamodel variable.
-    waiting: Vec<RecordListParentSceSynthInvokeListPartRecord>,
+    waiting:
+        ::sce_rust_runtime::portable::BoundedList<RecordListParentSceSynthInvokeListPartRecord, 64>,
     /// W3C SCXML 5.2: the `kept` datamodel variable.
-    kept: Vec<RecordListParentSceSynthInvokeListPartRecord>,
+    kept:
+        ::sce_rust_runtime::portable::BoundedList<RecordListParentSceSynthInvokeListPartRecord, 64>,
     /// W3C SCXML 5.2: the `part` datamodel variable.
     part: RecordListParentSceSynthInvokeListPartRecord,
     /// W3C SCXML 5.2: the `op` datamodel variable.
@@ -3267,10 +3408,22 @@ impl RecordListParentSceSynthInvokeListPolicy {
                 counter: 0,
                 nodeId: 0,
             };
-        let adds: Vec<RecordListParentSceSynthInvokeListEntryRecord> = Vec::new();
-        let tombstones: Vec<RecordListParentSceSynthInvokeListEntryRecord> = Vec::new();
-        let one: Vec<RecordListParentSceSynthInvokeListEntryRecord> = Vec::new();
-        let stable: Vec<RecordListParentSceSynthInvokeListEntryRecord> = Vec::new();
+        let adds: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListEntryRecord,
+            1024,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
+        let tombstones: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListEntryRecord,
+            1024,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
+        let one: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListEntryRecord,
+            1024,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
+        let stable: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListEntryRecord,
+            1024,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let entry: RecordListParentSceSynthInvokeListEntryRecord =
             RecordListParentSceSynthInvokeListEntryRecord {
                 element: 0,
@@ -3278,19 +3431,26 @@ impl RecordListParentSceSynthInvokeListPolicy {
                 counter: 0,
                 nodeId: 0,
             };
-        let values: Vec<RecordListParentSceSynthInvokeListValueRecord> = Vec::new();
-        let typed: String = "".to_string();
+        let values: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListValueRecord,
+            512,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
+        let typed: ::sce_rust_runtime::portable::SceString<32> =
+            ::sce_rust_runtime::portable::sce_text!(32, "");
         let held: RecordListParentSceSynthInvokeListValueRecord =
             RecordListParentSceSynthInvokeListValueRecord {
                 id: 0,
                 field: 0,
                 value: 0,
-                text: "".to_string(),
+                text: ::sce_rust_runtime::portable::sce_text!(96, ""),
                 wallTime: 0,
                 counter: 0,
                 nodeId: 0,
             };
-        let digest: Vec<RecordListParentSceSynthInvokeListNodeRecord> = Vec::new();
+        let digest: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListNodeRecord,
+            2048,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let mine: u32 = 0;
         let share_id: u32 = 0;
         let share_field: u16 = 0;
@@ -3307,7 +3467,10 @@ impl RecordListParentSceSynthInvokeListPolicy {
         let pending: i64 = -1;
         let members: u32 = 0;
         let agreeing: u32 = 0;
-        let answers: Vec<RecordListParentSceSynthInvokeListAnswerRecord> = Vec::new();
+        let answers: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListAnswerRecord,
+            512,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let answer: RecordListParentSceSynthInvokeListAnswerRecord =
             RecordListParentSceSynthInvokeListAnswerRecord { sender: 0, hash: 0 };
         let agreed: u32 = 0;
@@ -3315,27 +3478,37 @@ impl RecordListParentSceSynthInvokeListPolicy {
         let room_history: u32 = 0;
         let room_digest: u32 = 0;
         let full: u32 = 0;
-        let roster: Vec<RecordListParentSceSynthInvokeListMemberRecord> = Vec::new();
+        let roster: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListMemberRecord,
+            64,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let denied: u32 = 0;
         let forbidden: bool = false;
         let authorized: bool = true;
         let announce: bool = false;
         let announced: u32 = 0;
-        let moved: Vec<u64> = Vec::new();
+        let moved: ::sce_rust_runtime::portable::BoundedList<u64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let listed: bool = false;
-        let live: Vec<RecordListParentSceSynthInvokeListValueRecord> = Vec::new();
+        let live: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListValueRecord,
+            512,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let ordinal: u32 = 0;
         let empty: RecordListParentSceSynthInvokeListValueRecord =
             RecordListParentSceSynthInvokeListValueRecord {
                 id: 0,
                 field: 0,
                 value: 0,
-                text: "".to_string(),
+                text: ::sce_rust_runtime::portable::sce_text!(96, ""),
                 wallTime: 0,
                 counter: 0,
                 nodeId: 0,
             };
-        let staged: Vec<RecordListParentSceSynthInvokeListPartRecord> = Vec::new();
+        let staged: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            32,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let holding: bool = false;
         let closing_now: i64 = 0;
         let spoiled: bool = false;
@@ -3351,19 +3524,31 @@ impl RecordListParentSceSynthInvokeListPolicy {
         let named_field: u16 = 0;
         let named_kind: RecordListParentSceSynthInvokeListCommandEnum =
             RecordListParentSceSynthInvokeListCommandEnum::Edit;
-        let taking: Vec<RecordListParentSceSynthInvokeListPartRecord> = Vec::new();
+        let taking: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            64,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let took: u32 = 0;
-        let passing: Vec<RecordListParentSceSynthInvokeListPartRecord> = Vec::new();
+        let passing: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            64,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let passed: u32 = 0;
-        let waiting: Vec<RecordListParentSceSynthInvokeListPartRecord> = Vec::new();
-        let kept: Vec<RecordListParentSceSynthInvokeListPartRecord> = Vec::new();
+        let waiting: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            64,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
+        let kept: ::sce_rust_runtime::portable::BoundedList<
+            RecordListParentSceSynthInvokeListPartRecord,
+            64,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
         let part: RecordListParentSceSynthInvokeListPartRecord =
             RecordListParentSceSynthInvokeListPartRecord {
                 kind: 0,
                 id: 0,
                 field: 0,
                 value: 0,
-                text: "".to_string(),
+                text: ::sce_rust_runtime::portable::sce_text!(96, ""),
                 wallTime: 0,
                 counter: 0,
                 nodeId: 0,
@@ -3378,7 +3563,7 @@ impl RecordListParentSceSynthInvokeListPolicy {
                 id: 0,
                 field: 0,
                 value: 0,
-                text: "".to_string(),
+                text: ::sce_rust_runtime::portable::sce_text!(96, ""),
                 wallTime: 0,
                 counter: 0,
                 nodeId: 0,
@@ -4542,11 +4727,9 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                     // W3C SCXML 5.3: <assign location="roster">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.roster = sce_forge_runtime::algorithm::within(
+                            self.roster = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_RecordRoster__v(&self.roster, ev.node, ev.role)?).as_slice(),
-                                64,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -4592,7 +4775,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
 
                         // W3C SCXML 5.3: <assign location="typed">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.typed = sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 32)?;
+    self.typed = ::sce_rust_runtime::portable::SceString::<32>::from_text(&&ev.text[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -4619,7 +4802,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
 
                         // W3C SCXML 5.3: <assign location="part.text">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.part.text = sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 96)?;
+    self.part.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&&ev.text[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -4636,8 +4819,9 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         self.probe = RecordListParentSceSynthInvokeListRefusalEnum::ChangeTooLarge;
 
                         // SCE Accepted Subset §2.15: <sce:append target="staged">
-                        let sce_failed = if self.staged.len() < 32 {
-                            self.staged.push(self.part.clone());
+                        let sce_failed = if self.staged.len() < 32
+                            && self.staged.push(self.part.clone()).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
@@ -4721,7 +4905,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
 
                         // W3C SCXML 5.3: <assign location="part.text">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.part.text = sce_forge_runtime::algorithm::bounded("".to_string(), 96)?;
+    self.part.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&"")?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -4735,8 +4919,9 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         }
 
                         // SCE Accepted Subset §2.15: <sce:append target="staged">
-                        let sce_failed = if self.staged.len() < 32 {
-                            self.staged.push(self.part.clone());
+                        let sce_failed = if self.staged.len() < 32
+                            && self.staged.push(self.part.clone()).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
@@ -4820,7 +5005,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
 
                         // W3C SCXML 5.3: <assign location="part.text">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.part.text = sce_forge_runtime::algorithm::bounded("".to_string(), 96)?;
+    self.part.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&"")?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -4834,8 +5019,9 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         }
 
                         // SCE Accepted Subset §2.15: <sce:append target="staged">
-                        let sce_failed = if self.staged.len() < 32 {
-                            self.staged.push(self.part.clone());
+                        let sce_failed = if self.staged.len() < 32
+                            && self.staged.push(self.part.clone()).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
@@ -5310,7 +5496,7 @@ self.part.value = 0;
 
 // W3C SCXML 5.3: <assign location="part.text">
 let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.part.text = sce_forge_runtime::algorithm::bounded("".to_string(), 96)?;
+    self.part.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&"")?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5365,8 +5551,7 @@ if sce_failed {
 
 
 // SCE Accepted Subset §2.15: <sce:append target="taking">
-let sce_failed = if self.taking.len() < 64 {
-    self.taking.push(self.part.clone());
+let sce_failed = if self.taking.len() < 64 && self.taking.push(self.part.clone()).is_ok() {
     false
 } else {
     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
@@ -5402,7 +5587,7 @@ self.part.value = s.value;
 
 // W3C SCXML 5.3: <assign location="part.text">
 let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.part.text = sce_forge_runtime::algorithm::bounded(s.text.to_string(), 96)?;
+    self.part.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&&s.text[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5457,8 +5642,7 @@ if sce_failed {
 
 
 // SCE Accepted Subset §2.15: <sce:append target="taking">
-let sce_failed = if self.taking.len() < 64 {
-    self.taking.push(self.part.clone());
+let sce_failed = if self.taking.len() < 64 && self.taking.push(self.part.clone()).is_ok() {
     false
 } else {
     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
@@ -5490,8 +5674,7 @@ for t in self.taking.clone() {
     let _ = &t;
 
 // SCE Accepted Subset §2.15: <sce:append target="passing">
-let sce_failed = if self.passing.len() < 64 {
-    self.passing.push(t.clone());
+let sce_failed = if self.passing.len() < 64 && self.passing.push(t.clone()).is_ok() {
     false
 } else {
     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='passing'>: the list already holds its capacity of 64"));
@@ -5768,7 +5951,7 @@ None,
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.op.text = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.taking, self.took)?.text.to_string(), 96)?;
+    self.op.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&&sce_forge_runtime::algorithm::at_ref(&self.taking, self.took)?.text[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5864,7 +6047,7 @@ None,
                     if self.op.kind == 0 {
                         // W3C SCXML 5.3: <assign location="held.text">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.held.text = sce_forge_runtime::algorithm::bounded(self.op.text.to_string(), 96)?;
+    self.held.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&&self.op.text[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5966,8 +6149,9 @@ None,
                             // SCE Accepted Subset §2.15: <sce:clear target="one">
                             self.one.clear();
                             // SCE Accepted Subset §2.15: <sce:append target="one">
-                            let sce_failed = if self.one.len() < 1024 {
-                                self.one.push(self.entry);
+                            let sce_failed = if self.one.len() < 1024
+                                && self.one.push(self.entry).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
@@ -5979,7 +6163,7 @@ None,
 
                             // W3C SCXML 5.3: <assign location="adds">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.adds = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.adds, &self.one)?).as_slice(), 1024)?.to_vec();
+    self.adds = ::sce_rust_runtime::portable::BoundedList::from_slice((call_OrsetUnion__vv(&self.adds, &self.one)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -6018,7 +6202,7 @@ None,
                         if self.is_live && !self.present {
                             // W3C SCXML 5.3: <assign location="values">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.values = sce_forge_runtime::algorithm::within((call_MvValueKeep__vv(&self.values, &self.held)?).as_slice(), 512)?.to_vec();
+    self.values = ::sce_rust_runtime::portable::BoundedList::from_slice((call_MvValueKeep__vv(&self.values, &self.held)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -6225,8 +6409,9 @@ None,
                         // SCE Accepted Subset §2.15: <sce:clear target="one">
                         self.one.clear();
                         // SCE Accepted Subset §2.15: <sce:append target="one">
-                        let sce_failed = if self.one.len() < 1024 {
-                            self.one.push(self.entry);
+                        let sce_failed = if self.one.len() < 1024
+                            && self.one.push(self.entry).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
@@ -6238,7 +6423,7 @@ None,
 
                         // W3C SCXML 5.3: <assign location="tombstones">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.tombstones, &self.one)?).as_slice(), 1024)?.to_vec();
+    self.tombstones = ::sce_rust_runtime::portable::BoundedList::from_slice((call_OrsetUnion__vv(&self.tombstones, &self.one)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -6253,7 +6438,7 @@ None,
 
                         // W3C SCXML 5.3: <assign location="adds">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.adds = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.adds, &self.one)?).as_slice(), 1024)?.to_vec();
+    self.adds = ::sce_rust_runtime::portable::BoundedList::from_slice((call_OrsetLive__vv(&self.adds, &self.one)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -6286,7 +6471,7 @@ None,
 
                         // W3C SCXML 5.3: <assign location="values">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.values = sce_forge_runtime::algorithm::within((call_MvValueDrop__vv(&self.values, &self.held)?).as_slice(), 512)?.to_vec();
+    self.values = ::sce_rust_runtime::portable::BoundedList::from_slice((call_MvValueDrop__vv(&self.values, &self.held)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -6533,7 +6718,7 @@ None,
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.op.text = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.passing, self.passed)?.text.to_string(), 96)?;
+    self.op.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&&sce_forge_runtime::algorithm::at_ref(&self.passing, self.passed)?.text[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -7536,7 +7721,7 @@ None,
                     if self.authorized {
                         // W3C SCXML 5.3: <assign location="part.text">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.part.text = sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 96)?;
+    self.part.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&&ev.text[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -7691,7 +7876,7 @@ None,
 
                         // W3C SCXML 5.3: <assign location="part.text">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.part.text = sce_forge_runtime::algorithm::bounded("".to_string(), 96)?;
+    self.part.text = ::sce_rust_runtime::portable::SceString::<96>::from_text(&"")?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -7847,8 +8032,9 @@ None,
                         // W3C SCXML 5.9: cond="!already && !listed"
                         if !self.already && !self.listed {
                             // SCE Accepted Subset §2.15: <sce:append target="waiting">
-                            let sce_failed = if self.waiting.len() < 64 {
-                                self.waiting.push(self.part.clone());
+                            let sce_failed = if self.waiting.len() < 64
+                                && self.waiting.push(self.part.clone()).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
@@ -7905,8 +8091,9 @@ None,
                                     && w.by == self.part.by
                                 {
                                     // SCE Accepted Subset §2.15: <sce:append target="taking">
-                                    let sce_failed = if self.taking.len() < 64 {
-                                        self.taking.push(w.clone());
+                                    let sce_failed = if self.taking.len() < 64
+                                        && self.taking.push(w.clone()).is_ok()
+                                    {
                                         false
                                     } else {
                                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
@@ -7923,8 +8110,9 @@ None,
                                     || w.by != self.part.by
                                 {
                                     // SCE Accepted Subset §2.15: <sce:append target="kept">
-                                    let sce_failed = if self.kept.len() < 64 {
-                                        self.kept.push(w.clone());
+                                    let sce_failed = if self.kept.len() < 64
+                                        && self.kept.push(w.clone()).is_ok()
+                                    {
                                         false
                                     } else {
                                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64"));
@@ -7942,8 +8130,9 @@ None,
                                 let _ = &k;
 
                                 // SCE Accepted Subset §2.15: <sce:append target="waiting">
-                                let sce_failed = if self.waiting.len() < 64 {
-                                    self.waiting.push(k.clone());
+                                let sce_failed = if self.waiting.len() < 64
+                                    && self.waiting.push(k.clone()).is_ok()
+                                {
                                     false
                                 } else {
                                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
@@ -7987,8 +8176,9 @@ None,
                         self.took = 0;
 
                         // SCE Accepted Subset §2.15: <sce:append target="taking">
-                        let sce_failed = if self.taking.len() < 64 {
-                            self.taking.push(self.part.clone());
+                        let sce_failed = if self.taking.len() < 64
+                            && self.taking.push(self.part.clone()).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
@@ -8026,8 +8216,9 @@ None,
                         self.passed = 0;
 
                         // SCE Accepted Subset §2.15: <sce:append target="passing">
-                        let sce_failed = if self.passing.len() < 64 {
-                            self.passing.push(self.part.clone());
+                        let sce_failed = if self.passing.len() < 64
+                            && self.passing.push(self.part.clone()).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='passing'>: the list already holds its capacity of 64"));
@@ -8131,8 +8322,9 @@ None,
                     // W3C SCXML 5.9: cond="!listed"
                     if !self.listed {
                         // SCE Accepted Subset §2.15: <sce:append target="moved">
-                        let sce_failed = if self.moved.len() < 64 {
-                            self.moved.push(self.entry.element);
+                        let sce_failed = if self.moved.len() < 64
+                            && self.moved.push(self.entry.element).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='moved'>: the list already holds its capacity of 64"));
@@ -8185,7 +8377,7 @@ None,
 
                         // W3C SCXML 5.3: <assign location="live">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.live = sce_forge_runtime::algorithm::within((call_RegisterValues__v(&self.values, self.share_id as u64, self.share_field as u64)?).as_slice(), 512)?.to_vec();
+    self.live = ::sce_rust_runtime::portable::BoundedList::from_slice((call_RegisterValues__v(&self.values, self.share_id as u64, self.share_field as u64)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -8772,16 +8964,14 @@ None,
                     // W3C SCXML 5.3: <assign location="digest">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.digest = sce_forge_runtime::algorithm::within(
+                            self.digest = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_MerkleInsert__v(
                                     &self.digest,
                                     sce_forge_runtime::algorithm::div::<i64>(ev.wallTime, 60000)?,
                                     self.mine,
                                 )?)
                                 .as_slice(),
-                                2048,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -8817,8 +9007,9 @@ None,
                         // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
                         if t.wallTime <= ev.before {
                             // SCE Accepted Subset §2.15: <sce:append target="stable">
-                            let sce_failed = if self.stable.len() < 1024 {
-                                self.stable.push(t);
+                            let sce_failed = if self.stable.len() < 1024
+                                && self.stable.push(t).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
@@ -8845,7 +9036,7 @@ None,
 
                             // W3C SCXML 5.3: <assign location="digest">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
+    self.digest = ::sce_rust_runtime::portable::BoundedList::from_slice((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -8863,11 +9054,11 @@ None,
                     // W3C SCXML 5.3: <assign location="tombstones">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.tombstones = sce_forge_runtime::algorithm::within(
-                                (call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice(),
-                                1024,
-                            )?
-                            .to_vec();
+                            self.tombstones =
+                                ::sce_rust_runtime::portable::BoundedList::from_slice(
+                                    (call_OrsetLive__vv(&self.tombstones, &self.stable)?)
+                                        .as_slice(),
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -8895,8 +9086,9 @@ None,
                         // W3C SCXML 5.9: cond="w.atWallTime > _event.data.before"
                         if w.atWallTime > ev.before {
                             // SCE Accepted Subset §2.15: <sce:append target="kept">
-                            let sce_failed = if self.kept.len() < 64 {
-                                self.kept.push(w.clone());
+                            let sce_failed = if self.kept.len() < 64
+                                && self.kept.push(w.clone()).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64"));
@@ -8915,8 +9107,9 @@ None,
                         let _ = &k;
 
                         // SCE Accepted Subset §2.15: <sce:append target="waiting">
-                        let sce_failed = if self.waiting.len() < 64 {
-                            self.waiting.push(k.clone());
+                        let sce_failed = if self.waiting.len() < 64
+                            && self.waiting.push(k.clone()).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
@@ -9076,8 +9269,9 @@ None,
                             // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
                             if t.wallTime <= ev.before {
                                 // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                let sce_failed = if self.stable.len() < 1024 {
-                                    self.stable.push(t);
+                                let sce_failed = if self.stable.len() < 1024
+                                    && self.stable.push(t).is_ok()
+                                {
                                     false
                                 } else {
                                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
@@ -9234,8 +9428,9 @@ None,
                             self.answer.hash = ev.hash;
 
                             // SCE Accepted Subset §2.15: <sce:append target="answers">
-                            let sce_failed = if self.answers.len() < 512 {
-                                self.answers.push(self.answer);
+                            let sce_failed = if self.answers.len() < 512
+                                && self.answers.push(self.answer).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='answers'>: the list already holds its capacity of 512"));
@@ -9281,8 +9476,9 @@ None,
                                 // W3C SCXML 5.9: cond="t.wallTime <= pending"
                                 if t.wallTime <= self.pending {
                                     // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                    let sce_failed = if self.stable.len() < 1024 {
-                                        self.stable.push(t);
+                                    let sce_failed = if self.stable.len() < 1024
+                                        && self.stable.push(t).is_ok()
+                                    {
                                         false
                                     } else {
                                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
@@ -9517,8 +9713,9 @@ None,
                                 // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
                                 if t.wallTime <= ev.before {
                                     // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                    let sce_failed = if self.stable.len() < 1024 {
-                                        self.stable.push(t);
+                                    let sce_failed = if self.stable.len() < 1024
+                                        && self.stable.push(t).is_ok()
+                                    {
                                         false
                                     } else {
                                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
@@ -9592,7 +9789,7 @@ None,
 
                                 // W3C SCXML 5.3: <assign location="digest">
                                 let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
+    self.digest = ::sce_rust_runtime::portable::BoundedList::from_slice((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -9608,7 +9805,7 @@ None,
 
                             // W3C SCXML 5.3: <assign location="tombstones">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice(), 1024)?.to_vec();
+    self.tombstones = ::sce_rust_runtime::portable::BoundedList::from_slice((call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice())?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -9641,8 +9838,9 @@ None,
                                 // W3C SCXML 5.9: cond="w.atWallTime > _event.data.before"
                                 if w.atWallTime > ev.before {
                                     // SCE Accepted Subset §2.15: <sce:append target="kept">
-                                    let sce_failed = if self.kept.len() < 64 {
-                                        self.kept.push(w.clone());
+                                    let sce_failed = if self.kept.len() < 64
+                                        && self.kept.push(w.clone()).is_ok()
+                                    {
                                         false
                                     } else {
                                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64"));
@@ -9660,8 +9858,9 @@ None,
                                 let _ = &k;
 
                                 // SCE Accepted Subset §2.15: <sce:append target="waiting">
-                                let sce_failed = if self.waiting.len() < 64 {
-                                    self.waiting.push(k.clone());
+                                let sce_failed = if self.waiting.len() < 64
+                                    && self.waiting.push(k.clone()).is_ok()
+                                {
                                     false
                                 } else {
                                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
@@ -9697,8 +9896,9 @@ None,
                         let _ = &w;
 
                         // SCE Accepted Subset §2.15: <sce:append target="taking">
-                        let sce_failed = if self.taking.len() < 64 {
-                            self.taking.push(w.clone());
+                        let sce_failed = if self.taking.len() < 64
+                            && self.taking.push(w.clone()).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));

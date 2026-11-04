@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -314,7 +314,7 @@ impl StaticRecordStringInject for ::sce_rust_runtime::Engine<StaticRecordStringP
 #[allow(non_snake_case)]
 pub struct StaticRecordStringLabelledRecord {
     pub sensor: u8,
-    pub label: String,
+    pub label: ::sce_rust_runtime::portable::SceString<8>,
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
@@ -325,8 +325,8 @@ pub struct StaticRecordStringLabelledRecord {
 #[allow(non_snake_case)]
 pub struct StaticRecordStringData {
     pub last: StaticRecordStringLabelledRecord,
-    pub note: String,
-    pub labels: Vec<StaticRecordStringLabelledRecord>,
+    pub note: ::sce_rust_runtime::portable::SceString<16>,
+    pub labels: ::sce_rust_runtime::portable::BoundedList<StaticRecordStringLabelledRecord, 3>,
     pub errors: u32,
 }
 
@@ -389,7 +389,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticRecordStringLabelledR
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         Ok(Self {
             sensor: ::sce_rust_runtime::saved_state::record_field(value, what, "sensor")?,
-            label: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "label", 8)?,
+            label: ::sce_rust_runtime::saved_state::record_field(value, what, "label")?,
         })
     }
 }
@@ -577,10 +577,16 @@ impl StaticRecordStringPersist for Engine<StaticRecordStringPolicy> {
                 saved.variable("last")?,
                 "last",
             )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("note")?, "note", 16)?;
-        let _: Vec<StaticRecordStringLabelledRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("labels")?, "labels", 3)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("note")?,
+                "note",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticRecordStringLabelledRecord, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("labels")?,
+                "labels",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("errors")?,
             "errors",
@@ -609,10 +615,14 @@ impl StaticRecordStringPersist for Engine<StaticRecordStringPolicy> {
             saved.variable("last")?,
             "last",
         )?;
-        policy.note =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("note")?, "note", 16)?;
-        policy.labels =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("labels")?, "labels", 3)?;
+        policy.note = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("note")?,
+            "note",
+        )?;
+        policy.labels = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("labels")?,
+            "labels",
+        )?;
         policy.errors = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("errors")?,
             "errors",
@@ -626,7 +636,7 @@ impl StaticRecordStringPersist for Engine<StaticRecordStringPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticRecordStringInvokeParams {
-    pub note: Option<String>,
+    pub note: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub errors: Option<u32>,
 }
 
@@ -642,9 +652,9 @@ pub struct StaticRecordStringPolicy {
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
     last: StaticRecordStringLabelledRecord,
     /// W3C SCXML 5.2: the `note` datamodel variable, published (`sce:direction="out"`).
-    note: String,
+    note: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `labels` datamodel variable, published (`sce:direction="out"`).
-    labels: Vec<StaticRecordStringLabelledRecord>,
+    labels: ::sce_rust_runtime::portable::BoundedList<StaticRecordStringLabelledRecord, 3>,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
     errors: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -670,10 +680,12 @@ impl StaticRecordStringPolicy {
     fn build(session_id: String) -> Self {
         let last: StaticRecordStringLabelledRecord = StaticRecordStringLabelledRecord {
             sensor: 1,
-            label: "a".to_string(),
+            label: ::sce_rust_runtime::portable::sce_text!(8, "a"),
         };
-        let note: String = "hello".to_string();
-        let labels: Vec<StaticRecordStringLabelledRecord> = Vec::new();
+        let note: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "hello");
+        let labels: ::sce_rust_runtime::portable::BoundedList<StaticRecordStringLabelledRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let errors: u32 = 0;
         Self {
             pending_payload: StaticRecordStringPayload::default(),
@@ -1229,7 +1241,9 @@ impl StatePolicy for StaticRecordStringPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last.label =
-                                sce_forge_runtime::algorithm::bounded("abcdefgh".to_string(), 8)?;
+                                ::sce_rust_runtime::portable::SceString::<8>::from_text(
+                                    &"abcdefgh",
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1253,7 +1267,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last.label =
-                                sce_forge_runtime::algorithm::bounded("é€é".to_string(), 8)?;
+                                ::sce_rust_runtime::portable::SceString::<8>::from_text(&"é€é")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1277,7 +1291,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last.label =
-                                sce_forge_runtime::algorithm::bounded("é€éé".to_string(), 8)?;
+                                ::sce_rust_runtime::portable::SceString::<8>::from_text(&"é€éé")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1301,7 +1315,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last.label =
-                                sce_forge_runtime::algorithm::bounded("a".to_string(), 8)?;
+                                ::sce_rust_runtime::portable::SceString::<8>::from_text(&"a")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1324,9 +1338,8 @@ impl StatePolicy for StaticRecordStringPolicy {
                     // W3C SCXML 5.3: <assign location="note">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.note = sce_forge_runtime::algorithm::bounded(
-                                "abcdefghijklmnop".to_string(),
-                                16,
+                            self.note = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &"abcdefghijklmnop",
                             )?;
                             Ok(())
                         })() {
@@ -1351,7 +1364,9 @@ impl StatePolicy for StaticRecordStringPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last.label =
-                                sce_forge_runtime::algorithm::bounded(self.note.to_string(), 8)?;
+                                ::sce_rust_runtime::portable::SceString::<8>::from_text(
+                                    &&self.note[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1374,9 +1389,8 @@ impl StatePolicy for StaticRecordStringPolicy {
                     // W3C SCXML 5.3: <assign location="note">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.note = sce_forge_runtime::algorithm::bounded(
-                                self.last.label.to_string(),
-                                16,
+                            self.note = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &&self.last.label[..],
                             )?;
                             Ok(())
                         })() {
@@ -1406,9 +1420,8 @@ impl StatePolicy for StaticRecordStringPolicy {
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last = StaticRecordStringLabelledRecord {
                                 sensor: ev.sensor,
-                                label: sce_forge_runtime::algorithm::bounded(
-                                    ev.label.to_string(),
-                                    8,
+                                label: ::sce_rust_runtime::portable::SceString::<8>::from_text(
+                                    &&ev.label[..],
                                 )?,
                             };
                             Ok(())
@@ -1427,14 +1440,16 @@ impl StatePolicy for StaticRecordStringPolicy {
                     let sce_failed =
                         match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
                             if self.labels.len() < 3 {
-                                self.labels.push(StaticRecordStringLabelledRecord {
-                                    sensor: ev.sensor,
-                                    label: sce_forge_runtime::algorithm::bounded(
-                                        ev.label.to_string(),
-                                        8,
-                                    )?,
-                                });
-                                Ok(false)
+                                Ok(self
+                                    .labels
+                                    .push(StaticRecordStringLabelledRecord {
+                                        sensor: ev.sensor,
+                                        label:
+                                            ::sce_rust_runtime::portable::SceString::<8>::from_text(
+                                                &&ev.label[..],
+                                            )?,
+                                    })
+                                    .is_err())
                             } else {
                                 Ok(true)
                             }
@@ -1468,7 +1483,9 @@ impl StatePolicy for StaticRecordStringPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.last.label =
-                                sce_forge_runtime::algorithm::bounded(ev.label.to_string(), 8)?;
+                                ::sce_rust_runtime::portable::SceString::<8>::from_text(
+                                    &&ev.label[..],
+                                )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1492,8 +1509,9 @@ impl StatePolicy for StaticRecordStringPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="labels">
-                    let sce_failed = if self.labels.len() < 3 {
-                        self.labels.push(self.last.clone());
+                    let sce_failed = if self.labels.len() < 3
+                        && self.labels.push(self.last.clone()).is_ok()
+                    {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: the list already holds its capacity of 3"));
@@ -1515,7 +1533,7 @@ impl StatePolicy for StaticRecordStringPolicy {
 
                         // W3C SCXML 5.3: <assign location="note">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.note = sce_forge_runtime::algorithm::bounded(l.label.to_string(), 16)?;
+    self.note = ::sce_rust_runtime::portable::SceString::<16>::from_text(&&l.label[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -1539,11 +1557,8 @@ impl StatePolicy for StaticRecordStringPolicy {
                     // W3C SCXML 5.3: <assign location="note">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.note = sce_forge_runtime::algorithm::bounded(
-                                sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?
-                                    .label
-                                    .to_string(),
-                                16,
+                            self.note = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &&sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?.label[..],
                             )?;
                             Ok(())
                         })() {
@@ -1567,17 +1582,15 @@ impl StatePolicy for StaticRecordStringPolicy {
                     // W3C SCXML 5.3: <assign location="note">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.note = sce_forge_runtime::algorithm::bounded(
-                                sce_forge_runtime::algorithm::at_ref(
+                            self.note = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &&sce_forge_runtime::algorithm::at_ref(
                                     &self.labels,
                                     sce_forge_runtime::algorithm::sub::<u32>(
                                         (self.labels).len() as u32,
                                         1,
                                     )?,
                                 )?
-                                .label
-                                .to_string(),
-                                16,
+                                .label[..],
                             )?;
                             Ok(())
                         })() {
@@ -1602,7 +1615,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.note =
-                                sce_forge_runtime::algorithm::bounded("first".to_string(), 16)?;
+                                ::sce_rust_runtime::portable::SceString::<16>::from_text(&"first")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1633,7 +1646,7 @@ impl StatePolicy for StaticRecordStringPolicy {
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last.label = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?.label.to_string(), 8)?;
+    self.last.label = ::sce_rust_runtime::portable::SceString::<8>::from_text(&&sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?.label[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -1664,7 +1677,7 @@ impl StatePolicy for StaticRecordStringPolicy {
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last.label = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.labels, sce_forge_runtime::algorithm::sub::<u32>((self.labels).len() as u32, 1)?)?.label.to_string(), 8)?;
+    self.last.label = ::sce_rust_runtime::portable::SceString::<8>::from_text(&&sce_forge_runtime::algorithm::at_ref(&self.labels, sce_forge_runtime::algorithm::sub::<u32>((self.labels).len() as u32, 1)?)?.label[..])?;
     Ok(())
 })() {
     Ok(()) => false,

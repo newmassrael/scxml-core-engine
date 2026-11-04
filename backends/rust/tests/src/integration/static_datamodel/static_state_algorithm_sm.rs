@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -359,10 +359,10 @@ fn call_TotalOf__v(
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticStateAlgorithmData {
-    pub entries: Vec<StaticStateAlgorithmEntryRecord>,
+    pub entries: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmEntryRecord, 8>,
     pub total: StaticStateAlgorithmTotalRecord,
     pub last: StaticStateAlgorithmEntryRecord,
-    pub ids: Vec<u32>,
+    pub ids: ::sce_rust_runtime::portable::BoundedList<u32, 8>,
     pub idsum: u32,
     pub large: u32,
     pub refusals: u32,
@@ -663,8 +663,11 @@ impl StaticStateAlgorithmPersist for Engine<StaticStateAlgorithmPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<StaticStateAlgorithmEntryRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("entries")?, "entries", 8)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmEntryRecord, 8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("entries")?,
+                "entries",
+            )?;
         let _: StaticStateAlgorithmTotalRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("total")?,
@@ -675,8 +678,8 @@ impl StaticStateAlgorithmPersist for Engine<StaticStateAlgorithmPolicy> {
                 saved.variable("last")?,
                 "last",
             )?;
-        let _: Vec<u32> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("ids")?, "ids", 8)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<u32, 8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ids")?, "ids")?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("idsum")?,
             "idsum",
@@ -709,8 +712,10 @@ impl StaticStateAlgorithmPersist for Engine<StaticStateAlgorithmPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.entries =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("entries")?, "entries", 8)?;
+        policy.entries = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("entries")?,
+            "entries",
+        )?;
         policy.total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -719,7 +724,8 @@ impl StaticStateAlgorithmPersist for Engine<StaticStateAlgorithmPolicy> {
             saved.variable("last")?,
             "last",
         )?;
-        policy.ids = ::sce_rust_runtime::saved_state::bounded(saved.variable("ids")?, "ids", 8)?;
+        policy.ids =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ids")?, "ids")?;
         policy.idsum = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("idsum")?,
             "idsum",
@@ -756,13 +762,13 @@ pub struct StaticStateAlgorithmPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticStateAlgorithmPayload,
     /// W3C SCXML 5.2: the `entries` datamodel variable, published (`sce:direction="out"`).
-    entries: Vec<StaticStateAlgorithmEntryRecord>,
+    entries: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmEntryRecord, 8>,
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
     total: StaticStateAlgorithmTotalRecord,
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
     last: StaticStateAlgorithmEntryRecord,
     /// W3C SCXML 5.2: the `ids` datamodel variable, published (`sce:direction="out"`).
-    ids: Vec<u32>,
+    ids: ::sce_rust_runtime::portable::BoundedList<u32, 8>,
     /// W3C SCXML 5.2: the `idsum` datamodel variable, published (`sce:direction="out"`).
     idsum: u32,
     /// W3C SCXML 5.2: the `large` datamodel variable, published (`sce:direction="out"`).
@@ -790,12 +796,14 @@ pub struct StaticStateAlgorithmPolicy {
 
 impl StaticStateAlgorithmPolicy {
     fn build(session_id: String) -> Self {
-        let entries: Vec<StaticStateAlgorithmEntryRecord> = Vec::new();
+        let entries: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmEntryRecord, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let total: StaticStateAlgorithmTotalRecord =
             StaticStateAlgorithmTotalRecord { count: 0, sum: 0 };
         let last: StaticStateAlgorithmEntryRecord =
             StaticStateAlgorithmEntryRecord { id: 0, amount: 0 };
-        let ids: Vec<u32> = Vec::new();
+        let ids: ::sce_rust_runtime::portable::BoundedList<u32, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let idsum: u32 = 0;
         let large: u32 = 0;
         let refusals: u32 = 0;
@@ -1248,11 +1256,9 @@ impl StatePolicy for StaticStateAlgorithmPolicy {
                     // W3C SCXML 5.3: <assign location="entries">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.entries = sce_forge_runtime::algorithm::within(
+                            self.entries = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_AddEntry__v(&self.entries, ev.id, ev.amount)?).as_slice(),
-                                8,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1336,8 +1342,7 @@ impl StatePolicy for StaticStateAlgorithmPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="ids">
-                    let sce_failed = if self.ids.len() < 8 {
-                        self.ids.push(self.last.id);
+                    let sce_failed = if self.ids.len() < 8 && self.ids.push(self.last.id).is_ok() {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(

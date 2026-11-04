@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -314,7 +314,7 @@ pub struct StaticRecordEnumViewRecord {
 #[allow(non_snake_case)]
 pub struct StaticRecordEnumData {
     pub shown: StaticRecordEnumViewRecord,
-    pub seen: Vec<StaticRecordEnumViewRecord>,
+    pub seen: ::sce_rust_runtime::portable::BoundedList<StaticRecordEnumViewRecord, 4>,
     pub weeks: u32,
     pub flips: u32,
     pub leads: u32,
@@ -623,8 +623,11 @@ impl StaticRecordEnumPersist for Engine<StaticRecordEnumPolicy> {
                 saved.variable("shown")?,
                 "shown",
             )?;
-        let _: Vec<StaticRecordEnumViewRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("seen")?, "seen", 4)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticRecordEnumViewRecord, 4> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("seen")?,
+                "seen",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("weeks")?,
             "weeks",
@@ -661,7 +664,10 @@ impl StaticRecordEnumPersist for Engine<StaticRecordEnumPolicy> {
             saved.variable("shown")?,
             "shown",
         )?;
-        policy.seen = ::sce_rust_runtime::saved_state::bounded(saved.variable("seen")?, "seen", 4)?;
+        policy.seen = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("seen")?,
+            "seen",
+        )?;
         policy.weeks = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("weeks")?,
             "weeks",
@@ -696,7 +702,7 @@ pub struct StaticRecordEnumPolicy {
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
     shown: StaticRecordEnumViewRecord,
     /// W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`).
-    seen: Vec<StaticRecordEnumViewRecord>,
+    seen: ::sce_rust_runtime::portable::BoundedList<StaticRecordEnumViewRecord, 4>,
     /// W3C SCXML 5.2: the `weeks` datamodel variable, published (`sce:direction="out"`).
     weeks: u32,
     /// W3C SCXML 5.2: the `flips` datamodel variable, published (`sce:direction="out"`).
@@ -728,7 +734,8 @@ impl StaticRecordEnumPolicy {
             layout: StaticRecordEnumViewModeEnum::Month,
             zoom: 1,
         };
-        let seen: Vec<StaticRecordEnumViewRecord> = Vec::new();
+        let seen: ::sce_rust_runtime::portable::BoundedList<StaticRecordEnumViewRecord, 4> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let weeks: u32 = 0;
         let flips: u32 = 0;
         let leads: u32 = 0;
@@ -1300,8 +1307,7 @@ impl StatePolicy for StaticRecordEnumPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="seen">
-                    let sce_failed = if self.seen.len() < 4 {
-                        self.seen.push(self.shown);
+                    let sce_failed = if self.seen.len() < 4 && self.seen.push(self.shown).is_ok() {
                         false
                     } else {
                         true

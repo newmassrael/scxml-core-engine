@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -397,7 +397,7 @@ pub struct PresencePeerData {
     pub hub: bool,
     pub ttl: u32,
     pub lease: u32,
-    pub online: Vec<PresencePeerSeenRecord>,
+    pub online: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128>,
     pub serial: u32,
     pub lost: u32,
     pub refusals: u32,
@@ -702,10 +702,16 @@ impl PresencePeerPersist for Engine<PresencePeerPolicy> {
             saved.variable("lease")?,
             "lease",
         )?;
-        let _: Vec<PresencePeerSeenRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("online")?, "online", 128)?;
-        let _: Vec<PresencePeerSeenRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("rebuilt")?, "rebuilt", 128)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("online")?,
+                "online",
+            )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("rebuilt")?,
+                "rebuilt",
+            )?;
         let _: PresencePeerSeenRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("entry")?,
             "entry",
@@ -762,10 +768,14 @@ impl PresencePeerPersist for Engine<PresencePeerPolicy> {
             saved.variable("lease")?,
             "lease",
         )?;
-        policy.online =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("online")?, "online", 128)?;
-        policy.rebuilt =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("rebuilt")?, "rebuilt", 128)?;
+        policy.online = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("online")?,
+            "online",
+        )?;
+        policy.rebuilt = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("rebuilt")?,
+            "rebuilt",
+        )?;
         policy.entry = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("entry")?,
             "entry",
@@ -830,9 +840,9 @@ pub struct PresencePeerPolicy {
     /// W3C SCXML 5.2: the `lease` datamodel variable, published (`sce:direction="out"`).
     lease: u32,
     /// W3C SCXML 5.2: the `online` datamodel variable, published (`sce:direction="out"`).
-    online: Vec<PresencePeerSeenRecord>,
+    online: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128>,
     /// W3C SCXML 5.2: the `rebuilt` datamodel variable.
-    rebuilt: Vec<PresencePeerSeenRecord>,
+    rebuilt: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128>,
     /// W3C SCXML 5.2: the `entry` datamodel variable.
     entry: PresencePeerSeenRecord,
     /// W3C SCXML 5.2: the `serial` datamodel variable, published (`sce:direction="out"`).
@@ -870,8 +880,10 @@ impl PresencePeerPolicy {
         let hub: bool = false;
         let ttl: u32 = 0;
         let lease: u32 = 0;
-        let online: Vec<PresencePeerSeenRecord> = Vec::new();
-        let rebuilt: Vec<PresencePeerSeenRecord> = Vec::new();
+        let online: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let rebuilt: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let entry: PresencePeerSeenRecord = PresencePeerSeenRecord {
             client: 0,
             last: 0,
@@ -1718,8 +1730,9 @@ impl StatePolicy for PresencePeerPolicy {
                         // W3C SCXML 5.9: cond="m.client !== _event.data.client"
                         if m.client != ev.client {
                             // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
-                            let sce_failed = if self.rebuilt.len() < 128 {
-                                self.rebuilt.push(m);
+                            let sce_failed = if self.rebuilt.len() < 128
+                                && self.rebuilt.push(m).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
@@ -1755,8 +1768,9 @@ impl StatePolicy for PresencePeerPolicy {
                         }
 
                         // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
-                        let sce_failed = if self.rebuilt.len() < 128 {
-                            self.rebuilt.push(self.entry);
+                        let sce_failed = if self.rebuilt.len() < 128
+                            && self.rebuilt.push(self.entry).is_ok()
+                        {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
@@ -1772,8 +1786,9 @@ impl StatePolicy for PresencePeerPolicy {
                             let _ = &r;
 
                             // SCE Accepted Subset §2.15: <sce:append target="online">
-                            let sce_failed = if self.online.len() < 128 {
-                                self.online.push(r);
+                            let sce_failed = if self.online.len() < 128
+                                && self.online.push(r).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
@@ -1907,8 +1922,9 @@ impl StatePolicy for PresencePeerPolicy {
                         // W3C SCXML 5.9: cond="m.gen !== _event.data.gen"
                         if m.gen != ev.gen {
                             // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
-                            let sce_failed = if self.rebuilt.len() < 128 {
-                                self.rebuilt.push(m);
+                            let sce_failed = if self.rebuilt.len() < 128
+                                && self.rebuilt.push(m).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
@@ -1928,8 +1944,9 @@ impl StatePolicy for PresencePeerPolicy {
                             let _ = &r;
 
                             // SCE Accepted Subset §2.15: <sce:append target="online">
-                            let sce_failed = if self.online.len() < 128 {
-                                self.online.push(r);
+                            let sce_failed = if self.online.len() < 128
+                                && self.online.push(r).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
@@ -2035,8 +2052,9 @@ impl StatePolicy for PresencePeerPolicy {
                         // W3C SCXML 5.9: cond="m.client !== _event.data.client || m.last > _event.data.last"
                         if m.client != ev.client || m.last > ev.last {
                             // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
-                            let sce_failed = if self.rebuilt.len() < 128 {
-                                self.rebuilt.push(m);
+                            let sce_failed = if self.rebuilt.len() < 128
+                                && self.rebuilt.push(m).is_ok()
+                            {
                                 false
                             } else {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
@@ -2055,8 +2073,7 @@ impl StatePolicy for PresencePeerPolicy {
                         let _ = &r;
 
                         // SCE Accepted Subset §2.15: <sce:append target="online">
-                        let sce_failed = if self.online.len() < 128 {
-                            self.online.push(r);
+                        let sce_failed = if self.online.len() < 128 && self.online.push(r).is_ok() {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));

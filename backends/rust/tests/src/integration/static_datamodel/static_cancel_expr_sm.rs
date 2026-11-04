@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -445,8 +445,11 @@ impl StaticCancelExprPersist for Engine<StaticCancelExprPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("which")?, "which", 8)?;
+        let _: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("which")?,
+                "which",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("scale")?,
             "scale",
@@ -483,8 +486,10 @@ impl StaticCancelExprPersist for Engine<StaticCancelExprPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.which =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("which")?, "which", 8)?;
+        policy.which = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("which")?,
+            "which",
+        )?;
         policy.scale = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("scale")?,
             "scale",
@@ -510,7 +515,7 @@ impl StaticCancelExprPersist for Engine<StaticCancelExprPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticCancelExprInvokeParams {
-    pub which: Option<String>,
+    pub which: Option<::sce_rust_runtime::portable::SceString<8>>,
     pub scale: Option<u32>,
     pub a_fired: Option<u32>,
     pub b_fired: Option<u32>,
@@ -523,7 +528,7 @@ pub struct StaticCancelExprInvokeParams {
 
 pub struct StaticCancelExprPolicy {
     /// W3C SCXML 5.2: the `which` datamodel variable.
-    which: String,
+    which: ::sce_rust_runtime::portable::SceString<8>,
     /// W3C SCXML 5.2: the `scale` datamodel variable.
     scale: u32,
     /// W3C SCXML 5.2: the `a_fired` datamodel variable, published (`sce:direction="out"`).
@@ -553,7 +558,8 @@ pub struct StaticCancelExprPolicy {
 
 impl StaticCancelExprPolicy {
     fn build(session_id: String) -> Self {
-        let which: String = "a".to_string();
+        let which: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::portable::sce_text!(8, "a");
         let scale: u32 = 3;
         let a_fired: u32 = 0;
         let b_fired: u32 = 0;
@@ -1071,7 +1077,8 @@ impl StatePolicy for StaticCancelExprPolicy {
                     // W3C SCXML 5.3: <assign location="which">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.which = sce_forge_runtime::algorithm::bounded("b".to_string(), 8)?;
+                            self.which =
+                                ::sce_rust_runtime::portable::SceString::<8>::from_text(&"b")?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1094,7 +1101,8 @@ impl StatePolicy for StaticCancelExprPolicy {
                     // W3C SCXML 5.3: <assign location="which">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.which = sce_forge_runtime::algorithm::bounded("".to_string(), 8)?;
+                            self.which =
+                                ::sce_rust_runtime::portable::SceString::<8>::from_text(&"")?;
                             Ok(())
                         })() {
                             Ok(()) => false,

@@ -412,8 +412,11 @@ impl StatechartStaticDelayedHostSendPersist for Engine<StatechartStaticDelayedHo
         )?;
         let _: u32 =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         ::sce_rust_runtime::saved_state::judge::<StatechartStaticDelayedHostSendPolicy>(saved)
     }
 
@@ -436,8 +439,10 @@ impl StatechartStaticDelayedHostSendPersist for Engine<StatechartStaticDelayedHo
         )?;
         policy.job =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -448,7 +453,7 @@ impl StatechartStaticDelayedHostSendPersist for Engine<StatechartStaticDelayedHo
 #[derive(Default)]
 pub struct StatechartStaticDelayedHostSendInvokeParams {
     pub job: Option<u32>,
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<16>>,
 }
 
 // ======================================================================
@@ -461,7 +466,7 @@ pub struct StatechartStaticDelayedHostSendPolicy {
     /// W3C SCXML 5.2: the `job` datamodel variable.
     job: u32,
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: String,
+    label: ::sce_rust_runtime::portable::SceString<16>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -484,7 +489,8 @@ pub struct StatechartStaticDelayedHostSendPolicy {
 impl StatechartStaticDelayedHostSendPolicy {
     fn build(session_id: String) -> Self {
         let job: u32 = 7;
-        let label: String = "report".to_string();
+        let label: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "report");
         Self {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             job,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -295,8 +295,8 @@ impl StaticBytesWireInject for ::sce_rust_runtime::Engine<StaticBytesWirePolicy>
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticBytesWireData {
-    pub held: Vec<u8>,
-    pub echo: Vec<u8>,
+    pub held: ::sce_rust_runtime::portable::SceBytes<8>,
+    pub echo: ::sce_rust_runtime::portable::SceBytes<8>,
     pub relays: u32,
     pub errors: u32,
 }
@@ -502,10 +502,10 @@ impl StaticBytesWirePersist for Engine<StaticBytesWirePolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("held")?, "held", 8)?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("echo")?, "echo", 8)?;
+        let _: ::sce_rust_runtime::portable::SceBytes<8> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("held")?, "held")?;
+        let _: ::sce_rust_runtime::portable::SceBytes<8> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("echo")?, "echo")?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("relays")?,
             "relays",
@@ -535,9 +535,9 @@ impl StaticBytesWirePersist for Engine<StaticBytesWirePolicy> {
             Self::HISTORIES,
         )?;
         policy.held =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("held")?, "held", 8)?;
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("held")?, "held")?;
         policy.echo =
-            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("echo")?, "echo", 8)?;
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("echo")?, "echo")?;
         policy.relays = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("relays")?,
             "relays",
@@ -569,9 +569,9 @@ pub struct StaticBytesWirePolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticBytesWirePayload,
     /// W3C SCXML 5.2: the `held` datamodel variable, published (`sce:direction="out"`).
-    held: Vec<u8>,
+    held: ::sce_rust_runtime::portable::SceBytes<8>,
     /// W3C SCXML 5.2: the `echo` datamodel variable, published (`sce:direction="out"`).
-    echo: Vec<u8>,
+    echo: ::sce_rust_runtime::portable::SceBytes<8>,
     /// W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`).
     relays: u32,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
@@ -597,8 +597,10 @@ pub struct StaticBytesWirePolicy {
 
 impl StaticBytesWirePolicy {
     fn build(session_id: String) -> Self {
-        let held: Vec<u8> = b"ab".to_vec();
-        let echo: Vec<u8> = b"".to_vec();
+        let held: ::sce_rust_runtime::portable::SceBytes<8> =
+            ::sce_rust_runtime::portable::sce_bytes!(8, b"ab");
+        let echo: ::sce_rust_runtime::portable::SceBytes<8> =
+            ::sce_rust_runtime::portable::sce_bytes!(8, b"");
         let relays: u32 = 0;
         let errors: u32 = 0;
         Self {
@@ -958,7 +960,7 @@ impl StatePolicy for StaticBytesWirePolicy {
                     {
                         let val = ::sce_rust_runtime::ScriptValue::String(
                             ::sce_rust_runtime::event_payload::bytes_as_payload_text(
-                                &self.echo.to_vec(),
+                                &self.echo[..],
                             ),
                         );
                         let mut part = String::from("\"frame\":");
@@ -1079,8 +1081,9 @@ impl StatePolicy for StaticBytesWirePolicy {
                     // W3C SCXML 5.3: <assign location="held">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.held =
-                                sce_forge_runtime::algorithm::bounded(ev.frame.to_vec(), 8)?;
+                            self.held = ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                &&ev.frame[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1128,7 +1131,7 @@ impl StatePolicy for StaticBytesWirePolicy {
                             wire_params.entry("frame".to_string()).or_default().push(
                                 ::sce_rust_runtime::ScriptValue::String(
                                     ::sce_rust_runtime::event_payload::bytes_as_payload_text(
-                                        &self.held.to_vec(),
+                                        &self.held[..],
                                     ),
                                 ),
                             );
@@ -1170,8 +1173,9 @@ impl StatePolicy for StaticBytesWirePolicy {
                     // W3C SCXML 5.3: <assign location="echo">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.echo =
-                                sce_forge_runtime::algorithm::bounded(ev.frame.to_vec(), 8)?;
+                            self.echo = ::sce_rust_runtime::portable::SceBytes::<8>::from_slice(
+                                &&ev.frame[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

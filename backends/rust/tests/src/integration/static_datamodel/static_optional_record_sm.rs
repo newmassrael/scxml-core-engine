@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -280,7 +280,7 @@ impl StaticOptionalRecordInject for ::sce_rust_runtime::Engine<StaticOptionalRec
 #[allow(non_snake_case)]
 pub struct StaticOptionalRecordItemRecord {
     pub id: u32,
-    pub title: String,
+    pub title: ::sce_rust_runtime::portable::SceString<16>,
     pub count: i32,
 }
 
@@ -294,14 +294,14 @@ fn call_FirstAtLeast__v(
         .iter()
         .map(|r| schema_item_pick::SchemaItemPickPayload {
             id: r.id,
-            title: ::sce_portable_bytes::SceString::<16>::held(&r.title),
+            title: r.title.clone(),
             count: r.count,
         })
         .collect();
     let r = item_pick_first::item_pick_first(&p0_algorithm, p1);
     r.map(|sce_present| StaticOptionalRecordItemRecord {
         id: sce_present.id,
-        title: sce_present.title.as_str().to_string(),
+        title: sce_present.title.clone(),
         count: sce_present.count,
     })
 }
@@ -316,8 +316,8 @@ pub struct StaticOptionalRecordData {
     pub pick: Option<StaticOptionalRecordItemRecord>,
     pub found: Option<StaticOptionalRecordItemRecord>,
     pub draft: StaticOptionalRecordItemRecord,
-    pub items: Vec<StaticOptionalRecordItemRecord>,
-    pub title: String,
+    pub items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalRecordItemRecord, 3>,
+    pub title: ::sce_rust_runtime::portable::SceString<16>,
     pub count: i32,
     pub shown: i32,
     pub known: bool,
@@ -394,9 +394,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticOptionalRecordItemRec
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         Ok(Self {
             id: ::sce_rust_runtime::saved_state::record_field(value, what, "id")?,
-            title: ::sce_rust_runtime::saved_state::record_bounded_string(
-                value, what, "title", 16,
-            )?,
+            title: ::sce_rust_runtime::saved_state::record_field(value, what, "title")?,
             count: ::sce_rust_runtime::saved_state::record_field(value, what, "count")?,
         })
     }
@@ -627,10 +625,16 @@ impl StaticOptionalRecordPersist for Engine<StaticOptionalRecordPolicy> {
                 saved.variable("draft")?,
                 "draft",
             )?;
-        let _: Vec<StaticOptionalRecordItemRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 3)?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("title")?, "title", 16)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticOptionalRecordItemRecord, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("items")?,
+                "items",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("title")?,
+                "title",
+            )?;
         let _: i32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("count")?,
             "count",
@@ -683,10 +687,14 @@ impl StaticOptionalRecordPersist for Engine<StaticOptionalRecordPolicy> {
             saved.variable("draft")?,
             "draft",
         )?;
-        policy.items =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 3)?;
-        policy.title =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("title")?, "title", 16)?;
+        policy.items = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("items")?,
+            "items",
+        )?;
+        policy.title = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("title")?,
+            "title",
+        )?;
         policy.count = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("count")?,
             "count",
@@ -716,7 +724,7 @@ impl StaticOptionalRecordPersist for Engine<StaticOptionalRecordPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticOptionalRecordInvokeParams {
-    pub title: Option<String>,
+    pub title: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub count: Option<i32>,
     pub shown: Option<i32>,
     pub known: Option<bool>,
@@ -740,9 +748,9 @@ pub struct StaticOptionalRecordPolicy {
     /// W3C SCXML 5.2: the `draft` datamodel variable, published (`sce:direction="out"`).
     draft: StaticOptionalRecordItemRecord,
     /// W3C SCXML 5.2: the `items` datamodel variable, published (`sce:direction="out"`).
-    items: Vec<StaticOptionalRecordItemRecord>,
+    items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalRecordItemRecord, 3>,
     /// W3C SCXML 5.2: the `title` datamodel variable, published (`sce:direction="out"`).
-    title: String,
+    title: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
     count: i32,
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
@@ -778,11 +786,13 @@ impl StaticOptionalRecordPolicy {
         let found: Option<StaticOptionalRecordItemRecord> = None;
         let draft: StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord {
             id: 0,
-            title: "draft".to_string(),
+            title: ::sce_rust_runtime::portable::sce_text!(16, "draft"),
             count: 0,
         };
-        let items: Vec<StaticOptionalRecordItemRecord> = Vec::new();
-        let title: String = "".to_string();
+        let items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalRecordItemRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let title: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "");
         let count: i32 = 0;
         let shown: i32 = 0;
         let known: bool = false;
@@ -1305,15 +1315,7 @@ impl StatePolicy for StaticOptionalRecordPolicy {
                     let sce_failed =
                         match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
                             if self.items.len() < 3 {
-                                self.items.push(StaticOptionalRecordItemRecord {
-                                    id: ev.id,
-                                    title: sce_forge_runtime::algorithm::bounded(
-                                        ev.title.to_string(),
-                                        16,
-                                    )?,
-                                    count: ev.count,
-                                });
-                                Ok(false)
+                                Ok(self.items.push(StaticOptionalRecordItemRecord { id: ev.id, title: ::sce_rust_runtime::portable::SceString::<16>::from_text(&&ev.title[..])?, count: ev.count }).is_err())
                             } else {
                                 Ok(true)
                             }
@@ -1337,9 +1339,8 @@ impl StatePolicy for StaticOptionalRecordPolicy {
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.draft = StaticOptionalRecordItemRecord {
                                 id: ev.id,
-                                title: sce_forge_runtime::algorithm::bounded(
-                                    ev.title.to_string(),
-                                    16,
+                                title: ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                    &&ev.title[..],
                                 )?,
                                 count: ev.count,
                             };
@@ -1360,9 +1361,8 @@ impl StatePolicy for StaticOptionalRecordPolicy {
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.pick = Some(StaticOptionalRecordItemRecord {
                                 id: ev.id,
-                                title: sce_forge_runtime::algorithm::bounded(
-                                    ev.title.to_string(),
-                                    16,
+                                title: ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                    &&ev.title[..],
                                 )?,
                                 count: ev.count,
                             });
@@ -1433,7 +1433,7 @@ impl StatePolicy for StaticOptionalRecordPolicy {
                     if self.pick.is_some() {
                         // W3C SCXML 5.3: <assign location="title">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.title = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::optional::proven_ref(&self.pick).title.to_string(), 16)?;
+    self.title = ::sce_rust_runtime::portable::SceString::<16>::from_text(&&sce_forge_runtime::optional::proven_ref(&self.pick).title[..])?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -1451,7 +1451,7 @@ impl StatePolicy for StaticOptionalRecordPolicy {
                     } else {
                         // W3C SCXML 5.3: <assign location="title">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.title = sce_forge_runtime::algorithm::bounded("none".to_string(), 16)?;
+    self.title = ::sce_rust_runtime::portable::SceString::<16>::from_text(&"none")?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -1508,7 +1508,7 @@ impl StatePolicy for StaticOptionalRecordPolicy {
 
                         // W3C SCXML 5.3: <assign location="pick.value.title">
                         let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    sce_forge_runtime::optional::proven_mut(&mut self.pick).title = sce_forge_runtime::algorithm::bounded("bumped".to_string(), 16)?;
+    sce_forge_runtime::optional::proven_mut(&mut self.pick).title = ::sce_rust_runtime::portable::SceString::<16>::from_text(&"bumped")?;
     Ok(())
 })() {
     Ok(()) => false,

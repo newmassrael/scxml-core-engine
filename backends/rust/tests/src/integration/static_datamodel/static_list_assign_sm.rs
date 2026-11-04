@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -234,9 +234,9 @@ impl StaticListAssignEvent {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticListAssignData {
-    pub shown: Vec<u8>,
+    pub shown: ::sce_rust_runtime::portable::BoundedList<u8, 8>,
     pub first: u8,
-    pub few: Vec<u8>,
+    pub few: ::sce_rust_runtime::portable::BoundedList<u8, 4>,
     pub count: u32,
     pub size: u32,
     pub refusals: u32,
@@ -453,14 +453,17 @@ impl StaticListAssignPersist for Engine<StaticListAssignPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("shown")?, "shown", 8)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<u8, 8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("shown")?,
+                "shown",
+            )?;
         let _: u8 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("first")?,
             "first",
         )?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("few")?, "few", 4)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<u8, 4> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("few")?, "few")?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("count")?,
             "count",
@@ -493,13 +496,16 @@ impl StaticListAssignPersist for Engine<StaticListAssignPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.shown =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("shown")?, "shown", 8)?;
+        policy.shown = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("shown")?,
+            "shown",
+        )?;
         policy.first = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("first")?,
             "first",
         )?;
-        policy.few = ::sce_rust_runtime::saved_state::bounded(saved.variable("few")?, "few", 4)?;
+        policy.few =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("few")?, "few")?;
         policy.count = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("count")?,
             "count",
@@ -533,11 +539,11 @@ pub struct StaticListAssignInvokeParams {
 
 pub struct StaticListAssignPolicy {
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    shown: Vec<u8>,
+    shown: ::sce_rust_runtime::portable::BoundedList<u8, 8>,
     /// W3C SCXML 5.2: the `first` datamodel variable, published (`sce:direction="out"`).
     first: u8,
     /// W3C SCXML 5.2: the `few` datamodel variable, published (`sce:direction="out"`).
-    few: Vec<u8>,
+    few: ::sce_rust_runtime::portable::BoundedList<u8, 4>,
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
     count: u32,
     /// W3C SCXML 5.2: the `size` datamodel variable, published (`sce:direction="out"`).
@@ -565,9 +571,11 @@ pub struct StaticListAssignPolicy {
 
 impl StaticListAssignPolicy {
     fn build(session_id: String) -> Self {
-        let shown: Vec<u8> = Vec::new();
+        let shown: ::sce_rust_runtime::portable::BoundedList<u8, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let first: u8 = 10;
-        let few: Vec<u8> = Vec::new();
+        let few: ::sce_rust_runtime::portable::BoundedList<u8, 4> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let count: u32 = 0;
         let size: u32 = 0;
         let refusals: u32 = 0;
@@ -999,16 +1007,14 @@ impl StatePolicy for StaticListAssignPolicy {
                     // W3C SCXML 5.3: <assign location="shown">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.shown = sce_forge_runtime::algorithm::within(
+                            self.shown = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 ({
                                     let mut sce_out = sce_portable_bytes::SceOwnedList::new();
                                     day_run::day_run(self.first, 3, &mut sce_out)?;
                                     sce_out
                                 })
                                 .as_slice(),
-                                8,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1034,16 +1040,14 @@ impl StatePolicy for StaticListAssignPolicy {
                     // W3C SCXML 5.3: <assign location="shown">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.shown = sce_forge_runtime::algorithm::within(
+                            self.shown = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 ({
                                     let mut sce_out = sce_portable_bytes::SceOwnedList::new();
                                     day_run::day_run(self.first, 8, &mut sce_out)?;
                                     sce_out
                                 })
                                 .as_slice(),
-                                8,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1069,16 +1073,14 @@ impl StatePolicy for StaticListAssignPolicy {
                     // W3C SCXML 5.3: <assign location="shown">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.shown = sce_forge_runtime::algorithm::within(
+                            self.shown = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 ({
                                     let mut sce_out = sce_portable_bytes::SceOwnedList::new();
                                     day_run::day_run(self.first, 0, &mut sce_out)?;
                                     sce_out
                                 })
                                 .as_slice(),
-                                8,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1104,16 +1106,14 @@ impl StatePolicy for StaticListAssignPolicy {
                     // W3C SCXML 5.3: <assign location="few">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.few = sce_forge_runtime::algorithm::within(
+                            self.few = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 ({
                                     let mut sce_out = sce_portable_bytes::SceOwnedList::new();
                                     day_repeat::day_repeat(self.first, 3, &mut sce_out)?;
                                     sce_out
                                 })
                                 .as_slice(),
-                                4,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
@@ -1139,16 +1139,14 @@ impl StatePolicy for StaticListAssignPolicy {
                     // W3C SCXML 5.3: <assign location="few">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.few = sce_forge_runtime::algorithm::within(
+                            self.few = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 ({
                                     let mut sce_out = sce_portable_bytes::SceOwnedList::new();
                                     day_repeat::day_repeat(self.first, 5, &mut sce_out)?;
                                     sce_out
                                 })
                                 .as_slice(),
-                                4,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

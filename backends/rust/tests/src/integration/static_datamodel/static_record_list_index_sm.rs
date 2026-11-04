@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -586,8 +586,11 @@ impl StaticRecordListIndexPersist for Engine<StaticRecordListIndexPolicy> {
                 saved.variable("picked")?,
                 "picked",
             )?;
-        let _: Vec<StaticRecordListIndexDayRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("days")?, "days", 3)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticRecordListIndexDayRecord, 3> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("days")?,
+                "days",
+            )?;
         let _: i32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("cursor")?,
             "cursor",
@@ -636,7 +639,10 @@ impl StaticRecordListIndexPersist for Engine<StaticRecordListIndexPolicy> {
             saved.variable("picked")?,
             "picked",
         )?;
-        policy.days = ::sce_rust_runtime::saved_state::bounded(saved.variable("days")?, "days", 3)?;
+        policy.days = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("days")?,
+            "days",
+        )?;
         policy.cursor = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("cursor")?,
             "cursor",
@@ -688,7 +694,7 @@ pub struct StaticRecordListIndexPolicy {
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
     picked: StaticRecordListIndexDayRecord,
     /// W3C SCXML 5.2: the `days` datamodel variable.
-    days: Vec<StaticRecordListIndexDayRecord>,
+    days: ::sce_rust_runtime::portable::BoundedList<StaticRecordListIndexDayRecord, 3>,
     /// W3C SCXML 5.2: the `cursor` datamodel variable, published (`sce:direction="out"`).
     cursor: i32,
     /// W3C SCXML 5.2: the `day` datamodel variable, published (`sce:direction="out"`).
@@ -732,7 +738,8 @@ impl StaticRecordListIndexPolicy {
             month: 1,
             dayOfMonth: 1,
         };
-        let days: Vec<StaticRecordListIndexDayRecord> = Vec::new();
+        let days: ::sce_rust_runtime::portable::BoundedList<StaticRecordListIndexDayRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let cursor: i32 = 0;
         let day: u8 = 0;
         let year: u16 = 0;
@@ -1269,8 +1276,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                     self.draft.dayOfMonth = ev.dayOfMonth;
 
                     // SCE Accepted Subset §2.15: <sce:append target="days">
-                    let sce_failed = if self.days.len() < 3 {
-                        self.days.push(self.draft);
+                    let sce_failed = if self.days.len() < 3 && self.days.push(self.draft).is_ok() {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(

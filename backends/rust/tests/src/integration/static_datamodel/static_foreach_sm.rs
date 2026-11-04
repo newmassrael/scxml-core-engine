@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -248,7 +248,7 @@ impl StaticForeachEvent {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticForeachData {
-    pub picked: Vec<u8>,
+    pub picked: ::sce_rust_runtime::portable::BoundedList<u8, 4>,
     pub total: u32,
     pub weighted: u32,
     pub small: u8,
@@ -479,8 +479,11 @@ impl StaticForeachPersist for Engine<StaticForeachPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<u8> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("picked")?, "picked", 4)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<u8, 4> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("picked")?,
+                "picked",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -529,8 +532,10 @@ impl StaticForeachPersist for Engine<StaticForeachPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.picked =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("picked")?, "picked", 4)?;
+        policy.picked = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("picked")?,
+            "picked",
+        )?;
         policy.total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -583,7 +588,7 @@ pub struct StaticForeachInvokeParams {
 
 pub struct StaticForeachPolicy {
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
-    picked: Vec<u8>,
+    picked: ::sce_rust_runtime::portable::BoundedList<u8, 4>,
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
     total: u32,
     /// W3C SCXML 5.2: the `weighted` datamodel variable, published (`sce:direction="out"`).
@@ -619,7 +624,8 @@ pub struct StaticForeachPolicy {
 
 impl StaticForeachPolicy {
     fn build(session_id: String) -> Self {
-        let picked: Vec<u8> = Vec::new();
+        let picked: ::sce_rust_runtime::portable::BoundedList<u8, 4> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let total: u32 = 0;
         let weighted: u32 = 0;
         let small: u8 = 0;
@@ -1112,8 +1118,7 @@ impl StatePolicy for StaticForeachPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="picked">
-                    let sce_failed = if self.picked.len() < 4 {
-                        self.picked.push(100);
+                    let sce_failed = if self.picked.len() < 4 && self.picked.push(100).is_ok() {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4"));
@@ -1131,8 +1136,7 @@ impl StatePolicy for StaticForeachPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="picked">
-                    let sce_failed = if self.picked.len() < 4 {
-                        self.picked.push(200);
+                    let sce_failed = if self.picked.len() < 4 && self.picked.push(200).is_ok() {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4"));
@@ -1150,8 +1154,7 @@ impl StatePolicy for StaticForeachPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="picked">
-                    let sce_failed = if self.picked.len() < 4 {
-                        self.picked.push(5);
+                    let sce_failed = if self.picked.len() < 4 && self.picked.push(5).is_ok() {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4"));
@@ -1321,8 +1324,7 @@ impl StatePolicy for StaticForeachPolicy {
                         let _ = &v;
 
                         // SCE Accepted Subset §2.15: <sce:append target="picked">
-                        let sce_failed = if self.picked.len() < 4 {
-                            self.picked.push(v);
+                        let sce_failed = if self.picked.len() < 4 && self.picked.push(v).is_ok() {
                             false
                         } else {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4"));

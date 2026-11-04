@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -263,7 +263,7 @@ impl StaticTextRecordInject for ::sce_rust_runtime::Engine<StaticTextRecordPolic
 pub struct StaticTextRecordSlotRecord {
     pub slot: u32,
     pub version: i64,
-    pub text: String,
+    pub text: ::sce_rust_runtime::portable::SceString<32>,
 }
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
@@ -274,7 +274,7 @@ fn call_Holds__vv(p0: &[StaticTextRecordSlotRecord], p1: &StaticTextRecordSlotRe
         .map(|r| text_slot::TextSlotPayload {
             slot: r.slot,
             version: r.version,
-            text: ::sce_portable_bytes::SceString::<32>::held(&r.text),
+            text: r.text.clone(),
         })
         .collect();
     let r = text_slot_holds::text_slot_holds(
@@ -282,7 +282,7 @@ fn call_Holds__vv(p0: &[StaticTextRecordSlotRecord], p1: &StaticTextRecordSlotRe
         text_slot::TextSlotPayload {
             slot: p1.slot,
             version: p1.version,
-            text: ::sce_portable_bytes::SceString::<32>::held(&p1.text),
+            text: p1.text.clone(),
         },
     );
     r
@@ -297,18 +297,18 @@ fn call_Latest__vv(
         text_slot::TextSlotPayload {
             slot: p0.slot,
             version: p0.version,
-            text: ::sce_portable_bytes::SceString::<32>::held(&p0.text),
+            text: p0.text.clone(),
         },
         text_slot::TextSlotPayload {
             slot: p1.slot,
             version: p1.version,
-            text: ::sce_portable_bytes::SceString::<32>::held(&p1.text),
+            text: p1.text.clone(),
         },
     );
     StaticTextRecordSlotRecord {
         slot: r.slot,
         version: r.version,
-        text: r.text.as_str().to_string(),
+        text: r.text.clone(),
     }
 }
 
@@ -321,7 +321,7 @@ fn call_Retitled__v(
         .map(|r| text_slot::TextSlotPayload {
             slot: r.slot,
             version: r.version,
-            text: ::sce_portable_bytes::SceString::<32>::held(&r.text),
+            text: r.text.clone(),
         })
         .collect();
     let mut r = sce_portable_bytes::SceOwnedList::new();
@@ -330,7 +330,7 @@ fn call_Retitled__v(
         .map(|r| StaticTextRecordSlotRecord {
             slot: r.slot,
             version: r.version,
-            text: r.text.as_str().to_string(),
+            text: r.text.clone(),
         })
         .collect::<Vec<_>>())
 }
@@ -342,7 +342,7 @@ fn call_Retitled__v(
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticTextRecordData {
-    pub slots: Vec<StaticTextRecordSlotRecord>,
+    pub slots: ::sce_rust_runtime::portable::BoundedList<StaticTextRecordSlotRecord, 16>,
     pub held: StaticTextRecordSlotRecord,
     pub incoming: StaticTextRecordSlotRecord,
     pub known: u32,
@@ -414,7 +414,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticTextRecordSlotRecord 
         Ok(Self {
             slot: ::sce_rust_runtime::saved_state::record_field(value, what, "slot")?,
             version: ::sce_rust_runtime::saved_state::record_field(value, what, "version")?,
-            text: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "text", 32)?,
+            text: ::sce_rust_runtime::saved_state::record_field(value, what, "text")?,
         })
     }
 }
@@ -605,8 +605,11 @@ impl StaticTextRecordPersist for Engine<StaticTextRecordPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: Vec<StaticTextRecordSlotRecord> =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("slots")?, "slots", 16)?;
+        let _: ::sce_rust_runtime::portable::BoundedList<StaticTextRecordSlotRecord, 16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("slots")?,
+                "slots",
+            )?;
         let _: StaticTextRecordSlotRecord =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("held")?,
@@ -645,8 +648,10 @@ impl StaticTextRecordPersist for Engine<StaticTextRecordPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.slots =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("slots")?, "slots", 16)?;
+        policy.slots = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("slots")?,
+            "slots",
+        )?;
         policy.held = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("held")?,
             "held",
@@ -686,7 +691,7 @@ pub struct StaticTextRecordPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticTextRecordPayload,
     /// W3C SCXML 5.2: the `slots` datamodel variable, published (`sce:direction="out"`).
-    slots: Vec<StaticTextRecordSlotRecord>,
+    slots: ::sce_rust_runtime::portable::BoundedList<StaticTextRecordSlotRecord, 16>,
     /// W3C SCXML 5.2: the `held` datamodel variable, published (`sce:direction="out"`).
     held: StaticTextRecordSlotRecord,
     /// W3C SCXML 5.2: the `incoming` datamodel variable, published (`sce:direction="out"`).
@@ -716,16 +721,17 @@ pub struct StaticTextRecordPolicy {
 
 impl StaticTextRecordPolicy {
     fn build(session_id: String) -> Self {
-        let slots: Vec<StaticTextRecordSlotRecord> = Vec::new();
+        let slots: ::sce_rust_runtime::portable::BoundedList<StaticTextRecordSlotRecord, 16> =
+            ::sce_rust_runtime::portable::BoundedList::new();
         let held: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord {
             slot: 1,
             version: 0,
-            text: "start".to_string(),
+            text: ::sce_rust_runtime::portable::sce_text!(32, "start"),
         };
         let incoming: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord {
             slot: 1,
             version: 0,
-            text: "".to_string(),
+            text: ::sce_rust_runtime::portable::sce_text!(32, ""),
         };
         let known: u32 = 0;
         let refusals: u32 = 0;
@@ -1155,9 +1161,8 @@ impl StatePolicy for StaticTextRecordPolicy {
                             self.incoming = StaticTextRecordSlotRecord {
                                 slot: ev.slot,
                                 version: ev.version,
-                                text: sce_forge_runtime::algorithm::bounded(
-                                    ev.text.to_string(),
-                                    32,
+                                text: ::sce_rust_runtime::portable::SceString::<32>::from_text(
+                                    &&ev.text[..],
                                 )?,
                             };
                             Ok(())
@@ -1194,8 +1199,9 @@ impl StatePolicy for StaticTextRecordPolicy {
                     }
 
                     // SCE Accepted Subset §2.15: <sce:append target="slots">
-                    let sce_failed = if self.slots.len() < 16 {
-                        self.slots.push(self.incoming.clone());
+                    let sce_failed = if self.slots.len() < 16
+                        && self.slots.push(self.incoming.clone()).is_ok()
+                    {
                         false
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticTextRecordEvent::ErrorExecution, "<sce:append target='slots'>: the list already holds its capacity of 16"));
@@ -1215,11 +1221,9 @@ impl StatePolicy for StaticTextRecordPolicy {
                     // W3C SCXML 5.3: <assign location="slots">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.slots = sce_forge_runtime::algorithm::within(
+                            self.slots = ::sce_rust_runtime::portable::BoundedList::from_slice(
                                 (call_Retitled__v(&self.slots)?).as_slice(),
-                                16,
-                            )?
-                            .to_vec();
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,

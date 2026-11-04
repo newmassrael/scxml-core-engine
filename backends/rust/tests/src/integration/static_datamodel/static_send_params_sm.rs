@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d947250ac8dbe681be6c82964fb8feadd2bb3cbd6b46adffc9d553a7fc0e7ce6
+// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -291,7 +291,7 @@ impl StaticSendParamsInject for ::sce_rust_runtime::Engine<StaticSendParamsPolic
 pub struct StaticSendParamsData {
     pub total: u32,
     pub ok: bool,
-    pub tag: String,
+    pub tag: ::sce_rust_runtime::portable::SceString<16>,
     pub partial_total: u32,
     pub refusals: u32,
 }
@@ -526,16 +526,19 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
             saved.variable("small")?,
             "small",
         )?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("label")?,
+                "label",
+            )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
         )?;
         let _: bool =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ok")?, "ok")?;
-        let _: String =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("tag")?, "tag", 16)?;
+        let _: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("tag")?, "tag")?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("partialTotal")?,
             "partialTotal",
@@ -576,8 +579,10 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
             saved.variable("small")?,
             "small",
         )?;
-        policy.label =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("label")?,
+            "label",
+        )?;
         policy.total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -585,7 +590,7 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
         policy.ok =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ok")?, "ok")?;
         policy.tag =
-            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("tag")?, "tag", 16)?;
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("tag")?, "tag")?;
         policy.partial_total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("partialTotal")?,
             "partialTotal",
@@ -609,10 +614,10 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
 pub struct StaticSendParamsInvokeParams {
     pub count: Option<u32>,
     pub small: Option<u8>,
-    pub label: Option<String>,
+    pub label: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub total: Option<u32>,
     pub ok: Option<bool>,
-    pub tag: Option<String>,
+    pub tag: Option<::sce_rust_runtime::portable::SceString<16>>,
     pub partial_total: Option<u32>,
     pub partial_part: Option<u8>,
     pub refusals: Option<u32>,
@@ -632,13 +637,13 @@ pub struct StaticSendParamsPolicy {
     /// W3C SCXML 5.2: the `small` datamodel variable.
     small: u8,
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    label: String,
+    label: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
     total: u32,
     /// W3C SCXML 5.2: the `ok` datamodel variable, published (`sce:direction="out"`).
     ok: bool,
     /// W3C SCXML 5.2: the `tag` datamodel variable, published (`sce:direction="out"`).
-    tag: String,
+    tag: ::sce_rust_runtime::portable::SceString<16>,
     /// W3C SCXML 5.2: the `partialTotal` datamodel variable, published (`sce:direction="out"`).
     partial_total: u32,
     /// W3C SCXML 5.2: the `partialPart` datamodel variable.
@@ -668,10 +673,12 @@ impl StaticSendParamsPolicy {
     fn build(session_id: String) -> Self {
         let count: u32 = 3;
         let small: u8 = 250;
-        let label: String = "tally".to_string();
+        let label: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "tally");
         let total: u32 = 0;
         let ok: bool = false;
-        let tag: String = "".to_string();
+        let tag: ::sce_rust_runtime::portable::SceString<16> =
+            ::sce_rust_runtime::portable::sce_text!(16, "");
         let partial_total: u32 = 0;
         let partial_part: u8 = 0;
         let refusals: u32 = 0;
@@ -1324,8 +1331,9 @@ impl StatePolicy for StaticSendParamsPolicy {
                     // W3C SCXML 5.3: <assign location="tag">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.tag =
-                                sce_forge_runtime::algorithm::bounded(ev.tag.to_string(), 16)?;
+                            self.tag = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &&ev.tag[..],
+                            )?;
                             Ok(())
                         })() {
                             Ok(()) => false,
