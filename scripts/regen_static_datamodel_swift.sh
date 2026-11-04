@@ -227,6 +227,17 @@ if [ ! -e "${BROADCAST_LOG_DOCUMENTS[0]}" ]; then
     echo "error: no broadcast log fixture found under $BROADCAST_LOG_DIR" >&2
     exit 1
 fi
+# The logs over an element whose codec asks its caller for a flag input or a variant tag, which an
+# entry stores beside the bytes (ADR 0062 section 4). They are the shared conformance documents the
+# other backends generate theirs from, in a directory of the corpus and not of the fixtures above,
+# so that a document added here does not move the hash of every generated fixture. A set of its own
+# for the reason the first is one: the log is sized from the elements the set compiles together.
+BROADCAST_LOG_CONTEXT_DIR="tests/forge/conformance/broadcast_log_context"
+mapfile -t BROADCAST_LOG_CONTEXT_DOCUMENTS < <(printf '%s\n' "$BROADCAST_LOG_CONTEXT_DIR"/*.scxml | LC_ALL=C sort)
+if [ ! -e "${BROADCAST_LOG_CONTEXT_DOCUMENTS[0]}" ]; then
+    echo "error: no broadcast log context fixture found under $BROADCAST_LOG_CONTEXT_DIR" >&2
+    exit 1
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -246,6 +257,11 @@ for document in "${BROADCAST_LOG_DOCUMENTS[@]}"; do
     BROADCAST_LOG_ARGUMENTS+=(--forge "$document")
 done
 "$CODEGEN" orchestrate "${BROADCAST_LOG_ARGUMENTS[@]}" --language swift --output-dir "$TMP/broadcast_log/" > /dev/null
+BROADCAST_LOG_CONTEXT_ARGUMENTS=()
+for document in "${BROADCAST_LOG_CONTEXT_DOCUMENTS[@]}"; do
+    BROADCAST_LOG_CONTEXT_ARGUMENTS+=(--forge "$document")
+done
+"$CODEGEN" orchestrate "${BROADCAST_LOG_CONTEXT_ARGUMENTS[@]}" --language swift --output-dir "$TMP/broadcast_log_context/" > /dev/null
 
 mkdir -p "$GENERATED_DIR"
 # Every file below is generated and the tests beside them are not: clearing by
@@ -300,6 +316,16 @@ for generated in "$TMP/broadcast_log"/*.swift; do
     fi
     cp "$generated" "$GENERATED_DIR/"
     UNIT_FROM[$unit]="$BROADCAST_LOG_DIR"
+    BROADCAST_LOG_UNITS+=("$unit")
+done
+for generated in "$TMP/broadcast_log_context"/*.swift; do
+    unit="$(basename "$generated" .swift)"
+    if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+        echo "error: ${UNIT_FROM[$unit]} and the broadcast log context fixtures are both written as $unit; one of them needs another name" >&2
+        exit 1
+    fi
+    cp "$generated" "$GENERATED_DIR/"
+    UNIT_FROM[$unit]="$BROADCAST_LOG_CONTEXT_DIR"
     BROADCAST_LOG_UNITS+=("$unit")
 done
 

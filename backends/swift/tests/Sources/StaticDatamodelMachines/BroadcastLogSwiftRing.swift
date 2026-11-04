@@ -26,8 +26,7 @@
 // `log.readerDeferred()` and owns its cursor; the publisher is `log.publisher()`,
 // taken once and given back by `release()` or by dropping it.
 //
-// The element's codec is one the Swift codec writes: a frame of fixed-width
-// integers, which asks its caller for nothing. So an entry is the length word
+// The element's codec asks its caller for nothing, so an entry is the length word
 // and the bytes, and the log stores no flag input and no tag.
 //
 // The names are the members of the enum `BroadcastLogSwiftRing` and not top-level
