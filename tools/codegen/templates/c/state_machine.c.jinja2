@@ -2808,10 +2808,10 @@ SCE_SM_FN static bool is_in_final_state_of(const {{ csym_prefix }}{{ model.name 
 SCE_SM_FN static void note_unseen_event({{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t event);
 SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.name }}_t *sm);
-/* docs/adr/0084: the macrostep boundary's half of the inbox, defined with the
-   rest of it at the bottom of this file; declared here because its caller,
-   `run_main_event_loop`, comes long before that. Nothing for a deployment that
-   declared no inbox. */
+/* docs/adr/0084: the owner's drain of the inbox, defined with the rest of it at
+   the bottom of this file; declared here because its callers, `_raise_external`
+   and `run_main_event_loop`, come long before that. Nothing for a deployment
+   that declared no inbox. */
 SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* docs/adr/0084: build the inbox empty, with no waker. Called by every
@@ -2822,6 +2822,7 @@ SCE_SM_FN static void build_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
     /* False only for a shape the queue refuses, which sce/inbox.h rules out at
        compile time. */
     (void)sce_inbox_init(&sm->inbox);
+    sm->draining_inbox = false;
 #else
     (void)sm;
 #endif
@@ -3712,7 +3713,19 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }
        `e` the document sent to itself was turned away. The refusal belongs
        where only a host arrives; what a stopped machine abandons is recorded by
        `record_unseen_external_events` at the main event loop's exit, which is
-       the one place that sees the queue and the stop together. */
+       the one place that sees the queue and the stop together.
+
+       docs/adr/0084, D2: every external enqueue of this machine comes through
+       here, so here the external queue keeps arrival order. What another
+       context posted before this event (the post a host-served `<send>` waited
+       for, W3C test 201) arrived first, so the owner applies what the inbox
+       holds before the event joins the queue, and not only at the macrostep
+       boundary: a `<send>` to this session, a host-run invocation's ending, a
+       delayed send released by `_tick`, a child's report and the host's own
+       raise alike. An interrupt never calls this; it posts, and a post is only
+       a push. `_raise` does not drain: the internal queue is the running
+       macrostep's own, and arrival order is the external queue's. */
+    drain_inbox(sm);
     event_queue_push(&sm->external_queue, evt);
 }
 
@@ -6911,15 +6924,25 @@ SCE_SM_FN static void apply_inbox_input({{ csym_prefix }}{{ model.name }}_t *sm,
 }
 #endif
 
-/* The macrostep boundary's half of the inbox: apply, on the owner, what other
-   contexts posted, oldest first, while the external queue has room for the one
-   event an input raises. At most as many as the inbox holds, so posters that
-   never stop cannot hold the owner at this boundary; what they post meanwhile is
-   applied at the next one, and what waits for room waits in the inbox. */
+/* Apply, on the owner, what other contexts posted, oldest first, while the
+   external queue has room for the one event an input raises. At most as many as
+   the inbox holds, so posters that never stop cannot hold the owner here; what
+   they post meanwhile is applied at the next drain, and what waits for room
+   waits in the inbox. Made at each macrostep boundary and before this machine
+   puts an event of its own on the external queue (`_raise_external`).
+
+   One drain at a time. Applying an input raises an external event, and that
+   raise asks for a drain first: the drain already applying is that drain, and
+   takes what it held in order, so the inner request is nothing and the applied
+   input's event is pushed as it stands, with no drain inside a drain. */
 SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
 #if SCE_MAX_INBOX > 0
     {{ csym_prefix }}{{ model.name }}_inbox_input_t input;
     uint32_t applied = 0u;
+    if (sm->draining_inbox) {
+        return;
+    }
+    sm->draining_inbox = true;
     /* Zeroed once, because GCC cannot follow a copy made inside the queue's
        take into the reads that follow it, and `-Werror=maybe-uninitialized`
        would stop an optimising build. */
@@ -6929,6 +6952,7 @@ SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
         apply_inbox_input(sm, &input);
         applied++;
     }
+    sm->draining_inbox = false;
 #else
     (void)sm;
 #endif

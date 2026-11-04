@@ -14,7 +14,10 @@
 //     refused by the token check, as a direct one is, and nothing posted is
 //     applied before the owner reaches a macrostep boundary;
 //   * a full inbox refuses a post, answers false and counts the refusal, and
-//     takes posts again once its owner has applied what it held.
+//     takes posts again once its owner has applied what it held;
+//   * a post made before the owner puts an event of its own on the external
+//     queue is taken before that event (W3C test 201's shape), whether the
+//     event is a host-run invocation's completion or the host's own raise.
 //
 // Built once per row of the queue, as a deployment states its atomics
 // (`SCE_INBOX_ATOMIC_RMW_WIDTH` 64, 32 and 0), each with `SCE_MAX_INBOX`
@@ -547,11 +550,89 @@ static int a_full_inbox_refuses_a_post_and_reports_it(void) {
     return bad;
 }
 
+/* ── Arrival order on the external queue ───────────────────────────── */
+
+/* The host of W3C test 201's shape: on a start it has a thread of its own post
+   `ping` to the machine and waits for it, so the post happens-before what the
+   owner does next, and then completes the start at once. */
+typedef struct {
+    host_log_t log;
+    inbox_probe_t *sm;
+    bool posted;
+} posting_host_t;
+
+static void serve_posting(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
+    posting_host_t *host = (posting_host_t *)user_data;
+    inbox_probe_inbox_input_t input;
+    serve(&host->log, event, out);
+    if (event->phase != SCE_HOST_INVOKE_START) {
+        return;
+    }
+    ping(&input, "posted");
+    host->posted = post_from_another_thread(host->sm, &input);
+    out->has_done_data = true;
+    (void)snprintf(out->done_data, sizeof(out->done_data), "%s", "\"own\"");
+}
+
+/* ADR 0084, D2 as amended at step 8. Inside the owner's macrostep a host call
+   waits for another thread to post `ping`, and the owner then puts an event of
+   its own on the external queue: the `done.invoke.job` of the start the host
+   completed at once. The post arrived first, so it is taken first. */
+static int a_post_made_before_the_owner_queues_its_own_event_is_taken_before_it(void) {
+    static inbox_probe_t sm;
+    static posting_host_t host;
+    sce_host_invoker_registry_t wiring;
+    int bad = 0;
+
+    memset(&wiring, 0, sizeof(wiring));
+    memset(&host, 0, sizeof(host));
+    host.sm = &sm;
+    (void)sce_host_invoker_register(&wiring, TYPE, serve_posting, &host);
+    inbox_probe_init_with_host_invokers(&sm, &wiring);
+    inbox_probe_step(&sm);
+    if (!host.posted) {
+        (void)fprintf(stderr, "FAIL: the inbox refused the post made during the start\n");
+        bad = 1;
+    }
+    bad |= expect_taken("the owner's own event was taken ahead of a post that arrived before it", &sm,
+                        "ping:posted;done:own;");
+    inbox_probe_destroy(&sm);
+    return bad;
+}
+
+/* A host's own raise on the owner puts an event of the owner's on the external
+   queue as well: what another thread posted before it is taken before it. */
+static int a_post_made_before_the_hosts_own_raise_is_taken_before_it(void) {
+    static inbox_probe_t sm;
+    host_log_t host;
+    inbox_probe_inbox_input_t input;
+    inbox_probe_event_with_meta_t raised;
+    int bad = 0;
+
+    boot(&sm, &host);
+    ping(&input, "posted");
+    if (!post_from_another_thread(&sm, &input)) {
+        (void)fprintf(stderr, "FAIL: the inbox refused a post\n");
+        bad = 1;
+    }
+    memset(&raised, 0, sizeof(raised));
+    (void)inbox_probe_resolve_event_by_name("ping", &raised.event);
+    (void)snprintf(raised.data, sizeof(raised.data), "%s", "\"raised\"");
+    inbox_probe_raise_external(&sm, &raised);
+    inbox_probe_step(&sm);
+    bad |= expect_taken("the host's raise was taken ahead of a post that arrived before it", &sm,
+                        "ping:posted;ping:raised;");
+    inbox_probe_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= posts_from_many_threads_are_taken_as_a_single_threaded_replay_takes_them();
     bad |= a_posted_ending_of_a_cancelled_or_restarted_start_is_refused_as_a_direct_one_is();
     bad |= a_full_inbox_refuses_a_post_and_reports_it();
+    bad |= a_post_made_before_the_owner_queues_its_own_event_is_taken_before_it();
+    bad |= a_post_made_before_the_hosts_own_raise_is_taken_before_it();
     if (bad == 0) {
         (void)printf("PASS: the inbox (SCE_INBOX_ATOMIC_RMW_WIDTH %d, SCE_MAX_INBOX %d)\n", SCE_INBOX_ATOMIC_RMW_WIDTH,
                      SCE_MAX_INBOX);

@@ -1019,6 +1019,10 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        so a machine is not moved once it is initialised. */
     sce_inbox_t inbox;
     {{ csym_prefix }}{{ model.name }}_inbox_input_t inbox_slots[SCE_MAX_INBOX];
+    /* A drain is applying what the inbox held. An input it applies raises an
+       external event, which asks for a drain first; this makes that request
+       nothing rather than a drain inside the drain. */
+    bool draining_inbox;
 #endif
 } {{ csym_prefix }}{{ model.name }}_t;
 
@@ -1836,7 +1840,10 @@ void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }
    another thread, core or interrupt handler may make, which exists when the
    deployment declares the inbox's capacity (`SCE_MAX_INBOX`, sce/inbox.h). What
    it takes is applied by the owner at its next macrostep boundary, before the
-   external queue is consulted, in the order the inbox took it, by the operation
+   external queue is consulted, or sooner, when the owner puts an event of its
+   own on that queue first (`_raise_external`, which every external enqueue of
+   the machine goes through): the posts go ahead of that event, as they arrived
+   ahead of it. Each is applied in the order the inbox took it, by the operation
    `kind` names. The inbox is built by the initialiser and is handed to other
    contexts after it returns.
 
