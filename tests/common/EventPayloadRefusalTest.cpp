@@ -143,7 +143,11 @@ TEST(EventPayloadRefusal, EveryCaseOfTheSharedTableIsRefusedWithItsCodePointerAn
         const std::string name = c.at("name").get<std::string>();
         const std::string data = c.at("data").get<std::string>();
         EventPayloadFields fields;
-        Refusal refusal = EventPayloadFields::decode(data, fields);
+        // A case that gives a depth is read as a `<sce:lift>` of the record of the one field `v`
+        // reads it (docs/adr/0087, section 2.1).
+        Refusal refusal = c.contains("depth")
+                              ? EventPayloadFields::lift(data, c.at("depth").get<uint32_t>(), {"v"}, nullptr, fields)
+                              : EventPayloadFields::decode(data, fields);
         if (refusal.empty()) {
             EventPayloadValue v;
             refusal = fields.value("v", v);
@@ -196,6 +200,75 @@ TEST(EventPayloadRefusal, APointerEscapesTildeAndSolidusInEachToken) {
     EXPECT_EQ(Refusal::pointerBelow("", "a~b/c"), "/a~0b~1c");
     EXPECT_EQ(Refusal::pointerBelow("", "~1"), "/~01");
     EXPECT_EQ(Refusal::pointerBelow("", ""), "/");
+}
+
+// A lift refuses a container past its depth over the brackets alone, before the text is
+// read as JSON, and names the declared member it stands under or the whole text
+// (docs/adr/0087, section 2.1, item 4).
+TEST(EventPayloadRefusal, ALiftRefusesAContainerPastItsDepthBeforeItReadsTheText) {
+    const std::vector<std::string> declared = {"title", "count"};
+
+    struct Case {
+        const char *text;
+        uint32_t depth;
+        const char *pointer;  // nullptr: no refusal
+    };
+
+    const Case cases[] = {
+        {R"({"title":"a","count":1})", 1, nullptr},
+        {R"({"title":["a"]})", 1, "/title"},
+        {R"({"extra":{"a":1}})", 1, ""},
+        {R"({"title":[1]})", 1, "/title"},
+        {"[[1]]", 1, ""},
+        {R"({"extra":[[[[[[[)", 1, ""},
+        {R"({"title":"[[{\"[","count":1})", 1, nullptr},
+        {R"({"title":{"a":1}})", 2, nullptr},
+        {R"({"title":"[[)", 1, nullptr},
+        {R"({"title":"x","extra":[1]})", 1, ""},
+    };
+    for (const Case &c : cases) {
+        const Refusal refusal = EventPayloadFields::liftTooDeep(c.text, c.depth, declared);
+        if (c.pointer == nullptr) {
+            EXPECT_TRUE(refusal.empty()) << c.text << ": " << refusal.reason();
+            continue;
+        }
+        EXPECT_EQ(refusal.code(), RefusalCode::TooDeep) << c.text;
+        EXPECT_EQ(refusal.pointer(), c.pointer) << c.text;
+        EXPECT_EQ(refusal.bound(), std::optional<uint32_t>(c.depth)) << c.text;
+    }
+}
+
+// A lift reads its record as a delivery's is read, or answers its refusal as data.
+TEST(EventPayloadRefusal, ALiftReadsARecordOrAnswersItsRefusal) {
+    struct Pair {
+        uint8_t v = 0;
+        uint8_t w = 0;
+    };
+
+    const auto read = [](const EventPayloadFields &fields, Pair &out) -> Refusal {
+        Refusal refusal = fields.readInteger("v", out.v);
+        return refusal.empty() ? fields.readInteger("w", out.w) : refusal;
+    };
+    Pair lifted;
+    ASSERT_TRUE(
+        EventPayloadFields::liftRecord(R"({"v":1})", "Pair", 1, {"v", "w"}, R"({"w":7})", lifted, read).empty());
+    EXPECT_EQ(lifted.v, 1);
+    EXPECT_EQ(lifted.w, 7);
+    const std::pair<const char *, RefusalCode> refused[] = {
+        {" \t", RefusalCode::NotJson},
+        {"[[", RefusalCode::TooDeep},
+        {"[1]", RefusalCode::NotObject},
+        {R"({"v":1,"v":2})", RefusalCode::NotJson},
+        {R"({"v":256,"w":1})", RefusalCode::OutOfRange},
+        {R"({"w":1})", RefusalCode::Missing},
+    };
+    for (const auto &[text, code] : refused) {
+        Pair untouched{9, 9};
+        const Refusal refusal = EventPayloadFields::liftRecord(text, "Pair", 1, {"v", "w"}, nullptr, untouched, read);
+        EXPECT_EQ(refusal.code(), code) << text << ": " << refusal.reason();
+        EXPECT_FALSE(refusal.empty()) << text;
+        EXPECT_EQ(untouched.v, 9) << text << ": a refused lift writes nothing";
+    }
 }
 
 // What a reader of an enum field answers for a name its enum does not declare: the

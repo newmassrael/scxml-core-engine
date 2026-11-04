@@ -4,6 +4,7 @@
 
 #include "common/JsonText.h"
 #include "common/Latin1Bytes.h"
+#include "core/LogMacros.h"
 
 #include <algorithm>
 #include <cmath>
@@ -533,10 +534,11 @@ public:
     }
 
     /**
-     * Past one JSON string at `p` in RFC 8259's grammar (section 7): closed, and every escape one of the
-     * eight short ones or `\u` and four hex digits. nullptr when `p` spells none. Which character a `\u`
-     * escape names is the reader's question, not the grammar's: half of a character is refused where a text
-     * is read.
+     * Past one JSON string at `p` in RFC 8259's grammar (sections 7 and 8.2): closed, no character below
+     * U+0020 standing unescaped, every escape one of the eight short ones or `\u` and four hex digits, and
+     * a `\u` escape of the first half of a UTF-16 pair followed at once by one of the second half, a second
+     * half never alone. nullptr when `p` spells none: a half of a character names no character, so the text
+     * is no JSON text every runtime reads alike (tests/json_text/payload_refusal.json).
      */
     static const char *skipWellFormedString(const char *p) {
         if (*p != '"') {
@@ -544,7 +546,7 @@ public:
         }
         p++;
         while (*p != '"') {
-            if (*p == '\0') {
+            if (*p == '\0' || static_cast<unsigned char>(*p) < 0x20u) {
                 return nullptr;
             }
             if (*p == '\\') {
@@ -555,6 +557,15 @@ public:
                         return nullptr;
                     }
                     p += 4;
+                    if (code >= 0xD800u && code <= 0xDBFFu) {
+                        unsigned low = 0;
+                        if (p[1] != '\\' || p[2] != 'u' || !readHex4(p + 3, low) || low < 0xDC00u || low > 0xDFFFu) {
+                            return nullptr;
+                        }
+                        p += 6;
+                    } else if (code >= 0xDC00u && code <= 0xDFFFu) {
+                        return nullptr;
+                    }
                 } else if (std::string_view("\"\\/bfnrt").find(*p) == std::string_view::npos || *p == '\0') {
                     return nullptr;
                 }
@@ -823,6 +834,12 @@ public:
         uint64_t magnitude = 0;
         RefusalCode code = RefusalCode::BadNumber;
         std::string refusal = detail::EventPayloadScan::readWhole(at_, negative, magnitude, code);
+        if (refusal.empty() && negative && magnitude == 0u) {
+            // `-0` is a JSON number and no spelling of a whole number: every runtime refuses it, as it
+            // refuses `"-0"` for a 64-bit integer.
+            code = RefusalCode::BadNumber;
+            refusal = "is not a whole number (-0)";
+        }
         if (refusal.empty()) {
             refusal = detail::EventPayloadScan::fit(negative, magnitude, out, code);
         }
@@ -851,7 +868,11 @@ public:
             refusal = detail::EventPayloadScan::readWholeText(at_ + 1, std::is_signed_v<T>, negative, magnitude, code);
         } else {
             refusal = detail::EventPayloadScan::readWhole(at_, negative, magnitude, code);
-            if (refusal.empty() && magnitude > (uint64_t{1} << 53) - 1u) {
+            if (refusal.empty() && negative && magnitude == 0u) {
+                // `-0` is no whole number, as `"-0"` is not.
+                code = RefusalCode::BadNumber;
+                refusal = "is not a whole number (-0)";
+            } else if (refusal.empty() && magnitude > (uint64_t{1} << 53) - 1u) {
                 code = RefusalCode::BadNumber;
                 refusal = "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is "
                           "written as a text of its digits";
@@ -1133,6 +1154,132 @@ public:
             }
         }
         return out.takeDefaults(defaults);
+    }
+
+    /**
+     * @brief Read the text a `<sce:lift>` reads as the fields of a record of a schema
+     * (docs/adr/0087, section 2.1)
+     * @param text The text read, which must outlive `out`: `out` borrows its characters
+     * @param depth The deepest container a value of the schema holds
+     * @param declared The ids of the schema's fields
+     * @param defaults For a schema a later revision of which added fields, the JSON object of
+     *        their defaults, a literal that outlives `out`; nullptr for none
+     * @param out Receives the fields when the read succeeds
+     * @return An empty refusal when `out` was filled, else why it was not
+     *
+     * Three refusals come before the fields are read, in this order: a text that is empty or
+     * only whitespace (`notJson`); a container opened deeper than `depth`, decided over the
+     * text's brackets alone before it is read as JSON (`liftTooDeep`, `tooDeep`); and a text
+     * that is not one JSON object, as a delivery is refused (`decode`).
+     */
+    static EventPayloadRefusal lift(const std::string &text, uint32_t depth, const std::vector<std::string> &declared,
+                                    const char *defaults, EventPayloadFields &out) {
+        if (*detail::EventPayloadScan::skipSpace(text.c_str()) == '\0') {
+            return EventPayloadRefusal(RefusalCode::NotJson, "", "the text is empty");
+        }
+        EventPayloadRefusal refusal = liftTooDeep(text, depth, declared);
+        if (refusal.empty()) {
+            refusal = decode(text, out);
+        }
+        if (refusal.empty() && defaults != nullptr) {
+            refusal = out.takeDefaults(defaults);
+        }
+        return refusal;
+    }
+
+    /**
+     * @brief The refusal of a container `text` opens deeper than `depth`, the deepest a value of
+     * a lift's schema holds (docs/adr/0087, section 2.1, item 4), or no refusal when it opens none
+     *
+     * Decided over the brackets alone, before the text is read as JSON, so that every runtime
+     * decides it alike and no reader descends past the type: a text is skipped from its opening
+     * quote to the next quote no backslash escapes, each `{` and `[` outside one opens a level
+     * and each `}` and `]` closes one, and the first opened past `depth` is refused, whatever the
+     * text holds after it. A text that never closes ends the walk with nothing refused, and the
+     * reading of the text as JSON refuses it.
+     *
+     * The pointer names the member of the outermost object the container stands under, the name
+     * read from the last text closed in that object before a `:`, when that name is one of
+     * `declared`; otherwise the whole text, `""`. The bound is `depth`.
+     */
+    static EventPayloadRefusal liftTooDeep(const std::string &text, uint32_t depth,
+                                           const std::vector<std::string> &declared) {
+        uint32_t level = 0;
+        std::string_view lastText;
+        std::string_view member;
+        for (size_t at = 0; at < text.size(); ++at) {
+            const char c = text[at];
+            if (c == '"') {
+                const size_t start = at;
+                ++at;
+                while (at < text.size() && text[at] != '"') {
+                    at += text[at] == '\\' ? 2 : 1;
+                }
+                if (at >= text.size()) {
+                    return {};
+                }
+                if (level == 1u) {
+                    lastText = std::string_view(text).substr(start, at + 1 - start);
+                }
+            } else if (c == ':' && level == 1u) {
+                member = lastText;
+                lastText = {};
+            } else if (c == ',' && level == 1u) {
+                member = {};
+                lastText = {};
+            } else if (c == '{' || c == '[') {
+                ++level;
+                if (level > depth) {
+                    std::string pointer;
+                    std::string name;
+                    if (!member.empty() &&
+                        detail::EventPayloadScan::skipWellFormedString(std::string(member).c_str()) != nullptr &&
+                        detail::EventPayloadScan::walkText(std::string(member).c_str(), name).empty() &&
+                        std::find(declared.begin(), declared.end(), name) != declared.end()) {
+                        pointer = EventPayloadRefusal::pointerBelow("", name);
+                    }
+                    return EventPayloadRefusal(RefusalCode::TooDeep, std::move(pointer),
+                                               "the text opens a container deeper than the " + std::to_string(depth) +
+                                                   " levels a value of its schema holds",
+                                               depth);
+                }
+            } else if ((c == '}' || c == ']') && level > 0u) {
+                --level;
+            }
+        }
+        return {};
+    }
+
+    /**
+     * @brief What a `<sce:lift>` reads (docs/adr/0087, section 2.1): `text` as a record of the
+     * schema named `schema`, whose fields `read(fields, out)` reads, as a delivery of the schema is
+     * read; or the refusal of the first place that is not one, its code, pointer and bound the
+     * statechart keeps as a record
+     *
+     * `lift` says what is refused before the fields are read. Each outcome is logged with the
+     * schema's name and, for a refusal, its code, pointer and bound; the text itself is not, since
+     * nothing bounds what a sender writes in it. `out` is filled only when no refusal is answered.
+     */
+    template <typename T, typename Read>
+    static EventPayloadRefusal liftRecord(const std::string &text, const char *schema, uint32_t depth,
+                                          const std::vector<std::string> &declared, const char *defaults, T &out,
+                                          Read read) {
+        EventPayloadFields fields;
+        EventPayloadRefusal refusal = lift(text, depth, declared, defaults, fields);
+        T lifted{};
+        if (refusal.empty()) {
+            refusal = read(static_cast<const EventPayloadFields &>(fields), lifted);
+        }
+        if (refusal.empty()) {
+            SCE_LOG_INFO("<sce:lift>: the text is a record of {}", schema);
+            out = std::move(lifted);
+        } else {
+            SCE_LOG_INFO("<sce:lift>: the text is no record of {}: {} at '{}', bound {} ({})", schema,
+                         EventPayloadRefusal::codeName(refusal.code()), refusal.pointer(),
+                         refusal.bound().has_value() ? std::to_string(*refusal.bound()) : std::string("none"),
+                         refusal.reason());
+        }
+        return refusal;
     }
 
     /**

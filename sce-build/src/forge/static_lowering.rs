@@ -1911,6 +1911,12 @@ pub trait StaticTarget {
     fn lift(&self, _lift: &LiftStatement<'_>) -> Option<String> {
         None
     }
+    /// The line that brings the runtime's reader of a lift into scope in a unit
+    /// that lowers a `<sce:lift>`, for a target whose unit does not already hold
+    /// it. `None` for a target that needs none.
+    fn lift_import(&self) -> Option<String> {
+        None
+    }
     /// Append `value` to the list at `target` while it holds fewer than
     /// `capacity` elements, as an expression that is `true` when the append
     /// failed. It fails when the list is full — `overflow`, if any, runs, and
@@ -5032,6 +5038,7 @@ pub fn lower(
         composed: ComposedNames::of(model, target, machine, &held_enums),
         held_enums: held_enums.clone(),
         type_scope: crate::forge::value_path::statechart_scope(model),
+        lifts: std::cell::Cell::new(false),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -5776,6 +5783,11 @@ pub fn lower(
     // it (`flag ? 3 : null`): the unit imports it as it does for a variable.
     if rewrites.host_optional.get() {
         imports.extend(target.optional_import());
+    }
+    // A lift calls the runtime's reader of a text, which a unit with no typed
+    // payload of its own does not otherwise bring into scope (docs/adr/0087).
+    if rewrites.lifts.get() {
+        imports.extend(target.lift_import());
     }
     // An enum's definition names the optional type where the target answers a number
     // it declares as one, whether or not the machine holds an optional value.
@@ -7112,6 +7124,10 @@ struct Rewrites<'m> {
     /// document it is: what the depth of a record a `<sce:lift>` reads is
     /// folded in ([`crate::forge::lift::depth`]).
     type_scope: crate::forge::value_type::TypeScope,
+    /// Whether the walk has lowered a `<sce:lift>`, whose unit imports the
+    /// runtime's reader of a text ([`StaticTarget::lift_import`]). Set by the
+    /// walk where it meets one, read once it is done.
+    lifts: std::cell::Cell<bool>,
 }
 
 impl Rewrites<'_> {
@@ -8202,6 +8218,114 @@ impl StaticTarget for CppTarget {
                 filters::escape_cpp(label.to_string())
             )
         }
+    }
+    // The runtime's `EventPayloadFields::liftRecord` reads the text and hands the
+    // fields to a lambda that reads each into the record through the reader a
+    // delivery's value of its type is read by (`readInteger`, `readText`, ...). A
+    // refusal is the record of the standard refusal document; its code is the
+    // machine's enum of it at the code's number, which the enum document declares
+    // for every code the runtime has.
+    fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
+        const COMMON: &str = "::SCE::Common";
+        let enum_reader = |alias: &str, value: &str, into: &str| -> Option<String> {
+            let model = lift.enums.get(alias)?;
+            let ty = self.enum_type(lift.machine, alias)?;
+            let arms: String = model
+                .variants
+                .iter()
+                .map(|v| {
+                    format!(
+                        "if (name == \"{}\") {{ {into} = {ty}::{}; return {{}}; }} ",
+                        filters::escape_cpp(v.name.clone()),
+                        self.enum_variant(&ty, &model.name, &v.name)
+                    )
+                })
+                .collect();
+            Some(format!(
+                "[&]() -> {COMMON}::EventPayloadRefusal {{ std::string name; {COMMON}::EventPayloadRefusal \
+                 named = {value}.readName(name); if (!named.empty()) {{ return named; }} {arms}return \
+                 {value}.unknownVariant(name, \"{}\"); }}()",
+                filters::escape_cpp(alias.to_string())
+            ))
+        };
+        // The reader of a present value of `ty` at the value `value`, into the place `into`.
+        let read = |ty: &SceType, max: Option<u32>, value: &str, into: &str| -> Option<String> {
+            Some(match ty {
+                SceType::Uint64 | SceType::Int64 => format!("{value}.readWide({into})"),
+                SceType::Float32 | SceType::Float64 => format!("{value}.readFloating({into})"),
+                SceType::Bool => format!("{value}.readBool({into})"),
+                SceType::String => format!("{value}.readText({}u, {into})", max?),
+                SceType::Bytes => format!("{value}.readBytes({}u, {into})", max?),
+                SceType::Enum(reference) => enum_reader(&reference.alias, value, into)?,
+                _ => format!("{value}.readInteger({into})"),
+            })
+        };
+        let record_ty = self.record_type(lift.machine, lift.alias);
+        let mut reads = String::new();
+        for field in &lift.schema.fields {
+            let into = format!("out.{}", self.record_field(&field.id));
+            let reader = match &field.sce_type {
+                EntryType::Scalar(ty) => read(ty, field.max_size, "v", &into)?,
+                // The present value is read into the place the runtime hands the
+                // lambda, by the reader of its type.
+                EntryType::Optional { elem } => format!(
+                    "v.readOptional({into}, [&](const {COMMON}::EventPayloadValue &present, auto &held) -> \
+                     {COMMON}::EventPayloadRefusal {{ return {}; }})",
+                    read(elem, field.max_size, "present", "held")?
+                ),
+            };
+            reads.push_str(&format!(
+                "refused = r.value(\"{}\", v); if (!refused.empty()) {{ return refused; }} refused = {reader}; \
+                 if (!refused.empty()) {{ return refused; }} ",
+                field.id
+            ));
+        }
+        let declared: Vec<String> = lift
+            .field_ids()
+            .iter()
+            .map(|id| format!("\"{id}\""))
+            .collect();
+        let defaults = lift.defaults.as_ref().map_or_else(
+            || "nullptr".to_string(),
+            |json| format!("\"{}\"", filters::escape_cpp(json.clone())),
+        );
+        // The refusal, as a record of the standard refusal document.
+        let (code_alias, _) = lift.refusal_code()?;
+        let code_ty = self.enum_type(lift.machine, code_alias)?;
+        let refusal_ty = self.record_type(lift.machine, lift.refusal_alias);
+        let members = lift.refusal_members(
+            self,
+            &format!("static_cast<{code_ty}>(sceRefusal.code())"),
+            "sceRefusal.pointer()",
+            "sceRefusal.bound()",
+        )?;
+        let refusal_record = self.record_value(&refusal_ty, &members);
+        let lifted = if lift.location_optional {
+            self.optional_some(&record_ty, "sceLifted")?
+        } else {
+            "sceLifted".to_string()
+        };
+        Some(format!(
+            "{{ {record_ty} sceLifted{{}}; const {COMMON}::EventPayloadRefusal sceRefusal = \
+             {COMMON}::EventPayloadFields::liftRecord({text}, \"{schema}\", {depth}u, {{{declared}}}, \
+             {defaults}, sceLifted, [](const {COMMON}::EventPayloadFields &r, {record_ty} &out) -> \
+             {COMMON}::EventPayloadRefusal {{ {COMMON}::EventPayloadValue v; {COMMON}::EventPayloadRefusal \
+             refused; {reads}return {{}}; }}); if (sceRefusal.empty()) {{ {write} {absent} }} else {{ \
+             {refused} }} }}",
+            text = lift.text,
+            schema = filters::escape_cpp(lift.alias.to_string()),
+            depth = lift.depth,
+            declared = declared.join(", "),
+            write = self.assign(lift.location, &lifted),
+            absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
+            refused = self.assign(
+                lift.refusal,
+                &self.optional_some(&refusal_ty, &refusal_record)?
+            ),
+        ))
+    }
+    fn lift_import(&self) -> Option<String> {
+        Some("#include \"common/EventPayloadLift.h\"".to_string())
     }
     // An expression that is `true` when the append failed: the list is full, or
     // the value could not be computed. The room is checked first, so a full
@@ -15018,6 +15142,7 @@ fn lower_action(
                 .lift(&statement)
                 .ok_or_else(|| unlowered(&format!("{lang} has no lowering of it yet")))?;
             action.native_fails = false;
+            rewrites.lifts.set(true);
             rewrites.note_element(action.spellings.get("location"), &action.native_code);
         }
         // A `<foreach>` walks a list variable; its loop variables are the

@@ -1,0 +1,9 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# docs/adr/0087, section 2.1: read a text into a record of a schema, or keep
+   why it is not one as a refusal record. The statement is lowered ahead of the
+   template by `forge::static_lowering` and stored on `action.native_code`; it
+   raises nothing and cannot fail. #}
+// docs/adr/0087: <sce:lift text="{{ action.lift_text }}" schema="{{ action.lift_schema }}">
+{% include 'actions/_native_statement.jinja2' %}
