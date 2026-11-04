@@ -389,7 +389,11 @@ impl<L, A: Law, const MAX: usize, const MIN: usize> Lawful<Bounded<L, MAX, MIN>,
     /// state the law is in, so the entries it reads follow it.
     ///
     /// On `Err` the list is its default, so it still follows its law, whatever
-    /// `fill` left.
+    /// `fill` left. A list read past its capacity keeps the entries it held,
+    /// the first ones the frame gave, and they are held to the law, so a frame
+    /// whose entries break it before the capacity is refused for that, as it
+    /// is on a profile that holds more (docs/adr/0077 §7); held to it, they
+    /// stay and the list answers `CapacityExceeded`.
     pub fn refill_from<T: Default>(
         &mut self,
         start: A::Start,
@@ -399,14 +403,13 @@ impl<L, A: Law, const MAX: usize, const MIN: usize> Lawful<Bounded<L, MAX, MIN>,
         L: SceList<T> + Fewest + Follows<A>,
     {
         self.start = start;
-        let filled = self.list.refill(fill).and_then(|()| {
-            if self.list.follows(start) {
-                Ok(())
-            } else {
+        let filled = match self.list.refill(fill) {
+            Ok(()) | Err(CodecError::CapacityExceeded) if !self.list.follows(start) => {
                 Err(CodecError::PresentIfMismatch)
             }
-        });
-        if filled.is_err() {
+            read => read,
+        };
+        if !matches!(filled, Ok(()) | Err(CodecError::CapacityExceeded)) {
             *self = Self::default();
         }
         filled

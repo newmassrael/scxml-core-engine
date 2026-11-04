@@ -59,12 +59,14 @@ PY
 
 mutation_case "a failed fill keeps what it pushed" <<'PY'
 edit("backends/rust/forge-runtime/src/bounded.rs",
-     r'''        if filled.is_err() {
-            self.0.clear();
-            for _ in 0..MIN {''',
-     r'''        if filled.is_err() && self.0.as_slice().len() < MIN {
-            self.0.clear();
-            for _ in 0..MIN {''')
+     r'''                (MIN..=MAX).contains(&self.0.as_slice().len())
+            }
+            Err(_) => false,
+        };''',
+     r'''                (MIN..=MAX).contains(&self.0.as_slice().len())
+            }
+            Err(_) => true,
+        };''')
 PY
 
 mutation_case "a refill holds a list past its bound" <<'PY'
@@ -72,8 +74,8 @@ edit("backends/rust/forge-runtime/src/bounded.rs",
      r'''            n if n > MAX => Err(crate::codec::CodecError::TooManyElements),
             _ => Ok(()),
         });
-        if filled.is_err() {''',
+        // A list read past its capacity keeps the entries it held, which are''',
      r'''            _ => Ok(()),
         });
-        if filled.is_err() {''')
+        // A list read past its capacity keeps the entries it held, which are''')
 PY

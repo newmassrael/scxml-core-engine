@@ -335,7 +335,8 @@ impl<L, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
     /// since a `heapless::Vec` moves by copying its whole capacity.
     ///
     /// On `Err` the list holds `MIN` default entries, so it is still inside its
-    /// bounds, whatever `fill` left.
+    /// bounds, whatever `fill` left; on `CapacityExceeded` it keeps the entries
+    /// it held where they are inside them.
     ///
     /// A list past what its profile holds is read whole and not held past that
     /// capacity, and `fill` then answers `CapacityExceeded` (docs/adr/0077 §7).
@@ -356,7 +357,18 @@ impl<L, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
             n if n > MAX => Err(crate::codec::CodecError::TooManyElements),
             _ => Ok(()),
         });
-        if filled.is_err() {
+        // A list read past its capacity keeps the entries it held, which are
+        // inside its bounds, so what holds them can still be judged by them
+        // (a list's law, docs/adr/0065 §6 R8). Any other refusal leaves the
+        // fewest default entries.
+        let kept = match filled {
+            Ok(()) => true,
+            Err(crate::codec::CodecError::CapacityExceeded) => {
+                (MIN..=MAX).contains(&self.0.as_slice().len())
+            }
+            Err(_) => false,
+        };
+        if !kept {
             self.0.clear();
             for _ in 0..MIN {
                 if self.0.try_push(T::default()).is_err() {
@@ -983,6 +995,27 @@ mod tests {
             Err(CodecError::TooManyElements)
         );
         assert!(pair.first().is_empty() && pair.second().is_empty());
+    }
+
+    #[test]
+    fn a_list_read_past_its_capacity_keeps_the_entries_it_held() {
+        use crate::codec::CodecError;
+        let mut list = Bounded::<heapless::Vec<u8, 4>, 4, 1>::default();
+        assert_eq!(
+            list.refill(|v| {
+                crate::storage::SceList::try_push(v, 7u8)?;
+                crate::storage::SceList::try_push(v, 8u8)?;
+                Err(CodecError::CapacityExceeded)
+            }),
+            Err(CodecError::CapacityExceeded)
+        );
+        assert_eq!(list.as_slice(), &[7u8, 8][..]);
+        // Held entries outside the bounds are not kept: none, below the fewest.
+        assert_eq!(
+            list.refill(|_| Err(CodecError::CapacityExceeded)),
+            Err(CodecError::CapacityExceeded)
+        );
+        assert_eq!(list.as_slice(), &[0u8][..]);
     }
 
     #[test]

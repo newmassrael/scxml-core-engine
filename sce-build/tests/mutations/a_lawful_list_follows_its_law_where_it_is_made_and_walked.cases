@@ -40,8 +40,8 @@ PY
 
 mutation_case "a fill keeps entries that break the law" <<'PY'
 edit("backends/rust/forge-runtime/src/law.rs",
-     r'''            if self.list.follows(start) {''',
-     r'''            if self.list.follows(start) || start == start {''')
+     r'''            Ok(()) | Err(CodecError::CapacityExceeded) if !self.list.follows(start) => {''',
+     r'''            Ok(()) | Err(CodecError::CapacityExceeded) if !self.list.follows(start) && start != start => {''')
 PY
 
 # The call stays in the mutant and is never taken: a mutant that dropped it
