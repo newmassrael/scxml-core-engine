@@ -206,6 +206,8 @@ pub fn check(
         read: Default::default(),
         whole_state_call_ok: Default::default(),
         receivers: Receivers::of(model, &held_enums, &event_schemas),
+        lift_schemas: &model.imported_records,
+        type_scope: crate::forge::value_path::statechart_scope(model),
     };
     // Every record variable's fields, readable everywhere; a transition adds
     // its payload to these.
@@ -950,6 +952,14 @@ struct Judge<'a> {
     whole_state_call_ok: std::cell::Cell<bool>,
     /// Who reads the payload of a `<send>`, where the build knows ([`Receivers`]).
     receivers: Receivers<'a>,
+    /// Every record schema the document imports, by alias, whole: what a
+    /// `<sce:lift>` reads a text as (docs/adr/0087), a schema that holds a list
+    /// or a record included, which [`Self::schemas`] leaves out.
+    lift_schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// The scope the document names its types in, each record with the
+    /// document it is: what tells a lift's refusal record from another, and
+    /// what the depth and the longest pointer of a record are folded in.
+    type_scope: crate::forge::value_type::TypeScope,
 }
 
 /// The documents that read the payload of a `<send>` of this document, where the
@@ -1962,6 +1972,226 @@ impl<'a> Judge<'a> {
             spelling.map(|s| s.row()),
             spelling.map(|s| s.col()),
         )
+    }
+
+    /// A `<sce:lift>` (docs/adr/0087, section 2.1): `schema` an imported event
+    /// schema whose fields are each one entry; `location` a variable of
+    /// `record:R` or `optional<record:R>`, `R` the document `schema` names;
+    /// `refusal` another variable, of `optional<record:L>`, `L` the standard
+    /// refusal document; `text` the name of a bounded text, present where it is
+    /// read; and the longest pointer into `R` no longer than the refusal's
+    /// `path` holds. Each refusal is placed on the attribute that breaks it.
+    fn lift(&self, ctx: &TypeCtx<'_>, action: &Action) -> Result<(), Located<ForgeError>> {
+        use crate::forge::error::ValidationError;
+        let located = |error: ForgeError, attr: &str| {
+            let spelling = action.spellings.get(attr);
+            Located::new(
+                error,
+                self.diag_label,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+            )
+        };
+        let variable = |name: &str| self.scope.variables.iter().find(|v| v.id == name);
+        let type_of = |var: &Variable| {
+            var.value_type
+                .as_ref()
+                .map(|t| t.as_attr())
+                .unwrap_or_default()
+        };
+
+        // The schema: an event schema the document imports.
+        let schema = action.lift_schema.trim();
+        if !self.lift_schemas.contains_key(schema) {
+            return Err(located(
+                ValidationError::InvalidAttribute {
+                    element: "<sce:lift>".to_string(),
+                    attr: "schema".to_string(),
+                    value: schema.to_string(),
+                    allowed: self.lift_schemas.keys().cloned().collect(),
+                }
+                .into(),
+                "schema",
+            ));
+        }
+        // A schema one of whose fields holds a list or a record is read once
+        // the composed readers lower for every backend (docs/adr/0086, step 3;
+        // docs/adr/0087, section 7.1): refused by name until then, never read
+        // in part.
+        if !self.schemas.contains_key(schema) {
+            let composed = self.lift_schemas[schema]
+                .fields
+                .iter()
+                .find_map(|field| field.entry_field().err())
+                .map(|composed| {
+                    format!(
+                        "the field `{}` holds `{}`",
+                        composed.field, composed.composition.place
+                    )
+                })
+                .unwrap_or_else(|| "a field holds a list or a record".to_string());
+            return Err(located(
+                crate::forge::error::GenerateError::unsupported(format!(
+                    "<sce:lift schema=\"{schema}\">: {composed}, and a lift reads a record whose \
+                     fields are numbers, truth values, enums, texts, byte strings or optional \
+                     ones of them; a record that holds a list or a record is read once every \
+                     backend lowers the composed readers (docs/adr/0087, section 7.1)"
+                ))
+                .into(),
+                "schema",
+            ));
+        }
+
+        // The location: a variable of the record, or of an optional one.
+        let location = action.location.trim();
+        let wanted = format!("record:{schema} or optional<record:{schema}>");
+        let location_fits = variable(location).is_some_and(|var| {
+            var.value_type
+                .as_ref()
+                .and_then(|t| {
+                    t.record_alias()
+                        .or_else(|| t.optional_elem().and_then(|elem| elem.record_alias()))
+                })
+                .is_some_and(|alias| {
+                    crate::forge::lift::same_record(alias, schema, &self.type_scope)
+                })
+        });
+        if !location_fits {
+            let detail = match variable(location) {
+                Some(var) => format!(
+                    "names a variable of {}, and a lift replaces a variable of {wanted} whole",
+                    type_of(var)
+                ),
+                None => format!(
+                    "names no variable of the document, and a lift replaces a variable of \
+                     {wanted} whole"
+                ),
+            };
+            return Err(located(
+                ValidationError::LiftLocation {
+                    attr: "location".to_string(),
+                    value: location.to_string(),
+                    detail,
+                }
+                .into(),
+                "location",
+            ));
+        }
+
+        // The refusal: another variable, of the optional refusal record.
+        let refusal = action.lift_refusal.trim();
+        let refusal_wanted = format!(
+            "optional<record:L>, L the document {}",
+            crate::forge::lift::REFUSAL_DOCUMENT
+        );
+        let refusal_alias = variable(refusal)
+            .and_then(|var| var.value_type.as_ref())
+            .and_then(|t| t.optional_elem())
+            .and_then(|elem| elem.record_alias())
+            .filter(|alias| crate::forge::lift::is_refusal_record(alias, &self.type_scope));
+        let refusal_detail = if refusal == location {
+            Some(
+                "names the variable `location` names too, and a lift writes the record and the \
+                 refusal to two variables, one of them absent after it"
+                    .to_string(),
+            )
+        } else if refusal_alias.is_some() {
+            None
+        } else {
+            Some(match variable(refusal) {
+                Some(var) => format!(
+                    "names a variable of {}, and a lift keeps its refusal in a variable of \
+                     {refusal_wanted}",
+                    type_of(var)
+                ),
+                None => format!(
+                    "names no variable of the document, and a lift keeps its refusal in a \
+                     variable of {refusal_wanted}"
+                ),
+            })
+        };
+        if let Some(detail) = refusal_detail {
+            return Err(located(
+                ValidationError::LiftLocation {
+                    attr: "refusal".to_string(),
+                    value: refusal.to_string(),
+                    detail,
+                }
+                .into(),
+                "refusal",
+            ));
+        }
+        let refusal_alias = refusal_alias.expect("the refusal was held to its record above");
+
+        // The text: the name of a bounded text, present where it is read.
+        let text = action.lift_text.trim();
+        let lift_text = |detail: String| {
+            located(
+                ValidationError::LiftText {
+                    text: text.to_string(),
+                    detail,
+                }
+                .into(),
+                "text",
+            )
+        };
+        let named = crate::forge::expr::parse_to_ast(text)
+            .ok()
+            .and_then(|ast| crate::forge::expr::dotted_path(&ast));
+        if named.is_none() {
+            return Err(lift_text(
+                "is not a name, and a lift reads the text a variable, a field of a record \
+                 variable or a field of the event's payload holds, in place"
+                    .to_string(),
+            ));
+        }
+        let ty = self.expr(
+            ctx,
+            text,
+            action.spellings.get("text"),
+            Expected::Hint(InferredType::Unknown),
+        )?;
+        match ty {
+            InferredType::Str => {}
+            InferredType::Optional(crate::forge::types::OptionalElem::Str) => {
+                return Err(lift_text(
+                    "names a text that may be absent and is not proven present here: test it \
+                     first (`x !== null`), or lift a text that is always present"
+                        .to_string(),
+                ));
+            }
+            other => {
+                return Err(lift_text(format!(
+                    "names a value of {}, and a lift reads a text: a value of string[N]",
+                    self.spelled_type(ctx, text, other)
+                )));
+            }
+        }
+        if self.text_bound(text).is_none() {
+            return Err(lift_text(
+                "names a text with no bound, and a lift reads a text of string[N]".to_string(),
+            ));
+        }
+
+        // Every refusal names a place the schema declares, so the refusal's path
+        // holds each one whole when it holds the longest.
+        let longest = crate::forge::lift::longest_pointer(schema, &self.type_scope);
+        let bound = crate::forge::lift::path_bound(refusal_alias, &self.type_scope);
+        if let (Ok((pointer, length)), Some(bound)) = (longest, bound) {
+            if length > u64::from(bound) {
+                return Err(located(
+                    ValidationError::LiftPathBound {
+                        schema: schema.to_string(),
+                        pointer,
+                        length,
+                        bound,
+                    }
+                    .into(),
+                    "schema",
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// A `record:<alias>` variable built whole: one `<sce:set>` per field
@@ -3690,6 +3920,7 @@ impl<'a> Judge<'a> {
                     return Err(self.not_a_list(action, state));
                 }
             }
+            "sce_lift" => self.lift(ctx, action)?,
             // A host action's arguments are judged by
             // `native_action::validate`; what they call still counts as a
             // call of an imported algorithm.

@@ -5130,6 +5130,37 @@ impl SCXMLParser {
                 action.location = child.attribute("target").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
             }
+            // docs/adr/0087, section 2.1: read a text the statechart holds into a
+            // record of an imported event schema, or keep why it is not one in a
+            // refusal record. Which names it reads and writes, and whether each
+            // is of the type the statement needs, is judged with the rest of the
+            // typed scope ([`crate::forge::static_datamodel`]).
+            (false, "lift") => {
+                if model.datamodel != Datamodel::SceStatic {
+                    let pos = child.document().text_pos_at(child.range().start);
+                    return Err(crate::forge::error::Located::new(
+                        ScxmlSemanticError::StaticDatamodelRule {
+                            construct: "<sce:lift>".to_string(),
+                            datamodel: model.datamodel.as_str().to_string(),
+                            rule: "a text is read into a record of its schema, and a refusal kept \
+                                   as a record, only where every variable has a type: under \
+                                   datamodel=\"sce-static\""
+                                .to_string(),
+                            state: owning_state(child),
+                            observed: Some("lift".to_string()),
+                        }
+                        .into(),
+                        source_name,
+                        Some(pos.row),
+                        Some(pos.col),
+                    ));
+                }
+                action.action_type = "sce_lift".to_string();
+                action.lift_text = child.attribute("text").unwrap_or("").to_string();
+                action.lift_schema = child.attribute("schema").unwrap_or("").to_string();
+                action.location = child.attribute("location").unwrap_or("").to_string();
+                action.lift_refusal = child.attribute("refusal").unwrap_or("").to_string();
+            }
             // §scxml-4.10: an element of the SCXML namespace here is executable content, and the
             // ones that are not (`<onentry>` inside a `<transition>`, a `<state>` inside an
             // `<onexit>`, a misspelt `<asign>`) have no place. They used to be skipped with

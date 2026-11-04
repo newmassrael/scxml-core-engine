@@ -491,6 +491,9 @@ impl<'m> Analysis<'m> {
                 }
             }
             "sce_clear" => Ok(Cost::NONE),
+            // A lift writes a record or a refusal and raises nothing
+            // (docs/adr/0087, section 2.1): `actions/sce_lift.rs.jinja2`.
+            "sce_lift" => Ok(Cost::NONE),
             // A native action with no argument is a bare host call, which
             // cannot fail; one with arguments raises when one fails or the
             // payload it reads was not delivered.

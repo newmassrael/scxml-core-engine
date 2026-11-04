@@ -4445,6 +4445,52 @@ by. The fixture is not named `static_record_payload`: C11 names a machine's
 payload struct `<machine>_<event>`, and `static_record` has an event `payload`, so
 a machine of that name put both in one header.
 
+**A text read as a record: `<sce:lift>`** (docs/adr/0087, section 2). `<sce:lift
+text="said" schema="Answer" location="answer" refusal="why"/>` reads the text `said`
+holds as a record of the schema imported as `Answer`, through the reader a delivery of
+that schema is read by, a field a later revision added taking its default. When the
+text is one, it replaces `answer` whole and `why` becomes absent; when it is not, `why`
+holds a record of `sce:std/lift/refusal.scxml` (its `code`, a value of
+`sce:std/lift/refusal_code.scxml`; its `path`, the strict RFC 6901 pointer to the first
+place refused; its `bound`, the bound that place broke, for `tooLong`, `tooMany` and
+`tooDeep`) and `answer` is left as it was. The statement raises nothing, so the block it
+stands in goes on, and after it `why` says which of the two happened. What each name
+must be is judged where the document is read:
+
+- `schema` is an event schema the document imports (`validation/invalid-attribute`,
+  with the aliases it imports), whose fields are numbers, truth values, closed enums,
+  bounded texts and byte strings, or optional ones of them; one holding a list or a
+  record is `generate/unsupported-feature` until every backend reads one
+  (docs/adr/0087, section 7.1);
+- `location` is a variable of `record:R` or `optional<record:R>`, `R` the document
+  `schema` names, and `refusal` another variable, of `optional<record:L>`, `L` the
+  document `sce:std/lift/refusal.scxml` by whatever alias it is imported
+  (`validation/lift-location`);
+- `text` is the name of a `string[N]` value, a variable, a field of a record variable or
+  a field of the transition's payload, present where it is read: an optional one is
+  tested first (`validation/lift-text`);
+- the longest pointer to a place the schema declares fits the refusal's `path`
+  (`string[lift_path=256]`; `validation/lift-path-bound` names the pointer and its
+  length).
+
+Under any other data model the element is `scxml/static-datamodel-rule`.
+
+The reader refuses before it reads a field, in this order: a text that is empty or
+only whitespace (`notJson`); a container opened deeper than the deepest a value of `R`
+holds (`tooDeep`, its bound that depth, which is 1 for every schema a lift reads now),
+decided over the text's brackets alone before the text is read as JSON, so neither the
+work nor the stack of a lift grows with what a text nests; then a text that is not one
+JSON object, as a delivery is refused. A `tooDeep` refusal names the member of the
+outermost object the container stands under when `R` declares it, and the whole text
+(`""`) otherwise: a key a sender added is no place of `R`, and naming it would make the
+pointer as long as the text rather than the schema. Every reader holds the text to RFC
+8259 alone (tests/json_text/payload_refusal.json): whitespace of the four kinds between
+tokens, a number in its grammar (no leading zero, no `+`, a digit on each side of `.`
+and after an exponent), no raw control character in a text, no half of a UTF-16 pair
+in a `\u` escape, no repeated name, and `-0` no whole number. Rust, Go, Kotlin, Python,
+C++, Swift, C11 and the Interpreter lower it, and each replays
+`scenarios/static_lift.json`.
+
 **Enum variables.** `sce:type="enum:<alias>"` holds a variable in a variant of
 the enum the document imports as `<alias>` (`<sce:import kind="enum">`). It
 starts at one of the variants, written as the expression `<alias>.<variant>`
@@ -8977,7 +9023,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (493 codes)
+## Appendix — `DiagnosticCode` index (496 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9057,6 +9103,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/native-action-placement` | Validation |
 | `validation/typed-invoke-schema` | Validation |
 | `validation/typed-invoke-request` | Validation |
+| `validation/lift-location` | Validation |
+| `validation/lift-text` | Validation |
+| `validation/lift-path-bound` | Validation |
 | `validation/native-action-argument` | Validation |
 | `validation/native-action-signature-conflict` | Validation |
 | `validation/native-action-release` | Validation |

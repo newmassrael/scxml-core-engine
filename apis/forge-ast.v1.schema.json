@@ -135,6 +135,18 @@
         "label": {
           "type": "string"
         },
+        "lift_refusal": {
+          "description": "`<sce:lift refusal>`: the variable of `optional<record:L>`, `L` the document `sce:std/lift/refusal.scxml`, that holds why the text was refused, and is absent after a text that was read. Empty on every other action.",
+          "type": "string"
+        },
+        "lift_schema": {
+          "description": "`<sce:lift schema>`: the alias of the imported event schema whose record the text is read as. Empty on every other action.",
+          "type": "string"
+        },
+        "lift_text": {
+          "description": "`<sce:lift text>` (docs/adr/0087, section 2.1): the name of the text the statement reads, a value of `string[N]`. The variable the statement writes the record to is [`Self::location`]. Empty on every other action.",
+          "type": "string"
+        },
         "location": {
           "type": "string"
         },

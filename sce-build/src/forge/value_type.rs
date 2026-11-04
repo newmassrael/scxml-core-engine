@@ -1531,6 +1531,120 @@ pub fn contains_itself(alias: &str, env: &dyn TypeEnv) -> Option<Vec<String>> {
     visit(alias, env, &mut Vec::new())
 }
 
+// ── What a lift reads of a type (docs/adr/0087, section 2) ──────────────────
+//
+// Two folds beside the size calculus, by the same recursion and environment:
+// the deepest container a value holds, which bounds what a `<sce:lift>` reads
+// before it reads a container, and the longest strict RFC 6901 pointer to a
+// place a value declares, which bounds the `path` of a refusal it keeps.
+
+/// A record a fold enters: the fields the environment reads it as and the
+/// environment those fields are read in, or the refusal of an alias no record
+/// goes by and of a record that holds itself. `records` holds each record on
+/// the way by its key ([`TypeEnv::record_key`]), which the caller pops.
+type EnteredRecord<'e> = (Vec<(String, ValueType)>, &'e dyn TypeEnv);
+
+fn enter_record<'e>(
+    alias: &str,
+    env: &'e dyn TypeEnv,
+    records: &mut Vec<String>,
+) -> Result<EnteredRecord<'e>, SizeError> {
+    let key = env.record_key(alias);
+    if records.contains(&key) {
+        let mut cycle = records.clone();
+        cycle.push(key);
+        return Err(SizeError::ContainsItself { cycle });
+    }
+    let fields = env
+        .record_fields(alias)
+        .ok_or_else(|| SizeError::Unresolved {
+            alias: alias.to_string(),
+        })?;
+    records.push(key);
+    // The record's fields name types by its own document's aliases.
+    Ok((fields, env.record_scope(alias).unwrap_or(env)))
+}
+
+fn depth_at(
+    ty: &ValueType,
+    env: &dyn TypeEnv,
+    records: &mut Vec<String>,
+) -> Result<u32, SizeError> {
+    match ty {
+        ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => Ok(0),
+        ValueType::Optional { elem } => depth_at(elem, env, records),
+        ValueType::List { elem, .. } => Ok(depth_at(elem, env, records)?.saturating_add(1)),
+        ValueType::Record { alias } => {
+            let (fields, inner) = enter_record(alias, env, records)?;
+            let mut deepest = 0u32;
+            for (_, field) in &fields {
+                deepest = deepest.max(depth_at(field, inner, records)?);
+            }
+            records.pop();
+            Ok(deepest.saturating_add(1))
+        }
+    }
+}
+
+/// `depth(T)`: how deep the deepest container a value of `ty` holds is, the
+/// levels counted from 1 for the outermost: a record and a list each add a
+/// level, an optional value none, and a number, a truth value, an enum, a text
+/// and a byte string are no container (docs/adr/0087, section 2.1, item 4). A
+/// lift of a record of `R` refuses a container opened deeper than `depth(R)`
+/// before it reads it (`tooDeep`), so its work and its stack are bounded by the
+/// type whatever the text holds.
+pub fn container_depth(ty: &ValueType, env: &dyn TypeEnv) -> Result<u32, SizeError> {
+    depth_at(ty, env, &mut Vec::new())
+}
+
+fn pointer_at(
+    ty: &ValueType,
+    env: &dyn TypeEnv,
+    records: &mut Vec<String>,
+) -> Result<(String, u64), SizeError> {
+    match ty {
+        ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
+            Ok((String::new(), 0))
+        }
+        ValueType::Optional { elem } => pointer_at(elem, env, records),
+        ValueType::List { elem, max } => {
+            // A list of no element has no index to point at.
+            let Some(last) = max.max.checked_sub(1) else {
+                return Ok((String::new(), 0));
+            };
+            let (below, below_len) = pointer_at(elem, env, records)?;
+            let token = last.to_string();
+            let len = add(add(1, token.len() as u64)?, below_len)?;
+            Ok((format!("/{token}{below}"), len))
+        }
+        ValueType::Record { alias } => {
+            let (fields, inner) = enter_record(alias, env, records)?;
+            let mut longest = (String::new(), 0u64);
+            for (id, field) in &fields {
+                let (below, below_len) = pointer_at(field, inner, records)?;
+                let token = pointer_token(id);
+                let len = add(add(1, token.len() as u64)?, below_len)?;
+                if len > longest.1 {
+                    longest = (format!("/{token}{below}"), len);
+                }
+            }
+            records.pop();
+            Ok(longest)
+        }
+    }
+}
+
+/// The longest strict RFC 6901 pointer to a place a value of `ty` declares,
+/// with its length in bytes: `/` before each reference token, `~` written `~0`
+/// and `/` written `~1`, a list's largest index for its elements, and the empty
+/// pointer for a value that holds no place (docs/adr/0087, section 2.4). Every
+/// refusal a lift keeps names a place its type declares, so no pointer it
+/// writes is longer than this. Of two of one length, the first in the schema's
+/// order.
+pub fn longest_pointer(ty: &ValueType, env: &dyn TypeEnv) -> Result<(String, u64), SizeError> {
+    pointer_at(ty, env, &mut Vec::new())
+}
+
 // ── The grammar of a value (docs/adr/0087, section 1) ───────────────────────
 //
 // Two folds beside the size calculus, by the same structural recursion over
@@ -3644,6 +3758,86 @@ mod tests {
             })
         );
         assert_eq!(contains_itself("Item", &env), None);
+    }
+
+    /// `depth(T)` (docs/adr/0087, section 2.1, item 4): a record and a list
+    /// each add a level, an optional value none, and a leaf is no container.
+    #[test]
+    fn a_container_is_as_deep_as_the_records_and_lists_on_the_way() {
+        let mut env = table();
+        env.records.insert(
+            "Flat".into(),
+            vec![
+                ("id".into(), ty("uint32")),
+                ("note".into(), ty("optional<string[8]>")),
+            ],
+        );
+        env.records.insert(
+            "Batch".into(),
+            vec![
+                ("items".into(), ty("list<record:Flat>[3]")),
+                ("tags".into(), ty("optional<list<string[8]>[2]>")),
+            ],
+        );
+        for (text, depth) in [
+            ("uint8", 0),
+            ("string[8]", 0),
+            ("bytes[4]", 0),
+            ("optional<int64>", 0),
+            ("record:Flat", 1),
+            ("optional<record:Flat>", 1),
+            ("list<uint8>[2]", 1),
+            ("list<list<uint8>[2]>[2]", 2),
+            // `Item` holds a list of texts.
+            ("record:Item", 2),
+            ("record:Batch", 3),
+        ] {
+            assert_eq!(container_depth(&ty(text), &env), Ok(depth), "depth({text})");
+        }
+        env.records.insert(
+            "Node".into(),
+            vec![("next".into(), ty("optional<record:Node>"))],
+        );
+        assert!(matches!(
+            container_depth(&ty("record:Node"), &env),
+            Err(SizeError::ContainsItself { .. })
+        ));
+    }
+
+    /// The longest pointer to a place a value declares (docs/adr/0087, section
+    /// 2.4): each record's longest id, each list's largest index, `~` and `/`
+    /// escaped, the first of two of one length.
+    #[test]
+    fn the_longest_pointer_is_the_longest_path_a_value_declares() {
+        let mut env = table();
+        env.records.insert(
+            "Batch".into(),
+            vec![
+                ("items".into(), ty("list<record:Item>[12]")),
+                ("a~b/c".into(), ty("uint8")),
+            ],
+        );
+        env.records.insert(
+            "Flat".into(),
+            vec![("ab".into(), ty("uint8")), ("cd".into(), ty("bool"))],
+        );
+        let longest = |text: &str| longest_pointer(&ty(text), &env).unwrap();
+        assert_eq!(longest("uint8"), (String::new(), 0));
+        assert_eq!(longest("list<uint8>[0]"), (String::new(), 0));
+        assert_eq!(longest("list<uint8>[10]"), ("/9".to_string(), 2));
+        assert_eq!(longest("record:Flat"), ("/ab".to_string(), 3));
+        assert_eq!(longest("record:Item"), ("/amount".to_string(), 7));
+        // `/items/11/amount` (16) is longer than `/a~0b~1c` (8).
+        assert_eq!(
+            longest("record:Batch"),
+            ("/items/11/amount".to_string(), 16)
+        );
+        env.records
+            .insert("Odd".into(), vec![("a~b/c".into(), ty("uint8"))]);
+        assert_eq!(
+            longest_pointer(&ty("record:Odd"), &env).unwrap(),
+            ("/a~0b~1c".to_string(), 8)
+        );
     }
 
     #[test]

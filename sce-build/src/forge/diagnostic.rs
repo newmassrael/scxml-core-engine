@@ -842,6 +842,19 @@ pub enum DiagnosticCode {
     ValidationTypedInvokeSchema,
     #[serde(rename = "validation/typed-invoke-request")]
     ValidationTypedInvokeRequest,
+    /// `<sce:lift>` (docs/adr/0087, section 2.1): a `location` that is not a
+    /// variable of the record its `schema` names, or a `refusal` that is not
+    /// one of the optional refusal record.
+    #[serde(rename = "validation/lift-location")]
+    ValidationLiftLocation,
+    /// `<sce:lift>`: a `text` that is not the name of a bounded text, or of an
+    /// optional one not proven present.
+    #[serde(rename = "validation/lift-text")]
+    ValidationLiftText,
+    /// `<sce:lift>` (docs/adr/0087, section 2.4): a schema whose longest pointer
+    /// is past the refusal record's `path` bound.
+    #[serde(rename = "validation/lift-path-bound")]
+    ValidationLiftPathBound,
     #[serde(rename = "validation/native-action-argument")]
     ValidationNativeActionArgument,
     #[serde(rename = "validation/native-action-signature-conflict")]
@@ -3774,6 +3787,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationNativeActionPlacement,
         ValidationTypedInvokeSchema,
         ValidationTypedInvokeRequest,
+        ValidationLiftLocation,
+        ValidationLiftText,
+        ValidationLiftPathBound,
         ValidationNativeActionArgument,
         ValidationNativeActionSignatureConflict,
         ValidationNativeActionRelease,
@@ -4630,6 +4646,10 @@ impl DiagnosticCode {
             ValidationTypedInvokeSchema | ValidationTypedInvokeRequest => {
                 Some("SCE Accepted Subset §2.12")
             }
+            // The statement that reads a text into a record, and the record a
+            // refusal is kept in, are the ADR's own sections.
+            ValidationLiftLocation | ValidationLiftText => Some("ADR 0087 §2.1"),
+            ValidationLiftPathBound => Some("ADR 0087 §2.4"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -5408,6 +5428,9 @@ impl DiagnosticCode {
             | ValidationNativeActionPlacement
             | ValidationTypedInvokeSchema
             | ValidationTypedInvokeRequest
+            | ValidationLiftLocation
+            | ValidationLiftText
+            | ValidationLiftPathBound
             | ValidationNativeActionArgument
             | ValidationNativeActionSignatureConflict
             | ValidationNativeActionRelease
@@ -5898,6 +5921,9 @@ impl DiagnosticCode {
             ValidationNativeActionPlacement => "validation/native-action-placement",
             ValidationTypedInvokeSchema => "validation/typed-invoke-schema",
             ValidationTypedInvokeRequest => "validation/typed-invoke-request",
+            ValidationLiftLocation => "validation/lift-location",
+            ValidationLiftText => "validation/lift-text",
+            ValidationLiftPathBound => "validation/lift-path-bound",
             ValidationNativeActionArgument => "validation/native-action-argument",
             ValidationNativeActionSignatureConflict => {
                 "validation/native-action-signature-conflict"
@@ -7987,6 +8013,44 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(observed.clone()),
             fix: None,
             key_fragments: vec![invoke_id.clone(), alias.clone(), detail.clone()],
+        },
+        // docs/adr/0087, section 2.1. The name the attribute holds is what the
+        // row spells; which variable to name instead, or which type to declare
+        // it with, is the author's choice, so neither `expected` nor `fix`.
+        ValidationError::LiftLocation {
+            attr,
+            value,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationLiftLocation,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![attr.clone(), value.clone(), detail.clone()],
+        },
+        ValidationError::LiftText { text, detail } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationLiftText,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(text.clone()),
+            fix: None,
+            key_fragments: vec![text.clone(), detail.clone()],
+        },
+        // docs/adr/0087, section 2.4: the pointer that does not fit is `actual`;
+        // raising the bound and shortening a name are two repairs, so no fix.
+        ValidationError::LiftPathBound {
+            schema,
+            pointer,
+            length: _,
+            bound,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationLiftPathBound,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(pointer.clone()),
+            fix: None,
+            key_fragments: vec![schema.clone(), pointer.clone(), bound.to_string()],
         },
         ValidationError::NativeActionArgument {
             name,
@@ -13106,6 +13170,44 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:62ef5741e1b27e20","code":"validation/typed-invoke-request","stage":"validation","spec":"SCE Accepted Subset §2.12","message":"<invoke id=\"perm\" sce:request=\"PermRequest\">: <param name=\"colour\"> is not a field of PermRequest (fields: retries, scope)","actual":"colour"}"#,
+            ),
+            (
+                // A lift's location names a variable of another type than the
+                // record its schema names (docs/adr/0087, section 2.1).
+                "forge/lift-location",
+                ValidationError::LiftLocation {
+                    attr: "location".into(),
+                    value: "said".into(),
+                    detail: "names a variable of string[512], and a lift replaces a variable of \
+                             record:Answer or optional<record:Answer> whole"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:437ef9fa99847553","code":"validation/lift-location","stage":"validation","spec":"ADR 0087 §2.1","message":"<sce:lift location=\"said\">: names a variable of string[512], and a lift replaces a variable of record:Answer or optional<record:Answer> whole","actual":"said"}"#,
+            ),
+            (
+                // A lift's text names a number, which is no text to read.
+                "forge/lift-text",
+                ValidationError::LiftText {
+                    text: "count".into(),
+                    detail: "names a value of uint32, and a lift reads a text: a value of string[N]"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9ebfc04fbc36ce4e","code":"validation/lift-text","stage":"validation","spec":"ADR 0087 §2.1","message":"<sce:lift text=\"count\">: names a value of uint32, and a lift reads a text: a value of string[N]","actual":"count"}"#,
+            ),
+            (
+                // A schema whose longest pointer does not fit the refusal's path
+                // (docs/adr/0087, section 2.4), here under a bound of 8.
+                "forge/lift-path-bound",
+                ValidationError::LiftPathBound {
+                    schema: "Answer".into(),
+                    pointer: "/title_text".into(),
+                    length: 11,
+                    bound: 8,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8baeffd46b939664","code":"validation/lift-path-bound","stage":"validation","spec":"ADR 0087 §2.4","message":"<sce:lift schema=\"Answer\">: the longest pointer into a record of Answer is `/title_text`, 11 bytes, past the 8 bytes the refusal record's path holds (string[lift_path=8]): raise the bound with --limit lift_path=N, or shorten the names on the way to that place","actual":"/title_text"}"#,
             ),
             (
                 // A code identifier in shape — but Rust reserves `override`,
@@ -19320,6 +19422,9 @@ mod tests {
             | ValidationNativeActionPlacement
             | ValidationTypedInvokeSchema
             | ValidationTypedInvokeRequest
+            | ValidationLiftLocation
+            | ValidationLiftText
+            | ValidationLiftPathBound
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
             | ValidationNativeActionSignatureConflict
@@ -20301,6 +20406,7 @@ mod tests {
                 | ValidationRequireEither | ValidationWrongPipeline
                 | ValidationDynamicFeatures | ValidationNativeActionPlacement
                 | ValidationTypedInvokeSchema | ValidationTypedInvokeRequest
+                | ValidationLiftLocation | ValidationLiftText | ValidationLiftPathBound
                 | ValidationNativeActionArgument
                 | ValidationNativeActionSignatureConflict | ValidationNativeActionRelease
                 | ValidationMeshRpcReservedParam
@@ -20720,9 +20826,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            493,
+            496,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 493 distinct variants to match the DiagnosticCode \
+             expected 496 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21363,6 +21469,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationNativeActionPlacement
             | ValidationTypedInvokeSchema
             | ValidationTypedInvokeRequest
+            | ValidationLiftLocation
+            | ValidationLiftText
+            | ValidationLiftPathBound
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
             | ValidationNativeActionSignatureConflict

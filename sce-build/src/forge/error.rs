@@ -1172,6 +1172,46 @@ pub enum ValidationError {
         observed: String,
     },
 
+    /// docs/adr/0087, section 2.1: a `<sce:lift>` whose `location` is not a
+    /// variable of `record:R` or `optional<record:R>`, `R` the document its
+    /// `schema` names, or whose `refusal` is not a variable of
+    /// `optional<record:L>`, `L` the document `sce:std/lift/refusal.scxml`.
+    /// `attr` is the attribute (`location` or `refusal`) and `value` the name
+    /// it holds, which is the record's `actual`; `detail` says what the name is
+    /// and what it must be.
+    #[error("<sce:lift {attr}=\"{value}\">: {detail}")]
+    LiftLocation {
+        attr: String,
+        value: String,
+        detail: String,
+    },
+
+    /// docs/adr/0087, section 2.1: a `<sce:lift>` whose `text` is not the name
+    /// of a `string[N]` value (a variable, a field of a record variable, a field
+    /// of the payload of the transition's event), or names an optional one the
+    /// build has not proven present. `text` is the attribute as written, the
+    /// record's `actual`.
+    #[error("<sce:lift text=\"{text}\">: {detail}")]
+    LiftText { text: String, detail: String },
+
+    /// docs/adr/0087, section 2.4: a schema whose longest strict RFC 6901
+    /// pointer to a place it declares is longer than the bound of the refusal
+    /// record's `path`, so a refusal of a text read as it could not name its
+    /// place whole. `pointer` is that pointer, the record's `actual`, and
+    /// `length` its length in bytes.
+    #[error(
+        "<sce:lift schema=\"{schema}\">: the longest pointer into a record of {schema} is \
+         `{pointer}`, {length} bytes, past the {bound} bytes the refusal record's path holds \
+         (string[lift_path={bound}]): raise the bound with --limit lift_path=N, or shorten \
+         the names on the way to that place"
+    )]
+    LiftPathBound {
+        schema: String,
+        pointer: String,
+        length: u64,
+        bound: u32,
+    },
+
     /// §scxml-G-7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the

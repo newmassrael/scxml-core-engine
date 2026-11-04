@@ -1673,6 +1673,25 @@
     </xs:complexType>
   </xs:element>
 
+  <!--
+    Read a text a `sce-static` statechart holds into a record of an imported
+    event schema, or keep why it is not one (docs/adr/0087, section 2.1).
+    `text` names a `string[N]` value; `schema` the alias of the event schema;
+    `location` the variable of `record:R` or `optional<record:R>` a value of
+    the text replaces whole; `refusal` the variable of
+    `optional<record:L>`, `L` the document `sce:std/lift/refusal.scxml`,
+    present after a refused text and absent after a read one. The statement
+    raises nothing.
+  -->
+  <xs:element name="lift">
+    <xs:complexType>
+      <xs:attribute name="text" type="xs:string" use="required"/>
+      <xs:attribute name="schema" type="xs:string" use="required"/>
+      <xs:attribute name="location" type="xs:string" use="required"/>
+      <xs:attribute name="refusal" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
   <xs:element name="if">
     <xs:complexType>
       <xs:sequence>

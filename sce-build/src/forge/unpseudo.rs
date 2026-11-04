@@ -3912,6 +3912,26 @@ fn parse_scxml_action_body(
         a.action_type = "sce_append".to_string();
         a.location = undo(target, line.number)?;
         a.expr = undo(expr, line.number)?;
+    } else if let Some([text, schema, location, refusal]) =
+        t.strip_prefix("lift ").and_then(|rest| {
+            // `lift <text> as <schema> into <location> else <refusal>`: each part is
+            // one name or path with no space in it (docs/adr/0087, section 2.1), so
+            // the keywords between them are where they split.
+            let (text, rest) = rest.split_once(" as ")?;
+            let (schema, rest) = rest.split_once(" into ")?;
+            let (location, refusal) = rest.split_once(" else ")?;
+            let parts = [text, schema, location, refusal];
+            parts
+                .iter()
+                .all(|part| !part.is_empty() && !part.contains(' '))
+                .then_some(parts)
+        })
+    {
+        a.action_type = "sce_lift".to_string();
+        a.lift_text = undo(text, line.number)?;
+        a.lift_schema = undo(schema, line.number)?;
+        a.location = undo(location, line.number)?;
+        a.lift_refusal = undo(refusal, line.number)?;
     } else if let Some(target) = t
         .strip_prefix("clear ")
         .filter(|target| !target.is_empty() && !target.contains(' '))

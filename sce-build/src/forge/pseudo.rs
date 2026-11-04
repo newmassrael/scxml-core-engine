@@ -3036,6 +3036,15 @@ fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
             text(&a.expr)
         )),
         "sce_clear" => out.line(&format!("clear {}", text(&a.location))),
+        // docs/adr/0087, section 2.1: each of the four is one name or path, with
+        // no space in it, so each keyword selects the one after it.
+        "sce_lift" => out.line(&format!(
+            "lift {} as {} into {} else {}",
+            text(&a.lift_text),
+            text(&a.lift_schema),
+            text(&a.location),
+            text(&a.lift_refusal)
+        )),
         other => out.line(&format!("<unrendered action {}>", text(other))),
     }
 }

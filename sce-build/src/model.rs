@@ -701,6 +701,22 @@ pub struct Action {
     #[cfg_attr(test, schemars(skip))]
     pub native_content_value_fails: bool,
 
+    /// `<sce:lift text>` (docs/adr/0087, section 2.1): the name of the text the
+    /// statement reads, a value of `string[N]`. The variable the statement
+    /// writes the record to is [`Self::location`]. Empty on every other action.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lift_text: String,
+    /// `<sce:lift schema>`: the alias of the imported event schema whose record
+    /// the text is read as. Empty on every other action.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lift_schema: String,
+    /// `<sce:lift refusal>`: the variable of `optional<record:L>`, `L` the
+    /// document `sce:std/lift/refusal.scxml`, that holds why the text was
+    /// refused, and is absent after a text that was read. Empty on every other
+    /// action.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lift_refusal: String,
+
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name
     // conventions (mesh::pattern), RPC reply pairing is inferred from
@@ -980,6 +996,7 @@ impl Action {
             "raise" => &["event"],
             "sce_append" => &["location", "expr"],
             "sce_clear" => &["location"],
+            "sce_lift" => &["lift_text", "lift_schema", "location", "lift_refusal"],
             "script" => &["content"],
             "send" => &[
                 "event",
@@ -1039,10 +1056,12 @@ impl Action {
         }
     }
 
-    /// The eleven tags an `action_type` can hold, in the order the parser
+    /// The twelve tags an `action_type` can hold, in the order the parser
     /// and the template branches list them. `sce_append` / `sce_clear` are a
-    /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`),
-    /// prefixed so no reader mistakes them for an SCXML element's name.
+    /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`), and
+    /// `sce_lift` the statement that reads a text into a record or keeps why
+    /// it could not (`<sce:lift>`, docs/adr/0087), each prefixed so no reader
+    /// mistakes it for an SCXML element's name.
     pub const TAGS: &'static [&'static str] = &[
         "assign",
         "cancel",
@@ -1053,6 +1072,7 @@ impl Action {
         "raise",
         "sce_append",
         "sce_clear",
+        "sce_lift",
         "script",
         "send",
     ];

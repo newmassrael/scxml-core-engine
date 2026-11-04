@@ -999,6 +999,9 @@ references against a real document and drift silently.
 | `validation/invalid-reference` | `validation` | `replace_one_of` |  |
 | `validation/kind-basis-malformed` | `validation` | no |  |
 | `validation/kind-not-inline-eligible` | `validation` | `replace_one_of` | SCE Accepted Subset §2.1 |
+| `validation/lift-location` | `validation` | no | ADR 0087 §2.1 |
+| `validation/lift-path-bound` | `validation` | no | ADR 0087 §2.4 |
+| `validation/lift-text` | `validation` | no | ADR 0087 §2.1 |
 | `validation/malformed-code-identifier` | `validation` | no | SCE Accepted Subset §2.14 |
 | `validation/malformed-identifier` | `validation` | no | W3C SCXML §3.3.1 |
 | `validation/mesh-rpc-duplicate-target` | `validation` | no | SCE Mesh §9.5 |

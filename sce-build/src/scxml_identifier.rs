@@ -270,6 +270,15 @@ pub const SCE_IDENTIFIER_ATTRIBUTES: &[(&str, &str, Grammar)] = &[
     ("assign", "target", Grammar::CodePath),
     ("append", "target", Grammar::CodePath),
     ("call", "target", Grammar::CodePath),
+    // `<sce:lift>` (docs/adr/0087, section 2.1) names only what is declared
+    // elsewhere, so a path's rule holds each, with no keyword refused here: the
+    // text it reads (a variable, a field of a record variable or of the payload,
+    // `_event.data.text`), the alias of the schema, and the two variables it
+    // writes, each one segment.
+    ("lift", "text", Grammar::CodePath),
+    ("lift", "schema", Grammar::CodePath),
+    ("lift", "location", Grammar::CodePath),
+    ("lift", "refusal", Grammar::CodePath),
 ];
 
 /// Whether `name` is an XML Name in the ASCII form SCE accepts — the

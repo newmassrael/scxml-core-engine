@@ -46,6 +46,7 @@ pub mod int_ranges;
 pub mod intrinsic_registry;
 pub mod kind_basis;
 pub mod kind_catalog;
+pub mod lift;
 pub mod limits;
 pub mod manifest;
 pub mod model;
