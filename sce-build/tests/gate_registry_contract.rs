@@ -1403,7 +1403,8 @@ fn registry_stdout(root: &Path, args: &[&str]) -> String {
 /// below its units must name only gates the selection chose and, with what each
 /// unit runs before its gate, cover every one of them, so the push verifies what
 /// `select` says it does. A unit may keep no verdict its gate says may not be
-/// kept.
+/// kept, carries HEAD's id exactly when a gate it runs reads HEAD, and asks
+/// bx for the largest memory peak among the gates it runs.
 #[test]
 fn the_push_hands_bx_the_set_the_registry_plans() {
     let root = repo_root();
@@ -1462,6 +1463,9 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
         &["README.md"][..],
         &["sce-build/src/lib.rs"][..],
         &["backends/go/forge-runtime/go.mod"][..],
+        // Selects `embed-manifest-stamp`, which reads HEAD, so the plan's
+        // `--at` is asked of at least one unit.
+        &["embed/MANIFEST.inputs"][..],
     ] {
         let mut ask = vec!["--changed"];
         ask.extend_from_slice(changed);
@@ -1501,11 +1505,42 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                 .iter()
                 .filter_map(|a| a.as_str())
                 .collect();
+            let closure: BTreeSet<String> = deps_of(&name)
+                .into_iter()
+                .chain(std::iter::once(name.clone()))
+                .collect();
+            let reads_head = closure.iter().any(|s| {
+                mapping[s.as_str()]["commits"]
+                    .as_array()
+                    .is_some_and(|c| c.iter().any(|v| v == "HEAD"))
+            });
+            let (head, gate) = argv.split_at(argv.len().saturating_sub(1));
             assert_eq!(
-                argv,
-                ["bash", "scripts/gate", "--rust", "1.0.0", name.as_str()],
-                "{changed:?}: unit {name} does not run the runner on its own \
-                 gate at the planned release"
+                gate,
+                [name.as_str()],
+                "{changed:?}: unit {name} does not run the runner on its own gate"
+            );
+            assert_eq!(
+                head.get(..4),
+                Some(&["bash", "scripts/gate", "--rust", "1.0.0"][..]),
+                "{changed:?}: unit {name} does not run the runner at the planned \
+                 release: {argv:?}"
+            );
+            assert_eq!(
+                head.len() == 6 && head[4] == "--at" && head[5].len() >= 40,
+                reads_head,
+                "{changed:?}: unit {name} carries HEAD's id exactly when a gate \
+                 it runs reads HEAD: {argv:?}"
+            );
+            let peak = closure
+                .iter()
+                .filter_map(|s| mapping[s.as_str()]["peak_gb"].as_f64())
+                .fold(0.0_f64, f64::max);
+            assert_eq!(
+                unit["mem_gb"].as_f64(),
+                Some(peak),
+                "{changed:?}: unit {name} does not ask for the largest peak of \
+                 what it runs"
             );
             if mapping[name.as_str()]["cache"] == serde_json::Value::Bool(false) {
                 assert_eq!(
@@ -1515,8 +1550,7 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                      may not be kept"
                 );
             }
-            covered.extend(deps_of(&name));
-            covered.insert(name);
+            covered.extend(closure);
         }
         let missing: Vec<&String> = selected.difference(&covered).collect();
         assert!(

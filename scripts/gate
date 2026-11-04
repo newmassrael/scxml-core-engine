@@ -12,6 +12,7 @@
 #   scripts/gate --measure --all      run and report each gate's wall clock
 #   scripts/gate --plan <selection>   print the bx check units for a selection
 #   scripts/gate --rust <release> ... run on that Rust release, not on stable
+#   scripts/gate --at <commit> ...    refuse to run unless HEAD is that commit
 #
 # The order is derived, never typed: `tools/git-hooks/gate_registry.py`
 # holds each gate's dependencies and measured cost, and the runner sorts by
@@ -27,8 +28,9 @@
 # plan of the set `[checks.prepush]` in bx.toml, which the push hook hands to bx.
 # Each unit is this runner on one gate at the release the plan read
 # (`--rust`), so the release is in the unit's argv and therefore in the key bx
-# keeps the unit's pass under. See "Whether a gate's verdict may be kept" and
-# `plan_units` in the registry for what a unit is and when its pass is kept.
+# keeps the unit's pass under. A unit whose gate reads HEAD carries HEAD's id
+# too (`--at`), and runs only on that commit. See "Whether a gate's verdict may
+# be kept" and `plan_units` in the registry for when a unit's pass is kept.
 
 set -euo pipefail
 
@@ -44,6 +46,7 @@ CHANGED_FILE=""
 CHANGED_RANGES=()
 PLAN=0
 RUST_WANT=""
+AT_WANT=""
 
 while (( $# )); do
     case "$1" in
@@ -52,9 +55,10 @@ while (( $# )); do
         --measure)      MEASURE=1 ;;
         --plan)         PLAN=1 ;;
         --rust)         RUST_WANT="${2:-}"; shift ;;
+        --at)           AT_WANT="${2:-}"; shift ;;
         --changed-from) MODE="changed"; CHANGED_FILE="$2"; shift ;;
         --changed-in)   MODE="changed"; CHANGED_RANGES+=("$2"); shift ;;
-        -h|--help)      sed -n '5,31p' "$0"; exit 0 ;;
+        -h|--help)      sed -n '5,34p' "$0"; exit 0 ;;
         -*)             printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
         *)              SLUGS+=("$1"); MODE="${MODE:-named}" ;;
     esac
@@ -77,6 +81,34 @@ fi
 if (( PLAN )) && [[ "$MODE" == "list" || $MEASURE -eq 1 ]]; then
     printf 'gate: --plan runs nothing, so it takes neither --list nor --measure\n' >&2
     exit 2
+fi
+
+# ── The commit a plan named, and no other ──────────────────────────────
+#
+# A unit whose gate reads HEAD (its objects, its history, the submodule
+# commits it records) carries HEAD's id, because bx keeps the unit's pass
+# under a key that holds the tree and the argv but no commit. Run on another
+# commit, the unit would keep a verdict about one history under the name of
+# another. So it runs only where HEAD is that commit, and anywhere else ends
+# with 3, "could not run": bx reads that as a unit it could not measure, never
+# as a pass. A plan resolves HEAD itself, so it takes no `--at`.
+if [[ -n "$AT_WANT" ]]; then
+    if (( PLAN )); then
+        printf 'gate: --plan reads HEAD itself; do not pass --at with it\n' >&2
+        exit 2
+    fi
+    if [[ ! "$AT_WANT" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+        printf 'gate: --at takes a full commit id, got %q\n' "$AT_WANT" >&2
+        exit 2
+    fi
+    AT_HAVE="$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null || true)"
+    if [[ "$AT_HAVE" != "$AT_WANT" ]]; then
+        printf '\nERROR gate: the plan was made for commit %s and this checkout is at %s.\n' \
+            "$AT_WANT" "${AT_HAVE:-no commit}" >&2
+        printf 'The gate reads HEAD, so a verdict here would be about another commit;\n' >&2
+        printf 'nothing runs and nothing is claimed about the tree.\n' >&2
+        exit 3
+    fi
 fi
 
 # ── A change set named by commits rather than by a file ────────────────
