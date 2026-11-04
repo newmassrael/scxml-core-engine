@@ -15,23 +15,30 @@
 //   * an ending posted for a session of the tree, named by its id, is applied
 //     as `end_host_invoke_in` applies it;
 //   * a post is taken before the run starts and applied at its first boundary,
-//     and one taken after the run was stopped is counted as unseen.
+//     and one taken after the run was stopped is counted as unseen;
+//   * a post made before the owner puts an event of its own on the external
+//     queue is taken before that event (W3C test 201's shape), and an ending
+//     for a child session posted then is still applied.
 //
 // Fixture: tests/integration/inbox_probe.scxml, generated with the host-invoker
 // declaration `x-sce-host` into src/integration/host_processor/ by
 // scripts/regen_host_processor.sh. `taken` is what the machine took, in order,
-// as `ping:<data>;`, `done:<data>;` and `failed:<data>;`.
+// as `ping:<data>;`, `done:<data>;` and `failed:<data>;`. The child session's
+// case drives sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml,
+// as a_child_sessions_host_invocation_is_served_by_the_trees_host.rs does.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use sce_rust_runtime::{
-    Engine, HostInvokeEnding, HostInvokeEvent, IScriptEngine, InboxInput, InboxInputOf, InboxWaker,
+    Engine, EngineInbox, HostInvokeEnding, HostInvokeEvent, HostInvokeResponse, IScriptEngine,
+    InboxInput, InboxInputOf, InboxWaker, SceClock,
 };
 use sce_rust_tests::integration::host_processor::{
     InboxProbeEvent as Event, InboxProbePolicy as Policy,
 };
+use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::StaticInvokeTreePolicy;
 
 /// The type the fixture was generated for (`HOST_INVOKER` in
 /// scripts/regen_host_processor.sh).
@@ -42,28 +49,41 @@ const JOB: &str = "job";
 type Input = InboxInputOf<Policy>;
 
 /// One machine and its host's half: what the invoker was asked, in order, as
-/// `start:<token>` and `cancel:<token>`. The invoker answers nothing on a
-/// start, so the work runs past the call.
+/// `start:<token>` and `cancel:<token>`.
 struct Machine {
     engine: Engine<Policy>,
     script_engine: Arc<dyn IScriptEngine>,
     host: Arc<Mutex<Vec<String>>>,
 }
 
+/// What the invoker does on a start, handed the inbox of the machine it serves,
+/// and what it answers.
+type OnStart = Box<dyn FnMut(&EngineInbox<Policy>) -> Option<HostInvokeResponse> + Send>;
+
 impl Machine {
-    /// Built and served, not yet run.
+    /// Built and served, not yet run. The invoker answers nothing on a start,
+    /// so the work runs past the call.
     fn built() -> Self {
+        Self::built_starting_with(Box::new(|_: &EngineInbox<Policy>| None))
+    }
+
+    /// Built and served, not yet run, with an invoker that does `on_start` on
+    /// each start and answers what it returns.
+    fn built_starting_with(mut on_start: OnStart) -> Self {
         let script_engine: Arc<dyn IScriptEngine> = Arc::new(sce_rust_lua::LuaEngine::new());
         let mut engine = Engine::new(Policy::new(Arc::clone(&script_engine)));
+        let inbox = engine.inbox();
         let host: Arc<Mutex<Vec<String>>> = Arc::default();
         let log = Arc::clone(&host);
         engine.register_invoker(TYPE, move |event: HostInvokeEvent| {
-            let line = match event {
-                HostInvokeEvent::Start(request) => format!("start:{}", request.token),
-                HostInvokeEvent::Cancel(cancel) => format!("cancel:{}", cancel.token),
+            let (line, answer) = match event {
+                HostInvokeEvent::Start(request) => {
+                    (format!("start:{}", request.token), on_start(&inbox))
+                }
+                HostInvokeEvent::Cancel(cancel) => (format!("cancel:{}", cancel.token), None),
             };
             log.lock().expect("the host's log").push(line);
-            None
+            answer
         });
         Self {
             engine,
@@ -462,4 +482,120 @@ fn a_post_before_the_run_is_taken_by_it_and_one_after_the_stop_is_counted_as_uns
     machine.engine.step();
     assert_eq!(machine.engine.unseen_external_events(), unseen + 1);
     assert_eq!(machine.engine.last_unseen_event(), Some(Event::Ping));
+}
+
+// W3C test 201's shape (docs/adr/0084, D2 as amended at step 8). Inside the
+// owner's macrostep a host call waits for a thread of its own to post `ping`,
+// and the owner then puts an event of its own on the external queue: the
+// `done.invoke.job` of the start the host completed at once. The post arrived
+// first, so it is taken first, and not after the event it came before.
+#[test]
+fn a_post_made_before_the_owner_queues_its_own_event_is_taken_before_it() {
+    let mut machine = Machine::built_starting_with(Box::new(|inbox: &EngineInbox<Policy>| {
+        let inbox = inbox.clone();
+        let posted = std::thread::spawn(move || inbox.post(ping(&quoted("posted"))).is_ok())
+            .join()
+            .expect("the posting thread");
+        assert!(posted, "the inbox refused a post");
+        Some(HostInvokeResponse {
+            done_data: Some(quoted("own")),
+            ..HostInvokeResponse::default()
+        })
+    }));
+    machine.boot();
+    assert_eq!(
+        machine.taken(),
+        "ping:posted;done:own;",
+        "the owner's own event was taken ahead of a post that arrived before it"
+    );
+}
+
+// A host's own raise on the owner puts an event of the owner's on the external
+// queue as well: what another thread posted before it is taken before it.
+#[test]
+fn a_post_made_before_the_hosts_own_raise_is_taken_before_it() {
+    let mut machine = Machine::booted();
+    assert!(post_from_another_thread(
+        &machine.engine,
+        ping(&quoted("posted"))
+    ));
+    machine
+        .engine
+        .raise_external(Event::Ping, &quoted("raised"), "");
+    machine.engine.step();
+    assert_eq!(
+        machine.taken(),
+        "ping:posted;ping:raised;",
+        "the host's raise was taken ahead of a post that arrived before it"
+    );
+}
+
+// An ending for a child session is applied through the root's policy, which
+// the root's own code holds while it raises a child's report on the root; the
+// drain that report asks for runs inside that code. The ending waits for the
+// root's macrostep boundary and is applied there, so the child takes its
+// `done.invoke.clock` at its next drive and tells its parent `stamped`.
+#[test]
+fn an_ending_for_a_child_session_posted_before_the_childs_report_is_applied() {
+    // The ids and the completion
+    // a_child_sessions_host_invocation_is_served_by_the_trees_host.rs uses.
+    const ROOT: &str = "fixture-root";
+    const WORKER: &str = "fixture-root.working.1.worker";
+    const CLOCK: &str = "sce-host-clock-now";
+    const NOW: &str = r#"{"error":"","utc_ms":1700000000000,"monotonic_ms":5}"#;
+
+    let mut engine =
+        Engine::new(StaticInvokeTreePolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
+    engine.set_clock(SceClock::Manual(0));
+    let tokens: Arc<Mutex<Vec<u64>>> = Arc::default();
+    let seen = Arc::clone(&tokens);
+    engine.register_invoker(CLOCK, move |event: HostInvokeEvent| {
+        if let HostInvokeEvent::Start(request) = event {
+            seen.lock().expect("the starts").push(request.token);
+        }
+        None
+    });
+    engine.initialize();
+    // `go`, which the root forwards to `worker` in one tick and `worker` takes in
+    // the next: it arms its `report` 5 s on, enters `second` and starts the clock.
+    engine.raise_external_by_name("go", "");
+    engine.tick();
+    engine.tick();
+    let token = {
+        let tokens = tokens.lock().expect("the starts");
+        assert_eq!(tokens.len(), 1, "one start of the clock: {tokens:?}");
+        tokens[0]
+    };
+
+    let inbox = engine.inbox();
+    let ending = InboxInput::host_invoke_ending(
+        Some(WORKER),
+        HostInvokeEnding {
+            processor_type: CLOCK,
+            invoke_id: "clock",
+            token,
+            done: true,
+            data: NOW,
+        },
+    );
+    assert!(
+        std::thread::spawn(move || inbox.post(ending).is_ok())
+            .join()
+            .expect("the posting thread"),
+        "the inbox refused a post"
+    );
+
+    // The report comes due, and the root takes it in this turn.
+    engine.advance_time_ms(5_000);
+    assert_eq!(
+        engine.policy().reports(),
+        1,
+        "the child's report did not reach the root"
+    );
+    engine.tick();
+    assert_eq!(
+        engine.policy().stamps(),
+        1,
+        "the ending posted for the child session was never applied"
+    );
 }

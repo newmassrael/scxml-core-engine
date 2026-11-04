@@ -1142,6 +1142,23 @@ pub struct Engine<P: StatePolicy> {
     /// (docs/adr/0084), drained at each macrostep boundary after the engine's
     /// own. `None` until one is attached.
     pub(crate) attached_inbox: Option<crate::inbox::AttachedInbox<P>>,
+    /// A drain of the inboxes is applying what they held
+    /// ([`drain_inbox`](Engine::drain_inbox)). Applying an input queues an
+    /// external event, and a queued external event asks for a drain first; the
+    /// drain already running is that drain, so the flag turns the second one
+    /// into nothing rather than into a drain inside a drain.
+    pub(crate) draining_inbox: bool,
+    /// The policy is lent to its own code ([`with_policy`](Engine::with_policy)),
+    /// which may be the code asking for a drain. An ending for a child session
+    /// is applied through the policy, so while it is lent such an ending waits
+    /// in `held_child_endings`.
+    #[cfg(feature = "std")]
+    pub(crate) policy_lent: bool,
+    /// Endings for a child session of the tree that a drain took while the
+    /// policy was lent, oldest first; the next drain made when it is not
+    /// applies them before anything it takes.
+    #[cfg(feature = "std")]
+    pub(crate) held_child_endings: Vec<crate::inbox::InboxInputOf<P>>,
 }
 
 /// Every field of a new [`Engine`] and the value it starts at, handed to
@@ -1189,6 +1206,11 @@ macro_rules! engine_initial_fields {
             #[cfg(feature = "std")]
             inbox: core::cell::OnceCell::new(),
             attached_inbox: None,
+            draining_inbox: false,
+            #[cfg(feature = "std")]
+            policy_lent: false,
+            #[cfg(feature = "std")]
+            held_child_endings: Vec::new(),
         }
     };
 }
@@ -1421,17 +1443,20 @@ impl<P: StatePolicy> Engine<P> {
     /// Thread-safe, as is every clone of it; everything else of the engine
     /// that changes it is an owner-thread operation. What is posted is applied
     /// by the owner at its next macrostep boundary, before the external queue
-    /// is consulted, in the order the inbox took it, each input by the
+    /// is consulted, or sooner, when the owner puts an event of its own on
+    /// that queue first: the posts go ahead of that event, as they arrived
+    /// ahead of it. Each is applied in the order the inbox took it, by the
     /// owner-thread operation of the same name. Unbounded, so `post` is
     /// refused only once this engine is gone. A post taken before the first
-    /// run is applied at that run's first boundary.
+    /// run is applied at that run's first boundary at the latest.
     #[cfg(feature = "std")]
     pub fn inbox(&self) -> crate::inbox::EngineInbox<P> {
         crate::inbox::EngineInbox::of(self.inbox.get_or_init(crate::inbox::OwnedInbox::new))
     }
 
     /// Drain `inbox`, which the deployment declared in a `static`, at each
-    /// macrostep boundary of this engine, after the engine's own inbox: the
+    /// macrostep boundary of this engine and before an event of its own joins
+    /// its external queue, after the engine's own inbox: the
     /// bare-metal profile's inbox, whose capacity the deployment names
     /// (`BoundedInbox`). Replaces one attached before; what that one still
     /// holds stays in it.
@@ -1446,17 +1471,44 @@ impl<P: StatePolicy> Engine<P> {
         self.attached_inbox = Some(source);
     }
 
-    /// The macrostep boundary's half of the inbox: apply, on the owner, what
-    /// other threads posted, oldest first, each by the owner-thread operation
-    /// of the same name ([`apply_inbox_input`](Self::apply_inbox_input)). What
-    /// an inbox held when the boundary was reached, so posters that never stop
-    /// cannot hold the owner here; what they post meanwhile waits for the next.
+    /// Apply, on the owner, what other threads posted, oldest first, each by
+    /// the owner-thread operation of the same name
+    /// ([`apply_inbox_input`](Self::apply_inbox_input)). What an inbox held
+    /// when the drain began, so posters that never stop cannot hold the owner
+    /// here; what they post meanwhile waits for the next.
+    ///
+    /// Made at each macrostep boundary, before the external queue is
+    /// consulted, and before this machine puts an event of its own on that
+    /// queue ([`enqueue_external`](Self::enqueue_external)).
+    ///
+    /// One drain at a time. Applying an input queues an external event (a
+    /// posted event, a host-run invocation's `done.invoke`), and that enqueue
+    /// asks for a drain first: the drain already applying is that drain, and
+    /// takes what it held in order, so the inner request is nothing and an
+    /// applied input is queued as it stands, without a drain inside it.
     fn drain_inbox(&mut self) {
+        if self.draining_inbox {
+            return;
+        }
+        self.draining_inbox = true;
+        self.apply_held_inputs();
+        self.draining_inbox = false;
+    }
+
+    /// The body of [`drain_inbox`](Self::drain_inbox): the child sessions'
+    /// endings an earlier drain held, when the policy is free to take them,
+    /// then the engine's own inbox, then the attached one.
+    fn apply_held_inputs(&mut self) {
         // Named by path: the calls on the attached inbox are calls on a trait
         // object, which need no import, and the profile without `std` makes no
         // other.
         #[cfg(feature = "std")]
         {
+            if !self.policy_lent {
+                for ending in core::mem::take(&mut self.held_child_endings) {
+                    self.apply_inbox_input(ending);
+                }
+            }
             let due = self
                 .inbox
                 .get()
@@ -1465,7 +1517,7 @@ impl<P: StatePolicy> Engine<P> {
                 let Some(input) = self.inbox.get().and_then(crate::inbox::InboxSource::take) else {
                     break;
                 };
-                self.apply_inbox_input(input);
+                self.apply_held(input);
             }
         }
         if let Some(attached) = self.attached_inbox {
@@ -1473,9 +1525,58 @@ impl<P: StatePolicy> Engine<P> {
                 let Some(input) = crate::inbox::InboxSource::take(attached) else {
                     break;
                 };
-                self.apply_inbox_input(input);
+                self.apply_held(input);
             }
         }
+    }
+
+    /// Apply `input`, which a drain took, or hold it for the next drain when it
+    /// ends an invocation of a child session and the policy is lent.
+    ///
+    /// Such an ending is applied through the policy, which holds the child
+    /// (`route_host_invoke_end`). While the policy is lent to its own code,
+    /// which is what a drain asked for by a `<send>` of that code runs inside,
+    /// the engine must not change it ([`with_policy`](Self::with_policy),
+    /// point 2), and the child may be what that code is driving. The ending
+    /// puts its event on the child's queue and not on this machine's, so
+    /// holding it keeps this machine's external queue in arrival order; the
+    /// held endings keep theirs among themselves, and the macrostep boundary,
+    /// which every turn reaches before it consults the external queue,
+    /// applies them.
+    fn apply_held(&mut self, input: crate::inbox::InboxInputOf<P>) {
+        #[cfg(feature = "std")]
+        if self.policy_lent
+            && matches!(
+                &input,
+                crate::inbox::InboxInput::HostInvokeEnding {
+                    session_id: Some(session_id),
+                    ..
+                } if session_id.as_str() != self.policy.own_session_id()
+            )
+        {
+            self.held_child_endings.push(input);
+            return;
+        }
+        self.apply_inbox_input(input);
+    }
+
+    /// Put `event`, an event this machine queues itself, on its external
+    /// queue: every external enqueue of the engine goes through here
+    /// (docs/adr/0084, D2).
+    ///
+    /// The external queue takes events in the order they arrived. What another
+    /// thread posted before this event (the post a host-served `<send>` waited
+    /// for, W3C test 201) arrived first, so the inbox is drained before the
+    /// event joins the queue, and not only at the macrostep boundary. That
+    /// covers a `<send>` to this session, a host-run invocation's ending and
+    /// report, a delayed send or a deadline released by `tick`, a child's
+    /// report to this session, and a host's own `raise_external`.
+    ///
+    /// The internal queue does not drain ([`raise`](Self::raise)): it is the
+    /// running macrostep's own, and arrival order is the external queue's.
+    fn enqueue_external(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
+        self.drain_inbox();
+        Self::enqueue(&mut self.external_queue, event);
     }
 
     /// Apply one posted `input` by the call a direct caller on the owner
@@ -1587,11 +1688,23 @@ impl<P: StatePolicy> Engine<P> {
     ///    public route back to `policy` for generated code to take.
     /// 3. The pointer is not held beyond the scope of the single call.
     fn with_policy<R>(&mut self, f: impl FnOnce(&mut P, &mut Self) -> R) -> R {
+        // Recorded so a drain the policy's code causes (a `<send>` to this
+        // session queues an external event) keeps to point 2 below: it leaves
+        // an input that is applied through the policy for a drain made when
+        // the policy is back. Restored rather than cleared, as a lend can sit
+        // inside another.
+        #[cfg(feature = "std")]
+        let lent_before = core::mem::replace(&mut self.policy_lent, true);
         let policy_ptr: *mut P = &mut self.policy as *mut P;
         // SAFETY: see the doc comment above — the policy field and the rest of
         // the engine's fields are disjoint, and the split borrow lasts only for
         // the duration of `f`.
-        unsafe { f(&mut *policy_ptr, self) }
+        let result = unsafe { f(&mut *policy_ptr, self) };
+        #[cfg(feature = "std")]
+        {
+            self.policy_lent = lent_before;
+        }
+        result
     }
 
     /// docs/adr/0045: resume each of `children`, the running children a saved
@@ -2669,6 +2782,9 @@ impl<P: StatePolicy> Engine<P> {
                  for this document ({bound}): the analysis undercounts (docs/adr/0076)"
             );
         }
+        // No drain of the inbox here, unlike `enqueue_external` (docs/adr/0084,
+        // D2): the internal queue is the running macrostep's own, and arrival
+        // order is a property of the external queue.
         Self::enqueue(&mut self.internal_queue, event);
     }
 
@@ -2752,7 +2868,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target: SceString::new(),
         };
-        Self::enqueue(&mut self.external_queue, meta);
+        self.enqueue_external(meta);
     }
 
     /// EventSchema native lowering: raise an external event carrying a
@@ -2793,7 +2909,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target: SceString::new(),
         };
-        Self::enqueue(&mut self.external_queue, meta);
+        self.enqueue_external(meta);
     }
 
     /// Raise a typed event that also carries its payload on the `_event.data`
@@ -2840,7 +2956,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target: SceString::new(),
         };
-        Self::enqueue(&mut self.external_queue, meta);
+        self.enqueue_external(meta);
     }
 
     /// §scxml-6.4.1: Raise an external event by name (for child autoforward).
@@ -2936,7 +3052,7 @@ impl<P: StatePolicy> Engine<P> {
     pub fn raise_external_with_meta(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
 
-        Self::enqueue(&mut self.external_queue, event);
+        self.enqueue_external(event);
     }
 
     /// §scxml-3.12: Process an external event (convenience API, runs one macrostep).
@@ -2971,7 +3087,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target: SceString::new(),
         };
-        Self::enqueue(&mut self.external_queue, meta);
+        self.enqueue_external(meta);
         self.step();
     }
 
@@ -3696,7 +3812,7 @@ impl<P: StatePolicy> Engine<P> {
                 let mut metadata = EventMetadata::external("", "");
                 metadata.data = resp.event_data;
                 if let Some(meta) = Self::arriving_event(&resp.event_name, metadata) {
-                    Self::enqueue(&mut self.external_queue, meta);
+                    self.enqueue_external(meta);
                 }
             }
         }
@@ -4635,7 +4751,7 @@ impl<P: StatePolicy> Engine<P> {
         // §scxml-5.10: `_event.name` is the specific name, whichever descriptor
         // of the document it was matched through.
         if let Some(meta) = Self::arriving_event(&event_name, metadata) {
-            Self::enqueue(&mut self.external_queue, meta);
+            self.enqueue_external(meta);
         }
         true
     }
@@ -4704,7 +4820,7 @@ impl<P: StatePolicy> Engine<P> {
         metadata.data = crate::sce_string_from_str(&format!("\"{reason}\""));
         metadata.invoke_id = crate::sce_string_from_str(invoke_id);
         if let Some(meta) = Self::arriving_event(&event_name, metadata) {
-            Self::enqueue(&mut self.external_queue, meta);
+            self.enqueue_external(meta);
         }
     }
 
@@ -4762,7 +4878,7 @@ impl<P: StatePolicy> Engine<P> {
             let mut metadata = EventMetadata::external("", "");
             metadata.data = reply.event_data.clone();
             if let Some(meta) = Self::arriving_event(&reply.event_name, metadata) {
-                Self::enqueue(&mut self.external_queue, meta);
+                self.enqueue_external(meta);
             }
         }
         Some(replies)
