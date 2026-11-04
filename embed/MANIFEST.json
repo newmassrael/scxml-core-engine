@@ -3,7 +3,7 @@
   "embed_version": "6f71b4eacd",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 492,
+  "symbol_count": 494,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -196,6 +196,12 @@
       "header": "common/EventPayloadLift.h",
       "kind": "class",
       "members": [],
+      "name": "SCE::Common::EventPayloadRefusal"
+    },
+    {
+      "header": "common/EventPayloadLift.h",
+      "kind": "class",
+      "members": [],
       "name": "SCE::Common::EventPayloadValue"
     },
     {
@@ -203,6 +209,26 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Common::detail::EventPayloadScan"
+    },
+    {
+      "header": "common/EventPayloadLift.h",
+      "kind": "enum",
+      "name": "SCE::Common::RefusalCode",
+      "values": [
+        "NotJson",
+        "NotObject",
+        "TooDeep",
+        "Missing",
+        "NullNotOptional",
+        "WrongKind",
+        "BadNumber",
+        "OutOfRange",
+        "TooLong",
+        "TooMany",
+        "UnknownVariant",
+        "NotByteText",
+        "NulInText"
+      ]
     },
     {
       "header": "common/EventTypeHelper.h",

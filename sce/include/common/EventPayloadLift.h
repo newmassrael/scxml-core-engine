@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -18,6 +19,127 @@
 #include <vector>
 
 namespace SCE::Common {
+
+/**
+ * @brief The class of a refusal: the enum `sce:std/lift/refusal_code.scxml` declares, each
+ * code at the number that document gives it (docs/adr/0087, section 2.3)
+ */
+enum class RefusalCode : uint8_t {
+    NotJson = 1,
+    NotObject = 2,
+    TooDeep = 3,
+    Missing = 4,
+    NullNotOptional = 5,
+    WrongKind = 6,
+    BadNumber = 7,
+    OutOfRange = 8,
+    TooLong = 9,
+    TooMany = 10,
+    UnknownVariant = 11,
+    NotByteText = 12,
+    NulInText = 13,
+};
+
+/**
+ * @brief Why an event's data cannot be read as its schema's fields, or no refusal at all
+ *
+ * The sentence is what the delivery's `error.execution` carries. Beside it the refusal
+ * carries what a statechart reads as data (docs/adr/0087, section 2.4): its code, the
+ * place as a strict RFC 6901 pointer (`/items/2/tags/0`, `~` written `~0` and `/` written
+ * `~1`, empty for the whole text), and the bound the value broke, for a text, a byte
+ * string or a list past it. A default-constructed refusal is none: `empty()`.
+ *
+ * It reads as its sentence wherever a sentence is asked for, so a generated lift that
+ * reports a refusal as the text of `error.execution` takes it as one.
+ */
+class EventPayloadRefusal {
+public:
+    EventPayloadRefusal() = default;
+
+    EventPayloadRefusal(RefusalCode code, std::string pointer, std::string reason,
+                        std::optional<uint32_t> bound = std::nullopt)
+        : reason_(std::move(reason)), code_(code), pointer_(std::move(pointer)), bound_(bound) {}
+
+    /** @brief Whether this is no refusal: the read it answers filled what it read into */
+    bool empty() const {
+        return reason_.empty();
+    }
+
+    /** @brief The sentence the delivery's `error.execution` carries */
+    const std::string &reason() const {
+        return reason_;
+    }
+
+    /** @brief The class of the refusal */
+    RefusalCode code() const {
+        return code_;
+    }
+
+    /** @brief The place refused, as a strict RFC 6901 pointer: empty for the whole text */
+    const std::string &pointer() const {
+        return pointer_;
+    }
+
+    /** @brief The bound the value broke; empty for a refusal that names none */
+    std::optional<uint32_t> bound() const {
+        return bound_;
+    }
+
+    /** @brief The refusal as its sentence, which is what `error.execution` carries */
+    operator const std::string &() const {
+        return reason_;
+    }
+
+    /** @brief Whether the refusal says `sentence` */
+    friend bool operator==(const EventPayloadRefusal &refusal, const std::string &sentence) {
+        return refusal.reason_ == sentence;
+    }
+
+    friend bool operator!=(const EventPayloadRefusal &refusal, const std::string &sentence) {
+        return refusal.reason_ != sentence;
+    }
+
+    friend bool operator==(const EventPayloadRefusal &refusal, const char *sentence) {
+        return refusal.reason_ == sentence;
+    }
+
+    friend bool operator!=(const EventPayloadRefusal &refusal, const char *sentence) {
+        return refusal.reason_ != sentence;
+    }
+
+    /** @brief The name the enum declares `code` by (`notJson`); empty for a number it does not declare */
+    static const char *codeName(RefusalCode code) {
+        static const char *const names[] = {
+            "",          "notJson",    "notObject", "tooDeep", "missing",        "nullNotOptional", "wrongKind",
+            "badNumber", "outOfRange", "tooLong",   "tooMany", "unknownVariant", "notByteText",     "nulInText"};
+        const auto number = static_cast<size_t>(code);
+        return number < sizeof(names) / sizeof(names[0]) ? names[number] : "";
+    }
+
+    /**
+     * @brief `token` below the strict RFC 6901 pointer `prefix` (empty for the whole text):
+     * `/` and the token with `~` written `~0` and `/` written `~1` (RFC 6901, section 3)
+     */
+    static std::string pointerBelow(const std::string &prefix, const std::string &token) {
+        std::string out = prefix + "/";
+        for (const char c : token) {
+            if (c == '~') {
+                out += "~0";
+            } else if (c == '/') {
+                out += "~1";
+            } else {
+                out += c;
+            }
+        }
+        return out;
+    }
+
+private:
+    std::string reason_;
+    RefusalCode code_ = RefusalCode::NotJson;
+    std::string pointer_;
+    std::optional<uint32_t> bound_;
+};
 
 namespace detail {
 
@@ -268,14 +390,16 @@ public:
         return {};
     }
 
-    /** A whole number's sign and magnitude, or why it is neither. */
-    static std::string readWhole(const char *p, bool &negative, uint64_t &magnitude) {
+    /** A whole number's sign and magnitude, or why it is neither, its class in `code`. */
+    static std::string readWhole(const char *p, bool &negative, uint64_t &magnitude, RefusalCode &code) {
         if (*p != '-' && (*p < '0' || *p > '9')) {
+            code = RefusalCode::WrongKind;
             return "is not a number";
         }
         negative = (*p == '-');
         const char *digits = negative ? p + 1 : p;
         if (*digits < '0' || *digits > '9') {
+            code = RefusalCode::BadNumber;
             return "is not a number";
         }
         uint64_t value = 0;
@@ -283,6 +407,7 @@ public:
         for (; *d >= '0' && *d <= '9'; d++) {
             const uint64_t digit = static_cast<uint64_t>(*d - '0');
             if (value > (std::numeric_limits<uint64_t>::max() - digit) / 10u) {
+                code = RefusalCode::OutOfRange;
                 return "does not fit the width its schema declares";
             }
             value = value * 10u + digit;
@@ -290,17 +415,23 @@ public:
         // A fraction or an exponent is a different value, and rounding it would
         // answer a guard for something nobody sent.
         if (*d == '.' || *d == 'e' || *d == 'E') {
+            code = RefusalCode::BadNumber;
             return "is not a whole number";
         }
         magnitude = value;
         return {};
     }
 
-    /** The digits of a 64-bit field written as a text, from just past its opening quote: whole, canonical, closed. */
-    static std::string readWholeText(const char *p, bool isSigned, bool &negative, uint64_t &magnitude) {
+    /**
+     * The digits of a 64-bit field written as a text, from just past its opening quote: whole, canonical,
+     * closed; or why not, its class in `code`.
+     */
+    static std::string readWholeText(const char *p, bool isSigned, bool &negative, uint64_t &magnitude,
+                                     RefusalCode &code) {
         negative = (*p == '-');
         const char *digits = negative ? p + 1 : p;
         if (negative && !isSigned) {
+            code = RefusalCode::BadNumber;
             return "is not a whole number written as digits";
         }
         const char *d = digits;
@@ -308,6 +439,7 @@ public:
         for (; *d >= '0' && *d <= '9'; d++) {
             const uint64_t digit = static_cast<uint64_t>(*d - '0');
             if (value > (std::numeric_limits<uint64_t>::max() - digit) / 10u) {
+                code = RefusalCode::OutOfRange;
                 return "does not fit the width its schema declares";
             }
             value = value * 10u + digit;
@@ -315,14 +447,18 @@ public:
         const bool canonical =
             d != digits && *d == '"' && (*digits != '0' || d == digits + 1) && !(negative && value == 0);
         if (!canonical) {
+            code = RefusalCode::BadNumber;
             return "is not a whole number written as digits";
         }
         magnitude = value;
         return {};
     }
 
-    /** Whether a magnitude and sign fit `T`, writing it to `out` when they do; the clause why not. */
-    template <typename T> static std::string fit(bool negative, uint64_t magnitude, T &out) {
+    /**
+     * Whether a magnitude and sign fit `T`, writing it to `out` when they do; the clause why not, its class
+     * in `code`: below zero is no spelling of an unsigned number, and anything else outside is past the width.
+     */
+    template <typename T> static std::string fit(bool negative, uint64_t magnitude, T &out, RefusalCode &code) {
         if (negative) {
             if constexpr (std::is_signed_v<T>) {
                 // -(min) does not fit T when min is its floor, so the check is
@@ -330,16 +466,19 @@ public:
                 const uint64_t floorMagnitude =
                     static_cast<uint64_t>(-(static_cast<int64_t>(std::numeric_limits<T>::min()) + 1)) + 1u;
                 if (magnitude > floorMagnitude) {
+                    code = RefusalCode::OutOfRange;
                     return "does not fit the width its schema declares";
                 }
                 out = (magnitude == floorMagnitude) ? std::numeric_limits<T>::min()
                                                     : static_cast<T>(-static_cast<int64_t>(magnitude));
                 return {};
             } else {
+                code = RefusalCode::BadNumber;
                 return "does not fit the width its schema declares";
             }
         }
         if (magnitude > static_cast<uint64_t>(std::numeric_limits<T>::max())) {
+            code = RefusalCode::OutOfRange;
             return "does not fit the width its schema declares";
         }
         out = static_cast<T>(magnitude);
@@ -349,6 +488,189 @@ public:
     /** `segment` below `prefix`, as a JSON Pointer's reference tokens are joined. */
     static std::string join(const std::string &prefix, const std::string &segment) {
         return prefix.empty() ? segment : prefix + "/" + segment;
+    }
+
+    /**
+     * Past one JSON number at `p` in RFC 8259's grammar (section 6): `-`, then `0` or a digit that is not
+     * `0` and more digits, then a fraction and an exponent, each with at least one digit. nullptr when `p`
+     * spells none.
+     */
+    static const char *skipNumber(const char *p) {
+        if (*p == '-') {
+            p++;
+        }
+        if (*p == '0') {
+            p++;
+        } else if (*p >= '1' && *p <= '9') {
+            while (*p >= '0' && *p <= '9') {
+                p++;
+            }
+        } else {
+            return nullptr;
+        }
+        if (*p == '.') {
+            p++;
+            if (*p < '0' || *p > '9') {
+                return nullptr;
+            }
+            while (*p >= '0' && *p <= '9') {
+                p++;
+            }
+        }
+        if (*p == 'e' || *p == 'E') {
+            p++;
+            if (*p == '+' || *p == '-') {
+                p++;
+            }
+            if (*p < '0' || *p > '9') {
+                return nullptr;
+            }
+            while (*p >= '0' && *p <= '9') {
+                p++;
+            }
+        }
+        return p;
+    }
+
+    /**
+     * Past one JSON string at `p` in RFC 8259's grammar (section 7): closed, and every escape one of the
+     * eight short ones or `\u` and four hex digits. nullptr when `p` spells none. Which character a `\u`
+     * escape names is the reader's question, not the grammar's: half of a character is refused where a text
+     * is read.
+     */
+    static const char *skipWellFormedString(const char *p) {
+        if (*p != '"') {
+            return nullptr;
+        }
+        p++;
+        while (*p != '"') {
+            if (*p == '\0') {
+                return nullptr;
+            }
+            if (*p == '\\') {
+                p++;
+                unsigned code = 0;
+                if (*p == 'u') {
+                    if (!readHex4(p + 1, code)) {
+                        return nullptr;
+                    }
+                    p += 4;
+                } else if (std::string_view("\"\\/bfnrt").find(*p) == std::string_view::npos || *p == '\0') {
+                    return nullptr;
+                }
+            }
+            p++;
+        }
+        return p + 1;
+    }
+
+    /**
+     * The name at `p`, a JSON string, unescaped into `name`, and `p` moved past the `:` that follows it; or
+     * why it is not one. A name holding half of a character is compared as it is spelled.
+     */
+    static std::string readMemberName(const char *&p, std::string &name) {
+        const char *after = skipWellFormedString(p);
+        if (after == nullptr) {
+            return "a field name was expected";
+        }
+        if (!walkText(p, name).empty()) {
+            name.assign(p + 1, after - 1);
+        }
+        p = skipSpace(after);
+        if (*p != ':') {
+            return "a ':' was expected";
+        }
+        p = skipSpace(p + 1);
+        return {};
+    }
+
+    /**
+     * Why the text at `text` is not exactly one JSON value (RFC 8259) at every depth, or empty when it is;
+     * `trailing` is set when it is one JSON value and more.
+     *
+     * An object whose names repeat has no single meaning: a reader that takes the first and one that takes
+     * the last would read two values from one text, so it is refused, at any depth and under a key no schema
+     * declares too, as every runtime's reader refuses it (docs/adr/0087, section 2.3). Names are compared as
+     * the texts they spell, so an escape is the character it names. The containers open are kept on a stack,
+     * so the walk takes no call per level.
+     */
+    static std::string checkText(const char *text, bool &trailing) {
+        trailing = false;
+        std::vector<char> open;
+        std::vector<std::vector<std::string>> names;
+        const char *p = skipSpace(text);
+        for (;;) {
+            // A value is expected at `p`.
+            if (*p == '{' || *p == '[') {
+                const char kind = *p;
+                p = skipSpace(p + 1);
+                if (*p == (kind == '{' ? '}' : ']')) {
+                    p++;
+                } else {
+                    open.push_back(kind);
+                    if (kind == '{') {
+                        names.emplace_back();
+                        std::string name;
+                        const std::string refusal = readMemberName(p, name);
+                        if (!refusal.empty()) {
+                            return refusal;
+                        }
+                        names.back().push_back(std::move(name));
+                    }
+                    continue;
+                }
+            } else if (*p == '"') {
+                const char *after = skipWellFormedString(p);
+                if (after == nullptr) {
+                    return "a text is not closed, or holds an escape JSON does not have";
+                }
+                p = after;
+            } else if (std::string_view(p).substr(0, 4) == "true" || std::string_view(p).substr(0, 4) == "null") {
+                p += 4;
+            } else if (std::string_view(p).substr(0, 5) == "false") {
+                p += 5;
+            } else {
+                const char *after = skipNumber(p);
+                if (after == nullptr) {
+                    return *p == '\0' ? "it ends where a value was expected" : "a value was expected";
+                }
+                p = after;
+            }
+            // A value ended at `p`: close what it ends, or go on to the next member.
+            for (;;) {
+                p = skipSpace(p);
+                if (open.empty()) {
+                    trailing = *p != '\0';
+                    return trailing ? "it carries more than one JSON value" : std::string{};
+                }
+                const char kind = open.back();
+                if (*p == ',') {
+                    p = skipSpace(p + 1);
+                    if (kind == '{') {
+                        std::string name;
+                        const std::string refusal = readMemberName(p, name);
+                        if (!refusal.empty()) {
+                            return refusal;
+                        }
+                        std::vector<std::string> &seen = names.back();
+                        if (std::find(seen.begin(), seen.end(), name) != seen.end()) {
+                            return "the field \"" + name + "\" appears twice";
+                        }
+                        seen.push_back(std::move(name));
+                    }
+                    break;
+                }
+                if (*p == (kind == '{' ? '}' : ']')) {
+                    p++;
+                    if (kind == '{') {
+                        names.pop_back();
+                    }
+                    open.pop_back();
+                    continue;
+                }
+                return kind == '{' ? "a ',' or '}' was expected" : "a ',' or ']' was expected";
+            }
+        }
     }
 };
 
@@ -360,20 +682,27 @@ class EventPayloadFields;
  * @brief One value of an event's data, at the path through every depth that names it
  *
  * The path is a field's name, then each index and field name below it, joined by
- * `/`. Every reader answers an empty string when it filled `out`, else why it did
- * not, the path first; `out` is then as it was. Nothing is copied but what a reader
- * hands back: the value borrows the characters of the event record, which outlives
- * it while the event is being dispatched.
+ * `/`; the pointer is the strict RFC 6901 pointer to the same place, which a refusal
+ * carries beside its sentence. Every reader answers an empty refusal when it filled
+ * `out`, else why it did not, the path first; `out` is then as it was. Nothing is
+ * copied but what a reader hands back: the value borrows the characters of the event
+ * record, which outlives it while the event is being dispatched.
  */
 class EventPayloadValue {
 public:
     EventPayloadValue() = default;
 
-    EventPayloadValue(const char *at, std::string path) : at_(at), path_(std::move(path)) {}
+    EventPayloadValue(const char *at, std::string path, std::string pointer)
+        : at_(at), path_(std::move(path)), pointer_(std::move(pointer)) {}
 
     /** @brief The path that names this value */
     const std::string &path() const {
         return path_;
+    }
+
+    /** @brief The strict RFC 6901 pointer to this value (`/items/2`) */
+    const std::string &pointer() const {
+        return pointer_;
     }
 
     /** @brief Whether the value is `null`, the one spelling of an absent value */
@@ -381,12 +710,18 @@ public:
         return at_ != nullptr && std::string_view(at_).substr(0, 4) == "null" && !isWordCharacter(at_[4]);
     }
 
-    /** @brief A refusal of this value, saying `what` of it after its path */
-    std::string refuse(const std::string &what) const {
-        return "'" + path_ + "' " + what;
+    /** @brief A refusal of this value, of class `code`, saying `what` of it after its path */
+    EventPayloadRefusal refuse(RefusalCode code, const std::string &what,
+                               std::optional<uint32_t> bound = std::nullopt) const {
+        return EventPayloadRefusal(code, pointer_, "'" + path_ + "' " + what, bound);
     }
 
-    std::string readBool(bool &out) const {
+    /** @brief The refusal of the text `name` this value carries, which the enum `alias` does not declare */
+    EventPayloadRefusal unknownVariant(const std::string &name, const std::string &alias) const {
+        return refuse(RefusalCode::UnknownVariant, "(" + name + ") is not a variant of " + alias);
+    }
+
+    EventPayloadRefusal readBool(bool &out) const {
         if (std::string_view(at_).substr(0, 4) == "true" && !isWordCharacter(at_[4])) {
             out = true;
             return {};
@@ -401,15 +736,19 @@ public:
     /**
      * @brief The text the value carries, held to no bound: what an enum's variant is
      * named by, which its reader matches against the names its enum declares
+     *
+     * A text holding U+0000 is refused: a runtime that holds a text NUL-terminated
+     * would end it there, so no runtime holds one, and every reader refuses the same
+     * texts (docs/adr/0087, section 2.3). A byte string may hold the byte zero.
      */
-    std::string readName(std::string &out) const {
-        if (*at_ != '"') {
-            return wrongKind("is not a text");
-        }
+    EventPayloadRefusal readName(std::string &out) const {
         std::string text;
-        const std::string refusal = detail::EventPayloadScan::walkText(at_, text);
+        EventPayloadRefusal refusal = readCharacters(text);
         if (!refusal.empty()) {
-            return refuse(refusal);
+            return refusal;
+        }
+        if (text.find('\0') != std::string::npos) {
+            return refuse(RefusalCode::NulInText, "carries U+0000, which no text holds");
         }
         out = std::move(text);
         return {};
@@ -419,9 +758,9 @@ public:
      * @brief A text of at most `bound` UTF-8 bytes (docs/adr/0086, section 4.4): one
      * past the bound is refused, at whatever depth it stands, and never cut
      */
-    std::string readText(size_t bound, std::string &out) const {
+    EventPayloadRefusal readText(size_t bound, std::string &out) const {
         std::string text;
-        std::string refusal = readName(text);
+        EventPayloadRefusal refusal = readName(text);
         if (!refusal.empty()) {
             return refusal;
         }
@@ -442,19 +781,22 @@ public:
      * here; a character past U+00FF is no byte and is refused. Printable ASCII —
      * what a bytes guard compares — is the same bytes under either reading.
      */
-    std::string readBytes(size_t bound, std::vector<uint8_t> &out) const {
+    EventPayloadRefusal readBytes(size_t bound, std::vector<uint8_t> &out) const {
         if (*at_ != '"') {
             return wrongKind("is not a byte string");
         }
         std::string text;
-        std::string refusal = readName(text);
+        EventPayloadRefusal refusal = readCharacters(text);
         if (!refusal.empty()) {
             return refusal;
         }
         std::vector<uint8_t> bytes;
-        refusal = Latin1Bytes::bytesOf(text, bytes);
-        if (!refusal.empty()) {
-            return refuse(refusal);
+        const std::string notBytes = Latin1Bytes::bytesOf(text, bytes);
+        if (!notBytes.empty()) {
+            // `Latin1Bytes` refuses a character past U+00FF, which is no byte, and a
+            // text that is not UTF-8, which is no JSON text (RFC 8259, section 8.1).
+            const bool pastOneByte = notBytes.rfind("carries a character above U+00FF", 0) == 0;
+            return refuse(pastOneByte ? RefusalCode::NotByteText : RefusalCode::NotJson, notBytes);
         }
         if (bytes.size() > bound) {
             return pastBytes(bytes.size(), bound);
@@ -472,18 +814,19 @@ public:
      * than wrapped — silently truncating is how a guard on a boundary answers
      * for a value the document never received.
      */
-    template <typename T> std::string readInteger(T &out) const {
+    template <typename T> EventPayloadRefusal readInteger(T &out) const {
         static_assert(std::is_integral_v<T>, "readInteger is for whole-number values");
         if (isNull()) {
             return wrongKind("is not a number");
         }
         bool negative = false;
         uint64_t magnitude = 0;
-        std::string refusal = detail::EventPayloadScan::readWhole(at_, negative, magnitude);
+        RefusalCode code = RefusalCode::BadNumber;
+        std::string refusal = detail::EventPayloadScan::readWhole(at_, negative, magnitude, code);
         if (refusal.empty()) {
-            refusal = detail::EventPayloadScan::fit(negative, magnitude, out);
+            refusal = detail::EventPayloadScan::fit(negative, magnitude, out, code);
         }
-        return refusal.empty() ? refusal : refuse(refusal);
+        return refusal.empty() ? EventPayloadRefusal{} : refuse(code, refusal);
     }
 
     /**
@@ -495,31 +838,37 @@ public:
      * (`|n| <= 2^53`); a number past that is refused here on every engine, so the
      * same payload gives the same field wherever it is read.
      */
-    template <typename T> std::string readWide(T &out) const {
+    template <typename T> EventPayloadRefusal readWide(T &out) const {
         static_assert(std::is_integral_v<T> && sizeof(T) == 8, "readWide is for 64-bit whole-number values");
         if (isNull()) {
             return wrongKind("is not a number");
         }
         bool negative = false;
         uint64_t magnitude = 0;
+        RefusalCode code = RefusalCode::BadNumber;
         std::string refusal;
         if (*at_ == '"') {
-            refusal = detail::EventPayloadScan::readWholeText(at_ + 1, std::is_signed_v<T>, negative, magnitude);
+            refusal = detail::EventPayloadScan::readWholeText(at_ + 1, std::is_signed_v<T>, negative, magnitude, code);
         } else {
-            refusal = detail::EventPayloadScan::readWhole(at_, negative, magnitude);
+            refusal = detail::EventPayloadScan::readWhole(at_, negative, magnitude, code);
             if (refusal.empty() && magnitude > (uint64_t{1} << 53) - 1u) {
+                code = RefusalCode::BadNumber;
                 refusal = "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is "
                           "written as a text of its digits";
+            } else if (code == RefusalCode::OutOfRange) {
+                // A 64-bit integer as a number is held to 2^53 - 1 however large the
+                // number is: one past every width is no spelling of it either.
+                code = RefusalCode::BadNumber;
             }
         }
         if (refusal.empty()) {
-            refusal = detail::EventPayloadScan::fit(negative, magnitude, out);
+            refusal = detail::EventPayloadScan::fit(negative, magnitude, out, code);
         }
-        return refusal.empty() ? refusal : refuse(refusal);
+        return refusal.empty() ? EventPayloadRefusal{} : refuse(code, refusal);
     }
 
     /** @brief A fractional value, at the width its type declares */
-    template <typename T> std::string readFloating(T &out) const {
+    template <typename T> EventPayloadRefusal readFloating(T &out) const {
         static_assert(std::is_floating_point_v<T>, "readFloating is for fractional values");
         if (*at_ != '-' && (*at_ < '0' || *at_ > '9')) {
             return wrongKind("is not a number");
@@ -527,15 +876,18 @@ public:
         double wide = 0.0;
         try {
             wide = std::stod(std::string(at_, detail::EventPayloadScan::valueEnd(at_) - at_));
+        } catch (const std::out_of_range &) {
+            // A number past every double's range is past every real width.
+            return refuse(RefusalCode::OutOfRange, "is not a number this width can hold");
         } catch (const std::exception &) {
-            return refuse("is not a number this width can hold");
+            return refuse(RefusalCode::BadNumber, "is not a number this width can hold");
         }
         // A JSON number is a double wherever it is read, so a float holds the single
         // nearest that double, and a number past the largest single does not fit,
         // as a whole number past its width does not. Narrowing it anyway would be
         // undefined where the double is out of range.
         if (std::fabs(wide) > static_cast<double>(std::numeric_limits<T>::max())) {
-            return refuse("does not fit the width its schema declares");
+            return refuse(RefusalCode::OutOfRange, "does not fit the width its schema declares");
         }
         out = static_cast<T>(wide);
         return {};
@@ -545,13 +897,13 @@ public:
      * @brief A value of `optional<T>` (docs/adr/0055): absent where the value is
      * `null`, and otherwise what `read(value, present)` reads, held to `T`
      */
-    template <typename T, typename Read> std::string readOptional(std::optional<T> &out, Read read) const {
+    template <typename T, typename Read> EventPayloadRefusal readOptional(std::optional<T> &out, Read read) const {
         if (isNull()) {
             out.reset();
             return {};
         }
         T present{};
-        std::string refusal = read(*this, present);
+        EventPayloadRefusal refusal = read(*this, present);
         if (refusal.empty()) {
             out = std::move(present);
         }
@@ -565,7 +917,8 @@ public:
      * The elements are counted before any is read: an array longer than `bound` is
      * refused whole, and no element of it is decoded (ADR 0077, section 2).
      */
-    template <typename T, typename Read> std::string readList(size_t bound, std::vector<T> &out, Read read) const {
+    template <typename T, typename Read>
+    EventPayloadRefusal readList(size_t bound, std::vector<T> &out, Read read) const {
         if (*at_ != '[') {
             return wrongKind("is not a list");
         }
@@ -576,7 +929,7 @@ public:
                 elements.push_back(p);
                 const char *after = detail::EventPayloadScan::skipValue(p);
                 if (after == nullptr) {
-                    return refuse("is not a list (it ends unclosed)");
+                    return refuse(RefusalCode::NotJson, "is not a list (it ends unclosed)");
                 }
                 p = detail::EventPayloadScan::skipSpace(after);
                 if (*p == ',') {
@@ -586,19 +939,24 @@ public:
                 if (*p == ']') {
                     break;
                 }
-                return refuse("is not a list");
+                return refuse(RefusalCode::NotJson, "is not a list");
             }
         }
         if (elements.size() > bound) {
-            return refuse("holds " + std::to_string(elements.size()) + " elements, past the " + std::to_string(bound) +
-                          " its type declares");
+            return refuse(RefusalCode::TooMany,
+                          "holds " + std::to_string(elements.size()) + " elements, past the " + std::to_string(bound) +
+                              " its type declares",
+                          boundOf(bound));
         }
         std::vector<T> items;
         items.reserve(elements.size());
         for (size_t index = 0; index < elements.size(); ++index) {
             T item{};
-            const std::string refusal = read(
-                EventPayloadValue(elements[index], detail::EventPayloadScan::join(path_, std::to_string(index))), item);
+            const std::string token = std::to_string(index);
+            EventPayloadRefusal refusal =
+                read(EventPayloadValue(elements[index], detail::EventPayloadScan::join(path_, token),
+                                       EventPayloadRefusal::pointerBelow(pointer_, token)),
+                     item);
             if (!refusal.empty()) {
                 return refusal;
             }
@@ -616,7 +974,7 @@ public:
      * and which outlives the read, and a field the value lacks is read out of it
      * (docs/adr/0086, section 10.3); nullptr for a schema with none.
      */
-    template <typename Read> std::string readRecord(const char *defaults, Read read) const;
+    template <typename Read> EventPayloadRefusal readRecord(const char *defaults, Read read) const;
 
 private:
     /** Whether `c` continues a keyword, so that `nullx` is no `null`. */
@@ -624,18 +982,37 @@ private:
         return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
     }
 
-    /** The refusal of `null` where the type is not optional, or `otherwise`. */
-    std::string wrongKind(const char *otherwise) const {
-        return refuse(isNull() ? "is null, and its type is not optional" : otherwise);
+    /** A bound as a refusal names it: one no `uint32` holds is held at the largest. */
+    static uint32_t boundOf(size_t bound) {
+        return bound > std::numeric_limits<uint32_t>::max() ? std::numeric_limits<uint32_t>::max()
+                                                            : static_cast<uint32_t>(bound);
     }
 
-    std::string pastBytes(size_t held, size_t bound) const {
-        return refuse("is " + std::to_string(held) + " bytes, past the " + std::to_string(bound) +
-                      " its type declares");
+    /** The characters of the JSON string at the value, unescaped, or why it is no text. */
+    EventPayloadRefusal readCharacters(std::string &out) const {
+        if (*at_ != '"') {
+            return wrongKind("is not a text");
+        }
+        const std::string refusal = detail::EventPayloadScan::walkText(at_, out);
+        // A text the escapes of which name no character is no JSON text.
+        return refusal.empty() ? EventPayloadRefusal{} : refuse(RefusalCode::NotJson, refusal);
+    }
+
+    /** The refusal of `null` where the type is not optional, or `otherwise`. */
+    EventPayloadRefusal wrongKind(const char *otherwise) const {
+        return isNull() ? refuse(RefusalCode::NullNotOptional, "is null, and its type is not optional")
+                        : refuse(RefusalCode::WrongKind, otherwise);
+    }
+
+    EventPayloadRefusal pastBytes(size_t held, size_t bound) const {
+        return refuse(RefusalCode::TooLong,
+                      "is " + std::to_string(held) + " bytes, past the " + std::to_string(bound) + " its type declares",
+                      boundOf(bound));
     }
 
     const char *at_ = nullptr;
     std::string path_;
+    std::string pointer_;
 };
 
 /**
@@ -691,25 +1068,39 @@ public:
      * @brief Read an event's data as the fields it names
      * @param data The event's `_event.data` wire
      * @param out Receives the fields when the read succeeds
-     * @return An empty string when `out` was filled, else why it was not
+     * @return An empty refusal when `out` was filled, else why it was not
      *
      * The JSON read is §scxml-B-2-8-1's second rung, the same rung the script
-     * engine takes for the same string. Nothing is copied: `out` borrows the
+     * engine takes for the same string. The whole text is held to the JSON
+     * grammar first, so a text that is not one JSON value, or holds an object
+     * that repeats a name at any depth, is refused before any field is read
+     * (docs/adr/0087, section 2.3). Nothing is copied: `out` borrows the
      * characters, so the event record must outlive it — which it does, the lift
      * runs while the event is being dispatched.
      */
-    static std::string decode(const std::string &data, EventPayloadFields &out) {
+    static EventPayloadRefusal decode(const std::string &data, EventPayloadFields &out) {
         out.object_ = nullptr;
         out.defaults_ = nullptr;
         out.prefix_.clear();
+        out.pointerPrefix_.clear();
         const char *p = detail::EventPayloadScan::skipSpace(data.c_str());
         if (*p == '\0') {
-            return "the event carries no data";
+            return EventPayloadRefusal(RefusalCode::NotJson, "", "the event carries no data");
         }
+        bool trailing = false;
+        const std::string notJson = detail::EventPayloadScan::checkText(p, trailing);
         if (*p != '{') {
             // §scxml-B-2-8-1's other rungs: a bare value or a space-normalized
-            // string names no fields.
-            return "the event's data is not an object of named fields";
+            // string names no fields. The code tells one JSON value that is not an
+            // object from a text that is not JSON at all.
+            return EventPayloadRefusal(notJson.empty() ? RefusalCode::NotObject : RefusalCode::NotJson, "",
+                                       "the event's data is not an object of named fields");
+        }
+        if (trailing) {
+            return EventPayloadRefusal(RefusalCode::NotJson, "", "the event's data carries more than one JSON value");
+        }
+        if (!notJson.empty()) {
+            return EventPayloadRefusal(RefusalCode::NotJson, "", "the event's data is not JSON (" + notJson + ")");
         }
         out.object_ = p;
         return {};
@@ -721,7 +1112,7 @@ public:
      * @param defaults The JSON object of those fields' defaults, which the generator
      *        spells from the schema as a string literal that outlives `out`
      * @param out Receives the fields when the read succeeds
-     * @return An empty string when `out` was filled, else why it was not
+     * @return An empty refusal when `out` was filled, else why it was not
      *
      * A field the delivery lacks is read out of `defaults` instead
      * (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows"). A delivery with
@@ -730,12 +1121,13 @@ public:
      * whose fields came later reads its defaults. A field the delivery does carry
      * is read as it came, and held to its type as any other value is.
      */
-    static std::string decode(const std::string &data, const char *defaults, EventPayloadFields &out) {
+    static EventPayloadRefusal decode(const std::string &data, const char *defaults, EventPayloadFields &out) {
         out.object_ = nullptr;
         out.defaults_ = nullptr;
         out.prefix_.clear();
+        out.pointerPrefix_.clear();
         if (*detail::EventPayloadScan::skipSpace(data.c_str()) != '\0') {
-            std::string refusal = decode(data, out);
+            EventPayloadRefusal refusal = decode(data, out);
             if (!refusal.empty()) {
                 return refusal;
             }
@@ -750,14 +1142,27 @@ public:
      * else a refusal naming the path. A member the schema does not declare is never
      * asked for, so it is stepped over.
      */
-    std::string value(const char *name, EventPayloadValue &out) const {
+    EventPayloadRefusal value(const char *name, EventPayloadValue &out) const {
         const std::string path = detail::EventPayloadScan::join(prefix_, name);
+        std::string pointer = EventPayloadRefusal::pointerBelow(pointerPrefix_, name);
         const char *p = find(name);
         if (p == nullptr) {
-            return "the event's data has no '" + path + "'";
+            return EventPayloadRefusal(RefusalCode::Missing, std::move(pointer),
+                                       "the event's data has no '" + path + "'");
         }
-        out = EventPayloadValue(p, path);
+        out = EventPayloadValue(p, path, std::move(pointer));
         return {};
+    }
+
+    /**
+     * @brief The refusal of the text `variant` the field `name` carries, which the enum
+     * `alias` does not declare a variant by: what a generated reader of an enum field
+     * answers once it has matched every name the enum declares
+     */
+    EventPayloadRefusal unknownVariant(const char *name, const std::string &variant, const std::string &alias) const {
+        EventPayloadValue v;
+        EventPayloadRefusal refusal = value(name, v);
+        return refusal.empty() ? v.unknownVariant(variant, alias) : refusal;
     }
 
     /**
@@ -768,53 +1173,53 @@ public:
      * that lacks the key is refused: a field of the first revision is carried by
      * every delivery, absent or not, so a missing key is no absent value.
      */
-    std::string readAbsent(const char *name, bool &absent) const {
+    EventPayloadRefusal readAbsent(const char *name, bool &absent) const {
         EventPayloadValue v;
-        std::string refusal = value(name, v);
+        EventPayloadRefusal refusal = value(name, v);
         if (refusal.empty()) {
             absent = v.isNull();
         }
         return refusal;
     }
 
-    std::string readBool(const char *name, bool &out) const {
+    EventPayloadRefusal readBool(const char *name, bool &out) const {
         EventPayloadValue v;
-        std::string refusal = value(name, v);
+        EventPayloadRefusal refusal = value(name, v);
         return refusal.empty() ? v.readBool(out) : refusal;
     }
 
     /** @brief A text field, as the text it carries; `EventPayloadValue::readText` holds it to its bound */
-    std::string readString(const char *name, std::string &out) const {
+    EventPayloadRefusal readString(const char *name, std::string &out) const {
         EventPayloadValue v;
-        std::string refusal = value(name, v);
+        EventPayloadRefusal refusal = value(name, v);
         return refusal.empty() ? v.readName(out) : refusal;
     }
 
     /** @brief A byte-string field, held to no bound; `EventPayloadValue::readBytes` holds it to its own */
-    std::string readBytes(const char *name, std::vector<uint8_t> &out) const {
+    EventPayloadRefusal readBytes(const char *name, std::vector<uint8_t> &out) const {
         EventPayloadValue v;
-        std::string refusal = value(name, v);
+        EventPayloadRefusal refusal = value(name, v);
         return refusal.empty() ? v.readBytes(std::numeric_limits<size_t>::max(), out) : refusal;
     }
 
     /** @brief A whole-number field, at the width its schema declares (`EventPayloadValue::readInteger`) */
-    template <typename T> std::string readInteger(const char *name, T &out) const {
+    template <typename T> EventPayloadRefusal readInteger(const char *name, T &out) const {
         EventPayloadValue v;
-        std::string refusal = value(name, v);
+        EventPayloadRefusal refusal = value(name, v);
         return refusal.empty() ? v.readInteger(out) : refusal;
     }
 
     /** @brief A 64-bit whole-number field (`EventPayloadValue::readWide`) */
-    template <typename T> std::string readWide(const char *name, T &out) const {
+    template <typename T> EventPayloadRefusal readWide(const char *name, T &out) const {
         EventPayloadValue v;
-        std::string refusal = value(name, v);
+        EventPayloadRefusal refusal = value(name, v);
         return refusal.empty() ? v.readWide(out) : refusal;
     }
 
     /** @brief A fractional field, at the width its schema declares */
-    template <typename T> std::string readFloating(const char *name, T &out) const {
+    template <typename T> EventPayloadRefusal readFloating(const char *name, T &out) const {
         EventPayloadValue v;
-        std::string refusal = value(name, v);
+        EventPayloadRefusal refusal = value(name, v);
         return refusal.empty() ? v.readFloating(out) : refusal;
     }
 
@@ -915,10 +1320,13 @@ private:
     friend class EventPayloadValue;
 
     /** Take `defaults` as the schema's defaults, or refuse a text that is no object. */
-    std::string takeDefaults(const char *defaults) {
+    EventPayloadRefusal takeDefaults(const char *defaults) {
         const char *d = detail::EventPayloadScan::skipSpace(defaults);
         if (*d != '{') {
-            return "the schema's defaults are not a JSON object, which the generator never writes";
+            // A text that is none is the generator's, not a sender's, and is
+            // refused as no JSON object of the whole.
+            return EventPayloadRefusal(RefusalCode::NotJson, "",
+                                       "the schema's defaults are not a JSON object, which the generator never writes");
         }
         defaults_ = d;
         return {};
@@ -948,17 +1356,21 @@ private:
 
     /** The path of the record these are the fields of: empty for the payload. */
     std::string prefix_;
+
+    /** The strict RFC 6901 pointer to the record: empty for the payload. */
+    std::string pointerPrefix_;
 };
 
-template <typename Read> std::string EventPayloadValue::readRecord(const char *defaults, Read read) const {
+template <typename Read> EventPayloadRefusal EventPayloadValue::readRecord(const char *defaults, Read read) const {
     if (*at_ != '{') {
         return wrongKind("is not a record");
     }
     EventPayloadFields fields;
     fields.object_ = at_;
     fields.prefix_ = path_;
+    fields.pointerPrefix_ = pointer_;
     if (defaults != nullptr) {
-        const std::string refusal = fields.takeDefaults(defaults);
+        EventPayloadRefusal refusal = fields.takeDefaults(defaults);
         if (!refusal.empty()) {
             return refusal;
         }

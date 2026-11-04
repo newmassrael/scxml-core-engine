@@ -133,11 +133,19 @@ TEST(EventPayloadBytes, AnEscapeInATextFieldIsTheCharacterItNames) {
 TEST(EventPayloadBytes, HalfACharacterOrABadEscapeIsNoText) {
     EventPayloadFields fields;
     std::string label;
+    // Half of a character is JSON's grammar, and no text: refused where it is read.
     for (const char *wire : {"{\"label\":\"\\ud83d\"}", "{\"label\":\"\\ude00\"}", "{\"label\":\"\\ud83dx\"}",
-                             "{\"label\":\"\\ud83d\\u0041\"}", "{\"label\":\"\\u12g4\"}", "{\"label\":\"\\u12\"}"}) {
+                             "{\"label\":\"\\ud83d\\u0041\"}"}) {
         const std::string data = wire;
         ASSERT_EQ(EventPayloadFields::decode(data, fields), "");
         EXPECT_NE(fields.readString("label", label), "") << wire;
+    }
+    // An escape JSON does not have is no JSON text, refused whole (docs/adr/0087,
+    // section 2.3).
+    for (const char *wire : {"{\"label\":\"\\u12g4\"}", "{\"label\":\"\\u12\"}"}) {
+        const SCE::Common::EventPayloadRefusal refusal = EventPayloadFields::decode(wire, fields);
+        EXPECT_EQ(refusal.code(), SCE::Common::RefusalCode::NotJson) << wire;
+        EXPECT_EQ(refusal.pointer(), "") << wire;
     }
 }
 

@@ -803,10 +803,13 @@ add_test(NAME standard_host_scenario COMMAND standard_host_scenario_test)
 # every engine's writer reads. The same target holds the core's writer of an
 # object's members to tests/json_text/object_key_order.json (ARCHITECTURE.md,
 # "JSON Object Key Order") and its writers of a float to
-# tests/json_text/real_text.json ("JSON Number Text").
+# tests/json_text/real_text.json ("JSON Number Text"). The payload lift's
+# refusals are held to tests/json_text/payload_refusal.json, the table every
+# runtime's reader reads (docs/adr/0087, sections 2.3 and 2.4).
 # ============================================================================
 add_executable(json_text_test
     common/JsonTextTest.cpp
+    common/EventPayloadRefusalTest.cpp
 )
 
 target_include_directories(json_text_test
@@ -828,6 +831,8 @@ target_compile_definitions(json_text_test
         SCE_JSON_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/string_escape.json"
         SCE_JSON_KEY_ORDER_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/object_key_order.json"
         SCE_JSON_REAL_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/real_text.json"
+        SCE_JSON_PAYLOAD_REFUSAL_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/payload_refusal.json"
+        SCE_STDLIB_REFUSAL_CODE="${CMAKE_SOURCE_DIR}/stdlib/lift/refusal_code.scxml"
 )
 
 apply_sce_test_policies(json_text_test)

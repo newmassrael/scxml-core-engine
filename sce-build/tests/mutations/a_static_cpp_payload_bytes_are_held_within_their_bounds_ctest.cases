@@ -40,6 +40,6 @@ PY
 
 mutation_case "the bytes of a payload are the bytes of its UTF-8 text" <<'PY'
 edit("sce/include/common/EventPayloadLift.h",
-     "        refusal = Latin1Bytes::bytesOf(text, bytes);",
-     "        bytes.assign(text.begin(), text.end());\n        refusal.clear();")
+     "        const std::string notBytes = Latin1Bytes::bytesOf(text, bytes);",
+     "        bytes.assign(text.begin(), text.end());\n        const std::string notBytes;")
 PY

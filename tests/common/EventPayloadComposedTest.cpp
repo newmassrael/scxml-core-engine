@@ -24,6 +24,8 @@
 using SCE::Common::EventPayloadBounds;
 using SCE::Common::EventPayloadFields;
 using SCE::Common::EventPayloadValue;
+using SCE::Common::RefusalCode;
+using Refusal = SCE::Common::EventPayloadRefusal;
 
 namespace {
 
@@ -106,25 +108,25 @@ Held recordHeld(std::vector<std::string> ids, std::vector<Held> values) {
     return h;
 }
 
-template <typename T> std::string readUnsigned(const EventPayloadValue &v, Held &out) {
+template <typename T> Refusal readUnsigned(const EventPayloadValue &v, Held &out) {
     T n{};
-    const std::string refusal = v.readInteger(n);
+    const Refusal refusal = v.readInteger(n);
     out = unsignedHeld(n);
     return refusal;
 }
 
-template <typename T> std::string readSigned(const EventPayloadValue &v, Held &out) {
+template <typename T> Refusal readSigned(const EventPayloadValue &v, Held &out) {
     T n{};
-    const std::string refusal = v.readInteger(n);
+    const Refusal refusal = v.readInteger(n);
     out = signedHeld(n);
     return refusal;
 }
 
 /** The reader of `ty`, one call per constructor, as the generator writes it. */
-std::string read(const Ty &ty, const EventPayloadValue &v, Held &out) {
+Refusal read(const Ty &ty, const EventPayloadValue &v, Held &out) {
     if (ty.depth > 0) {
         std::vector<Held> items;
-        const std::string refusal = v.readList(kBound, items, [&](const EventPayloadValue &e, Held &into) {
+        const Refusal refusal = v.readList(kBound, items, [&](const EventPayloadValue &e, Held &into) {
             return read(Ty{ty.kind, ty.depth - 1}, e, into);
         });
         out = listHeld(std::move(items));
@@ -139,7 +141,7 @@ std::string read(const Ty &ty, const EventPayloadValue &v, Held &out) {
         return readUnsigned<uint32_t>(v, out);
     case Kind::U64: {
         uint64_t n = 0;
-        const std::string refusal = v.readWide(n);
+        const Refusal refusal = v.readWide(n);
         out = unsignedHeld(n);
         return refusal;
     }
@@ -151,43 +153,43 @@ std::string read(const Ty &ty, const EventPayloadValue &v, Held &out) {
         return readSigned<int32_t>(v, out);
     case Kind::I64: {
         int64_t n = 0;
-        const std::string refusal = v.readWide(n);
+        const Refusal refusal = v.readWide(n);
         out = signedHeld(n);
         return refusal;
     }
     case Kind::F32: {
         float x = 0.0f;
-        const std::string refusal = v.readFloating(x);
+        const Refusal refusal = v.readFloating(x);
         out.tag = Held::Tag::F;
         out.f = static_cast<double>(x);
         return refusal;
     }
     case Kind::F64: {
         double x = 0.0;
-        const std::string refusal = v.readFloating(x);
+        const Refusal refusal = v.readFloating(x);
         out.tag = Held::Tag::F;
         out.f = x;
         return refusal;
     }
     case Kind::Bool: {
         bool x = false;
-        const std::string refusal = v.readBool(x);
+        const Refusal refusal = v.readBool(x);
         out.tag = Held::Tag::B;
         out.b = x;
         return refusal;
     }
     case Kind::Enum: {
         std::string name;
-        std::string refusal = v.readName(name);
+        Refusal refusal = v.readName(name);
         if (refusal.empty() && name != "low" && name != "medium" && name != "high") {
-            refusal = v.refuse("(" + name + ") is not a variant of Level");
+            refusal = v.unknownVariant(name, "Level");
         }
         out = textHeld(name);
         return refusal;
     }
     case Kind::Text: {
         std::string text;
-        const std::string refusal = v.readText(kTextBound, text);
+        const Refusal refusal = v.readText(kTextBound, text);
         out = textHeld(text);
         return refusal;
     }
@@ -197,7 +199,7 @@ std::string read(const Ty &ty, const EventPayloadValue &v, Held &out) {
     }
     case Kind::Opt: {
         std::optional<uint8_t> present;
-        const std::string refusal =
+        const Refusal refusal =
             v.readOptional(present, [](const EventPayloadValue &p, uint8_t &n) { return p.readInteger(n); });
         out = present.has_value() ? unsignedHeld(*present) : Held{};
         return refusal;
@@ -207,7 +209,7 @@ std::string read(const Ty &ty, const EventPayloadValue &v, Held &out) {
             std::vector<Held> values(3);
             for (const char *id : {"a", "c"}) {
                 EventPayloadValue field;
-                std::string refusal = fields.value(id, field);
+                Refusal refusal = fields.value(id, field);
                 if (refusal.empty()) {
                     refusal = readUnsigned<uint8_t>(field, values[id[0] == 'a' ? 0 : 2]);
                 }
@@ -216,7 +218,7 @@ std::string read(const Ty &ty, const EventPayloadValue &v, Held &out) {
                 }
             }
             EventPayloadValue b;
-            std::string refusal = fields.value("b", b);
+            Refusal refusal = fields.value("b", b);
             std::string text;
             if (refusal.empty()) {
                 refusal = b.readText(kTextBound, text);
@@ -228,7 +230,7 @@ std::string read(const Ty &ty, const EventPayloadValue &v, Held &out) {
     case Kind::RecList:
         return v.readRecord(nullptr, [&](const EventPayloadFields &fields) {
             EventPayloadValue tags;
-            std::string refusal = fields.value("tags", tags);
+            Refusal refusal = fields.value("tags", tags);
             Held held;
             if (refusal.empty()) {
                 refusal = read(Ty{Kind::Text, 1}, tags, held);
@@ -237,7 +239,7 @@ std::string read(const Ty &ty, const EventPayloadValue &v, Held &out) {
             return refusal;
         });
     }
-    return "no reader";
+    return Refusal(RefusalCode::WrongKind, v.pointer(), "no reader");
 }
 
 /** The maximal value of `ty`: every list full, every text at its bound of control characters, every number at
@@ -485,10 +487,10 @@ Bad bad(Kind kind) {
 }
 
 /** What the read of `text` comes to: the value, or the refusal. */
-std::string lift(const Ty &ty, const std::string &text, Held &out, const char *defaults = nullptr) {
+Refusal lift(const Ty &ty, const std::string &text, Held &out, const char *defaults = nullptr) {
     EventPayloadFields fields;
-    std::string refusal = defaults == nullptr ? EventPayloadFields::decode(text, fields)
-                                              : EventPayloadFields::decode(text, defaults, fields);
+    Refusal refusal = defaults == nullptr ? EventPayloadFields::decode(text, fields)
+                                          : EventPayloadFields::decode(text, defaults, fields);
     if (!refusal.empty()) {
         return refusal;
     }
@@ -507,7 +509,7 @@ TEST(EventPayloadComposed, EveryElementKindAtEveryDepthIsReadOrRefusedAtItsPath)
                             const std::string &path, const std::string &sentence, const char *defaults) {
         ++cases;
         Held got;
-        const std::string refusal = lift(ty, text, got, defaults);
+        const std::string refusal = lift(ty, text, got, defaults).reason();
         if (want != nullptr) {
             if (!refusal.empty() || !(got == *want)) {
                 failures.push_back(label + ": " + (refusal.empty() ? "read another value" : refusal));
@@ -612,7 +614,7 @@ TEST(EventPayloadComposed, ATopLevelTextAndByteStringAreHeldToTheirBoundWhenRead
 }
 
 TEST(EventPayloadComposed, AListPastItsBoundIsRefusedBeforeAnElementIsRead) {
-    const std::string wire = R"({"v": [1, 2, "x"], "s": "x", "open": [1, )";
+    const std::string wire = R"({"v": [1, 2, "x"], "s": "x"})";
     EventPayloadFields fields;
     ASSERT_EQ(EventPayloadFields::decode(wire, fields), "");
     EventPayloadValue v;
@@ -629,8 +631,11 @@ TEST(EventPayloadComposed, AListPastItsBoundIsRefusedBeforeAnElementIsRead) {
     ASSERT_EQ(fields.value("s", v), "");
     EXPECT_EQ(v.readList(2, out, [](const EventPayloadValue &e, uint8_t &into) { return e.readInteger(into); }),
               "'s' is not a list");
-    ASSERT_EQ(fields.value("open", v), "");
-    EXPECT_NE(v.readList(2, out, [](const EventPayloadValue &e, uint8_t &into) { return e.readInteger(into); }), "");
+    // A list that never closes is no JSON text, and is refused whole before any
+    // field of it is read (docs/adr/0087, section 2.3).
+    const Refusal open = EventPayloadFields::decode(R"({"v": [1, 2], "open": [1, )", fields);
+    EXPECT_EQ(open.code(), RefusalCode::NotJson) << open.reason();
+    EXPECT_EQ(open.pointer(), "");
 }
 
 TEST(EventPayloadComposed, ARecordValueNamesItsMissingFieldAndReadsItsLaterFieldsFromDefaults) {
@@ -650,8 +655,8 @@ TEST(EventPayloadComposed, ARecordValueNamesItsMissingFieldAndReadsItsLaterField
     EXPECT_EQ(b, 9u);
     EventPayloadValue s;
     ASSERT_EQ(fields.value("s", s), "");
-    EXPECT_EQ(s.readRecord(nullptr, [](const EventPayloadFields &) { return std::string{}; }), "'s' is not a record");
-    EXPECT_NE(r.readRecord("[]", [](const EventPayloadFields &) { return std::string{}; }), "");
+    EXPECT_EQ(s.readRecord(nullptr, [](const EventPayloadFields &) { return Refusal{}; }), "'s' is not a record");
+    EXPECT_NE(r.readRecord("[]", [](const EventPayloadFields &) { return Refusal{}; }), "");
 }
 
 TEST(EventPayloadComposed, AListAndARecordAreWrittenInTheirOrderAndByTheirKeyBytes) {
