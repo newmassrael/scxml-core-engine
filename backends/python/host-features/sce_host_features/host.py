@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from . import clock, http, kv, notify
+from . import clock, http, kv, model, notify
 from .clock import ClockSource
 from .http import Transport
+from .model import MODEL_GENERATE, ModelProvider, ScriptedProvider
 from .records import DONE, HOLD, INVALID_ARGUMENT, REFUSE, Outcome, failure
 
 __all__ = ["DONE", "HOLD", "REFUSE", "TYPES", "Outcome", "ReferenceHost", "Start"]
@@ -28,6 +29,7 @@ TYPES: Tuple[str, ...] = (
     "sce-host-notify-post",
     "sce-host-notify-cancel",
     "sce-host-http-fetch",
+    MODEL_GENERATE,
 )
 
 
@@ -58,6 +60,22 @@ class ReferenceHost:
         #: The highest monotonic reading answered, which no answer goes below.
         self.monotonic_floor: Optional[int] = None
         self._starts: List[Start] = []
+        #: Where a generation's text comes from: a scripted provider until the
+        #: embedding gives another.
+        self.provider: ModelProvider = ScriptedProvider()
+        #: The machine's table of answer schemas, which a generation's
+        #: `answer_schema` is resolved through.
+        self.answer_schemas: List[Any] = []
+
+    def set_model_provider(self, provider: ModelProvider) -> None:
+        """Generate texts with `provider` from here on."""
+        self.provider = provider
+
+    def set_answer_schemas(self, schemas: Sequence[Any]) -> None:
+        """Resolve a generation's `answer_schema` through `schemas`, the table of
+        the machine this host serves (its generated ``ANSWER_SCHEMAS``). A request
+        that names an id the table does not hold is refused."""
+        self.answer_schemas = list(schemas)
 
     def set_faults(self, faults: Dict[str, str]) -> None:
         """Inject failures: each operation type named fails with the code it maps
@@ -116,6 +134,8 @@ class ReferenceHost:
             refused = argument("id") == ""
         elif operation == "sce-host-http-fetch":
             refused = not http.acceptable(argument("method"), argument("url"), argument("headers"))
+        elif operation == MODEL_GENERATE:
+            refused = model.judge(self.answer_schemas, params) is None
         else:
             refused = False
         if refused:
@@ -144,6 +164,8 @@ class ReferenceHost:
             )
         if operation == "sce-host-notify-cancel":
             return notify.cancel(self, argument("id"))
+        if operation == MODEL_GENERATE:
+            return model.generate(self, invoke_id, params)
         return http.fetch(
             self, invoke_id, argument("method"), argument("url"), argument("headers"), argument("body")
         )

@@ -15,12 +15,42 @@ a `Transport`, both the embedding's to supply.
 from .clock import ClockSource, Reading, ScriptedClock, SystemClock, Zone
 from .host import DONE, HOLD, REFUSE, TYPES, Outcome, ReferenceHost, Start
 from .http import HttpRequest, HttpResponse, HttpTransport, Transport, TransportFailure
+from .model import (
+    ANSWER_MAX_BYTES,
+    ANSWERED,
+    FAILED,
+    HELD,
+    MODEL_GENERATE,
+    REFUSED,
+    TEMPERATURE_MAX_MILLI,
+    ExhaustiveProvider,
+    GenerateRequest,
+    Generation,
+    ModelProvider,
+    OutcomeClass,
+    ScriptedAnswer,
+    ScriptedProvider,
+)
 from .serve import serve
 
 __all__ = [
+    "ANSWERED",
+    "ANSWER_MAX_BYTES",
     "ClockSource",
     "DONE",
+    "ExhaustiveProvider",
+    "FAILED",
+    "GenerateRequest",
+    "Generation",
+    "HELD",
     "HOLD",
+    "MODEL_GENERATE",
+    "ModelProvider",
+    "OutcomeClass",
+    "REFUSED",
+    "ScriptedAnswer",
+    "ScriptedProvider",
+    "TEMPERATURE_MAX_MILLI",
     "HttpRequest",
     "HttpResponse",
     "HttpTransport",

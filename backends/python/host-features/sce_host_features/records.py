@@ -34,6 +34,14 @@ _ZERO: Dict[str, dict] = {
     "sce-host-notify-request-permission": {"state": ""},
     "sce-host-notify-post": {"status": ""},
     "sce-host-http-fetch": {"status": 0, "headers": "", "body": ""},
+    "sce-host-model-generate": {
+        "text": "",
+        "constrained": False,
+        "model": "",
+        "prompt_tokens": 0,
+        "answer_tokens": 0,
+        "finish": "",
+    },
 }
 
 
