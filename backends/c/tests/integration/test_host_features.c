@@ -31,6 +31,7 @@
 #include "static_host_clock_sm.h"
 #include "static_host_http_sm.h"
 #include "static_host_kv_sm.h"
+#include "static_host_model_sm.h"
 #include "static_host_notify_sm.h"
 
 #ifndef SCE_HOST_FEATURES_SCENARIO_DIR
@@ -423,6 +424,7 @@ typedef struct {
     script_t transport;
     sce_hf_reading_t reading;
     sce_hf_zone_t zone;
+    sce_hf_scripted_provider_t *model;
 } rig_t;
 
 static bool scripted_read(void *user_data, sce_hf_reading_t *out) {
@@ -531,6 +533,56 @@ static void script_directive(script_t *script, const jn_t *d) {
     }
 }
 
+// What a `model` directive says the scripted provider is like: each member it names. An answer is `text`, or
+// `text_repeat` as a text and a count, with `finish`, `stop` when not written.
+static void model_directive(sce_hf_scripted_provider_t *model, const jn_t *d) {
+    const jn_t *answers = jn_get(d, "answers");
+    if (answers != NULL) {
+        sce_hf_scripted_clear_answers(model);
+        for (size_t i = 0; i < answers->count; ++i) {
+            const jn_t *answer = answers->items[i];
+            const jn_t *text = jn_get(answer, "text");
+            const jn_t *finish = jn_get(answer, "finish");
+            const char *ends = finish != NULL ? finish->s : "stop";
+            if (text != NULL) {
+                sce_hf_scripted_push_answer(model, text->s, text->n, ends);
+                continue;
+            }
+            const jn_t *repeat = jn_get(answer, "text_repeat");
+            const size_t unit = repeat->items[0]->n;
+            const size_t times = (size_t)repeat->items[1]->i;
+            char *joined = (char *)must(malloc(unit * times + 1u));
+            for (size_t k = 0; k < times; ++k) {
+                memcpy(joined + k * unit, repeat->items[0]->s, unit);
+            }
+            joined[unit * times] = '\0';
+            sce_hf_scripted_push_answer(model, joined, unit * times, ends);
+            free(joined);
+        }
+    }
+    const jn_t *constrained = jn_get(d, "constrained");
+    if (constrained != NULL) {
+        sce_hf_scripted_set_constrained(model, constrained->b);
+    }
+    const jn_t *name = jn_get(d, "name");
+    if (name != NULL) {
+        sce_hf_scripted_set_name(model, name->s);
+    }
+    const jn_t *context = jn_get(d, "context");
+    if (context != NULL) {
+        sce_hf_scripted_set_context(model, (uint64_t)context->i);
+    }
+    const jn_t *hold = jn_get(d, "hold");
+    if (hold != NULL) {
+        sce_hf_scripted_set_hold(model, hold->b);
+    }
+}
+
+// The request fields a scenario writes as numbers; every other is text.
+static bool integer_field(const char *name) {
+    return strcmp(name, "at_ms") == 0 || strcmp(name, "max_tokens") == 0 || strcmp(name, "temperature_milli") == 0;
+}
+
 static int rig_directives(rig_t *rig, const jn_t *directives) {
     for (size_t i = 0; i < directives->count; ++i) {
         const char *name = directives->keys[i];
@@ -565,6 +617,8 @@ static int rig_directives(rig_t *rig, const jn_t *directives) {
             }
         } else if (strcmp(name, "http") == 0) {
             script_directive(&rig->transport, value);
+        } else if (strcmp(name, "model") == 0) {
+            model_directive(rig->model, value);
         } else {
             (void)fprintf(stderr, "host_features: `%s` is not a host directive\n", name);
             return 1;
@@ -574,7 +628,7 @@ static int rig_directives(rig_t *rig, const jn_t *directives) {
 }
 
 // What the host was started with since the last step, as a scenario writes it: the
-// request as its record, `at_ms` being the one integer field.
+// request as its record, the integer fields as numbers.
 static jn_t *rig_starts(rig_t *rig) {
     jn_t *out = jn_new(J_ARR);
     for (size_t i = 0; i < sce_hf_start_count(rig->host); ++i) {
@@ -583,7 +637,7 @@ static jn_t *rig_starts(rig_t *rig) {
             const char *name;
             const char *value;
             sce_hf_start_param(rig->host, i, p, &name, &value);
-            jn_set(request, name, strcmp(name, "at_ms") == 0 ? jn_int(strtoll(value, NULL, 10)) : jn_str(value));
+            jn_set(request, name, integer_field(name) ? jn_int(strtoll(value, NULL, 10)) : jn_str(value));
         }
         jn_t *start = jn_new(J_OBJ);
         jn_set(start, "type", jn_str(sce_hf_start_operation(rig->host, i)));
@@ -649,10 +703,12 @@ static void free_state(jn_t *state, const jn_t *transport_log) {
 
 typedef struct {
     const char *name;
-    // A string, a truth value or a number, by the kind of the variable.
+    // A string, a truth value, a number, or a value of any shape (J_OBJ) read whole, by the kind of the
+    // variable.
     jkind_t kind;
     const char *(*text)(const void *sm);
     long long (*number)(const void *sm);
+    jn_t *(*value)(const void *sm);
 } variable_t;
 
 typedef struct {
@@ -667,6 +723,8 @@ typedef struct {
     const variable_t *variables;
     size_t variable_count;
     size_t size;
+    // Hands the host the machine's table of answer schemas; NULL for a machine that names none.
+    void (*answer_schemas)(sce_hf_host_t *host);
 } machine_t;
 
 #define TEXT_VAR(M, VAR)                                                                                               \
@@ -677,8 +735,8 @@ typedef struct {
     static long long M##_number_##VAR(const void *sm) {                                                                \
         return (long long)M##_get_##VAR((const M##_t *)sm);                                                            \
     }
-#define TEXT_ROW(M, VAR) {#VAR, J_STR, M##_text_##VAR, NULL}
-#define NUMBER_ROW(M, KIND, VAR) {#VAR, KIND, NULL, M##_number_##VAR}
+#define TEXT_ROW(M, VAR) {#VAR, J_STR, M##_text_##VAR, NULL, NULL}
+#define NUMBER_ROW(M, KIND, VAR) {#VAR, KIND, NULL, M##_number_##VAR, NULL}
 
 // A machine that waits on no clock is started with its invokers and driven by `_step`; one that does (the HTTP
 // exchange carries a deadline) is started on a manual clock the scenario moves on and driven by `_tick`.
@@ -796,15 +854,107 @@ static const variable_t http_variables[] = {
 };
 
 #define MACHINE_ROW(M, VARIABLES)                                                                                      \
-    {#M,           M##_start, M##_raise_by_name, M##_advance,                                                          \
-     M##_settle,   M##_state, VARIABLES,         sizeof(VARIABLES) / sizeof((VARIABLES)[0]),                           \
-     sizeof(M##_t)}
+    {#M,                                                                                                               \
+     M##_start,                                                                                                        \
+     M##_raise_by_name,                                                                                                \
+     M##_advance,                                                                                                      \
+     M##_settle,                                                                                                       \
+     M##_state,                                                                                                        \
+     VARIABLES,                                                                                                        \
+     sizeof(VARIABLES) / sizeof((VARIABLES)[0]),                                                                       \
+     sizeof(M##_t),                                                                                                    \
+     NULL}
+
+// static_host_model: a generation under an answer schema, and the record read from its answer or the refusal
+// of it. Both records may be absent; a record's text is its buffer's text, its byte string the Latin-1 text of
+// its bytes, a 64-bit field the text of its digits, and an enum the name its document declares.
+#define static_host_model_STATE_COUNT_VALUE STATIC_HOST_MODEL_STATE_COUNT
+MACHINE_COMMON(static_host_model, SCHEDULED)
+NUMBER_VAR(static_host_model, calls)
+TEXT_VAR(static_host_model, outcome)
+TEXT_VAR(static_host_model, finish)
+NUMBER_VAR(static_host_model, constrained)
+TEXT_VAR(static_host_model, answered_by)
+NUMBER_VAR(static_host_model, prompt_tokens)
+NUMBER_VAR(static_host_model, answer_tokens)
+
+// The bytes of `data[0..len)` as the text whose characters are those bytes' code points, in UTF-8.
+static jn_t *latin1_text(const uint8_t *data, size_t len) {
+    char *text = (char *)must(malloc(2u * len + 1u));
+    size_t n = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (data[i] < 0x80u) {
+            text[n++] = (char)data[i];
+        } else {
+            text[n++] = (char)(0xC0u | (data[i] >> 6));
+            text[n++] = (char)(0x80u | (data[i] & 0x3Fu));
+        }
+    }
+    text[n] = '\0';
+    jn_t *node = jn_str(text);
+    free(text);
+    return node;
+}
+
+static jn_t *static_host_model_value_answer(const void *sm) {
+    const sce_optional_record_static_host_model_record_answer_t held =
+        static_host_model_get_answer((const static_host_model_t *)sm);
+    if (!held.present) {
+        return jn_new(J_NULL);
+    }
+    char digits[32];
+    (void)snprintf(digits, sizeof(digits), "%lld", (long long)held.value.amount);
+    jn_t *answer = jn_new(J_OBJ);
+    jn_set(answer, "id", jn_int((long long)held.value.id));
+    jn_set(answer, "amount", jn_str(digits));
+    jn_set(answer, "title", jn_str(held.value.title.data));
+    jn_set(answer, "kind", jn_str(lift_kind_declared_name(held.value.kind)));
+    jn_set(answer, "note", held.value.note.present ? jn_str(held.value.note.value.data) : jn_new(J_NULL));
+    jn_set(answer, "tag", latin1_text(held.value.tag.data, held.value.tag.len));
+    jn_set(answer, "priority", jn_int((long long)held.value.priority));
+    return answer;
+}
+
+static jn_t *static_host_model_value_why(const void *sm) {
+    const sce_optional_record_static_host_model_record_lift_refusal_t held =
+        static_host_model_get_why((const static_host_model_t *)sm);
+    if (!held.present) {
+        return jn_new(J_NULL);
+    }
+    jn_t *why = jn_new(J_OBJ);
+    jn_set(why, "code", jn_str(refusal_code_declared_name(held.value.code)));
+    jn_set(why, "path", jn_str(held.value.path.data));
+    jn_set(why, "bound", held.value.bound.present ? jn_int((long long)held.value.bound.value) : jn_new(J_NULL));
+    return why;
+}
+
+#define VALUE_ROW(M, VAR) {#VAR, J_OBJ, NULL, NULL, M##_value_##VAR}
+
+static const variable_t model_variables[] = {
+    NUMBER_ROW(static_host_model, J_NUM, calls),
+    TEXT_ROW(static_host_model, outcome),
+    TEXT_ROW(static_host_model, finish),
+    NUMBER_ROW(static_host_model, J_BOOL, constrained),
+    TEXT_ROW(static_host_model, answered_by),
+    NUMBER_ROW(static_host_model, J_NUM, prompt_tokens),
+    NUMBER_ROW(static_host_model, J_NUM, answer_tokens),
+    VALUE_ROW(static_host_model, answer),
+    VALUE_ROW(static_host_model, why),
+};
+
+static void static_host_model_answer_schemas_to(sce_hf_host_t *host) {
+    sce_hf_set_answer_schemas(host, static_host_model_answer_schemas(), STATIC_HOST_MODEL_ANSWER_SCHEMA_COUNT);
+}
 
 static const machine_t machines[] = {
     MACHINE_ROW(static_host_kv, kv_variables),
     MACHINE_ROW(static_host_clock, clock_variables),
     MACHINE_ROW(static_host_notify, notify_variables),
     MACHINE_ROW(static_host_http, http_variables),
+    {"static_host_model", static_host_model_start, static_host_model_raise_by_name, static_host_model_advance,
+     static_host_model_settle, static_host_model_state, model_variables,
+     sizeof(model_variables) / sizeof(model_variables[0]), sizeof(static_host_model_t),
+     static_host_model_answer_schemas_to},
 };
 
 // ── The replay ───────────────────────────────────────────────────────────────
@@ -866,6 +1016,11 @@ static int replay(const machine_t *machine) {
     sce_hf_clock_t clock = {scripted_read, scripted_zone, &rig};
     sce_hf_transport_t transport = {scripted_exchange, &rig.transport};
     rig.host = sce_hf_host_new(clock, transport);
+    rig.model = sce_hf_scripted_provider_new();
+    sce_hf_set_model_provider(rig.host, sce_hf_scripted_provider(rig.model));
+    if (machine->answer_schemas != NULL) {
+        machine->answer_schemas(rig.host);
+    }
     sce_host_invoker_registry_t registry;
     memset(&registry, 0, sizeof(registry));
     if (!sce_hf_register(&registry, rig.host)) {
@@ -936,7 +1091,8 @@ static int replay(const machine_t *machine) {
                 bad = 1;
                 continue;
             }
-            jn_t *got = row->kind == J_STR    ? jn_str(row->text(sm))
+            jn_t *got = row->kind == J_OBJ    ? row->value(sm)
+                        : row->kind == J_STR  ? jn_str(row->text(sm))
                         : row->kind == J_BOOL ? jn_bool(row->number(sm) != 0)
                                               : jn_int(row->number(sm));
             if (!jn_equal(got, variables->items[v])) {
@@ -951,9 +1107,283 @@ static int replay(const machine_t *machine) {
     jn_free(rig.transport.log);
     script_clear_response(&rig.transport);
     sce_hf_host_free(rig.host);
+    sce_hf_scripted_provider_free(rig.model);
     jn_free(scenario);
     free(text);
     return bad;
+}
+
+// What the exhaustive provider answers for a class of the table.
+static sce_hf_outcome_class_t outcome_class(const jn_t *cls) {
+    sce_hf_outcome_class_t out = {SCE_HF_GENERATION_HOLD, "", "", ""};
+    const char *end = jn_get(cls, "end")->s;
+    if (strcmp(end, "answer") == 0) {
+        out.kind = SCE_HF_GENERATION_ANSWER;
+        out.text = jn_get(cls, "text")->s;
+        out.finish = jn_get(cls, "finish")->s;
+    } else if (strcmp(end, "failure") == 0) {
+        out.kind = SCE_HF_GENERATION_FAILURE;
+        out.code = jn_get(cls, "error")->s;
+    } else if (strcmp(end, "refusal") == 0) {
+        out.kind = SCE_HF_GENERATION_REFUSAL;
+    }
+    return out;
+}
+
+// Run static_host_model against the exhaustive provider answering the classes `sequence[0..length)` names, one
+// call a class, and hold what the machine publishes after each call to what its class says. Nonzero when it
+// does not.
+static int run_sequence(const jn_t *table, const size_t *sequence, size_t length) {
+    const machine_t *machine = &machines[sizeof(machines) / sizeof(machines[0]) - 1u];
+    const jn_t *classes = jn_get(table, "classes");
+    sce_hf_outcome_class_t provided[8];
+    char named[256] = "";
+    for (size_t i = 0; i < length; ++i) {
+        provided[i] = outcome_class(classes->items[sequence[i]]);
+        (void)strncat(named, jn_get(classes->items[sequence[i]], "class")->s, sizeof(named) - strlen(named) - 2u);
+        (void)strncat(named, " ", sizeof(named) - strlen(named) - 1u);
+    }
+    rig_t rig;
+    memset(&rig, 0, sizeof(rig));
+    rig.transport.log = jn_new(J_ARR);
+    sce_hf_clock_t clock = {scripted_read, scripted_zone, &rig};
+    sce_hf_transport_t transport = {scripted_exchange, &rig.transport};
+    rig.host = sce_hf_host_new(clock, transport);
+    sce_hf_exhaustive_provider_t *provider = sce_hf_exhaustive_provider_new(provided, length);
+    sce_hf_set_model_provider(rig.host, sce_hf_exhaustive_provider(provider));
+    machine->answer_schemas(rig.host);
+    sce_host_invoker_registry_t registry;
+    memset(&registry, 0, sizeof(registry));
+    int bad = sce_hf_register(&registry, rig.host) ? 0 : 1;
+    void *sm = calloc(1u, machine->size);
+    machine->start(sm, &registry);
+    machine->settle(sm);
+    const jn_t *ask = jn_get(table, "ask");
+    const jn_t *data = jn_get(ask, "data");
+    char *payload = (char *)must(strndup(data->raw, data->raw_len));
+    // The record the last call that read one left, the table's own node; `none` before any.
+    jn_t *none = jn_new(J_NULL);
+    const jn_t *answer = none;
+    for (size_t n = 0; !bad && n < length; ++n) {
+        const jn_t *cls = classes->items[sequence[n]];
+        if (!machine->raise(sm, jn_get(ask, "event")->s, payload)) {
+            bad = fail(machine->name, (int)n, named, "the machine's events do not match the table's", NULL, NULL);
+            break;
+        }
+        machine->settle(sm);
+        const jn_t *then = jn_get(cls, "then");
+        if (then != NULL && strcmp(then->s, "advance") == 0) {
+            machine->advance(sm, (uint64_t)jn_get(table, "deadline_ms")->i);
+            machine->settle(sm);
+        } else if (then != NULL && strcmp(then->s, "leave") == 0) {
+            (void)machine->raise(sm, jn_get(table, "leave")->s, NULL);
+            machine->settle(sm);
+        }
+        const jn_t *expect = jn_get(cls, "expect");
+        const jn_t *read = jn_get(expect, "answer");
+        if (read != NULL) {
+            answer = read;
+        }
+        const char *atomic = machine->state(sm);
+        if (atomic == NULL || strcmp(atomic, "idle") != 0) {
+            bad |= fail(machine->name, (int)n, named, "the machine is not idle", NULL, NULL);
+        }
+        const char *names[] = {"outcome", "why", "finish", "answer", "calls"};
+        for (size_t v = 0; v < sizeof(names) / sizeof(names[0]); ++v) {
+            const variable_t *row = NULL;
+            for (size_t k = 0; k < machine->variable_count; ++k) {
+                if (strcmp(machine->variables[k].name, names[v]) == 0) {
+                    row = &machine->variables[k];
+                }
+            }
+            if (row == NULL) {
+                bad |= fail(machine->name, (int)n, named, "the driver reads no such variable", NULL, NULL);
+                continue;
+            }
+            jn_t *got = row->kind == J_OBJ   ? row->value(sm)
+                        : row->kind == J_STR ? jn_str(row->text(sm))
+                                             : jn_int(row->number(sm));
+            jn_t *calls = jn_int((long long)(n + 1u));
+            const jn_t *want = strcmp(names[v], "answer") == 0  ? answer
+                               : strcmp(names[v], "calls") == 0 ? calls
+                                                                : jn_get(expect, names[v]);
+            if (!jn_equal(got, want)) {
+                char what[64];
+                (void)snprintf(what, sizeof(what), "variable `%s`", names[v]);
+                bad |= fail(machine->name, (int)n, named, what, got, want);
+            }
+            jn_free(calls);
+            jn_free(got);
+        }
+    }
+    jn_free(none);
+    free(payload);
+    free(sm);
+    jn_free(rig.transport.log);
+    script_clear_response(&rig.transport);
+    sce_hf_host_free(rig.host);
+    sce_hf_exhaustive_provider_free(provider);
+    return bad;
+}
+
+// The machine around a model is tested exhaustively (docs/adr/0087, section 9.4): every sequence of outcome
+// classes up to the table's bound, each call read as its class says, and every refusal code of the library
+// either reached by a class or named as deferred with its reason.
+static int every_outcome_class_sequence(void) {
+    char path[512];
+    (void)snprintf(path, sizeof(path), "%s/../model_outcome_classes.json", SCE_HOST_FEATURES_SCENARIO_DIR);
+    char *text = read_file(path);
+    if (text == NULL) {
+        (void)fprintf(stderr, "host_features: the class table %s is not readable\n", path);
+        return 1;
+    }
+    parser_t ps = {text, text + strlen(text), true};
+    jn_t *table = parse_value(&ps);
+    int bad = 0;
+    const jn_t *classes = table != NULL && ps.ok ? jn_get(table, "classes") : NULL;
+    const jn_t *bound = table != NULL && ps.ok ? jn_get(table, "bound") : NULL;
+    if (classes == NULL || bound == NULL || classes->count == 0u || bound->i <= 0 || bound->i > 8) {
+        (void)fprintf(stderr, "host_features: the class table names nothing to run\n");
+        bad = 1;
+    } else if (strcmp(jn_get(table, "answer_schema")->s, static_host_model_answer_schemas()[0].id) != 0) {
+        (void)fprintf(stderr, "host_features: the class table names another answer schema\n");
+        bad = 1;
+    }
+    size_t runs = 0;
+    size_t expected = 0;
+    size_t power = 1;
+    for (size_t length = 1; !bad && length <= (size_t)bound->i; ++length) {
+        power *= classes->count;
+        expected += power;
+        size_t sequence[8] = {0};
+        for (;;) {
+            bad |= run_sequence(table, sequence, length);
+            ++runs;
+            size_t position = length;
+            while (position > 0u && sequence[position - 1u] == classes->count - 1u) {
+                sequence[--position] = 0u;
+            }
+            if (position == 0u || bad) {
+                break;
+            }
+            ++sequence[position - 1u];
+        }
+    }
+    if (!bad && runs != expected) {
+        (void)fprintf(stderr, "host_features: %zu sequences were run, not the %zu up to the bound\n", runs, expected);
+        bad = 1;
+    }
+    if (!bad) {
+        const char *codes[32];
+        size_t code_count = 0;
+        const jn_t *deferred = jn_get(table, "deferred");
+        for (size_t i = 0; i < classes->count + deferred->count && code_count < 32u; ++i) {
+            const jn_t *code = NULL;
+            if (i < classes->count) {
+                const jn_t *why = jn_get(jn_get(classes->items[i], "expect"), "why");
+                code = why != NULL && why->kind == J_OBJ ? jn_get(why, "code") : NULL;
+            } else {
+                code = jn_get(deferred->items[i - classes->count], "code");
+            }
+            bool seen = code == NULL;
+            for (size_t k = 0; !seen && k < code_count; ++k) {
+                seen = strcmp(codes[k], code->s) == 0;
+            }
+            if (!seen) {
+                codes[code_count++] = code->s;
+            }
+        }
+        if (code_count != 13u) {
+            (void)fprintf(stderr, "host_features: %zu refusal codes are reached or deferred, not 13\n", code_count);
+            bad = 1;
+        }
+    }
+    jn_free(table);
+    free(text);
+    return bad;
+}
+
+// What the host makes of a generation apart from the scenario: each argument it does not accept is refused
+// before the provider is asked, an answer past its bound or a request past the context fails whole, and the
+// exhaustive provider answers each class in turn.
+static bool judges_a_generation_before_its_provider(void) {
+    bool ok = true;
+    script_t script;
+    memset(&script, 0, sizeof(script));
+    script.log = jn_new(J_ARR);
+    sce_hf_transport_t transport = {scripted_exchange, &script};
+    sce_hf_host_t *host = sce_hf_host_new(sce_hf_system_clock(), transport);
+    static const sce_answer_schema_t schemas[] = {{"urn:sce:schema:answer:1", "{}", "root ::= \"{}\""}};
+    sce_hf_set_answer_schemas(host, schemas, 1u);
+    sce_hf_scripted_provider_t *scripted = sce_hf_scripted_provider_new();
+    sce_hf_scripted_set_constrained(scripted, true);
+    sce_hf_scripted_set_context(scripted, 10u);
+    char *long_text = (char *)must(malloc(SCE_HF_ANSWER_MAX_BYTES + 2u));
+    memset(long_text, 'a', SCE_HF_ANSWER_MAX_BYTES + 1u);
+    long_text[SCE_HF_ANSWER_MAX_BYTES + 1u] = '\0';
+    sce_hf_scripted_push_answer(scripted, long_text, SCE_HF_ANSWER_MAX_BYTES + 1u, "stop");
+    sce_hf_scripted_push_answer(scripted, "kept", 4u, "stop");
+    free(long_text);
+    sce_hf_set_model_provider(host, sce_hf_scripted_provider(scripted));
+
+    struct {
+        const char *prompt, *schema, *max_tokens, *temperature, *expect;
+    } const cases[] = {
+        {"", "", "8", "0", NULL},
+        {"p", "", "0", "0", NULL},
+        {"p", "", "8", "2001", NULL},
+        {"p", "urn:sce:schema:other:1", "8", "0", NULL},
+        {"p", "", "8", "0", "\"error\":\"answer_too_large\""},
+        {"abc", "", "8", "0", "\"error\":\"context_exceeded\""},
+        {"abc", "urn:sce:schema:answer:1", "7", "2000", "\"text\":\"kept\""},
+        {"p", "", "8", "0", "\"error\":\"unavailable\""},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        const sce_host_send_param_t params[4] = {{"prompt", cases[i].prompt},
+                                                 {"answer_schema", cases[i].schema},
+                                                 {"max_tokens", cases[i].max_tokens},
+                                                 {"temperature_milli", cases[i].temperature}};
+        sce_hf_outcome_t outcome;
+        (void)sce_hf_start(host, SCE_HF_MODEL_GENERATE, "gen", params, 4u, &outcome);
+        const bool held = cases[i].expect == NULL
+                              ? outcome.kind == SCE_HF_REFUSE
+                              : outcome.kind == SCE_HF_DONE && strstr(outcome.data, cases[i].expect) != NULL;
+        if (!held) {
+            (void)fprintf(stderr, "host_features: generation case %zu answered %s\n", i,
+                          outcome.data != NULL ? outcome.data : "(nothing)");
+            ok = false;
+        }
+        sce_hf_outcome_free(&outcome);
+    }
+    const sce_hf_outcome_class_t sequence[] = {
+        {SCE_HF_GENERATION_ANSWER, "t", "length", ""},
+        {SCE_HF_GENERATION_FAILURE, "", "", "busy"},
+        {SCE_HF_GENERATION_REFUSAL, "", "", ""},
+        {SCE_HF_GENERATION_HOLD, "", "", ""},
+    };
+    sce_hf_exhaustive_provider_t *exhaustive = sce_hf_exhaustive_provider_new(sequence, 4u);
+    sce_hf_set_model_provider(host, sce_hf_exhaustive_provider(exhaustive));
+    const sce_hf_kind_t kinds[] = {SCE_HF_DONE, SCE_HF_DONE, SCE_HF_REFUSE, SCE_HF_HOLD, SCE_HF_DONE};
+    const char *contains[] = {"\"model\":\"exhaustive\"", "\"error\":\"busy\"", NULL, NULL,
+                              "\"error\":\"unavailable\""};
+    for (size_t i = 0; i < 5u; ++i) {
+        const sce_host_send_param_t params[4] = {
+            {"prompt", "p"}, {"answer_schema", ""}, {"max_tokens", "8"}, {"temperature_milli", "0"}};
+        sce_hf_outcome_t outcome;
+        (void)sce_hf_start(host, SCE_HF_MODEL_GENERATE, "gen", params, 4u, &outcome);
+        if (outcome.kind != kinds[i] || (contains[i] != NULL && strstr(outcome.data, contains[i]) == NULL)) {
+            (void)fprintf(stderr, "host_features: exhaustive class %zu answered %s\n", i,
+                          outcome.data != NULL ? outcome.data : "(nothing)");
+            ok = false;
+        }
+        sce_hf_outcome_free(&outcome);
+    }
+    sce_hf_host_free(host);
+    sce_hf_scripted_provider_free(scripted);
+    sce_hf_exhaustive_provider_free(exhaustive);
+    jn_free(script.log);
+    return ok;
 }
 
 // What the host holds apart from the scenarios: its system clock, what it does not serve, and the order of
@@ -1012,10 +1442,16 @@ int main(void) {
     if (!serves_only_the_standard_set_and_a_monotonic_clock()) {
         bad = 1;
     }
+    if (!judges_a_generation_before_its_provider()) {
+        bad = 1;
+    }
     for (size_t i = 0; i < sizeof(machines) / sizeof(machines[0]); ++i) {
         const int one = replay(&machines[i]);
         (void)printf("host_features: %s %s\n", machines[i].name, one == 0 ? "ok" : "FAILED");
         bad |= one;
     }
+    const int sequences = every_outcome_class_sequence();
+    (void)printf("host_features: every outcome class sequence %s\n", sequences == 0 ? "ok" : "FAILED");
+    bad |= sequences;
     return bad;
 }

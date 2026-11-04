@@ -3001,7 +3001,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # (`SCE_MAX_DATA_LEN`) and the host registers every standard type
     # (`SCE_MAX_HOST_INVOKERS`), and both are layout the machine and the host must
     # agree on, so one target's definitions reach both.
-    foreach(_HOST_FEATURE_MACHINE static_host_kv static_host_clock static_host_notify static_host_http)
+    foreach(_HOST_FEATURE_MACHINE static_host_kv static_host_clock static_host_notify static_host_http static_host_model)
         sce_generate_static_integration_c_test(${_HOST_FEATURE_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_HOST_FEATURE_MACHINE}.scxml"
@@ -3014,6 +3014,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_host_clock_SOURCES}
         ${INTEGRATION_C_TEST_static_host_notify_SOURCES}
         ${INTEGRATION_C_TEST_static_host_http_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_model_SOURCES}
     )
     sce_c_link_runtime(sce_c_integration_host_features)
     target_include_directories(sce_c_integration_host_features PRIVATE
@@ -3023,7 +3024,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     target_compile_definitions(sce_c_integration_host_features PRIVATE
         SCE_MAX_DATA_LEN=40960
-        SCE_MAX_HOST_INVOKERS=12
+        SCE_MAX_HOST_INVOKERS=13
         SCE_HOST_FEATURES_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/tests/host_features/scenarios"
     )
     set_target_properties(sce_c_integration_host_features PROPERTIES

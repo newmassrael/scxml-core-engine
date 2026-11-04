@@ -401,7 +401,7 @@ Three things differ by lane and are not hidden:
 - **The C host is a hosted reference** (it allocates), and a result record travels
   in one data slot of the machine, `SCE_MAX_DATA_LEN`, which defaults to 256 bytes.
   A C build that serves the HTTP operation sets it to at least 40000
-  (`SCE_HF_MIN_DATA_LEN`) and `SCE_MAX_HOST_INVOKERS` to at least 11. A result that
+  (`SCE_HF_MIN_DATA_LEN`) and `SCE_MAX_HOST_INVOKERS` to at least 12. A result that
   does not fit the slot is refused as `error.execution`, not cut.
 
 ## 9. Not provided

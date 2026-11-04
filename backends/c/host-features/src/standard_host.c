@@ -28,6 +28,7 @@ const char *const sce_hf_types[SCE_HF_TYPE_COUNT] = {
     "sce-host-notify-post",
     "sce-host-notify-cancel",
     "sce-host-http-fetch",
+    SCE_HF_MODEL_GENERATE,
 };
 
 /* The most bytes of response headers and of body a result record holds. */
@@ -185,6 +186,13 @@ struct sce_hf_host_s {
     start_t *starts;
     size_t start_count;
     size_t start_cap;
+    /* Where a generation's text comes from: the host's own scripted provider
+       until the embedding gives another. */
+    sce_hf_scripted_provider_t *own_provider;
+    sce_hf_model_provider_t provider;
+    /* The machine's table of answer schemas, the machine's constant storage. */
+    const sce_answer_schema_t *answer_schemas;
+    size_t answer_schema_count;
 };
 
 sce_hf_host_t *sce_hf_host_new(sce_hf_clock_t clock, sce_hf_transport_t transport) {
@@ -193,7 +201,18 @@ sce_hf_host_t *sce_hf_host_new(sce_hf_clock_t clock, sce_hf_transport_t transpor
     host->transport = transport;
     host->permission = dup_str("undetermined");
     host->user_decision = dup_str("none");
+    host->own_provider = sce_hf_scripted_provider_new();
+    host->provider = sce_hf_scripted_provider(host->own_provider);
     return host;
+}
+
+void sce_hf_set_model_provider(sce_hf_host_t *host, sce_hf_model_provider_t provider) {
+    host->provider = provider;
+}
+
+void sce_hf_set_answer_schemas(sce_hf_host_t *host, const sce_answer_schema_t *schemas, size_t count) {
+    host->answer_schemas = schemas;
+    host->answer_schema_count = count;
 }
 
 static void clear_faults(sce_hf_host_t *host) {
@@ -240,6 +259,7 @@ void sce_hf_host_free(sce_hf_host_t *host) {
     strlist_free(&host->held);
     strlist_free(&host->cancelled);
     sce_hf_clear_starts(host);
+    sce_hf_scripted_provider_free(host->own_provider);
     free(host);
 }
 
@@ -468,6 +488,13 @@ static void failure(const char *operation, const char *code, sce_hf_outcome_t *o
         record_text(&r, "state", "", 0u);
     } else if (strcmp(operation, "sce-host-notify-post") == 0) {
         record_text(&r, "status", "", 0u);
+    } else if (strcmp(operation, SCE_HF_MODEL_GENERATE) == 0) {
+        record_text(&r, "text", "", 0u);
+        record_bool(&r, "constrained", false);
+        record_text(&r, "model", "", 0u);
+        record_int(&r, "prompt_tokens", 0);
+        record_int(&r, "answer_tokens", 0);
+        record_text(&r, "finish", "", 0u);
     } else {
         record_int(&r, "status", 0);
         record_text(&r, "headers", "", 0u);
@@ -867,6 +894,285 @@ static void http_fetch(sce_hf_host_t *host, const char *id, const char *method, 
     sce_hf_http_response_free(&response);
 }
 
+/* ── Generated text ─────────────────────────────────────────────────── */
+
+typedef struct {
+    char *text;
+    size_t len;
+    char *finish;
+} scripted_answer_t;
+
+struct sce_hf_scripted_provider_s {
+    scripted_answer_t *answers;
+    size_t count;
+    size_t cap;
+    /* The next answer to give; those before it were given. */
+    size_t next;
+    bool constrained;
+    char *name;
+    uint64_t context;
+    bool hold;
+};
+
+/* A text's tokens as the reference providers count them: its bytes. */
+static uint32_t text_tokens(size_t len) {
+    return len > UINT32_MAX ? UINT32_MAX : (uint32_t)len;
+}
+
+static sce_hf_generation_t generation_of(sce_hf_generation_kind_t kind) {
+    sce_hf_generation_t out;
+    memset(&out, 0, sizeof(out));
+    out.kind = kind;
+    out.text = "";
+    out.finish = "";
+    out.model = "";
+    out.code = "";
+    return out;
+}
+
+static sce_hf_generation_t scripted_generate(void *user_data, const sce_hf_generate_request_t *request) {
+    sce_hf_scripted_provider_t *provider = (sce_hf_scripted_provider_t *)user_data;
+    if (provider->hold) {
+        (void)fprintf(stderr, "[sce] scripted provider: holds the generation\n");
+        return generation_of(SCE_HF_GENERATION_HOLD);
+    }
+    const uint32_t prompt_tokens = text_tokens(strlen(request->prompt));
+    if (provider->context != 0u && (uint64_t)prompt_tokens + request->max_tokens > provider->context) {
+        (void)fprintf(stderr,
+                      "[sce] scripted provider: %" PRIu32 " prompt tokens and %" PRIu32
+                      " more pass a context of %" PRIu64 "\n",
+                      prompt_tokens, request->max_tokens, provider->context);
+        sce_hf_generation_t out = generation_of(SCE_HF_GENERATION_FAILURE);
+        out.code = "context_exceeded";
+        return out;
+    }
+    if (provider->next == provider->count) {
+        (void)fprintf(stderr, "[sce] scripted provider: no answer left to give\n");
+        sce_hf_generation_t out = generation_of(SCE_HF_GENERATION_FAILURE);
+        out.code = "unavailable";
+        return out;
+    }
+    const scripted_answer_t *answer = &provider->answers[provider->next++];
+    (void)fprintf(stderr, "[sce] scripted provider: answers %zu bytes, finish %s\n", answer->len, answer->finish);
+    sce_hf_generation_t out = generation_of(SCE_HF_GENERATION_ANSWER);
+    out.text = answer->text;
+    out.text_len = answer->len;
+    out.finish = answer->finish;
+    out.constrained = provider->constrained && request->answer_schema != NULL;
+    out.model = provider->name;
+    out.prompt_tokens = prompt_tokens;
+    out.answer_tokens = text_tokens(answer->len);
+    return out;
+}
+
+sce_hf_scripted_provider_t *sce_hf_scripted_provider_new(void) {
+    sce_hf_scripted_provider_t *provider = (sce_hf_scripted_provider_t *)must(calloc(1u, sizeof(*provider)));
+    provider->name = dup_str("scripted");
+    return provider;
+}
+
+void sce_hf_scripted_clear_answers(sce_hf_scripted_provider_t *provider) {
+    for (size_t i = 0; i < provider->count; ++i) {
+        free(provider->answers[i].text);
+        free(provider->answers[i].finish);
+    }
+    free(provider->answers);
+    provider->answers = NULL;
+    provider->count = 0;
+    provider->cap = 0;
+    provider->next = 0;
+}
+
+void sce_hf_scripted_provider_free(sce_hf_scripted_provider_t *provider) {
+    if (provider == NULL) {
+        return;
+    }
+    sce_hf_scripted_clear_answers(provider);
+    free(provider->name);
+    free(provider);
+}
+
+sce_hf_model_provider_t sce_hf_scripted_provider(sce_hf_scripted_provider_t *provider) {
+    sce_hf_model_provider_t out = {scripted_generate, provider};
+    return out;
+}
+
+void sce_hf_scripted_push_answer(sce_hf_scripted_provider_t *provider, const char *text, size_t len,
+                                 const char *finish) {
+    if (provider->count == provider->cap) {
+        provider->cap = provider->cap ? provider->cap * 2u : 4u;
+        provider->answers =
+            (scripted_answer_t *)must(realloc(provider->answers, provider->cap * sizeof(scripted_answer_t)));
+    }
+    scripted_answer_t *answer = &provider->answers[provider->count++];
+    answer->text = dup_n(text, len);
+    answer->len = len;
+    answer->finish = dup_str(finish);
+}
+
+void sce_hf_scripted_set_constrained(sce_hf_scripted_provider_t *provider, bool constrained) {
+    provider->constrained = constrained;
+}
+
+void sce_hf_scripted_set_name(sce_hf_scripted_provider_t *provider, const char *name) {
+    free(provider->name);
+    provider->name = dup_str(name);
+}
+
+void sce_hf_scripted_set_context(sce_hf_scripted_provider_t *provider, uint64_t context) {
+    provider->context = context;
+}
+
+void sce_hf_scripted_set_hold(sce_hf_scripted_provider_t *provider, bool hold) {
+    provider->hold = hold;
+}
+
+struct sce_hf_exhaustive_provider_s {
+    sce_hf_outcome_class_t *sequence;
+    size_t count;
+    size_t next;
+};
+
+static sce_hf_generation_t exhaustive_generate(void *user_data, const sce_hf_generate_request_t *request) {
+    sce_hf_exhaustive_provider_t *provider = (sce_hf_exhaustive_provider_t *)user_data;
+    if (provider->next == provider->count) {
+        (void)fprintf(stderr, "[sce] exhaustive provider: asked past the sequence the test named\n");
+        sce_hf_generation_t out = generation_of(SCE_HF_GENERATION_FAILURE);
+        out.code = "unavailable";
+        return out;
+    }
+    const sce_hf_outcome_class_t *next = &provider->sequence[provider->next++];
+    (void)fprintf(stderr, "[sce] exhaustive provider: answers class %d\n", (int)next->kind);
+    sce_hf_generation_t out = generation_of(next->kind);
+    if (next->kind == SCE_HF_GENERATION_ANSWER) {
+        out.text = next->text;
+        out.text_len = strlen(next->text);
+        out.finish = next->finish;
+        out.model = "exhaustive";
+        out.prompt_tokens = text_tokens(strlen(request->prompt));
+        out.answer_tokens = text_tokens(out.text_len);
+    } else if (next->kind == SCE_HF_GENERATION_FAILURE) {
+        out.code = next->code;
+    }
+    return out;
+}
+
+sce_hf_exhaustive_provider_t *sce_hf_exhaustive_provider_new(const sce_hf_outcome_class_t *sequence, size_t count) {
+    sce_hf_exhaustive_provider_t *provider = (sce_hf_exhaustive_provider_t *)must(calloc(1u, sizeof(*provider)));
+    provider->sequence = (sce_hf_outcome_class_t *)must(calloc(count > 0u ? count : 1u, sizeof(*sequence)));
+    provider->count = count;
+    for (size_t i = 0; i < count; ++i) {
+        provider->sequence[i].kind = sequence[i].kind;
+        provider->sequence[i].text = dup_str(sequence[i].text != NULL ? sequence[i].text : "");
+        provider->sequence[i].finish = dup_str(sequence[i].finish != NULL ? sequence[i].finish : "");
+        provider->sequence[i].code = dup_str(sequence[i].code != NULL ? sequence[i].code : "");
+    }
+    return provider;
+}
+
+void sce_hf_exhaustive_provider_free(sce_hf_exhaustive_provider_t *provider) {
+    if (provider == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < provider->count; ++i) {
+        free((char *)provider->sequence[i].text);
+        free((char *)provider->sequence[i].finish);
+        free((char *)provider->sequence[i].code);
+    }
+    free(provider->sequence);
+    free(provider);
+}
+
+sce_hf_model_provider_t sce_hf_exhaustive_provider(sce_hf_exhaustive_provider_t *provider) {
+    sce_hf_model_provider_t out = {exhaustive_generate, provider};
+    return out;
+}
+
+/* Whether `digits` is a count of at most `max`, written in decimal digits. */
+static bool count_of(const char *digits, uint64_t max, uint64_t *out) {
+    if (digits[0] == '\0' || strlen(digits) > 10u) {
+        return false;
+    }
+    uint64_t value = 0;
+    for (const char *c = digits; *c != '\0'; ++c) {
+        if (*c < '0' || *c > '9') {
+            return false;
+        }
+        value = value * 10u + (uint64_t)(*c - '0');
+    }
+    *out = value;
+    return value <= max;
+}
+
+/* The request the host accepts, or NULL with `why` it refuses it: an empty
+   prompt, `max_tokens` zero, a temperature past 2000 thousandths, or an answer
+   schema the table does not hold. */
+static const char *judge_generation(const sce_hf_host_t *host, const char *prompt, const char *answer_schema,
+                                    const char *max_tokens, const char *temperature, sce_hf_generate_request_t *out) {
+    uint64_t tokens = 0;
+    uint64_t milli = 0;
+    if (prompt[0] == '\0') {
+        return "the prompt is empty";
+    }
+    if (!count_of(max_tokens, UINT32_MAX, &tokens) || tokens == 0u) {
+        return "max_tokens is not a count above zero";
+    }
+    if (!count_of(temperature, SCE_HF_TEMPERATURE_MAX_MILLI, &milli)) {
+        return "the temperature is past 2000 thousandths";
+    }
+    out->prompt = prompt;
+    out->answer_schema = NULL;
+    out->max_tokens = (uint32_t)tokens;
+    out->temperature_milli = (uint32_t)milli;
+    if (answer_schema[0] != '\0') {
+        for (size_t i = 0; i < host->answer_schema_count; ++i) {
+            if (strcmp(host->answer_schemas[i].id, answer_schema) == 0) {
+                out->answer_schema = &host->answer_schemas[i];
+            }
+        }
+        if (out->answer_schema == NULL) {
+            return "the answer schema is not one of the machine's";
+        }
+    }
+    return NULL;
+}
+
+static void model_generate(sce_hf_host_t *host, const char *id, const sce_hf_generate_request_t *request,
+                           sce_hf_outcome_t *out) {
+    const sce_hf_generation_t generation = host->provider.generate(host->provider.user_data, request);
+    if (generation.kind == SCE_HF_GENERATION_ANSWER) {
+        if (generation.text_len > SCE_HF_ANSWER_MAX_BYTES) {
+            (void)fprintf(stderr, "[sce] %s %s: an answer of %zu bytes is past %u\n", SCE_HF_MODEL_GENERATE, id,
+                          generation.text_len, SCE_HF_ANSWER_MAX_BYTES);
+            failure(SCE_HF_MODEL_GENERATE, "answer_too_large", out);
+            return;
+        }
+        (void)fprintf(stderr, "[sce] %s %s: answered by %s, finish %s\n", SCE_HF_MODEL_GENERATE, id, generation.model,
+                      generation.finish);
+        record_t r;
+        record_begin(&r, "");
+        record_text(&r, "text", generation.text, generation.text_len);
+        record_bool(&r, "constrained", generation.constrained);
+        record_text(&r, "model", generation.model, strlen(generation.model));
+        record_int(&r, "prompt_tokens", (long long)generation.prompt_tokens);
+        record_int(&r, "answer_tokens", (long long)generation.answer_tokens);
+        record_text(&r, "finish", generation.finish, strlen(generation.finish));
+        record_end(&r, out);
+    } else if (generation.kind == SCE_HF_GENERATION_FAILURE) {
+        (void)fprintf(stderr, "[sce] %s %s: fails %s\n", SCE_HF_MODEL_GENERATE, id, generation.code);
+        failure(SCE_HF_MODEL_GENERATE, generation.code, out);
+    } else if (generation.kind == SCE_HF_GENERATION_REFUSAL) {
+        (void)fprintf(stderr, "[sce] %s %s: refused by the provider\n", SCE_HF_MODEL_GENERATE, id);
+        out->kind = SCE_HF_REFUSE;
+        out->data = dup_str("{\"reason\":\"invalid_argument\"}");
+    } else {
+        (void)fprintf(stderr, "[sce] %s %s: held\n", SCE_HF_MODEL_GENERATE, id);
+        strlist_push(&host->held, id);
+        out->kind = SCE_HF_HOLD;
+        out->data = NULL;
+    }
+}
+
 /* ── Start ──────────────────────────────────────────────────────────── */
 
 static const char *param_of(const sce_host_send_param_t *params, size_t count, const char *name) {
@@ -917,6 +1223,16 @@ bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke
     } else if (strcmp(operation, "sce-host-http-fetch") == 0) {
         refused = !http_acceptable(ARG("method"), ARG("url"), ARG("headers"));
     }
+    sce_hf_generate_request_t generation;
+    memset(&generation, 0, sizeof(generation));
+    if (strcmp(operation, SCE_HF_MODEL_GENERATE) == 0) {
+        const char *why = judge_generation(host, ARG("prompt"), ARG("answer_schema"), ARG("max_tokens"),
+                                           ARG("temperature_milli"), &generation);
+        if (why != NULL) {
+            (void)fprintf(stderr, "[sce] %s %s: refused, %s\n", operation, invoke_id, why);
+            refused = true;
+        }
+    }
     if (refused) {
         out->kind = SCE_HF_REFUSE;
         out->data = dup_str("{\"reason\":\"invalid_argument\"}");
@@ -924,9 +1240,14 @@ bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke
     }
     for (size_t i = 0; i < host->fault_count; ++i) {
         if (strcmp(host->faults[i].operation, operation) == 0) {
+            (void)fprintf(stderr, "[sce] %s %s: fails %s, injected\n", operation, invoke_id, host->faults[i].code);
             failure(operation, host->faults[i].code, out);
             return true;
         }
+    }
+    if (strcmp(operation, SCE_HF_MODEL_GENERATE) == 0) {
+        model_generate(host, invoke_id, &generation, out);
+        return true;
     }
     if (strcmp(operation, "sce-host-clock-now") == 0) {
         clock_now(host, out);

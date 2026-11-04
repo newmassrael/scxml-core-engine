@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 /** The number of standard operation types. */
-#define SCE_HF_TYPE_COUNT 11
+#define SCE_HF_TYPE_COUNT 12
 
 /** Every operation type of the standard host features, in the order the
     specification lists them. */
@@ -194,6 +194,119 @@ bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke
 /** The host is told to stop invocation `invoke_id`, because its state exited
     or its deadline passed. What it held for it is dropped. */
 void sce_hf_cancel(sce_hf_host_t *host, const char *invoke_id);
+
+/* ── Generated text (docs/SCE_HOST_FEATURES.md, section 6) ──────────────
+ *
+ * The host judges the request (an empty prompt, `max_tokens` zero, a
+ * temperature past 2000 thousandths, an answer schema the machine's table does
+ * not hold), then asks its provider for a generation, and never cuts the
+ * answer: one past the bound of `text` fails `answer_too_large`. No provider
+ * here reaches a model. The scripted provider gives the answers a scenario
+ * wrote; the exhaustive provider gives the outcome class a test names at each
+ * call (docs/adr/0087, section 9.4). */
+
+/** The operation that generates a text. */
+#define SCE_HF_MODEL_GENERATE "sce-host-model-generate"
+/** The bound of a result's `text`, in bytes (`model_answer`). */
+#define SCE_HF_ANSWER_MAX_BYTES 4096u
+/** The highest sampling temperature a request may ask for, in thousandths. */
+#define SCE_HF_TEMPERATURE_MAX_MILLI 2000u
+
+/** A generation's request, as a provider reads it. `answer_schema` is the
+    machine's answer schema the request names, NULL for a free text. */
+typedef struct sce_hf_generate_request_s {
+    const char *prompt;
+    const sce_answer_schema_t *answer_schema;
+    uint32_t max_tokens;
+    uint32_t temperature_milli;
+} sce_hf_generate_request_t;
+
+/** What a provider made of one generation. */
+typedef enum sce_hf_generation_kind_e {
+    /** An answer: the completion's fields but `error`. */
+    SCE_HF_GENERATION_ANSWER = 0,
+    /** A failure, by its `code` of the operation's closed set. */
+    SCE_HF_GENERATION_FAILURE = 1,
+    /** The host declines to start it (`invalid_argument`). */
+    SCE_HF_GENERATION_REFUSAL = 2,
+    /** No answer yet, or ever: a deadline or a cancel ends the call. */
+    SCE_HF_GENERATION_HOLD = 3
+} sce_hf_generation_kind_t;
+
+/** A generation. Its texts are the provider's, valid until it is asked again;
+    the host copies what it answers before then. */
+typedef struct sce_hf_generation_s {
+    sce_hf_generation_kind_t kind;
+    const char *text;
+    size_t text_len;
+    const char *finish;
+    bool constrained;
+    const char *model;
+    uint32_t prompt_tokens;
+    uint32_t answer_tokens;
+    const char *code;
+} sce_hf_generation_t;
+
+/** Where a host's generations come from: a model on the device, a remote one,
+    or a script. */
+typedef struct sce_hf_model_provider_s {
+    sce_hf_generation_t (*generate)(void *user_data, const sce_hf_generate_request_t *request);
+    void *user_data;
+} sce_hf_model_provider_t;
+
+/** Generate texts with `provider`, whose `user_data` outlives the host, from
+    here on. A host starts with a scripted provider of its own that has no
+    answer. */
+void sce_hf_set_model_provider(sce_hf_host_t *host, sce_hf_model_provider_t provider);
+
+/** Resolve a generation's `answer_schema` through the `count` schemas at
+    `schemas`, the table of the machine this host serves
+    (`<machine>_answer_schemas()`), constant storage the host does not copy. A
+    request that names an id the table does not hold is refused. */
+void sce_hf_set_answer_schemas(sce_hf_host_t *host, const sce_answer_schema_t *schemas, size_t count);
+
+/** A provider that gives the answers it was told, one a generation, in order,
+    counting a token as one byte. It is constrained only when the request names
+    an answer schema; with no answer left it fails `unavailable`. */
+typedef struct sce_hf_scripted_provider_s sce_hf_scripted_provider_t;
+
+sce_hf_scripted_provider_t *sce_hf_scripted_provider_new(void);
+void sce_hf_scripted_provider_free(sce_hf_scripted_provider_t *provider);
+/** The provider as a host takes it. */
+sce_hf_model_provider_t sce_hf_scripted_provider(sce_hf_scripted_provider_t *provider);
+/** Forget the answers not given yet. */
+void sce_hf_scripted_clear_answers(sce_hf_scripted_provider_t *provider);
+/** Give `text[0..len)` with `finish` (`stop` or `length`) after the others. */
+void sce_hf_scripted_push_answer(sce_hf_scripted_provider_t *provider, const char *text, size_t len,
+                                 const char *finish);
+void sce_hf_scripted_set_constrained(sce_hf_scripted_provider_t *provider, bool constrained);
+/** What the provider says answered; `scripted` until set. */
+void sce_hf_scripted_set_name(sce_hf_scripted_provider_t *provider, const char *name);
+/** The most tokens a prompt and `max_tokens` may take together; 0 for none. */
+void sce_hf_scripted_set_context(sce_hf_scripted_provider_t *provider, uint64_t context);
+/** Whether the provider holds every generation unanswered. */
+void sce_hf_scripted_set_hold(sce_hf_scripted_provider_t *provider, bool hold);
+
+/** One outcome class of a generation (docs/adr/0087, section 9.4), as the table
+    every lane reads names it (tests/host_features/model_outcome_classes.json):
+    an answer with `text` and `finish`, a failure with `code`, a refusal, or a
+    hold the test ends by a deadline or a cancel. */
+typedef struct sce_hf_outcome_class_s {
+    sce_hf_generation_kind_t kind;
+    const char *text;
+    const char *finish;
+    const char *code;
+} sce_hf_outcome_class_t;
+
+/** A provider that stands for a model that may give any outcome at any call:
+    each generation takes the next class of the sequence the test named. */
+typedef struct sce_hf_exhaustive_provider_s sce_hf_exhaustive_provider_t;
+
+/** A provider answering `sequence[0..count)`, which it copies. */
+sce_hf_exhaustive_provider_t *sce_hf_exhaustive_provider_new(const sce_hf_outcome_class_t *sequence, size_t count);
+void sce_hf_exhaustive_provider_free(sce_hf_exhaustive_provider_t *provider);
+/** The provider as a host takes it. */
+sce_hf_model_provider_t sce_hf_exhaustive_provider(sce_hf_exhaustive_provider_t *provider);
 
 /** The handler to register under every type of `sce_hf_types`, with the host
     as `user_data`. A start is answered with its completion (a failure is a
