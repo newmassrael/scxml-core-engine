@@ -64,7 +64,7 @@ class ComposedPayloadTest {
             Kind.F32 -> v.float32().toDouble()
             Kind.F64 -> v.float64()
             Kind.BOOL -> v.boolean()
-            Kind.ENUM -> v.name().also { if (it !in ENUM_NAMES) throw v.refuse("($it) is not a variant of Level") }
+            Kind.ENUM -> v.name().also { if (it !in ENUM_NAMES) throw v.unknownVariant(it, "Level") }
             Kind.TEXT -> v.string(TEXT_BOUND)
             Kind.BYTES -> v.bytes(TEXT_BOUND).toList()
             Kind.OPT -> v.optional { it.uint8().toULong() } ?: Absent

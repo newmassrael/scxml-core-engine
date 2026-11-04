@@ -27,9 +27,16 @@ package com.sce.runtime
  * constructors that hold other values, each calling the reader of its part:
  * [Value.list], [Value.optional] and [Value.record]. A value outside its type is
  * refused before anything of it is kept, and the refusal names the path
- * through every depth as a JSON Pointer (RFC 6901): `'items/2/tags/0' is 9
- * bytes, past the 8 its type declares`. A key a record's schema does not
- * declare is stepped over.
+ * through every depth: `'items/2/tags/0' is 9 bytes, past the 8 its type
+ * declares`. A key a record's schema does not declare is stepped over.
+ *
+ * A refusal is a [Refusal]: the sentence the delivery's `error.execution`
+ * carries, and beside it what a statechart reads as data (docs/adr/0087,
+ * section 2.4): a [RefusalCode], the place as a strict RFC 6901 pointer
+ * (`/items/2/tags/0`, `~` written `~0` and `/` written `~1`, empty for the
+ * whole text) and the bound the value broke. A repeated name anywhere in the
+ * text, and a text holding U+0000, are refused, so every runtime's reader
+ * holds one set of texts (tests/json_text/payload_refusal.json).
  *
  * The JSON is read through the runtime's one reader ([Json]); what the inject
  * seam writes goes through its [Json.quote].
@@ -39,8 +46,84 @@ package com.sce.runtime
  */
 object EventPayload {
 
-    /** Why an event's data cannot be read as its schema's fields. */
-    class Refusal(message: String) : Exception(message)
+    /**
+     * The class of a refusal: the enum `sce:std/lift/refusal_code.scxml`
+     * declares, each code by its [declaredName] at its [number]
+     * (docs/adr/0087, section 2.3).
+     */
+    enum class RefusalCode(val number: Int, val declaredName: String) {
+        /** The text is empty, is not JSON, carries more than one JSON value, or repeats a name. */
+        NOT_JSON(1, "notJson"),
+
+        /** The text is one JSON value that is not an object. */
+        NOT_OBJECT(2, "notObject"),
+
+        /** A container is opened deeper than any a value of the schema holds. */
+        TOO_DEEP(3, "tooDeep"),
+
+        /** A field of a record is absent and no revision default fills it. */
+        MISSING(4, "missing"),
+
+        /** `null` stands where the type is not optional. */
+        NULL_NOT_OPTIONAL(5, "nullNotOptional"),
+
+        /** A value of another JSON kind. */
+        WRONG_KIND(6, "wrongKind"),
+
+        /** A number not in its type's spelling. */
+        BAD_NUMBER(7, "badNumber"),
+
+        /** A whole number past its type's width, or a real past a `float32`'s range. */
+        OUT_OF_RANGE(8, "outOfRange"),
+
+        /** A text or byte string past its bound. */
+        TOO_LONG(9, "tooLong"),
+
+        /** A list past its bound. */
+        TOO_MANY(10, "tooMany"),
+
+        /** A name the enum does not declare. */
+        UNKNOWN_VARIANT(11, "unknownVariant"),
+
+        /** A byte string's text holding a character above U+00FF. */
+        NOT_BYTE_TEXT(12, "notByteText"),
+
+        /** A text holding U+0000. */
+        NUL_IN_TEXT(13, "nulInText"),
+        ;
+
+        companion object {
+            /** The code the enum declares by [name], or null when it declares none. */
+            fun named(name: String): RefusalCode? = entries.firstOrNull { it.declaredName == name }
+        }
+    }
+
+    /**
+     * Why an event's data cannot be read as its schema's fields: the sentence
+     * the delivery's `error.execution` carries, and beside it its [code], the
+     * place as a strict RFC 6901 [pointer] (empty for the whole text), and the
+     * [bound] the value broke, for a text, a byte string or a list past it.
+     */
+    class Refusal(
+        message: String,
+        val code: RefusalCode,
+        val pointer: String,
+        val bound: Long? = null,
+    ) : Exception(message)
+
+    /**
+     * [token] below the strict RFC 6901 pointer [prefix] (empty for the whole
+     * text): `/` and the token with `~` written `~0` and `/` written `~1`
+     * (RFC 6901, section 3).
+     */
+    fun pointerBelow(prefix: String, token: String): String =
+        "$prefix/" + token.replace("~", "~0").replace("/", "~1")
+
+    /** Whether [text] spells a whole number: digits, after a `-` or not. */
+    private fun spellsWhole(text: String): Boolean {
+        val digits = text.removePrefix("-")
+        return digits.isNotEmpty() && digits.all { it in '0'..'9' }
+    }
 
     /**
      * The largest whole number every engine holds exactly as a number (`2^53 - 1`,
@@ -71,22 +154,37 @@ object EventPayload {
 
     /**
      * One value of an event's data, at the [path] through every depth that names
-     * it: a field's name, then each index and field name below it, joined by `/`.
+     * it: a field's name, then each index and field name below it, joined by `/`;
+     * and at the strict RFC 6901 [pointer] to the same place, which a refusal
+     * carries beside its sentence.
      */
-    class Value internal constructor(private val raw: Any?, val path: String) {
+    class Value internal constructor(private val raw: Any?, val path: String, val pointer: String) {
 
         /** Whether the value is `null`, the one spelling of an absent value. */
         val isNull: Boolean get() = raw == null
 
         /**
-         * A refusal of this value, saying [what] of it after its path:
-         * `'items/1/level' (x) is not a variant of Level`.
+         * A refusal of this value, of class [code], saying [what] of it after its
+         * path: `'items/1/level' (x) is not a variant of Level`.
          */
-        fun refuse(what: String): Refusal = Refusal("'$path' $what")
+        fun refuse(code: RefusalCode, what: String, bound: Int? = null): Refusal =
+            Refusal("'$path' $what", code, pointer, bound?.toLong())
+
+        /** The refusal of the text [name] this value carries, which the enum [alias] does not declare. */
+        fun unknownVariant(name: String, alias: String): Refusal =
+            refuse(RefusalCode.UNKNOWN_VARIANT, "($name) is not a variant of $alias")
 
         /** The refusal of `null` where the type is not optional, or [otherwise]. */
         private fun wrongKind(otherwise: String): Refusal =
-            if (isNull) refuse("is null, and its type is not optional") else refuse(otherwise)
+            if (isNull) {
+                refuse(RefusalCode.NULL_NOT_OPTIONAL, "is null, and its type is not optional")
+            } else {
+                refuse(RefusalCode.WRONG_KIND, otherwise)
+            }
+
+        /** The refusal of a number past the width its type declares. */
+        private fun pastWidth(text: String): Refusal =
+            refuse(RefusalCode.OUT_OF_RANGE, "does not fit the width its schema declares ($text)")
 
         /**
          * The value as the number it was written as.
@@ -104,12 +202,19 @@ object EventPayload {
 
         private fun whole(): Long {
             val text = number()
-            return text.toLongOrNull() ?: throw refuse("is not a whole number ($text)")
+            // A whole number no Long holds is past every width this reads; any
+            // other spelling is no whole number at all.
+            return text.toLongOrNull() ?: throw refuse(
+                if (spellsWhole(text)) RefusalCode.OUT_OF_RANGE else RefusalCode.BAD_NUMBER,
+                "is not a whole number ($text)",
+            )
         }
 
         private fun <T> narrowed(value: Long, min: Long, max: Long, of: (Long) -> T): T {
             if (value < min || value > max) {
-                throw refuse("does not fit the width its schema declares ($value)")
+                // Below zero is no spelling of an unsigned number.
+                val code = if (min == 0L && value < 0L) RefusalCode.BAD_NUMBER else RefusalCode.OUT_OF_RANGE
+                throw refuse(code, "does not fit the width its schema declares ($value)")
             }
             return of(value)
         }
@@ -132,11 +237,13 @@ object EventPayload {
             when (raw) {
                 is String ->
                     if (isDecimal(raw, signed)) raw
-                    else throw refuse("is not a whole number written as digits ($raw)")
+                    else throw refuse(RefusalCode.BAD_NUMBER, "is not a whole number written as digits ($raw)")
                 is Json.Number -> {
-                    val n = raw.text.toLongOrNull() ?: throw refuse("is not a whole number (${raw.text})")
+                    val n = raw.text.toLongOrNull()
+                        ?: throw refuse(RefusalCode.BAD_NUMBER, "is not a whole number (${raw.text})")
                     if (n > EXACT_IN_A_DOUBLE || n < -EXACT_IN_A_DOUBLE) {
                         throw refuse(
+                            RefusalCode.BAD_NUMBER,
                             "is a number past 2^53 - 1, which is not exact everywhere " +
                                 "(${raw.text}); a 64-bit integer that large is written as a " +
                                 "text of its digits",
@@ -149,7 +256,7 @@ object EventPayload {
 
         fun int64(): Long {
             val text = wide(true)
-            return text.toLongOrNull() ?: throw refuse("does not fit the width its schema declares ($text)")
+            return text.toLongOrNull() ?: throw pastWidth(text)
         }
 
         fun uint8(): UByte = narrowed(whole(), 0L, UByte.MAX_VALUE.toLong()) { it.toUByte() }
@@ -164,7 +271,7 @@ object EventPayload {
          */
         fun uint64(): ULong {
             val text = wide(false)
-            return text.toULongOrNull() ?: throw refuse("does not fit the width its schema declares ($text)")
+            return text.toULongOrNull() ?: throw pastWidth(text)
         }
 
         /**
@@ -177,16 +284,16 @@ object EventPayload {
          */
         fun float32(): Float {
             val text = number()
-            val wide = text.toDoubleOrNull() ?: throw refuse("is not a number ($text)")
+            val wide = text.toDoubleOrNull() ?: throw refuse(RefusalCode.BAD_NUMBER, "is not a number ($text)")
             if (kotlin.math.abs(wide) > Float.MAX_VALUE.toDouble()) {
-                throw refuse("does not fit the width its schema declares ($text)")
+                throw pastWidth(text)
             }
             return wide.toFloat()
         }
 
         fun float64(): Double {
             val text = number()
-            return text.toDoubleOrNull() ?: throw refuse("is not a number ($text)")
+            return text.toDoubleOrNull() ?: throw refuse(RefusalCode.BAD_NUMBER, "is not a number ($text)")
         }
 
         fun boolean(): Boolean {
@@ -199,10 +306,18 @@ object EventPayload {
         /**
          * The text the value carries, held to no bound: what an enum's variant is
          * named by, which its reader matches against the names its enum declares.
+         *
+         * A text holding U+0000 is refused: a runtime that holds a text
+         * NUL-terminated would end it there, so no runtime holds one, and every
+         * reader refuses the same texts (docs/adr/0087, section 2.3). A byte
+         * string may hold the byte zero ([bytes]).
          */
         fun name(): String {
             if (raw !is String) {
                 throw wrongKind("is not a text ($raw)")
+            }
+            if (raw.indexOf('\u0000') >= 0) {
+                throw refuse(RefusalCode.NUL_IN_TEXT, "carries U+0000, which no text holds")
             }
             return raw
         }
@@ -236,7 +351,10 @@ object EventPayload {
             for (i in raw.indices) {
                 val c = raw[i].code
                 if (c > 0xFF) {
-                    throw refuse("carries a character above U+00FF, which no single byte spells")
+                    throw refuse(
+                        RefusalCode.NOT_BYTE_TEXT,
+                        "carries a character above U+00FF, which no single byte spells",
+                    )
                 }
                 out[i] = c.toByte()
             }
@@ -247,7 +365,7 @@ object EventPayload {
         }
 
         private fun pastBytes(held: Int, bound: Int): Refusal =
-            refuse("is $held bytes, past the $bound its type declares")
+            refuse(RefusalCode.TOO_LONG, "is $held bytes, past the $bound its type declares", bound)
 
         /**
          * A value of `optional<T>` (docs/adr/0055): absent where the value is
@@ -268,9 +386,16 @@ object EventPayload {
                 throw wrongKind("is not a list")
             }
             if (raw.size > bound) {
-                throw refuse("holds ${raw.size} elements, past the $bound its type declares")
+                throw refuse(
+                    RefusalCode.TOO_MANY,
+                    "holds ${raw.size} elements, past the $bound its type declares",
+                    bound,
+                )
             }
-            return raw.mapIndexed { index, item -> read(Value(item, join(path, index.toString()))) }
+            return raw.mapIndexed { index, item ->
+                val token = index.toString()
+                read(Value(item, join(path, token), pointerBelow(pointer, token)))
+            }
         }
 
         /**
@@ -287,7 +412,7 @@ object EventPayload {
             @Suppress("UNCHECKED_CAST")
             val members = raw as Map<String, Any?>
             val fallback = if (defaults == null) emptyMap() else defaultsOf(defaults)
-            return read(Fields(fallback + members, path))
+            return read(Fields(fallback + members, path, pointer))
         }
     }
 
@@ -297,7 +422,11 @@ object EventPayload {
      * its schema declares. The fields of a record value are read the same way,
      * at the record's path.
      */
-    class Fields internal constructor(internal val values: Map<String, Any?>, private val prefix: String = "") {
+    class Fields internal constructor(
+        internal val values: Map<String, Any?>,
+        private val prefix: String = "",
+        private val pointerPrefix: String = "",
+    ) {
 
         /**
          * The value of the field [name], at its path: the delivered one, else
@@ -307,10 +436,11 @@ object EventPayload {
          */
         fun field(name: String): Value {
             val path = join(prefix, name)
+            val pointer = pointerBelow(pointerPrefix, name)
             if (!values.containsKey(name)) {
-                throw Refusal("the event's data has no '$path'")
+                throw Refusal("the event's data has no '$path'", RefusalCode.MISSING, pointer)
             }
-            return Value(values[name], path)
+            return Value(values[name], path, pointer)
         }
 
         fun int8(name: String): Byte = field(name).int8()
@@ -363,18 +493,30 @@ object EventPayload {
     fun decode(data: String): Fields {
         val trimmed = data.trim()
         if (trimmed.isEmpty()) {
-            throw Refusal("the event carries no data")
+            throw Refusal("the event carries no data", RefusalCode.NOT_JSON, "")
         }
         if (!trimmed.startsWith('{')) {
+            // One sentence for a text that is no object, as it has always been;
+            // the code tells one JSON value that is not an object from a text
+            // that is not JSON at all (docs/adr/0087, section 2.3).
+            val oneValue = try {
+                Json.parse(trimmed)
+                true
+            } catch (e: Json.Error) {
+                false
+            }
             throw Refusal(
-                "the event's data is a bare value, and this event's schema declares named fields")
+                "the event's data is a bare value, and this event's schema declares named fields",
+                if (oneValue) RefusalCode.NOT_OBJECT else RefusalCode.NOT_JSON,
+                "",
+            )
         }
         val value = try {
             Json.parse(trimmed)
         } catch (e: Json.Error.Trailing) {
-            throw Refusal("the event's data carries more than one JSON value")
+            throw Refusal("the event's data carries more than one JSON value", RefusalCode.NOT_JSON, "")
         } catch (e: Json.Error.Malformed) {
-            throw Refusal("the event's data is not JSON (${e.what})")
+            throw Refusal("the event's data is not JSON (${e.what})", RefusalCode.NOT_JSON, "")
         }
         @Suppress("UNCHECKED_CAST")
         return Fields(value as Map<String, Any?>)
@@ -405,7 +547,13 @@ object EventPayload {
             null
         }
         if (parsed !is Map<*, *>) {
-            throw Refusal("the schema's defaults are not a JSON object, which the generator never writes")
+            // A text that is none is the generator's, not a sender's, and is
+            // refused as no JSON object of the whole.
+            throw Refusal(
+                "the schema's defaults are not a JSON object, which the generator never writes",
+                RefusalCode.NOT_JSON,
+                "",
+            )
         }
         @Suppress("UNCHECKED_CAST")
         return parsed as Map<String, Any?>

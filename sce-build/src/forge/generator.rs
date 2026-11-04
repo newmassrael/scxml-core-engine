@@ -6525,11 +6525,12 @@ fn kotlin_payload_present_reader(f: &EntryField, l: &LangCtx) -> String {
     let present = f.sce_type.present_type();
     // An enum is the machine's own, lifted from the variant's declared name; a
     // name the enum does not declare is a payload that does not fit its schema,
-    // refused as a number out of range is.
+    // refused as a number out of range is, with the code and pointer of the
+    // refusal beside its sentence (docs/adr/0087, section 2.5).
     if let SceType::Enum(r) = present {
         return format!(
             "fields.string(\"{id}\").let {{ name -> {ty}.entries.firstOrNull {{ it.declaredName == name }} \
-             ?: throw EventPayload.Refusal(\"'{id}' ($name) is not a variant of {alias}\") }}",
+             ?: throw fields.field(\"{id}\").unknownVariant(name, \"{alias}\") }}",
             ty = l.type_name(present),
             alias = r.alias
         );

@@ -93,37 +93,52 @@ object TypedRequest {
      * uses.
      */
     fun wire(value: Any?, name: String, type: FieldType, fractionalWire: (Any?) -> String): String {
+        // The refusal of the field, in the classes a reader of a completion
+        // gives the same judgement (docs/adr/0087, section 2.3).
+        fun refuse(code: EventPayload.RefusalCode, what: String, bound: Long? = null) =
+            EventPayload.Refusal("'$name' $what", code, EventPayload.pointerBelow("", name), bound)
         val signed = SIGNED_BOUNDS[type.kind]
         val unsignedMax = UNSIGNED_MAX[type.kind]
         if (signed != null || unsignedMax != null) {
-            val digits = wholeDigits(value) ?: throw EventPayload.Refusal(
-                if (value is Number) "'$name' is not a whole number" else "'$name' is not a number"
-            )
+            val digits = wholeDigits(value) ?: throw if (value is Number) {
+                refuse(EventPayload.RefusalCode.BAD_NUMBER, "is not a whole number")
+            } else {
+                refuse(EventPayload.RefusalCode.WRONG_KIND, "is not a number")
+            }
             val fits = if (signed != null) {
                 digits.toLongOrNull()?.let { it in signed.first..signed.second } ?: false
             } else {
                 digits.toULongOrNull()?.let { it <= unsignedMax!! } ?: false
             }
             if (!fits) {
-                throw EventPayload.Refusal("'$name' does not fit the width its schema declares ($digits)")
+                // Below zero is no value of an unsigned type at any width.
+                val code = if (unsignedMax != null && digits.startsWith("-")) {
+                    EventPayload.RefusalCode.BAD_NUMBER
+                } else {
+                    EventPayload.RefusalCode.OUT_OF_RANGE
+                }
+                throw refuse(code, "does not fit the width its schema declares ($digits)")
             }
             return digits
         }
         return when (type.kind) {
             "float32", "float64" -> {
                 if (value !is Number) {
-                    throw EventPayload.Refusal("'$name' is not a number")
+                    throw refuse(EventPayload.RefusalCode.WRONG_KIND, "is not a number")
                 }
                 val d = value.toDouble()
                 // JSON, which a completion's record crosses as, has no
                 // spelling for these, so a request may not carry one either.
                 if (d.isNaN() || d.isInfinite()) {
-                    throw EventPayload.Refusal("'$name' is not a finite number")
+                    throw refuse(EventPayload.RefusalCode.BAD_NUMBER, "is not a finite number")
                 }
                 if (type.kind == "float32") {
                     val narrowed = d.toFloat()
                     if (narrowed.isInfinite()) {
-                        throw EventPayload.Refusal("'$name' does not fit the width its schema declares")
+                        throw refuse(
+                            EventPayload.RefusalCode.OUT_OF_RANGE,
+                            "does not fit the width its schema declares",
+                        )
                     }
                     fractionalWire(narrowed.toDouble())
                 } else {
@@ -131,18 +146,22 @@ object TypedRequest {
                 }
             }
             "bool" -> (value as? Boolean)?.toString()
-                ?: throw EventPayload.Refusal("'$name' is not a truth value")
-            "string" -> value as? String ?: throw EventPayload.Refusal("'$name' is not a text")
+                ?: throw refuse(EventPayload.RefusalCode.WRONG_KIND, "is not a truth value")
+            "string" -> value as? String ?: throw refuse(EventPayload.RefusalCode.WRONG_KIND, "is not a text")
             "bytes" -> {
-                val text = value as? String ?: throw EventPayload.Refusal("'$name' is not a byte string")
+                val text = value as? String
+                    ?: throw refuse(EventPayload.RefusalCode.WRONG_KIND, "is not a byte string")
                 if (text.any { it.code > 0xFF }) {
-                    throw EventPayload.Refusal(
-                        "'$name' carries a character above U+00FF, which no single byte spells"
+                    throw refuse(
+                        EventPayload.RefusalCode.NOT_BYTE_TEXT,
+                        "carries a character above U+00FF, which no single byte spells",
                     )
                 }
                 if (text.length > type.cap) {
-                    throw EventPayload.Refusal(
-                        "'$name' is ${text.length} bytes, past the ${type.cap} its schema declares"
+                    throw refuse(
+                        EventPayload.RefusalCode.TOO_LONG,
+                        "is ${text.length} bytes, past the ${type.cap} its schema declares",
+                        type.cap.toLong(),
                     )
                 }
                 text
