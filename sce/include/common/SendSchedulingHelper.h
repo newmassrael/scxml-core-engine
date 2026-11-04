@@ -398,6 +398,21 @@ public:
     }
 
     /**
+     * @brief When the pending deadline of host-run start `token` comes due, or
+     *        `std::nullopt` when none is pending
+     *
+     * What a save writes of a running invocation's deadline: one that fired or
+     * was dropped is no longer pending, and is not written.
+     */
+    std::optional<TimePoint> hostInvokeDeadlineDueAt(uint64_t token) const {
+        const auto indexIt = deadlineIndex_.find(token);
+        if (indexIt == deadlineIndex_.end()) {
+            return std::nullopt;
+        }
+        return indexIt->second->first.fireTime;
+    }
+
+    /**
      * @brief Cancel a scheduled event by sendId
      *
      * §scxml-6.3: ACTUALLY REMOVES the event (not lazy marking!)
@@ -704,6 +719,14 @@ public:
      */
     void dropHostInvokeDeadline(uint64_t token) {
         core_.dropHostInvokeDeadline(token);
+    }
+
+    /**
+     * @brief When start `token`'s pending deadline comes due — see
+     *        `SchedulerQueueCore::hostInvokeDeadlineDueAt`
+     */
+    std::optional<uint64_t> hostInvokeDeadlineDueAt(uint64_t token) const {
+        return core_.hostInvokeDeadlineDueAt(token);
     }
 
     bool hasReadyEvents(uint64_t nowMs) const {

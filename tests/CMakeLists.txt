@@ -181,6 +181,9 @@ add_executable(sce_scxml_tests
     core/InvokeHelperTest.cpp
     # docs/adr/0084 D2: an engine's inbox, with its allocator injected.
     core/EngineInboxTest.cpp
+    # docs/adr/0084 D5: the bookkeeping of host-run invocations, apart from any
+    # engine.
+    core/HostInvokeLedgerTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
     common/TestSummaryExitStatusTest.cpp
