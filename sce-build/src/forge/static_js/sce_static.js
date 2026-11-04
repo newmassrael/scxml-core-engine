@@ -64,7 +64,8 @@
      Interpreter's data model cannot hold it, or an operand is a Number that is
      not an integer a Number holds exactly. A read of an event's data carries
      none, since a backend answers that with error.execution as well, and only
-     ever for the shape of the event.
+     ever for the shape of the event; it carries sceRefusal instead, the code,
+     the pointer and the bound of the refusal every backend's reader names.
 
      A hybrid invoke names the document it starts by a value its srcexpr
      computes, and the document is one its sce:candidates declares, each lowered
@@ -93,6 +94,24 @@
     var error = new Error('sce-static: ' + reason);
     error.sceFailure = name;
     throw error;
+  }
+
+  /* A refusal of an event's data: the sentence, and beside it what a statechart
+     reads as data (docs/adr/0087, section 2.4) in sceRefusal: the code, a name
+     of sce:std/lift/refusal_code.scxml; the place as a strict RFC 6901 pointer,
+     empty for the whole data; and the bound the value broke, for a text, a byte
+     string or a list past it, null for every other code. It names no failure
+     of sceFailure's, since a backend answers it with error.execution. */
+  function refuse(code, pointer, reason, bound) {
+    var error = new Error('sce-static: ' + reason);
+    error.sceRefusal = { code: code, pointer: pointer, bound: bound === undefined ? null : bound };
+    throw error;
+  }
+
+  /* The strict RFC 6901 pointer to the token below the pointer prefix: a slash,
+     and the token with a tilde written ~0 and a slash written ~1. */
+  function pointerBelow(prefix, token) {
+    return prefix + '/' + String(token).split('~').join('~0').split('/').join('~1');
   }
 
   function exact(value) {
@@ -212,26 +231,31 @@
     };
   }
 
+  /* The event's data reaches field() already read by the script engine, as the
+     value its JSON spells, or as the text itself where it spells none: a text
+     that is not JSON, or holds an object that repeats a name, is the engine's
+     to refuse, and is not seen here as the text it was. */
   function field(data, name, type, fallback) {
     var revised = fallback !== undefined;
     if (data === undefined || data === null || (revised && data === '')) {
       if (!revised) {
-        fail('the event carries no data');
+        refuse('notJson', '', 'the event carries no data');
       }
       data = {};
     }
     if (typeof data !== 'object' || Array.isArray(data)) {
-      fail('the event data is a bare value, and its schema declares named fields');
+      refuse('notObject', '', 'the event data is a bare value, and its schema declares named fields');
     }
     var value;
+    var pointer = pointerBelow('', name);
     if (Object.prototype.hasOwnProperty.call(data, name)) {
       value = data[name];
     } else if (revised) {
       value = fallback;
     } else {
-      fail('the event data has no \'' + name + '\'');
+      refuse('missing', pointer, 'the event data has no \'' + name + '\'');
     }
-    return readValue(value, type, name);
+    return readValue(value, type, name, pointer);
   }
 
   /* What a type descriptor describes. A scalar is named by its type, an enum by
@@ -264,28 +288,30 @@
      type is refused before anything of it is kept, the refusal naming the path;
      a list past its bound is refused before any element of it is read, and a key
      a record's schema does not declare is stepped over. A field of a record a
-     later revision of its schema added is read out of the record's defaults. */
-  function readValue(value, type, path) {
+     later revision of its schema added is read out of the record's defaults.
+     pointer is the strict RFC 6901 pointer to the same place, which a refusal
+     carries beside its sentence. */
+  function readValue(value, type, path, pointer) {
     var kind = kindOf(type);
     var where = '\'' + path + '\' ';
     if (kind === 'optional') {
-      return value === null ? null : readValue(value, type.optional, path);
+      return value === null ? null : readValue(value, type.optional, path, pointer);
     }
     if (value === null) {
-      fail(where + 'is null, and its type is not optional');
+      refuse('nullNotOptional', pointer, where + 'is null, and its type is not optional');
     }
     if (kind === 'list') {
       if (!Array.isArray(value)) {
-        fail(where + 'is not a list');
+        refuse('wrongKind', pointer, where + 'is not a list');
       }
       if (value.length > type.max) {
-        fail(where + 'holds ' + String(value.length) + ' elements, past the ' + String(type.max) + ' its type declares');
+        refuse('tooMany', pointer, where + 'holds ' + String(value.length) + ' elements, past the ' + String(type.max) + ' its type declares', type.max);
       }
-      return value.map(function (item, index) { return readValue(item, type.list, below(path, index)); });
+      return value.map(function (item, index) { return readValue(item, type.list, below(path, index), pointerBelow(pointer, index)); });
     }
     if (kind === 'record') {
       if (typeof value !== 'object' || Array.isArray(value)) {
-        fail(where + 'is not a record');
+        refuse('wrongKind', pointer, where + 'is not a record');
       }
       var held = {};
       Object.keys(type.record).forEach(function (id) {
@@ -295,18 +321,16 @@
         } else if (type.defaults !== undefined && Object.prototype.hasOwnProperty.call(type.defaults, id)) {
           member = type.defaults[id];
         } else {
-          fail('the event data has no \'' + below(path, id) + '\'');
+          refuse('missing', pointerBelow(pointer, id), 'the event data has no \'' + below(path, id) + '\'');
         }
-        held[id] = readValue(member, type.record[id], below(path, id));
+        held[id] = readValue(member, type.record[id], below(path, id), pointerBelow(pointer, id));
       });
       return held;
     }
     if (kind === 'enum') {
-      if (typeof value !== 'string') {
-        fail(where + 'is not a text');
-      }
+      text(value, where, pointer);
       if (type.indexOf(value) < 0) {
-        fail(where + '(' + value + ') is not a variant of its enum');
+        refuse('unknownVariant', pointer, where + '(' + value + ') is not a variant of its enum');
       }
       return value;
     }
@@ -318,33 +342,37 @@
            2^53 - 1 is not exact in the data a Number carries, so it is written
            as text on every engine and read from it here. */
         if (!(kind === 'int64' ? /^(0|-?[1-9][0-9]*)$/ : /^(0|[1-9][0-9]*)$/).test(value)) {
-          fail(where + 'is not a whole number written as digits');
+          refuse('badNumber', pointer, where + 'is not a whole number written as digits');
         }
         whole = BigInt(value);
       } else {
         if (typeof value !== 'number') {
-          fail(where + 'is not a number');
+          refuse('wrongKind', pointer, where + 'is not a number');
         }
         if (!Number.isSafeInteger(value)) {
-          fail(where + 'is not an integer a Number holds exactly');
+          /* A whole number past every Number's exact integers is past every
+             width but a 64-bit one's, whose number is held to 2^53 - 1; any
+             other number is in no whole spelling. */
+          refuse(Number.isInteger(value) && kind !== 'int64' && kind !== 'uint64' ? 'outOfRange' : 'badNumber', pointer, where + 'is not an integer a Number holds exactly');
         }
         whole = BigInt(value);
       }
       if (whole < range.min || whole > range.max) {
-        fail(where + 'does not fit ' + kind);
+        /* Below zero is no spelling of an unsigned number. */
+        refuse(range.min === ZERO && whole < ZERO ? 'badNumber' : 'outOfRange', pointer, where + 'does not fit ' + kind);
       }
       return canonical(whole);
     }
     if (kind === 'float32' || kind === 'float64') {
       if (typeof value !== 'number') {
-        fail(where + 'is not a number');
+        refuse('wrongKind', pointer, where + 'is not a number');
       }
       if (kind === 'float32') {
         /* A Number is a binary64: the field a schema declares float32 holds the
            binary32 nearest it, and a number past the range of a single does not
            fit it, as an integer past its width does not. */
         if (Math.abs(value) > FLOAT32_MAX) {
-          fail(where + 'does not fit float32');
+          refuse('outOfRange', pointer, where + 'does not fit float32');
         }
         return Math.fround(value);
       }
@@ -352,19 +380,17 @@
     }
     if (kind === 'bool') {
       if (typeof value !== 'boolean') {
-        fail(where + 'is not a truth value');
+        refuse('wrongKind', pointer, where + 'is not a truth value');
       }
       return value;
     }
     if (kind === 'string' || kind === 'bounded-string') {
-      if (typeof value !== 'string') {
-        fail(where + 'is not a text');
-      }
+      text(value, where, pointer);
       /* A text is held to the bound its type declares wherever it stands, the
          top level of a payload included (docs/adr/0086, section 4.4). */
       var size = utf8Length(value);
       if (kind === 'bounded-string' && size > type.string) {
-        fail(where + 'is ' + String(size) + ' bytes, past the ' + String(type.string) + ' its type declares');
+        refuse('tooLong', pointer, where + 'is ' + String(size) + ' bytes, past the ' + String(type.string) + ' its type declares', type.string);
       }
       return value;
     }
@@ -372,25 +398,46 @@
       /* The wire spells a byte string as its byte-exact Latin-1 text, one
          character to a byte, so the value is the text, held to the bound its
          type declares when the type is written with one. */
-      byteText(value, where + 'is not a byte string', where);
+      if (typeof value !== 'string') {
+        refuse('wrongKind', pointer, where + 'is not a byte string');
+      }
+      for (var i = 0; i < value.length; i++) {
+        if (value.charCodeAt(i) > 0xFF) {
+          refuse('notByteText', pointer, where + 'carries a character above U+00FF, which no single byte spells');
+        }
+      }
       if (kind === 'bounded-bytes' && value.length > type.bytes) {
-        fail(where + 'is ' + String(value.length) + ' bytes, past the ' + String(type.bytes) + ' its type declares');
+        refuse('tooLong', pointer, where + 'is ' + String(value.length) + ' bytes, past the ' + String(type.bytes) + ' its type declares', type.bytes);
       }
       return value;
     }
     fail('a value of type ' + String(type) + ' has no reader');
   }
 
+  /* A text of an event's data, held to no bound: what a text field holds and
+     what an enum's variant is named by. A text holding U+0000 is refused, since
+     a backend that holds a text NUL-terminated would end it there, so no backend
+     holds one (docs/adr/0087, section 2.3); a byte string may hold the byte
+     zero. */
+  function text(value, where, pointer) {
+    if (typeof value !== 'string') {
+      refuse('wrongKind', pointer, where + 'is not a text');
+    }
+    if (value.indexOf('\u0000') >= 0) {
+      refuse('nulInText', pointer, where + 'carries U+0000, which no text holds');
+    }
+    return value;
+  }
+
   /* A byte string is the text of its bytes, one character to a byte: a value that
-     is not text, or holds a character past U+00FF, is no byte string. A reader
-     of a payload names the path of the value as where. */
-  function byteText(value, notText, where) {
+     is not text, or holds a character past U+00FF, is no byte string. */
+  function byteText(value, notText) {
     if (typeof value !== 'string') {
       fail(notText);
     }
     for (var i = 0; i < value.length; i++) {
       if (value.charCodeAt(i) > 0xFF) {
-        fail(where === undefined ? 'the byte string holds a character past U+00FF, which is no byte' : where + 'carries a character above U+00FF, which no single byte spells');
+        fail('the byte string holds a character past U+00FF, which is no byte');
       }
     }
     return value;

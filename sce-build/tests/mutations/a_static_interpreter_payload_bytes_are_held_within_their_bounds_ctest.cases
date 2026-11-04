@@ -37,8 +37,8 @@ PY
 
 mutation_case "a character past U+00FF is let through by the library's reader of a byte string" <<'PY'
 edit("sce-build/src/forge/static_js/sce_static.js",
-     "      if (value.charCodeAt(i) > 0xFF) {\n        fail(where === undefined",
-     "      if (value.charCodeAt(i) > 0x10FFFF) {\n        fail(where === undefined")
+     "        if (value.charCodeAt(i) > 0xFF) {\n          refuse('notByteText'",
+     "        if (value.charCodeAt(i) > 0x10FFFF) {\n          refuse('notByteText'")
 PY
 
 mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'

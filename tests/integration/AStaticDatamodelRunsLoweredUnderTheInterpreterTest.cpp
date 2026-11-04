@@ -1454,6 +1454,67 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReadsAValue
     engine_->destroySession(session);
 }
 
+// The library's refusal carries, beside its sentence, the code, the RFC 6901 pointer and
+// the bound every runtime's reader names (docs/adr/0087, sections 2.3 and 2.4), held to
+// tests/json_text/payload_refusal.json, the table every reader reads. The library is
+// handed the data as the Interpreter's script engine reads it, the JSON text's value or
+// the text itself where it spells none, so the cases the engine decides before the
+// library sees the data are not the library's: a text that is not JSON and an object
+// that repeats a name (code notJson, with data), and a whole number written with an
+// exponent, which reaches a Number as the whole number it equals.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRefusalByItsCodePointerAndBound) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    const Ran ran =
+        capture(std::string("\"") + bin + "\" lower-algorithm sce:std/time/second_of_day.scxml 2>/dev/null");
+    ASSERT_EQ(0, ran.status);
+    const auto line = nlohmann::json::parse(ran.output, nullptr, false);
+    ASSERT_TRUE(line.is_object()) << ran.output.substr(0, 200);
+
+    const std::string session = "payload_refusal_lowered";
+    ASSERT_TRUE(engine_->createSession(session, ""));
+    const auto installed = engine_->executeScript(session, line.at("install").get<std::string>()).get();
+    ASSERT_TRUE(installed.isSuccess()) << installed.getErrorMessage();
+
+    const auto table =
+        nlohmann::json::parse(slurp(std::filesystem::path(SCE_PROJECT_ROOT) / "tests/json_text/payload_refusal.json"));
+    const auto &cases = table.at("cases");
+    ASSERT_GE(cases.size(), 40u) << "the shared table was not read";
+    size_t asked = 0;
+    for (const auto &c : cases) {
+        const std::string name = c.at("name").get<std::string>();
+        const std::string data = c.at("data").get<std::string>();
+        const bool engines = c.contains("refusal") && c.at("refusal").at("code") == "notJson" && !data.empty();
+        if (engines || name == "an exponent where a whole number is") {
+            continue;
+        }
+        ++asked;
+        const std::string program = "(function () { var text = " + nlohmann::json(data).dump() +
+                                    "; var data; if (text !== '') { try { data = JSON.parse(text); } catch (e) "
+                                    "{ data = text; } } try { SceStatic.field(data, 'v', " +
+                                    c.at("type").dump() +
+                                    "); return JSON.stringify({read: true}); } catch (e) { return "
+                                    "JSON.stringify({refusal: e.sceRefusal === undefined ? null : e.sceRefusal, "
+                                    "message: String(e.message)}); } })()";
+        const auto answered = engine_->evaluateExpression(session, program).get();
+        ASSERT_TRUE(answered.isSuccess()) << name << ": " << answered.getErrorMessage();
+        const auto got = nlohmann::json::parse(answered.getValue<std::string>(), nullptr, false);
+        ASSERT_TRUE(got.is_object()) << name << ": " << answered.getValue<std::string>();
+        if (!c.contains("refusal")) {
+            EXPECT_TRUE(got.contains("read")) << name << ": " << got.dump();
+            continue;
+        }
+        ASSERT_TRUE(got.contains("refusal") && got.at("refusal").is_object()) << name << ": " << got.dump();
+        const auto &want = c.at("refusal");
+        const auto &refusal = got.at("refusal");
+        EXPECT_EQ(refusal.at("code"), want.at("code")) << name << ": " << got.dump();
+        EXPECT_EQ(refusal.at("pointer"), want.at("pointer")) << name << ": " << got.dump();
+        EXPECT_EQ(refusal.at("bound"), want.at("bound")) << name << ": " << got.dump();
+    }
+    EXPECT_GE(asked, 35u) << "the cases the library is held to shrank";
+    engine_->destroySession(session);
+}
+
 // SCE_MESH.md, Errors: a send to a peer from a machine whose host registered no Mesh
 // router is a configuration fault of the host and raises error.execution, as it does
 // on every other backend. It is not an event the sender takes from itself:
