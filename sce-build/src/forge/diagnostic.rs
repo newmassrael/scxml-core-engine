@@ -24116,7 +24116,7 @@ mod anchor_contract_tests {
     /// half that carries a decision. `docs/SCE_LUA_TRANSLATION_SEAM.md`
     /// prices a C-callable lowering surface, and the question of what
     /// its error channel must carry is settled by exactly this count:
-    /// the frontend distinguishes 15 failure kinds by code, while the
+    /// the frontend distinguishes one failure kind per code, while the
     /// run-time path's `ScriptResult` carries a bool and a free-form
     /// string and no code at all. A C surface that returned a boolean
     /// would discard the whole alphabet — but only while the alphabet

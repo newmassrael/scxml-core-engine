@@ -1900,7 +1900,7 @@ cache already covers.
   counted. Re-derive with `scripts/measure-scope-obligation.sh`.
 - **The error channel** — ~~unmeasured~~ **settled 2026-08-29, and without a
   benchmark, exactly as this bullet predicted. See "The error channel, counted"
-  below.** 15 codes against 0. ⚠ The OWNERSHIP half of this bullet is still
+  below.** 23 codes against 0. ⚠ The OWNERSHIP half of this bullet is still
   open and is stated at the end of that section.
 - ~~**The size of what a C++ consumer takes on.**~~ **Re-priced 2026-08-29 as
   a SWAP, and the first version had the wrong SHAPE rather than a wrong
@@ -2228,23 +2228,29 @@ grep -o 'createError([^;]*' sce/src/scripting/LuaEngine.cpp | sort -u
 
 | | build-time frontend | run-time rewriter |
 |---|---|---|
-| failure kinds distinguishable at the boundary | **15** `ExprError` variants | **0** |
-| machine-readable code | **15** distinct `DiagnosticCode`s, one per variant | none — `ScriptResult` is `bool` + `std::string` |
+| failure kinds distinguishable at the boundary | **23** `ExprError` variants | **0** |
+| machine-readable code | **23** distinct `DiagnosticCode`s, one per variant | none — `ScriptResult` is `bool` + `std::string` |
 | structured repair data | `available` / `members` / `candidates` / `arguments`, driving `Fix::ReplaceOneOf` and `Fix::ReplaceWith` | none |
 | author-facing message shapes | one per variant, `#[error(...)]` | 4 authored (`ReferenceError: …`, `Session not found: …`, `Syntax error: …`, `Unknown Lua error`) plus raw Lua strings passed through |
 
-11 of the 15 variants are constructed by the ECMAScript frontend itself, over
-30 sites in `sce-build/src/ecmascript/` (`lua.rs` 10, `builtins.rs` 10,
-`parser.rs` 9, `resolve.rs` 1); the remaining four reach it through the shared
-expression pipeline.
+The two counts in the table are the enums', and
+`sce-build/tests/lowering_decision_ledger.rs`
+(`the_seam_prose_states_the_alphabet_the_enums_hold`) re-counts them against
+every number this section states, so a variant added without the table moving
+fails there. They stood at 15 when this section was first written on
+2026-08-29, when 11 of the 15 were constructed by the ECMAScript frontend
+itself, over 30 sites in `sce-build/src/ecmascript/` (`lua.rs` 10,
+`builtins.rs` 10, `parser.rs` 9, `resolve.rs` 1), and the remaining four
+reached it through the shared expression pipeline; that split is the day's
+measurement and is not re-derived.
 
 **The question this bullet posed is answered: the frontend's alphabet is
-strictly richer — 15 codes against 0 — so the FFI must carry a code plus a
+strictly richer — 23 codes against 0 — so the FFI must carry a code plus a
 string, not a boolean.**
 
 ⚠ **And the code does not have to be invented.** `payload_for` already maps
 every `ExprError` variant to its own `DiagnosticCode`, the mapping is a
-bijection onto the enum's 15-member `expression/` family, and those spellings
+bijection onto the enum's 23-member `expression/` family, and those spellings
 are already wire-visible and pinned by `schemas/sce-diagnostic.v1.schema.json`.
 A C surface should carry THAT code rather than a private enum of its own — the
 alternative is a second alphabet for the same failures, which is the shape

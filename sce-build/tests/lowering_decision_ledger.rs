@@ -2221,3 +2221,47 @@ fn a_raw_string_body_is_a_literal_to_both_kotlin_readings() {
         "a raw string body was dropped from the detector reading"
     );
 }
+
+/// The number written immediately before `suffix` in `doc`, bold or not.
+fn number_before(doc: &str, suffix: &str) -> usize {
+    let at = doc
+        .find(suffix)
+        .unwrap_or_else(|| panic!("{LEDGER_DOC} no longer says `{suffix}`"));
+    let head = doc[..at].trim_end().trim_end_matches('*');
+    let digits: String = head
+        .chars()
+        .rev()
+        .take_while(char::is_ascii_digit)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    digits
+        .parse()
+        .unwrap_or_else(|_| panic!("no number stands before `{suffix}` in {LEDGER_DOC}"))
+}
+
+/// The error channel's section states the alphabet in prose and in a table as
+/// well as in its ledger row, and only the row was re-counted: the table said
+/// 15 while the enums grew to 23. Every number the section writes for it is now
+/// asked of the two enums, as the row's is.
+#[test]
+fn the_seam_prose_states_the_alphabet_the_enums_hold() {
+    let doc = read(LEDGER_DOC);
+    let variants = expr_error_variants(&read("sce-build/src/forge/error.rs"));
+    let codes = expression_codes(&read("sce-build/src/forge/diagnostic.rs"));
+    for (suffix, held) in [
+        ("`ExprError` variants |", variants),
+        ("distinct `DiagnosticCode`s, one per variant", codes),
+        ("-member `expression/` family", codes),
+        ("codes against 0 — so the FFI", codes),
+        ("codes against 0. ⚠ The OWNERSHIP", codes),
+    ] {
+        assert_eq!(
+            number_before(&doc, suffix),
+            held,
+            "{LEDGER_DOC} states the alphabet before `{suffix}` as a number the \
+             enums no longer hold ({held}); re-derive it and rewrite the sentence"
+        );
+    }
+}
