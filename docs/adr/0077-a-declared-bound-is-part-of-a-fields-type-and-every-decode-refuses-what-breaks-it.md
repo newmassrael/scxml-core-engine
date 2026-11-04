@@ -535,19 +535,27 @@ bytes on the three probe codecs against lists of 136 and 132). There is no judge
   copying profile holds leave the field at its default. Two lists of one count answer it where their held counts
   differ, which only a capacity makes them do.
 - **The gates on a chain's entries.** A chain notes the kinds its gates ask for of every entry it reads, held or
-  not, so the fields after it are read as the frame says. A full list keeps an entry of each kind it read in place
-  of one whose kinds another entry holds, so the arm the kinds name is one the value can hold while the list has room
-  for one entry of each kind; the door the arm is installed through keeps it and answers that it was past the
-  capacity.
+  not, so the fields after it are read as the frame says: Rust in its fill, C11 in the loop that reads an entry past
+  its array into the last row, whose array alone cannot say which kinds the frame held. A full list keeps an entry
+  of each kind it read in place of one whose kinds another entry holds, so the arm the kinds name is one the value
+  can hold while the list has room for one entry of each kind; the door the arm is installed through keeps it and
+  answers that it was past the capacity. A chain whose gated kinds outnumber what the profile holds of it names an
+  arm the value cannot hold, and the door leaves the group at its default. Where the group builds nothing after the
+  chain, every field after it is read into a local by the kinds the fill noted, so the decode notes the capacity and
+  reads on, a frame cut or malformed after the chain is refused for that, and `CapacityExceeded` is said only of a
+  frame read whole.
 - **What the value holds.** On `CapacityExceeded`, as on every `Err`, `decode_into` leaves `_out` not to be read, and
-  every field of it holds what its type says: a list inside its bounds, a chain its arm's kinds, two lists one count,
-  a group built by value left as it was.
+  every field of it holds what its type says: a list inside its bounds, a chain its arm's kinds (or the group's
+  default, where no arm the value can hold is the frame's), two lists one count, a group built by value left as it
+  was.
 - **What is not read whole, stated.** Two frames are answered `CapacityExceeded` before the frame is read whole, and a
   frame malformed after that point gets that answer rather than its own: a chain whose gated kinds outnumber what the
-  profile holds of it, so that no arm the value can hold is the frame's; and a list held to its law (ADR 0065 §6 R8)
-  whose entries break the law past its capacity, since the law is held to the entries the list keeps. A deployment
-  that gives a chain fewer entries than it has gated kinds, or a lawful list fewer entries than a frame breaks its law
-  at, is the only one that meets them.
+  profile holds of it, in a group whose arms hold a list or a body read after the chain, which has no place to be read
+  into but the arm the value cannot hold; and a list held to its law (ADR 0065 §6 R8) whose entries break the law past
+  its capacity, since the law is held to the entries the list keeps. A deployment that gives such a chain fewer
+  entries than it has gated kinds, or a lawful list fewer entries than a frame breaks its law at, is the only one that
+  meets them. No codec of the tree has the first shape: the one chain with two gated kinds
+  (`codec_chain_has_tagged`) has only scalars after it.
 - **What it frees.** No form is generated to judge a frame: `store_into`, `stored` and `past_capacity` are gone, and
   a Rust tree with a list of no bound is no longer refused without views. The MCU frame of a lent decode is held by
   `scripts/codec_frame_probe.sh` (`backends/rust/probes/nostd-codec-frame`), which refuses a frame on the decode's

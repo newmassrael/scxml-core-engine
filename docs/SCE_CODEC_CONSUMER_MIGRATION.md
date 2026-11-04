@@ -982,5 +982,11 @@ Landing: the commit that adds this section; every Rust tree is regenerated after
 - `SceList` has a provided method, `is_full`, which a list of a consumer's own profile implements where it has a
   capacity (the default, `false`, is a list that grows). A list that has a capacity and does not implement it still
   holds what fits, but keeps no entry of a kind a gate reads in place of another past its capacity.
+- A chain whose gated kinds outnumber what the profile holds of it leaves its group at the default; where the group
+  builds no list or body after the chain the decode reads on, so a frame cut after the chain is `NeedMoreBytes`, as
+  on a profile that holds more.
+- A C11 decode notes the kinds a later gate asks of a chain on each entry it reads, so a chain the deployment holds
+  fewer entries of than its walk reads decides those gates by every entry the frame gave, not by the entries its
+  array kept. The `_has_<chain>_<kind>` locals are declared before the chain and set in its loop.
 - `sce_forge_runtime::content_line::note_capacity` is also `sce_forge_runtime::codec::note_capacity`, one function.
 
