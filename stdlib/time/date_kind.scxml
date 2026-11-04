@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/date_kind.scxml — which day a date expression names
+  (date_expression.scxml), as resolve_date.scxml resolves it from today
+  (docs/adr/0087, section 5):
+
+  - `none`: the text names no date, and the expression resolves to none;
+  - `absolute`: the date of `year`, `month` and `day`;
+  - `monthDay`: the first date of `month` and `day` on or after today, so a
+    29 February is the one of the next year that has one;
+  - `relativeDays`, `relativeWeeks`: `count` days, or weeks of seven days,
+    after today (before it for a negative `count`);
+  - `relativeMonths`, `relativeYears`: today's date `count` months, or years,
+    on, its day held to the length of the month it lands in;
+  - `comingWeekday`: the first day after today that is a `weekday`, one to
+    seven days ahead, so today's own weekday is a week ahead;
+  - `previousWeekday`: the last day before today that is a `weekday`;
+  - `weekdayOfWeek`: the `weekday` of the ISO 8601 week, which starts on a
+    Monday, `count` weeks from today's: 0 this week, 1 the next.
+
+  Speech says "next Friday" for the coming one and for the one of next
+  week; the two are two kinds here, so the reading is chosen in the open.
+  The set grows by revision: a later one adds kinds and never changes what
+  an existing kind resolves to, and the numbers below are never reused.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="date_kind" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="none" value="0"/>
+      <sce:variant name="absolute" value="1"/>
+      <sce:variant name="monthDay" value="2"/>
+      <sce:variant name="relativeDays" value="3"/>
+      <sce:variant name="relativeWeeks" value="4"/>
+      <sce:variant name="relativeMonths" value="5"/>
+      <sce:variant name="relativeYears" value="6"/>
+      <sce:variant name="comingWeekday" value="7"/>
+      <sce:variant name="previousWeekday" value="8"/>
+      <sce:variant name="weekdayOfWeek" value="9"/>
+    </data>
+  </datamodel>
+</scxml>
