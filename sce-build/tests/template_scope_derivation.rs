@@ -124,8 +124,8 @@ fn depfile_writer_holds_no_hand_kept_language_list() {
     )
     .expect("sce_codegen.rs is readable");
 
-    // The writer hands what one generation contributes to `depfile_entry`, which
-    // is where the exclusion is computed, so both functions are read.
+    // The writer writes what one generation contributes, which `depfile_entry`
+    // computes, the exclusion with it, so both functions are read.
     let function = |name: &str| {
         let start = src.find(&format!("fn {name}(")).unwrap_or_else(|| {
             panic!("{name} still exists — if it was renamed, retarget this gate")
@@ -136,7 +136,7 @@ fn depfile_writer_holds_no_hand_kept_language_list() {
     };
     let body = format!(
         "{}\n{}",
-        function("write_depfile"),
+        function("write_depfile_entry"),
         function("depfile_entry")
     );
     let body = body.as_str();

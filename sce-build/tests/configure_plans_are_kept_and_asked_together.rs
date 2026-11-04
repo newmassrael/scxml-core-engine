@@ -308,6 +308,30 @@ fn a_batch_answers_each_request_as_the_plan_of_it_alone_does() {
         "--no-format".to_string(),
     ];
 
+    // The two other steps whose files a build compiles: a set compiled
+    // together, and a conformance harness.
+    let mut set = vec!["--plan".to_string(), "orchestrate".to_string()];
+    for document in SET_DOCUMENTS {
+        set.extend(["--forge".to_string(), text(&set_document(document))]);
+    }
+    set.extend([
+        "-l".to_string(),
+        "c11".to_string(),
+        "-o".to_string(),
+        text(&tmp.path().join("set")),
+        "--no-format".to_string(),
+    ]);
+    let harness = vec![
+        "--plan".to_string(),
+        "generate-conformance".to_string(),
+        "-l".to_string(),
+        "c11".to_string(),
+        "-m".to_string(),
+        text(&forge_catalog()),
+        "-o".to_string(),
+        text(&tmp.path().join("harness")),
+    ];
+
     let requests: Vec<(&str, Vec<String>)> = vec![
         (
             "w3c239",
@@ -319,6 +343,8 @@ fn a_batch_answers_each_request_as_the_plan_of_it_alone_does() {
         ),
         ("deployed", deployed),
         ("refused", refused),
+        ("set", set),
+        ("harness", harness),
     ];
     let listing: String = requests
         .iter()
@@ -338,7 +364,7 @@ fn a_batch_answers_each_request_as_the_plan_of_it_alone_does() {
         .expect("run sce-codegen plan-batch");
     assert!(batch.status.success(), "{}", stderr(&batch));
     assert!(
-        String::from_utf8_lossy(&batch.stdout).contains("4 request(s), 3 answered, 1 refused"),
+        String::from_utf8_lossy(&batch.stdout).contains("6 request(s), 5 answered, 1 refused"),
         "the batch does not say what it answered: {}",
         String::from_utf8_lossy(&batch.stdout)
     );
@@ -426,6 +452,40 @@ fn a_batch_answers_each_request_as_the_plan_of_it_alone_does() {
         answer("deployed").contains("\t\t--deploy\t"),
         "the generation of the partition the deploy places the child on was not planned"
     );
+
+    // What a set and a harness read is what their depfiles name: each
+    // document of the set, and the catalog the harness is rendered from.
+    let reads = |name: &str| read_list(&results.join(format!("{name}.reads"))).0;
+    for document in SET_DOCUMENTS {
+        let path = text(&set_document(document));
+        assert!(
+            reads("set").contains(&path),
+            "the plan of the set does not list {path} among what it read"
+        );
+    }
+    assert!(
+        reads("harness").contains(&text(&forge_catalog())),
+        "the plan of the harness does not list its catalog among what it read"
+    );
+}
+
+/// A document set the C11 conformance project compiles with `orchestrate`,
+/// each document importing only those before it.
+const SET_DOCUMENTS: &[&str] = &[
+    "broadcast_log_conformance_flagged_event",
+    "broadcast_log_conformance_flagged",
+];
+
+/// The path of a document of [`SET_DOCUMENTS`].
+fn set_document(name: &str) -> PathBuf {
+    repo_root()
+        .join("tests/forge/conformance/broadcast_log_context")
+        .join(format!("{name}.scxml"))
+}
+
+/// The forge fixture catalog a conformance harness is rendered from.
+fn forge_catalog() -> PathBuf {
+    repo_root().join("tests/forge/conformance/fixtures.json")
 }
 
 /// The batch runs plans and nothing else, keeps each answer under a name

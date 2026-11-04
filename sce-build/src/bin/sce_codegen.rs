@@ -555,7 +555,7 @@ use sce_build::parser::SCXMLParser;
 struct DriftContext {
     header: drift::DriftHeader,
     /// The synth-6.2.6 source set that produced `header.source_hash`,
-    /// carried so `write_depfile` can declare it.
+    /// carried so `depfile_entry` can declare it.
     ///
     /// Kept on the context rather than re-collected at the depfile call
     /// site because the two would then be separate walks of the same
@@ -1776,9 +1776,12 @@ struct Cli {
     /// and a list of them kept in the build description is a second copy that
     /// falls behind the document. Pass the arguments the real run takes, with
     /// `--output-dir` naming where the files will go.
-    /// Accepted by `generate` alone, which is the command that produces files
-    /// a build has to declare; `--assert-unchanged` is its opposite number and
-    /// the two cannot be combined.
+    /// Accepted by the three commands whose files a build compiles and so has
+    /// to declare: `generate` (one document, or a set with `--with-imports`),
+    /// `orchestrate` (a document set compiled together) and
+    /// `generate-conformance` (a harness rendered from a fixture catalog).
+    /// `--assert-unchanged` is its opposite number and the two cannot be
+    /// combined.
     #[arg(long, global = true, conflicts_with = "assert_unchanged")]
     plan: bool,
 
@@ -3705,8 +3708,8 @@ enum Commands {
         #[arg(long, value_name = "KIND", value_parser = registered_kinds())]
         kind: Option<String>,
     },
-    /// Answer many plans at once: run `--plan generate` for each request of
-    /// `--requests`, up to `--jobs` at a time, and keep each answer under
+    /// Answer many plans at once: run the `--plan` run each request of
+    /// `--requests` asks, up to `--jobs` at a time, and keep each answer under
     /// `--results`.
     ///
     /// A build system has to know a generation's outputs when it is
@@ -3722,9 +3725,10 @@ enum Commands {
     ///
     /// `--requests` holds one request per line: a name, then each argument of
     /// the run after the program, separated by tabs. The arguments ask one
-    /// plan (`--plan [--plan-children] generate <document> ...`), and nothing
-    /// else is run. For each request, `<results>/<name>.request` keeps its
-    /// line, and then either `<name>.plan` holds what the plan printed, with
+    /// plan (`--plan [--plan-children] generate <document> ...`, or a plan of
+    /// `orchestrate` or `generate-conformance`, the other two commands whose
+    /// files a build compiles), and nothing else is run. For each request,
+    /// `<results>/<name>.request` keeps its line, and then either `<name>.plan` holds what the plan printed, with
     /// `<name>.reads` the files it read (`--plan-reads`), or `<name>.error`
     /// holds what the refused run wrote on stderr. Every `.plan` is dated
     /// when the batch began, before any plan read anything, and strictly
@@ -4163,6 +4167,17 @@ struct OrchestrateArgs {
     /// one at a time.
     #[arg(long)]
     no_format: bool,
+    /// Write a Make-format depfile for the set, with the contract of
+    /// `generate --write-deps`: its one target the first file the run
+    /// writes, its prerequisites every document of the set, what each
+    /// includes, the deploy, the source set the `source-hash` covers, the
+    /// templates and this program, less every file the run writes.
+    ///
+    /// Without it a build step that compiles a set's headers named its
+    /// documents and the deploy and nothing else, so a template edit left
+    /// the headers stale and the build reused them.
+    #[arg(long, value_name = "PATH")]
+    write_deps: Option<String>,
 }
 
 /// Recover `--error-format` from the raw argument vector.
@@ -4261,13 +4276,8 @@ fn main() {
         let _ = OUTPUT_MODE.set(OutputMode::AssertUnchanged);
     }
     if cli.plan {
-        if !matches!(cli.command, Commands::Generate(_)) {
-            cli_exit(CliError::Usage {
-                detail: "--plan applies only to `generate`: it is the one command whose outputs \
-                         a build has to declare, and the answer is the list of files a \
-                         `generate` run with the same arguments would write"
-                    .to_string(),
-            });
+        if let Some(detail) = plan_refusal(&cli.command, cli.plan_children) {
+            cli_exit(CliError::Usage { detail });
         }
         let _ = OUTPUT_MODE.set(OutputMode::Plan);
         let _ = PLAN_CHILDREN.set(cli.plan_children);
@@ -4525,6 +4535,42 @@ fn main() {
     finish_generated_output();
 }
 
+/// Why `--plan` cannot apply to `command` (with `--plan-children` when
+/// `plan_children`), or `None` when it does.
+///
+/// A plan answers which files a build step writes, so it applies to the
+/// commands a build declares a step of: `generate`, `orchestrate` and
+/// `generate-conformance`, whose files a target compiles. Every other command
+/// is refused, so one added later is refused until it is placed here: a plan
+/// of a command that does not hold its files in memory would answer with
+/// none and write them besides. Two shapes of those
+/// commands write what a plan cannot answer for, and are refused:
+/// `--plan-children` plans the children one document's generation writes,
+/// which a set and a harness have none of, and `orchestrate --emit-ast-dir`
+/// writes its envelopes to disk whatever the run's mode.
+fn plan_refusal(command: &Commands, plan_children: bool) -> Option<String> {
+    match command {
+        Commands::Generate(_) => None,
+        Commands::Orchestrate(args) if args.emit_ast_dir.is_some() => Some(
+            "--plan cannot apply to orchestrate --emit-ast-dir: the envelopes are written \
+             beside the run and are no file of the step a plan answers for"
+                .to_string(),
+        ),
+        Commands::Orchestrate(_) | Commands::GenerateConformance { .. } if plan_children => Some(
+            "--plan-children plans the child documents of one document's generation; \
+                 orchestrate and generate-conformance write none of their own to plan"
+                .to_string(),
+        ),
+        Commands::Orchestrate(_) | Commands::GenerateConformance { .. } => None,
+        _ => Some(
+            "--plan applies only to the commands whose files a build compiles and so has \
+             to declare: generate, orchestrate and generate-conformance. The answer is the \
+             list of files a run of the command with the same arguments would write"
+                .to_string(),
+        ),
+    }
+}
+
 /// Why `--assert-unchanged` cannot apply to `command`, or `None` when it
 /// does.
 ///
@@ -4632,6 +4678,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         profile: profile_path,
         format_style,
         no_format,
+        write_deps,
     } = args;
     let lexicon = check_lexicon(&lexicon);
     // Before anything else is read: an unusable profile is the first thing
@@ -4793,6 +4840,31 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     }
     report.formatter = cpp_formatter.used();
 
+    // What the set read, for the depfile it was asked for and the list a
+    // plan of it writes: the one entry both are written from, as for
+    // `generate`.
+    if records_reads(write_deps.as_deref()) {
+        let entry = document_set_depfile_entry(DocumentSetReads {
+            artifacts: &report.artifacts,
+            documents: &all_documents,
+            include_dirs: &include_dirs,
+            deploy: deploy_path.map(Path::new),
+            lang,
+            source_set: &drift_ctx.sources,
+            error_format,
+        });
+        if let Some(path) = write_deps.as_deref() {
+            write_depfile_entry(path, &entry);
+        }
+        write_plan_reads(Some(&entry));
+    }
+
+    // A plan's stdout is its answer and nothing else; what of the manifest
+    // it carries, what the set's machines link, is handed to the answer.
+    if output_mode() == OutputMode::Plan {
+        pending_tree().requires.clone_from(&report.runtime_requires);
+        return;
+    }
     outln!(
         "{}",
         build_manifest(
@@ -4804,6 +4876,83 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         )
         .to_line()
     );
+}
+
+/// What a document set's run read, for [`document_set_depfile_entry`].
+struct DocumentSetReads<'a> {
+    /// Every file the run wrote, in the order it wrote them: the first is
+    /// the depfile's target.
+    artifacts: &'a [PathBuf],
+    /// Every document of the set, statecharts and forge documents alike.
+    documents: &'a [&'a Path],
+    /// The directories a fragment a document includes is looked up in.
+    include_dirs: &'a [PathBuf],
+    deploy: Option<&'a Path>,
+    lang: Language,
+    /// The synth-6.2.6 source set behind the `source-hash` the run wrote.
+    source_set: &'a [PathBuf],
+    error_format: ErrorFormat,
+}
+
+/// The depfile entry of a document set's run (`orchestrate`): its artefacts,
+/// and every file it read: each document, each fragment a document includes
+/// (`<xi:include>`, `<sce:use>`), the deploy, the source set, every template
+/// of the target language (forge documents and statecharts render from
+/// different parts of the tree, so the scope is its root, less the other
+/// backends' templates) and this program.
+///
+/// The fragments are asked of the preprocessor every pipeline expands a
+/// document with, since the set's compile does not report them; a document
+/// of the library is in this program and includes nothing on disk.
+fn document_set_depfile_entry(reads: DocumentSetReads<'_>) -> DepfileEntry {
+    let DocumentSetReads {
+        artifacts,
+        documents,
+        include_dirs,
+        deploy,
+        lang,
+        source_set,
+        error_format,
+    } = reads;
+    let mut read: Vec<PathBuf> = documents.iter().map(|path| path.to_path_buf()).collect();
+    for document in documents {
+        if sce_build::forge::stdlib::names_standard(document) {
+            continue;
+        }
+        let name = document.display().to_string();
+        let content = read_named_document(&name).unwrap_or_else(|source| {
+            cli_exit(CliError::ReadInput {
+                path: name.clone(),
+                source,
+            })
+        });
+        match sce_build::parser::expand_preprocessors(
+            &content,
+            &name,
+            document.parent(),
+            include_dirs,
+        ) {
+            Ok((_expanded, _map, included)) => read.extend(included),
+            Err(e) => error_format.emit_forge_and_exit(&e),
+        }
+    }
+    read.extend(deploy.map(Path::to_path_buf));
+    let Some((first, rest)) = read.split_first() else {
+        return DepfileEntry {
+            outputs: artifacts.to_vec(),
+            ..DepfileEntry::default()
+        };
+    };
+    let template_base = sce_build::find_template_base();
+    depfile_entry(DepfileInputs {
+        output_paths: artifacts,
+        template_dir: &template_base,
+        lang,
+        scxml_input: first,
+        preprocessor_deps: rest,
+        source_set,
+        self_written: &[],
+    })
 }
 
 /// Multi-doc AST emit helper for [`cmd_orchestrate`]. For every
@@ -7045,7 +7194,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                         report.artifacts.push(path.clone());
                     }
                     if records_reads(depfile_path) {
-                        // Through `write_depfile`'s entry, not a local
+                        // Through `depfile_entry`, not a local
                         // `format!`. The inline version this replaced
                         // named the input `.scxml` and nothing else — no
                         // templates on any of the six backends, and no
@@ -8363,7 +8512,12 @@ struct DepfileInputs<'a> {
     self_written: &'a [PathBuf],
 }
 
-/// Write CMake DEPFILE (Makefile-format dependency file).
+/// What one generation contributes to a depfile: the files it produced —
+/// its artefacts first, the first of them the depfile's target — the files
+/// it wrote beside them, and every file it read, before the produced ones are
+/// taken back out. A run writes it as a Make-format depfile
+/// ([`write_depfile_entry`]), and a plan lists what it read from it
+/// ([`write_plan_reads`]).
 ///
 /// [`DepfileInputs::self_written`] names files this invocation produced
 /// that are not artefacts — the §9.6.6 synth children and the
@@ -8376,19 +8530,6 @@ struct DepfileInputs<'a> {
 /// `dependency cycle: parent_synth_inline__sce_synth_invoke__remote_inv
 /// .scxml -> itself` — taking 131 of 378 tests down with it. A file this
 /// run wrote cannot be a reason to re-run it.
-///
-/// An `--assert-unchanged` run writes no depfile and compares none: a
-/// depfile describes what a build read, not what the generator produced,
-/// and a run that writes nothing is not a build step. A `--plan` run is the
-/// same: it is asked for the files a build step would produce, and is not one.
-fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
-    write_depfile_entry(depfile_path, &depfile_entry(inputs));
-}
-
-/// What one generation contributes to a depfile: the files it produced —
-/// its artefacts first, the first of them the depfile's target — the files
-/// it wrote beside them, and every file it read, before the produced ones are
-/// taken back out.
 ///
 /// Kept apart from the write because a `generate --with-imports` run writes
 /// ONE depfile for every document it generates: each document's entry is
@@ -8412,7 +8553,7 @@ impl DepfileEntry {
     }
 }
 
-/// The entry one generation's `inputs` describe — see [`write_depfile`] for
+/// The entry one generation's `inputs` describe — see [`DepfileEntry`] for
 /// why each family is a prerequisite.
 fn depfile_entry(inputs: DepfileInputs<'_>) -> DepfileEntry {
     let DepfileInputs {
@@ -13613,23 +13754,31 @@ fn cmd_generate_conformance(
     // the same `harness_layout` rather than spelled again here: a second
     // spelling is free to drift into declaring a directory the render
     // does not read, or missing the one it does.
-    if let Some(dep_path) = depfile_path {
+    //
+    // A plan of the harness (`--plan-reads`) lists the same prerequisites,
+    // from the same entry, so a build keeps its answer exactly while the
+    // depfile would not re-run the step.
+    if records_reads(depfile_path) {
         let harness_template_dir =
             template_base.join(sce_build::conformance::harness_layout(lang).template_subdir);
-        write_depfile(
-            dep_path,
-            DepfileInputs {
-                output_paths: std::slice::from_ref(&out_path),
-                template_dir: &harness_template_dir,
-                lang,
-                scxml_input: Path::new(manifest_path),
-                preprocessor_deps: &rendered.extra_inputs,
-                source_set: &drift_ctx.sources,
-                self_written: &[],
-            },
-        );
+        let entry = depfile_entry(DepfileInputs {
+            output_paths: std::slice::from_ref(&out_path),
+            template_dir: &harness_template_dir,
+            lang,
+            scxml_input: Path::new(manifest_path),
+            preprocessor_deps: &rendered.extra_inputs,
+            source_set: &drift_ctx.sources,
+            self_written: &[],
+        });
+        if let Some(dep_path) = depfile_path {
+            write_depfile_entry(dep_path, &entry);
+        }
+        write_plan_reads(Some(&entry));
     }
-    outln!("Generated conformance harness: {}", out_path.display());
+    // A plan's stdout is its answer and nothing else.
+    if output_mode() != OutputMode::Plan {
+        outln!("Generated conformance harness: {}", out_path.display());
+    }
 }
 
 // ── Subcommand: expand ─────────────────────────────────────────
@@ -14340,12 +14489,13 @@ fn plan_requests(text: &str, requests_path: &str) -> Vec<PlanRequest> {
             Ok(cli)
                 if cli.plan
                     && cli.plan_reads.is_none()
-                    && matches!(cli.command, Commands::Generate(_)) => {}
+                    && plan_refusal(&cli.command, cli.plan_children).is_none() => {}
             Ok(_) => refuse(
                 requests_path,
                 number,
-                "a request asks one plan of a generation (`--plan [--plan-children] \
-                 [--plan-requires] generate <document> ...`), and the file it reads into \
+                "a request asks one plan of a build step (`--plan [--plan-children] \
+                 [--plan-requires] generate <document> ...`, or `--plan [--plan-requires]` \
+                 with `orchestrate` or `generate-conformance`), and the file it reads into \
                  is the batch's to name (`--plan-reads`)",
             ),
             Err(error) => refuse(

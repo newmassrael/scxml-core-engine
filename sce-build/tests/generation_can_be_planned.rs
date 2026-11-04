@@ -15,7 +15,12 @@
 //   - a document that synthesizes children has them in the plan;
 //   - the exit status is the generation's own: a document it refuses is refused;
 //   - what is on disk does not change the answer;
-//   - a command it cannot serve, and `--assert-unchanged`, refuse it.
+//   - a command it cannot serve, and `--assert-unchanged`, refuse it;
+//   - a document set compiled together (`orchestrate`) and a conformance
+//     harness (`generate-conformance`), the other two steps whose files a
+//     build compiles, are planned as a document is: the plan writes nothing,
+//     names exactly what the run writes, and the depfile the run writes names
+//     that first file as its target.
 //
 // The first two together are the claim a build depends on: a file the run
 // writes and the plan does not name is an undeclared output, which ninja
@@ -283,7 +288,7 @@ fn a_command_the_plan_cannot_serve_refuses_it() {
 
     assert!(!check.status.success(), "`--plan check` was accepted");
     assert!(
-        stderr(&check).contains("--plan applies only to `generate`"),
+        stderr(&check).contains("--plan applies only to the commands whose files a build"),
         "the refusal does not say why: {}",
         stderr(&check)
     );
@@ -498,4 +503,210 @@ fn a_plan_and_an_assertion_are_not_asked_together() {
         "the refusal does not name the conflict: {}",
         stderr(&both)
     );
+}
+
+/// A document set the C11 conformance project compiles with `orchestrate`:
+/// the broadcast logs over elements that ask their caller for inputs, in the
+/// order that puts what a document imports before it.
+const CONTEXT_SET: &[&str] = &[
+    "broadcast_log_conformance_flagged_event",
+    "broadcast_log_conformance_flagged",
+    "broadcast_log_conformance_choice_small",
+    "broadcast_log_conformance_choice_large",
+    "broadcast_log_conformance_choice",
+    "broadcast_log_conformance_chosen",
+];
+
+/// Each document of [`CONTEXT_SET`], as its path.
+fn context_documents() -> Vec<PathBuf> {
+    let dir = repo_root().join("tests/forge/conformance/broadcast_log_context");
+    CONTEXT_SET
+        .iter()
+        .map(|name| dir.join(format!("{name}.scxml")))
+        .collect()
+}
+
+/// `sce-codegen [flags] orchestrate --forge <each of the set> -l c11 -o <out> [after]`.
+fn orchestrate(flags: &[&str], out: &Path, after: &[&str]) -> Output {
+    let mut command = Command::new(codegen());
+    command.args(flags).arg("orchestrate");
+    for document in context_documents() {
+        command.arg("--forge").arg(document);
+    }
+    command
+        .args(["-l", "c11", "-o"])
+        .arg(out)
+        .args(after)
+        .output()
+        .expect("run sce-codegen")
+}
+
+/// `sce-codegen [flags] generate-conformance -l c11 -m <the forge catalog> -o <out> [after]`.
+fn generate_conformance(flags: &[&str], out: &Path, after: &[&str]) -> Output {
+    Command::new(codegen())
+        .args(flags)
+        .arg("generate-conformance")
+        .args(["-l", "c11", "-m"])
+        .arg(repo_root().join("tests/forge/conformance/fixtures.json"))
+        .arg("-o")
+        .arg(out)
+        .args(after)
+        .output()
+        .expect("run sce-codegen")
+}
+
+/// The target of a Make-format depfile, and the text of its prerequisites.
+fn depfile_target(depfile: &Path) -> (String, String) {
+    let text =
+        fs::read_to_string(depfile).unwrap_or_else(|e| panic!("read {}: {e}", depfile.display()));
+    let (target, prerequisites) = text
+        .split_once(": ")
+        .unwrap_or_else(|| panic!("{} names no target: {text}", depfile.display()));
+    (target.to_string(), prerequisites.to_string())
+}
+
+/// A set compiled together is planned as a document is: the plan writes
+/// nothing and names exactly the files the run writes, and the depfile the
+/// run writes has the plan's first file, the build edge's OUTPUT, as its one
+/// target, and names every document of the set and the templates.
+#[test]
+fn a_document_set_is_planned_as_a_document_is() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let planned_into = tmp.path().join("planned");
+    let written_into = tmp.path().join("written");
+
+    let plan = orchestrate(&["--plan"], &planned_into, &[]);
+    assert!(plan.status.success(), "{}", stderr(&plan));
+    assert!(
+        !planned_into.exists(),
+        "the plan of the set created {}",
+        planned_into.display()
+    );
+    for line in stdout_lines(&plan) {
+        assert!(
+            !line.starts_with('{'),
+            "a manifest line among the plan's paths: {line}"
+        );
+    }
+
+    let depfile = tmp.path().join("set.d");
+    let real = orchestrate(
+        &[],
+        &written_into,
+        &["--write-deps", depfile.to_str().expect("utf-8 path")],
+    );
+    assert!(real.status.success(), "{}", stderr(&real));
+    let named = planned(&plan, &planned_into);
+    let wrote = files_under(&written_into);
+    assert_eq!(
+        named, wrote,
+        "the plan of the set names {named:?} and the run wrote {wrote:?}"
+    );
+
+    let first = stdout_lines(&plan)
+        .first()
+        .cloned()
+        .expect("the plan of the set names a file");
+    let first_written = written_into.join(
+        Path::new(&first)
+            .strip_prefix(&planned_into)
+            .expect("the planned file is under the planned directory"),
+    );
+    let (target, prerequisites) = depfile_target(&depfile);
+    assert_eq!(
+        target,
+        first_written.display().to_string(),
+        "the depfile's target is not the first file the plan names, which a build \
+         declares as the step's OUTPUT"
+    );
+    for document in context_documents() {
+        assert!(
+            prerequisites.contains(&document.display().to_string()),
+            "the depfile of the set does not name {}",
+            document.display()
+        );
+    }
+    assert!(
+        prerequisites.contains(".jinja2"),
+        "the depfile of the set names no template, so a template edit leaves its \
+         headers stale: {prerequisites}"
+    );
+}
+
+/// A conformance harness is planned as a document is, and its depfile's
+/// target is the one file the plan names.
+#[test]
+fn a_conformance_harness_is_planned_as_a_document_is() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let planned_into = tmp.path().join("planned");
+    let written_into = tmp.path().join("written");
+
+    let plan = generate_conformance(&["--plan"], &planned_into, &[]);
+    assert!(plan.status.success(), "{}", stderr(&plan));
+    assert!(
+        !planned_into.exists(),
+        "the plan of the harness created {}",
+        planned_into.display()
+    );
+
+    let depfile = tmp.path().join("harness.d");
+    let real = generate_conformance(
+        &[],
+        &written_into,
+        &["--write-deps", depfile.to_str().expect("utf-8 path")],
+    );
+    assert!(real.status.success(), "{}", stderr(&real));
+    let named = planned(&plan, &planned_into);
+    let wrote = files_under(&written_into);
+    assert_eq!(
+        named, wrote,
+        "the plan of the harness names {named:?} and the run wrote {wrote:?}"
+    );
+    assert_eq!(named.len(), 1, "a harness is one file: {named:?}");
+    let (target, _) = depfile_target(&depfile);
+    let only = named.first().expect("one file");
+    assert_eq!(
+        target,
+        written_into.join(only).display().to_string(),
+        "the depfile's target is not the file the plan names"
+    );
+}
+
+/// What a set or a harness cannot plan is refused: the children of one
+/// document's generation, which neither has, and the AST envelopes
+/// `orchestrate --emit-ast-dir` writes to disk whatever the run's mode.
+#[test]
+fn a_set_plan_refuses_what_it_cannot_answer_for() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let out = tmp.path().join("out");
+
+    let children = orchestrate(&["--plan", "--plan-children"], &out, &[]);
+    assert!(
+        !children.status.success(),
+        "--plan-children was accepted on a document set"
+    );
+    assert!(
+        stderr(&children).contains("--plan-children plans the child documents"),
+        "the refusal does not say why: {}",
+        stderr(&children)
+    );
+
+    let harness_children = generate_conformance(&["--plan", "--plan-children"], &out, &[]);
+    assert!(
+        !harness_children.status.success(),
+        "--plan-children was accepted on a conformance harness"
+    );
+
+    let asts = tmp.path().join("asts");
+    let envelopes = orchestrate(
+        &["--plan"],
+        &out,
+        &["--emit-ast-dir", asts.to_str().expect("utf-8 path")],
+    );
+    assert!(
+        !envelopes.status.success(),
+        "--plan was accepted with --emit-ast-dir"
+    );
+    assert!(!asts.exists(), "the refused plan wrote AST envelopes");
+    assert!(!out.exists(), "a refused plan wrote its output");
 }
