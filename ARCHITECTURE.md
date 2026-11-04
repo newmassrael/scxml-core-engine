@@ -1281,10 +1281,13 @@ middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
    that was cancelled or started again is refused by the token check either way
    (§scxml-6.4). The external queue takes events in the order they arrived, so
    the owner also drains before it puts an event of its own on that queue (a
-   `<send>` to itself, a `done.invoke`), and its event joins behind what was
-   posted before it; an internal raise does not drain. The Interpreter does
-   both; the generated runtimes drain at the boundary only, which ADR 0084's
-   order of work owes (step 9).
+   `<send>` to itself, a host-run invocation's `done.invoke`, a delayed send
+   released on the owner, a child's report to its parent, the host's own raise
+   on the owner thread), and its event joins behind what was posted before it;
+   an internal raise does not drain. Every engine does both. A generated
+   runtime does the second at the one function its external enqueue goes
+   through; applying a posted event reaches that function again and pushes it
+   without draining, one drain at a time (ADR 0084, D2 as amended at step 9).
 5. **Waking.** A post wakes the owner through a waker the host installs, or
    through the runtime's own loop where it has one.
 6. **Timers.** A clock pulled on the owner thread needs no inbox. A timer that

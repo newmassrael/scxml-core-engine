@@ -11,6 +11,11 @@
   (`core/EngineInbox.h`) and applied at the next macrostep boundary. How the rule is held on an engine with no
   loop of a thread of its own is recorded in D8. W3C test 201 showed the boundary drain of D2 left the external queue
   out of arrival order; D2 is amended, the Interpreter follows it, and the generated runtimes owe step 9.
+  Step 9 done (2026-11-05): every generated runtime applies what its inbox holds before its owner puts an event of
+  its own on the external queue, at the one function that queue's enqueue goes through, and each runtime's inbox
+  conformance test holds it to W3C test 201's shape. The generated C++ engine's W3C HTTP harness posts the
+  listener's event to the inbox as a host would, instead of raising it on the owner. Recorded in D2 as amended at
+  step 9.
 - Date: 2026-11-03
 - Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
   `main` first.
@@ -139,6 +144,24 @@ host is the arrangement measured above to fail.
   thread posts it while the send waits for the answer, and the `timeout` the document sends next must come second.
   The rule holds for every engine. An internal raise does not drain: the internal queue is the running macrostep's
   own, and arrival order is the external queue's.
+  Amended at step 9: an event of the owner's own is any event the owner puts on its own external queue: a `<send>`
+  to itself, a host-run invocation's `done.invoke` or report, a delayed send or timer released on the owner (`tick`,
+  `advance_time` and their spellings), a child the same owner runs reporting to its parent, and a host's direct
+  owner-thread raise. An event the owner routes elsewhere (a peer, another session) is not put on its queue and
+  does not drain. Each runtime applies its inbox at one chokepoint, the one function its external enqueue goes
+  through, by the operation the boundary drain uses. Applying a posted event reaches that function again and pushes
+  the event without draining: one drain applies at a time, and a drain asked for inside it applies nothing, since
+  the outer one takes what it held in order. A bounded inbox (C11, `no_std` Rust) drains the same way, as an owner
+  operation, and the external queue's own bound and refusal do not change. The chokepoints:
+  - the Interpreter: `StateMachine::applyHeldBeforeExternalEnqueue`, which the raiser asks before an external raise
+    (`EventRaiserImpl::ForeignEntry`'s `beforeExternalEnqueue`), as do a host-run invocation's `done.invoke` and an
+    event handed over inside a running macrostep (step 8);
+  - the generated C++ engine: `StaticExecutionEngine::raiseExternal(const EventWithMetadata &)`, just before its
+    push onto the external queue, while a run is going (what is posted before a run is kept for it), with
+    `drainingInbox_` holding one drain at a time (`StaticExecutionEngine.h`);
+  - Rust, C11, Kotlin, Go, Python and Swift: each generated runtime applies its inbox at the one function its
+    external enqueue goes through, in that runtime's engine, and every event of the owner's own reaches the queue
+    only through it.
 - A post returns whether the inbox took it. A bounded inbox (C11 and `no_std` Rust, whose capacity the deployment
   declares) refuses a post when full and says so; nothing is dropped silently. A hosted runtime's inbox is unbounded.
 - A post wakes the owner through a waker the host installs (`wakeWith` and its spellings; a runtime with its own loop,
@@ -322,12 +345,13 @@ check, since the exit cancelled its invocation), and a later post is refused and
    shared request fixture.
 7. The lowering (D7) and the `sce-static` host scenarios on the Interpreter replay.
 8. The Interpreter's threading (D8), and SCE_MESH.md §1 and §19.
-9. Owed by the D2 drain bullet as amended at step 8: the generated runtimes (C++, Rust, Kotlin, Go, Python, C11,
-   Swift) still drain only at the macrostep boundary, so an owner's own external event can overtake a post that
-   arrived before it. Each applies what its inbox holds before it puts an event of its own on the external queue,
-   with a test of the W3C 201 shape. The generated C++ engine's W3C HTTP harness works around exactly this by raising
-   the listener's event on the owner instead of posting it (`tests/w3c/aot_tests/HttpAotTest.h`); the workaround is
-   removed in the same step.
+9. Done (2026-11-05). Owed by the D2 drain bullet as amended at step 8: the generated runtimes (C++, Rust, Kotlin,
+   Go, Python, C11, Swift) drained only at the macrostep boundary, so an owner's own external event could overtake a
+   post that arrived before it. Each applies what its inbox holds before it puts an event of its own on the external
+   queue, at one chokepoint (D2 as amended at step 9), with a test of the W3C 201 shape. The generated C++ engine's
+   W3C HTTP harness worked around exactly this by raising the listener's event on the owner instead of posting it
+   (`tests/w3c/aot_tests/HttpAotTest.h`); it now posts it, natively from the listener's thread and under WASM from
+   the owner inside the send.
 
 Each step lands with its tests and is pushed under the repository's push rule. A step that finds the rule wrong for a
 runtime stops and amends this ADR rather than working around it.
