@@ -231,6 +231,15 @@ down into its elements and the default arm's tag. Four codecs gain 13 cases. A v
 or a peeked byte decides it, an arm under a build feature, and an arm's codec that takes flag inputs are refused by
 name.
 
+*Landed (step 3, seventh part, 2026-11-04): chains that end on an entry's flag, and gated lists.* The model writes a
+chain with `terminate-on="entry-flag"` with the flag set on every entry but the last, derived as ADR 0058 §1 says, and
+reads entries until one has it clear; such a chain holds one entry or more. A list or a chain gated by `sce:present-if`
+is present where its gate holds, its gate flag and a count gated with it following it. A case states each entry's
+flag as the chain writes it, so a case and its decode agree. A flag's `value` names the builder's default and is read
+as nothing of the wire. Sixteen codecs gain 32 cases, the Zenoh put, del, err, reply, OAM, query, final response,
+hello and push among them, each frame with every element it derives written by the model. Two lists of one count (R5)
+are refused by name.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

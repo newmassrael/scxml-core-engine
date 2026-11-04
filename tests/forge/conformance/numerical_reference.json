@@ -39665,6 +39665,11 @@
           ],
           "error": "need-more-bytes"
         }
+      ],
+      "sources": [
+        {"source": {"header_flags": 0, "extensions": [{"header": 1, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}]}, "encoded": [0, 1], "note": "one unit extension"},
+        {"source": {"header_flags": 0, "extensions": [{"header": 129, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, {"header": 34, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 5}}}]}, "encoded": [0, 129, 34, 5], "note": "a unit and a zint: Z on the first only"},
+        {"source": {"header_flags": 16, "extensions": [{"header": 161, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 128}}}, {"header": 132, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, {"header": 67, "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": [7, 8]}}}]}, "encoded": [16, 161, 128, 1, 132, 67, 2, 7, 8], "note": "three extensions of each encoding"}
       ]
     },
     "codec_chain_depth_plain": {
@@ -39688,6 +39693,10 @@
           ],
           "error": "too-many-elements"
         }
+      ],
+      "sources": [
+        {"source": {"header_flags": 0, "extensions": [{"header": 1}]}, "encoded": [0, 1], "note": "one entry: Z clear, the last"},
+        {"source": {"header_flags": 0, "extensions": [{"header": 129}, {"header": 130}, {"header": 131}, {"header": 132}, {"header": 133}, {"header": 134}, {"header": 135}, {"header": 8}]}, "encoded": [0, 129, 130, 131, 132, 133, 134, 135, 8], "note": "eight entries, the depth: Z set on each but the last"}
       ]
     },
     "codec_chain_depth_gated": {
@@ -39715,6 +39724,10 @@
           ],
           "error": "too-many-elements"
         }
+      ],
+      "sources": [
+        {"source": {"header": 0, "extensions": null, "payload": [170]}, "encoded": [0, 1, 170], "note": "Z clear: no chain, then the payload"},
+        {"source": {"header": 128, "extensions": [{"header": 129}, {"header": 2}], "payload": []}, "encoded": [128, 129, 2, 0], "note": "Z set: two entries, then an empty payload"}
       ]
     },
     "codec_present_if_basic": {
@@ -41390,6 +41403,109 @@
         {"source": {"header": 34, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 128}}}, "encoded": [34, 128, 1], "note": "a zint extension: enc 1"},
         {"source": {"header": 195, "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": [1, 2]}}}, "encoded": [195, 2, 1, 2], "note": "a zbuf extension with Z set: enc 2"},
         {"source": {"header": 101, "body": {"tag": 3, "body": {}}}, "encoded": [101], "note": "enc 3, which no arm names: the default arm"}
+      ]
+    },
+    "codec_peek_arm_a": {
+      "fixture": "CodecPeekArmA",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a flag's `value` is the builder's default and says nothing of the wire.",
+      "sources": [
+        {"source": {"header": 0, "payload": 5}, "encoded": [0, 5], "note": "the header presented whole, then one byte"}
+      ]
+    },
+    "codec_peek_arm_b": {
+      "fixture": "CodecPeekArmB",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a flag's `value` is the builder's default and says nothing of the wire.",
+      "sources": [
+        {"source": {"header": 1, "payload": 4660}, "encoded": [1, 18, 52], "note": "the header presented whole, then two bytes"}
+      ]
+    },
+    "codec_repeat_present_if_basic": {
+      "fixture": "CodecRepeatPresentIfBasic",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a gated list whose count is gated with it, and so follows it.",
+      "sources": [
+        {"source": {"carrier": 0, "elems": null}, "encoded": [0], "note": "has_list clear: no count and no list"},
+        {"source": {"carrier": 1, "elems": [{"seq": 1}, {"seq": 2}]}, "encoded": [1, 2, 0, 1, 0, 2], "note": "has_list and the count derived from the list"},
+        {"source": {"carrier": 1, "elems": []}, "encoded": [1, 0], "note": "an empty list is present: its count is zero"}
+      ]
+    },
+    "codec_tlv_chain_present_if_basic": {
+      "fixture": "CodecTlvChainPresentIfBasic",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a gated chain read to the end of the frame.",
+      "sources": [
+        {"source": {"carrier": 0, "entries": null}, "encoded": [0], "note": "has_chain clear: the carrier alone"},
+        {"source": {"carrier": 1, "entries": [{"entry_type": 1, "entry_body": [9]}]}, "encoded": [1, 1, 1, 9], "note": "a chain read to the end of the frame, its flag derived"}
+      ]
+    },
+    "codec_zenoh_msg_put": {
+      "fixture": "CodecZenohMsgPut",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh put: gated bodies, a gated extension chain and a payload.",
+      "sources": [
+        {"source": {"header": 1, "timestamp": null, "encoding": null, "extensions": null, "payload": [170, 187]}, "encoded": [1, 2, 170, 187], "note": "a bare put: the header and the payload"},
+        {"source": {"header": 225, "timestamp": {"time": 5, "zid": [1]}, "encoding": {"packed_id": 0, "schema": null}, "extensions": [{"header": 129, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, {"header": 34, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 9}}}], "payload": []}, "encoded": [225, 5, 1, 1, 0, 129, 34, 9, 0], "note": "T, E and Z derived from the timestamp, the encoding and the chain"}
+      ]
+    },
+    "codec_zenoh_msg_del": {
+      "fixture": "CodecZenohMsgDel",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh del: a gated timestamp and a gated extension chain.",
+      "sources": [
+        {"source": {"header": 2, "timestamp": null, "extensions": null}, "encoded": [2], "note": "a bare del"},
+        {"source": {"header": 162, "timestamp": {"time": 128, "zid": []}, "extensions": [{"header": 3, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}]}, "encoded": [162, 128, 1, 0, 3], "note": "T and Z derived"}
+      ]
+    },
+    "codec_zenoh_err": {
+      "fixture": "CodecZenohErr",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh err: a gated encoding, a gated extension chain and a payload.",
+      "sources": [
+        {"source": {"header": 5, "encoding": null, "extensions": null, "payload": [1]}, "encoded": [5, 1, 1], "note": "a bare err"},
+        {"source": {"header": 197, "encoding": {"packed_id": 1, "schema": "t"}, "extensions": [{"header": 65, "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": []}}}], "payload": []}, "encoded": [197, 1, 1, 116, 65, 0, 0], "note": "E and Z derived; an encoding with a schema"}
+      ]
+    },
+    "codec_zenoh_reply": {
+      "fixture": "CodecZenohReply",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh reply: a gated consolidation and chain, then a push body.",
+      "sources": [
+        {"source": {"header": 4, "consolidation": null, "extensions": null, "body": {"header": 1, "body": {"arm": "codec_zenoh_put", "body": {"payload": 3}}}}, "encoded": [4, 1, 3], "note": "a bare reply holding a put"},
+        {"source": {"header": 164, "consolidation": 2, "extensions": [{"header": 2, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}], "body": {"header": 2, "body": {"arm": "codec_zenoh_del", "body": {}}}}, "encoded": [164, 2, 2, 2], "note": "C and Z derived; a reply holding a del"}
+      ]
+    },
+    "codec_zenoh_oam": {
+      "fixture": "CodecZenohOam",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh OAM: a gated chain, then a body whose encoding is in the header.",
+      "sources": [
+        {"source": {"header": 31, "id": 1, "extensions": null, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, "encoded": [31, 1], "note": "an OAM of no body: enc 0"},
+        {"source": {"header": 223, "id": 128, "extensions": [{"header": 1, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}], "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": [5]}}}, "encoded": [223, 128, 1, 1, 1, 5], "note": "Z derived from the chain, enc 2 from the zbuf arm"}
+      ]
+    },
+    "codec_zenoh_query": {
+      "fixture": "CodecZenohQuery",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh query: its chain ends with the frame, so no entry's Z is the chain's.",
+      "sources": [
+        {"source": {"header": 3, "consolidation": null, "parameters": null, "extensions": null}, "encoded": [3], "note": "a bare query"},
+        {"source": {"header": 227, "consolidation": 1, "parameters": [97, 61, 49], "extensions": [{"header": 1, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, {"header": 34, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 4}}}]}, "encoded": [227, 1, 3, 97, 61, 49, 1, 34, 4], "note": "C, P and Z derived; a chain read to the end of the frame"}
+      ]
+    },
+    "codec_zenoh_response_final": {
+      "fixture": "CodecZenohResponseFinal",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh final response: a request id and a gated extension chain.",
+      "sources": [
+        {"source": {"header": 26, "request_id": 7, "extensions": null}, "encoded": [26, 7], "note": "a bare final response"},
+        {"source": {"header": 154, "request_id": 128, "extensions": [{"header": 129, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, {"header": 2, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}]}, "encoded": [154, 128, 1, 129, 2], "note": "Z derived from the chain"}
+      ]
+    },
+    "codec_zenoh_hello": {
+      "fixture": "CodecZenohHello",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh hello: locators the flag input L gates, their count gated with them.",
+      "sources": [
+        {"source": {"version": 1, "cbyte": 1, "zid": [3], "locators": null}, "inputs": {"L": 0}, "encoded": [1, 1, 3], "note": "L clear: no locators"},
+        {"source": {"version": 1, "cbyte": 18, "zid": [3, 4], "locators": [{"locator": "tcp/1"}, {"locator": ""}]}, "inputs": {"L": 1}, "encoded": [1, 18, 3, 4, 2, 5, 116, 99, 112, 47, 49, 0], "note": "L set: two locators, their count derived"}
+      ]
+    },
+    "codec_zenoh_push": {
+      "fixture": "CodecZenohPush",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh push: a variant of one arm and a default.",
+      "sources": [
+        {"source": {"header": 29, "body": {"arm": "codec_zenoh_push_body", "body": {"header": 1, "body": {"arm": "codec_zenoh_put", "body": {"payload": 7}}}}}, "encoded": [29, 1, 7], "note": "mid 0x1d, derived from the arm; a put"},
+        {"source": {"header": 62, "body": {"tag": 30, "body": {"header": 2, "body": {"arm": "codec_zenoh_del", "body": {}}}}}, "encoded": [62, 2], "note": "a mid no arm names: the default arm keeps it"}
       ]
     }
   },

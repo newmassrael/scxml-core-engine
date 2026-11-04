@@ -47,9 +47,12 @@ What the model reads so far, and refuses by name past it:
   `sce:length-from` names one; or the entries of a list (`<sce:repeat>`),
   counted by a field before it (`count=`) or read to the end of the scope
   (`until-eof`), or of a chain (`<sce:tlv-chain>`) read to the end of the
-  scope, within `max-count` or `max-depth`. A body is stated as its codec's
-  value, a list as an array of them, and a count or a body's length is derived
-  as a byte length is;
+  scope or until an entry whose flag (`terminate-on="entry-flag"`) is clear,
+  within `max-count` or `max-depth`; any of them gated as a field is. A body
+  is stated as its codec's value, a list as an array of them, and a count or
+  a body's length is derived as a byte length is, as is the flag a chain ends
+  on: set on every entry but the last, so such a chain holds one or more. Two
+  lists of one count are not read yet;
 * a field gated on one flag of a carrier (`sce:present-if="c.f"` or `"!c.f"`),
   present exactly where the gate holds, its flag derived from its presence;
 * a gate group ([`Group`], docs/adr/0065 §6 R4b, R4c): two or more elements
@@ -100,8 +103,16 @@ READ_ATTRIBUTES = {
         f"{SCE}max-size",
     },
     "embed": {"id", "type", f"{SCE}byte", f"{SCE}present-if", f"{SCE}length-from"},
-    "repeat": {"id", "type", f"{SCE}byte", "count", "until-eof", "max-count"},
-    "tlv-chain": {"id", "type", f"{SCE}byte", "max-depth"},
+    "repeat": {"id", "type", f"{SCE}byte", "count", "until-eof", "max-count", f"{SCE}present-if"},
+    "tlv-chain": {
+        "id",
+        "type",
+        f"{SCE}byte",
+        "max-depth",
+        "terminate-on",
+        "entry-flag-name",
+        f"{SCE}present-if",
+    },
     "variant": {"tag"},
 }
 
@@ -238,6 +249,10 @@ class Field:
     tag_ref: str | None = None
     arms: list[tuple[int, str, Codec]] = field(default_factory=list)
     default_arm: tuple[str, Codec] | None = None
+    #: Of a chain that ends on a flag of its entries (`terminate-on=
+    #: "entry-flag"`): the entry's carrier and the flag, set on every entry
+    #: but the last, which the chain derives (docs/adr/0058 §1).
+    end_flag: tuple[str, str] | None = None
 
     def shares_a_byte(self) -> bool:
         return self.size == "fixed" and (self.bit_offset is not None or self.bits < 8)
@@ -397,6 +412,8 @@ class Codec:
                 raise Unread(f"{self.name}: the measure {name} is not an unsigned number")
             if len({m.measure() for m in measured}) > 1:
                 raise Unread(f"{self.name}: {name} is measured by declarations of two kinds")
+            if sum(m.size == "list" for m in measured) > 1:
+                raise Unread(f"{self.name}: {name} counts two lists, which is not read yet")
 
 
 def attribute_int(node, name: str, namespace: str = SCE) -> int | None:
@@ -453,6 +470,18 @@ def read_held(
         size, measured_by, most = "list", count, attribute_int(node, "max-count", "")
     else:
         size, measured_by, most = "list", None, attribute_int(node, "max-depth", "")
+    end_flag = None
+    if kind == "tlv-chain" and node.get("terminate-on", "exhaust-or-depth") != "exhaust-or-depth":
+        if node.get("terminate-on") != "entry-flag":
+            raise Unread(f"{stem}: `{id}` ends by {node.get('terminate-on')!r}")
+        name = node.get("entry-flag-name")
+        carrier = next((f for f in child.fields if f.carrier and any(g.name == name for g in f.flags)),
+                       None)
+        if carrier is None or child.flag(carrier.id, name).width != 1:
+            raise Unread(f"{stem}: the entries of `{id}` hold no one-bit flag `{name}`")
+        end_flag = (carrier.id, name)
+    elif node.get("entry-flag-name") is not None:
+        raise Unread(f"{stem}: `{id}` names an entry flag and does not end on it")
     return Field(
         id=id,
         sce_type=kind,
@@ -465,6 +494,7 @@ def read_held(
         measured_by=measured_by,
         most=most,
         child=child,
+        end_flag=end_flag,
     )
 
 
@@ -577,7 +607,9 @@ def read_document(path: Path) -> Codec:
             raise Unread(f"{stem}: type {sce_type!r} of `{id}` is not read yet")
         flags = []
         for f in node:
-            if f.tag != f"{SCE}flag" or set(f.attrib) - {"name", "bit", "width"}:
+            # `value` is the carrier's value in the builder's default
+            # instance; it says nothing of the wire.
+            if f.tag != f"{SCE}flag" or set(f.attrib) - {"name", "bit", "width", "value"}:
                 raise Unread(f"{stem}: a flag of `{id}` declares what is not read yet")
             flags.append(Flag(f.get("name"), int(f.get("bit")), int(f.get("width", "1"))))
         length_field = node.get(f"{SCE}length-field")
@@ -672,6 +704,18 @@ def held(f: Field, value) -> bytes | list[bytes]:
     else:
         if not isinstance(value, list):
             raise ValueError(f"`{f.id}` is a list, a JSON array")
+        if f.end_flag is not None:
+            # The chain ends on its entries' flag: it is set on every entry
+            # but the last, so the chain holds one entry or more.
+            if not value:
+                raise ValueError(f"`{f.id}` ends on an entry's flag, so it holds one or more")
+            carrier, name = f.end_flag
+            mask = 1 << f.child.flag(carrier, name).bit
+            value = [
+                entry | {carrier: (entry[carrier] | mask) if i + 1 < len(value)
+                         else (entry[carrier] & ~mask)}
+                for i, entry in enumerate(value)
+            ]
         data = [encode(f.child, entry) for entry in value]
     if f.most is not None and len(data) > f.most:
         raise ValueError(f"`{f.id}` holds {len(data)}, past its bound of {f.most}")
@@ -939,7 +983,8 @@ def decode_at(
             count = None
             if f.measured_by is not None:
                 count = measure_on_wire(codec, f.measured_by, raw, carriers)
-            while (len(entries) < count) if count is not None else (at < end):
+            more = True
+            while more and ((len(entries) < count) if count is not None else (at < end)):
                 if f.most is not None and len(entries) == f.most:
                     raise ValueError(f"{codec.name}: `{f.id}` holds more than {f.most} entries")
                 entry, stop = decode_at(f.child, frame, at, end, {})
@@ -947,6 +992,12 @@ def decode_at(
                     raise ValueError(f"{codec.name}: an entry of `{f.id}` reads no byte")
                 entries.append(entry)
                 at = stop
+                if f.end_flag is not None:
+                    # Read until an entry whose flag says no other follows.
+                    carrier, name = f.end_flag
+                    more = (entry[carrier] >> f.child.flag(carrier, name).bit) & 1 == 1
+            if f.end_flag is not None and (not entries or more):
+                raise ValueError(f"{codec.name}: the frame ends inside `{f.id}`")
             raw[f.id] = entries
             continue
         if f.size == "vle":
@@ -1031,6 +1082,25 @@ ABOUT = (
 )
 
 ASCII = list(range(0x61, 0x61 + 26))
+
+
+def ext_unit(ext_id: int, more: bool) -> dict:
+    """A Zenoh unit extension of `codec_zenoh_ext_entry`: `enc` 0 is its arm's
+    tag, and `Z` is set where another entry follows, as the chain derives it."""
+    return {"header": ext_id | (0x80 if more else 0),
+            "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}
+
+
+def ext_zint(ext_id: int, value: int, more: bool) -> dict:
+    """A Zenoh zint extension: `enc` 1 (bits 5 and 6) is its arm's tag."""
+    return {"header": ext_id | 0x20 | (0x80 if more else 0),
+            "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": value}}}
+
+
+def ext_zbuf(ext_id: int, value: list, more: bool) -> dict:
+    """A Zenoh zbuf extension: `enc` 2 is its arm's tag."""
+    return {"header": ext_id | 0x40 | (0x80 if more else 0),
+            "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": value}}}
 
 
 #: Each fixture this model writes, with its hand-chosen sources: every edge of
@@ -1407,6 +1477,154 @@ FIXTURES = {
              "enc 3, which no arm names: the default arm"),
         ],
         "a Zenoh extension: its encoding, two bits of the header, is the arm's tag.",
+    ),
+    "codec_peek_arm_a": Fixture(
+        [({"header": 0x00, "payload": 5}, "the header presented whole, then one byte")],
+        "a flag's `value` is the builder's default and says nothing of the wire.",
+    ),
+    "codec_peek_arm_b": Fixture(
+        [({"header": 0x01, "payload": 0x1234}, "the header presented whole, then two bytes")],
+        "a flag's `value` is the builder's default and says nothing of the wire.",
+    ),
+    "codec_repeat_present_if_basic": Fixture(
+        [
+            ({"carrier": 0x00, "elems": None}, "has_list clear: no count and no list"),
+            ({"carrier": 0x01, "elems": [{"seq": 1}, {"seq": 2}]},
+             "has_list and the count derived from the list"),
+            ({"carrier": 0x01, "elems": []}, "an empty list is present: its count is zero"),
+        ],
+        "a gated list whose count is gated with it, and so follows it.",
+    ),
+    "codec_tlv_chain_present_if_basic": Fixture(
+        [
+            ({"carrier": 0x00, "entries": None}, "has_chain clear: the carrier alone"),
+            ({"carrier": 0x01, "entries": [{"entry_type": 1, "entry_body": [9]}]},
+             "a chain read to the end of the frame, its flag derived"),
+        ],
+        "a gated chain read to the end of the frame.",
+    ),
+    "codec_chain_depth_plain": Fixture(
+        [
+            ({"header_flags": 0, "extensions": [{"header": 0x01}]},
+             "one entry: Z clear, the last"),
+            ({"header_flags": 0, "extensions": [{"header": 0x80 | i} for i in range(1, 8)]
+              + [{"header": 0x08}]},
+             "eight entries, the depth: Z set on each but the last"),
+        ],
+        "a chain that ends on its entries' flag: Z is set on every entry but the last.",
+    ),
+    "codec_chain_depth_gated": Fixture(
+        [
+            ({"header": 0x00, "extensions": None, "payload": [0xAA]},
+             "Z clear: no chain, then the payload"),
+            ({"header": 0x80, "extensions": [{"header": 0x81}, {"header": 0x02}],
+              "payload": []},
+             "Z set: two entries, then an empty payload"),
+        ],
+        "a gated chain that ends on its entries' flag, followed by a payload.",
+    ),
+    "codec_zenoh_ext_envelope": Fixture(
+        [
+            ({"header_flags": 0, "extensions": [ext_unit(1, False)]}, "one unit extension"),
+            ({"header_flags": 0, "extensions": [ext_unit(1, True), ext_zint(2, 5, False)]},
+             "a unit and a zint: Z on the first only"),
+            ({"header_flags": 0x10, "extensions": [ext_zint(1, 0x80, True), ext_unit(4, True),
+                                                   ext_zbuf(3, [7, 8], False)]},
+             "three extensions of each encoding"),
+        ],
+        "a Zenoh extension chain: each entry's enc is its arm's, its Z the chain's.",
+    ),
+    "codec_zenoh_msg_put": Fixture(
+        [
+            ({"header": 0x01, "timestamp": None, "encoding": None, "extensions": None,
+              "payload": [0xAA, 0xBB]}, "a bare put: the header and the payload"),
+            ({"header": 0xE1, "timestamp": {"time": 5, "zid": [1]},
+              "encoding": {"packed_id": 0x00, "schema": None},
+              "extensions": [ext_unit(1, True), ext_zint(2, 9, False)], "payload": []},
+             "T, E and Z derived from the timestamp, the encoding and the chain"),
+        ],
+        "a Zenoh put: gated bodies, a gated extension chain and a payload.",
+    ),
+    "codec_zenoh_msg_del": Fixture(
+        [
+            ({"header": 0x02, "timestamp": None, "extensions": None}, "a bare del"),
+            ({"header": 0xA2, "timestamp": {"time": 0x80, "zid": []},
+              "extensions": [ext_unit(3, False)]}, "T and Z derived"),
+        ],
+        "a Zenoh del: a gated timestamp and a gated extension chain.",
+    ),
+    "codec_zenoh_err": Fixture(
+        [
+            ({"header": 0x05, "encoding": None, "extensions": None, "payload": [1]},
+             "a bare err"),
+            ({"header": 0xC5, "encoding": {"packed_id": 0x01, "schema": "t"},
+              "extensions": [ext_zbuf(1, [], False)], "payload": []},
+             "E and Z derived; an encoding with a schema"),
+        ],
+        "a Zenoh err: a gated encoding, a gated extension chain and a payload.",
+    ),
+    "codec_zenoh_reply": Fixture(
+        [
+            ({"header": 0x04, "consolidation": None, "extensions": None,
+              "body": {"header": 0x01, "body": {"arm": "codec_zenoh_put", "body": {"payload": 3}}}},
+             "a bare reply holding a put"),
+            ({"header": 0xA4, "consolidation": 2, "extensions": [ext_unit(2, False)],
+              "body": {"header": 0x02, "body": {"arm": "codec_zenoh_del", "body": {}}}},
+             "C and Z derived; a reply holding a del"),
+        ],
+        "a Zenoh reply: a gated consolidation and chain, then a push body.",
+    ),
+    "codec_zenoh_oam": Fixture(
+        [
+            ({"header": 0x1F, "id": 1, "extensions": None,
+              "body": {"arm": "codec_zenoh_ext_unit", "body": {}}},
+             "an OAM of no body: enc 0"),
+            ({"header": 0xDF, "id": 0x80, "extensions": [ext_unit(1, False)],
+              "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": [5]}}},
+             "Z derived from the chain, enc 2 from the zbuf arm"),
+        ],
+        "a Zenoh OAM: a gated chain, then a body whose encoding is in the header.",
+    ),
+    "codec_zenoh_query": Fixture(
+        [
+            ({"header": 0x03, "consolidation": None, "parameters": None, "extensions": None},
+             "a bare query"),
+            ({"header": 0xE3, "consolidation": 1, "parameters": [0x61, 0x3D, 0x31],
+              "extensions": [{"header": 0x01, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}},
+                             {"header": 0x22, "body": {"arm": "codec_zenoh_ext_zint",
+                                                       "body": {"value": 4}}}]},
+             "C, P and Z derived; a chain read to the end of the frame"),
+        ],
+        "a Zenoh query: its chain ends with the frame, so no entry's Z is the chain's.",
+    ),
+    "codec_zenoh_response_final": Fixture(
+        [
+            ({"header": 0x1A, "request_id": 7, "extensions": None}, "a bare final response"),
+            ({"header": 0x9A, "request_id": 0x80,
+              "extensions": [ext_unit(1, True), ext_unit(2, False)]}, "Z derived from the chain"),
+        ],
+        "a Zenoh final response: a request id and a gated extension chain.",
+    ),
+    "codec_zenoh_hello": Fixture(
+        [
+            ({"version": 1, "cbyte": 0x01, "zid": [3], "locators": None},
+             "L clear: no locators", {"L": 0}),
+            ({"version": 1, "cbyte": 0x12, "zid": [3, 4],
+              "locators": [{"locator": "tcp/1"}, {"locator": ""}]},
+             "L set: two locators, their count derived", {"L": 1}),
+        ],
+        "a Zenoh hello: locators the flag input L gates, their count gated with them.",
+    ),
+    "codec_zenoh_push": Fixture(
+        [
+            ({"header": 0x1D, "body": {"arm": "codec_zenoh_push_body", "body": {
+                "header": 0x01, "body": {"arm": "codec_zenoh_put", "body": {"payload": 7}}}}},
+             "mid 0x1d, derived from the arm; a put"),
+            ({"header": 0x3E, "body": {"tag": 0x1E, "body": {
+                "header": 0x02, "body": {"arm": "codec_zenoh_del", "body": {}}}}},
+             "a mid no arm names: the default arm keeps it"),
+        ],
+        "a Zenoh push: a variant of one arm and a default.",
     ),
     "codec_chain_depth_entry": Fixture(
         [({"header": 0x05}, "an id, Z clear"), ({"header": 0x8F}, "id 15 and Z set")],
