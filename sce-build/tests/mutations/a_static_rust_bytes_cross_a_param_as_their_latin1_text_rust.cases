@@ -27,6 +27,6 @@ mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/f
 
 mutation_case "a byte slice crosses as its UTF-8 decoding" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            &format!(\"::sce_rust_runtime::event_payload::bytes_as_payload_text(&{value})\"),",
-     "            &format!(\"String::from_utf8_lossy(&{value}).into_owned()\"),")
+     "            &format!(\"::sce_rust_runtime::event_payload::bytes_as_payload_text({value})\"),",
+     "            &format!(\"String::from_utf8_lossy({value}).into_owned()\"),")
 PY

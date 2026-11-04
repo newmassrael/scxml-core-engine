@@ -1962,15 +1962,26 @@ pub trait StaticTarget {
     fn enum_wire_name(&self, _alias: &str, _value: &str) -> Option<String> {
         None
     }
-    /// `value`, a lowered expression of an owned byte string, as the typed wire
-    /// value it crosses as: its byte-exact Latin-1 text, each byte the character
-    /// of that code point (docs/adr/0005, decision 2) — the form
-    /// [`Self::wire_value`] gives a string, in whichever type this backend carries
-    /// one, so a text a request carries and the JSON value of the event's data are
-    /// the same wherever the machine runs. `None` for a backend with no such
-    /// spelling yet, which refuses the `<param>` by name.
+    /// `value`, a lowered expression of a byte string, as the typed wire value it
+    /// crosses as: its byte-exact Latin-1 text, each byte the character of that
+    /// code point (docs/adr/0005, decision 2) — the form [`Self::wire_value`]
+    /// gives a string, in whichever type this backend carries one, so a text a
+    /// request carries and the JSON value of the event's data are the same
+    /// wherever the machine runs. `value` is borrowed whole on a target that
+    /// lends it ([`Self::lends_wire_bytes`]) and owned on every other. `None`
+    /// for a backend with no such spelling yet, which refuses the `<param>` by
+    /// name.
     fn wire_bytes(&self, _value: &str) -> Option<String> {
         None
+    }
+    /// Whether [`Self::wire_bytes`] takes its byte string borrowed, as the
+    /// helper that writes its text reads it, so the value is lowered borrowed
+    /// ([`Rewrites::lent`]) and never copied only to be read: a present one as
+    /// the slice it is, and an optional one as the view an expression reads it
+    /// as, whose present value is that slice. `false` for a target whose wire
+    /// helper takes what it is handed.
+    fn lends_wire_bytes(&self) -> bool {
+        false
     }
 }
 
@@ -3913,12 +3924,16 @@ impl StaticTarget for RustTarget {
         Some(format!("({value}).sce_name().to_string()"))
     }
     // The text the payload's own writer spells a byte slice as, which the wire
-    // value of a string holds as the `String` it is.
+    // value of a string holds as the `String` it is. The writer reads the slice
+    // it is lent, so the value is the `&[u8]` it is read as and is never copied.
     fn wire_bytes(&self, value: &str) -> Option<String> {
         Some(self.wire_value(
             InferredType::Str,
-            &format!("::sce_rust_runtime::event_payload::bytes_as_payload_text(&{value})"),
+            &format!("::sce_rust_runtime::event_payload::bytes_as_payload_text({value})"),
         ))
+    }
+    fn lends_wire_bytes(&self) -> bool {
+        true
     }
 }
 
@@ -6958,6 +6973,24 @@ impl Rewrites<'_> {
         if !(text_slot && self.target.copies_bounded_text()) {
             return self.owned(text, ctx, renames, slot);
         }
+        self.lent(text, ctx, renames, slot)
+    }
+
+    /// A text or a byte string, `slot` its type or the optional one of it, read
+    /// for a consumer that copies or reads what it is lent and keeps nothing of
+    /// it: a present one borrowed whole
+    /// ([`crate::forge::expr::transpile_into_copied`]), and an optional one as
+    /// the view an expression reads it as ([`Self::receiving`]), whose present
+    /// value is borrowed. What a bounded place's constructor
+    /// ([`Self::bounded_value`]) and a wire helper that lends its byte string
+    /// ([`StaticTarget::lends_wire_bytes`]) take.
+    fn lent(
+        &self,
+        text: &str,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        renames: &HashMap<&str, &str>,
+        slot: InferredType,
+    ) -> Result<Receiving, Refusal> {
         let target = self.target.expr_target();
         self.with_state_calls(text, renames, |text, renames| {
             if slot.is_optional() {
@@ -15238,9 +15271,14 @@ fn lower_wire_value(
                 ty.describe()
             )));
         }
-        let value = rewrites
-            .owned(written, ctx, renames, ty)
-            .map_err(|r| refused(r.error.to_string()))?;
+        // A byte string is read as the view an expression reads it as where the
+        // wire helper takes it lent, so its present value crosses uncopied.
+        let value = if bytes && target.lends_wire_bytes() {
+            rewrites.lent(written, ctx, renames, ty)
+        } else {
+            rewrites.owned(written, ctx, renames, ty)
+        }
+        .map_err(|r| refused(r.error.to_string()))?;
         let wired = target
             .wire_optional(&value.text, &present, &wire)
             .ok_or_else(|| optional_not_lowered(&construct, lang))?;
@@ -15278,10 +15316,14 @@ fn lower_wire_value(
         )));
     }
     // The value is read once and is its own: an owned string, for the typed
-    // value that carries it.
-    let value = rewrites
-        .owned(written, ctx, renames, slot)
-        .map_err(|r| refused(r.error.to_string()))?;
+    // value that carries it. A byte string the wire helper takes lent is read
+    // borrowed whole instead, since the helper writes a text of its own from it.
+    let value = if bytes && target.lends_wire_bytes() {
+        rewrites.lent(written, ctx, renames, slot)
+    } else {
+        rewrites.owned(written, ctx, renames, slot)
+    }
+    .map_err(|r| refused(r.error.to_string()))?;
     let wired = if bytes {
         target
             .wire_bytes(&value.text)
@@ -17630,6 +17672,69 @@ mod tests {
             value("signed").starts_with("sce_forge_wire_int((int64_t)("),
             "{params:?}"
         );
+    }
+
+    // ── a byte string a `<param>` carries ───────────────────────────────────
+    //
+    // The wire helper writes the Latin-1 text of the bytes it is lent, so Rust
+    // reads the byte string borrowed and never copies it first: a variable, each
+    // arm of a conditional, and the present value of an optional one.
+
+    const WITH_SEND_BYTES: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="flag" sce:type="bool" expr="true"/>
+    <data id="held" sce:type="bytes[8]" expr="'ab'"/>
+    <data id="spare" sce:type="bytes[8]" expr="''"/>
+    <data id="maybe" sce:type="optional&lt;bytes[8]&gt;" expr="null"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" target="done">
+      <send event="out">
+        <param name="held" expr="held"/>
+        <param name="chosen" expr="flag ? held : spare"/>
+        <param name="maybe" expr="maybe"/>
+      </send>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+
+    // Pinned by `RustTarget::lends_wire_bytes`, `RustTarget::wire_bytes` and
+    // `Rewrites::lent`.
+    #[test]
+    fn a_rust_byte_string_param_is_lent_to_the_wire_helper_uncopied() {
+        let mut model = SCXMLParser::new()
+            .parse_string(WITH_SEND_BYTES, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        lower_rust(&mut model, "M").expect("lowers");
+        let params: std::collections::BTreeMap<String, String> = model.states["s"].transitions[0]
+            .actions[0]
+            .params
+            .iter()
+            .map(|p| (p.name.clone(), p.native_value.clone()))
+            .collect();
+        let text = "::sce_rust_runtime::event_payload::bytes_as_payload_text";
+        assert_eq!(
+            params["held"],
+            format!("::sce_rust_runtime::ScriptValue::String({text}(&self.held[..]))"),
+            "{params:?}"
+        );
+        assert!(
+            params["chosen"].contains(&format!("{text}(if "))
+                && params["chosen"].contains("{ &self.held[..] } else { &self.spare[..] }"),
+            "each arm lent whole: {params:?}"
+        );
+        let present = crate::forge::rust_optional::PRESENT;
+        assert!(
+            params["maybe"].starts_with("match self.maybe.as_deref() {")
+                && params["maybe"].contains(&format!("{text}({present})")),
+            "the present value of the view, lent: {params:?}"
+        );
+        for (name, value) in &params {
+            assert!(!value.contains(".to_vec()"), "{name}: {params:?}");
+        }
     }
 
     // ── a 32-bit real a variable holds ──────────────────────────────────────
