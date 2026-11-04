@@ -2135,29 +2135,28 @@ add_dependencies(txml_converter_tests sce_runtime)
 
 
 # ============================================================================
-# 9. W3C SCXML Compliance Tests (SOLID Architecture) - Native builds only
+# 9. W3C SCXML Compliance Tests (SOLID Architecture) - Native and WASM
 # ============================================================================
-# WASM builds: W3C tests require sce-codegen (a Native-only tool), which plans
-# and generates the C++ code of each fixture from its committed SCXML.
-
-if(NOT EMSCRIPTEN)
 # This section defines W3C SCXML conformance tests that run on both:
 # - Interpreter Engine: Runtime SCXML parsing and execution
 # - AOT Engine: Ahead-of-Time compiled static state machines
 #
-# Output directory for generated static W3C test code (used by both w3c_test_cli and w3c_static_test_cli)
+# The fixtures w3c_test_cli runs, and the machines it compiles, come from one
+# place under every toolchain: the conformance registry, read below, and the
+# generator's plan of each fixture, generated into this build tree. An
+# Emscripten build is a cross build like any other: `sce-codegen` is a host
+# program, found as one (cmake/SCEFindCodegen.cmake), run by `execute_process`
+# when the tree is configured and by `add_custom_command` when it is built,
+# exactly as natively, and the C++ it writes does not depend on the target.
+# The WASM configure used to read the set and the machines out of a native
+# build tree that had to be named `build`, inside the source tree, and be
+# configured and built first; without one it went on with an empty set.
+#
+# Output directory for generated static W3C test code (used by w3c_test_cli)
 set(STATIC_W3C_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/w3c_static_generated")
-
-# Output directory for generated static integration-fixture code. Distinct
-# from STATIC_W3C_OUTPUT_DIR so the build system treats W3C and integration
-# trees as separate §6.2.6 drift contexts.
-set(STATIC_INTEGRATION_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated")
 
 # Generate C++ code for W3C tests BEFORE defining executables
 include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
-# Parallel CMake function for integration fixtures
-# (`integration_resources/<stem>/<stem>.scxml` → `<output>/<stem>_sm.{h,inl}`).
-include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticIntegrationFixture.cmake)
 
 # Initialize GENERATED_W3C_HEADERS and W3C_AOT_TESTS before any sce_generate_static_w3c_test calls
 # W3C Test Registration Automation: W3C_AOT_TESTS is auto-accumulated by sce_generate_static_w3c_test()
@@ -2165,6 +2164,24 @@ include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticIntegrationFixture.cmake)
 # which the loop below turns into a call (TestXXX.h + registry auto-generated)
 set(GENERATED_W3C_HEADERS "")
 set(W3C_AOT_TESTS "")
+
+# Native builds only: the integration fixtures, the machines integration_tests
+# compiles beside them, and the feature-conformance programs. The generator
+# runs under Emscripten as it does natively (the W3C route below is the proof),
+# so this fence is not about the generator: integration_tests (section 6) is
+# declared under Emscripten too, and its AOT sources include machines declared
+# only here, so that target does not compile there. Whether integration_tests
+# is a WASM target is its own decision, and the W3C route does not hang on it.
+if(NOT EMSCRIPTEN)
+# Output directory for generated static integration-fixture code. Distinct
+# from STATIC_W3C_OUTPUT_DIR so the build system treats W3C and integration
+# trees as separate §6.2.6 drift contexts.
+set(STATIC_INTEGRATION_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated")
+
+# Parallel CMake function for integration fixtures
+# (`integration_resources/<stem>/<stem>.scxml` → `<output>/<stem>_sm.{h,inl}`).
+include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticIntegrationFixture.cmake)
+
 # Initialize integration-fixture header accumulator. sce_generate_static_integration_test
 # appends to this in parent scope; the integration_tests target then DEPENDS on it.
 set(GENERATED_INTEGRATION_HEADERS "")
@@ -2898,6 +2915,7 @@ sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_thermostat.scxml
 )
+endif()  # NOT EMSCRIPTEN - integration fixtures and the machines integration_tests compiles
 
 # ── W3C test registrations, derived from the conformance registry ──
 #
@@ -2913,7 +2931,9 @@ sce_add_state_machine(
 # there is no JSON parsing in CMake and no second copy of the set to keep in
 # step; the configure depends on the registry, so adding a test needs no
 # manual cmake invocation. `sce-build/tests/w3c_registry_drives_cmake.rs`
-# pins that what is scheduled here is what the registry declares.
+# pins that what is scheduled here is what the registry declares, and that
+# it is read and generated under the conditions w3c_test_cli is declared
+# under, so a WASM build runs the set a native one does.
 sce_w3c_registry_fixtures(_W3C_ALL_IDS _W3C_HARNESS_OF_)
 
 # Every fixture's plan, asked of the generator in one batch before the loop
@@ -2958,54 +2978,11 @@ endforeach()
 #   create tests/w3c/aot_tests/TestXXX.h manually. Auto-generation skips existing files.
 #
 # FILES GENERATED:
-# - build/W3CAotTestList.cmake (auto-accumulated test list for WASM + tooling)
-# - build/tests/w3c/W3CTestRegistry.cpp (from W3CTestRegistry.cpp.in template)
+# - <build>/tests/w3c/W3CTestRegistry.cpp (from W3CTestRegistry.cpp.in template)
 # - tests/w3c/runners/W3CTestRunner_Test*.cpp (CMake auto-generates)
 # - tests/w3c/aot_tests/TestXXX.h (CMake auto-generates if not exists)
 # ===========================================================================
-
-# W3C Test Registration Automation: Save accumulated W3C_AOT_TESTS for WASM builds and tooling
-# This file is auto-generated from sce_generate_static_w3c_test() calls above
-# Use space-separated format (compatible with CMake set() and Python regex parsing)
-string(REPLACE ";" " " _W3C_AOT_TESTS_SPACES "${W3C_AOT_TESTS}")
-set(_W3C_AOT_TESTS_LIST_FILE "${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake")
-# Written only when the list changed (`sce_codegen_write_input`), as every
-# file this tree composes when it is configured.
-string(CONCAT _W3C_AOT_TESTS_LIST
-    "# Auto-generated from sce_generate_static_w3c_test() calls in tests/CMakeLists.txt\n"
-    "# DO NOT EDIT - Run Native CMake configure to regenerate\n"
-    "set(W3C_AOT_TESTS\n"
-    "    ${_W3C_AOT_TESTS_SPACES}\n"
-    ")\n"
-)
-sce_codegen_write_input("${_W3C_AOT_TESTS_LIST_FILE}" "${_W3C_AOT_TESTS_LIST}")
 message(STATUS "W3C AOT Tests auto-accumulated: ${W3C_AOT_TESTS}")
-message(STATUS "Saved W3C_AOT_TESTS list to ${_W3C_AOT_TESTS_LIST_FILE}")
-
-endif()  # NOT EMSCRIPTEN - W3C SCXML test generation (sce_generate_static_w3c_test calls)
-
-# WASM: Use pre-generated AOT test headers and test list from Native build
-# WASM builds cannot run sce-codegen, a Native tool, to plan or generate them
-if(EMSCRIPTEN)
-    # Point to Native build's generated headers
-    # NOTE: Requires Native build to be run first to generate AOT test headers
-    set(STATIC_W3C_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/build/tests/w3c_static_generated")
-
-    if(NOT EXISTS "${STATIC_W3C_OUTPUT_DIR}")
-        message(WARNING "WASM build requires pre-generated AOT test headers from Native build. Please run Native build first: cd ../build && cmake .. && cmake --build . --target w3c_test_cli")
-    endif()
-
-    # W3C Test Registration Automation: Read accumulated test list from Native build
-    set(_W3C_AOT_TESTS_LIST_FILE "${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake")
-    if(EXISTS "${_W3C_AOT_TESTS_LIST_FILE}")
-        include("${_W3C_AOT_TESTS_LIST_FILE}")
-    else()
-        message(WARNING "W3C_AOT_TESTS list file not found: ${_W3C_AOT_TESTS_LIST_FILE}")
-        message(WARNING "Run Native CMake configure first to generate this file")
-    endif()
-
-    message(STATUS "WASM: Using pre-generated AOT test headers from ${STATIC_W3C_OUTPUT_DIR}")
-endif()
 
 # ============================================================================
 # Auto-generate web/visualizer/test-list.js from W3C_AOT_TESTS
@@ -3013,8 +2990,8 @@ endif()
 # Zero Duplication: the conformance registry is the single source, and
 # `generate_test_list.py` reads it directly.
 #
-# It was handed `build/W3CAotTestList.cmake` instead — the CMake list this
-# tree used to accumulate — which the script stopped understanding when the
+# It was handed a CMake file instead, the list of ids this tree used to
+# accumulate, which the script stopped understanding when the
 # registry became the source of truth. It parses its input as JSON, so a
 # CMake file fails on the first byte:
 #
@@ -3085,7 +3062,7 @@ endforeach()
 # W3C Test CLI Target (Both Native and WASM)
 # ============================================================================
 # Full W3C Test Runner for all W3C SCXML 1.0 compliance tests
-# Build for both Native and WASM (HTTP tests excluded on WASM)
+# Built for both Native and WASM, from the one set and the one generation above
 set(W3C_TEST_CLI_SOURCES
     w3c/W3CTestCLI.cpp
     w3c/W3CTestRunner.cpp
@@ -3098,7 +3075,10 @@ set(W3C_TEST_CLI_SOURCES
     ${GENERATED_W3C_HEADERS}  # Trigger generation of static test headers for AOT engine
 )
 
-# Native-only: HTTP server for BasicHTTP Event I/O Processor tests (W3C SCXML C.2)
+# Native-only: HTTP server for BasicHTTP Event I/O Processor tests (W3C SCXML C.2).
+# It is a cpp-httplib server on its own threads, and cpp-httplib is not built
+# under Emscripten (sce/CMakeLists.txt); a WASM run gets the same endpoint from
+# w3c/standalone_http_server.js, which the pre-js below spawns under Node.
 if(NOT EMSCRIPTEN)
     list(APPEND W3C_TEST_CLI_SOURCES w3c/W3CHttpTestServer.cpp)
 endif()
@@ -3110,7 +3090,7 @@ target_link_libraries(w3c_test_cli
         sce_runtime
 )
 
-# WASM: Disable warnings from pre-generated Native AOT headers
+# WASM: Disable warnings Emscripten's clang raises on the generated AOT headers
 if(EMSCRIPTEN)
     target_compile_options(w3c_test_cli PRIVATE
         -Wno-unused-lambda-capture
@@ -8342,7 +8322,7 @@ add_test(NAME ConcurrencyTests COMMAND concurrency_tests)
 add_test(NAME IntegrationTests COMMAND integration_tests)
 
 # Priority Level 4: W3C SCXML compliance validation (comprehensive validation, ~40s)
-# WASM: Uses pre-generated AOT test headers (HTTP tests excluded)
+# WASM: the same registry set and generated AOT headers, run under Node
 # Native: Full test suite including HTTP tests with txml-converter
 if(EMSCRIPTEN)
     add_test(NAME W3CFullComplianceTests COMMAND node w3c_test_cli.js)

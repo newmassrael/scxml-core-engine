@@ -94,6 +94,8 @@
 
 mod common;
 
+use common::cmake_text::cmake_code;
+
 /// The route under test. Compiled in, so an edit to it starts the suite that
 /// judges it (`include-str-coverage` in tools/git-hooks/gate_registry.py).
 const W3C_ROUTE: &str = include_str!("../../cmake/SCEStaticW3CTest.cmake");
@@ -154,80 +156,6 @@ const CUSTOM_COMMAND_KEYWORDS: &[&str] = &[
     "COMMAND_EXPAND_LISTS",
     "DEPENDS_EXPLICIT_ONLY",
 ];
-
-/// The text of a CMake file with its comments removed and its line numbering
-/// kept: a line comment runs from an unquoted `#` to the end of the line, a
-/// bracket comment from `#[[` (or `#[=[`, with any number of `=`) to the
-/// matching close. A `#` inside a quoted argument is text (`"#_parent"`).
-fn cmake_code(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut quoted = false;
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if quoted {
-            out.push(c);
-            if c == '\\' {
-                if let Some(&escaped) = chars.get(i + 1) {
-                    out.push(escaped);
-                    i += 2;
-                    continue;
-                }
-            } else if c == '"' {
-                quoted = false;
-            }
-            i += 1;
-            continue;
-        }
-        match c {
-            '"' => {
-                quoted = true;
-                out.push(c);
-                i += 1;
-            }
-            '#' => {
-                let end = bracket_comment_end(&chars, i + 1).unwrap_or_else(|| {
-                    chars[i..]
-                        .iter()
-                        .position(|&ch| ch == '\n')
-                        .map_or(chars.len(), |offset| i + offset)
-                });
-                out.extend(chars[i..end].iter().filter(|&&ch| ch == '\n'));
-                i = end;
-            }
-            _ => {
-                out.push(c);
-                i += 1;
-            }
-        }
-    }
-    out
-}
-
-/// Where a bracket comment opened at `at` (just past its `#`) ends, or `None`
-/// when what follows the `#` opens no bracket.
-fn bracket_comment_end(chars: &[char], at: usize) -> Option<usize> {
-    if chars.get(at) != Some(&'[') {
-        return None;
-    }
-    let mut j = at + 1;
-    let mut level = 0;
-    while chars.get(j) == Some(&'=') {
-        level += 1;
-        j += 1;
-    }
-    if chars.get(j) != Some(&'[') {
-        return None;
-    }
-    let mut closing = vec![']'; level + 2];
-    closing[1..=level].fill('=');
-    let body = j + 1;
-    chars[body..]
-        .windows(closing.len())
-        .position(|window| window == closing.as_slice())
-        .map(|offset| body + offset + closing.len())
-}
 
 fn is_identifier(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'

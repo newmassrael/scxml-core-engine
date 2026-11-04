@@ -39,15 +39,26 @@ if(SCE_CODEGEN AND NOT EXISTS "${SCE_CODEGEN}")
     unset(SCE_CODEGEN CACHE)
 endif()
 
+# The generator is a program of the HOST, whatever the build targets. A cross
+# toolchain re-roots every search under its sysroot when its
+# CMAKE_FIND_ROOT_PATH_MODE_PROGRAM says ONLY or BOTH, which would find no
+# generator, or a target binary that cannot run here, where the configure and
+# the build run it (`execute_process`, `add_custom_command`). Emscripten's
+# toolchain file happens to set that mode to NEVER, but the answer must not
+# rest on which toolchain configured the tree, so both searches leave the
+# find root out themselves (`NO_CMAKE_FIND_ROOT_PATH`). A command named by a
+# full path is not run through CMAKE_CROSSCOMPILING_EMULATOR either: CMake
+# wraps only a command that names an executable target of the build.
 if(NOT SCE_CODEGEN)
     get_filename_component(_SCE_FIND_CODEGEN_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
     find_program(SCE_CODEGEN sce-codegen
         PATHS "${_SCE_FIND_CODEGEN_ROOT}/target/debug"
               "${_SCE_FIND_CODEGEN_ROOT}/target/release"
         NO_DEFAULT_PATH
+        NO_CMAKE_FIND_ROOT_PATH
     )
     if(NOT SCE_CODEGEN)
-        find_program(SCE_CODEGEN sce-codegen)
+        find_program(SCE_CODEGEN sce-codegen NO_CMAKE_FIND_ROOT_PATH)
     endif()
 endif()
 

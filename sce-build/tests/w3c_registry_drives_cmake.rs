@@ -24,10 +24,25 @@
 //! stale result looks like a correct one. A flag on a C11 registration is
 //! the other copy that went: what a machine links is the generator's
 //! statement (`a_c11_machine_includes_what_it_states_it_requires`).
+//!
+//! The C++ route has one runner, `w3c_test_cli`, built natively and under
+//! Emscripten, and the WASM build was the third copy. Its configure was
+//! fenced off from the registration ("WASM cannot run sce-codegen") and read
+//! the set back out of a CMake list the native configure wrote into the
+//! source tree's `build/`, and the machines out of that native build tree:
+//! without one it warned and went on with an empty set. A cross build runs a
+//! host program at configure and at build time as a native one does, so the
+//! set and the machines are read and generated under the conditions the
+//! runner is declared under ([`wasm_fork_violations`]), and no file of a
+//! route reaches into the source tree's `build/` ([`source_tree_build_violations`]).
 
 use std::path::{Path, PathBuf};
 
 use sce_build::w3c_registry::{W3cRegistry, W3C_REGISTRY_RELATIVE_PATH};
+
+mod common;
+
+use common::cmake_text::{cmake_code, strings_blanked};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -375,5 +390,414 @@ fn a_link_stated_by_hand_is_refused() {
         found.iter().any(|v| v.contains("names `lua54`"))
             && found.iter().any(|v| v.contains("`sce_c_link_runtime`")),
         "a runner loop that links Lua by hand was accepted: {found:?}"
+    );
+}
+
+// ── The WASM build reads the set the native build reads ───────────────
+
+/// The module that declares the C++ route's registration function, and the
+/// variables a registration accumulates into its caller's scope.
+const CPP_ROUTE_MODULE: &str = "cmake/SCEStaticW3CTest.cmake";
+
+/// The runner the C++ route registers its fixtures for, built natively and
+/// under Emscripten from the one CMake file.
+const CPP_RUNNER: &str = "w3c_test_cli";
+
+/// The CMake list the native configure used to write into the source tree
+/// for the WASM configure to `include()`. Spelled here because it is gone
+/// from the tree: it is the shape this refuses, not a fact the tree states.
+const RETIRED_LIST: &str = "W3CAotTestList";
+
+/// The 1-based line of byte offset `at` of `text`.
+fn line_of(text: &str, at: usize) -> usize {
+    text[..at].matches('\n').count() + 1
+}
+
+/// The text between the parenthesis at `open` and the one that closes it,
+/// with its whitespace collapsed: the condition of an `if(...)`.
+fn argument_text(structure: &str, open: usize) -> String {
+    let mut depth = 0usize;
+    for (offset, c) in structure[open..].char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    let inner = &structure[open + 1..open + offset];
+                    return inner.split_whitespace().collect::<Vec<_>>().join(" ");
+                }
+            }
+            _ => {}
+        }
+    }
+    structure[open + 1..]
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// One `if` block open at some point of a CMake file: the condition of every
+/// branch reached so far, and whether its `else()` is the branch open.
+struct OpenBlock {
+    conditions: Vec<String>,
+    in_else: bool,
+}
+
+/// The branch byte offset `at` of `structure` sits in, for every enclosing
+/// `if` block whose conditions name the Emscripten toolchain, outermost
+/// first. `structure` is a file's code with its strings blanked
+/// (`strings_blanked`), so a block named inside a message opens nothing.
+///
+/// Two places of one file with the same answer are configured under the
+/// same toolchains: neither is declared where the other is not.
+fn emscripten_branches_at(structure: &str, at: usize) -> Vec<String> {
+    let keyword = regex::Regex::new(r"(?i)\b(if|elseif|else|endif)\s*\(").expect("pattern");
+    let emscripten = regex::Regex::new(r"\bEMSCRIPTEN\b").expect("pattern");
+    let mut open: Vec<OpenBlock> = Vec::new();
+    for found in keyword.captures_iter(&structure[..at]) {
+        let whole = found.get(0).expect("the whole match");
+        let condition = argument_text(structure, whole.end() - 1);
+        match found[1].to_ascii_lowercase().as_str() {
+            "if" => open.push(OpenBlock {
+                conditions: vec![condition],
+                in_else: false,
+            }),
+            "elseif" => {
+                if let Some(block) = open.last_mut() {
+                    block.conditions.push(condition);
+                }
+            }
+            "else" => {
+                if let Some(block) = open.last_mut() {
+                    block.in_else = true;
+                }
+            }
+            _ => {
+                open.pop();
+            }
+        }
+    }
+    open.iter()
+        .filter(|block| block.conditions.iter().any(|c| emscripten.is_match(c)))
+        .map(|block| {
+            let all = block.conditions.join(" / ");
+            if block.in_else {
+                format!("else() of if({all})")
+            } else {
+                format!("if({all}), branch {}", block.conditions.len())
+            }
+        })
+        .collect()
+}
+
+/// The variables `function`'s body hands back to its caller as it found them
+/// grown (`set(<V> ${<V>} PARENT_SCOPE)`): what a registration accumulates.
+fn accumulated_variables(module: &str, function: &str) -> Vec<String> {
+    let code = cmake_code(module);
+    let Some(start) = code.find(&format!("function({function} ")) else {
+        return Vec::new();
+    };
+    let end = code[start..]
+        .find("endfunction(")
+        .map_or(code.len(), |offset| start + offset);
+    let re =
+        regex::Regex::new(r"set\(\s*([A-Za-z0-9_]+)\s+\$\{([A-Za-z0-9_]+)\}\s+PARENT_SCOPE\s*\)")
+            .expect("pattern");
+    let mut found: Vec<String> = re
+        .captures_iter(&code[start..end])
+        .filter(|c| c[1] == c[2])
+        .map(|c| c[1].to_string())
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// Every way `tree` lets the WASM build of [`CPP_RUNNER`] take its fixtures,
+/// or their machines, from anywhere but where the native build takes them:
+/// the inclusion of the route module, the reading of the registry, the
+/// prefetch of the plans, every registration, and every assignment of a
+/// variable a registration accumulates (`module`, [`accumulated_variables`])
+/// or writes its machines into (the registration's second argument), each
+/// under an Emscripten branch the runner's declaration is not under.
+///
+/// The variables are read from the route rather than named, so a variable a
+/// registration starts to accumulate tomorrow is held as the ones it
+/// accumulates today.
+fn wasm_fork_violations(tree: &str, module: &str, registration: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let structure = strings_blanked(&cmake_code(tree));
+    let Some(runner_at) = structure.find(&format!("add_executable({CPP_RUNNER}")) else {
+        found.push(format!("no `add_executable({CPP_RUNNER} ...)`"));
+        return found;
+    };
+    let expected = emscripten_branches_at(&structure, runner_at);
+
+    let mut variables = accumulated_variables(module, registration);
+    if variables.is_empty() {
+        found.push(format!(
+            "`{registration}` in the route module hands no accumulated variable back to its \
+             caller, so nothing here says where the runner's set comes from"
+        ));
+    }
+    let output_dir = regex::Regex::new(&format!(
+        r"\b{}\(\s*\S+\s+\$\{{([A-Za-z0-9_]+)\}}",
+        regex::escape(registration)
+    ))
+    .expect("pattern");
+    let mut output_dirs: Vec<String> = output_dir
+        .captures_iter(&structure)
+        .map(|c| c[1].to_string())
+        .collect();
+    output_dirs.sort();
+    output_dirs.dedup();
+    if output_dirs.is_empty() {
+        found.push(format!(
+            "no `{registration}(<id> ${{<dir>}} ...)` names the directory its machines are \
+             written into"
+        ));
+    }
+    variables.extend(output_dirs);
+
+    let module_name = Path::new(CPP_ROUTE_MODULE)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("the route module has a file name");
+    let anchors = [
+        module_name.to_string(),
+        "sce_w3c_registry_fixtures(".to_string(),
+        "sce_prefetch_static_w3c_tests(".to_string(),
+        format!("{registration}("),
+    ];
+    let mut places: Vec<(String, usize)> = Vec::new();
+    for anchor in &anchors {
+        let at: Vec<usize> = structure
+            .match_indices(anchor.as_str())
+            .map(|(i, _)| i)
+            .collect();
+        if at.is_empty() {
+            found.push(format!(
+                "`{anchor}` does not occur, so the route is not read here"
+            ));
+        }
+        places.extend(at.into_iter().map(|i| (format!("`{anchor}`"), i)));
+    }
+    for variable in &variables {
+        let assignment = regex::Regex::new(&format!(
+            r"\b(?:set\(\s*|list\(\s*[A-Za-z_]+\s+){}[\s)]",
+            regex::escape(variable)
+        ))
+        .expect("pattern");
+        let at: Vec<usize> = assignment
+            .find_iter(&structure)
+            .map(|m| m.start())
+            .collect();
+        if at.is_empty() {
+            found.push(format!("`{variable}` is never assigned here"));
+        }
+        places.extend(
+            at.into_iter()
+                .map(|i| (format!("the assignment of `{variable}`"), i)),
+        );
+    }
+
+    for (what, at) in places {
+        let branches = emscripten_branches_at(&structure, at);
+        if branches != expected {
+            found.push(format!(
+                "{what} at line {} is configured under {branches:?}, and `{CPP_RUNNER}` under \
+                 {expected:?}: one toolchain's runner would take its fixtures from somewhere \
+                 else",
+                line_of(&structure, at)
+            ));
+        }
+    }
+    found
+}
+
+#[test]
+fn the_wasm_build_reads_the_set_the_native_build_reads() {
+    let route = &ROUTES[0];
+    let found = wasm_fork_violations(
+        &read(route.file),
+        &read(CPP_ROUTE_MODULE),
+        route.registration,
+    );
+    assert!(
+        found.is_empty(),
+        "{} does not register and generate the fixtures of `{CPP_RUNNER}` under the \
+         toolchains it builds `{CPP_RUNNER}` under:\n  {}\nThe generator is a host program: \
+         a cross build runs it at configure and at build time as a native one does.",
+        route.file,
+        found.join("\n  ")
+    );
+}
+
+/// The shape this replaced is refused, and the derived one is not: a set read
+/// only outside Emscripten, with a WASM branch that points the machines at a
+/// native build tree; a fence that is only a comment is no fence.
+#[test]
+fn a_wasm_branch_with_a_set_of_its_own_is_refused() {
+    let module = read(CPP_ROUTE_MODULE);
+    let registration = ROUTES[0].registration;
+    let registered = format!(
+        "include(${{CMAKE_SOURCE_DIR}}/{CPP_ROUTE_MODULE})\n\
+         set(STATIC_W3C_OUTPUT_DIR \"${{CMAKE_CURRENT_BINARY_DIR}}/w3c_static_generated\")\n\
+         set(GENERATED_W3C_HEADERS \"\")\n\
+         set(W3C_AOT_TESTS \"\")\n\
+         sce_w3c_registry_fixtures(_IDS _HARNESS_OF_)\n\
+         sce_prefetch_static_w3c_tests(\"${{STATIC_W3C_OUTPUT_DIR}}\" cpp ${{_IDS}})\n\
+         foreach(_ID ${{_IDS}})\n\
+         \x20   {registration}(${{_ID}} ${{STATIC_W3C_OUTPUT_DIR}})\n\
+         endforeach()\n"
+    );
+    let runner = format!(
+        "if(EMSCRIPTEN)\n\
+         \x20   message(\"if(NOT EMSCRIPTEN) is text\")\n\
+         endif()\n\
+         add_executable({CPP_RUNNER} ${{GENERATED_W3C_HEADERS}})\n"
+    );
+
+    let derived = format!("# if(NOT EMSCRIPTEN)\n{registered}{runner}");
+    assert_eq!(
+        wasm_fork_violations(&derived, &module, registration),
+        Vec::<String>::new(),
+        "the derived shape was refused"
+    );
+
+    let forked = format!(
+        "if(NOT EMSCRIPTEN)\n{registered}endif()\n\
+         if(EMSCRIPTEN)\n\
+         \x20   set(STATIC_W3C_OUTPUT_DIR \"${{CMAKE_SOURCE_DIR}}/build/tests/w3c_static_generated\")\n\
+         endif()\n{runner}"
+    );
+    let found = wasm_fork_violations(&forked, &module, registration);
+    for refused in [
+        "`sce_w3c_registry_fixtures(`",
+        "`W3C_AOT_TESTS`",
+        "`GENERATED_W3C_HEADERS`",
+        "`STATIC_W3C_OUTPUT_DIR` at line 13",
+    ] {
+        assert!(
+            found.iter().any(|v| v.contains(refused)),
+            "{refused} was accepted in the forked shape: {found:?}"
+        );
+    }
+}
+
+// ── No route reaches into the source tree's build directory ───────────
+
+/// Every CMake file a W3C route is made of, with its text: each route's own
+/// file and every module it includes, followed through the modules' own
+/// includes. Read from the `include()`s rather than listed, so a module a
+/// route starts to include is scanned on the day it does.
+fn route_files() -> Vec<(String, String)> {
+    let include = regex::Regex::new(
+        r#"\binclude\(\s*"?\$\{(CMAKE_SOURCE_DIR|CMAKE_CURRENT_LIST_DIR)\}/([^")\s]+)"?\s*\)"#,
+    )
+    .expect("pattern");
+    let mut pending: Vec<String> = ROUTES.iter().map(|r| r.file.to_string()).collect();
+    let mut files: Vec<(String, String)> = Vec::new();
+    while let Some(path) = pending.pop() {
+        if files.iter().any(|(seen, _)| *seen == path) {
+            continue;
+        }
+        let text = read(&path);
+        for c in include.captures_iter(&cmake_code(&text)) {
+            let relative = &c[2];
+            let included = if &c[1] == "CMAKE_SOURCE_DIR" {
+                relative.to_string()
+            } else {
+                let dir = Path::new(&path).parent().expect("a file has a directory");
+                dir.join(relative).to_string_lossy().into_owned()
+            };
+            pending.push(included);
+        }
+        files.push((path, text));
+    }
+    files
+}
+
+/// Every place `files` (each a path and its text) names the source tree's
+/// own `build/` directory, or the retired list, in code: a configure that
+/// writes there violates the out-of-source build, and one that reads from
+/// there depends on a second build tree having been configured first under
+/// a name nothing declares.
+fn source_tree_build_violations(files: &[(String, String)]) -> Vec<String> {
+    let build_dir = regex::Regex::new(
+        r#"\$\{(?:CMAKE_SOURCE_DIR|PROJECT_SOURCE_DIR|CMAKE_CURRENT_SOURCE_DIR|CMAKE_CURRENT_LIST_DIR)\}(?:/\.\.)*/build(?:[/"\s)]|$)"#,
+    )
+    .expect("pattern");
+    let mut found = Vec::new();
+    for (path, text) in files {
+        let code = cmake_code(text);
+        for (number, line) in code.lines().enumerate() {
+            if build_dir.is_match(line) {
+                found.push(format!(
+                    "{path}:{}: names the source tree's build directory: {}",
+                    number + 1,
+                    line.trim()
+                ));
+            }
+            if line.contains(RETIRED_LIST) {
+                found.push(format!(
+                    "{path}:{}: names `{RETIRED_LIST}`: {}",
+                    number + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn no_route_file_reaches_into_the_source_trees_build_directory() {
+    let files = route_files();
+    let scanned: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
+    for expected in [REGISTRY_MODULE, CPP_ROUTE_MODULE] {
+        assert!(
+            scanned.contains(&expected),
+            "{expected} did not reach the scan through the routes' includes ({scanned:?}); \
+             the include reading is broken, not the tree"
+        );
+    }
+    let found = source_tree_build_violations(&files);
+    assert!(
+        found.is_empty(),
+        "a W3C route reaches into the source tree's build directory:\n  {}\nEvery file a \
+         configure writes belongs in its own build tree, and a toolchain reads the set from \
+         the registry rather than from another toolchain's build.",
+        found.join("\n  ")
+    );
+}
+
+#[test]
+fn a_list_written_into_the_source_tree_is_refused() {
+    let text = format!(
+        "set(_LIST \"${{CMAKE_SOURCE_DIR}}/build/{RETIRED_LIST}.cmake\")\n\
+         # include(\"${{CMAKE_SOURCE_DIR}}/build/{RETIRED_LIST}.cmake\")\n\
+         set(_DIR \"${{CMAKE_SOURCE_DIR}}/build_wasm\")\n\
+         set(_GEN ${{CMAKE_SOURCE_DIR}}/build)\n"
+    );
+    let found = source_tree_build_violations(&[("probe.cmake".to_string(), text)]);
+    assert!(
+        found
+            .iter()
+            .any(|v| v.starts_with("probe.cmake:1: names the source tree's build"))
+            && found
+                .iter()
+                .any(|v| v.starts_with(&format!("probe.cmake:1: names `{RETIRED_LIST}`"))),
+        "a list written into the source tree's build directory was accepted: {found:?}"
+    );
+    assert!(
+        found.iter().any(|v| v.starts_with("probe.cmake:4:")),
+        "the bare build directory was accepted: {found:?}"
+    );
+    assert!(
+        !found
+            .iter()
+            .any(|v| v.starts_with("probe.cmake:2:") || v.starts_with("probe.cmake:3:")),
+        "a comment, or a directory merely beginning with `build`, was refused: {found:?}"
     );
 }
