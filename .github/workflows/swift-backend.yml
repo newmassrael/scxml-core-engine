@@ -20,7 +20,7 @@ name: Swift backend (runtime, forge runtime, generated machines)
 # test that skipped or matched nothing is red too. Whether the COMMITTED machines are what the
 # generator writes is `regen-reproduces`' question and is kept there.
 #
-# ⚠ THE TOOLCHAIN IS PINNED, and the pin lives in `bx.toml` (`[tools.swift]`) and nowhere
+# ⚠ THE TOOLCHAIN IS PINNED, and the pin lives in `bx.toml` (`[platform.linux.tools.swift]`) and nowhere
 # else: the release, and the digest of its tarball for each Ubuntu release. The build
 # machines install it with `provision`, this lane with `scripts/install_swift_toolchain.sh`,
 # and the gate reads it through `scripts/lib/swift_pin.sh`, so a bump is one edit and a
@@ -140,7 +140,7 @@ jobs:
           libncurses-dev libpython3-dev libsqlite3-0 libxml2-dev libz3-dev \
           pkg-config tzdata unzip zlib1g-dev
 
-    # The release and the tarball's digest are `bx.toml`'s `[tools.swift]` and nothing in
+    # The release and the tarball's digest are `bx.toml`'s `[platform.linux.tools.swift]` and nothing in
     # this file, so the key moves with the pin and the build machines and this lane cannot
     # disagree about the compiler.
     - name: Read the Swift pin

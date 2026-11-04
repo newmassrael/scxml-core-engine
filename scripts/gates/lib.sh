@@ -614,7 +614,7 @@ sce_gate_require_jdk() {
 # The Swift gate needs the same guarantee the JDK one makes, and for the same
 # reason: "is there a `swift`" and "which toolchain builds the package" are
 # different questions. A toolchain is installed by hand under
-# `~/.local/share/swift/<version>/` (`[tools.swift]` in `bx.toml`) and is not on
+# `~/.local/share/swift/<version>/` (`[platform.linux.tools.swift]` in `bx.toml`) and is not on
 # PATH, and a machine that carries an older `swift` on PATH would build the
 # packages with a compiler this repository never ran them on: the Swift
 # Testing library and the language mode both moved between releases.
@@ -639,7 +639,7 @@ sce_gate_require_swift() {
     source "$SCE_REPO_ROOT/scripts/lib/swift_pin.sh"
     version="$(sce_swift_pin_version)"
     [ -n "$version" ] \
-        || sce_gate_fail "no \`[tools.swift]\` version found in bx.toml — this gate takes its toolchain from the pin the build machines install, and a missing pin would let it build on any Swift."
+        || sce_gate_fail "no \`[platform.linux.tools.swift]\` version found in bx.toml — this gate takes its toolchain from the pin the build machines install, and a missing pin would let it build on any Swift."
 
     # What `swift --version` prints in parentheses: `swift-6.4-RELEASE` for the
     # release `6.4.0`, and `swift-6.4.1-RELEASE` for a patch release.
@@ -656,8 +656,8 @@ sce_gate_require_swift() {
     fi
 
     command -v swift >/dev/null 2>&1 \
-        || sce_gate_fail "swift is not on PATH and $HOME/.local/share/swift/$version/bin/swift does not exist, and this gate was selected because the Swift backend changed. Install Swift $version (\`provision <alias>\` installs the \`[tools.swift]\` pin of bx.toml) — skipping here would report green on an unverified backend."
+        || sce_gate_fail "swift is not on PATH and $HOME/.local/share/swift/$version/bin/swift does not exist, and this gate was selected because the Swift backend changed. Install Swift $version (\`provision <alias>\` installs the \`[platform.linux.tools.swift]\` pin of bx.toml) — skipping here would report green on an unverified backend."
     swift --version 2>&1 | grep -qF "$tag" \
-        || sce_gate_fail "swift would build the packages with $(swift --version 2>&1 | head -1), and they are verified on $tag (the \`[tools.swift]\` pin of bx.toml). Install Swift $version under ~/.local/share/swift/$version/ with scripts/install_swift_toolchain.sh — another release is a different compiler."
+        || sce_gate_fail "swift would build the packages with $(swift --version 2>&1 | head -1), and they are verified on $tag (the \`[platform.linux.tools.swift]\` pin of bx.toml). Install Swift $version under ~/.local/share/swift/$version/ with scripts/install_swift_toolchain.sh — another release is a different compiler."
     sce_gate_step "Swift $tag (pinned by bx.toml)"
 }

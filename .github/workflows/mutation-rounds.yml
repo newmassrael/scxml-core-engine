@@ -692,7 +692,7 @@ jobs:
           ${{ runner.os }}-gradle-
 
     # And the same for a Swift round, which is the Swift backend's. The toolchain is the
-    # one `bx.toml` pins (`[tools.swift]`) and `swift-backend.yml` installs: a round
+    # one `bx.toml` pins (`[platform.linux.tools.swift]`) and `swift-backend.yml` installs: a round
     # judging the backend on a different compiler than the lane that gates it would be
     # answering about a build nobody ships, the reason the Go step above states for its
     # own pin. The release and the digest are read from `bx.toml` and written nowhere in

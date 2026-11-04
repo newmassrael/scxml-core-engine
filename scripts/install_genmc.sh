@@ -26,7 +26,7 @@
 #   sudo apt-get install -y g++-14 clang-19 llvm-19-dev cmake ninja-build \
 #       libffi-dev zlib1g-dev libedit-dev
 #
-# The build machines get it from `[tools.genmc]` in bx.toml, which runs this
+# The build machines get it from `[platform.linux.tools.genmc]` in bx.toml, which runs this
 # script with GENMC_ROOT set to bx's store entry and rebuilds when the pin or
 # this script changes. The queue checker (`scripts/gates/genmc-queue.sh`) looks
 # for the binary at the path derived here and says how to install it when it

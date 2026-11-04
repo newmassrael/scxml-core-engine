@@ -24,7 +24,7 @@ SCE_REPO_ROOT="$(git rev-parse --show-toplevel)"
 source "$SCE_REPO_ROOT/scripts/lib/swift_pin.sh"
 
 version="$(sce_swift_pin_version)"
-[ -n "$version" ] || { echo "error: bx.toml has no [tools.swift] version" >&2; exit 1; }
+[ -n "$version" ] || { echo "error: bx.toml has no [platform.linux.tools.swift] version" >&2; exit 1; }
 tag="$(sce_swift_pin_tag "$version")"
 prefix="$HOME/.local/share/swift/$version"
 
@@ -54,7 +54,7 @@ echo "$digest  $work/$file" | sha256sum -c --quiet
 mkdir -p "$prefix/bin"
 tar -xzf "$work/$file" -C "$prefix" --strip-components=1
 
-# Only `swift` gets a link, as on the build machines (`prefix_link` of `[tools.swift]`):
+# Only `swift` gets a link, as on the build machines (`prefix_link` of `[platform.linux.tools.swift]`):
 # `swiftc` and the rest sit beside the file it points to, which is where the gate and
 # the mutation harness look.
 ln -sfn "$prefix/usr/bin/swift" "$prefix/bin/swift"

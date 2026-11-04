@@ -98,6 +98,24 @@ send    = "tracked+submodules"
 # vector, for the same reason (2026-11-02).
 writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", "scripts/package_embed.sh", "UPDATE_GOLDEN", "UPDATE_EXPECT", "SCE_PEER_SCENARIO", "SCE_SEALED_KAT"]
 
+# THE ONE PLATFORM, WRITTEN AS A TABLE (2026-11-04). This file used bx's shorthand until then:
+# requirements at the top level, which bx reads as one `linux` platform of ANY architecture. The
+# shorthand has no way to say an architecture, and the set of checks below keeps the verdicts it
+# passes (bx RFC 0020, section 4.3): a kept verdict is one architecture's, so bx refuses `cache` on a
+# platform that names none. Everything below this header up to the next table is what the shorthand
+# said at the top level, unchanged; the tools, the commands and the set of checks follow as tables.
+#
+# What the table costs, stated: a run of this repository now goes only to an `x86_64` machine. Every
+# machine that built it when this was written was one, and a machine of another architecture would
+# have needed the C++ toolchain, GenMC and the Swift tarball for it, none of which is pinned here.
+#
+# The table is read by bx-fleet (`bx-fleet decl plan`) and not by bx's line readers, so the
+# one-line rules the shorthand had (`needs` below) are history rather than a constraint;
+# `bx-fleet decl validate bx.toml` is what checks this file.
+[platform.linux]
+os   = "linux"
+arch = "x86_64"
+
 # `node` is not optional: every BasicHTTP fixture in the Rust workspace
 # posts to localhost:8080, and without the echo server they route to their
 # `<transition event="*"/>` fail branch — 25 failures that say nothing about
@@ -145,12 +163,14 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 # host's unsuffixed `clang-format` can be another major — so the suffixed name
 # is the tool a host must be able to run.
 #
-# ⚠ ONE LINE. bx reads this key with a single `sed` that anchors on `[` and
-# `]` in the same line, unlike `writes`/`packages` which are read across
-# lines — so a wrapped list parses as EMPTY and every host becomes eligible
-# for everything. Measured 2026-08-24, thirty seconds after wrapping it:
-# `--explain-declaration` printed `decl needs` with nothing after it.
-needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "go", "java", "python3", "wasm-pack", "kotlinc", "clang-format-19"]
+# One line, for a reason that held while this file was the shorthand: bx read
+# this key with a single `sed` that anchored on `[` and `]` in the same line,
+# so a wrapped list parsed as EMPTY and every host became eligible for
+# everything (measured 2026-08-24, thirty seconds after wrapping it:
+# `--explain-declaration` printed `decl needs` with nothing after it). The
+# platform table is read as TOML by bx-fleet, which has no such limit; the
+# line stays whole so that the record above still describes it.
+needs =["cargo", "cmake", "ninja", "g++", "node", "git", "go", "java", "python3", "wasm-pack", "kotlinc", "clang-format-19"]
 
 # System packages a host must carry that no executable in `needs` can name: a development header
 # is not a command. bx asks `dpkg-query` for each and reports every missing one in a single
@@ -175,14 +195,14 @@ needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "go", "java", "python3
 # above describes.
 #
 # The rest are what swift.org lists for the Swift toolchain on Ubuntu 22.04 and 24.04 (the
-# `[tools.swift]` table below), less three: `git` is in `needs`, `libgcc-N-dev` and
+# `[platform.linux.tools.swift]` table below), less three: `git` is in `needs`, `libgcc-N-dev` and
 # `libstdc++-N-dev` come with the `g++` in `needs` (13 on 24.04, 11 on 22.04, which is the N each
 # release's list names), and `gnupg2` is there to check the tarball's signature, which the pinned
 # SHA-256 does instead. Without them the tarball unpacks and `swift --version` answers, and a
 # compile or a link dies later (`libcurl4-openssl-dev` for FoundationNetworking, `libz3-dev`,
 # `libxml2-dev` for FoundationXML): the same shape as `libssl-dev` above.
 #
-# `curl` is what the `[tools.swift]` install downloads with. It is a package and not a `need`
+# `curl` is what the Swift tool's install downloads with. It is a package and not a `need`
 # because nothing a job runs calls it; provision installs packages before it builds a tool.
 # Measured 2026-10-20: one build machine had no curl, and the install exited 127 there.
 packages = ["libssl-dev", "openjdk-17-jdk-headless", "curl", "binutils", "libc6-dev", "libcurl4-openssl-dev", "libedit2", "libncurses-dev", "libpython3-dev", "libsqlite3-0", "libxml2-dev", "libz3-dev", "pkg-config", "tzdata", "unzip", "zlib1g-dev"]
@@ -198,7 +218,7 @@ min_free_gb = 60
 # ⚠ It sat at the end of the file, INSIDE [commands], until 2026-10-17. By
 # TOML's rules that made it a command named `peak_gb_per_task`; bx's old
 # line-by-line reader found it anyway, which is the only reason it ever had
-# effect. bx.toml is read by TOML's tables, so it belongs up here.
+# effect. bx.toml is read by TOML's tables, so it belongs in the platform's.
 peak_gb_per_task = 4
 
 # The citation gate's binary, at the revision CI installs. The revision is read
@@ -209,7 +229,11 @@ peak_gb_per_task = 4
 # with both binaries in one `cargo install`, as the pin's own install line does,
 # but only the CLI is a requirement here: it is the one a run executes, while
 # `mnemosyne-mcp` serves the MCP servers of a workstation.
-[tools.mnemosyne-cli]
+#
+# Each tool is a table of the platform (`[platform.linux.tools.<name>]`): a tool
+# is what a machine of one platform must carry. Until 2026-11-04 these were
+# `[tools.<name>]` tables of the shorthand, which meant the same platform.
+[platform.linux.tools.mnemosyne-cli]
 version_file = ".github/workflows/spec-citations.yml"
 version_pattern = 'MNEMOSYNE_REV: *([0-9a-f]{40})'
 path = "~/.local/share/mnemosyne-rev/{version:8}/bin/mnemosyne-cli"
@@ -236,7 +260,10 @@ prefix_file = "bin/mnemosyne-cli"
 #
 # Only `swift` gets a link. `swiftc` and the rest of the toolchain are beside the file the link
 # points to, so a lane reaches them through `dirname "$(readlink -f ~/.local/share/swift/<version>/bin/swift)"`.
-[tools.swift]
+#
+# `scripts/lib/swift_pin.sh` reads the version and the digests out of this table, for the hosted
+# lanes and the gates; it finds the table by this header.
+[platform.linux.tools.swift]
 version = "6.4.0"
 path = "~/.local/share/swift/{version}/bin/swift"
 check = "swift-6.4-RELEASE"
@@ -256,7 +283,7 @@ prefix_file = "usr/bin/swift"
 # 19 still takes every other job of this repository. Until 2026-10-20 bx ran as
 # an account that could not reach the only GenMC on a build machine, and a run
 # through bx exited 127.
-[tools.genmc]
+[platform.linux.tools.genmc]
 version_file = "scripts/install_genmc.sh"
 version_pattern = '^GENMC_REV="(v[0-9.]+)"'
 path = "~/.local/genmc/{version}/bin/genmc"
@@ -266,7 +293,11 @@ install_inputs = ["scripts/install_genmc.sh"]
 packages = ["g++-14", "clang-19", "llvm-19-dev", "cmake", "ninja-build", "libffi-dev", "zlib1g-dev", "libedit-dev"]
 needed_by = ["genmc-queue"]
 
-[commands]
+# The two named commands, each a table of its own: in platform tables a command
+# is `[commands.<name>]` with `run`, and with one platform it runs there. Until
+# 2026-11-04 they were `build = "..."` and `verify = "..."` lines of one
+# `[commands]` table of the shorthand, with the same strings.
+#
 # `--features cli` is not optional here: `cargo test --workspace` silently
 # skips every cli-gated target, so a workspace run without it reports green
 # on the CLI surface it never compiled.
@@ -295,7 +326,8 @@ needed_by = ["genmc-queue"]
 # repository's Kotlin plugin dies on JDK 25 (`* What went wrong: 25.0.4`,
 # measured 2026-09-30 on a build machine whose default `java` was 25.0.4). The script
 # picks the JDK the Kotlin gates pick, from the version CI installs.
-build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run && scripts/gradlew-on-ci-jdk.sh :sce-forge-runtime-kotlin:jvmJar --console=plain"
+[commands.build]
+run = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run && scripts/gradlew-on-ci-jdk.sh :sce-forge-runtime-kotlin:jvmJar --console=plain"
 
 # The echo server is started here rather than assumed: a bare workspace run
 # reports failures that look like backend defects and are not.
@@ -305,7 +337,8 @@ build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S 
 # workspace has no such fixture and needs one already listening. So: ctest
 # with the port free, then the server, then cargo. Both statuses are OR'd so
 # a red ctest cannot be hidden by a green cargo run.
-verify = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalone_http_server.js 8080 /test & srv=$!; sleep 1; cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; exit $(( c | r ))"
+[commands.verify]
+run = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalone_http_server.js 8080 /test & srv=$!; sleep 1; cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; exit $(( c | r ))"
 
 # Regenerating the committed generated trees writes into the tree, so `writes`
 # keeps a plain `bx -- scripts/regen_...` on this machine. Declared as an

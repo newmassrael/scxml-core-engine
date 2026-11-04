@@ -1094,7 +1094,7 @@ GATES: dict[str, dict] = {
         # without a toolchain rather than skipping, so the lane is the place it
         # runs until every build machine is verified to carry the pin.
         "ci_only": "38s, and the 6.4.0 toolchain is a hand-installed pin "
-                   "(`[tools.swift]` in bx.toml) that not every build machine "
+                   "(`[platform.linux.tools.swift]` in bx.toml) that not every build machine "
                    "is verified to carry; the gate refuses without it, so a "
                    "push that selected it there would be refused for a reason "
                    "that says nothing about the tree. swift-backend.yml "
@@ -1114,7 +1114,7 @@ GATES: dict[str, dict] = {
         "workflows": ["swift-backend.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[tools.swift]` "
+        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
                    "in bx.toml) that not every build machine is verified to "
                    "carry; the gate refuses without it, so a push that "
                    "selected it there would be refused for a reason that says "
@@ -1137,7 +1137,7 @@ GATES: dict[str, dict] = {
         "workflows": ["swift-backend.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[tools.swift]` "
+        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
                    "in bx.toml) that not every build machine is verified to "
                    "carry; the gate refuses without it, so a push that "
                    "selected it there would be refused for a reason that says "
@@ -1162,7 +1162,7 @@ GATES: dict[str, dict] = {
         "workflows": ["swift-backend.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[tools.swift]` "
+        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
                    "in bx.toml) that not every build machine is verified to "
                    "carry; the gate refuses without it, so a push that "
                    "selected it there would be refused for a reason that says "

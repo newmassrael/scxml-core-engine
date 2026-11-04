@@ -3,8 +3,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The Swift toolchain this repository builds and tests the Swift backend with, read
-# from the one place that names it: the `[tools.swift]` table of `bx.toml`, which is
-# what `provision` installs on the build machines.
+# from the one place that names it: the Swift tool of `bx.toml`'s platform
+# (`[platform.linux.tools.swift]`; `[tools.swift]` of the shorthand until 2026-11-04),
+# which is what `provision` installs on the build machines.
 #
 # Everything else asks here. The hosted lanes (`swift-backend.yml`, the Swift rounds of
 # `mutation-rounds.yml`) install it with `scripts/install_swift_toolchain.sh`, the
@@ -17,7 +18,7 @@
 
 # The release, `6.4.0`.
 sce_swift_pin_version() {
-    awk '/^\[/ { in_swift = ($0 == "[tools.swift]"); next }
+    awk '/^\[/ { in_swift = ($0 == "[platform.linux.tools.swift]"); next }
          in_swift && /^version = / { gsub(/[" ]/, "", $3); print $3; exit }' \
         "${SCE_REPO_ROOT}/bx.toml"
 }
