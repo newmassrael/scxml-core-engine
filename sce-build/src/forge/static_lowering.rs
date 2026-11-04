@@ -17677,22 +17677,20 @@ mod tests {
     // ── a byte string a `<param>` carries ───────────────────────────────────
     //
     // The wire helper writes the Latin-1 text of the bytes it is lent, so Rust
-    // reads the byte string borrowed and never copies it first: a variable, each
-    // arm of a conditional, and the present value of an optional one.
+    // reads the byte string borrowed and never copies it first: a variable and
+    // the present value of an optional one, the two a byte string `<param>` may
+    // be (the judge admits a byte string held by a variable or a record's field).
 
     const WITH_SEND_BYTES: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static" name="m">
   <datamodel>
-    <data id="flag" sce:type="bool" expr="true"/>
     <data id="held" sce:type="bytes[8]" expr="'ab'"/>
-    <data id="spare" sce:type="bytes[8]" expr="''"/>
     <data id="maybe" sce:type="optional&lt;bytes[8]&gt;" expr="null"/>
   </datamodel>
   <state id="s">
     <transition event="go" target="done">
       <send event="out">
         <param name="held" expr="held"/>
-        <param name="chosen" expr="flag ? held : spare"/>
         <param name="maybe" expr="maybe"/>
       </send>
     </transition>
@@ -17720,11 +17718,6 @@ mod tests {
             params["held"],
             format!("::sce_rust_runtime::ScriptValue::String({text}(&self.held[..]))"),
             "{params:?}"
-        );
-        assert!(
-            params["chosen"].contains(&format!("{text}(if "))
-                && params["chosen"].contains("{ &self.held[..] } else { &self.spare[..] }"),
-            "each arm lent whole: {params:?}"
         );
         let present = crate::forge::rust_optional::PRESENT;
         assert!(

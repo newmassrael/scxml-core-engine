@@ -1845,7 +1845,7 @@ fn a_state_saved_before_the_widening_restores_with_every_value_present() {
         title: Some(sce_portable_bytes::SceString::from_text("first").expect("fits")),
         status: Some(StaticOptionalStatusEnum::Open),
     };
-    assert_eq!(data.items, &[item.clone()]);
+    assert_eq!(data.items, std::slice::from_ref(&item));
     assert_eq!(data.item, item);
 }
 
