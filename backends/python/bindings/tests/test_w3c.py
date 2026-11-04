@@ -3,7 +3,8 @@
 
 """W3C SCXML 1.0 Conformance Tests via Python bindings.
 
-Validates that all 202 W3C tests pass through the pybind11-wrapped
+Validates that every fixture the conformance registry lists
+(tests/w3c/conformance/fixtures.json) passes through the pybind11-wrapped
 C++ ReadySCXMLEngine interpreter, matching the native C++ results.
 
 Pass/fail criteria (same as C++ W3CTestRunner):
@@ -41,34 +42,25 @@ sys.path.insert(0, os.path.join(_PROJECT_ROOT, "tests", "w3c"))
 import _sce as sce
 import sce_http_endpoint
 
-# W3C test list (202 tests, from build/W3CAotTestList.cmake)
-W3C_TEST_IDS = [
-    "144", "147", "148", "149", "150", "151", "152", "153", "155", "156",
-    "158", "159", "172", "173", "174", "175", "176", "178", "179", "183",
-    "185", "186", "187", "189", "190", "191", "192", "193", "194", "198",
-    "199", "200", "201", "205", "207", "208", "210", "215", "216", "220",
-    "223", "224", "225", "226", "228", "229", "230", "232", "233", "234",
-    "235", "236", "237", "239", "240", "241", "242", "243", "244", "245",
-    "247", "250", "252", "253", "276", "277", "278", "279", "280", "286",
-    "287", "294", "298", "301", "302", "303", "304", "307", "309", "310",
-    "311", "312", "313", "314", "318", "319", "321", "322", "323", "324",
-    "325", "326", "329", "330", "331", "332", "333", "335", "336", "337",
-    "338", "339", "342", "343", "344", "346", "347", "348", "349", "350",
-    "351", "352", "354", "355", "364", "372", "375", "376", "377", "378",
-    "387", "388", "396", "399", "401", "402", "403a", "403b", "403c",
-    "404", "405", "406", "407", "409", "411", "412", "413", "415", "416",
-    "417", "419", "421", "422", "423", "436", "444", "445", "446", "448",
-    "449", "451", "452", "453", "456", "457", "459", "460", "525", "487",
-    "488", "527", "528", "529", "530", "495", "496", "500", "501", "503",
-    "504", "505", "506", "509", "510", "513", "518", "519", "520", "521",
-    "522", "531", "532", "533", "534", "550", "551", "552", "553", "554",
-    "557", "558", "560", "561", "562", "567", "569", "570", "576", "577",
-    "578", "579", "580",
-]
+# The fixtures this suite runs and the harness each needs, read from the
+# conformance registry every other channel reads them from
+# (docs/SCE_W3C_TEST_REGISTRATION.md). This file held its own copy of the set,
+# 202 ids and the 13 BasicHTTP ones, which a fixture added to or dropped from
+# the registry left behind without anything failing.
+_W3C_REGISTRY = os.path.join(_PROJECT_ROOT, "tests", "w3c", "conformance", "fixtures.json")
 
-# W3C SCXML C.2: BasicHTTPEventProcessor tests (require HTTP server)
-HTTP_TEST_IDS = {"201", "509", "510", "513", "518", "519", "520", "522",
-                 "531", "532", "534", "567", "577"}
+
+def _registry_fixtures() -> list[dict]:
+    with open(_W3C_REGISTRY, encoding="utf-8") as registry:
+        return json.load(registry)["fixtures"]
+
+
+W3C_TEST_IDS = [fixture["id"] for fixture in _registry_fixtures()]
+
+# §scxml-C-2: the fixtures the registry runs under the `http` harness, which
+# need the BasicHTTP test server.
+HTTP_TEST_IDS = {fixture["id"] for fixture in _registry_fixtures()
+                 if fixture["harness"] == "http"}
 
 TIMEOUT_SEC = 10.0
 POLL_INTERVAL_SEC = 0.01
