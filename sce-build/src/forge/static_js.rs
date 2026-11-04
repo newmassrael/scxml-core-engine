@@ -121,11 +121,11 @@ use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
 use crate::forge::import_source::ImportSource;
 use crate::forge::model::{
-    EntryField, EnumModel, ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType,
+    EntryField, EntryType, EnumModel, ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType,
 };
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
-    lower, Callee, CalleeImport, LoweredElement, LoweredSite, StaticTarget,
+    lower, Callee, CalleeImport, LiftStatement, LoweredElement, LoweredSite, StaticTarget,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
@@ -696,6 +696,69 @@ impl StaticTarget for JsTarget {
     }
     fn clear(&self, target: &str) -> String {
         self.assign_element(target, "[]")
+    }
+    // The element that replaces the `<sce:lift>`: a `<script>` that hands the text
+    // to the library's `lift` with the type the record is read as, written as the
+    // library's `field` takes a type (`{record: …, defaults: …}`), and writes the
+    // record or the refusal into the two variables. The library answers rather
+    // than throws, so the script raises nothing, as the generated backends' lift
+    // does not; a value the data model cannot hold is the one exception, and fails
+    // as an assignment of it would.
+    fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
+        let kind = |ty: &SceType, max: Option<u32>| -> Option<String> {
+            Some(match ty {
+                SceType::String => format!("{{string: {}}}", max?),
+                SceType::Bytes => format!("{{bytes: {}}}", max?),
+                SceType::Enum(reference) => {
+                    let model = lift.enums.get(&reference.alias)?;
+                    let names: Vec<&str> = model.variants.iter().map(|v| v.name.as_str()).collect();
+                    variant_list(&names)
+                }
+                other => field_kind(other, &[])?,
+            })
+        };
+        let mut fields = Vec::with_capacity(lift.schema.fields.len());
+        for field in &lift.schema.fields {
+            let declared = match &field.sce_type {
+                EntryType::Scalar(ty) => kind(ty, field.max_size)?,
+                EntryType::Optional { elem } => {
+                    format!("{{optional: {}}}", kind(elem, field.max_size)?)
+                }
+            };
+            fields.push(format!("'{}': {declared}", field.id));
+        }
+        // The defaults are a JSON object, which is an object literal here.
+        let defaults = lift
+            .defaults
+            .as_ref()
+            .map(|json| format!(", defaults: {json}"))
+            .unwrap_or_default();
+        let declared: Vec<String> = lift
+            .field_ids()
+            .iter()
+            .map(|id| format!("'{id}'"))
+            .collect();
+        let refusal = self.record_value(
+            "",
+            &lift.refusal_members(
+                self,
+                "sceLift.refusal.code",
+                "sceLift.refusal.pointer",
+                "sceLift.refusal.bound",
+            )?,
+        );
+        let script = format!(
+            "(function (sceLift) {{ if (sceLift.refusal === null) {{ {location} = sceLift.value; \
+             {absent} = null; }} else {{ {absent} = {refusal}; }} }})({RUNTIME_GLOBAL}.lift({text}, \
+             {{record: {{{fields}}}{defaults}}}, {depth}, [{declared}]));",
+            location = lift.location,
+            absent = lift.refusal,
+            text = lift.text,
+            fields = fields.join(", "),
+            depth = lift.depth,
+            declared = declared.join(", "),
+        );
+        Some(format!("<script>{}</script>", xml_attribute_value(&script)))
     }
     fn raise_execution_error(&self, _machine: &str, _message: &str) -> String {
         String::new()

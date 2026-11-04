@@ -82,6 +82,21 @@
      declares, failing out-of-range for a number no variant declares: what
      Alias.toNumber and Alias.fromNumber are lowered to.
 
+     A text a statechart holds is read as a record of a schema by lift()
+     (docs/adr/0087, section 2.1), which answers {value, refusal}: the record
+     and a null refusal, or a null value and the refusal of the first place
+     that is not one, its code, pointer and bound, which the statement keeps as
+     a record. The text is read by this library's own reader of JSON text,
+     parseText(), which holds it to RFC 8259 alone as every runtime's reader
+     does (tests/json_text/payload_refusal.json): whitespace of the four kinds
+     between tokens, a number in its grammar, no raw control character in a
+     text, no half of a UTF-16 pair in an escape, no repeated name. A number
+     is kept as the text it was written in (a JsonNumber), so a whole number is
+     read exactly and a fraction or an exponent where a whole number is is
+     refused, as every runtime refuses it. Before the text is read, an empty
+     one is refused, and so is a container opened deeper than the schema's
+     values go, over the text's brackets alone (tooDeep()).
+
      The library is embedded in one attribute and its newlines collapse, so it
      holds no line comment and no statement that relies on a line break. */
   var SAFE = BigInt(Number.MAX_SAFE_INTEGER);
@@ -112,6 +127,306 @@
      and the token with a tilde written ~0 and a slash written ~1. */
   function pointerBelow(prefix, token) {
     return prefix + '/' + String(token).split('~').join('~0').split('/').join('~1');
+  }
+
+  /* A number of a JSON text this library read, in the text it was written in:
+     a whole number is read from it exactly, and one written with a fraction or
+     an exponent is told from a whole one. */
+  function JsonNumber(text) {
+    this.text = text;
+  }
+
+  var ESCAPES = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
+
+  /* The one JSON value of text, read by RFC 8259 alone (sections 2, 6 and 7):
+     whitespace of the four kinds between tokens; a number in its grammar, kept
+     as a JsonNumber; a text with no raw control character and no half of a
+     UTF-16 pair in an escape; an object, of no prototype, whose names do not
+     repeat. A text that breaks any of it throws a SyntaxError saying where. */
+  function parseText(text) {
+    var at = 0;
+    function malformed(what) {
+      throw new SyntaxError(what);
+    }
+    function space() {
+      while (at < text.length && ' \t\n\r'.indexOf(text.charAt(at)) >= 0) {
+        at++;
+      }
+    }
+    function isDigit(c) {
+      return c >= '0' && c <= '9';
+    }
+    function digits() {
+      while (isDigit(text.charAt(at))) {
+        at++;
+      }
+    }
+    function hex4() {
+      var four = text.substr(at, 4);
+      if (!/^[0-9a-fA-F]{4}$/.test(four)) {
+        malformed('a \\u escape is not four hex digits');
+      }
+      at += 4;
+      return parseInt(four, 16);
+    }
+    function string() {
+      var out = '';
+      at++;
+      for (;;) {
+        if (at >= text.length) {
+          malformed('a text ends unclosed');
+        }
+        var c = text.charAt(at);
+        at++;
+        if (c === '"') {
+          return out;
+        }
+        if (c === '\\') {
+          var e = text.charAt(at);
+          at++;
+          if (e === 'u') {
+            var code = hex4();
+            if (code >= 0xD800 && code <= 0xDBFF) {
+              if (text.substr(at, 2) !== '\\u') {
+                malformed('a \\u escape is half of a character');
+              }
+              at += 2;
+              var low = hex4();
+              if (low < 0xDC00 || low > 0xDFFF) {
+                malformed('a \\u escape is half of a character');
+              }
+              out += String.fromCharCode(code, low);
+            } else if (code >= 0xDC00 && code <= 0xDFFF) {
+              malformed('a \\u escape is half of a character');
+            } else {
+              out += String.fromCharCode(code);
+            }
+          } else if (Object.prototype.hasOwnProperty.call(ESCAPES, e)) {
+            out += ESCAPES[e];
+          } else {
+            malformed('unknown escape \\' + e);
+          }
+        } else if (c < ' ') {
+          malformed('a control character stands in a text unescaped');
+        } else {
+          out += c;
+        }
+      }
+    }
+    function number() {
+      var start = at;
+      if (text.charAt(at) === '-') {
+        at++;
+      }
+      if (text.charAt(at) === '0') {
+        at++;
+      } else if (isDigit(text.charAt(at))) {
+        digits();
+      } else {
+        malformed('a number has no digits');
+      }
+      if (text.charAt(at) === '.') {
+        at++;
+        if (!isDigit(text.charAt(at))) {
+          malformed('a fraction has no digits');
+        }
+        digits();
+      }
+      if (text.charAt(at) === 'e' || text.charAt(at) === 'E') {
+        at++;
+        if (text.charAt(at) === '+' || text.charAt(at) === '-') {
+          at++;
+        }
+        if (!isDigit(text.charAt(at))) {
+          malformed('an exponent has no digits');
+        }
+        digits();
+      }
+      if (isDigit(text.charAt(at))) {
+        malformed('a number has a leading zero');
+      }
+      return new JsonNumber(text.slice(start, at));
+    }
+    function container(close) {
+      var object = close === '}';
+      var out = object ? Object.create(null) : [];
+      at++;
+      space();
+      if (text.charAt(at) === close) {
+        at++;
+        return out;
+      }
+      for (;;) {
+        if (object) {
+          space();
+          if (text.charAt(at) !== '"') {
+            malformed('a field name was expected');
+          }
+          var name = string();
+          if (Object.prototype.hasOwnProperty.call(out, name)) {
+            malformed('the field ' + name + ' appears twice');
+          }
+          space();
+          if (text.charAt(at) !== ':') {
+            malformed('a colon was expected');
+          }
+          at++;
+          out[name] = value();
+        } else {
+          out.push(value());
+        }
+        space();
+        var next = text.charAt(at);
+        at++;
+        if (next === close) {
+          return out;
+        }
+        if (next !== ',') {
+          malformed('a comma or the end of the container was expected');
+        }
+      }
+    }
+    function value() {
+      space();
+      var c = text.charAt(at);
+      if (c === '{') {
+        return container('}');
+      }
+      if (c === '[') {
+        return container(']');
+      }
+      if (c === '"') {
+        return string();
+      }
+      if (text.substr(at, 4) === 'true') {
+        at += 4;
+        return true;
+      }
+      if (text.substr(at, 5) === 'false') {
+        at += 5;
+        return false;
+      }
+      if (text.substr(at, 4) === 'null') {
+        at += 4;
+        return null;
+      }
+      if (c === '-' || isDigit(c)) {
+        return number();
+      }
+      return malformed(at >= text.length ? 'it ends where a value was expected' : 'a value was expected');
+    }
+    var read = value();
+    space();
+    if (at < text.length) {
+      malformed('it carries more than one JSON value');
+    }
+    return read;
+  }
+
+  /* The refusal of a container text opens deeper than depth, the deepest a value
+     of a lift's schema holds (docs/adr/0087, section 2.1, item 4), or null when
+     it opens none. Decided over the brackets alone, before the text is read as
+     JSON, so that every runtime decides it alike: a text is skipped from its
+     opening quote to the next quote no backslash escapes, each opening bracket
+     outside one opens a level and each closing one closes one, and the first
+     opened past depth is refused, whatever the text holds after it. A text that
+     never closes ends the walk with nothing refused. The pointer names the
+     member of the outermost object the container stands under, the name read
+     from the last text closed in that object before a colon, when it is one of
+     declared; otherwise the whole text. The bound is depth. */
+  function tooDeep(text, depth, declared) {
+    var level = 0;
+    var lastText = null;
+    var member = null;
+    for (var at = 0; at < text.length; at++) {
+      var c = text.charAt(at);
+      if (c === '"') {
+        var start = at;
+        at++;
+        while (at < text.length && text.charAt(at) !== '"') {
+          at += text.charAt(at) === '\\' ? 2 : 1;
+        }
+        if (at >= text.length) {
+          return null;
+        }
+        if (level === 1) {
+          lastText = text.slice(start, at + 1);
+        }
+      } else if (c === ':' && level === 1) {
+        member = lastText;
+        lastText = null;
+      } else if (c === ',' && level === 1) {
+        member = null;
+        lastText = null;
+      } else if (c === '{' || c === '[') {
+        level++;
+        if (level > depth) {
+          var pointer = '';
+          if (member !== null) {
+            try {
+              var name = parseText(member);
+              if (typeof name === 'string' && declared.indexOf(name) >= 0) {
+                pointer = pointerBelow('', name);
+              }
+            } catch (e) {
+              pointer = '';
+            }
+          }
+          try {
+            refuse('tooDeep', pointer, 'the text opens a container deeper than the ' + String(depth) + ' levels a value of its schema holds', depth);
+          } catch (refusal) {
+            return refusal;
+          }
+        }
+      } else if ((c === '}' || c === ']') && level > 0) {
+        level--;
+      }
+    }
+    return null;
+  }
+
+  /* The text a lift reads, as the value of type, a record of its schema
+     (docs/adr/0087, section 2.1), or the refusal thrown of the first place
+     that is not one: an empty text, a container past depth, a text that is
+     not one JSON object, then what a delivery of the schema is refused for. */
+  function liftValue(text, type, depth, declared) {
+    if (typeof text !== 'string') {
+      fail('expected the text a lift reads, read ' + String(text));
+    }
+    if (text.replace(/[ \t\n\r]/g, '') === '') {
+      refuse('notJson', '', 'the text is empty');
+    }
+    var deep = tooDeep(text, depth, declared);
+    if (deep !== null) {
+      throw deep;
+    }
+    var data;
+    try {
+      data = parseText(text);
+    } catch (e) {
+      refuse('notJson', '', 'the text is not JSON (' + String(e.message) + ')');
+    }
+    if (data === null || typeof data !== 'object' || Array.isArray(data) || data instanceof JsonNumber) {
+      refuse('notObject', '', 'the text is one JSON value, and its schema declares named fields');
+    }
+    return readValue(data, type, '', '');
+  }
+
+  /* <sce:lift>: {value, refusal}, one of them null. A value the data model
+     cannot hold (a 64-bit integer past what a Number holds exactly) fails as
+     unrepresentable, as a variable's does. */
+  function lift(text, type, depth, declared) {
+    var value;
+    try {
+      value = liftValue(text, type, depth, declared);
+    } catch (e) {
+      if (e.sceRefusal === undefined) {
+        throw e;
+      }
+      return { value: null, refusal: e.sceRefusal };
+    }
+    check(value);
+    return { value: value, refusal: null };
   }
 
   function exact(value) {
@@ -243,7 +558,7 @@
       }
       data = {};
     }
-    if (typeof data !== 'object' || Array.isArray(data)) {
+    if (typeof data !== 'object' || Array.isArray(data) || data instanceof JsonNumber) {
       refuse('notObject', '', 'the event data is a bare value, and its schema declares named fields');
     }
     var value;
@@ -310,7 +625,7 @@
       return value.map(function (item, index) { return readValue(item, type.list, below(path, index), pointerBelow(pointer, index)); });
     }
     if (kind === 'record') {
-      if (typeof value !== 'object' || Array.isArray(value)) {
+      if (typeof value !== 'object' || Array.isArray(value) || value instanceof JsonNumber) {
         refuse('wrongKind', pointer, where + 'is not a record');
       }
       var held = {};
@@ -345,9 +660,24 @@
           refuse('badNumber', pointer, where + 'is not a whole number written as digits');
         }
         whole = BigInt(value);
+      } else if (value instanceof JsonNumber) {
+        /* A number this library read is read from the text it was written in,
+           exactly: a fraction, an exponent and -0 are no spelling of a whole
+           number, and a 64-bit one past 2^53 - 1 is not exact everywhere. */
+        if (value.text === '-0' || !/^-?(0|[1-9][0-9]*)$/.test(value.text)) {
+          refuse('badNumber', pointer, where + 'is not a whole number (' + value.text + ')');
+        }
+        whole = BigInt(value.text);
+        if ((kind === 'int64' || kind === 'uint64') && (whole > SAFE || whole < -SAFE)) {
+          refuse('badNumber', pointer, where + 'is a number past 2^53 - 1, which is not exact everywhere');
+        }
       } else {
         if (typeof value !== 'number') {
           refuse('wrongKind', pointer, where + 'is not a number');
+        }
+        /* -0 is a JSON number and no spelling of a whole number. */
+        if (Object.is(value, -0)) {
+          refuse('badNumber', pointer, where + 'is not a whole number (-0)');
         }
         if (!Number.isSafeInteger(value)) {
           /* A whole number past every Number's exact integers is past every
@@ -364,8 +694,17 @@
       return canonical(whole);
     }
     if (kind === 'float32' || kind === 'float64') {
+      if (value instanceof JsonNumber) {
+        value = Number(value.text);
+      }
       if (typeof value !== 'number') {
         refuse('wrongKind', pointer, where + 'is not a number');
+      }
+      /* A number past the largest double (1e999), which a reader rounds to an
+         infinity no runtime holds, does not fit, as one past the largest single
+         does not fit a float32. */
+      if (!isFinite(value)) {
+        refuse('outOfRange', pointer, where + 'does not fit ' + kind);
       }
       if (kind === 'float32') {
         /* A Number is a binary64: the field a schema declares float32 holds the
@@ -477,6 +816,8 @@
     U32: integer(false, 32),
     U64: integer(false, 64),
     field: field,
+    lift: lift,
+    parseText: parseText,
     otherwise: function (value, fallback) {
       return value === null ? fallback() : value;
     },

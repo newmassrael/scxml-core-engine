@@ -885,6 +885,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // each one's own step.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_optional_record"), replayed.end())
         << "static_optional_record was not replayed: an optional record has no lowering for the Interpreter";
+    // ... and a text read into a record or its refusal kept as one (docs/adr/0087, section
+    // 9.1), through the library's own reader of JSON text, so that a refusal the scan
+    // above would let pass does not stand for its lowering.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_lift"), replayed.end())
+        << "static_lift was not replayed: <sce:lift> has no lowering for the Interpreter";
     // ... and the copies of the list of who is online, whose entries are let go by the
     // machine's own delayed send, which the Interpreter's scheduler releases as the
     // scenario moves its logical clock on.
@@ -1456,12 +1461,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReadsAValue
 
 // The library's refusal carries, beside its sentence, the code, the RFC 6901 pointer and
 // the bound every runtime's reader names (docs/adr/0087, sections 2.3 and 2.4), held to
-// tests/json_text/payload_refusal.json, the table every reader reads. The library is
-// handed the data as the Interpreter's script engine reads it, the JSON text's value or
-// the text itself where it spells none, so the cases the engine decides before the
-// library sees the data are not the library's: a text that is not JSON and an object
-// that repeats a name (code notJson, with data), and a whole number written with an
-// exponent, which reaches a Number as the whole number it equals.
+// tests/json_text/payload_refusal.json, the table every reader reads. The text of each
+// case is read by the library's own reader of JSON text (`SceStatic.parseText`), which
+// holds it to RFC 8259 alone as every runtime's reader does, a repeated name and a lax
+// number included, so every case of the table is the library's; a case that gives a
+// depth is read as a `<sce:lift>` reads its text (`SceStatic.lift`).
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRefusalByItsCodePointerAndBound) {
     const char *bin = std::getenv("SCE_CODEGEN_BIN");
     ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
@@ -1484,16 +1488,20 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRe
     for (const auto &c : cases) {
         const std::string name = c.at("name").get<std::string>();
         const std::string data = c.at("data").get<std::string>();
-        const bool engines = c.contains("refusal") && c.at("refusal").at("code") == "notJson" && !data.empty();
-        if (engines || name == "an exponent where a whole number is") {
-            continue;
-        }
         ++asked;
-        const std::string program = "(function () { var text = " + nlohmann::json(data).dump() +
-                                    "; var data; if (text !== '') { try { data = JSON.parse(text); } catch (e) "
-                                    "{ data = text; } } try { SceStatic.field(data, 'v', " +
-                                    c.at("type").dump() +
-                                    "); return JSON.stringify({read: true}); } catch (e) { return "
+        // A delivery's text that is no JSON is refused with no data read; a lift's text is
+        // read whole by `SceStatic.lift`, the record of the one field `v` its type.
+        const std::string reading =
+            c.contains("depth") ? "var lifted = SceStatic.lift(text, {record: {'v': " + c.at("type").dump() + "}}, " +
+                                      c.at("depth").dump() +
+                                      ", ['v']); if (lifted.refusal !== null) { return JSON.stringify({refusal: "
+                                      "lifted.refusal}); }"
+                                : "var data; if (text !== '') { try { data = SceStatic.parseText(text); } catch (e) { "
+                                  "return JSON.stringify({refusal: {code: 'notJson', pointer: '', bound: null}}); } } "
+                                  "SceStatic.field(data, 'v', " +
+                                      c.at("type").dump() + ");";
+        const std::string program = "(function () { var text = " + nlohmann::json(data).dump() + "; try { " + reading +
+                                    " return JSON.stringify({read: true}); } catch (e) { return "
                                     "JSON.stringify({refusal: e.sceRefusal === undefined ? null : e.sceRefusal, "
                                     "message: String(e.message)}); } })()";
         const auto answered = engine_->evaluateExpression(session, program).get();
@@ -1511,7 +1519,7 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRe
         EXPECT_EQ(refusal.at("pointer"), want.at("pointer")) << name << ": " << got.dump();
         EXPECT_EQ(refusal.at("bound"), want.at("bound")) << name << ": " << got.dump();
     }
-    EXPECT_GE(asked, 35u) << "the cases the library is held to shrank";
+    EXPECT_EQ(asked, cases.size()) << "every case of the table is the library's";
     engine_->destroySession(session);
 }
 
