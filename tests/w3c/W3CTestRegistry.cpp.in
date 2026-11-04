@@ -46,4 +46,39 @@ bool W3CTestRegistry::isInterpreterTest(int testNum) {
     return isInterpreterTest(std::to_string(testNum));
 }
 
+const std::vector<std::pair<std::string, TestHarness>>& W3CTestRegistry::getHarnesses() {
+    // Every registered fixture's harness, as tests/w3c/conformance/fixtures.json names it
+    static const std::vector<std::pair<std::string, TestHarness>> harnesses = {
+@W3C_HARNESS_REGISTRATIONS@
+    };
+    return harnesses;
+}
+
+std::optional<TestHarness> W3CTestRegistry::getHarness(const std::string& testId) {
+    for (const auto& [id, harness] : getHarnesses()) {
+        if (id == testId) {
+            return harness;
+        }
+    }
+    return std::nullopt;
+}
+
+bool W3CTestRegistry::needsHttpEndpoint(const std::string& testId) {
+    return getHarness(testId) == TestHarness::HTTP;
+}
+
+std::vector<std::string> W3CTestRegistry::httpTestIds() {
+    std::vector<std::string> ids;
+    for (const auto& [id, harness] : getHarnesses()) {
+        if (harness == TestHarness::HTTP) {
+            ids.push_back(id);
+        }
+    }
+    return ids;
+}
+
+int W3CTestRegistry::largestTestNumber() {
+    return @W3C_LARGEST_TEST_NUMBER@;
+}
+
 }  // namespace SCE::W3C

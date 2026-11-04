@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "InteractiveTestRunner.h"
+#include "W3CTestRegistry.h"
 #include "common/Logger.h"
 #include "core/LogMacros.h"
 #include "impl/SnapshotComparator.h"
@@ -32,11 +33,20 @@ namespace fs = std::filesystem;
 namespace SCE::W3C {
 
 // W3C SCXML tests with non-deterministic behavior (excluded from automated verification)
-// Math.random() tests, HTTP tests with network timing variability
-const std::set<int> NON_DETERMINISTIC_TESTS = {579,  // Math.random() usage
+// beyond the BasicHTTP fixtures, which isNonDeterministic() asks the registry for
+const std::set<int> NON_DETERMINISTIC_TESTS = {579};  // Math.random() usage
 
-                                               // HTTP tests: Network timing variability (WASM build only)
-                                               509, 510, 513, 518, 519, 520, 522, 531, 532, 534, 567, 577};
+/**
+ * @brief Whether a test's run is not the same run twice
+ *
+ * A fixture the conformance registry runs under its `http` harness waits on
+ * the network, so its timing is not the step order's to decide. Which fixtures
+ * those are is the registry's (W3CTestRegistry, generated from
+ * tests/w3c/conformance/fixtures.json), not a list kept here.
+ */
+bool isNonDeterministic(int testId) {
+    return NON_DETERMINISTIC_TESTS.count(testId) > 0 || W3CTestRegistry::needsHttpEndpoint(std::to_string(testId));
+}
 
 // Tests requiring special infrastructure or having known issues
 const std::set<int> EXCLUDED_TESTS = {
@@ -164,14 +174,14 @@ std::string getTestSCXMLPath(int testId) {
  * @brief Helper to check if test should be skipped
  */
 bool shouldSkipTest(int testId) {
-    return NON_DETERMINISTIC_TESTS.count(testId) > 0 || EXCLUDED_TESTS.count(testId) > 0;
+    return isNonDeterministic(testId) || EXCLUDED_TESTS.count(testId) > 0;
 }
 
 /**
  * @brief Get reason for test skip
  */
 std::string getSkipReason(int testId) {
-    if (NON_DETERMINISTIC_TESTS.count(testId) > 0) {
+    if (isNonDeterministic(testId)) {
         return "Non-deterministic behavior (Math.random() or HTTP timing)";
     }
     if (EXCLUDED_TESTS.count(testId) > 0) {

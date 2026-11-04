@@ -14,18 +14,14 @@
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
-#include <set>
 #include <thread>
-
-// Maximum W3C SCXML test ID (for START~ range support)
-constexpr int MAX_W3C_TEST_ID = 580;
-
-// W3C SCXML C.2: HTTP test IDs requiring external HTTP server
-static const std::set<std::string> HTTP_TEST_IDS = {"201", "509", "510", "513", "518", "519", "520",
-                                                    "522", "531", "532", "534", "567", "577"};
 
 /**
  * @brief Check if HTTP server is needed for the requested tests
+ *
+ * Which fixtures need the BasicHTTP endpoint, and where an open range ends,
+ * are the conformance registry's to say: both are asked of the registry
+ * generated from it (W3CTestRegistry), never kept here.
  *
  * @param specificTestIds List of specific test IDs to run (empty = all tests)
  * @param runUpToMode True if running tests up to a certain ID
@@ -39,6 +35,8 @@ static const std::set<std::string> HTTP_TEST_IDS = {"201", "509", "510", "513", 
         return true;
     }
 
+    const std::vector<std::string> httpTestIds = SCE::W3C::W3CTestRegistry::httpTestIds();
+
     // Check if any requested test is an HTTP test
     for (const auto &testId : specificTestIds) {
         // Handle range format: "500~600"
@@ -46,10 +44,11 @@ static const std::set<std::string> HTTP_TEST_IDS = {"201", "509", "510", "513", 
         if (tildePos != std::string::npos) {
             try {
                 int start = (tildePos > 0) ? std::stoi(testId.substr(0, tildePos)) : 1;
-                int end = (tildePos < testId.length() - 1) ? std::stoi(testId.substr(tildePos + 1)) : MAX_W3C_TEST_ID;
+                int end = (tildePos < testId.length() - 1) ? std::stoi(testId.substr(tildePos + 1))
+                                                           : SCE::W3C::W3CTestRegistry::largestTestNumber();
 
                 // Check if any HTTP test falls within range
-                for (const auto &httpTestId : HTTP_TEST_IDS) {
+                for (const auto &httpTestId : httpTestIds) {
                     int httpNum = std::stoi(httpTestId);
                     if (httpNum >= start && httpNum <= end) {
                         return true;
@@ -62,14 +61,14 @@ static const std::set<std::string> HTTP_TEST_IDS = {"201", "509", "510", "513", 
         }
 
         // Direct ID match
-        if (HTTP_TEST_IDS.count(testId) > 0) {
+        if (SCE::W3C::W3CTestRegistry::needsHttpEndpoint(testId)) {
             return true;
         }
     }
 
     // Check runUpToMode
     if (runUpToMode) {
-        for (const auto &httpTestId : HTTP_TEST_IDS) {
+        for (const auto &httpTestId : httpTestIds) {
             int httpNum = std::stoi(httpTestId);
             if (httpNum <= upToTestId) {
                 return true;
@@ -279,13 +278,15 @@ int main(int argc, char *argv[]) {
                 printf("  (no arguments)         Run all W3C SCXML tests\n");
                 printf("  ID1 ID2 ...            Run specific test IDs (e.g., 150 151 152)\n");
                 printf("  START~END              Run tests in range (e.g., 100~200)\n");
-                printf("  START~                 Run tests from START to end (e.g., 500~ runs tests 500-580)\n");
+                printf("  START~                 Run tests from START to end (e.g., 500~ runs tests 500-%d)\n",
+                       SCE::W3C::W3CTestRegistry::largestTestNumber());
                 printf("  ~NUMBER                Run all tests up to NUMBER (e.g., ~176 runs tests 150-176)\n");
                 printf("\n");
                 printf("Examples:\n");
                 printf("  %s 201                 Run test 201\n", argv[0]);
                 printf("  %s 150~160             Run tests 150 through 160\n", argv[0]);
-                printf("  %s 500~                Run tests 500 to end (500-580)\n", argv[0]);
+                printf("  %s 500~                Run tests 500 to end (500-%d)\n", argv[0],
+                       SCE::W3C::W3CTestRegistry::largestTestNumber());
                 printf("  %s 201 --repeat 100    Run test 201 100 times\n", argv[0]);
                 printf("  %s ~176 --repeat 10    Run tests up to 176, 10 times\n", argv[0]);
                 printf("  %s --repeat 5          Run all tests 5 times\n", argv[0]);
@@ -316,7 +317,7 @@ int main(int argc, char *argv[]) {
 
                         if (endStr.empty()) {
                             // START~ format: run from START to maximum test ID
-                            endId = MAX_W3C_TEST_ID;
+                            endId = SCE::W3C::W3CTestRegistry::largestTestNumber();
                             SCE_LOG_INFO("W3C CLI: Range mode enabled - will run tests from {} to end ({})", startId,
                                          endId);
                         } else {
@@ -409,8 +410,9 @@ int main(int argc, char *argv[]) {
 
             if (!serverReady) {
                 SCE_LOG_ERROR("W3C CLI: HTTP server not ready after 5 seconds - HTTP tests will fail");
-                SCE_LOG_WARN("W3C CLI: HTTP server should be auto-started by polyfill_pre.js for tests: 201, 518, 519, "
-                             "520, etc.");
+                SCE_LOG_WARN("W3C CLI: HTTP server should be auto-started by wasm_polyfill.js for the {} fixtures "
+                             "the registry runs under its `http` harness",
+                             SCE::W3C::W3CTestRegistry::httpTestIds().size());
             }
         }
 #endif

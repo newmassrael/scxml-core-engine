@@ -10,8 +10,12 @@ if (typeof module !== 'undefined' && typeof require !== 'undefined') {
     const { spawn } = require('child_process');
     const path = require('path');
 
-    // W3C SCXML C.2: HTTP test IDs requiring external HTTP server
-    const HTTP_TEST_IDS = new Set(['201', '509', '510', '513', '518', '519', '520', '522', '531', '532', '534', '567', '577']);
+    // W3C SCXML C.2: the fixtures that need the external HTTP server are the
+    // ones the conformance registry runs under its `http` harness, and an open
+    // range ends at the registry's largest test number. Both are generated from
+    // the registry by tests/CMakeLists.txt into w3c_registry_pre.js, the
+    // --pre-js linked before this one, and are not kept here.
+    const HTTP_TEST_IDS = new Set(SCE_W3C_HTTP_TEST_IDS);
 
     // Detect if HTTP tests will be executed
     const args = process.argv.slice(2);
@@ -25,7 +29,7 @@ if (typeof module !== 'undefined' && typeof require !== 'undefined') {
             if (arg.includes('~')) {
                 const parts = arg.split('~');
                 const start = parseInt(parts[0]) || 1;    // Empty string → 1 (start from test 1)
-                const end = parseInt(parts[1]) || 999;     // Empty string → 999 (end at max test)
+                const end = parseInt(parts[1]) || SCE_W3C_LARGEST_TEST_NUMBER;  // Empty string → the last test
                 return Array.from(HTTP_TEST_IDS).some(id => {
                     const num = parseInt(id);
                     return num >= start && num <= end;
