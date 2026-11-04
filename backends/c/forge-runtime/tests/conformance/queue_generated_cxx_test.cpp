@@ -115,10 +115,14 @@ int roundTrip(Queue &queue, TryPush tryPush, TryPop tryPop, Acquire acquireProdu
     return tryPop(&queue, &out) ? 1 : 0;
 }
 
-// The intrusive queues name nodes by index in an array the caller owns.
+// The intrusive queues name nodes by index in an array the caller owns, of the
+// node their headers generate around the element (ADR 0088); both headers are
+// included above, and the node's guard defines it once for both.
 template <typename Queue, typename Init, typename Push, typename TryPop>
 int nodeRoundTrip(Queue &queue, Init init, Push push, TryPop tryPop) {
-    queue_conformance_node_t nodes[3]{};
+    queue_conformance_event_node_t nodes[3]{};
+    nodes[1].value.sensor_id = 7;
+    nodes[1].value.value = 1234;
     std::uint32_t index = 0;
     if (!init(&queue, nodes, 3u, 2u)) {
         return 1;
@@ -126,6 +130,9 @@ int nodeRoundTrip(Queue &queue, Init init, Push push, TryPop tryPop) {
     push(&queue, 1u);
     push(&queue, 0u);
     if (!tryPop(&queue, &index) || index != 1u || !tryPop(&queue, &index) || index != 0u) {
+        return 1;
+    }
+    if (nodes[1].value.sensor_id != 7 || nodes[1].value.value != 1234) {
         return 1;
     }
     return tryPop(&queue, &index) ? 1 : 0;

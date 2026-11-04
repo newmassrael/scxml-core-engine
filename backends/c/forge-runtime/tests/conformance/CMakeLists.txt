@@ -578,19 +578,18 @@ sce_queue_variant(queue_conformance_intrusive_many queue_c_intrusive_irq "")
 sce_queue_variant(queue_conformance_segmented queue_c_segmented "")
 sce_queue_variant(queue_conformance_segmented_many queue_c_segmented_many "")
 
-# The elements every queue holds, then each queue for the machine whose atomics it
-# is built for. The intrusive queues hold a node that carries its own link. All of
-# them are generated into one directory, and claim in one list.
+# The element every queue holds, then each queue for the machine whose atomics it
+# is built for. The intrusive queues hold the same element, in the node their
+# headers generate around it (ADR 0088). All of them are generated into one
+# directory, and claim in one list.
 set(QUEUE_C_HEADERS "")
-foreach(_element queue_conformance_event queue_conformance_node)
-    sce_codegen_generation(_QUEUE_ELEMENT
-        DOCUMENT "${RESOURCE_DIR}/${_element}.scxml"
-        OUTPUT_DIR "${QUEUE_C_GENERATED_DIR}"
-        LANGUAGE c11
-        CLAIM SCE_QUEUE_C_DECLARED_OUTPUTS
-        COMMENT "Generating C11 queue element ${_element}")
-    list(APPEND QUEUE_C_HEADERS ${_QUEUE_ELEMENT_HEADERS})
-endforeach()
+sce_codegen_generation(_QUEUE_ELEMENT
+    DOCUMENT "${RESOURCE_DIR}/queue_conformance_event.scxml"
+    OUTPUT_DIR "${QUEUE_C_GENERATED_DIR}"
+    LANGUAGE c11
+    CLAIM SCE_QUEUE_C_DECLARED_OUTPUTS
+    COMMENT "Generating C11 queue element queue_conformance_event")
+list(APPEND QUEUE_C_HEADERS ${_QUEUE_ELEMENT_HEADERS})
 foreach(_pair
         "queue_c_spsc:mcu64" "queue_c_scq64:mcu64" "queue_c_scq32:mcu32"
         "queue_c_irq_one:mcu0" "queue_c_irq_many:mcu0"

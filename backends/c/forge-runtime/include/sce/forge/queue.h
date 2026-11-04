@@ -285,10 +285,15 @@ static inline int sce_queue_spsc_try_pop(sce_queue_spsc_t *q, unsigned char *slo
 /* The value of a link that names no node. */
 #define SCE_QUEUE_NIL UINT32_MAX
 
-/* An intrusive queue over `len` nodes of `stride` bytes at `nodes`. Each node
- * carries its own link, a `uint32_t` at byte `link_offset`, which the queue uses
- * in place as the index of the node that follows; a node is named by its index
- * in the array, and the queue allocates nothing. One node is set aside as the
+/* An intrusive queue over `len` nodes of `stride` bytes at `nodes`. A node is
+ * the generated `<element>_node_t` (ADR 0088): the element's value, and after it
+ * the link, a `uint32_t` at byte `link_offset` that holds the index of the node
+ * that follows. The link is the list's and not part of the value: the element
+ * declares none, and only the queue reaches it, here through the atomic
+ * operations of sce/forge/atomics.h. A node is named by its index in the array,
+ * and the queue allocates nothing; the runtime stays type-erased over `stride`
+ * and `link_offset`, which the generated queue passes as `sizeof` and `offsetof`
+ * of its node. One node is set aside as the
  * stub and is never pushed by a caller: the pop of the last node puts it behind
  * that node, through the exchange the producers use, so the last node has a
  * successor and can be handed back whole.
@@ -337,9 +342,10 @@ static inline void sce_queue_intrusive_append(sce_queue_intrusive_t *q, uint32_t
 
 /* Builds an empty queue over `len` nodes at `nodes`, with node `stub` set aside.
  * `link_offset` is the byte offset, within a node of `stride` bytes, of the
- * node's `uint32_t` link, which must be aligned for one. Returns zero, and builds
- * nothing, when `stub` is not a node of the array, when `len` is not below the
- * value that means "none", or when the link does not fit its node. */
+ * node's `uint32_t` link (the generated node's `next`), which must be aligned
+ * for one. Returns zero, and builds nothing, when `stub` is not a node of the
+ * array, when `len` is not below the value that means "none", or when the link
+ * does not fit its node. */
 static inline int sce_queue_intrusive_init(sce_queue_intrusive_t *q, void *nodes, uint32_t len, size_t stride,
                                            size_t link_offset, uint32_t stub, int many_consumers) {
     if (nodes == NULL || stub >= len || len >= SCE_QUEUE_NIL || link_offset + sizeof(uint32_t) > stride ||

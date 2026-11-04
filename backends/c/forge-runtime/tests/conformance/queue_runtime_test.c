@@ -388,12 +388,18 @@ static void every_contract_scenario_holds(void) {
 
 /* ---- The intrusive list ---- */
 
-/* A node: more than the link, so a queue that wrote past it or moved the
- * payload is seen. */
-typedef struct node {
+/* The value a node holds: more than one word, so a queue that wrote into it or
+ * moved it is seen. */
+typedef struct payload {
     uint64_t payload;
-    uint32_t link;
     uint32_t tag;
+} payload_t;
+
+/* A node in the shape the queue header generates around an element (ADR 0088):
+ * the value, and after it the link the runtime reaches at `link_offset`. */
+typedef struct node {
+    payload_t value;
+    uint32_t next;
 } node_t;
 
 #define NODE_PAYLOAD(index) ((uint64_t)(index) * 40503u + 7u)
@@ -415,10 +421,10 @@ typedef struct list {
 static int list_build(list_t *l, list_kind_t kind, node_t *nodes, uint32_t len, int many_consumers) {
     l->kind = kind;
     if (kind == LIST_ATOMIC) {
-        return sce_queue_intrusive_init(&l->atomic, nodes, len, sizeof(node_t), offsetof(node_t, link), len - 1u,
+        return sce_queue_intrusive_init(&l->atomic, nodes, len, sizeof(node_t), offsetof(node_t, next), len - 1u,
                                         many_consumers);
     }
-    return sce_queue_intrusive_irq_init(&l->irq, nodes, len, sizeof(node_t), offsetof(node_t, link), len - 1u,
+    return sce_queue_intrusive_irq_init(&l->irq, nodes, len, sizeof(node_t), offsetof(node_t, next), len - 1u,
                                         many_consumers);
 }
 
@@ -478,16 +484,16 @@ static void every_intrusive_scenario_holds(void) {
             const uint32_t len = scenario->capacity + 1u; /* the nodes, and the stub */
             CHECK(len <= 16u, "%s: more nodes than the test array", scenario->id);
             for (n = 0; n < len; n++) {
-                nodes[n].payload = NODE_PAYLOAD(n);
-                nodes[n].link = 0xDEADBEEFu;
-                nodes[n].tag = 0xA5A5A5A5u;
+                nodes[n].value.payload = NODE_PAYLOAD(n);
+                nodes[n].value.tag = 0xA5A5A5A5u;
+                nodes[n].next = 0xDEADBEEFu;
             }
             CHECK(list_build(&l, kind, nodes, len, !scenario->consumers_one), "%s/%s: the shape is refused",
                   list_name(kind), scenario->id);
             run_intrusive_scenario(&l, scenario);
             for (n = 0; n < len; n++) {
-                CHECK(nodes[n].payload == NODE_PAYLOAD(n) && nodes[n].tag == 0xA5A5A5A5u,
-                      "%s/%s: the queue wrote outside the link of node %u", list_name(kind), scenario->id, (unsigned)n);
+                CHECK(nodes[n].value.payload == NODE_PAYLOAD(n) && nodes[n].value.tag == 0xA5A5A5A5u,
+                      "%s/%s: the queue wrote the value of node %u", list_name(kind), scenario->id, (unsigned)n);
             }
             ran++;
         }
@@ -499,15 +505,15 @@ static void an_intrusive_queue_refuses_a_shape_it_cannot_run(void) {
     node_t nodes[4];
     sce_queue_intrusive_t q;
     sce_queue_intrusive_irq_t irq;
-    CHECK(!sce_queue_intrusive_init(&q, nodes, 4, sizeof(node_t), offsetof(node_t, link), 4, 0),
+    CHECK(!sce_queue_intrusive_init(&q, nodes, 4, sizeof(node_t), offsetof(node_t, next), 4, 0),
           "a stub outside the array is refused");
-    CHECK(!sce_queue_intrusive_init(&q, nodes, SCE_QUEUE_NIL, sizeof(node_t), offsetof(node_t, link), 0, 0),
+    CHECK(!sce_queue_intrusive_init(&q, nodes, SCE_QUEUE_NIL, sizeof(node_t), offsetof(node_t, next), 0, 0),
           "a length that reaches the value for none is refused");
     CHECK(!sce_queue_intrusive_init(&q, nodes, 4, sizeof(node_t), sizeof(node_t) - 2u, 3, 0),
           "a link that does not fit its node is refused");
-    CHECK(!sce_queue_intrusive_init(&q, nodes, 4, sizeof(node_t), offsetof(node_t, link) + 1u, 3, 0),
+    CHECK(!sce_queue_intrusive_init(&q, nodes, 4, sizeof(node_t), offsetof(node_t, next) + 1u, 3, 0),
           "a link not aligned for a 32-bit word is refused");
-    CHECK(!sce_queue_intrusive_irq_init(&irq, nodes, 4, sizeof(node_t), offsetof(node_t, link), 4, 0),
+    CHECK(!sce_queue_intrusive_irq_init(&irq, nodes, 4, sizeof(node_t), offsetof(node_t, next), 4, 0),
           "the critical-section list refuses a stub outside the array too");
 }
 

@@ -142,8 +142,9 @@ static inline int sce_queue_irq_try_pop(sce_queue_irq_t *q, unsigned char *slots
 
 /* The intrusive list (sce/forge/queue.h, sce_queue_intrusive_*) for the same
  * target: a plain singly linked list whose every operation runs in the critical
- * section. The links are the same `uint32_t` node indices, in the same place, so
- * the generated type does not change with the target. The critical section
+ * section. The links are the same `uint32_t` node indices, in the same place:
+ * the `next` of the generated `<element>_node_t`, after the value (ADR 0088), so
+ * the generated node does not change with the target. The critical section
  * excludes every other participant, so nothing can be caught between two steps:
  * a pop never answers empty while a node is queued, the stub is not needed and
  * stays out of the list, and the consumers need no flag. */

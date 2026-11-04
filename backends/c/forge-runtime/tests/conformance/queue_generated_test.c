@@ -27,6 +27,7 @@
  * the progress they declare lowered to `blocking` where the target gives no more.
  */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -140,17 +141,20 @@ static void each_header_states_what_the_document_required_and_what_it_gives(void
 }
 
 /* One intrusive queue of either lowering, through the generated functions: the
- * nodes are the caller's array of the generated element, the last one the stub. */
+ * nodes are the caller's array of the node the queue header generates around the
+ * element (ADR 0088), the last one the stub. Both lowerings' headers are included
+ * above and define the node over one element once, under its guard; a second
+ * definition would stop the build. */
 #define EXERCISE_INTRUSIVE(PREFIX, TYPE)                                                                               \
     static void exercise_##PREFIX(void) {                                                                              \
         static TYPE q;                                                                                                 \
-        static queue_conformance_node_t nodes[5];                                                                      \
+        static queue_conformance_event_node_t nodes[5];                                                                \
         uint32_t index = 0;                                                                                            \
         unsigned i;                                                                                                    \
         for (i = 0; i < 5u; i++) {                                                                                     \
-            memset(&nodes[i], 0, sizeof nodes[i]);                                                                     \
-            nodes[i].sensor_id = (uint8_t)(i + 1u);                                                                    \
-            nodes[i].value = (uint16_t)(i * 3u);                                                                       \
+            nodes[i].value = make_event(i + 1u, i * 3u);                                                               \
+            /* The queue sets every link it later reads; a stale one must not matter. */                               \
+            nodes[i].next = 0xDEADBEEFu;                                                                               \
         }                                                                                                              \
         CHECK(!PREFIX##_init(&q, nodes, 5u, 5u), #PREFIX ": a stub outside the array is refused");                     \
         CHECK(PREFIX##_init(&q, nodes, 5u, 4u), #PREFIX ": the shape the document states is refused");                 \
@@ -165,13 +169,51 @@ static void each_header_states_what_the_document_required_and_what_it_gives(void
         CHECK(PREFIX##_try_pop(&q, &index) && index == 2u, #PREFIX ": the node comes back at once and can be reused"); \
         CHECK(!PREFIX##_try_pop(&q, &index), #PREFIX ": drained");                                                     \
         for (i = 0; i < 5u; i++) {                                                                                     \
-            CHECK(nodes[i].sensor_id == (uint8_t)(i + 1u) && nodes[i].value == (uint16_t)(i * 3u),                     \
-                  #PREFIX ": the queue wrote outside the link of node %u", i);                                         \
+            CHECK(nodes[i].value.sensor_id == (uint8_t)(i + 1u) && nodes[i].value.value == (uint16_t)(i * 3u),         \
+                  #PREFIX ": the queue wrote the value of node %u", i);                                                \
         }                                                                                                              \
     }
 
 EXERCISE_INTRUSIVE(queue_c_intrusive, queue_c_intrusive_t)
 EXERCISE_INTRUSIVE(queue_c_intrusive_irq, queue_c_intrusive_irq_t)
+
+/* The generated node is the element's value with the link after it, which the
+ * queue reaches as `link_offset`. */
+static void the_generated_node_holds_the_value_and_then_the_link(void) {
+    CHECK(offsetof(queue_conformance_event_node_t, value) == 0u, "the value comes first");
+    CHECK(offsetof(queue_conformance_event_node_t, next) >= sizeof(queue_conformance_event_t),
+          "the link lies after the value");
+    CHECK(sizeof(((queue_conformance_event_node_t *)0)->next) == sizeof(uint32_t), "the link is a 32-bit index");
+}
+
+/* A node popped from one queue is pushed to the other over the same element, both
+ * over one array with a stub each: the node is in one queue at a time, and its
+ * value moves with it untouched. The two lowerings are built for different
+ * machines; they meet here only on this test's one thread, which is all the
+ * check needs: one node type serves both. */
+static void a_node_moves_between_queues_over_one_element(void) {
+    static queue_c_intrusive_t work;
+    static queue_c_intrusive_irq_t spare;
+    static queue_conformance_event_node_t nodes[5];
+    uint32_t index = 0;
+    unsigned i;
+    for (i = 0; i < 5u; i++) {
+        nodes[i].value = make_event(i + 1u, i * 3u);
+    }
+    CHECK(queue_c_intrusive_init(&work, nodes, 5u, 3u), "the work queue is built");
+    CHECK(queue_c_intrusive_irq_init(&spare, nodes, 5u, 4u), "the spare queue is built over the same array");
+    queue_c_intrusive_push(&work, 0u);
+    queue_c_intrusive_push(&work, 1u);
+    CHECK(queue_c_intrusive_try_pop(&work, &index) && index == 0u, "the work queue hands back its oldest node");
+    queue_c_intrusive_irq_push(&spare, 0u);
+    CHECK(queue_c_intrusive_irq_try_pop(&spare, &index) && index == 0u,
+          "the node popped from one queue comes off the other");
+    CHECK(queue_c_intrusive_try_pop(&work, &index) && index == 1u, "the first queue kept the node still in it");
+    CHECK(!queue_c_intrusive_try_pop(&work, &index) && !queue_c_intrusive_irq_try_pop(&spare, &index),
+          "both queues drained");
+    CHECK(nodes[0].value.sensor_id == 1u && nodes[0].value.value == 0u,
+          "the node's value moved between the queues untouched");
+}
 
 static void the_intrusive_headers_state_what_the_document_required_and_what_it_gives(void) {
     /* Many producers, one consumer over atomics: push is wait-free, and the
@@ -424,6 +466,8 @@ int main(void) {
     exercise_queue_c_irq_many();
     exercise_queue_c_intrusive();
     exercise_queue_c_intrusive_irq();
+    the_generated_node_holds_the_value_and_then_the_link();
+    a_node_moves_between_queues_over_one_element();
     the_intrusive_headers_state_what_the_document_required_and_what_it_gives();
     the_segmented_headers_state_what_the_document_required_and_what_it_gives();
     the_linked_lamport_queue_hands_events_over_in_order_across_segments();

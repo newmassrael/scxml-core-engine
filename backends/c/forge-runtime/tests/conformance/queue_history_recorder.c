@@ -483,11 +483,12 @@ static void record_run(const char *dir, const char *name, kind_t kind, uint32_t 
 
 /* ---- The intrusive list ---- */
 
-/* A node of the caller's array: a payload, and the link the queue uses. */
+/* A node of the caller's array, in the shape the queue header generates around
+ * an element (ADR 0088): the value, a payload, and after it the link the queue
+ * uses. */
 typedef struct node {
-    uint64_t payload;
-    uint32_t link;
-    uint32_t pad;
+    uint64_t value;
+    uint32_t next;
 } node_t;
 
 typedef enum list_kind { LIST_ATOMIC, LIST_IRQ } list_kind_t;
@@ -539,7 +540,7 @@ static void *list_produce(void *arg) {
         const uint64_t payload = index + 1u;
         uint64_t invoked;
         uint64_t returned;
-        run->nodes[index].payload = payload;
+        run->nodes[index].value = payload;
         invoked = list_tick(run);
         list_push(run, (uint32_t)index);
         returned = list_tick(run);
@@ -560,7 +561,7 @@ static void *list_consume(void *arg) {
         const uint64_t returned = list_tick(run);
         if (popped) {
             spins = 0;
-            log_add(log, 0, 1, run->nodes[index].payload, "popped", invoked, returned);
+            log_add(log, 0, 1, run->nodes[index].value, "popped", invoked, returned);
             (void)sce_atomic_fetch_add_acq_rel_u64(&run->delivered, 1u);
         } else {
             log_add(log, 0, 0, 0, "empty", invoked, returned);
@@ -594,11 +595,11 @@ static void record_list_run(const char *dir, const char *name, list_kind_t kind,
     run.logs = (log_t *)calloc(participants, sizeof(log_t));
     if (kind == LIST_ATOMIC) {
         if (!sce_queue_intrusive_init(&run.atomic, run.nodes, (uint32_t)total + 1u, sizeof(node_t),
-                                      offsetof(node_t, link), (uint32_t)total, consumers > 1u)) {
+                                      offsetof(node_t, next), (uint32_t)total, consumers > 1u)) {
             die("the intrusive list refused its shape");
         }
     } else if (!sce_queue_intrusive_irq_init(&run.irq, run.nodes, (uint32_t)total + 1u, sizeof(node_t),
-                                             offsetof(node_t, link), (uint32_t)total, consumers > 1u)) {
+                                             offsetof(node_t, next), (uint32_t)total, consumers > 1u)) {
         die("the interrupt-masked list refused its shape");
     }
     for (i = 0; i < producers; i++) {
