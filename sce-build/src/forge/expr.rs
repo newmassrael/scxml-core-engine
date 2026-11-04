@@ -70,8 +70,6 @@ use std::fmt;
 /// answers with, so the caller holding the attribute can place it.
 pub type Refusal = Spanned<ExprError>;
 
-#[cfg(test)]
-mod string_literal_tests;
 pub(crate) mod swift;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -12113,6 +12111,9 @@ fn c_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Tests
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[cfg(test)]
+mod string_literal_tests;
 
 #[cfg(test)]
 mod tests {
