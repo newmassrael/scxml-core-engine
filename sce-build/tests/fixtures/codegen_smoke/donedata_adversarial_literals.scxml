@@ -25,8 +25,8 @@
   <final id="done">
     <donedata>
       <param name="dd_dquote" expr="'a&quot;b'"/>
-      <param name="dd_backslash" expr="'c\d'"/>
-      <param name="dd_both" expr="'e\&quot;f'"/>
+      <param name="dd_backslash" expr="'c\\d'"/>
+      <param name="dd_both" expr="'e\\\&quot;f'"/>
       <param name="dd_luaclose" expr="'g&quot;}h'"/>
       <param name="dd_tab" expr="'i&#9;j'"/>
       <param name="dd_newline" expr="'k&#10;l'"/>

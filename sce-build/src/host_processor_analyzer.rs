@@ -978,14 +978,13 @@ fn host_served_mesh_request(
     }
 }
 
-/// `value` as a string literal of the data model: quoted with the quote it
-/// does not contain, which the parser's literal reader strips back off.
+/// `value` as a string literal of the data model, written by the one
+/// ECMAScript quoter, so the parser's literal reader decodes it back to
+/// `value` whatever quotes and backslashes it holds (the quoter this replaced
+/// chose the quote `value` did not contain, which held only while it did not
+/// contain both, or a backslash).
 fn quote_literal(value: &str) -> String {
-    if value.contains('\'') {
-        format!("\"{value}\"")
-    } else {
-        format!("'{value}'")
-    }
+    crate::filters::ecmascript_string_literal(value)
 }
 
 /// Whether `pred` holds for any action in `model`, nested ones included.

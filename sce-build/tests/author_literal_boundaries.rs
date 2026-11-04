@@ -135,11 +135,14 @@ const SHAPES: &[&str] = &[
 const VALUES: &[(&str, &str)] = &[
     // Closes the host literal mid-token when unescaped.
     ("dquote", "a\"b"),
-    // `\d` is an unknown escape in C/C++/Rust/Go/Kotlin and in Lua:
-    // pasted raw it is a warning at best and a changed value at worst.
+    // A backslash before `d`: `\d` is an unknown escape in C/C++/Rust/Go/
+    // Kotlin and in Lua, so pasted raw it is a warning at best and a changed
+    // value at worst. The fixtures write it `'c\\d'`, which is the value
+    // `c\d` as ECMAScript reads it; `'c\d'` would be `cd` (an identity
+    // escape), and a static param is the value its literal denotes.
     ("backslash", "c\\d"),
     // Backslash immediately before a quote — escaping one of the two
-    // leaves the literal unbalanced.
+    // leaves the literal unbalanced. Written `'e\\\"f'` in the fixtures.
     ("both", "e\\\"f"),
     // Terminates the Lua table constructor the Rust/Go backends build.
     ("luaclose", "g\"}h"),

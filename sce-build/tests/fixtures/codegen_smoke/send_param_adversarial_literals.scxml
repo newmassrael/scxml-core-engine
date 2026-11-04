@@ -37,8 +37,8 @@
       <!-- internal event queue -->
       <send event="e_internal" target="#_internal">
         <param name="internal_dquote" expr="'a&quot;b'"/>
-        <param name="internal_backslash" expr="'c\d'"/>
-        <param name="internal_both" expr="'e\&quot;f'"/>
+        <param name="internal_backslash" expr="'c\\d'"/>
+        <param name="internal_both" expr="'e\\\&quot;f'"/>
         <param name="internal_luaclose" expr="'g&quot;}h'"/>
         <param name="internal_tab" expr="'i&#9;j'"/>
         <param name="internal_newline" expr="'k&#10;l'"/>
@@ -48,8 +48,8 @@
       <!-- parent session via invoke callback -->
       <send event="e_parent" target="#_parent">
         <param name="parent_dquote" expr="'a&quot;b'"/>
-        <param name="parent_backslash" expr="'c\d'"/>
-        <param name="parent_both" expr="'e\&quot;f'"/>
+        <param name="parent_backslash" expr="'c\\d'"/>
+        <param name="parent_both" expr="'e\\\&quot;f'"/>
         <param name="parent_luaclose" expr="'g&quot;}h'"/>
         <param name="parent_tab" expr="'i&#9;j'"/>
         <param name="parent_newline" expr="'k&#10;l'"/>
@@ -59,8 +59,8 @@
       <!-- BasicHTTP form fields -->
       <send event="e_http" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://localhost:8080/probe">
         <param name="http_dquote" expr="'a&quot;b'"/>
-        <param name="http_backslash" expr="'c\d'"/>
-        <param name="http_both" expr="'e\&quot;f'"/>
+        <param name="http_backslash" expr="'c\\d'"/>
+        <param name="http_both" expr="'e\\\&quot;f'"/>
         <param name="http_luaclose" expr="'g&quot;}h'"/>
         <param name="http_tab" expr="'i&#9;j'"/>
         <param name="http_newline" expr="'k&#10;l'"/>
@@ -70,8 +70,8 @@
       <!-- delayed external queue -->
       <send event="e_delay" delay="20ms">
         <param name="delay_dquote" expr="'a&quot;b'"/>
-        <param name="delay_backslash" expr="'c\d'"/>
-        <param name="delay_both" expr="'e\&quot;f'"/>
+        <param name="delay_backslash" expr="'c\\d'"/>
+        <param name="delay_both" expr="'e\\\&quot;f'"/>
         <param name="delay_luaclose" expr="'g&quot;}h'"/>
         <param name="delay_tab" expr="'i&#9;j'"/>
         <param name="delay_newline" expr="'k&#10;l'"/>
@@ -81,8 +81,8 @@
       <!-- immediate external queue -->
       <send event="e_plain">
         <param name="plain_dquote" expr="'a&quot;b'"/>
-        <param name="plain_backslash" expr="'c\d'"/>
-        <param name="plain_both" expr="'e\&quot;f'"/>
+        <param name="plain_backslash" expr="'c\\d'"/>
+        <param name="plain_both" expr="'e\\\&quot;f'"/>
         <param name="plain_luaclose" expr="'g&quot;}h'"/>
         <param name="plain_tab" expr="'i&#9;j'"/>
         <param name="plain_newline" expr="'k&#10;l'"/>

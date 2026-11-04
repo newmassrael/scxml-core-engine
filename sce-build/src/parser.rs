@@ -4631,12 +4631,9 @@ impl SCXMLParser {
         for param_elem in scxml_children(elem, "param") {
             check_param_attributes(&param_elem, source_name)?;
             let param_expr = param_elem.attribute("expr").unwrap_or("").to_string();
-            let is_static_literal = is_static_string_literal(&param_expr);
-            let static_value = if is_static_literal {
-                extract_static_string_literal(&param_expr)
-            } else {
-                String::new()
-            };
+            let literal = static_string_literal(&param_expr);
+            let is_static_literal = literal.is_some();
+            let static_value = literal.unwrap_or_default();
             action.params.push(Param {
                 name: param_elem.attribute("name").unwrap_or("").to_string(),
                 expr: param_expr,
@@ -5325,7 +5322,8 @@ impl SCXMLParser {
             let name = param.attribute("name").unwrap_or("").to_string();
             let expr = param.attribute("expr").unwrap_or("").to_string();
             let location = param.attribute("location").unwrap_or("").to_string();
-            let is_sl = is_static_string_literal(&expr);
+            let literal = static_string_literal(&expr);
+            let is_sl = literal.is_some();
             let param_at = source_location_of(&param, source_name);
             let expr_spelling = AttributeSpelling::of(&param, None, "expr");
             let location_spelling = AttributeSpelling::of(&param, None, "location");
@@ -5336,11 +5334,7 @@ impl SCXMLParser {
                 location: location.clone(),
                 location_spelling: location_spelling.clone(),
                 is_static_literal: is_sl,
-                static_value: if is_sl {
-                    extract_static_string_literal(&expr)
-                } else {
-                    String::new()
-                },
+                static_value: literal.unwrap_or_default(),
                 envelope_metadata: false,
                 source_location: param_at.clone(),
                 ..Param::default()
@@ -5852,7 +5846,10 @@ impl SCXMLParser {
                         detail: "<param name=\"_mesh_event\"> must appear exactly once".into(),
                     }));
                 }
-                mesh_event = Some(extract_static_string_literal(&expr));
+                // The literal's value, its escapes read; an expression that is
+                // not one literal is kept as written.
+                mesh_event =
+                    Some(static_string_literal(&expr).unwrap_or_else(|| expr.trim().to_string()));
             } else if name == "_mesh_deadline_ms"
                 || name == crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM
             {
@@ -5876,11 +5873,7 @@ impl SCXMLParser {
                 // (`expr="50"`); either is read by the deadline grammar every
                 // runtime shares, so this build accepts exactly what a host
                 // invoke's runtime would.
-                let raw = if is_static_string_literal(&expr) {
-                    extract_static_string_literal(&expr)
-                } else {
-                    expr.trim().to_string()
-                };
+                let raw = static_string_literal(&expr).unwrap_or_else(|| expr.trim().to_string());
                 match crate::host_processor_analyzer::parse_deadline_ms(&raw) {
                     Some(v) => deadline_ms = Some(v),
                     None => {
@@ -5896,19 +5889,15 @@ impl SCXMLParser {
                     detail: "unknown _mesh_* name is reserved for future envelope metadata".into(),
                 }));
             } else {
-                let is_sl = is_static_string_literal(&expr);
+                let literal = static_string_literal(&expr);
                 payload_params.push(Param {
                     name,
                     expr: expr.clone(),
                     expr_spelling: AttributeSpelling::of(&param, None, "expr"),
                     location,
                     location_spelling: AttributeSpelling::of(&param, None, "location"),
-                    is_static_literal: is_sl,
-                    static_value: if is_sl {
-                        extract_static_string_literal(&expr)
-                    } else {
-                        String::new()
-                    },
+                    is_static_literal: literal.is_some(),
+                    static_value: literal.unwrap_or_default(),
                     envelope_metadata: false,
                     source_location: source_location_of(&param, source_name),
                     ..Param::default()
@@ -8606,19 +8595,22 @@ pub(crate) fn parse_delay_to_ms(delay: &str) -> Option<i64> {
     Some(ms)
 }
 
-fn is_static_string_literal(expr: &str) -> bool {
-    let trimmed = expr.trim();
-    trimmed.len() >= 2
-        && ((trimmed.starts_with('\'') && trimmed.ends_with('\''))
-            || (trimmed.starts_with('"') && trimmed.ends_with('"')))
-}
-
-fn extract_static_string_literal(expr: &str) -> String {
-    let trimmed = expr.trim();
-    if trimmed.len() >= 2 {
-        trimmed[1..trimmed.len() - 1].to_string()
-    } else {
-        String::new()
+/// The text `expr` denotes when the whole expression is one ECMAScript string
+/// literal, its escapes read by the one decoder the expression lexer applies
+/// (`crate::forge::expr::tokenize_as`, ECMAScript mode): `'c\d'` is `cd`, as
+/// the script engine reads it. `None` for anything else, a join of two
+/// literals (`'a' + 'b'`) included: that is an expression, and the path that
+/// evaluates expressions computes it, so the build does not fold it. A literal
+/// the decoder refuses (a lone surrogate, a malformed `\x`) is `None` too, so
+/// the evaluating path raises the error ECMAScript raises for it.
+fn static_string_literal(expr: &str) -> Option<String> {
+    use crate::forge::expr::{tokenize_as, LexMode, Token};
+    match tokenize_as(expr.trim(), LexMode::EcmaScript)
+        .ok()?
+        .as_slice()
+    {
+        [Token::String { value }, Token::Eof] => Some(value.clone()),
+        _ => None,
     }
 }
 
@@ -9702,6 +9694,51 @@ mod tests {
         assert_eq!(model.variables.len(), 2);
         assert_eq!(model.variables[0].id, "x");
         assert_eq!(model.variables[1].id, "y");
+    }
+
+    /// A `<param>` whose `expr` is one string literal is pasted at build time
+    /// as the literal's VALUE, its escapes read as ECMAScript reads them: the
+    /// identity escape `\d` is `d`, and `\\` is one backslash. A join of two
+    /// literals is an expression, evaluated where every expression is, and is
+    /// not pasted; nor is a literal the decoder refuses.
+    #[test]
+    fn a_static_param_is_the_value_of_its_literal() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="ecmascript">
+            <state id="s">
+                <onentry>
+                    <send event="e" target="#_internal">
+                        <param name="identity" expr="'c\d'"/>
+                        <param name="backslash" expr="'c\\d'"/>
+                        <param name="quoted" expr="&quot;it's&quot;"/>
+                        <param name="joined" expr="'a' + 'b'"/>
+                        <param name="lone" expr="'\uD800'"/>
+                    </send>
+                </onentry>
+            </state>
+        </scxml>"##;
+        let model = SCXMLParser::new().parse_string(scxml, "test").unwrap();
+        let send = &model.states["s"].on_entry_blocks[0][0];
+        let read: Vec<(&str, bool, &str)> = send
+            .params
+            .iter()
+            .map(|p| {
+                (
+                    p.name.as_str(),
+                    p.is_static_literal,
+                    p.static_value.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            read,
+            [
+                ("identity", true, "cd"),
+                ("backslash", true, "c\\d"),
+                ("quoted", true, "it's"),
+                ("joined", false, ""),
+                ("lone", false, ""),
+            ]
+        );
     }
 
     #[test]

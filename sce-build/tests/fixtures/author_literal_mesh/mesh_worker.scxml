@@ -26,8 +26,8 @@
     <onentry>
       <send event="e_meshparent" target="#_parent">
         <param name="meshparent_dquote" expr="'a&quot;b'"/>
-        <param name="meshparent_backslash" expr="'c\d'"/>
-        <param name="meshparent_both" expr="'e\&quot;f'"/>
+        <param name="meshparent_backslash" expr="'c\\d'"/>
+        <param name="meshparent_both" expr="'e\\\&quot;f'"/>
         <param name="meshparent_luaclose" expr="'g&quot;}h'"/>
         <param name="meshparent_tab" expr="'i&#9;j'"/>
         <param name="meshparent_newline" expr="'k&#10;l'"/>
