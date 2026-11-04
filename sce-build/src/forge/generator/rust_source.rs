@@ -199,7 +199,7 @@ pub(crate) fn source_case(
 ) -> Result<SourceCase, String> {
     let mut bindings = Vec::new();
     let literal = parts_literal(plan, path, source, held, &mut bindings)?;
-    let (inputs, said) = handed_inputs(plan, path, inputs)?;
+    let HandedInputs { args: inputs, said } = handed_inputs(plan, path, inputs)?;
     let mut fresh = 0;
     let mut checks: Vec<(String, String)> = plan
         .elements
@@ -215,6 +215,12 @@ pub(crate) fn source_case(
             group_equal(group, path, "&decoded", "&parts"),
         )
     }));
+    if plan.model.variant.is_some() {
+        checks.push((
+            VARIANT_MEMBER.to_string(),
+            variant_equal(plan, path, "&decoded", "&parts", held, &mut fresh)?,
+        ));
+    }
     checks.extend(said);
     Ok(SourceCase {
         bindings,
@@ -224,16 +230,24 @@ pub(crate) fn source_case(
     })
 }
 
-/// The flag inputs a case hands the codec at `path`, as `decode`'s arguments in
-/// the order the codec declares them; and, for each input the value says
-/// (docs/adr/0065 §6 R4a), an expression that holds when `parts` says the one
-/// the case hands. An input the value does not say is one the encode takes as
-/// an argument, which a case does not spell yet.
+/// The flag inputs a byte case hands its codec.
+#[derive(Default)]
+struct HandedInputs {
+    /// `decode`'s arguments, in the order the codec declares the inputs.
+    args: Vec<String>,
+    /// For each input the value says, its label and an expression that holds
+    /// when `parts` says the one the case hands.
+    said: Vec<(String, String)>,
+}
+
+/// The flag inputs a case hands the codec at `path` ([`HandedInputs`]), each
+/// one the value says (docs/adr/0065 §6 R4a). An input the value does not say
+/// is one the encode takes as an argument, which a case does not spell yet.
 fn handed_inputs(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
     inputs: &serde_json::Value,
-) -> Result<(Vec<String>, Vec<(String, String)>), String> {
+) -> Result<HandedInputs, String> {
     if let Some(input) = plan.given.first() {
         return Err(format!(
             "the value does not say the flag input `{}`, which its encode takes, and a case \
@@ -243,7 +257,7 @@ fn handed_inputs(
     }
     let declared = &plan.model.flag_inputs;
     let object = match inputs {
-        serde_json::Value::Null if declared.is_empty() => return Ok((Vec::new(), Vec::new())),
+        serde_json::Value::Null if declared.is_empty() => return Ok(HandedInputs::default()),
         serde_json::Value::Object(object) => object,
         _ => return Err("a case of a codec that takes flag inputs states `inputs`".to_string()),
     };
@@ -276,7 +290,7 @@ fn handed_inputs(
         };
         said.push((format!("flag input {}", input.name), holds));
     }
-    Ok((args, said))
+    Ok(HandedInputs { args, said })
 }
 
 /// Refuse what a literal does not spell yet.
@@ -309,8 +323,20 @@ fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
             ));
         }
     }
-    if !plan.arms.is_empty() {
-        return Err("a variant is not spelled as a literal yet".to_string());
+    if let Some(variant) = &plan.model.variant {
+        if variant.tag_field.is_none() || variant.peek_byte.is_some() {
+            return Err(
+                "a variant whose tag its caller supplies or a peeked byte decides is not \
+                 spelled as a literal yet"
+                    .to_string(),
+            );
+        }
+        if let Some(arm) = plan.arms.iter().find(|arm| arm.feature.is_some()) {
+            return Err(format!(
+                "the arm `{}` is compiled under a feature, which a literal does not spell yet",
+                arm.codec
+            ));
+        }
     }
     if let Some(element) = plan
         .elements
@@ -342,6 +368,7 @@ fn parts_literal(
     if let Some(extra) = object.keys().find(|key| {
         !plan.elements.iter().any(|e| &e.field.id == *key)
             && !plan.groups().iter().any(|g| &gates_label(g) == *key)
+            && !(plan.model.variant.is_some() && *key == VARIANT_MEMBER)
     }) {
         return Err(format!(
             "the source states `{extra}`, which the value does not present"
@@ -356,6 +383,14 @@ fn parts_literal(
         let spelled = group_literal(plan, path, group, value, held, bindings)
             .map_err(|e| format!("`{label}`: {e}"))?;
         members.push(format!("{}: {spelled}", group_accessor(group)));
+    }
+    if plan.model.variant.is_some() {
+        let value = object
+            .get(VARIANT_MEMBER)
+            .ok_or_else(|| format!("the source states no `{VARIANT_MEMBER}`, the variant's arm"))?;
+        let spelled = variant_literal(plan, path, value, held, bindings)
+            .map_err(|e| format!("`{VARIANT_MEMBER}`: {e}"))?;
+        members.push(format!("{VARIANT_MEMBER}: {spelled}"));
     }
     for element in &plan.elements {
         let id = &element.field.id;
@@ -381,6 +416,122 @@ fn parts_literal(
         members.push(format!("{}: {spelled}", filters::to_snake_case(id.clone())));
     }
     Ok(format!("{} {{ {} }}", path.parts(), members.join(", ")))
+}
+
+/// The member a source states a variant's arm by, and the accessor of it
+/// (docs/adr/0058 §1, `fn body(&self)`).
+const VARIANT_MEMBER: &str = "body";
+
+/// The arm of the variant a source states as `{"arm": alias, "body": ..}` for a
+/// known arm or `{"tag": n, "body": ..}` for the default arm (ADR 0081 §5): the
+/// `{Codec}PartsBody` arm holding the body, bound first, and for the default arm
+/// the tag it holds.
+fn variant_literal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let object = json
+        .as_object()
+        .ok_or_else(|| "a variant is a JSON object".to_string())?;
+    let body = object
+        .get("body")
+        .ok_or_else(|| "a variant states `body`, the arm's value".to_string())?;
+    let enum_type = format!("{}::{}PartsBody", path.module, path.type_name);
+    let mut held_body = |alias: &str| -> Result<String, String> {
+        let literal = held.read(alias, &mut |plan, path, held| {
+            parts_literal(plan, path, body, held, bindings)
+        })?;
+        Ok(bind(bindings, None, literal))
+    };
+    match (object.get("arm"), object.get("tag"), object.len()) {
+        (Some(alias), None, 2) => {
+            let alias = alias
+                .as_str()
+                .ok_or_else(|| "`arm` is the alias of the arm's codec".to_string())?;
+            if !plan
+                .arms
+                .iter()
+                .any(|a| a.codec == alias && a.tag.is_some())
+            {
+                return Err(format!("no known arm holds `{alias}`"));
+            }
+            let name = held_body(alias)?;
+            Ok(format!(
+                "{enum_type}::{}(&{name})",
+                filters::to_pascal_case(alias.to_string())
+            ))
+        }
+        (None, Some(tag), 2) => {
+            let tag = tag
+                .as_u64()
+                .ok_or_else(|| "`tag` is the number the default arm holds".to_string())?;
+            let arm = plan
+                .arms
+                .iter()
+                .find(|a| a.tag.is_none())
+                .ok_or_else(|| "the variant has no default arm".to_string())?;
+            let name = held_body(arm.codec)?;
+            Ok(format!(
+                "{enum_type}::Default {{ tag: {}::{}::new({tag}).expect(\"the case's tag is no \
+                 arm's\"), body: &{name} }}",
+                path.module,
+                unknown_tag_type(&path.type_name)
+            ))
+        }
+        _ => Err("a variant states `arm` or `tag`, and `body`".to_string()),
+    }
+}
+
+/// A `bool` expression that holds when `a` and `b`, references to two sources
+/// of the codec `plan` at `path`, hold the same arm of its variant with the
+/// same body, and for the default arm the same tag.
+fn variant_equal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    a: &str,
+    b: &str,
+    held: &mut dyn HeldCodecs,
+    fresh: &mut usize,
+) -> Result<String, String> {
+    let source = format!("{}::{}VariantSource", path.module, path.type_name);
+    let mut arms = Vec::new();
+    for arm in &plan.arms {
+        *fresh += 1;
+        let (x, y) = (format!("a{fresh}"), format!("b{fresh}"));
+        let same = {
+            let (x, y) = (x.clone(), y.clone());
+            held.read(arm.codec, &mut |plan, path, held| {
+                body_equal(plan, path, &x, &y, held, fresh)
+            })?
+        };
+        // A body of no element binds nothing it reads.
+        let (x, y) = if same == "true" {
+            ("_".to_string(), "_".to_string())
+        } else {
+            (x, y)
+        };
+        arms.push(match arm.tag {
+            Some(_) => {
+                let name = filters::to_pascal_case(arm.codec.to_string());
+                format!("({source}::{name}({x}), {source}::{name}({y})) => {same}")
+            }
+            None => format!(
+                "({source}::Default {{ tag: ta{fresh}, body: {x} }}, \
+                 {source}::Default {{ tag: tb{fresh}, body: {y} }}) => ta{fresh} == tb{fresh} && {same}"
+            ),
+        });
+    }
+    if arms.len() > 1 {
+        arms.push("_ => false".to_string());
+    }
+    Ok(format!(
+        "match ({src}::{VARIANT_MEMBER}({a}), {src}::{VARIANT_MEMBER}({b})) {{ {} }}",
+        arms.join(", "),
+        src = path.source()
+    ))
 }
 
 /// The value of the gate group `group` a source states as `{"arm": i, ..}`, its
@@ -636,6 +787,9 @@ fn body_equal(
             .iter()
             .map(|group| group_equal(group, path, a, b)),
     );
+    if plan.model.variant.is_some() {
+        checks.push(variant_equal(plan, path, a, b, held, fresh)?);
+    }
     // Parenthesised only where they are joined: alone, a check is a block,
     // a `match` or a comparison that needs none.
     Ok(match checks.as_slice() {

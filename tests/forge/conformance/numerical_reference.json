@@ -41354,6 +41354,43 @@
         {"source": {"id": 0, "ext_keyexpr": null}, "inputs": {"Z": 0}, "encoded": [0], "note": "Z clear: the id alone"},
         {"source": {"id": 9, "ext_keyexpr": {"outer_header": 15, "inner": {"inner_header": 0, "id": 0, "suffix": null}}}, "inputs": {"Z": 1}, "encoded": [9, 15, 2, 0, 0], "note": "Z set: the key expression extension"}
       ]
+    },
+    "codec_variant_dispatch": {
+      "fixture": "CodecVariantDispatch",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a variant's tag is its arm's, or the one the default arm holds: no member states it.",
+      "sources": [
+        {"source": {"body": {"arm": "codec_variant_session_open", "body": {"version": 258}}}, "encoded": [1, 1, 2], "note": "the open arm: its tag, then its body"},
+        {"source": {"body": {"arm": "codec_variant_session_close", "body": {"reason": 3}}}, "encoded": [2, 3], "note": "the close arm"},
+        {"source": {"body": {"tag": 127, "body": {"reason": 9}}}, "encoded": [127, 9], "note": "a tag no arm names: the default arm keeps it"}
+      ]
+    },
+    "codec_origin_choice": {
+      "fixture": "CodecOriginChoice",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a variant whose arms are a leaf and a scalar.",
+      "sources": [
+        {"source": {"body": {"arm": "codec_origin_leaf", "body": {"data": [1, 2]}}}, "encoded": [1, 2, 1, 2], "note": "the leaf arm"},
+        {"source": {"body": {"arm": "codec_origin_scalar", "body": {"value": 171}}}, "encoded": [2, 171], "note": "the scalar arm"},
+        {"source": {"body": {"tag": 0, "body": {"value": 1}}}, "encoded": [0, 1], "note": "tag zero, which no arm names"}
+      ]
+    },
+    "codec_zenoh_push_body": {
+      "fixture": "CodecZenohPushBody",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a variant whose tag is a flag of a carrier, derived from the arm.",
+      "sources": [
+        {"source": {"header": 1, "body": {"arm": "codec_zenoh_put", "body": {"payload": 7}}}, "encoded": [1, 7], "note": "mid 1: a put; the mid bits are derived from the arm"},
+        {"source": {"header": 34, "body": {"arm": "codec_zenoh_del", "body": {}}}, "encoded": [34], "note": "mid 2: a del, the bits beside the tag kept"},
+        {"source": {"header": 240, "body": {"tag": 16, "body": {"payload": 1}}}, "encoded": [240, 1], "note": "a mid no arm names: the default arm keeps it"}
+      ]
+    },
+    "codec_zenoh_ext_entry": {
+      "fixture": "CodecZenohExtEntry",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh extension: its encoding, two bits of the header, is the arm's tag.",
+      "sources": [
+        {"source": {"header": 1, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, "encoded": [1], "note": "a unit extension: enc 0"},
+        {"source": {"header": 34, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 128}}}, "encoded": [34, 128, 1], "note": "a zint extension: enc 1"},
+        {"source": {"header": 195, "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": [1, 2]}}}, "encoded": [195, 2, 1, 2], "note": "a zbuf extension with Z set: enc 2"},
+        {"source": {"header": 101, "body": {"tag": 3, "body": {}}}, "encoded": [101], "note": "enc 3, which no arm names: the default arm"}
+      ]
     }
   },
   "string_lookups": {

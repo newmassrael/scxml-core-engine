@@ -222,6 +222,15 @@ says (`{Codec}Wire::input_x`, docs/adr/0065 §6 R4a), so a case whose inputs the
 codecs gain 25 cases. An input the value does not say, which the encode takes as an argument, and a held codec whose
 inputs its parent binds are refused by name.
 
+*Landed (step 3, sixth part, 2026-11-04): variants.* The model reads a `<sce:variant>` whose tag is a field or a flag
+of a carrier before it: the tag is derived from the arm, a known arm's the document's and the default arm's the one it
+holds, which must be no arm's and fit the tag's bits; the decode reads the tag and the arm's body within its scope.
+The variant is the source's member `body`, `{"arm": alias, "body": ..}` or `{"tag": n, "body": ..}`. The literal holds
+`{Codec}PartsBody`, the default arm's tag as `{Codec}UnknownTag::new(n)`, and the harness compares the arm, its body
+down into its elements and the default arm's tag. Four codecs gain 13 cases. A variant whose caller supplies its tag
+or a peeked byte decides it, an arm under a build feature, and an arm's codec that takes flag inputs are refused by
+name.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

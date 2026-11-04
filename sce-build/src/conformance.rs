@@ -4205,6 +4205,9 @@ mod tests {
             // A flag input the value says: the decode is handed it, and the
             // value is held to saying the one the case hands.
             "fixtures::codec_zenoh_wireexpr::CodecZenohWireexprWire::input_n(&parts) == true",
+            // A variant's default arm, holding the tag no arm names.
+            "body: fixtures::codec_variant_dispatch::CodecVariantDispatchPartsBody::Default { \
+             tag: fixtures::codec_variant_dispatch::CodecVariantDispatchUnknownTag::new(127)",
         ] {
             assert!(rust.contains(literal), "the Rust harness lacks `{literal}`");
         }
