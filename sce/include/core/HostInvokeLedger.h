@@ -455,6 +455,8 @@ private:
                               Deadlines &deadlines) {
         static_assert(HostInvokeDeadlineSchedulerTrait<Deadlines>::value,
                       "a host-invoke ledger's scheduler arms, drops and answers a deadline by token");
+        // §scxml-6.4.1: the type is one the platform serves, through the invoker the
+        // host registered for it.
         const uint64_t token = nextToken_++;
         request.token = token;
         // docs/adr/0045: the session that starts it, which the host may serve or refuse
@@ -501,8 +503,8 @@ private:
         return true;
     }
 
-    // Every host-run invocation started and neither ended nor cancelled, keyed by
-    // `(type, id)`, with its start's token and the request, so an engine's exit chain
+    // §scxml-6.4: every host-run invocation started and neither ended nor cancelled,
+    // keyed by `(type, id)`, with its start's token and the request, so an engine's exit chain
     // can be an unconditional cancel and an ending can be judged against the run it
     // names. One entry per key: an `<invoke>` belongs to one state and a state is in
     // the configuration at most once, so the same id is never running twice; a

@@ -11421,11 +11421,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "startedHostInvokes_",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/host_processor.py",
           "symbol": "HostInvokeEvent",
           "kind": "implements"
@@ -11894,6 +11889,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "MainLoop",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostInvokeLedger.h",
+          "symbol": "started_",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -12442,11 +12442,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "startHostInvoke",
-          "kind": "references"
-        },
-        {
           "file": "backends/c/runtime/include/sce/saved_state.h",
           "kind": "references"
         },
@@ -12462,6 +12457,11 @@
         {
           "file": "sce-build/src/generator.rs",
           "symbol": "swift_host_invoke_unlowered",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostInvokeLedger.h",
+          "symbol": "startRun",
           "kind": "references"
         }
       ],
@@ -22479,6 +22479,18 @@
       "target_kind": "section",
       "target_id": "scxml-3.12.2",
       "reason": "ADR 0068: the error-event test is table data the Rust template writes; the runtime's name test was removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "ADR 0084 step 5 moved the started table into the shared host-invoke ledger (core/HostInvokeLedger.h, started_)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "ADR 0084 step 5 moved the start of a host-run invocation into the shared host-invoke ledger (core/HostInvokeLedger.h, startRun)"
     }
   ],
   "frames": {},
