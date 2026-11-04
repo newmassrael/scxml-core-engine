@@ -20,9 +20,7 @@
 #include "static/StaticExecutionEngine.h"
 #include <chrono>
 #include <memory>
-#include <mutex>
 #include <thread>
-#include <vector>
 
 namespace SCE::W3C::AotTests {
 
@@ -76,21 +74,29 @@ public:
                                                                        [](::SCE::IScriptEngine *) {}));
         }
 
-        // What the listener made of the machine's POSTs, waiting for the
-        // machine's owner (see `raiseReceived` below). Declared before the
-        // listener, so it outlives a listener's thread.
-        std::mutex receivedMutex;
-        std::vector<typename SM::EventWithMetadata> received;
-
         // W3C SCXML C.2: the event the listener made of a POST, by name, as
-        // the machine's own event.
-        const auto deliver = [&receivedMutex, &received](const std::string &eventName, const std::string &eventData) {
+        // the machine's own event, posted to the machine's inbox as a host
+        // posts what arrives for a machine it does not drive on that thread
+        // (ARCHITECTURE.md "Engine Threading"). Natively the listener's thread
+        // posts it; under WASM the send's answer carries it, and the owner
+        // posts it inside the send. One rule for both: the post is applied
+        // before the machine puts an event of its own on its external queue
+        // (docs/adr/0084, D2), and the POST returns only after the listener has
+        // made the event, so the event joins the queue ahead of anything the
+        // document queues after the send. W3C test 201 sends `timeout` to
+        // itself right after the POST and must see `event1` first. The handle
+        // is a copy, safe on any thread and valid for as long as the listener
+        // runs.
+        const auto inbox = sm.inbox();
+        const auto deliver = [inbox](const std::string &eventName, const std::string &eventData) {
             SCE_LOG_DEBUG("HttpAotTest {}: the listener made event '{}' with data '{}'", TestNum, eventName, eventData);
             for (int i = 0; i < 256; ++i) {
                 const auto candidate = static_cast<Event>(i);
                 if (candidate != Event::NONE && Policy::getEventName(candidate) == eventName) {
-                    std::lock_guard<std::mutex> lock(receivedMutex);
-                    received.emplace_back(candidate, eventData);
+                    if (!inbox.post(
+                            typename SM::InboxExternalEvent{typename SM::EventWithMetadata(candidate, eventData)})) {
+                        SCE_LOG_ERROR("HttpAotTest {}: the machine's inbox refused event '{}'", TestNum, eventName);
+                    }
                     return;
                 }
             }
@@ -119,29 +125,9 @@ public:
         // sends through that published entry.
         sm.setBasicHttpAccessUri(W3C::basicHttpTestAccessUri());
 
-        // The machine belongs to the thread that drives it (ARCHITECTURE.md
-        // "Engine Threading"). This processor is synchronous: the POST returns
-        // only after the listener has handed over the event it made, so the
-        // event is raised on the owner as soon as the send that caused it
-        // returns, ahead of anything the document queues after the send (W3C
-        // test 201 sends `timeout` to itself right after the POST and must see
-        // `event1` first). Raised rather than posted to the inbox for that
-        // reason: a post would be applied at the macrostep boundary, behind
-        // what the rest of the macrostep queues.
-        const auto raiseReceived = [&sm, &receivedMutex, &received] {
-            std::vector<typename SM::EventWithMetadata> taken;
-            {
-                std::lock_guard<std::mutex> lock(receivedMutex);
-                taken.swap(received);
-            }
-            for (const auto &eventMeta : taken) {
-                sm.raiseExternal(eventMeta);
-            }
-        };
-
         // W3C SCXML C.2: Wire performHttpSend() callback (Kotlin W3CHttpTestBase parity)
         // Generated code calls engine.performHttpSend() which delegates to this callback.
-        sm.setHttpSendCallback([&raiseReceived, &deliver](const SCE::Static::HttpSendRequest &request) {
+        sm.setHttpSendCallback([&deliver](const SCE::Static::HttpSendRequest &request) {
             SCE_LOG_DEBUG("HttpAotTest {}: performHttpSend target='{}' event='{}' content='{}'", TestNum,
                           request.target, request.eventName, request.content);
 
@@ -188,8 +174,6 @@ public:
             } catch (const std::exception &e) {
                 SCE_LOG_ERROR("HttpAotTest {}: HTTP POST failed: {}", TestNum, e.what());
             }
-            // On the owner, inside the send: what the POST produced.
-            raiseReceived();
         });
 
         sm.initialize();
@@ -209,8 +193,8 @@ public:
                 break;
             }
 
-            // Process any pending events, the listener's first
-            raiseReceived();
+            // Process any pending events; what the listener posted since the
+            // last tick is applied at the macrostep boundary
             sm.tick();
 
             // Small sleep to avoid busy-waiting
