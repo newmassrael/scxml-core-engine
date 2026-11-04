@@ -1866,8 +1866,9 @@ add_executable(integration_tests
     integration/HostProcessorAotTest.cpp
     integration/DelayedHostSendAotTest.cpp
     integration/HostInvokerAotTest.cpp
-    # docs/adr/0084, D4 and D6: the requests both engines hand the host, held to
-    # one table.
+    # docs/adr/0084, D4 and D6: the Interpreter's host processor door, and the
+    # requests both engines hand the host, held to one table.
+    integration/HostDoorTest.cpp
     integration/HostRequestTest.cpp
     integration/HostRequestAotTest.cpp
     # docs/adr/0084: what another thread has for the generated engine enters
