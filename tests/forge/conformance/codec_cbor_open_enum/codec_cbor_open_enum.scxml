@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (SCE_FORGE.md section 4.6.1): a CBOR map with an entry of an open enum
+     (`sce:strict-variants="false"`), required and optional. An open enum holds every number its
+     carrier holds, so the entry takes every number the map gives it: the conversion is total and
+     there is no number to refuse. Kept apart from the shared fixtures so that adding it moves the
+     hash of no generated tree; a backend reads it from here. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_open_enum" version="1.0">
+  <sce:import kind="enum" src="../../resources/enum_uds_nrc.scxml" as="Nrc"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="status" sce:type="enum:Nrc" sce:key="1" sce:direction="out"/>
+    <data id="detail" sce:type="optional&lt;enum:Nrc&gt;" sce:key="2" sce:direction="out"/>
+  </datamodel>
+</scxml>
