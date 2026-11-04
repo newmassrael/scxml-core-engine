@@ -11,6 +11,10 @@
 //
 // - `Spsc` is the `bounded` row for one producer and one consumer: a Lamport ring, wait-free on both
 //   sides.
+// - `Scq` is the `bounded` row for any other cardinality: Nikolaev's SCQ data queue (DISC 2019), lock-free
+//   on both sides, in the form of the authors' single-width-CAS reference implementation (lfring_cas1.h,
+//   dual 2-clause BSD / MIT). Swift's atomics have a fetch-or, which the reference's `fetch_or` is, so no
+//   compare-and-swap loop stands in for it.
 //
 // Siblings, rule for rule: `Spsc` (Kotlin, `backends/kotlin/forge-runtime/.../queue/Spsc.kt`) and the
 // Rust, C++ and Go runtimes. The atomics are `Synchronization`'s, with the orderings the algorithm needs
@@ -26,6 +30,25 @@
 //   dropped does not strand its side.
 //
 // A refused push needs no hand-back: `tryPush` takes its element by value, so the caller still holds it.
+
+import Synchronization
+
+/// Takes one of `limit` places of a side, if one is free. A compare-and-swap loop and not an add, so a
+/// refused request leaves the count as it was and no concurrent request can be refused on account of it.
+func takePlace(_ alive: borrowing Atomic<Int>, limit: Int) -> Bool {
+    var seen = alive.load(ordering: .sequentiallyConsistent)
+    while true {
+        if seen >= limit {
+            return false
+        }
+        let (exchanged, original) = alive.compareExchange(
+            expected: seen, desired: seen + 1, ordering: .sequentiallyConsistent)
+        if exchanged {
+            return true
+        }
+        seen = original
+    }
+}
 
 /// Whether a push took its element.
 public enum PushStatus: Equatable, Sendable {
