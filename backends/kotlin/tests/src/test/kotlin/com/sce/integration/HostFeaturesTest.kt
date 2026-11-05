@@ -34,12 +34,17 @@ import com.sce.integration.static_host_kv.StaticHostKvStateMachine
 import com.sce.integration.static_host_model.StaticHostModelAnswerSchemas
 import com.sce.integration.static_host_model.StaticHostModelStateMachine
 import com.sce.integration.static_host_notify.StaticHostNotifyStateMachine
+import com.sce.integration.static_model_harness.StaticModelHarnessAnswerSchemas
+import com.sce.integration.static_model_harness.StaticModelHarnessState
+import com.sce.integration.static_model_harness.StaticModelHarnessStateMachine
+import com.sce.integration.static_model_harness.StaticModelHarnessTransitions
 import com.sce.runtime.AnswerSchema
 import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.ManualClock
 import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
+import com.sce.runtime.TransitionTaken
 import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -236,9 +241,21 @@ class HostFeaturesTest {
         sm: StateMachineEngine<S, E>,
         schemas: List<AnswerSchema> = emptyList(),
         save: () -> String,
+    ) = replayScenario(machine, machine, sm, schemas, save)
+
+    /**
+     * Replay the scenario [stem] against [machine], the machine the scenario names: a
+     * machine whose run ends has one scenario a run (the reference harness's cases).
+     */
+    private fun <S : State, E : Event> replayScenario(
+        stem: String,
+        machine: String,
+        sm: StateMachineEngine<S, E>,
+        schemas: List<AnswerSchema>,
+        save: () -> String,
     ) {
-        val scenario = scenario(machine)
-        assertEquals(machine, scenario.getValue("machine").jsonPrimitive.content)
+        val scenario = scenario(stem)
+        assertEquals(machine, scenario.getValue("machine").jsonPrimitive.content, "the scenario $stem names its machine")
         val rig = Rig()
         rig.host.setAnswerSchemas(schemas)
         serve(sm, rig.host)
@@ -250,7 +267,7 @@ class HostFeaturesTest {
             sm.tick()
             steps.forEachIndexed { n, element ->
                 val step = element.jsonObject
-                val note = step["note"]?.jsonPrimitive?.content ?: ""
+                val note = stem + ": " + (step["note"]?.jsonPrimitive?.content ?: "")
                 step["host"]?.let { rig.directives(it.jsonObject) }
                 step["advance_ms"]?.let {
                     sm.advanceTimeMs(it.jsonPrimitive.long)
@@ -310,6 +327,14 @@ class HostFeaturesTest {
     fun aMachineAsksItsHostForATextUnderAnAnswerSchema() {
         val sm = StaticHostModelStateMachine()
         replay("static_host_model", sm, StaticHostModelAnswerSchemas.all) { sm.save().toJson() }
+    }
+
+    @Test
+    fun theReferenceHarnessRunsEachCaseOfItsScenario() {
+        for (stem in HARNESS_SCENARIOS) {
+            val sm = StaticModelHarnessStateMachine()
+            replayScenario(stem, "static_model_harness", sm, StaticModelHarnessAnswerSchemas.all) { sm.save().toJson() }
+        }
     }
 
     /** What the exhaustive provider answers for a class of the table. */
@@ -416,18 +441,216 @@ class HostFeaturesTest {
         assertEquals(13, codes.size, "every refusal code is reached or deferred: $codes")
     }
 
+    /**
+     * The end of the host operation a class gives a call (docs/adr/0087, section 9.4): an
+     * answer by its `finish`, a failure by its code, the refusal, and a held call,
+     * whichever way it is left.
+     */
+    private fun hostOutcome(cls: JsonObject): String =
+        when (val end = cls.getValue("end").jsonPrimitive.content) {
+            "answer" -> "answer:" + cls.getValue("finish").jsonPrimitive.content
+            "failure" -> cls.getValue("error").jsonPrimitive.content
+            "refusal" -> "invalid_argument"
+            "hold" -> "hold"
+            else -> error("`$end` is not an end")
+        }
+
+    /** What one run of the harness against the exhaustive provider showed. */
+    private class HarnessRun(
+        /** Every row the transition observer was told, in order. */
+        val rows: List<TransitionTaken<StaticModelHarnessState>>,
+        /** How many calls the host was asked to start. */
+        val calls: Int,
+        /** The state the run ended in. */
+        val ended: String,
+        /** The code of each refusal the harness kept, in order. */
+        val codes: List<String>,
+    )
+
+    private fun settleHarness(sm: StaticModelHarnessStateMachine) {
+        repeat(HARNESS_SETTLE_TICKS) { sm.tick() }
+    }
+
+    /**
+     * Run the reference harness against the exhaustive provider answering the classes
+     * [sequence] names, one call a class: offer it the table's ids, start it, and leave
+     * each call it holds as the table's harness section says, until it ends.
+     */
+    private fun runHarness(table: JsonObject, sequence: List<Int>): HarnessRun {
+        val classes = table.getValue("classes").jsonArray.map { it.jsonObject }
+        val harness = table.getValue("harness").jsonObject
+        assertEquals(
+            "advance",
+            harness.getValue("then").jsonPrimitive.content,
+            "a held call of the harness is left by its own deadline",
+        )
+        val sm = StaticModelHarnessStateMachine()
+        val rows = mutableListOf<TransitionTaken<StaticModelHarnessState>>()
+        sm.transitionObserver = { taken -> rows.add(taken) }
+        val host = ReferenceHost(ScriptedClock(), ScriptTransport())
+        host.setAnswerSchemas(StaticModelHarnessAnswerSchemas.all)
+        host.setModelProvider(ExhaustiveProvider(sequence.map { outcomeClass(classes[it]) }))
+        serve(sm, host)
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        try {
+            settleHarness(sm)
+            val offer = harness.getValue("offer").jsonPrimitive.content
+            for (id in harness.getValue("offered").jsonArray) {
+                sm.sendEventByName(offer, EventMetadata(data = buildJsonObject { put("id", id) }.toString()))
+                settleHarness(sm)
+            }
+            sm.sendEventByName(
+                harness.getValue("start").jsonPrimitive.content,
+                EventMetadata(data = harness.getValue("data").toString()),
+            )
+            settleHarness(sm)
+            val bound = harness.getValue("bound").jsonPrimitive.int
+            val deadline = harness.getValue("deadline_ms").jsonPrimitive.long
+            fun saved(): JsonObject = Json.parseToJsonElement(sm.save().toJson()).jsonObject
+            fun current(): String = saved().getValue("current").jsonPrimitive.content
+            var waits = 0
+            while (current() != "accepted" && current() != "gave_up") {
+                assertTrue(waits <= bound, "$sequence: the run neither ended nor held a call it could be moved past")
+                sm.advanceTimeMs(deadline)
+                settleHarness(sm)
+                waits++
+            }
+            val codes = saved().getValue("variables").jsonObject.getValue("refusals").jsonArray.map {
+                it.jsonObject.getValue("code").jsonPrimitive.content
+            }
+            return HarnessRun(rows.toList(), host.takeStarts().size, current(), codes)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    private fun rowName(row: TransitionTaken<StaticModelHarnessState>): String = "${row.source}[${row.index}]"
+
+    /**
+     * The reference harness is tested exhaustively, and its coverage is measured
+     * (docs/adr/0087, section 9.4 item 1, Landing order item 7): every sequence of `bound`
+     * outcome classes is a run, the transition observer of docs/adr/0089 tells each row of
+     * the emitted transition table the run takes, and the runs together take every row of
+     * the table, reach every refusal code, and reach every host outcome at every call site
+     * (a row that enters the state whose invoke is the call).
+     *
+     * The harness makes at most `bound` calls and the provider answers a call by its
+     * position alone, so every sequence of fewer classes the harness can consume is a
+     * prefix of a sequence run here, and none is asked past.
+     */
+    @Test
+    fun everySequenceOfOutcomeClassesTakesEveryRowOfTheReferenceHarness() {
+        val table = Json.parseToJsonElement(
+            File(repoRoot(), "tests/host_features/model_outcome_classes.json").readText(),
+        ).jsonObject
+        val harness = table.getValue("harness").jsonObject
+        assertEquals("static_model_harness", harness.getValue("machine").jsonPrimitive.content)
+        assertEquals(
+            table.getValue("answer_schema").jsonPrimitive.content,
+            StaticModelHarnessAnswerSchemas.all.first().id,
+        )
+        val classes = table.getValue("classes").jsonArray.map { it.jsonObject }
+        val bound = harness.getValue("bound").jsonPrimitive.int
+        val call = harness.getValue("call").jsonPrimitive.content
+        assertTrue(classes.isNotEmpty() && bound > 0, "a table that names nothing judges nothing")
+        val rows = StaticModelHarnessTransitions.all.map { TransitionTaken(it.from, it.index) }.toSet()
+        val sites = StaticModelHarnessTransitions.all.filter { it.targets == call }
+            .map { TransitionTaken(it.from, it.index) }.toSet()
+        assertTrue(sites.isNotEmpty(), "no row of the table enters `$call`")
+        val outcomes = classes.map { hostOutcome(it) }.toSortedSet()
+
+        val taken = mutableSetOf<TransitionTaken<StaticModelHarnessState>>()
+        val codes = mutableSetOf<String>()
+        val reached = mutableSetOf<Pair<TransitionTaken<StaticModelHarnessState>, String>>()
+        var sequences = listOf(emptyList<Int>())
+        repeat(bound) { sequences = sequences.flatMap { prefix -> classes.indices.map { prefix + it } } }
+        var runs = 0
+        for (sequence in sequences) {
+            val named = sequence.map { classes[it].getValue("class").jsonPrimitive.content }
+            val run = runHarness(table, sequence)
+            assertTrue(
+                run.ended == "accepted" || run.ended == "gave_up",
+                "$named: the run ended in `${run.ended}`, not a final",
+            )
+            val called = run.rows.filter { it in sites }
+            assertEquals(run.calls, called.size, "$named: each call is made by one row that enters `$call`")
+            assertTrue(run.calls <= bound, "$named: ${run.calls} calls, past the bound")
+            called.zip(sequence).forEach { (site, cls) -> reached.add(site to hostOutcome(classes[cls])) }
+            taken.addAll(run.rows)
+            codes.addAll(run.codes)
+            runs++
+        }
+        var expected = 1
+        repeat(bound) { expected *= classes.size }
+        assertEquals(expected, runs, "every sequence was run")
+
+        val toldNoRow = (taken - rows).map { rowName(it) }.sorted()
+        assertTrue(toldNoRow.isEmpty(), "the observer was told pairs that are no row of the table: $toldNoRow")
+        val neverTaken = (rows - taken).map { rowName(it) }.sorted()
+        assertTrue(
+            neverTaken.isEmpty(),
+            "every row of the harness's transition table is taken; never taken: $neverTaken",
+        )
+
+        val deferred = table.getValue("deferred").jsonArray
+            .map { it.jsonObject.getValue("code").jsonPrimitive.content }.toSet()
+        val liftCodes = classes.mapNotNull {
+            (it.getValue("expect").jsonObject["why"] as? JsonObject)?.getValue("code")?.jsonPrimitive?.content
+        }
+        val expectedCodes = (liftCodes + APPLICATION_CODES + deferred).toSortedSet()
+        assertEquals(14, expectedCodes.size, "the thirteen lift codes and the application's own: $expectedCodes")
+        val neverReached = expectedCodes.filter { it !in codes && it !in deferred }
+        assertTrue(neverReached.isEmpty(), "every refusal code is reached; never reached: $neverReached")
+        val unknown = codes.filter { it !in expectedCodes }.sorted()
+        assertTrue(unknown.isEmpty(), "the harness kept codes no class reaches: $unknown")
+
+        val notAtEverySite = sites.flatMap { site ->
+            outcomes.filter { (site to it) !in reached }.map { "${rowName(site)} $it" }
+        }.sorted()
+        assertTrue(
+            notAtEverySite.isEmpty(),
+            "every host outcome is reached at every call site; never reached: $notAtEverySite",
+        )
+    }
+
     @Test
     fun everyScenarioOfTheDirectoryIsReplayedHere() {
         val names = File(repoRoot(), "tests/host_features/scenarios").listFiles()!!
             .filter { it.extension == "json" }.map { it.nameWithoutExtension }.sorted()
-        assertEquals(
-            listOf("static_host_clock", "static_host_http", "static_host_kv", "static_host_model", "static_host_notify"),
-            names,
-        )
+        val replayed =
+            listOf("static_host_clock", "static_host_http", "static_host_kv", "static_host_model", "static_host_notify") +
+                HARNESS_SCENARIOS
+        assertEquals(replayed.sorted(), names)
     }
 
     private companion object {
         /** The request fields a scenario writes as numbers; every other is text. */
         val INTEGER_FIELDS = setOf("at_ms", "max_tokens", "temperature_milli")
+
+        /**
+         * The cases of the reference harness's scenario (docs/adr/0087, section 9.1 item 8),
+         * one scenario each: a run of the harness ends at one of its finals, so each case is
+         * a run of its own.
+         */
+        val HARNESS_SCENARIOS = listOf(
+            "static_model_harness_accepted",
+            "static_model_harness_exhausted",
+            "static_model_harness_not_offered",
+            "static_model_harness_repaired",
+            "static_model_harness_timeout",
+        )
+
+        /**
+         * The codes of the application's own checks, after the thirteen of the lift its enum
+         * repeats (enum_harness_code.scxml), each named for the class that reaches it.
+         */
+        val APPLICATION_CODES = listOf("notOffered")
+
+        /**
+         * The ticks a harness run is given after each event: a run may make its calls and
+         * take each completion within one event, a call a round.
+         */
+        const val HARNESS_SETTLE_TICKS = 8
     }
 }

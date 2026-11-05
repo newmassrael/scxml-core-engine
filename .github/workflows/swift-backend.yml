@@ -78,6 +78,10 @@ on:
       - 'scripts/gates/ecma262-lowered-swift.sh'
       - 'scripts/gates/forge-swift.sh'
       - 'tests/forge/**'
+      # The scenarios of the standard host features and the table of a model's
+      # outcome classes, which the Swift lane's host-feature tests replay and run
+      # (`HostFeaturesTests.swift`, the reference harness's among them).
+      - 'tests/host_features/**'
       - 'scripts/regen_swift_ecma262_lowered.sh'
       - 'tools/generate_lowered_ecma262_fixture.py'
       - 'tests/ecmascript/**'

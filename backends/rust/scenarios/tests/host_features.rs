@@ -12,6 +12,7 @@
 // what it holds afterwards. The expected values are derived from the
 // specification, not observed from the host.
 
+use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -21,13 +22,17 @@ use sce_rust_host_features::{
     TransportFailure, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
-use sce_rust_runtime::{Engine, SceClock, StatePolicy};
+use sce_rust_runtime::{Engine, SceClock, StatePolicy, TransitionTaken};
 use sce_rust_scenarios::integration::static_datamodel::{
     static_host_clock_sm::{StaticHostClockPersist, StaticHostClockPolicy},
     static_host_http_sm::{StaticHostHttpPersist, StaticHostHttpPolicy},
     static_host_kv_sm::{StaticHostKvPersist, StaticHostKvPolicy},
     static_host_model_sm::{StaticHostModelPersist, StaticHostModelPolicy, ANSWER_SCHEMAS},
     static_host_notify_sm::{StaticHostNotifyPersist, StaticHostNotifyPolicy},
+    static_model_harness_sm::{
+        StaticModelHarnessPersist, StaticModelHarnessPolicy, StaticModelHarnessState,
+        StaticModelHarnessTransition, ANSWER_SCHEMAS as HARNESS_ANSWER_SCHEMAS,
+    },
 };
 use serde_json::{json, Map, Value};
 
@@ -297,16 +302,29 @@ fn holds(got: &Value, want: &Value) -> bool {
     }
 }
 
+/// Replay the scenario of `machine`'s own name against it.
 fn replay<P: StatePolicy>(
-    mut engine: Engine<P>,
+    engine: Engine<P>,
     save: impl Fn(&Engine<P>) -> SavedState,
     machine: &str,
     answer_schemas: &[AnswerSchema],
 ) {
-    let scenario = scenario(machine);
+    replay_scenario(engine, save, machine, machine, answer_schemas);
+}
+
+/// Replay the scenario `stem` against `machine`, the machine the scenario names: a
+/// machine whose run ends has one scenario a run (the reference harness's cases).
+fn replay_scenario<P: StatePolicy>(
+    mut engine: Engine<P>,
+    save: impl Fn(&Engine<P>) -> SavedState,
+    stem: &str,
+    machine: &str,
+    answer_schemas: &[AnswerSchema],
+) {
+    let scenario = scenario(stem);
     assert_eq!(
         scenario["machine"], machine,
-        "the scenario names its machine"
+        "the scenario {stem} names its machine"
     );
     let clock: Clock = Arc::new(Mutex::new(ScriptedClock::new()));
     let script = Arc::new(Mutex::new(Script::default()));
@@ -342,7 +360,7 @@ fn replay<P: StatePolicy>(
         if let Some(event) = step.get("event").and_then(Value::as_str) {
             assert!(
                 P::resolve_event_by_name(event).is_some(),
-                "step {n}: the machine's events do not match `{event}`"
+                "{stem} step {n}: the machine's events do not match `{event}`"
             );
             let data = step.get("data").map(Value::to_string).unwrap_or_default();
             engine.raise_external_by_name(event, &data);
@@ -351,13 +369,16 @@ fn replay<P: StatePolicy>(
         let expect = &step["expect"];
         let started = rig.starts();
         if let Some(want) = expect.get("host_invokes") {
-            assert_eq!(&started, want, "step {n} ({note}): what the host was asked");
+            assert_eq!(
+                &started, want,
+                "{stem} step {n} ({note}): what the host was asked"
+            );
         }
         if let Some(want) = expect.get("host_state") {
             assert_eq!(
                 &rig.host_state(want),
                 want,
-                "step {n} ({note}): what the host holds"
+                "{stem} step {n} ({note}): what the host holds"
             );
         }
         let saved: Value =
@@ -365,7 +386,7 @@ fn replay<P: StatePolicy>(
         if let Some(state) = expect.get("state") {
             assert_eq!(
                 &saved["current"], state,
-                "step {n} ({note}): the current state"
+                "{stem} step {n} ({note}): the current state"
             );
         }
         if let Some(variables) = expect.get("variables").and_then(Value::as_object) {
@@ -373,7 +394,7 @@ fn replay<P: StatePolicy>(
                 let got = &saved["variables"][name];
                 assert!(
                     holds(got, want),
-                    "step {n} ({note}): variable `{name}` is {got}, not {want}"
+                    "{stem} step {n} ({note}): variable `{name}` is {got}, not {want}"
                 );
             }
         }
@@ -428,6 +449,30 @@ fn a_machine_asks_its_host_for_a_text_under_an_answer_schema() {
         "static_host_model",
         ANSWER_SCHEMAS,
     );
+}
+
+/// The cases of the reference harness's scenario (docs/adr/0087, section 9.1 item
+/// 8), one scenario each: a run of the harness ends at one of its finals, so each
+/// case is a run of its own.
+const HARNESS_SCENARIOS: [&str; 5] = [
+    "static_model_harness_accepted",
+    "static_model_harness_exhausted",
+    "static_model_harness_not_offered",
+    "static_model_harness_repaired",
+    "static_model_harness_timeout",
+];
+
+#[test]
+fn the_reference_harness_runs_each_case_of_its_scenario() {
+    for stem in HARNESS_SCENARIOS {
+        replay_scenario(
+            Engine::new(StaticModelHarnessPolicy::new()),
+            |engine| engine.save_at(0).expect("saves"),
+            stem,
+            "static_model_harness",
+            HARNESS_ANSWER_SCHEMAS,
+        );
+    }
 }
 
 /// The table of the outcome classes of one generation every lane reads
@@ -597,6 +642,294 @@ fn every_sequence_of_outcome_classes_is_read_as_its_classes_say() {
     );
 }
 
+/// A row of the reference harness's transition table, as the table and the
+/// transition observer name it: the state it is written in and its index there.
+type HarnessRow = (StaticModelHarnessState, u32);
+
+/// The rows a transition observer is told, in the order it is told them.
+type HarnessSeen = Arc<Mutex<Vec<HarnessRow>>>;
+
+/// The codes of the application's own checks, after the thirteen of the lift
+/// that its enum repeats (enum_harness_code.scxml), each named for the class that
+/// reaches it.
+const APPLICATION_CODES: [&str; 1] = ["notOffered"];
+
+/// The ticks a harness run is given after each event: a run may make its calls
+/// and take each completion within one event, a call a round.
+const HARNESS_SETTLE_TICKS: usize = 8;
+
+fn settle_harness(engine: &mut Engine<StaticModelHarnessPolicy>) {
+    for _ in 0..HARNESS_SETTLE_TICKS {
+        engine.tick();
+    }
+}
+
+/// The end of the host operation a class gives a call (docs/adr/0087, section
+/// 9.4): an answer by its `finish`, a failure by its code, the refusal, and a held
+/// call, whichever way it is left.
+fn host_outcome(class: &Value) -> String {
+    match class["end"].as_str().expect("an end") {
+        "answer" => format!("answer:{}", class["finish"].as_str().expect("a finish")),
+        "failure" => class["error"].as_str().expect("a code").to_string(),
+        "refusal" => "invalid_argument".to_string(),
+        "hold" => "hold".to_string(),
+        other => panic!("`{other}` is not an end"),
+    }
+}
+
+/// What one run of the harness against the exhaustive provider showed.
+struct HarnessRun {
+    /// Every row the transition observer was told, in order.
+    rows: Vec<HarnessRow>,
+    /// How many calls the host was asked to start.
+    calls: usize,
+    /// The state the run ended in.
+    ended: &'static str,
+    /// The code of each refusal the harness kept, in order.
+    codes: Vec<String>,
+}
+
+/// Run the reference harness against the exhaustive provider answering the
+/// classes `sequence` names, one call a class: offer it the table's ids, start
+/// it, and leave each call it holds as the table's harness section says, until
+/// it ends.
+fn run_harness(table: &Value, sequence: &[usize]) -> HarnessRun {
+    let classes = table["classes"].as_array().expect("classes");
+    let harness = &table["harness"];
+    let bound = harness["bound"].as_u64().expect("a bound") as usize;
+    let deadline_ms = harness["deadline_ms"].as_u64().expect("a deadline");
+    assert_eq!(
+        harness["then"], "advance",
+        "a held call of the harness is left by its own deadline"
+    );
+    let seen = HarnessSeen::default();
+    let mut engine = Engine::new(StaticModelHarnessPolicy::new());
+    let sink = Arc::clone(&seen);
+    engine.set_transition_observer(move |taken: TransitionTaken<StaticModelHarnessState>| {
+        sink.lock()
+            .expect("the observer's list is not poisoned")
+            .push((taken.source, taken.index));
+    });
+    let clock: Clock = Arc::new(Mutex::new(ScriptedClock::new()));
+    let mut reference = ReferenceHost::new(
+        Box::new(Arc::clone(&clock)) as Box<dyn ClockSource + Send>,
+        Scripted(Arc::new(Mutex::new(Script::default()))),
+    );
+    reference.set_answer_schemas(HARNESS_ANSWER_SCHEMAS);
+    reference.set_model_provider(Box::new(ExhaustiveProvider::new(
+        sequence
+            .iter()
+            .map(|&i| outcome_class(&classes[i]))
+            .collect(),
+    )));
+    let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
+    serve(&mut engine, &host);
+    engine.set_clock(SceClock::Manual(0));
+    engine.initialize();
+    settle_harness(&mut engine);
+    let offer = harness["offer"].as_str().expect("the offer event");
+    for id in harness["offered"].as_array().expect("the offered ids") {
+        engine.raise_external_by_name(offer, &json!({ "id": id }).to_string());
+        settle_harness(&mut engine);
+    }
+    let start = harness["start"].as_str().expect("the start event");
+    engine.raise_external_by_name(start, &harness["data"].to_string());
+    settle_harness(&mut engine);
+    let ended = |engine: &Engine<StaticModelHarnessPolicy>| {
+        matches!(
+            StaticModelHarnessPolicy::get_state_name(engine.get_current_state()),
+            "accepted" | "gave_up"
+        )
+    };
+    let mut waits = 0usize;
+    while !ended(&engine) {
+        assert!(
+            waits <= bound,
+            "{sequence:?}: the run neither ended nor held a call it could be moved past"
+        );
+        engine.advance_time_ms(deadline_ms);
+        settle_harness(&mut engine);
+        waits += 1;
+    }
+    let calls = host.lock().expect("the host").take_starts().len();
+    let saved: Value = serde_json::from_str(&engine.save_at(0).expect("saves").to_json())
+        .expect("a saved state is JSON");
+    let codes = saved["variables"]["refusals"]
+        .as_array()
+        .expect("the refusals are a list")
+        .iter()
+        .map(|refusal| refusal["code"].as_str().expect("a code").to_string())
+        .collect();
+    let rows = seen.lock().expect("not poisoned").clone();
+    HarnessRun {
+        rows,
+        calls,
+        ended: StaticModelHarnessPolicy::get_state_name(engine.get_current_state()),
+        codes,
+    }
+}
+
+/// `row` as a failure names it: its state's id and its index.
+fn harness_row_name(row: &HarnessRow) -> String {
+    format!(
+        "{}[{}]",
+        StaticModelHarnessPolicy::get_state_name(row.0),
+        row.1
+    )
+}
+
+/// The reference harness is tested exhaustively, and its coverage is measured
+/// (docs/adr/0087, section 9.4 item 1, Landing order item 7): every sequence of
+/// `bound` outcome classes is a run, the transition observer of docs/adr/0089
+/// tells each row of the emitted transition table the run takes, and the runs
+/// together take every row of the table, reach every refusal code, and reach every
+/// host outcome at every call site (a row that enters the state whose invoke is the
+/// call).
+///
+/// The harness makes at most `bound` calls and the provider answers a call by its
+/// position alone, so every sequence of fewer classes the harness can consume is a
+/// prefix of a sequence run here, and none is asked past.
+#[test]
+fn every_sequence_of_outcome_classes_takes_every_row_of_the_reference_harness() {
+    let table = outcome_classes();
+    let harness = &table["harness"];
+    assert_eq!(harness["machine"], "static_model_harness");
+    assert_eq!(
+        table["answer_schema"].as_str(),
+        HARNESS_ANSWER_SCHEMAS.first().map(|schema| schema.id),
+        "the table's answer schema is the harness's"
+    );
+    let classes = table["classes"].as_array().expect("classes");
+    let bound = harness["bound"].as_u64().expect("a bound") as usize;
+    let call = harness["call"].as_str().expect("the call's state");
+    assert!(
+        !classes.is_empty() && bound > 0,
+        "a table that names nothing judges nothing"
+    );
+    let rows: Vec<HarnessRow> = StaticModelHarnessTransition::ALL
+        .iter()
+        .map(|row| (row.from, row.index))
+        .collect();
+    let sites: Vec<HarnessRow> = StaticModelHarnessTransition::ALL
+        .iter()
+        .filter(|row| row.targets == call)
+        .map(|row| (row.from, row.index))
+        .collect();
+    assert!(!sites.is_empty(), "no row of the table enters `{call}`");
+    let outcomes: BTreeSet<String> = classes.iter().map(host_outcome).collect();
+
+    let mut taken: HashSet<HarnessRow> = HashSet::new();
+    let mut codes: BTreeSet<String> = BTreeSet::new();
+    let mut reached: HashSet<(HarnessRow, String)> = HashSet::new();
+    let mut runs = 0usize;
+    for sequence in sequences(classes.len(), bound) {
+        let named: Vec<&str> = sequence
+            .iter()
+            .map(|&i| classes[i]["class"].as_str().expect("a class name"))
+            .collect();
+        let run = run_harness(&table, &sequence);
+        assert!(
+            run.ended == "accepted" || run.ended == "gave_up",
+            "{named:?}: the run ended in `{}`, not a final",
+            run.ended
+        );
+        let called: Vec<HarnessRow> = run
+            .rows
+            .iter()
+            .copied()
+            .filter(|row| sites.contains(row))
+            .collect();
+        assert_eq!(
+            called.len(),
+            run.calls,
+            "{named:?}: each call is made by one row that enters `{call}`"
+        );
+        assert!(
+            run.calls <= bound,
+            "{named:?}: {} calls, past the bound",
+            run.calls
+        );
+        for (site, &class) in called.iter().zip(&sequence) {
+            reached.insert((*site, host_outcome(&classes[class])));
+        }
+        taken.extend(run.rows);
+        codes.extend(run.codes);
+        runs += 1;
+    }
+    assert_eq!(
+        runs,
+        classes.len().pow(bound as u32),
+        "every sequence was run"
+    );
+
+    let told_no_row: Vec<String> = taken
+        .iter()
+        .filter(|row| !rows.contains(*row))
+        .map(harness_row_name)
+        .collect();
+    assert!(
+        told_no_row.is_empty(),
+        "the observer was told pairs that are no row of the table: {told_no_row:?}"
+    );
+    let never_taken: Vec<String> = rows
+        .iter()
+        .filter(|row| !taken.contains(*row))
+        .map(harness_row_name)
+        .collect();
+    assert!(
+        never_taken.is_empty(),
+        "every row of the harness's transition table is taken; never taken: {never_taken:?}"
+    );
+
+    let deferred: BTreeSet<String> = table["deferred"]
+        .as_array()
+        .expect("deferred")
+        .iter()
+        .map(|entry| entry["code"].as_str().expect("a code").to_string())
+        .collect();
+    let mut expected: BTreeSet<String> = classes
+        .iter()
+        .filter_map(|class| class["expect"]["why"]["code"].as_str())
+        .map(str::to_string)
+        .chain(APPLICATION_CODES.iter().map(|code| code.to_string()))
+        .collect();
+    expected.extend(deferred.iter().cloned());
+    assert_eq!(
+        expected.len(),
+        14,
+        "the thirteen lift codes and the application's own: {expected:?}"
+    );
+    let never_reached: Vec<&String> = expected
+        .iter()
+        .filter(|code| !codes.contains(*code) && !deferred.contains(*code))
+        .collect();
+    assert!(
+        never_reached.is_empty(),
+        "every refusal code is reached; never reached: {never_reached:?}"
+    );
+    let unknown: Vec<&String> = codes
+        .iter()
+        .filter(|code| !expected.contains(*code))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "the harness kept codes no class reaches: {unknown:?}"
+    );
+
+    let mut not_at_every_site: Vec<String> = Vec::new();
+    for site in &sites {
+        for outcome in &outcomes {
+            if !reached.contains(&(*site, outcome.clone())) {
+                not_at_every_site.push(format!("{} {outcome}", harness_row_name(site)));
+            }
+        }
+    }
+    assert!(
+        not_at_every_site.is_empty(),
+        "every host outcome is reached at every call site; never reached: {not_at_every_site:?}"
+    );
+}
+
 /// The scenarios the lanes replay are the ones the directory holds, and this
 /// lane replays each of them.
 #[test]
@@ -614,14 +947,14 @@ fn every_scenario_of_the_directory_is_replayed_here() {
         })
         .collect();
     on_disk.sort();
-    assert_eq!(
-        on_disk,
-        [
-            "static_host_clock",
-            "static_host_http",
-            "static_host_kv",
-            "static_host_model",
-            "static_host_notify"
-        ]
-    );
+    let mut replayed = vec![
+        "static_host_clock",
+        "static_host_http",
+        "static_host_kv",
+        "static_host_model",
+        "static_host_notify",
+    ];
+    replayed.extend(HARNESS_SCENARIOS);
+    replayed.sort_unstable();
+    assert_eq!(on_disk, replayed);
 }

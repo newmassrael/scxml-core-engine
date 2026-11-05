@@ -237,11 +237,16 @@ class _Rig:
         return state
 
 
-def replay(machine: str) -> None:
-    scenario = json.loads((_SCENARIOS / f"{machine}.json").read_text())
-    assert scenario["machine"] == machine
+def replay(machine: str, stem: Optional[str] = None, saved: bool = False) -> None:
+    """Replay the scenario ``stem`` (``machine``'s own name when none) against
+    ``machine``, the machine the scenario names: a machine whose run ends has one
+    scenario a run (the reference harness's cases). With ``saved``, each variable
+    is read from the machine's saved state, the text every backend saves alike."""
+    stem = stem or machine
+    scenario = json.loads((_SCENARIOS / f"{stem}.json").read_text(encoding="utf-8"))
+    assert scenario["machine"] == machine, f"the scenario {stem} names its machine"
     steps = scenario["steps"]
-    assert steps, f"scenario {machine} has no steps, which judges nothing"
+    assert steps, f"scenario {stem} has no steps, which judges nothing"
     module = importlib.import_module(f"integration.static_datamodel.{machine}_sm")
     engine = module.create_engine()
     rig = _Rig()
@@ -250,8 +255,14 @@ def replay(machine: str) -> None:
     engine.initialize()
     policy = engine.policy
     readers = module.SCE_HOST_NAMES["readers"]
+
+    def read(variable: str):
+        if saved:
+            return json.loads(module.save_at(engine, 0).to_json())["variables"][variable]
+        return _plain(_read(policy, readers, variable))
+
     for n, step in enumerate(steps):
-        where = f"{machine} step {n}: {step.get('note', '')}"
+        where = f"{stem} step {n}: {step.get('note', '')}"
         if "host" in step:
             rig.directives(step["host"])
         if "advance_ms" in step:
@@ -272,7 +283,7 @@ def replay(machine: str) -> None:
         if "state" in expect:
             assert _atomic_state(engine) == expect["state"], where
         for variable, want in expect.get("variables", {}).items():
-            got = _plain(_read(policy, readers, variable))
+            got = read(variable)
             assert _same(got, want), f"{where}: variable {variable!r} is {got!r}, not {want!r}"
 
 
@@ -294,6 +305,23 @@ def test_a_machine_makes_an_http_exchange_through_its_host() -> None:
 
 def test_a_machine_asks_its_host_for_a_text_under_an_answer_schema() -> None:
     replay("static_host_model")
+
+
+#: The cases of the reference harness's scenario (docs/adr/0087, section 9.1 item
+#: 8), one scenario each: a run of the harness ends at one of its finals, so each
+#: case is a run of its own.
+_HARNESS_SCENARIOS = (
+    "static_model_harness_accepted",
+    "static_model_harness_exhausted",
+    "static_model_harness_not_offered",
+    "static_model_harness_repaired",
+    "static_model_harness_timeout",
+)
+
+
+def test_the_reference_harness_runs_each_case_of_its_scenario() -> None:
+    for stem in _HARNESS_SCENARIOS:
+        replay("static_model_harness", stem=stem, saved=True)
 
 
 def _outcome_class(cls: dict) -> OutcomeClass:
@@ -373,6 +401,132 @@ def test_every_sequence_of_outcome_classes_is_read_as_its_classes_say() -> None:
     assert len(codes) == 13, f"every refusal code is reached or deferred: {sorted(codes)}"
 
 
+#: The codes of the application's own checks, after the thirteen of the lift its
+#: enum repeats (enum_harness_code.scxml), each named for the class that reaches it.
+_APPLICATION_CODES = ("notOffered",)
+
+
+def _host_outcome(cls: dict) -> str:
+    """The end of the host operation a class gives a call (docs/adr/0087, section
+    9.4): an answer by its ``finish``, a failure by its code, the refusal, and a held
+    call, whichever way it is left."""
+    end = cls["end"]
+    if end == "answer":
+        return "answer:" + cls["finish"]
+    if end == "failure":
+        return cls["error"]
+    if end == "refusal":
+        return "invalid_argument"
+    assert end == "hold", f"`{end}` is not an end"
+    return "hold"
+
+
+def _run_harness(table: dict, sequence: Sequence[int]):
+    """Run the reference harness against the exhaustive provider answering the
+    classes ``sequence`` names, one call a class: offer it the table's ids, start
+    it, and leave each call it holds as the table's harness section says, until it
+    ends. Answers the rows the transition observer was told, in order, the calls
+    the host was asked to start, the state the run ended in, and the code of each
+    refusal the harness kept."""
+    classes = table["classes"]
+    harness = table["harness"]
+    assert harness["then"] == "advance", "a held call of the harness is left by its own deadline"
+    module = importlib.import_module("integration.static_datamodel.static_model_harness_sm")
+    engine = module.create_engine()
+    rows: List[tuple] = []
+
+    def observer(kind, fields) -> None:
+        if kind == "transition":
+            rows.append((fields["source"], fields["index"]))
+
+    engine.set_observer(observer)
+    host = ReferenceHost(ScriptedClock(), _ScriptTransport())
+    host.set_answer_schemas(module.ANSWER_SCHEMAS)
+    host.set_model_provider(ExhaustiveProvider([_outcome_class(classes[i]) for i in sequence]))
+    serve(engine, host)
+    engine.initialize()
+    policy = engine.policy
+    offer = policy.resolve_event_by_name(harness["offer"])
+    start = policy.resolve_event_by_name(harness["start"])
+    assert offer is not None and start is not None, "the machine's events do not match the table's"
+    for offered in harness["offered"]:
+        engine.send_event(offer, EventMetadata(data=json.dumps({"id": offered})))
+    engine.send_event(start, EventMetadata(data=json.dumps(harness["data"])))
+    waits = 0
+    while _atomic_state(engine) not in ("accepted", "gave_up"):
+        assert waits <= harness["bound"], f"{sequence}: the run neither ended nor held a call"
+        engine.advance_time(harness["deadline_ms"])
+        waits += 1
+    saved = json.loads(module.save_at(engine, 0).to_json())
+    codes = [refusal["code"] for refusal in saved["variables"]["refusals"]]
+    return rows, len(host.take_starts()), _atomic_state(engine), codes
+
+
+def test_every_sequence_of_outcome_classes_takes_every_row_of_the_reference_harness() -> None:
+    """The reference harness is tested exhaustively, and its coverage is measured
+    (docs/adr/0087, section 9.4 item 1, Landing order item 7): every sequence of
+    ``bound`` outcome classes is a run, the transition observer of docs/adr/0089
+    tells each row of the emitted transition table the run takes, and the runs
+    together take every row of the table, reach every refusal code, and reach every
+    host outcome at every call site (a row that enters the state whose invoke is the
+    call).
+
+    The harness makes at most ``bound`` calls and the provider answers a call by its
+    position alone, so every sequence of fewer classes the harness can consume is a
+    prefix of a sequence run here, and none is asked past."""
+    table = json.loads(_CLASSES.read_text(encoding="utf-8"))
+    harness = table["harness"]
+    module = importlib.import_module("integration.static_datamodel.static_model_harness_sm")
+    assert harness["machine"] == "static_model_harness"
+    assert [s.id for s in module.ANSWER_SCHEMAS][:1] == [table["answer_schema"]]
+    classes = table["classes"]
+    bound = harness["bound"]
+    call = harness["call"]
+    assert classes and bound, "a table that names nothing judges nothing"
+    rows = {(str(row.from_state), row.index) for row in module.TRANSITIONS}
+    sites = {(str(row.from_state), row.index) for row in module.TRANSITIONS if row.targets == call}
+    assert sites, f"no row of the table enters `{call}`"
+    outcomes = {_host_outcome(cls) for cls in classes}
+
+    taken: set = set()
+    codes: set = set()
+    reached: set = set()
+    runs = 0
+    for sequence in itertools.product(range(len(classes)), repeat=bound):
+        named = [classes[i]["class"] for i in sequence]
+        seen, calls, ended, kept = _run_harness(table, sequence)
+        assert ended in ("accepted", "gave_up"), f"{named}: the run ended in {ended!r}, not a final"
+        called = [row for row in seen if row in sites]
+        assert len(called) == calls <= bound, f"{named}: {calls} calls, {len(called)} by a row that enters {call!r}"
+        for site, i in zip(called, sequence):
+            reached.add((site, _host_outcome(classes[i])))
+        taken.update(seen)
+        codes.update(kept)
+        runs += 1
+    assert runs == len(classes) ** bound, "every sequence was run"
+
+    told_no_row = sorted(f"{s}[{i}]" for s, i in taken - rows)
+    assert not told_no_row, f"the observer was told pairs that are no row of the table: {told_no_row}"
+    never_taken = sorted(f"{s}[{i}]" for s, i in rows - taken)
+    assert not never_taken, f"every row of the harness's transition table is taken; never taken: {never_taken}"
+
+    deferred = {entry["code"] for entry in table["deferred"]}
+    expected = {cls["expect"]["why"]["code"] for cls in classes if cls["expect"]["why"]}
+    expected |= set(_APPLICATION_CODES) | deferred
+    assert len(expected) == 14, f"the thirteen lift codes and the application's own: {sorted(expected)}"
+    never_reached = sorted(expected - codes - deferred)
+    assert not never_reached, f"every refusal code is reached; never reached: {never_reached}"
+    unknown = sorted(codes - expected)
+    assert not unknown, f"the harness kept codes no class reaches: {unknown}"
+
+    not_at_every_site = sorted(
+        f"{s}[{i}] {outcome}" for (s, i) in sites for outcome in outcomes if ((s, i), outcome) not in reached
+    )
+    assert not not_at_every_site, (
+        f"every host outcome is reached at every call site; never reached: {not_at_every_site}"
+    )
+
+
 def _ask(prompt: str, schema: str = "", max_tokens: str = "8", temperature: str = "0") -> dict:
     return {
         "prompt": prompt,
@@ -443,13 +597,16 @@ def test_the_exhaustive_provider_answers_each_class_in_turn() -> None:
 
 def test_every_scenario_of_the_directory_is_replayed_here() -> None:
     names = sorted(p.stem for p in _SCENARIOS.glob("*.json"))
-    assert names == [
-        "static_host_clock",
-        "static_host_http",
-        "static_host_kv",
-        "static_host_model",
-        "static_host_notify",
-    ]
+    assert names == sorted(
+        [
+            "static_host_clock",
+            "static_host_http",
+            "static_host_kv",
+            "static_host_model",
+            "static_host_notify",
+            *_HARNESS_SCENARIOS,
+        ]
+    )
 
 
 def test_the_system_clock_answers_a_monotonic_reading_that_does_not_decrease() -> None:

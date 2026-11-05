@@ -39,6 +39,11 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # The reference host of the standard host features, which the scenarios of
 # `tests/host_features/` replay a machine against (docs/SCE_HOST_FEATURES.md).
 sce-rust-host-features = { path = "../host-features" }
+# The engine again, with the transition observer (docs/adr/0089) the exhaustive
+# run of the reference harness measures its transition coverage by
+# (docs/adr/0087, section 9.4). A test-only feature: the library and its wasm32
+# build keep the engine as `[dependencies]` states it.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "transition-observer"] }
 
 # The wasm32 build is a cdylib a host script loads (`wasm/run.mjs`); every other
 # target uses the rlib, which is what the native tests link.

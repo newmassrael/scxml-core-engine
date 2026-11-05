@@ -284,25 +284,33 @@ private struct HostRig {
     }
 }
 
-/// Replays scenario `name` against `policy`, a machine the host serves. `variables` read
-/// what the machine published.
+/// Replays the scenario `scenario` (`name`'s own when none) against `policy`, a machine of
+/// the document `name` the host serves, which the scenario names: a machine whose run ends
+/// has one scenario a run (the reference harness's cases). `variables` read what the
+/// machine published.
 private func replayHost<Policy: StatePolicy>(
     _ name: String,
+    scenario stemGiven: String? = nil,
     policy: Policy,
     variables: [String: () -> JSONValue],
     answerSchemas: [AnswerSchema] = [],
     sourceLocation: SourceLocation = #_sourceLocation
 ) {
-    let path = "\(hostScenarioDirectory)/\(name).json"
+    let stem = stemGiven ?? name
+    let path = "\(hostScenarioDirectory)/\(stem).json"
     let scenario: JSONValue
     do {
         scenario = try parseJSON(String(contentsOfFile: path, encoding: .utf8))
     } catch {
-        fail("scenario \(name) is not readable: \(error)", sourceLocation)
+        fail("scenario \(stem) is not readable: \(error)", sourceLocation)
+        return
+    }
+    guard case .text(let machine)? = scenario.member("machine"), machine == name else {
+        fail("scenario \(stem) names another machine than \(name)", sourceLocation)
         return
     }
     guard case .array(let steps)? = scenario.member("steps"), !steps.isEmpty else {
-        fail("scenario \(name) has no steps, which judges nothing", sourceLocation)
+        fail("scenario \(stem) has no steps, which judges nothing", sourceLocation)
         return
     }
 
@@ -329,7 +337,7 @@ private func replayHost<Policy: StatePolicy>(
     var judged = 0
     defer {
         if judged == 0 {
-            fail("scenario \(name) judged no expectation", sourceLocation)
+            fail("scenario \(stem) judged no expectation", sourceLocation)
         }
     }
     for (index, step) in steps.enumerated() {
@@ -337,7 +345,7 @@ private func replayHost<Policy: StatePolicy>(
         if case .text(let text)? = step.member("note") {
             note = text
         }
-        let label = "step \(index) (\(note))"
+        let label = "\(stem) step \(index) (\(note))"
         if case .object(let directives)? = step.member("host") {
             rig.apply(directives, at: sourceLocation)
         }
@@ -396,7 +404,7 @@ private func replayHost<Policy: StatePolicy>(
                         continue
                     }
                     judged += 1
-                    if !sameValue(read(), value) {
+                    if !sameValue(byKey(read()), byKey(value)) {
                         fail("\(label): variable `\(variable)` is \(read()), not \(value)", sourceLocation)
                     }
                 }
@@ -654,6 +662,299 @@ private func runSequence(_ table: JSONValue, _ classes: [JSONValue], _ sequence:
         }
     }
     #expect(codes.count == 13, "every refusal code is reached or deferred: \(codes.sorted())")
+}
+
+/// The cases of the reference harness's scenario (docs/adr/0087, section 9.1 item 8), one
+/// scenario each: a run of the harness ends at one of its finals, so each case is a run of its
+/// own.
+private let harnessScenarios = [
+    "static_model_harness_accepted",
+    "static_model_harness_exhausted",
+    "static_model_harness_not_offered",
+    "static_model_harness_repaired",
+    "static_model_harness_timeout",
+]
+
+/// What static_model_harness publishes, each as a scenario states it: a record by its fields,
+/// a 64-bit field as its digits, an enum by its name.
+private func harnessVariables(_ policy: StaticModelHarnessPolicy) -> [String: () -> JSONValue] {
+    [
+        "outcome": { .text(policy.outcome) },
+        "attempts": { integer(policy.attempts) },
+        "offered": { integers(policy.offered) },
+        "refusals": {
+            .array(
+                policy.refusals.map { refusal -> JSONValue in
+                    .object([
+                        (key: "code", value: .text(refusal.code.declaredName)),
+                        (key: "path", value: .text(refusal.path)),
+                    ])
+                }
+            )
+        },
+        "answer": {
+            policy.answer.map { a -> JSONValue in
+                .object([
+                    (key: "id", value: integer(a.id)),
+                    (key: "amount", value: .text(String(a.amount))),
+                    (key: "title", value: .text(a.title)),
+                    (key: "kind", value: .text(a.kind.declaredName)),
+                    (key: "note", value: optionalText(a.note)),
+                    (key: "tag", value: .text(bytesAsPayloadText(a.tag))),
+                    (key: "priority", value: integer(a.priority)),
+                ])
+            } ?? .null
+        },
+        "why": {
+            policy.why.map { w -> JSONValue in
+                .object([
+                    (key: "code", value: .text(w.code.declaredName)),
+                    (key: "path", value: .text(w.path)),
+                    (key: "bound", value: optionalInteger(w.bound)),
+                ])
+            } ?? .null
+        },
+    ]
+}
+
+@Test func theReferenceHarnessRunsEachCaseOfItsScenario() {
+    for stem in harnessScenarios {
+        let policy = StaticModelHarnessPolicy()
+        replayHost(
+            "static_model_harness",
+            scenario: stem,
+            policy: policy,
+            variables: harnessVariables(policy),
+            answerSchemas: StaticModelHarnessAnswerSchemas.all
+        )
+    }
+}
+
+/// The codes of the application's own checks, after the thirteen of the lift its enum repeats
+/// (enum_harness_code.scxml), each named for the class that reaches it.
+private let harnessApplicationCodes = ["notOffered"]
+
+/// The ticks a harness run is given after each event: a run may make its calls and take each
+/// completion within one event, a call a round.
+private let harnessSettleTicks = 8
+
+private func settleHarness<Policy: StatePolicy>(_ engine: Engine<Policy>) {
+    for _ in 0..<harnessSettleTicks {
+        engine.tick()
+    }
+}
+
+/// A member of a class or a section that is a text, or "" for one that is not.
+private func textMember(_ value: JSONValue, _ name: String) -> String {
+    if case .text(let text)? = value.member(name) {
+        return text
+    }
+    return ""
+}
+
+/// The end of the host operation a class gives a call (docs/adr/0087, section 9.4): an answer
+/// by its `finish`, a failure by its code, the refusal, and a held call, whichever way it is
+/// left.
+private func hostOutcome(_ cls: JSONValue) -> String {
+    switch textMember(cls, "end") {
+    case "answer":
+        return "answer:" + textMember(cls, "finish")
+    case "failure":
+        return textMember(cls, "error")
+    case "refusal":
+        return "invalid_argument"
+    default:
+        return "hold"
+    }
+}
+
+/// What one run of the harness against the exhaustive provider showed.
+private struct HarnessRun {
+    /// Every row the transition observer was told, in order.
+    var rows: [TransitionTaken<StaticModelHarnessState>]
+    /// How many calls the host was asked to start.
+    var calls: Int
+    /// The state the run ended in.
+    var ended: String
+    /// The code of each refusal the harness kept, in order.
+    var codes: [String]
+}
+
+private func harnessRowName(_ row: TransitionTaken<StaticModelHarnessState>) -> String {
+    "\(row.source)[\(row.index)]"
+}
+
+/// Runs the reference harness against the exhaustive provider answering the classes `sequence`
+/// names, one call a class: offers it the table's ids, starts it, and leaves each call it holds
+/// as the table's harness section says, until it ends. Nil, with the failure recorded, when the
+/// run cannot be made.
+private func runHarness(_ table: JSONValue, _ classes: [JSONValue], _ sequence: [Int], at: SourceLocation)
+    -> HarnessRun?
+{
+    guard let harness = table.member("harness"),
+        case .array(let offered)? = harness.member("offered"),
+        let data = harness.member("data"),
+        case .number(let boundText)? = harness.member("bound"), let bound = Int(boundText),
+        case .number(let deadlineText)? = harness.member("deadline_ms"), let deadlineMs = Int64(deadlineText)
+    else {
+        fail("the class table's harness section names no offer, start, bound or deadline", at)
+        return nil
+    }
+    if textMember(harness, "then") != "advance" {
+        fail("a held call of the harness is left by its own deadline", at)
+        return nil
+    }
+    let policy = StaticModelHarnessPolicy()
+    let host = ReferenceHost(clock: ScriptedClockSource(), transport: ScriptedTransport())
+    host.setAnswerSchemas(StaticModelHarnessAnswerSchemas.all)
+    host.setModelProvider(ExhaustiveProvider(sequence.map { outcomeClass(classes[$0]) }))
+    let engine = Engine(policy: policy)
+    var rows: [TransitionTaken<StaticModelHarnessState>] = []
+    engine.setTransitionObserver { rows.append($0) }
+    engine.setClock(ManualClock())
+    do {
+        try serve(host, on: engine)
+    } catch {
+        fail("the reference host could not be registered: \(error)", at)
+        return nil
+    }
+    engine.initialize()
+    settleHarness(engine)
+    for id in offered {
+        let offer = writeJSON(.object([(key: "id", value: id)]))
+        engine.raiseExternalByName(textMember(harness, "offer"), eventData: offer)
+        settleHarness(engine)
+    }
+    engine.raiseExternalByName(textMember(harness, "start"), eventData: writeJSON(data))
+    settleHarness(engine)
+    let current = { policy.getStateName(engine.getCurrentState()) }
+    var waits = 0
+    while current() != "accepted" && current() != "gave_up" {
+        if waits > bound {
+            fail("\(sequence): the run neither ended nor held a call it could be moved past", at)
+            return nil
+        }
+        engine.advanceTimeMs(deadlineMs)
+        settleHarness(engine)
+        waits += 1
+    }
+    return HarnessRun(
+        rows: rows,
+        calls: host.takeStarts().count,
+        ended: current(),
+        codes: policy.refusals.map { $0.code.declaredName }
+    )
+}
+
+/// The reference harness is tested exhaustively, and its coverage is measured (docs/adr/0087,
+/// section 9.4 item 1, Landing order item 7): every sequence of `bound` outcome classes is a
+/// run, the transition observer of docs/adr/0089 tells each row of the emitted transition table
+/// the run takes, and the runs together take every row of the table, reach every refusal code,
+/// and reach every host outcome at every call site (a row that enters the state whose invoke is
+/// the call).
+///
+/// The harness makes at most `bound` calls and the provider answers a call by its position
+/// alone, so every sequence of fewer classes the harness can consume is a prefix of a sequence
+/// run here, and none is asked past.
+@Test func everySequenceOfOutcomeClassesTakesEveryRowOfTheReferenceHarness() {
+    let at = #_sourceLocation
+    let table: JSONValue
+    do {
+        table = try parseJSON(
+            String(contentsOfFile: "\(hostScenarioDirectory)/../model_outcome_classes.json", encoding: .utf8)
+        )
+    } catch {
+        fail("the class table is not readable: \(error)", at)
+        return
+    }
+    guard case .array(let classes)? = table.member("classes"), !classes.isEmpty,
+        let harness = table.member("harness"),
+        case .number(let boundText)? = harness.member("bound"), let bound = Int(boundText), bound > 0,
+        case .text(let schema)? = table.member("answer_schema"),
+        case .array(let deferredEntries)? = table.member("deferred")
+    else {
+        fail("the class table names nothing to run", at)
+        return
+    }
+    #expect(textMember(harness, "machine") == "static_model_harness")
+    #expect(StaticModelHarnessAnswerSchemas.all.first?.id == schema)
+    let call = textMember(harness, "call")
+    let rows = Set(StaticModelHarnessTransition.all.map { TransitionTaken(source: $0.from, index: $0.index) })
+    let sites = Set(
+        StaticModelHarnessTransition.all.filter { $0.targets == call }.map {
+            TransitionTaken(source: $0.from, index: $0.index)
+        }
+    )
+    if sites.isEmpty {
+        fail("no row of the table enters `\(call)`", at)
+        return
+    }
+    let outcomes = Set(classes.map(hostOutcome))
+
+    var taken = Set<TransitionTaken<StaticModelHarnessState>>()
+    var codes = Set<String>()
+    var reached = Set<String>()
+    var sequences: [[Int]] = [[]]
+    for _ in 0..<bound {
+        sequences = sequences.flatMap { prefix in classes.indices.map { prefix + [$0] } }
+    }
+    var runs = 0
+    for sequence in sequences {
+        let named = sequence.map { textMember(classes[$0], "class") }
+        guard let run = runHarness(table, classes, sequence, at: at) else {
+            return
+        }
+        if run.ended != "accepted" && run.ended != "gave_up" {
+            fail("\(named): the run ended in `\(run.ended)`, not a final", at)
+            return
+        }
+        let called = run.rows.filter { sites.contains($0) }
+        if called.count != run.calls || run.calls > bound {
+            fail("\(named): \(run.calls) calls, \(called.count) of them by a row that enters `\(call)`", at)
+            return
+        }
+        for (site, index) in zip(called, sequence) {
+            reached.insert("\(harnessRowName(site)) \(hostOutcome(classes[index]))")
+        }
+        taken.formUnion(run.rows)
+        codes.formUnion(run.codes)
+        runs += 1
+    }
+    var expected = 1
+    for _ in 0..<bound {
+        expected *= classes.count
+    }
+    #expect(runs == expected, "every sequence was run")
+
+    let toldNoRow = taken.subtracting(rows).map(harnessRowName).sorted()
+    #expect(toldNoRow.isEmpty, "the observer was told pairs that are no row of the table: \(toldNoRow)")
+    let neverTaken = rows.subtracting(taken).map(harnessRowName).sorted()
+    #expect(neverTaken.isEmpty, "every row of the harness's transition table is taken; never taken: \(neverTaken)")
+
+    let deferred = Set(deferredEntries.map { textMember($0, "code") })
+    var expectedCodes = Set(harnessApplicationCodes).union(deferred)
+    for cls in classes {
+        if case .text(let code)? = cls.member("expect")?.member("why")?.member("code") {
+            expectedCodes.insert(code)
+        }
+    }
+    #expect(expectedCodes.count == 14, "the thirteen lift codes and the application's own: \(expectedCodes.sorted())")
+    let neverReached = expectedCodes.subtracting(codes).subtracting(deferred).sorted()
+    #expect(neverReached.isEmpty, "every refusal code is reached; never reached: \(neverReached)")
+    let unknown = codes.subtracting(expectedCodes).sorted()
+    #expect(unknown.isEmpty, "the harness kept codes no class reaches: \(unknown)")
+
+    var notAtEverySite: [String] = []
+    for site in sites {
+        for outcome in outcomes where !reached.contains("\(harnessRowName(site)) \(outcome)") {
+            notAtEverySite.append("\(harnessRowName(site)) \(outcome)")
+        }
+    }
+    notAtEverySite.sort()
+    #expect(
+        notAtEverySite.isEmpty,
+        "every host outcome is reached at every call site; never reached: \(notAtEverySite)"
+    )
 }
 
 @Test func theReferenceHostJudgesAGenerationBeforeItsProvider() {

@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,6 +32,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_kv"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_model"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_notify"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_model_harness"
 )
 
 // scriptTransport answers what a scenario says and keeps what it was given.
@@ -265,6 +267,8 @@ func same(got any, want any) bool {
 			return float64(g) == w
 		case int:
 			return float64(g) == w
+		case float64:
+			return g == w
 		}
 		return false
 	default:
@@ -279,7 +283,17 @@ func replayHost[S interface {
 	comparable
 	String() string
 }, E comparable](t *testing.T, name string, policy sce.StatePolicy[S, E], schemas []sce.AnswerSchema, variables map[string]func() any) {
-	path := filepath.Join("..", "..", "..", "..", "..", "tests", "host_features", "scenarios", name+".json")
+	replayHostScenario[S, E](t, name, name, policy, schemas, variables)
+}
+
+// replayHostScenario replays the scenario `stem` against `machine`, the machine the
+// scenario names, which the host serves: a machine whose run ends has one scenario
+// a run (the reference harness's cases).
+func replayHostScenario[S interface {
+	comparable
+	String() string
+}, E comparable](t *testing.T, stem string, machine string, policy sce.StatePolicy[S, E], schemas []sce.AnswerSchema, variables map[string]func() any) {
+	path := filepath.Join("..", "..", "..", "..", "..", "tests", "host_features", "scenarios", stem+".json")
 	text, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("the scenario is not readable: %v", err)
@@ -287,6 +301,9 @@ func replayHost[S interface {
 	var scenario map[string]any
 	if err := json.Unmarshal(text, &scenario); err != nil {
 		t.Fatalf("a scenario is JSON: %v", err)
+	}
+	if scenario["machine"] != machine {
+		t.Fatalf("the scenario %s names %v, not %s", stem, scenario["machine"], machine)
 	}
 	clock := hf.NewScriptedClock()
 	transport := &scriptTransport{}
@@ -318,6 +335,7 @@ func replayHost[S interface {
 	for n, raw := range steps {
 		step := raw.(map[string]any)
 		note, _ := step["note"].(string)
+		note = stem + ": " + note
 		if directives, ok := step["host"].(map[string]any); ok {
 			rig.directives(t, directives)
 		}
@@ -600,5 +618,338 @@ func TestEverySequenceOfOutcomeClassesIsReadAsItsClassesSay(t *testing.T) {
 	}
 	if len(codes) != 13 {
 		t.Fatalf("every code of sce:std/lift/refusal_code.scxml is reached or deferred: %v", codes)
+	}
+}
+
+// harnessScenarios are the cases of the reference harness's scenario (docs/adr/0087,
+// section 9.1 item 8), one scenario each: a run of the harness ends at one of its
+// finals, so each case is a run of its own.
+var harnessScenarios = []string{
+	"static_model_harness_accepted",
+	"static_model_harness_exhausted",
+	"static_model_harness_not_offered",
+	"static_model_harness_repaired",
+	"static_model_harness_timeout",
+}
+
+// harnessVariables are the readers of what static_model_harness publishes, each as a
+// scenario states it: a record by its fields, a 64-bit integer as its digits, an enum
+// by its name.
+func harnessVariables(t *testing.T, policy *static_model_harness.StaticModelHarnessPolicy) map[string]func() any {
+	return map[string]func() any{
+		"outcome":  func() any { return policy.Outcome() },
+		"attempts": func() any { return policy.Attempts() },
+		"offered":  func() any { return asJSON(t, policy.Offered()) },
+		"refusals": func() any {
+			refusals := []any{}
+			for _, refusal := range policy.Refusals() {
+				refusals = append(refusals, map[string]any{"code": refusal.Code().String(), "path": refusal.Path()})
+			}
+			return asJSON(t, refusals)
+		},
+		"answer": func() any {
+			if a, ok := policy.Answer().Get(); ok {
+				return asJSON(t, map[string]any{
+					"id": a.Id(), "amount": signedDigits(a.Amount()), "title": a.Title(), "kind": a.Kind().String(),
+					"note": a.Note(), "tag": sce.BytesAsPayloadText(a.Tag()), "priority": a.Priority(),
+				})
+			}
+			return nil
+		},
+		"why": func() any {
+			if why, ok := policy.Why().Get(); ok {
+				return asJSON(t, map[string]any{"code": why.Code().String(), "path": why.Path(), "bound": why.Bound()})
+			}
+			return nil
+		},
+	}
+}
+
+func TestTheReferenceHarnessRunsEachCaseOfItsScenario(t *testing.T) {
+	for _, stem := range harnessScenarios {
+		policy := static_model_harness.NewStaticModelHarnessPolicy()
+		policy.SessionID = sce.GenerateSessionID()
+		replayHostScenario[static_model_harness.StaticModelHarnessState, static_model_harness.StaticModelHarnessEvent](
+			t, stem, "static_model_harness", &policy, static_model_harness.AnswerSchemas, harnessVariables(t, &policy))
+	}
+}
+
+// harnessRow is a row of the reference harness's transition table, as the table and
+// the transition observer (docs/adr/0089) name it.
+type harnessRow = sce.TransitionTaken[static_model_harness.StaticModelHarnessState]
+
+// harnessApplicationCodes are the codes of the application's own checks, after the
+// thirteen of the lift its enum repeats (enum_harness_code.scxml), each named for
+// the class that reaches it.
+var harnessApplicationCodes = []string{"notOffered"}
+
+// harnessSettleTicks are the ticks a harness run is given after each event: a run may
+// make its calls and take each completion within one event, a call a round.
+const harnessSettleTicks = 8
+
+// harnessOutcome is the end of the host operation a class gives a call (docs/adr/0087,
+// section 9.4): an answer by its `finish`, a failure by its code, the refusal, and a
+// held call, whichever way it is left.
+func harnessOutcome(class map[string]any) string {
+	switch class["end"] {
+	case "answer":
+		return "answer:" + class["finish"].(string)
+	case "failure":
+		return class["error"].(string)
+	case "refusal":
+		return "invalid_argument"
+	default:
+		return "hold"
+	}
+}
+
+// harnessRun is what one run of the harness against the exhaustive provider showed.
+type harnessRun struct {
+	rows  []harnessRow
+	calls int
+	ended string
+	codes []string
+}
+
+func harnessRowName(row harnessRow) string {
+	return fmt.Sprintf("%s[%d]", row.Source.String(), row.Index)
+}
+
+// runHarness runs the reference harness against the exhaustive provider answering the
+// classes sequence names, one call a class: it offers the table's ids, starts it, and
+// leaves each call it holds as the table's harness section says, until it ends.
+func runHarness(t *testing.T, table map[string]any, sequence []int) harnessRun {
+	classes := table["classes"].([]any)
+	harness := table["harness"].(map[string]any)
+	if harness["then"] != "advance" {
+		t.Fatalf("a held call of the harness is left by its own deadline, not %v", harness["then"])
+	}
+	var provided []hf.OutcomeClass
+	for _, i := range sequence {
+		provided = append(provided, outcomeClass(classes[i].(map[string]any)))
+	}
+	policy := static_model_harness.NewStaticModelHarnessPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	host := hf.NewReferenceHost(hf.NewScriptedClock(), &scriptTransport{})
+	host.SetAnswerSchemas(static_model_harness.AnswerSchemas)
+	host.SetModelProvider(hf.NewExhaustiveProvider(provided))
+	engine := sce.NewEngine[static_model_harness.StaticModelHarnessState, static_model_harness.StaticModelHarnessEvent](&policy)
+	var rows []harnessRow
+	engine.SetTransitionObserver(func(taken harnessRow) {
+		rows = append(rows, taken)
+	})
+	engine.SetClock(sce.NewManualClock(0))
+	hf.Serve(engine, host)
+	engine.Initialize()
+	settle := func() {
+		for i := 0; i < harnessSettleTicks; i++ {
+			engine.Tick()
+		}
+	}
+	settle()
+	for _, id := range harness["offered"].([]any) {
+		data, err := json.Marshal(map[string]any{"id": id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine.RaiseExternalByName(harness["offer"].(string), string(data))
+		settle()
+	}
+	start, err := json.Marshal(harness["data"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.RaiseExternalByName(harness["start"].(string), string(start))
+	settle()
+	leaf := func() string {
+		name := ""
+		for _, state := range engine.GetActiveStates() {
+			if !policy.IsCompoundState(state) {
+				name = state.String()
+			}
+		}
+		return name
+	}
+	bound := int(harness["bound"].(float64))
+	deadline := int64(harness["deadline_ms"].(float64))
+	for waits := 0; leaf() != "accepted" && leaf() != "gave_up"; waits++ {
+		if waits > bound {
+			t.Fatalf("%v: the run neither ended nor held a call it could be moved past", sequence)
+		}
+		engine.AdvanceTimeMs(deadline)
+		settle()
+	}
+	codes := []string{}
+	for _, refusal := range policy.Refusals() {
+		codes = append(codes, refusal.Code().String())
+	}
+	return harnessRun{rows: rows, calls: len(host.TakeStarts()), ended: leaf(), codes: codes}
+}
+
+// The reference harness is tested exhaustively, and its coverage is measured
+// (docs/adr/0087, section 9.4 item 1, Landing order item 7): every sequence of `bound`
+// outcome classes is a run, the transition observer of docs/adr/0089 tells each row of
+// the emitted transition table the run takes, and the runs together take every row of
+// the table, reach every refusal code, and reach every host outcome at every call site
+// (a row that enters the state whose invoke is the call).
+//
+// The harness makes at most `bound` calls and the provider answers a call by its
+// position alone, so every sequence of fewer classes the harness can consume is a
+// prefix of a sequence run here, and none is asked past.
+func TestEverySequenceOfOutcomeClassesTakesEveryRowOfTheReferenceHarness(t *testing.T) {
+	text, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "tests", "host_features", "model_outcome_classes.json"))
+	if err != nil {
+		t.Fatalf("the class table is not readable: %v", err)
+	}
+	var table map[string]any
+	if err := json.Unmarshal(text, &table); err != nil {
+		t.Fatalf("the class table is JSON: %v", err)
+	}
+	harness := table["harness"].(map[string]any)
+	if harness["machine"] != "static_model_harness" || len(static_model_harness.AnswerSchemas) == 0 ||
+		table["answer_schema"] != static_model_harness.AnswerSchemas[0].ID {
+		t.Fatalf("the table names another harness or answer schema: %v", table["answer_schema"])
+	}
+	classes := table["classes"].([]any)
+	bound := int(harness["bound"].(float64))
+	call := harness["call"].(string)
+	if len(classes) == 0 || bound == 0 {
+		t.Fatal("a table that names nothing judges nothing")
+	}
+	rows := map[harnessRow]bool{}
+	sites := map[harnessRow]bool{}
+	for _, row := range static_model_harness.StaticModelHarnessTransitions {
+		pair := harnessRow{Source: row.From, Index: row.Index}
+		rows[pair] = true
+		if row.Targets == call {
+			sites[pair] = true
+		}
+	}
+	if len(sites) == 0 {
+		t.Fatalf("no row of the table enters `%s`", call)
+	}
+	outcomes := map[string]bool{}
+	for _, raw := range classes {
+		outcomes[harnessOutcome(raw.(map[string]any))] = true
+	}
+
+	taken := map[harnessRow]bool{}
+	codes := map[string]bool{}
+	reached := map[string]bool{}
+	runs, expected := 0, 1
+	for i := 0; i < bound; i++ {
+		expected *= len(classes)
+	}
+	sequence := make([]int, bound)
+	for {
+		var named []string
+		for _, i := range sequence {
+			named = append(named, classes[i].(map[string]any)["class"].(string))
+		}
+		run := runHarness(t, table, sequence)
+		if run.ended != "accepted" && run.ended != "gave_up" {
+			t.Fatalf("%v: the run ended in `%s`, not a final", named, run.ended)
+		}
+		var called []harnessRow
+		for _, row := range run.rows {
+			if sites[row] {
+				called = append(called, row)
+			}
+			taken[row] = true
+		}
+		if len(called) != run.calls || run.calls > bound {
+			t.Fatalf("%v: %d calls, %d of them made by a row that enters `%s`", named, run.calls, len(called), call)
+		}
+		for n, site := range called {
+			reached[harnessRowName(site)+" "+harnessOutcome(classes[sequence[n]].(map[string]any))] = true
+		}
+		for _, code := range run.codes {
+			codes[code] = true
+		}
+		runs++
+		position := bound - 1
+		for position >= 0 && sequence[position] == len(classes)-1 {
+			sequence[position] = 0
+			position--
+		}
+		if position < 0 {
+			break
+		}
+		sequence[position]++
+	}
+	if runs != expected {
+		t.Fatalf("%d sequences were run, not the %d of the bound", runs, expected)
+	}
+
+	var toldNoRow, neverTaken []string
+	for row := range taken {
+		if !rows[row] {
+			toldNoRow = append(toldNoRow, harnessRowName(row))
+		}
+	}
+	for row := range rows {
+		if !taken[row] {
+			neverTaken = append(neverTaken, harnessRowName(row))
+		}
+	}
+	sort.Strings(toldNoRow)
+	sort.Strings(neverTaken)
+	if len(toldNoRow) != 0 {
+		t.Errorf("the observer was told pairs that are no row of the table: %v", toldNoRow)
+	}
+	if len(neverTaken) != 0 {
+		t.Errorf("every row of the harness's transition table is taken; never taken: %v", neverTaken)
+	}
+
+	deferred := map[string]bool{}
+	for _, raw := range table["deferred"].([]any) {
+		deferred[raw.(map[string]any)["code"].(string)] = true
+	}
+	expectedCodes := map[string]bool{}
+	for _, raw := range classes {
+		if why, ok := raw.(map[string]any)["expect"].(map[string]any)["why"].(map[string]any); ok {
+			expectedCodes[why["code"].(string)] = true
+		}
+	}
+	for _, code := range harnessApplicationCodes {
+		expectedCodes[code] = true
+	}
+	for code := range deferred {
+		expectedCodes[code] = true
+	}
+	if len(expectedCodes) != 14 {
+		t.Fatalf("the thirteen lift codes and the application's own: %v", expectedCodes)
+	}
+	var neverReached, unknown []string
+	for code := range expectedCodes {
+		if !codes[code] && !deferred[code] {
+			neverReached = append(neverReached, code)
+		}
+	}
+	for code := range codes {
+		if !expectedCodes[code] {
+			unknown = append(unknown, code)
+		}
+	}
+	sort.Strings(neverReached)
+	sort.Strings(unknown)
+	if len(neverReached) != 0 {
+		t.Errorf("every refusal code is reached; never reached: %v", neverReached)
+	}
+	if len(unknown) != 0 {
+		t.Errorf("the harness kept codes no class reaches: %v", unknown)
+	}
+
+	var notAtEverySite []string
+	for site := range sites {
+		for outcome := range outcomes {
+			if key := harnessRowName(site) + " " + outcome; !reached[key] {
+				notAtEverySite = append(notAtEverySite, key)
+			}
+		}
+	}
+	sort.Strings(notAtEverySite)
+	if len(notAtEverySite) != 0 {
+		t.Errorf("every host outcome is reached at every call site; never reached: %v", notAtEverySite)
 	}
 }
