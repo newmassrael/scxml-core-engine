@@ -65,8 +65,40 @@ try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.
 {{ saved_present(field.saved_type, field.saved_kind if field.saved_kind in ['enum', 'record'] else 'scalar', value, what, field.bound) }}
 {%- endif -%}
 {%- endmacro %}
-{#- The `<invoke type="scxml">`s of the document in document order, each with the state that holds it: the order a
-   saved state lists its running children in. The states are walked by document order, not by id. #}
+{#- Builds the session of `<invoke>` `entry` as the saved child names it, of the policy `policy_type`, judges the state it
+   holds down to its last grandchild, and returns what resumes it where it stood in place of starting it: no
+   `<onentry>` runs, no `<data>` is evaluated and nothing is sent. `mesh_document` is the Swift expression of the
+   document a Mesh router is asked for, and `stem` the candidate a hybrid invoke's slot is told it runs. #}
+{%- macro resume_child(entry, policy_type, host_call, mesh_document, stem, indent) -%}
+{{ indent }}let childPolicy = {{ policy_type }}Policy({{ 'actions: ' ~ host_call if host_call else '' }})
+{{ indent }}let session = InvokedSession(
+{{ indent }}    policy: childPolicy,
+{{ indent }}    sessionID: childSessionID,
+{{ indent }}    queue: ParentEventQueue()
+{{ indent }})
+{{ indent }}let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+{{ indent }}return { [self] in
+{{ indent }}    // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+{{ indent }}    // before it is restored, since restoring arms them.
+{{ indent }}    session.engine.setClock(engine.clock())
+{{ indent }}    engine.startChildMesh(of: session, invokeID: "{{ entry.info.invoke_id | escape_swift }}", document: {{ mesh_document }})
+{{ indent }}    resumeChild()
+{{ indent }}    activeInvokes["{{ entry.info.invoke_id | escape_swift }}"] = ChildSession(
+{{ indent }}        sessionID: childSessionID,
+{{ indent }}        invokeID: "{{ entry.info.invoke_id | escape_swift }}",
+{{ indent }}        parentSessionID: sessionID,
+{{ indent }}        autoforward: {{ 'true' if entry.info.autoforward else 'false' }},
+{{ indent }}        finalizeScript: ""
+{{ indent }}    )
+{{ indent }}    sceInvokeChild{{ entry.info.field_suffix | to_pascal_case }} = session
+{% if stem %}
+{{ indent }}    sceInvokeStem{{ entry.info.field_suffix | to_pascal_case }} = "{{ stem | escape_swift }}"
+{% endif %}
+{{ indent }}    sceInvokeDone{{ entry.info.field_suffix | to_pascal_case }} = false
+{{ indent }}}
+{%- endmacro %}
+{#- The `<invoke type="scxml">`s of the document, static and hybrid, in document order, each with the state that holds
+   it: the order a saved state lists its running children in. The states are walked by document order, not by id. #}
 {%- set ns_order = namespace(max=0, all=[]) -%}
 {%- for state_id, state in model.states | dictsort -%}
 {%- if state.document_order > ns_order.max -%}{%- set ns_order.max = state.document_order -%}{%- endif -%}
@@ -74,7 +106,7 @@ try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.
 {%- for order in range(ns_order.max + 1) -%}
 {%- for state_id, state in model.states | dictsort -%}
 {%- if state.document_order == order -%}
-{%- for invoke_info in state.invokes | scxml -%}
+{%- for invoke_info in (state.invokes | scxml) + (state.invokes | hybrid) -%}
 {%- set ns_order.all = ns_order.all + [{'info': invoke_info, 'state': state_id}] -%}
 {%- endfor -%}
 {%- endif -%}
@@ -215,14 +247,25 @@ extension {{ machine_name }}Policy: SavedPolicy {
         if let child = sceInvokeChild{{ entry.info.field_suffix | to_pascal_case }}, !sceInvokeDone{{ entry.info.field_suffix | to_pascal_case }},
             let slot = activeInvokes["{{ entry.info.invoke_id | escape_swift }}"]
         {
+{% if entry.info.kind == 'Hybrid' %}
+            // The slot holds whichever candidate the `srcexpr` named, by what a parent drives it through.
+            guard let saving = child as? any SavedChildEngine else {
+                throw StateRefusal("the session of '{{ entry.info.invoke_id | escape_swift }}' is one this runtime cannot save")
+            }
+{% endif %}
             // The id the child was started under, which its session id derives from this one's: carried, not
             // computed again.
             running.append(
                 SavedChild(
                     id: "{{ entry.info.invoke_id | escape_swift }}", start: Int64(sceInvokeStarts{{ entry.info.field_suffix | to_pascal_case }}),
                     invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+{% if entry.info.kind == 'Hybrid' %}
+                    document: sceInvokeStem{{ entry.info.field_suffix | to_pascal_case }},
+                    session: try saving.saveSession(wallNowMs: wallNowMs)))
+{% else %}
                     document: "{{ entry.info.child_name | escape_swift }}",
                     session: try child.engine.save(wallNowMs: wallNowMs)))
+{% endif %}
         }
 {% endfor %}
         return running
@@ -328,37 +371,22 @@ extension {{ machine_name }}Policy: SavedPolicy {
     private func sceJudgeSavedChild{{ entry.info.field_suffix | to_pascal_case }}(
         _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<{{ machine_name }}Policy>, wallNowMs: Int64
     ) throws -> () -> Void {
+{% if entry.info.kind == 'Hybrid' %}
+        // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
+        switch child.document {
+{% for candidate in entry.info.candidates %}
+        case "{{ candidate.stem | escape_swift }}":
+{{ resume_child(entry, candidate.stem | to_pascal_case, candidate.child_host_call, '"' ~ (candidate.stem | escape_swift) ~ '"', candidate.stem, '            ') }}
+{% endfor %}
+        default:
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which '{{ entry.info.invoke_id | escape_swift }}' does not start")
+        }
+{% else %}
         guard child.document == "{{ entry.info.child_name | escape_swift }}" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which '{{ entry.info.invoke_id | escape_swift }}' does not start")
         }
-        let childPolicy = {{ entry.info.child_name | to_pascal_case }}Policy({{ 'actions: ' ~ entry.info.child_host_call if entry.info.child_host_call else '' }})
-        let session = InvokedSession(
-            policy: childPolicy,
-            sessionID: childSessionID,
-            queue: ParentEventQueue()
-        )
-        let resumeChild: () -> Void
-        do {
-            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
-        } catch let refusal as StateRefusal {
-            throw refusal.within("invokes[\(index)].session")
-        }
-        return { [self] in
-            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
-            // before it is restored, since restoring arms them.
-            session.engine.setClock(engine.clock())
-            engine.startChildMesh(of: session, invokeID: "{{ entry.info.invoke_id | escape_swift }}", document: documentStem("{{ entry.info.src | default('', true) | escape_swift }}"))
-            resumeChild()
-            activeInvokes["{{ entry.info.invoke_id | escape_swift }}"] = ChildSession(
-                sessionID: childSessionID,
-                invokeID: "{{ entry.info.invoke_id | escape_swift }}",
-                parentSessionID: sessionID,
-                autoforward: {{ 'true' if entry.info.autoforward else 'false' }},
-                finalizeScript: ""
-            )
-            sceInvokeChild{{ entry.info.field_suffix | to_pascal_case }} = session
-            sceInvokeDone{{ entry.info.field_suffix | to_pascal_case }} = false
-        }
+{{ resume_child(entry, entry.info.child_name | to_pascal_case, entry.info.child_host_call, 'documentStem("' ~ (entry.info.src | default('', true) | escape_swift) ~ '")', '', '        ') }}
+{% endif %}
     }
 {% endfor %}
 {% endif %}

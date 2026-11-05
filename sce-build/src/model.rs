@@ -2915,6 +2915,12 @@ pub struct InvokeCandidate {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_saves: bool,
+    /// Codegen-internal: whether the Swift runtime saves this candidate's whole
+    /// state — [`InvokeSessionCommon::child_swift_saves`], per candidate. Outside
+    /// the IR contract.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_swift_saves: bool,
     /// Codegen-internal: what the candidate reads of each event it is sent —
     /// [`InvokeSessionCommon::child_receives`], per candidate. Outside the IR
     /// contract.

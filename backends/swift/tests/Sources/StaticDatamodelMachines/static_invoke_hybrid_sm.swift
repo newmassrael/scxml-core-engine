@@ -427,6 +427,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildFirstRun: (any ChildEngine)?
 
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemFirstRun = ""
+
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDoneFirstRun = false
 
@@ -437,6 +440,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
     /// Whichever candidate its `srcexpr` named, so the slot holds the session by what a
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildLossyRun: (any ChildEngine)?
+
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemLossyRun = ""
 
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDoneLossyRun = false
@@ -449,6 +455,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildMissingRun: (any ChildEngine)?
 
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemMissingRun = ""
+
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDoneMissingRun = false
 
@@ -459,6 +468,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
     /// Whichever candidate its `srcexpr` named, so the slot holds the session by what a
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildSecondRun: (any ChildEngine)?
+
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemSecondRun = ""
 
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDoneSecondRun = false
@@ -576,6 +588,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         )
         sceStarted.initialize()
         sceInvokeChildFirstRun = sceStarted
+        sceInvokeStemFirstRun = sceSelected
         sceSettleInvokeFirstRun(engine: engine)
     }
 
@@ -688,6 +701,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         )
         sceStarted.initialize()
         sceInvokeChildLossyRun = sceStarted
+        sceInvokeStemLossyRun = sceSelected
         sceSettleInvokeLossyRun(engine: engine)
     }
 
@@ -784,6 +798,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         )
         sceStarted.initialize()
         sceInvokeChildMissingRun = sceStarted
+        sceInvokeStemMissingRun = sceSelected
         sceSettleInvokeMissingRun(engine: engine)
     }
 
@@ -896,6 +911,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         )
         sceStarted.initialize()
         sceInvokeChildSecondRun = sceStarted
+        sceInvokeStemSecondRun = sceSelected
         sceSettleInvokeSecondRun(engine: engine)
     }
 
@@ -1447,3 +1463,512 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeHybridPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868",
+            revised: "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58",
+            format2First: "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868",
+            format2Revised: "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("pick", SavedValues.of(vPick)),
+            SavedEntry("base", SavedValues.of(vBase)),
+            SavedEntry("enabled", SavedValues.of(vEnabled)),
+            SavedEntry("completed", SavedValues.of(vCompleted)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(try saved.variable("pick"), "pick", capacity: 48)
+        let value1 = try SavedValues.uint32(try saved.variable("base"), "base")
+        let value2 = try SavedValues.bool(try saved.variable("enabled"), "enabled")
+        let value3 = try SavedValues.uint32(try saved.variable("completed"), "completed")
+        let value4 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vPick = value0
+            self.vBase = value1
+            self.vEnabled = value2
+            self.vCompleted = value3
+            self.vErrors = value4
+        }
+    }
+
+    /// The id the document gives each of its `<invoke type="scxml">`s, in document order.
+    public var savedInvokeIDs: [String] {
+        ["first_run", "second_run", "lossy_run", "missing_run"]
+    }
+
+    /// How many times each `<invoke>` has started, which numbers the next start's id.
+    public func savedInvokeStarts() -> [SavedEntry<Int64>] {
+        var counted: [SavedEntry<Int64>] = []
+        if sceInvokeStartsFirstRun > 0 {
+            counted.append(SavedEntry("first_run", Int64(sceInvokeStartsFirstRun)))
+        }
+        if sceInvokeStartsSecondRun > 0 {
+            counted.append(SavedEntry("second_run", Int64(sceInvokeStartsSecondRun)))
+        }
+        if sceInvokeStartsLossyRun > 0 {
+            counted.append(SavedEntry("lossy_run", Int64(sceInvokeStartsLossyRun)))
+        }
+        if sceInvokeStartsMissingRun > 0 {
+            counted.append(SavedEntry("missing_run", Int64(sceInvokeStartsMissingRun)))
+        }
+        return counted
+    }
+
+    /// Every `<invoke>` whose child session is running, each with the child's whole state
+    /// (docs/adr/0045). A child that has ended is not running, though its entry stays until its state exits.
+    public func savedChildren(wallNowMs: Int64) throws -> [SavedChild] {
+        var running: [SavedChild] = []
+        if let child = sceInvokeChildFirstRun, !sceInvokeDoneFirstRun,
+            let slot = activeInvokes["first_run"]
+        {
+            // The slot holds whichever candidate the `srcexpr` named, by what a parent drives it through.
+            guard let saving = child as? any SavedChildEngine else {
+                throw StateRefusal("the session of 'first_run' is one this runtime cannot save")
+            }
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "first_run", start: Int64(sceInvokeStartsFirstRun),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: sceInvokeStemFirstRun,
+                    session: try saving.saveSession(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildSecondRun, !sceInvokeDoneSecondRun,
+            let slot = activeInvokes["second_run"]
+        {
+            // The slot holds whichever candidate the `srcexpr` named, by what a parent drives it through.
+            guard let saving = child as? any SavedChildEngine else {
+                throw StateRefusal("the session of 'second_run' is one this runtime cannot save")
+            }
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "second_run", start: Int64(sceInvokeStartsSecondRun),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: sceInvokeStemSecondRun,
+                    session: try saving.saveSession(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildLossyRun, !sceInvokeDoneLossyRun,
+            let slot = activeInvokes["lossy_run"]
+        {
+            // The slot holds whichever candidate the `srcexpr` named, by what a parent drives it through.
+            guard let saving = child as? any SavedChildEngine else {
+                throw StateRefusal("the session of 'lossy_run' is one this runtime cannot save")
+            }
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "lossy_run", start: Int64(sceInvokeStartsLossyRun),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: sceInvokeStemLossyRun,
+                    session: try saving.saveSession(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildMissingRun, !sceInvokeDoneMissingRun,
+            let slot = activeInvokes["missing_run"]
+        {
+            // The slot holds whichever candidate the `srcexpr` named, by what a parent drives it through.
+            guard let saving = child as? any SavedChildEngine else {
+                throw StateRefusal("the session of 'missing_run' is one this runtime cannot save")
+            }
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "missing_run", start: Int64(sceInvokeStartsMissingRun),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: sceInvokeStemMissingRun,
+                    session: try saving.saveSession(wallNowMs: wallNowMs)))
+        }
+        return running
+    }
+
+    /// The state that holds the `<invoke>` `id`, which a saved state's children and restarts are held to.
+    private func savedInvokeOwner(_ id: String) -> StaticInvokeHybridState? {
+        switch id {
+        case "first_run": return .first
+        case "second_run": return .second
+        case "lossy_run": return .lossy
+        case "missing_run": return .missing
+        default: return nil
+        }
+    }
+
+    /// Judges the children and the counts of starts `saved` holds and changes nothing; what it returns puts the
+    /// children back once this machine stands where it was saved (docs/adr/0045, section 3).
+    public func readSavedChildren(from saved: SavedState, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64) throws -> () -> Void {
+        for counted in saved.invokeStarts where savedInvokeOwner(counted.key) == nil {
+            throw StateRefusal("invokestarts counts '\(counted.key)', which the document does not invoke")
+        }
+        func counted(_ id: String) -> Int64 { saved.invokeStarts.first { $0.key == id }?.value ?? 0 }
+        // The state that holds an `<invoke>` is one the saved configuration stands in, and no `<invoke>` is listed twice.
+        func holder(_ id: String, _ what: String, _ seen: inout Set<String>) throws -> StaticInvokeHybridState {
+            guard let owner = savedInvokeOwner(id) else {
+                throw StateRefusal("the saved state holds a running child session '\(id)', which this machine does not start")
+            }
+            guard saved.configuration.contains(getStateName(owner)) else {
+                throw StateRefusal("\(what) is '\(id)', whose state the saved configuration does not stand in")
+            }
+            guard seen.insert(id).inserted else {
+                throw StateRefusal("\(what) is '\(id)', which an earlier entry already names")
+            }
+            return owner
+        }
+        var seen: Set<String> = []
+        var resume: [() -> Void] = []
+        var restart: [String] = []
+        switch saved.invokes {
+        case .resumed(let children):
+            for (index, child) in children.enumerated() {
+                _ = try holder(child.id, "invokes[\(index)]", &seen)
+                if child.start != counted(child.id) {
+                    throw StateRefusal(
+                        "invokes[\(index)] is start \(child.start) of '\(child.id)', and the session counts \(counted(child.id)) "
+                            + "starts of it: a state re-entered cancels the earlier child before it starts the next one")
+                }
+                // The id the child would be given where it is built, derived from this session's own, which the
+                // restore is about to bind.
+                let derived = "\(saved.boundSessionID ?? sessionID).\(child.invokeID)"
+                if child.session.sessionID != derived {
+                    throw StateRefusal(
+                        "invokes[\(index)].session's id is '\(child.session.sessionID)', and a child of "
+                            + "'\(saved.boundSessionID ?? sessionID)' started under '\(child.invokeID)' is '\(derived)'")
+                }
+                switch child.id {
+                case "first_run":
+                    resume.append(try sceJudgeSavedChildFirstRun(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "second_run":
+                    resume.append(try sceJudgeSavedChildSecondRun(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "lossy_run":
+                    resume.append(try sceJudgeSavedChildLossyRun(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "missing_run":
+                    resume.append(try sceJudgeSavedChildMissingRun(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                default:
+                    break
+                }
+            }
+        case .restarted(let ids):
+            for (index, id) in ids.enumerated() {
+                _ = try holder(id, "invokes[\(index)]", &seen)
+                restart.append(id)
+            }
+        }
+        return { [self] in
+            sceInvokeStartsFirstRun = Int(counted("first_run"))
+            sceInvokeStartsSecondRun = Int(counted("second_run"))
+            sceInvokeStartsLossyRun = Int(counted("lossy_run"))
+            sceInvokeStartsMissingRun = Int(counted("missing_run"))
+            for put in resume { put() }
+            // A format-1 state holds a child by its id alone, so each is started again from its beginning, as
+            // entering its state starts it, and last, so what a child sends as it starts stands behind what was
+            // already waiting.
+            for id in restart {
+                switch id {
+                case "first_run":
+                    sceInvokeStartsFirstRun += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "first.\(sceInvokeStartsFirstRun).first_run",
+                        state: .first,
+                        documentID: "first_run"))
+                case "second_run":
+                    sceInvokeStartsSecondRun += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "second.\(sceInvokeStartsSecondRun).second_run",
+                        state: .second,
+                        documentID: "second_run"))
+                case "lossy_run":
+                    sceInvokeStartsLossyRun += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "lossy.\(sceInvokeStartsLossyRun).lossy_run",
+                        state: .lossy,
+                        documentID: "lossy_run"))
+                case "missing_run":
+                    sceInvokeStartsMissingRun += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "missing.\(sceInvokeStartsMissingRun).missing_run",
+                        state: .missing,
+                        documentID: "missing_run"))
+                default:
+                    break
+                }
+            }
+            if !restart.isEmpty {
+                executePendingInvokes(engine: engine)
+            }
+        }
+    }
+
+    /// Builds the session `<invoke>` `first_run` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildFirstRun(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
+        switch child.document {
+        case "static_hybrid_first":
+            let childPolicy = StaticHybridFirstPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "first_run", document: "static_hybrid_first")
+                resumeChild()
+                activeInvokes["first_run"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "first_run",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildFirstRun = session
+                sceInvokeStemFirstRun = "static_hybrid_first"
+                sceInvokeDoneFirstRun = false
+            }
+        case "static_hybrid_second":
+            let childPolicy = StaticHybridSecondPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "first_run", document: "static_hybrid_second")
+                resumeChild()
+                activeInvokes["first_run"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "first_run",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildFirstRun = session
+                sceInvokeStemFirstRun = "static_hybrid_second"
+                sceInvokeDoneFirstRun = false
+            }
+        default:
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'first_run' does not start")
+        }
+    }
+
+    /// Builds the session `<invoke>` `second_run` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildSecondRun(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
+        switch child.document {
+        case "static_hybrid_first":
+            let childPolicy = StaticHybridFirstPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "second_run", document: "static_hybrid_first")
+                resumeChild()
+                activeInvokes["second_run"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "second_run",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildSecondRun = session
+                sceInvokeStemSecondRun = "static_hybrid_first"
+                sceInvokeDoneSecondRun = false
+            }
+        case "static_hybrid_second":
+            let childPolicy = StaticHybridSecondPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "second_run", document: "static_hybrid_second")
+                resumeChild()
+                activeInvokes["second_run"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "second_run",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildSecondRun = session
+                sceInvokeStemSecondRun = "static_hybrid_second"
+                sceInvokeDoneSecondRun = false
+            }
+        default:
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'second_run' does not start")
+        }
+    }
+
+    /// Builds the session `<invoke>` `lossy_run` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildLossyRun(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
+        switch child.document {
+        case "static_hybrid_first":
+            let childPolicy = StaticHybridFirstPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "lossy_run", document: "static_hybrid_first")
+                resumeChild()
+                activeInvokes["lossy_run"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "lossy_run",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildLossyRun = session
+                sceInvokeStemLossyRun = "static_hybrid_first"
+                sceInvokeDoneLossyRun = false
+            }
+        case "static_hybrid_second":
+            let childPolicy = StaticHybridSecondPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "lossy_run", document: "static_hybrid_second")
+                resumeChild()
+                activeInvokes["lossy_run"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "lossy_run",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildLossyRun = session
+                sceInvokeStemLossyRun = "static_hybrid_second"
+                sceInvokeDoneLossyRun = false
+            }
+        default:
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'lossy_run' does not start")
+        }
+    }
+
+    /// Builds the session `<invoke>` `missing_run` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildMissingRun(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
+        switch child.document {
+        case "static_hybrid_first":
+            let childPolicy = StaticHybridFirstPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "missing_run", document: "static_hybrid_first")
+                resumeChild()
+                activeInvokes["missing_run"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "missing_run",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildMissingRun = session
+                sceInvokeStemMissingRun = "static_hybrid_first"
+                sceInvokeDoneMissingRun = false
+            }
+        case "static_hybrid_second":
+            let childPolicy = StaticHybridSecondPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "missing_run", document: "static_hybrid_second")
+                resumeChild()
+                activeInvokes["missing_run"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "missing_run",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildMissingRun = session
+                sceInvokeStemMissingRun = "static_hybrid_second"
+                sceInvokeDoneMissingRun = false
+            }
+        default:
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'missing_run' does not start")
+        }
+    }
+}

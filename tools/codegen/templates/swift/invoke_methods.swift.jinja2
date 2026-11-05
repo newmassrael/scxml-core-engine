@@ -188,6 +188,9 @@
     /// Whichever candidate its `srcexpr` named, so the slot holds the session by what a
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}: (any ChildEngine)?
+
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStem{{ invoke_info.field_suffix | to_pascal_case }} = ""
 {% else %}
     private var sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}: InvokedSession<{{ invoke_info.child_name | to_pascal_case }}Policy>?
 {% endif %}
@@ -432,6 +435,9 @@
         )
         sceStarted.initialize()
         sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = sceStarted
+{% if invoke_info.candidates %}
+        sceInvokeStem{{ invoke_info.field_suffix | to_pascal_case }} = sceSelected
+{% endif %}
         sceSettleInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
 {% endif %}
     }

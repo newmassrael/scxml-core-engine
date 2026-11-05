@@ -7021,9 +7021,10 @@ pub(crate) fn a_tree_can_hold(model: &SCXMLModel) -> bool {
 /// Whether the Swift runtime saves the whole state of a machine of `model` and of
 /// every session it can start: what [`a_tree_can_hold`] says a saved state can
 /// hold, of a machine of no product line, whose every `<invoke>` is a static
-/// child session (`<invoke type="scxml">`) of a document of which the same holds.
-/// A hybrid `<invoke>`, one a host runs and one that asks a peer are not among
-/// them yet, and a machine that has one is generated without the save API.
+/// child session (`<invoke type="scxml">`) of a document of which the same holds,
+/// or a hybrid one every candidate of which is such a document. An `<invoke>` a
+/// host runs and one that asks a peer are not among them yet, and a machine that
+/// has one is generated without the save API.
 ///
 /// A child's answer is read from what the parse recorded on its `<invoke>`
 /// ([`crate::model::InvokeSessionCommon::child_swift_saves`]), which this function
@@ -7037,9 +7038,16 @@ pub(crate) fn a_swift_tree_can_hold(model: &SCXMLModel) -> bool {
             .flat_map(|s| &s.invokes)
             .all(|invoke| match invoke {
                 crate::model::Invoke::Scxml(info) => info.common.child_swift_saves,
-                // The type names no processor: the start raises one error and nothing keeps running.
-                crate::model::Invoke::Unsupported(_) => true,
-                crate::model::Invoke::Hybrid(_) | crate::model::Invoke::MeshRpc(_) => false,
+                // A type SCE does not implement is served by a host's invoker, which keeps running and which a
+                // saved state holds as a host-run invocation, or by none, which raises one error. The Swift
+                // runtime saves neither yet, and a child's answer is read before the host declares what it
+                // serves, so the two cannot be told apart here.
+                crate::model::Invoke::Unsupported(_) => false,
+                crate::model::Invoke::Hybrid(info) => {
+                    !info.candidates.is_empty()
+                        && info.candidates.iter().all(|c| c.child_swift_saves)
+                }
+                crate::model::Invoke::MeshRpc(_) => false,
             })
 }
 

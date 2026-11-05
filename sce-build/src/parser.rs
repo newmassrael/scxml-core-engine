@@ -8892,6 +8892,7 @@ fn populate_candidate_metadata(
     candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
     candidate.child_mesh = common.child_mesh;
     candidate.child_saves = common.child_saves;
+    candidate.child_swift_saves = common.child_swift_saves;
     candidate.child_receives = common.child_receives;
 }
 

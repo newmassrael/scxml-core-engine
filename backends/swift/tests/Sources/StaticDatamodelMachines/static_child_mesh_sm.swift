@@ -384,6 +384,9 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildPeer: (any ChildEngine)?
 
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemPeer = ""
+
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDonePeer = false
 
@@ -457,6 +460,7 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
         )
         sceStarted.initialize()
         sceInvokeChildPeer = sceStarted
+        sceInvokeStemPeer = sceSelected
         sceSettleInvokePeer(engine: engine)
     }
 
@@ -834,3 +838,261 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticChildMeshPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "da543ed16b83c929a0920b9a9aac50cd56e51ff437dd739e049e2f87b699a9fe",
+            revised: "b428739571d63d80edb7874f3bddb4b4c6c3d1f4c245f5a2cc0f5c72da4fd05e",
+            format2First: "da543ed16b83c929a0920b9a9aac50cd56e51ff437dd739e049e2f87b699a9fe",
+            format2Revised: "b428739571d63d80edb7874f3bddb4b4c6c3d1f4c245f5a2cc0f5c72da4fd05e")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("pick", SavedValues.of(vPick)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(try saved.variable("pick"), "pick", capacity: 48)
+        let value1 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vPick = value0
+            self.vRefusals = value1
+        }
+    }
+
+    /// The id the document gives each of its `<invoke type="scxml">`s, in document order.
+    public var savedInvokeIDs: [String] {
+        ["list", "peer"]
+    }
+
+    /// How many times each `<invoke>` has started, which numbers the next start's id.
+    public func savedInvokeStarts() -> [SavedEntry<Int64>] {
+        var counted: [SavedEntry<Int64>] = []
+        if sceInvokeStartsList > 0 {
+            counted.append(SavedEntry("list", Int64(sceInvokeStartsList)))
+        }
+        if sceInvokeStartsPeer > 0 {
+            counted.append(SavedEntry("peer", Int64(sceInvokeStartsPeer)))
+        }
+        return counted
+    }
+
+    /// Every `<invoke>` whose child session is running, each with the child's whole state
+    /// (docs/adr/0045). A child that has ended is not running, though its entry stays until its state exits.
+    public func savedChildren(wallNowMs: Int64) throws -> [SavedChild] {
+        var running: [SavedChild] = []
+        if let child = sceInvokeChildList, !sceInvokeDoneList,
+            let slot = activeInvokes["list"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "list", start: Int64(sceInvokeStartsList),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_child_mesh__sce_synth_invoke__list",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildPeer, !sceInvokeDonePeer,
+            let slot = activeInvokes["peer"]
+        {
+            // The slot holds whichever candidate the `srcexpr` named, by what a parent drives it through.
+            guard let saving = child as? any SavedChildEngine else {
+                throw StateRefusal("the session of 'peer' is one this runtime cannot save")
+            }
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "peer", start: Int64(sceInvokeStartsPeer),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: sceInvokeStemPeer,
+                    session: try saving.saveSession(wallNowMs: wallNowMs)))
+        }
+        return running
+    }
+
+    /// The state that holds the `<invoke>` `id`, which a saved state's children and restarts are held to.
+    private func savedInvokeOwner(_ id: String) -> StaticChildMeshState? {
+        switch id {
+        case "list": return .working
+        case "peer": return .joined
+        default: return nil
+        }
+    }
+
+    /// Judges the children and the counts of starts `saved` holds and changes nothing; what it returns puts the
+    /// children back once this machine stands where it was saved (docs/adr/0045, section 3).
+    public func readSavedChildren(from saved: SavedState, engine: Engine<StaticChildMeshPolicy>, wallNowMs: Int64) throws -> () -> Void {
+        for counted in saved.invokeStarts where savedInvokeOwner(counted.key) == nil {
+            throw StateRefusal("invokestarts counts '\(counted.key)', which the document does not invoke")
+        }
+        func counted(_ id: String) -> Int64 { saved.invokeStarts.first { $0.key == id }?.value ?? 0 }
+        // The state that holds an `<invoke>` is one the saved configuration stands in, and no `<invoke>` is listed twice.
+        func holder(_ id: String, _ what: String, _ seen: inout Set<String>) throws -> StaticChildMeshState {
+            guard let owner = savedInvokeOwner(id) else {
+                throw StateRefusal("the saved state holds a running child session '\(id)', which this machine does not start")
+            }
+            guard saved.configuration.contains(getStateName(owner)) else {
+                throw StateRefusal("\(what) is '\(id)', whose state the saved configuration does not stand in")
+            }
+            guard seen.insert(id).inserted else {
+                throw StateRefusal("\(what) is '\(id)', which an earlier entry already names")
+            }
+            return owner
+        }
+        var seen: Set<String> = []
+        var resume: [() -> Void] = []
+        var restart: [String] = []
+        switch saved.invokes {
+        case .resumed(let children):
+            for (index, child) in children.enumerated() {
+                _ = try holder(child.id, "invokes[\(index)]", &seen)
+                if child.start != counted(child.id) {
+                    throw StateRefusal(
+                        "invokes[\(index)] is start \(child.start) of '\(child.id)', and the session counts \(counted(child.id)) "
+                            + "starts of it: a state re-entered cancels the earlier child before it starts the next one")
+                }
+                // The id the child would be given where it is built, derived from this session's own, which the
+                // restore is about to bind.
+                let derived = "\(saved.boundSessionID ?? sessionID).\(child.invokeID)"
+                if child.session.sessionID != derived {
+                    throw StateRefusal(
+                        "invokes[\(index)].session's id is '\(child.session.sessionID)', and a child of "
+                            + "'\(saved.boundSessionID ?? sessionID)' started under '\(child.invokeID)' is '\(derived)'")
+                }
+                switch child.id {
+                case "list":
+                    resume.append(try sceJudgeSavedChildList(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "peer":
+                    resume.append(try sceJudgeSavedChildPeer(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                default:
+                    break
+                }
+            }
+        case .restarted(let ids):
+            for (index, id) in ids.enumerated() {
+                _ = try holder(id, "invokes[\(index)]", &seen)
+                restart.append(id)
+            }
+        }
+        return { [self] in
+            sceInvokeStartsList = Int(counted("list"))
+            sceInvokeStartsPeer = Int(counted("peer"))
+            for put in resume { put() }
+            // A format-1 state holds a child by its id alone, so each is started again from its beginning, as
+            // entering its state starts it, and last, so what a child sends as it starts stands behind what was
+            // already waiting.
+            for id in restart {
+                switch id {
+                case "list":
+                    sceInvokeStartsList += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "working.\(sceInvokeStartsList).list",
+                        state: .working,
+                        documentID: "list"))
+                case "peer":
+                    sceInvokeStartsPeer += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "joined.\(sceInvokeStartsPeer).peer",
+                        state: .joined,
+                        documentID: "peer"))
+                default:
+                    break
+                }
+            }
+            if !restart.isEmpty {
+                executePendingInvokes(engine: engine)
+            }
+        }
+    }
+
+    /// Builds the session `<invoke>` `list` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildList(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticChildMeshPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_child_mesh__sce_synth_invoke__list" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'list' does not start")
+        }
+        let childPolicy = StaticChildMeshSceSynthInvokeListPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "list", document: documentStem("#static_child_mesh__sce_synth_invoke__list"))
+            resumeChild()
+            activeInvokes["list"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "list",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildList = session
+            sceInvokeDoneList = false
+        }
+    }
+
+    /// Builds the session `<invoke>` `peer` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildPeer(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticChildMeshPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
+        switch child.document {
+        case "static_mesh_relay":
+            let childPolicy = StaticMeshRelayPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "peer", document: "static_mesh_relay")
+                resumeChild()
+                activeInvokes["peer"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "peer",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildPeer = session
+                sceInvokeStemPeer = "static_mesh_relay"
+                sceInvokeDonePeer = false
+            }
+        default:
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'peer' does not start")
+        }
+    }
+}

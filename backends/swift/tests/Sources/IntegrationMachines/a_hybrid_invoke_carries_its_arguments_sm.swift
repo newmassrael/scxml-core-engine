@@ -668,6 +668,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildInvoke1: (any ChildEngine)?
 
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemInvoke1 = ""
+
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDoneInvoke1 = false
 
@@ -679,6 +682,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildInvoke0: (any ChildEngine)?
 
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemInvoke0 = ""
+
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDoneInvoke0 = false
 
@@ -689,6 +695,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
     /// Whichever candidate its `srcexpr` named, so the slot holds the session by what a
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildInvoke2: (any ChildEngine)?
+
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemInvoke2 = ""
 
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDoneInvoke2 = false
@@ -793,6 +802,7 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
         )
         sceStarted.initialize()
         sceInvokeChildInvoke1 = sceStarted
+        sceInvokeStemInvoke1 = sceSelected
         sceSettleInvokeInvoke1(engine: engine)
     }
 
@@ -918,6 +928,7 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
         )
         sceStarted.initialize()
         sceInvokeChildInvoke0 = sceStarted
+        sceInvokeStemInvoke0 = sceSelected
         sceSettleInvokeInvoke0(engine: engine)
     }
 

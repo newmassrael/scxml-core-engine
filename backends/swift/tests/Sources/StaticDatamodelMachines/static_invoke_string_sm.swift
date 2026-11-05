@@ -1200,12 +1200,7 @@ extension StaticInvokeStringPolicy: SavedPolicy {
             sessionID: childSessionID,
             queue: ParentEventQueue()
         )
-        let resumeChild: () -> Void
-        do {
-            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
-        } catch let refusal as StateRefusal {
-            throw refusal.within("invokes[\(index)].session")
-        }
+        let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
             // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
             // before it is restored, since restoring arms them.
@@ -1239,12 +1234,7 @@ extension StaticInvokeStringPolicy: SavedPolicy {
             sessionID: childSessionID,
             queue: ParentEventQueue()
         )
-        let resumeChild: () -> Void
-        do {
-            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
-        } catch let refusal as StateRefusal {
-            throw refusal.within("invokes[\(index)].session")
-        }
+        let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
             // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
             // before it is restored, since restoring arms them.
@@ -1278,12 +1268,7 @@ extension StaticInvokeStringPolicy: SavedPolicy {
             sessionID: childSessionID,
             queue: ParentEventQueue()
         )
-        let resumeChild: () -> Void
-        do {
-            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
-        } catch let refusal as StateRefusal {
-            throw refusal.within("invokes[\(index)].session")
-        }
+        let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
             // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
             // before it is restored, since restoring arms them.

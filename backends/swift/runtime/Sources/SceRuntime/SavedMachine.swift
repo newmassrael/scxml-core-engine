@@ -398,3 +398,30 @@ private func historyReason<Policy: StatePolicy>(_ verdict: HistoryRejection<Poli
     case .arity: return "they are not a configuration of the parent's subtree (\(verdict.arity))"
     }
 }
+
+/// A child session held by what a parent drives it through (`ChildEngine`) that can be saved: the slot of a
+/// hybrid `<invoke>` holds whichever candidate its `srcexpr` named, so the policy type the session runs is not
+/// known where the parent saves it.
+public protocol SavedChildEngine: ChildEngine {
+    /// The session's whole state, as `Engine.save` writes it.
+    func saveSession(wallNowMs: Int64) throws -> SavedState
+}
+
+extension InvokedSession: SavedChildEngine where Policy: SavedPolicy {
+    public func saveSession(wallNowMs: Int64) throws -> SavedState {
+        try engine.save(wallNowMs: wallNowMs)
+    }
+}
+
+extension InvokedSession where Policy: SavedPolicy {
+    /// Judges `saved`, the state of this session as its parent's saved state holds it as the child at `index`,
+    /// down to its last grandchild, and changes nothing; what it returns resumes the session. A refusal names the
+    /// child by its path from the parent (`invokes[0].session`).
+    public func prepareSavedChild(_ saved: SavedState, index: Int, wallNowMs: Int64) throws -> () -> Void {
+        do {
+            return try engine.prepareRestore(saved, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+    }
+}

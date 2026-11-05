@@ -609,6 +609,9 @@ public final class InvokeExpressionFailureIsReportedPolicy: InvocablePolicy {
     /// parent drives it through, not by the candidate's policy type.
     private var sceInvokeChildInvoke0: (any ChildEngine)?
 
+    /// The document stem of the candidate that session runs, which a saved state names its document by.
+    private var sceInvokeStemInvoke0 = ""
+
     /// Whether that session has ended and `done.invoke` was raised for it: once.
     private var sceInvokeDoneInvoke0 = false
 
