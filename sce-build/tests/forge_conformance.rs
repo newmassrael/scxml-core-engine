@@ -16046,6 +16046,12 @@ warnings = "deny"
 /// broken intra-doc link among them: a consumer builds its codecs' docs with
 /// `RUSTDOCFLAGS="-D warnings"`, and a link the generator writes to an item
 /// that has moved (a static that went to `{Codec}Wire`) stops it in every file.
+///
+/// A codec that takes a profile and holds a list the protocol bounds by nothing
+/// declares `{Codec}In` and no `{Codec}` (docs/adr/0077 §7), so a doc of its
+/// view that names `{Codec}` links nothing. The generator takes such a codec
+/// with views only, so the views run adds the query value set, whose codecs
+/// all take a profile with no lent alias: a list, a variant and a chain.
 #[test]
 fn the_generated_codecs_document_with_no_broken_link() {
     use sce_build::generator::Language;
@@ -16067,8 +16073,30 @@ fn the_generated_codecs_document_with_no_broken_link() {
     for views in [false, true] {
         let mut opts = golden_options(Language::Rust);
         opts.views = views;
-        let files = generate_files_for_codec_set_with(&resource_dir(), &set, Language::Rust, opts)
-            .expect("the codec set generates");
+        let mut documents = set.to_vec();
+        if views {
+            documents.extend_from_slice(QUERY_VALUE_SET);
+        }
+        let files =
+            generate_files_for_codec_set_with(&resource_dir(), &documents, Language::Rust, opts)
+                .expect("the codec set generates");
+        if views {
+            // The run is about a module with no `{Codec}`: hold the set to
+            // having one, so a fixture that gains a bound cannot empty it.
+            let (_, zbuf) = files
+                .iter()
+                .find(|(name, _)| {
+                    std::path::Path::new(name)
+                        .file_name()
+                        .is_some_and(|n| n == "codec_zenoh_value_zbuf.rs")
+                })
+                .expect("the query value set generates codec_zenoh_value_zbuf.rs");
+            assert!(
+                zbuf.contains("pub struct CodecZenohValueZbufIn<")
+                    && !zbuf.contains("pub type CodecZenohValueZbuf<"),
+                "codec_zenoh_value_zbuf must take a profile with no lent alias:\n{zbuf}"
+            );
+        }
         let id = if views {
             "doc_links_views"
         } else {

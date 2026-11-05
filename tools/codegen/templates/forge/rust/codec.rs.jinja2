@@ -17,6 +17,11 @@
     `{Codec}VariantIn` where the codec takes a profile, `{Codec}Variant` where it
     takes none. #}
 {%- set variant_enum = struct_name ~ ("VariantIn" if emit_owned else "Variant") %}
+{#- The storing value by the name the module itself declares, for a doc link to
+    reach: `{Codec}In` where the codec takes a profile, whose `{Codec}` is an
+    alias the module declares only where the lent form holds every list
+    (docs/adr/0077 §7), and the struct `{Codec}` where it takes none. #}
+{%- set value_type = struct_name ~ ("In" if emit_owned else "") %}
 {{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -666,7 +671,7 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     }
 
     /// Decode the next frame from `cursor`: the bytes, the bounds and the
-    /// errors of [`{{ struct_name }}{% if not eager_default_holds %}In{% endif %}::decode`], held as a view. On success the
+    /// errors of [`{{ value_type }}::decode`], held as a view. On success the
     /// cursor advances past the consumed bytes.
     pub fn decode(cursor: &mut SceCursor<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
         let mut _out = Self::default();
@@ -682,7 +687,7 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
     }
 
-    /// Fill `_out`, the builder form [`{{ struct_name }}`] a sender fills and
+    /// Fill `_out`, the builder form [`{{ value_type }}`] a sender fills and
     /// encodes, with what this view says: every field, each embedded body, the
     /// variant arm, and each list entry as the walk yields it, built in the
     /// destination where it will live. Fails only where the destination cannot
@@ -741,12 +746,12 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 
 {% if max_bytes_fit %}
     /// Worst-case encoded byte count for this codec, as
-    /// [`{{ struct_name }}::MAX_ENCODED_BYTES`].
+    /// [`{{ value_type }}::MAX_ENCODED_BYTES`].
     pub const MAX_ENCODED_BYTES: usize = {{ max_bytes }};
 {% endif %}
 
     /// Encode what this view says into the caller-owned sink: the bytes
-    /// [`{{ struct_name }}::encode`] writes for the value [`Self::into_builder`]
+    /// [`{{ value_type }}::encode`] writes for the value [`Self::into_builder`]
     /// fills, written straight from the view, walking each list, without the
     /// builder. It writes the canonical wire, not the frame the view was decoded
     /// from, so a frame `decode` accepted in a form that is not canonical is
