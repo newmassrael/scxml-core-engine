@@ -2473,13 +2473,16 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_root_start_refusal(void)
    C holds a text of any length. #}
 /* docs/adr/0087, section 4.1: the answer schemas the header declares. */
 SCE_SM_FN const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void) {
-{% for entry in answer_schemas %}
-    static const char id_{{ loop.index0 }}[] = "{{ entry.id }}";
-    static const char json_schema_{{ loop.index0 }}[] = {{ entry.json_schema_chars }};
-    static const char gbnf_{{ loop.index0 }}[] = {{ entry.gbnf_chars }};
+{# The loop variable is not `entry`: the attribute-name gate reads a variable by
+   its name, and `entry` is bound to a model list elsewhere in this file, so the
+   fields of this context list would be taken for model attributes. #}
+{% for answer in answer_schemas %}
+    static const char id_{{ loop.index0 }}[] = "{{ answer.id }}";
+    static const char json_schema_{{ loop.index0 }}[] = {{ answer.json_schema_chars }};
+    static const char gbnf_{{ loop.index0 }}[] = {{ answer.gbnf_chars }};
 {% endfor %}
     static const sce_answer_schema_t schemas[{{ csym_prefix | upper }}{{ model.name | upper }}_ANSWER_SCHEMA_COUNT] = {
-{% for entry in answer_schemas %}
+{% for answer in answer_schemas %}
         {id_{{ loop.index0 }}, json_schema_{{ loop.index0 }}, gbnf_{{ loop.index0 }}},
 {% endfor %}
     };
