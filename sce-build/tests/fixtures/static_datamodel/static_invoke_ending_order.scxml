@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15; docs/adr/0084, D2
+  as amended at step 10): the order a child session takes an ending its host
+  posted for it and an event its parent sent it after that post.
+
+  `working` invokes `worker`, written in place. `worker` asks its host for the
+  time on entry (`sce-host-clock-now`, a host-run invocation of a child
+  session, served by the invokers its parent's host registered) and the host
+  does not answer at once, so the invocation keeps running. `worker` tells its
+  parent `stamped` when the host's answer ends it (`done.invoke.clock`), and
+  `answer` when it is sent `question`.
+
+  `ask` does two things in the parent's macrostep, in document order: it calls
+  its host (`beforeQuestion`, a host action, which the parent performs inside
+  the transition), and it sends `question` to `worker`. A host that posts the
+  clock's ending, naming `worker`, from inside `beforeQuestion` has posted it
+  before the parent's send. The address of a posted input is resolved when it
+  is posted, so the ending is on `worker`'s queue before `question` is:
+  `worker` takes `done.invoke.clock` first, and the parent hears `stamped`
+  before `answer`. The parent numbers what it hears in `heard` and keeps the
+  number of each in `stamped_at` and `answer_at`: 1 and 2 after such a run. A
+  runtime that held the ending in the root's inbox until the root's next
+  boundary would give `worker` the parent's `question` first, and the parent
+  would read 2 and 1.
+
+  `beforeQuestion` is a host action and not a host-served `<send>`: the
+  standard host types are invocations, and a `<send>` the host serves names a
+  processor the build is told of, which the fixtures here are generated
+  without. No scenario replays the machine, since a scenario has no step for a
+  post made inside a macrostep; each runtime's inbox conformance test drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_invoke_ending_order">
+  <datamodel>
+    <data id="heard" sce:type="uint32" expr="0"/>
+    <data id="stamped_at" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="answer_at" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <invoke type="scxml" id="worker">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <sce:import kind="event-schema" src="sce:std/host/clock_now_result.scxml" as="ClockNowResult"/>
+          <state id="waiting">
+            <invoke type="sce-host-clock-now" id="clock" sce:result="ClockNowResult"/>
+            <transition event="done.invoke.clock" type="internal">
+              <send event="stamped" target="#_parent"/>
+            </transition>
+            <transition event="question" type="internal">
+              <send event="answer" target="#_parent"/>
+            </transition>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="ask" type="internal">
+      <sce:action name="beforeQuestion" effect="notice"/>
+      <send event="question" target="#_worker"/>
+    </transition>
+    <transition event="stamped" type="internal">
+      <assign location="heard" expr="heard + 1"/>
+      <assign location="stamped_at" expr="heard"/>
+    </transition>
+    <transition event="answer" type="internal">
+      <assign location="heard" expr="heard + 1"/>
+      <assign location="answer_at" expr="heard"/>
+    </transition>
+  </state>
+</scxml>

@@ -191,11 +191,16 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     }
     // A host operation is performed by the host installed on the machine
     // (`INativeActionHost`), so `static_host_call` lowers: its arguments are
-    // expressions, lowered as any are.
-    assert!(
-        lowered.iter().any(|name| name == "static_host_call"),
-        "static_host_call is lowered for the Interpreter: lowered {lowered:?}"
-    );
+    // expressions, lowered as any are. So does the tree whose parent calls its
+    // host inside a transition while its inline child runs a host invocation
+    // (docs/adr/0084, D2 as amended at step 10), which the Interpreter's inbox
+    // test runs from the document `sce-codegen lower` makes of it.
+    for name in ["static_host_call", "static_invoke_ending_order"] {
+        assert!(
+            lowered.iter().any(|lowered_name| lowered_name == name),
+            "{name} is lowered for the Interpreter: lowered {lowered:?}"
+        );
+    }
     // An action states its effect, and the Interpreter reads `effect` and
     // `released-by` as the generated engines do (docs/adr/0038), so the machine
     // that states a duty with its release lowers too: the two attributes travel

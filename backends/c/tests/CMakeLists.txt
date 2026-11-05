@@ -2620,6 +2620,16 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         HOST_INVOKER sce-host-clock-now
     )
 
+    # A tree whose host posts the ending of a child's invocation from inside the parent's
+    # macrostep, before the parent sends the child an event (docs/adr/0084, D2 as amended at
+    # step 10). No scenario replays it, since a scenario has no step for such a post; the
+    # inbox executables further down drive it.
+    sce_generate_static_integration_c_test(static_invoke_ending_order
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_invoke_ending_order.scxml"
+        HOST_INVOKER sce-host-clock-now
+    )
+
     # The `<invoke type="scxml">` machines of `static_invoke`, `static_invoke_params`
     # and `static_invoke_string` are generated once and used by two executables:
     # the scenarios below, and the child-session cases further down.
@@ -3307,7 +3317,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # (`SCE_INBOX_ATOMIC_RMW_WIDTH`): the SCQ over 64- and over 32-bit entries
     # against the hosted reference atomics, and the interrupt-masked ring against
     # the hosted stand-in for masking interrupts, the two the forge runtime's own
-    # queue tests run against.
+    # queue tests run against. Beside it, the tree of `static_invoke_ending_order`
+    # (generated above), whose host posts a child's ending inside the parent's
+    # macrostep.
     find_package(Threads REQUIRED)
     sce_generate_static_integration_c_test(inbox_probe
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -3324,6 +3336,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         add_executable(${_sce_inbox_target}
             integration/test_what_another_thread_posts_enters_through_the_inbox.c
             ${INTEGRATION_C_TEST_inbox_probe_SOURCES}
+            ${INTEGRATION_C_TEST_static_invoke_ending_order_SOURCES}
             ${_sce_inbox_platform}
         )
         sce_c_link_runtime(${_sce_inbox_target})

@@ -531,8 +531,10 @@ sce_add_static_scenario_suite(
 )
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which
-# candidate starts; and the pending schema revision a saved state is restored into.
-foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_hybrid_saved static_schema_pending)
+# candidate starts; the pending schema revision a saved state is restored into; and
+# the tree a host posts a child's ending to from inside the parent's macrostep
+# (docs/adr/0084, D2 as amended at step 10), a post a scenario has no step for.
+foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_hybrid_saved static_schema_pending static_invoke_ending_order)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
