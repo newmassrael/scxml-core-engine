@@ -933,15 +933,6 @@ enum Eventless {
     Refused,
 }
 
-/// How a host-run invocation ended, when the host reports it (§scxml-6.4):
-/// which of `done.invoke` and `error.invoke` the document receives.
-#[cfg(feature = "std")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HostInvokeEnd {
-    Done,
-    Failed,
-}
-
 /// What a restored host-run invocation has left of its deadline
 /// (SCE Accepted Subset §2.15).
 #[cfg(feature = "std")]
@@ -1137,7 +1128,7 @@ pub struct Engine<P: StatePolicy> {
     /// a child, so an engine nobody posts to keeps no channel. Dropped with
     /// the engine, which refuses every post made after it.
     #[cfg(feature = "std")]
-    pub(crate) inbox: core::cell::OnceCell<crate::inbox::OwnedInbox<crate::inbox::InboxInputOf<P>>>,
+    pub(crate) inbox: core::cell::OnceCell<crate::inbox::OwnedInbox>,
     /// The inboxes of the tree this session is in (ARCHITECTURE.md "Engine
     /// Threading", item 3): its own until a parent hands it the tree's
     /// ([`share_tree_inboxes_with`](Engine::share_tree_inboxes_with)).
@@ -1462,7 +1453,7 @@ impl<P: StatePolicy> Engine<P> {
     /// This session's own inbox, made in the tree it is in now if it has none
     /// yet.
     #[cfg(feature = "std")]
-    fn owned_inbox(&self) -> &crate::inbox::OwnedInbox<crate::inbox::InboxInputOf<P>> {
+    fn owned_inbox(&self) -> &crate::inbox::OwnedInbox {
         self.inbox.get_or_init(|| {
             crate::inbox::OwnedInbox::new(self.policy.own_session_id(), self.tree_inboxes.clone())
         })
@@ -1476,11 +1467,7 @@ impl<P: StatePolicy> Engine<P> {
     /// the child, so the child applies what it was posted at its own
     /// boundaries, the next of which the parent's next drive reaches.
     #[cfg(feature = "std")]
-    pub fn share_tree_inboxes_with<Q: StatePolicy>(&self, child: &mut Engine<Q>)
-    where
-        Q::Event: Send,
-        Q::Payload: Send,
-    {
+    pub fn share_tree_inboxes_with<Q: StatePolicy>(&self, child: &mut Engine<Q>) {
         child.adopt_tree_inboxes(&self.tree_inboxes);
     }
 
@@ -1488,11 +1475,7 @@ impl<P: StatePolicy> Engine<P> {
     /// session holds now: a child a restore resumed holds children of its own,
     /// resumed with it before its parent could hand it anything.
     #[cfg(feature = "std")]
-    pub fn adopt_tree_inboxes(&mut self, tree: &crate::inbox::TreeInboxes)
-    where
-        P::Event: Send,
-        P::Payload: Send,
-    {
+    pub fn adopt_tree_inboxes(&mut self, tree: &crate::inbox::TreeInboxes) {
         self.tree_inboxes = tree.clone();
         self.owned_inbox().join(tree);
         self.policy.adopt_tree_inboxes_in_children(tree);
@@ -1569,22 +1552,25 @@ impl<P: StatePolicy> Engine<P> {
     /// (ARCHITECTURE.md "Engine Threading", item 3), so applying one never
     /// reaches another engine of the tree.
     fn apply_held_inputs(&mut self) {
-        // Named by path: the calls on the attached inbox are calls on a trait
-        // object, which need no import, and the profile without `std` makes no
-        // other.
+        // The engine's own inbox holds no type of this machine's, so taking
+        // from it is the same code for every machine and only applying is
+        // this machine's.
         #[cfg(feature = "std")]
         {
             let due = self
                 .inbox
                 .get()
-                .map_or(0, crate::inbox::InboxSource::per_boundary);
+                .map_or(0, crate::inbox::OwnedInbox::per_boundary);
             for _ in 0..due {
-                let Some(input) = self.inbox.get().and_then(crate::inbox::InboxSource::take) else {
+                let Some(held) = self.inbox.get().and_then(crate::inbox::OwnedInbox::take) else {
                     break;
                 };
-                self.apply_inbox_input(input);
+                self.apply_held_input(held);
             }
         }
+        // Named by path: the calls on the attached inbox are calls on a trait
+        // object, which need no import, and the profile without `std` makes no
+        // other.
         if let Some(attached) = self.attached_inbox {
             for _ in 0..crate::inbox::InboxSource::per_boundary(attached) {
                 let Some(input) = crate::inbox::InboxSource::take(attached) else {
@@ -1631,9 +1617,9 @@ impl<P: StatePolicy> Engine<P> {
                 self.raise_external_by_name_with_meta(&name, &metadata);
             }
             #[cfg(feature = "std")]
-            // Both inboxes resolved the address when the ending was posted
-            // (ARCHITECTURE.md "Engine Threading", item 3), and hold an
-            // ending of their own session without it, so none is read here:
+            // The attached inbox resolved the address when the ending was
+            // posted (ARCHITECTURE.md "Engine Threading", item 3), and holds
+            // an ending of its own session without it, so none is read here:
             // reading this session's id would read the policy, which a drain
             // made inside the policy's own code must not.
             InboxInput::HostInvokeEnding {
@@ -1659,43 +1645,45 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
+    /// [`apply_inbox_input`](Self::apply_inbox_input) for an input of the
+    /// engine's own inbox, which holds it without this machine's types: the
+    /// same operations, and only they are this machine's code.
+    #[cfg(feature = "std")]
+    fn apply_held_input(&mut self, held: crate::inbox::HeldInput) {
+        use crate::inbox::HeldInput;
+        match held {
+            // Queued without a drain, as a posted event of the attached inbox
+            // is: the drain applying it is the one that would run.
+            HeldInput::ExternalEvent { queued, payload } => {
+                Self::enqueue_queued(&mut self.external_queue, queued, || {
+                    crate::inbox::payload_of(payload)
+                });
+            }
+            HeldInput::ExternalEventByName { name, metadata } => {
+                self.raise_external_by_name_with_meta(&name, &metadata);
+            }
+            // Its address was resolved when it was posted, so it is this
+            // session's, and the type holds no session to read.
+            HeldInput::HostInvokeEnding(ending) => {
+                self.apply_posted_host_invoke_ending(ending.as_ending());
+            }
+        }
+    }
+
     /// A posted host-run invocation's `ending`, of this session, applied as
     /// the host's own call on the owner would be:
     /// [`complete_host_invoke`](Self::complete_host_invoke) or
-    /// [`fail_host_invoke`](Self::fail_host_invoke). The token check is
-    /// theirs, so a stale ending is refused here as a direct one is
-    /// (§scxml-6.4); the poster was answered when the inbox took it, so the
-    /// refusal is logged.
+    /// [`fail_host_invoke`](Self::fail_host_invoke), through the body both
+    /// share. The token check is theirs, so a stale ending is refused here as
+    /// a direct one is (§scxml-6.4); the poster was answered when the inbox
+    /// took it, so the refusal is logged.
     #[cfg(feature = "std")]
     fn apply_posted_host_invoke_ending(
         &mut self,
         ending: crate::host_processor::HostInvokeEnding<'_>,
     ) {
-        let ended = if ending.done {
-            self.complete_host_invoke(
-                ending.processor_type,
-                ending.invoke_id,
-                ending.token,
-                ending.data,
-            )
-        } else {
-            self.fail_host_invoke(
-                ending.processor_type,
-                ending.invoke_id,
-                ending.token,
-                ending.data,
-                "",
-                "",
-            )
-        };
-        if !ended {
-            sce_log_debug!(
-                "Engine: a posted ending of start {} of the '{}' invocation '{}' was refused: \
-                 it was cancelled, has ended, or was started again since",
-                ending.token,
-                ending.processor_type,
-                ending.invoke_id
-            );
+        if !self.end_host_invoke(ending, "", "") {
+            crate::host_processor::note_refused_posted_ending(&ending);
         }
     }
 
@@ -4623,11 +4611,13 @@ impl<P: StatePolicy> Engine<P> {
         origin_type: &str,
     ) -> bool {
         self.end_host_invoke(
-            processor_type,
-            invoke_id,
-            token,
-            HostInvokeEnd::Done,
-            done_data,
+            crate::host_processor::HostInvokeEnding {
+                processor_type,
+                invoke_id,
+                token,
+                done: true,
+                data: done_data,
+            },
             origin,
             origin_type,
         )
@@ -4653,11 +4643,13 @@ impl<P: StatePolicy> Engine<P> {
         origin_type: &str,
     ) -> bool {
         self.end_host_invoke(
-            processor_type,
-            invoke_id,
-            token,
-            HostInvokeEnd::Failed,
-            error_data,
+            crate::host_processor::HostInvokeEnding {
+                processor_type,
+                invoke_id,
+                token,
+                done: false,
+                data: error_data,
+            },
             origin,
             origin_type,
         )
@@ -4756,20 +4748,7 @@ impl<P: StatePolicy> Engine<P> {
         ending: crate::host_processor::HostInvokeEnding<'_>,
     ) -> Option<Result<(), crate::host_processor::HostInvokeEndRefusal>> {
         if session_id == self.policy.own_session_id() {
-            let end = if ending.done {
-                HostInvokeEnd::Done
-            } else {
-                HostInvokeEnd::Failed
-            };
-            let ended = self.end_host_invoke(
-                ending.processor_type,
-                ending.invoke_id,
-                ending.token,
-                end,
-                ending.data,
-                "",
-                "",
-            );
+            let ended = self.end_host_invoke(ending, "", "");
             return Some(if ended {
                 Ok(())
             } else {
@@ -4783,47 +4762,23 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// The one body behind a host-run invocation's completion and failure:
-    /// the token check, the deadline drop, and the event.
+    /// the token check and the event, which are the same for every machine
+    /// (`HostProcessorRegistry::end_started`), then the deadline drop and the
+    /// enqueue, which are this machine's.
     #[cfg(feature = "std")]
-    #[allow(clippy::too_many_arguments)]
     fn end_host_invoke(
         &mut self,
-        processor_type: &str,
-        invoke_id: &str,
-        token: u64,
-        end: HostInvokeEnd,
-        data: &str,
+        ending: crate::host_processor::HostInvokeEnding<'_>,
         origin: &str,
         origin_type: &str,
     ) -> bool {
-        if !self
-            .host_processors
-            .take_started(processor_type, invoke_id, token)
-        {
+        let Some((event_name, metadata)) =
+            self.host_processors
+                .end_started(ending, origin, origin_type)
+        else {
             return false;
-        }
-        self.scheduler.drop_host_invoke_deadline(token);
-        // §scxml-3.12.1: the specific `done.invoke.<id>` / `error.invoke.<id>`
-        // when the document names it, and otherwise the generic event its
-        // descriptor matches — as an SCXML child's completion does. Looking
-        // up only the specific name lost every completion a document handled
-        // generically.
-        let event_name = match end {
-            HostInvokeEnd::Done => crate::invoke::create_done_invoke_event_name(invoke_id),
-            HostInvokeEnd::Failed => format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX),
         };
-        let mut metadata = EventMetadata::external("", origin);
-        // An empty `origin_type` keeps the one every host completion has
-        // carried, so `complete_host_invoke` reads as it always did.
-        if !origin_type.is_empty() {
-            metadata.origin_type = crate::sce_string_from_str(origin_type);
-        }
-        metadata.data = crate::sce_string_from_str(data);
-        // §scxml-5.10.1: the completion is an event of the invocation, so
-        // `_event.invokeid` is the invocation's id — the one the event
-        // names and the host was handed.
-        metadata.invoke_id = crate::sce_string_from_str(invoke_id);
-        metadata.host_invoke_token = Some(token);
+        self.scheduler.drop_host_invoke_deadline(ending.token);
         // §scxml-5.10: `_event.name` is the specific name, whichever descriptor
         // of the document it was matched through.
         if let Some(meta) = Self::arriving_event(&event_name, metadata) {
@@ -5068,15 +5023,28 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target,
         } = event;
-        if core::mem::size_of::<P::Payload>() != 0 {
-            queue.push_payload(payload);
-        }
-        queue.events().push(QueuedEvent {
+        let queued = QueuedEvent {
             event: P::event_id(event),
             metadata,
             #[cfg(feature = "std")]
             target,
-        });
+        };
+        Self::enqueue_queued(queue, queued, || payload);
+    }
+
+    /// Put `queued`, an event already held by its number, on `queue`, with the
+    /// payload `payload` gives when this machine's events carry one: the one
+    /// push behind [`enqueue`](Self::enqueue) and an event the engine's own
+    /// inbox held. `payload` is not called for a payload type with no size.
+    fn enqueue_queued<Q: EventQueueStorage<P::Payload>>(
+        queue: &mut Q,
+        queued: QueuedEvent,
+        payload: impl FnOnce() -> P::Payload,
+    ) {
+        if core::mem::size_of::<P::Payload>() != 0 {
+            queue.push_payload(payload());
+        }
+        queue.events().push(queued);
     }
 
     /// The event of this machine a queued number names.

@@ -767,6 +767,57 @@ impl HostProcessorRegistry {
         true
     }
 
+    /// End start `ending.token` of the running invocation `ending` names, as
+    /// its host reported (§scxml-6.4): take it out of the set, and give the
+    /// name and `_event` fields of the event the document receives, which
+    /// carries `origin` and, unless empty, `origin_type`. `None`, and nothing
+    /// taken, when that start is not running: cancelled, ended, or started
+    /// again since.
+    ///
+    /// The part of an ending that is the same for every machine, so it is
+    /// compiled once; the engine drops the start's deadline and queues the
+    /// event by its own machine's names.
+    pub(crate) fn end_started(
+        &mut self,
+        ending: HostInvokeEnding<'_>,
+        origin: &str,
+        origin_type: &str,
+    ) -> Option<(String, crate::EventMetadata)> {
+        let HostInvokeEnding {
+            processor_type,
+            invoke_id,
+            token,
+            done,
+            data,
+        } = ending;
+        if !self.take_started(processor_type, invoke_id, token) {
+            return None;
+        }
+        // The specific `done.invoke.<id>` / `error.invoke.<id>`, which the
+        // engine delivers as the document's own event of that name or as the
+        // generic one its descriptor matches, as an SCXML child's completion
+        // is. Looking up only the specific name lost every completion a
+        // document handled generically.
+        let event_name = if done {
+            crate::invoke::create_done_invoke_event_name(invoke_id)
+        } else {
+            format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX)
+        };
+        let mut metadata = crate::EventMetadata::external("", origin);
+        // An empty `origin_type` keeps the one every host completion has
+        // carried, so `complete_host_invoke` reads as it always did.
+        if !origin_type.is_empty() {
+            metadata.origin_type = crate::sce_string_from_str(origin_type);
+        }
+        metadata.data = crate::sce_string_from_str(data);
+        // §scxml-5.10.1: the completion is an event of the invocation, so
+        // `_event.invokeid` is the invocation's id, the one the event names
+        // and the host was handed.
+        metadata.invoke_id = crate::sce_string_from_str(invoke_id);
+        metadata.host_invoke_token = Some(token);
+        Some((event_name, metadata))
+    }
+
     /// Cancel an invocation, if it is still running.
     ///
     /// Returns the token of the start that was cancelled, or `None` when no
@@ -1038,6 +1089,19 @@ fn request_field_text<'a>(request: &'a HostInvokeRequest, name: &str) -> &'a str
             request.invoke_id
         ),
     }
+}
+
+/// Say that a posted `ending` was refused by the token check (§scxml-6.4):
+/// its poster was answered when the inbox took it, so the log is where the
+/// refusal is told. Of no machine's types, so it is compiled once.
+pub(crate) fn note_refused_posted_ending(ending: &HostInvokeEnding<'_>) {
+    crate::sce_log_debug!(
+        "Engine: a posted ending of start {} of the '{}' invocation '{}' was refused: \
+         it was cancelled, has ended, or was started again since",
+        ending.token,
+        ending.processor_type,
+        ending.invoke_id
+    );
 }
 
 /// Whether an event named `event_name` carrying `_event.invokeid` =

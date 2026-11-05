@@ -31,6 +31,14 @@
 //! that names another session of the tree is posted straight to that
 //! session's inbox when it is posted, and each session applies its own inbox.
 //!
+//! A `std` inbox holds what was posted without the machine's types
+//! (`HeldInput`): an external event as the number and fields the external
+//! queue holds it by, with its payload beside it when the machine's events
+//! carry one. So the channel, the code that takes from it and the code that
+//! drops what it still holds are compiled once for every machine of a
+//! program, not once for each, and the tree's directory holds every
+//! session's inbox as one type.
+//!
 //! Neither inbox closes when a run ends. A post taken after the run reached a
 //! top-level final state, or was stopped, is applied where the owner next
 //! reaches the end of its loop, as the direct call made at that moment would
@@ -46,6 +54,8 @@
 //! delivery has a caller on another thread, and the set is the inputs that
 //! have one.
 
+#[cfg(feature = "std")]
+use std::any::Any;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 #[cfg(feature = "std")]
@@ -63,6 +73,8 @@ use crate::event::{EventMetadata, EventWithMetadata};
     all(target_has_atomic = "8", target_has_atomic = "ptr")
 ))]
 use crate::hal::Hal;
+#[cfg(feature = "std")]
+use crate::helpers::event_queue::QueuedEvent;
 use crate::policy::StatePolicy;
 
 /// One input a thread that does not own an engine may post to its inbox.
@@ -233,7 +245,7 @@ pub struct TreeInboxes(Arc<TreeShared>);
 /// The directory of a tree: the inbox of each session it started, by the
 /// session's id.
 #[cfg(feature = "std")]
-type Directory = HashMap<String, Arc<dyn SessionDoor>>;
+type Directory = HashMap<String, Arc<Shared>>;
 
 /// What every handle of [`TreeInboxes`] shares.
 #[cfg(feature = "std")]
@@ -273,21 +285,19 @@ impl TreeInboxes {
         self.directory().remove(session_id);
     }
 
-    /// Push `ending` onto the inbox of session `session_id`.
-    fn post_ending(
-        &self,
-        session_id: &str,
-        ending: crate::host_processor::HostInvokeEnding<'_>,
-    ) -> Result<(), TreeRefusal> {
+    /// Push `held`, an input of session `session_id` with its address
+    /// resolved, onto that session's inbox; `held` back with the reason when
+    /// the tree does not hold the session or its engine is gone.
+    // The refusal hands the input back, as `Shared::push` does.
+    #[allow(clippy::result_large_err)]
+    fn post_to(&self, session_id: &str, held: HeldInput) -> Result<(), (TreeRefusal, HeldInput)> {
         let directory = self.directory();
-        let door = directory
-            .get(session_id)
-            .ok_or(TreeRefusal::UnknownSession)?;
-        if door.push_ending(ending) {
-            Ok(())
-        } else {
-            Err(TreeRefusal::EngineGone)
-        }
+        let Some(shared) = directory.get(session_id) else {
+            return Err((TreeRefusal::UnknownSession, held));
+        };
+        shared
+            .push(held)
+            .map_err(|held| (TreeRefusal::EngineGone, held))
     }
 
     fn install_waker(&self, waker: Option<InboxWaker>) {
@@ -308,40 +318,171 @@ impl TreeInboxes {
     }
 }
 
-/// One session's inbox as its tree's directory holds it, without the
-/// session's types: what a post naming the session pushes onto.
+/// What a session's own inbox holds in the `std` profile: an [`InboxInput`]
+/// without the machine's types, and with its address resolved, so what
+/// it holds is its own session's and the owner applies it without reading
+/// whose it is.
 #[cfg(feature = "std")]
-trait SessionDoor: Send + Sync {
-    /// Push `ending`, of an invocation of this session, onto its inbox;
-    /// `false` when its engine is gone.
-    fn push_ending(&self, ending: crate::host_processor::HostInvokeEnding<'_>) -> bool;
+pub(crate) enum HeldInput {
+    /// [`InboxInput::ExternalEvent`].
+    ExternalEvent {
+        /// The event as the external queue holds it: its number, its
+        /// `_event` fields and its target.
+        queued: QueuedEvent,
+        /// Its typed payload, for a machine whose events carry one; `None`
+        /// for one whose payload type has no size, `()` among them.
+        payload: Option<Box<dyn Any + Send>>,
+    },
+    /// [`InboxInput::ExternalEventByName`].
+    ExternalEventByName {
+        /// The name the event arrived under.
+        name: String,
+        /// Its `_event` fields.
+        metadata: EventMetadata,
+    },
+    /// [`InboxInput::HostInvokeEnding`] of the inbox's own session.
+    HostInvokeEnding(HeldEnding),
+}
+
+/// The end of one start of a host-run invocation as an inbox holds it: what
+/// [`HostInvokeEnding`](crate::host_processor::HostInvokeEnding) borrows,
+/// owned.
+#[cfg(feature = "std")]
+pub(crate) struct HeldEnding {
+    processor_type: String,
+    invoke_id: String,
+    token: u64,
+    done: bool,
+    data: String,
 }
 
 #[cfg(feature = "std")]
-impl<E: Send, D: Send> SessionDoor for Shared<InboxInput<E, D>> {
-    fn push_ending(&self, ending: crate::host_processor::HostInvokeEnding<'_>) -> bool {
-        self.push_own_ending(ending)
+impl HeldEnding {
+    /// The ending, as the owner-thread operations take it.
+    pub(crate) fn as_ending(&self) -> crate::host_processor::HostInvokeEnding<'_> {
+        crate::host_processor::HostInvokeEnding {
+            processor_type: &self.processor_type,
+            invoke_id: &self.invoke_id,
+            token: self.token,
+            done: self.done,
+            data: &self.data,
+        }
     }
 }
 
 #[cfg(feature = "std")]
-impl<E, D> Shared<InboxInput<E, D>> {
-    /// Push `ending`, of an invocation of this session, onto its inbox
-    /// without an address: what the inbox holds is its own session's, so the
-    /// owner applies it without reading whose it is. `false` when the engine
-    /// is gone.
-    fn push_own_ending(&self, ending: crate::host_processor::HostInvokeEnding<'_>) -> bool {
-        self.push(InboxInput::host_invoke_ending(None, ending))
-            .is_ok()
+impl HeldInput {
+    /// `input`, posted to the inbox of an engine whose policy is `P`, as the
+    /// inbox holds it, and the session an ending names, which the post
+    /// resolves: `None` for every other input.
+    fn of<P: StatePolicy>(input: InboxInputOf<P>) -> (Self, Option<String>)
+    where
+        P::Payload: Send,
+    {
+        match input {
+            InboxInput::ExternalEvent(EventWithMetadata {
+                event,
+                payload,
+                metadata,
+                target,
+            }) => {
+                let payload: Option<Box<dyn Any + Send>> =
+                    if core::mem::size_of::<P::Payload>() == 0 {
+                        None
+                    } else {
+                        Some(Box::new(payload))
+                    };
+                let queued = QueuedEvent {
+                    event: P::event_id(event),
+                    metadata,
+                    target,
+                };
+                (HeldInput::ExternalEvent { queued, payload }, None)
+            }
+            InboxInput::ExternalEventByName { name, metadata } => {
+                (HeldInput::ExternalEventByName { name, metadata }, None)
+            }
+            InboxInput::HostInvokeEnding {
+                session_id,
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+            } => (
+                HeldInput::HostInvokeEnding(HeldEnding {
+                    processor_type,
+                    invoke_id,
+                    token,
+                    done,
+                    data,
+                }),
+                session_id,
+            ),
+        }
     }
+
+    /// The input this was made from by [`of`](Self::of), with the session
+    /// `session_id` an ending named: what a refused post hands back.
+    fn into_input<P: StatePolicy>(self, session_id: Option<String>) -> InboxInputOf<P> {
+        match self {
+            HeldInput::ExternalEvent { queued, payload } => {
+                let QueuedEvent {
+                    event,
+                    metadata,
+                    target,
+                } = queued;
+                InboxInput::ExternalEvent(EventWithMetadata {
+                    event: P::EVENTS[usize::from(event.0)],
+                    payload: payload_of(payload),
+                    metadata,
+                    target,
+                })
+            }
+            HeldInput::ExternalEventByName { name, metadata } => {
+                InboxInput::ExternalEventByName { name, metadata }
+            }
+            HeldInput::HostInvokeEnding(HeldEnding {
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+            }) => InboxInput::HostInvokeEnding {
+                session_id,
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+            },
+        }
+    }
+}
+
+/// The payload of type `D` an inbox held for an external event: what
+/// [`HeldInput::of`] boxed, or `D`'s default for a type with no size, whose
+/// value the inbox did not hold.
+///
+/// # Panics
+///
+/// When `payload` holds a value of another type: an inbox takes external
+/// events only through its own engine's handle, whose policy names `D`.
+#[cfg(feature = "std")]
+pub(crate) fn payload_of<D: Default + 'static>(payload: Option<Box<dyn Any + Send>>) -> D {
+    payload.map_or_else(D::default, |held| {
+        *held
+            .downcast::<D>()
+            .expect("an inbox holds the payload of another machine's events")
+    })
 }
 
 /// What a session's inbox and every handle to it share.
 #[cfg(feature = "std")]
-struct Shared<I> {
+struct Shared {
     /// The channel's sending half. `Sync`, so every handle posts through this
     /// one without a lock.
-    sender: mpsc::Sender<I>,
+    sender: mpsc::Sender<HeldInput>,
     /// Posts taken and not yet taken off by the owner: what a boundary drains,
     /// read once when it is reached.
     held: AtomicUsize,
@@ -354,10 +495,13 @@ struct Shared<I> {
 }
 
 #[cfg(feature = "std")]
-impl<I> Shared<I> {
+impl Shared {
     /// Push `input` onto the channel; the input back when the owner's half of
     /// it is gone with the engine.
-    fn push(&self, input: I) -> Result<(), I> {
+    // The refusal hands the input back, as `std::sync::mpsc`'s `SendError`
+    // does, so the poster's refusal can give the caller its own input.
+    #[allow(clippy::result_large_err)]
+    fn push(&self, input: HeldInput) -> Result<(), HeldInput> {
         self.sender.send(input).map_err(|refused| refused.0)?;
         self.held.fetch_add(1, Ordering::AcqRel);
         Ok(())
@@ -375,14 +519,17 @@ impl<I> Shared<I> {
 /// The engine's own hold on its inbox in the `std` profile: the receiving half
 /// of the channel, which only the owner reads, and what the handles share.
 /// Dropped with the engine, which is what refuses a post made after it.
+///
+/// Of no machine's types, so every engine of a program holds the same type
+/// here and its code exists once.
 #[cfg(feature = "std")]
-pub(crate) struct OwnedInbox<I> {
-    shared: Arc<Shared<I>>,
-    receiver: mpsc::Receiver<I>,
+pub(crate) struct OwnedInbox {
+    shared: Arc<Shared>,
+    receiver: mpsc::Receiver<HeldInput>,
 }
 
 #[cfg(feature = "std")]
-impl<I> OwnedInbox<I> {
+impl OwnedInbox {
     /// An empty inbox of session `session_id`, in `tree`.
     pub(crate) fn new(session_id: &str, tree: TreeInboxes) -> Self {
         let (sender, receiver) = mpsc::channel();
@@ -396,10 +543,7 @@ impl<I> OwnedInbox<I> {
             receiver,
         }
     }
-}
 
-#[cfg(feature = "std")]
-impl<E: Send + 'static, D: Send + 'static> OwnedInbox<InboxInput<E, D>> {
     /// Put this inbox in `tree`: its session is in that tree from now on, and
     /// the tree's directory names this inbox under the session's id.
     pub(crate) fn join(&self, tree: &TreeInboxes) {
@@ -408,24 +552,21 @@ impl<E: Send + 'static, D: Send + 'static> OwnedInbox<InboxInput<E, D>> {
             .tree
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = tree.clone();
-        let shared: Arc<Shared<InboxInput<E, D>>> = Arc::clone(&self.shared);
-        let door: Arc<dyn SessionDoor> = shared;
         tree.directory()
-            .insert(self.shared.session_id.clone(), door);
+            .insert(self.shared.session_id.clone(), Arc::clone(&self.shared));
     }
-}
 
-#[cfg(feature = "std")]
-impl<I> InboxSource<I> for OwnedInbox<I> {
-    fn take(&self) -> Option<I> {
+    /// The oldest input posted and not yet taken, if any.
+    pub(crate) fn take(&self) -> Option<HeldInput> {
         let input = self.receiver.try_recv().ok()?;
         self.shared.held.fetch_sub(1, Ordering::AcqRel);
         Some(input)
     }
 
-    /// What the inbox held when the boundary was reached: a post made while
-    /// the owner applies these waits for the next boundary.
-    fn per_boundary(&self) -> usize {
+    /// How many inputs one boundary takes at most: what the inbox held when
+    /// the boundary was reached, so a post made while the owner applies these
+    /// waits for the next boundary.
+    pub(crate) fn per_boundary(&self) -> usize {
         self.shared.held.load(Ordering::Acquire)
     }
 }
@@ -433,13 +574,15 @@ impl<I> InboxSource<I> for OwnedInbox<I> {
 /// The handle a thread that does not own an engine posts to its inbox through
 /// (`Engine::inbox`), in the `std` profile.
 ///
-/// `Send` and `Sync` whenever the machine's events and payloads are, which a
-/// generated machine's are; cheap to clone, and every clone names the same
-/// inbox. It stays valid after the engine is gone, and its posts are refused
-/// from then on.
+/// `Send` and `Sync`: what it posts is held without the machine's types.
+/// Posting an external event asks the machine's payload type to be `Send`,
+/// which a generated machine's is. Cheap to clone, and every clone names the
+/// same inbox. It stays valid after the engine is gone, and its posts are
+/// refused from then on.
 #[cfg(feature = "std")]
 pub struct EngineInbox<P: StatePolicy> {
-    shared: Arc<Shared<InboxInputOf<P>>>,
+    shared: Arc<Shared>,
+    machine: core::marker::PhantomData<fn() -> P>,
 }
 
 #[cfg(feature = "std")]
@@ -447,16 +590,18 @@ impl<P: StatePolicy> Clone for EngineInbox<P> {
     fn clone(&self) -> Self {
         Self {
             shared: Arc::clone(&self.shared),
+            machine: core::marker::PhantomData,
         }
     }
 }
 
 #[cfg(feature = "std")]
 impl<P: StatePolicy> EngineInbox<P> {
-    /// A handle to `owned`.
-    pub(crate) fn of(owned: &OwnedInbox<InboxInputOf<P>>) -> Self {
+    /// A handle to `owned`, the inbox of an engine whose policy is `P`.
+    pub(crate) fn of(owned: &OwnedInbox) -> Self {
         Self {
             shared: Arc::clone(&owned.shared),
+            machine: core::marker::PhantomData,
         }
     }
 
@@ -482,53 +627,29 @@ impl<P: StatePolicy> EngineInbox<P> {
     // not this crate's to box; the bounded inbox beside this one has no
     // allocator to box it with.
     #[allow(clippy::result_large_err)]
-    pub fn post(&self, input: InboxInputOf<P>) -> Result<(), InboxRefusal<InboxInputOf<P>>> {
+    pub fn post(&self, input: InboxInputOf<P>) -> Result<(), InboxRefusal<InboxInputOf<P>>>
+    where
+        P::Payload: Send,
+    {
         let tree = self.shared.tree();
-        match input {
-            // The address of an ending is resolved now, not when it is drained
-            // (ARCHITECTURE.md "Engine Threading", item 3): this session's own
-            // goes onto this inbox without it, another session's onto that
-            // session's inbox.
-            InboxInput::HostInvokeEnding {
-                session_id: Some(session_id),
-                processor_type,
-                invoke_id,
-                token,
-                done,
-                data,
-            } => {
-                let ending = crate::host_processor::HostInvokeEnding {
-                    processor_type: &processor_type,
-                    invoke_id: &invoke_id,
-                    token,
-                    done,
-                    data: &data,
-                };
-                let posted = if session_id == self.shared.session_id {
-                    if self.shared.push_own_ending(ending) {
-                        Ok(())
-                    } else {
-                        Err(TreeRefusal::EngineGone)
-                    }
-                } else {
-                    tree.post_ending(&session_id, ending)
-                };
-                if let Err(refusal) = posted {
-                    let input = InboxInput::HostInvokeEnding {
-                        session_id: Some(session_id),
-                        processor_type,
-                        invoke_id,
-                        token,
-                        done,
-                        data,
-                    };
-                    return Err(match refusal {
-                        TreeRefusal::UnknownSession => InboxRefusal::UnknownSession(input),
-                        TreeRefusal::EngineGone => InboxRefusal::EngineGone(input),
-                    });
-                }
-            }
-            input => self.shared.push(input).map_err(InboxRefusal::EngineGone)?,
+        let (held, session_id) = HeldInput::of::<P>(input);
+        // The address of an ending is resolved now, not when it is drained
+        // (ARCHITECTURE.md "Engine Threading", item 3): this session's own, or
+        // one that names no session, goes onto this inbox without it, another
+        // session's onto that session's inbox.
+        let posted = match session_id.as_deref() {
+            Some(other) if other != self.shared.session_id => tree.post_to(other, held),
+            _ => self
+                .shared
+                .push(held)
+                .map_err(|held| (TreeRefusal::EngineGone, held)),
+        };
+        if let Err((refusal, held)) = posted {
+            let input = held.into_input::<P>(session_id);
+            return Err(match refusal {
+                TreeRefusal::UnknownSession => InboxRefusal::UnknownSession(input),
+                TreeRefusal::EngineGone => InboxRefusal::EngineGone(input),
+            });
         }
         <P::Hal as Hal>::wake();
         tree.wake();

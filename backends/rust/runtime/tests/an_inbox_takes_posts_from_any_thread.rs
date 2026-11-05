@@ -11,6 +11,8 @@
 //   * a post the inbox took wakes the owner through the policy's HAL and through
 //     the waker the host installed;
 //   * a post to the inbox of an engine that is gone is refused with its input;
+//   * a posted event's payload reaches the machine with it, and comes back
+//     with it when the post is refused;
 //   * a post taken after the run was stopped is counted as unseen, as a direct
 //     raise would be, and not held where nobody reads it;
 //   * the bare-metal inbox a deployment declares refuses a post when full, gives
@@ -18,7 +20,8 @@
 //     applies what it took.
 //
 // The machine: one state, `s`, whose two targetless transitions take `ping` and
-// `pong` and record, in order, the name of each event they took.
+// `pong` and record, in order, the name of each event they took, and the
+// payload each event carried.
 //
 // The generated-machine case, many threads against a single-threaded replay, is
 // `backends/rust/tests/tests/what_another_thread_posts_enters_through_the_inbox.rs`.
@@ -31,9 +34,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, state_words, BoundedInbox, DocumentTables, Engine, EngineInbox, EventId, Hal,
-    HistoryId, InboxInput, InboxRefusal, InboxWaker, NoHistory, RunStore, StateId, StateKind,
-    StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    state_scratch, state_words, BoundedInbox, DocumentTables, Engine, EngineInbox, EventId,
+    EventWithMetadata, Hal, HistoryId, InboxInput, InboxRefusal, InboxWaker, NoHistory, RunStore,
+    StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -95,22 +98,33 @@ enum Ev {
 const S_PING: TransitionId = TransitionId(0);
 const S_PONG: TransitionId = TransitionId(1);
 
-/// What the machine took, in order.
-struct InboxPolicy {
+/// What the machine took, in order, and the payload each event carried: `D`,
+/// the machine's payload type, is `()` but in the case that posts a payload.
+struct InboxPolicy<D = ()> {
     taken: Vec<&'static str>,
+    payloads: Vec<D>,
 }
 
 impl InboxPolicy {
     fn new() -> Self {
-        Self { taken: Vec::new() }
+        Self::carrying()
     }
 }
 
-impl StatePolicy for InboxPolicy {
+impl<D> InboxPolicy<D> {
+    fn carrying() -> Self {
+        Self {
+            taken: Vec::new(),
+            payloads: Vec::new(),
+        }
+    }
+}
+
+impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy<D> {
     type State = St;
     type Event = Ev;
     type History = NoHistory;
-    type Payload = ();
+    type Payload = D;
     type Hal = CountingHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -222,6 +236,10 @@ impl StatePolicy for InboxPolicy {
             self.taken.push("pong");
         }
     }
+
+    fn populate_event_payload(&mut self, payload: &Self::Payload) {
+        self.payloads.push(payload.clone());
+    }
 }
 
 fn running() -> Engine<InboxPolicy> {
@@ -232,6 +250,13 @@ fn running() -> Engine<InboxPolicy> {
 
 fn ping() -> InboxInput<Ev> {
     InboxInput::external(Ev::Ping, "", "")
+}
+
+/// `ping`, carrying `payload`, for the machine whose payload type is `u32`.
+fn ping_carrying(payload: u32) -> InboxInput<Ev, u32> {
+    let mut event: EventWithMetadata<Ev, u32> = EventWithMetadata::new(Ev::Ping);
+    event.payload = payload;
+    InboxInput::ExternalEvent(event)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -337,6 +362,49 @@ fn a_post_to_the_inbox_of_an_engine_that_is_gone_is_refused_with_its_input() {
                 refused.event,
                 Ev::Ping,
                 "the refusal gave back another input"
+            );
+        }
+        other => panic!("a post to the inbox of a dropped engine answered {other:?}"),
+    }
+}
+
+// The inbox holds what was posted without the machine's types, so a payload
+// rides beside its event: it reaches the machine with the event, and comes
+// back with the event when the post is refused.
+#[test]
+fn a_posted_payload_rides_with_its_event_and_comes_back_with_a_refusal() {
+    let _posting = posting();
+    let mut engine = Engine::new(InboxPolicy::<u32>::carrying());
+    engine.initialize();
+    let inbox = engine.inbox();
+
+    let poster = inbox.clone();
+    let taken = std::thread::spawn(move || poster.post(ping_carrying(7)).is_ok())
+        .join()
+        .expect("the posting thread");
+    assert!(
+        taken,
+        "an engine's own inbox takes every post while the engine lives"
+    );
+    engine.step();
+    assert_eq!(engine.policy().taken, ["ping"]);
+    assert_eq!(
+        engine.policy().payloads,
+        [7],
+        "the posted event reached the machine without the payload it carried"
+    );
+
+    drop(engine);
+    match inbox.post(ping_carrying(9)) {
+        Err(InboxRefusal::EngineGone(InboxInput::ExternalEvent(refused))) => {
+            assert_eq!(
+                refused.event,
+                Ev::Ping,
+                "the refusal gave back another event"
+            );
+            assert_eq!(
+                refused.payload, 9,
+                "the refusal gave back the event without its payload"
             );
         }
         other => panic!("a post to the inbox of a dropped engine answered {other:?}"),
