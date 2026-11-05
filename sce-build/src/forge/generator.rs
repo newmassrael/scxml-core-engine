@@ -10979,8 +10979,7 @@ fn render_codec(
                             &body_decoder,
                             &embed_thread.decode_arg,
                             &m.fields,
-                            c11_over,
-                            true,
+                            EmbedDecodeInto::Value { c11_over },
                             lang,
                         )
                         .into(),
@@ -11014,8 +11013,7 @@ fn render_codec(
                                 &body_decoder,
                                 &embed_thread.decode_arg,
                                 &m.fields,
-                                false,
-                                false,
+                                EmbedDecodeInto::View,
                                 lang,
                             )
                             .into(),
@@ -15260,6 +15258,17 @@ fn repeat_streaming_encode_block(
     }
 }
 
+/// Where an embed's streaming decode puts the body it reads.
+#[derive(Clone, Copy)]
+enum EmbedDecodeInto {
+    /// Into the value, which stores the body: a Rust decode notes a capacity
+    /// it was past ([`RUST_DECODE_OVER`]), and `c11_over` says whether the C11
+    /// decode is a store after a parse ([`c11_may_exceed_capacity`]).
+    Value { c11_over: bool },
+    /// Where it sits, as a view: it stores nothing and cannot run out.
+    View,
+}
+
 /// RFC §synth-5-B embed primitive — pre-rendered streaming decode statement for
 /// one embed field. Calls the embedded codec's decode() once with
 /// optional parent-flag threading, binding the result to the field id
@@ -15279,14 +15288,12 @@ fn embed_streaming_decode_stmt(
     body_decoder: &str,
     thread_arg: &str,
     fields: &[CodecField],
-    // Whether the C11 decode is a store after a parse ([`c11_may_exceed_capacity`]).
-    c11_over: bool,
-    // Whether a Rust decode stores the body, so notes a capacity it was past
-    // ([`RUST_DECODE_OVER`]); a view stores nothing and cannot run out.
-    stores: bool,
+    into: EmbedDecodeInto,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
+    let stores = matches!(into, EmbedDecodeInto::Value { .. });
+    let c11_over = matches!(into, EmbedDecodeInto::Value { c11_over: true });
     let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     let len_from = field.embed_length_from.as_deref();
