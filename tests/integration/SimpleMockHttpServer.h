@@ -14,8 +14,8 @@ namespace SCE {
  * @brief Simple embedded mock HTTP server for testing
  *
  * This class provides a lightweight HTTP server that can be started
- * and stopped within test cases. It automatically finds an available
- * port and responds to HTTP requests with predefined responses.
+ * and stopped within test cases. It binds a port the kernel assigns and
+ * responds to HTTP requests with predefined responses.
  */
 class SimpleMockHttpServer {
 public:
@@ -24,7 +24,8 @@ public:
 
     /**
      * @brief Start the mock server
-     * @return The server URL (e.g., "http://127.0.0.1:8080")
+     * @return The server URL, naming the port the kernel assigned
+     *         (e.g., "http://127.0.0.1:41873"); empty when it could not start
      */
     std::string start();
 
@@ -49,7 +50,6 @@ public:
 
 private:
     void serverLoop();
-    int findAvailablePort();
     void handleRequest(int clientSocket);
     std::string generateHttpResponse(const std::string &content);
 

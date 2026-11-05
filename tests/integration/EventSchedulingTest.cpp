@@ -1821,9 +1821,10 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     std::string receivedEventName;
     std::string receivedEventData;
 
-    // Create W3C HTTP test server on a random port
-    int testPort = 18513;  // Port for test 513
-    auto httpServer = std::make_unique<SCE::W3C::W3CHttpTestServer>(testPort, "/test");
+    // The listener is told no port: given 0 it binds one the kernel assigns,
+    // and the test posts to what it bound, as the W3C runner hands a machine
+    // the bound location (tests/w3c/basic_http_test_endpoint.h says why).
+    auto httpServer = std::make_unique<SCE::W3C::W3CHttpTestServer>(0, "/test");
 
     // Set callback to track received events
     httpServer->setEventCallback([&eventReceived, &receivedEventName, &receivedEventData](const std::string &eventName,
@@ -1836,13 +1837,17 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
 
     // Start HTTP server
     ASSERT_TRUE(httpServer->start()) << "Failed to start W3C HTTP test server";
-    SCE_LOG_DEBUG("W3C Test 513: HTTP server started on localhost:{}{}", testPort, "/test");
+    const int boundPort = httpServer->getPort();
+    ASSERT_GT(boundPort, 0) << "the server reports no bound port after start()";
+    const std::string accessUri = httpServer->accessUri();
+    EXPECT_EQ(accessUri, "http://localhost:" + std::to_string(boundPort) + httpServer->getPath());
+    SCE_LOG_DEBUG("W3C Test 513: HTTP server started at {}", accessUri);
 
     // Wait for server to be fully ready
     std::this_thread::sleep_for(SCE::Test::Utils::LONG_WAIT_MS);
 
-    // Send well-formed HTTP POST event to server
-    httplib::Client client("localhost", testPort);
+    // Send well-formed HTTP POST event to the bound location
+    httplib::Client client("localhost", boundPort);
     client.set_connection_timeout(5, 0);  // 5 second timeout
     client.set_read_timeout(5, 0);
 
@@ -1852,8 +1857,8 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     params.emplace("testParam1", "value1");
     params.emplace("testParam2", "value2");
 
-    SCE_LOG_DEBUG("W3C Test 513: Sending HTTP POST request to localhost:{}{}", testPort, "/test");
-    auto response = client.Post("/test", params);
+    SCE_LOG_DEBUG("W3C Test 513: Sending HTTP POST request to {}", accessUri);
+    auto response = client.Post(httpServer->getPath(), params);
 
     // Verify HTTP response received
     ASSERT_TRUE(response) << "Failed to receive HTTP response from server";

@@ -33,13 +33,6 @@ std::string SimpleMockHttpServer::start() {
         return serverUrl_;
     }
 
-    // Find available port
-    port_ = findAvailablePort();
-    if (port_ <= 0) {
-        Logger::error("SimpleMockHttpServer: Failed to find available port");
-        return "";
-    }
-
     // Create socket
     serverSocket_ = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket_ < 0) {
@@ -59,18 +52,30 @@ std::string SimpleMockHttpServer::start() {
         Logger::warn("SimpleMockHttpServer: Failed to set non-blocking mode");
     }
 
-    // Bind to address
+    // Bind to port 0, which the kernel answers with a port no one holds, and
+    // read back the one it assigned. Probing a range for a free port and then
+    // binding it raced every other process on the host between the two calls.
     struct sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = INADDR_ANY;
-    serverAddr.sin_port = htons(port_);
+    serverAddr.sin_port = htons(0);
 
     if (bind(serverSocket_, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
-        SCE_LOG_ERROR("SimpleMockHttpServer: Failed to bind to port {}", port_);
+        SCE_LOG_ERROR("SimpleMockHttpServer: Failed to bind to a kernel-assigned port");
         close(serverSocket_);
         serverSocket_ = -1;
         return "";
     }
+
+    struct sockaddr_in boundAddr{};
+    socklen_t boundLength = sizeof(boundAddr);
+    if (getsockname(serverSocket_, (struct sockaddr *)&boundAddr, &boundLength) < 0) {
+        SCE_LOG_ERROR("SimpleMockHttpServer: Failed to read the port the kernel assigned");
+        close(serverSocket_);
+        serverSocket_ = -1;
+        return "";
+    }
+    port_ = ntohs(boundAddr.sin_port);
 
     // Start listening
     if (listen(serverSocket_, 5) < 0) {
@@ -111,29 +116,6 @@ void SimpleMockHttpServer::stop() {
     serverThread_.reset();
 
     Logger::debug("SimpleMockHttpServer: Stopped");
-}
-
-int SimpleMockHttpServer::findAvailablePort() {
-    // Try ports from 8000 to 8999
-    for (int port = 8000; port < 9000; ++port) {
-        int testSocket = socket(AF_INET, SOCK_STREAM, 0);
-        if (testSocket < 0) {
-            continue;
-        }
-
-        struct sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = INADDR_ANY;
-        addr.sin_port = htons(port);
-
-        int result = bind(testSocket, (struct sockaddr *)&addr, sizeof(addr));
-        close(testSocket);
-
-        if (result == 0) {
-            return port;
-        }
-    }
-    return -1;  // No available port found
 }
 
 void SimpleMockHttpServer::serverLoop() {
