@@ -7020,18 +7020,17 @@ pub(crate) fn a_tree_can_hold(model: &SCXMLModel) -> bool {
 
 /// Whether the Swift runtime saves the whole state of a machine of `model` and of
 /// every session it can start: what [`a_tree_can_hold`] says a saved state can
-/// hold, of a machine of no product line, whose every `<invoke>` is a static
-/// child session (`<invoke type="scxml">`) of a document of which the same holds,
-/// or a hybrid one every candidate of which is such a document. An `<invoke>` a
-/// host runs and one that asks a peer are not among them yet, and a machine that
-/// has one is generated without the save API.
+/// hold, whose every `<invoke>` is a static child session (`<invoke
+/// type="scxml">`) of a document of which the same holds, a hybrid one every
+/// candidate of which is such a document, or one a host's invoker serves. One
+/// that asks a peer in a way a saved state does not hold is not among them, and
+/// a machine that has one is generated without the save API.
 ///
 /// A child's answer is read from what the parse recorded on its `<invoke>`
 /// ([`crate::model::InvokeSessionCommon::child_swift_saves`]), which this function
 /// computed when the child's own document was parsed.
 pub(crate) fn a_swift_tree_can_hold(model: &SCXMLModel) -> bool {
     a_tree_can_hold(model)
-        && model.configuration.is_none()
         && model
             .states
             .values()

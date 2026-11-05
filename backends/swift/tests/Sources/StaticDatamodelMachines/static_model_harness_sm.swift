@@ -1849,4 +1849,12 @@ extension StaticModelHarnessPolicy: SavedPolicy {
             self.vWhy = value10
         }
     }
+
+    /// The `<invoke>`s of the document a declared host invoker runs, each by its type and id with the state that
+    /// holds it: what a saved state's host-run invocations are held to (docs/adr/0045).
+    public var savedHostInvokeSlots: [SavedHostInvokeSlot] {
+        [
+            SavedHostInvokeSlot(processorType: "sce-host-model-generate", invokeID: "gen", state: "generate"),
+        ]
+    }
 }

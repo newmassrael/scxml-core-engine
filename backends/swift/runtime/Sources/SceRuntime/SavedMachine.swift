@@ -504,3 +504,16 @@ extension InvokedSession where Policy: SavedPolicy {
         }
     }
 }
+
+/// The configuration of a product line a machine was generated for (docs/adr/0057, section 7), written one feature to
+/// a statement so that the machine generated for every build of the line holds each feature under its own
+/// compilation condition (section 10): `configured { on in on.append("feature") }`. A build that turns none on
+/// writes no statement, and the closure still takes its argument, so it is no unused variable there.
+public enum SavedFeatures {
+    /// The features `turnOn` appends, in the order it appends them: the sorted set a saved state records.
+    public static func configured(_ turnOn: (inout [String]) -> Void) -> [String] {
+        var features: [String] = []
+        turnOn(&features)
+        return features
+    }
+}

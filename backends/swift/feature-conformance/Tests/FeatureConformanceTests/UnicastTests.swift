@@ -16,6 +16,11 @@ import Testing
         #expect(lifted([]).active == "probe;")
     }
 
+    /// A saved state records the configuration it was taken in (docs/adr/0057, section 7).
+    @Test func aSavedStateNamesTheFeaturesThisBuildTurnsOn() {
+        #expect(lifted([]).saved.contains(#""features":["session-unicast"]"#))
+    }
+
     private func lifted(_ run: [String]) -> Observation {
         let host = LiftedUnicast.RecordingSessionActions()
         return observe(

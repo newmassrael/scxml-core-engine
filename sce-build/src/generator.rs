@@ -5095,8 +5095,8 @@ const SWIFT_SAVED_SCALARS: &[&str] = &[
 /// yet. The generator computes the shape of every machine whose state a saved state can hold whole
 /// ([`crate::forge::static_lowering::StaticLowering::saved_shape`]); what Swift adds is what its runtime holds
 /// of that state so far: every variable a scalar of [`SWIFT_SAVED_SCALARS`], an enum, a record, a list, or one
-/// of those that may be absent (see [`swift_saves_field`]), and a tree of static child sessions of
-/// such machines under no product line ([`crate::forge::static_lowering::a_swift_tree_can_hold`]).
+/// of those that may be absent (see [`swift_saves_field`]), and a tree of child sessions of such
+/// machines ([`crate::forge::static_lowering::a_swift_tree_can_hold`]).
 /// A machine past that is generated without the save API
 /// rather than with one that would silently drop part of its state, as the generator does for a machine whose
 /// state no backend can hold.
@@ -5106,8 +5106,7 @@ fn swift_saved_shape(
 ) -> Option<crate::forge::static_lowering::SavedShape> {
     let shape = lowering.saved_shape.as_ref()?;
     let holds_every_field = lowering.fields.iter().all(swift_saves_field);
-    // What the document starts, and what every child of it starts, is a static child session the Swift
-    // runtime saves too, and the machine is of no product line.
+    // What the document starts, and what every child of it starts, is a session the Swift runtime saves too.
     if !crate::forge::static_lowering::a_swift_tree_can_hold(model) || !holds_every_field {
         return None;
     }

@@ -15,8 +15,9 @@
     Written only for a machine whose state the Swift runtime holds whole
     (`swift_saved_shape` of the generator): every variable a number, a truth value, a bounded text,
     a byte string, an enum, a record or a list of them, or one of those that may be absent, every
-    record schema in its first revision, and no `<invoke>` or product line in the document. What each `<history>` recorded is saved and restored through the ids the
-    document gives them.
+    record schema at any revision, and the `<invoke>`s a static child session, a hybrid one or a declared host
+    invoker runs. What each `<history>` recorded is saved and restored through the ids the document gives them,
+    and a machine of a product line records the configuration it was built for.
 #}
 {#- How a variable is written: by `SavedValues.of`, which every scalar, byte string and enum has, and by the
    record's own `toSaved`; a list writes each element so, and a value that may be absent is `null` or as its
@@ -127,7 +128,19 @@ extension {{ machine_name }}Policy: SavedPolicy {
     /// so a later build whose guards, actions or comments changed restores it and one that renamed,
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
+{% if static_saved_shape.features is not none %}
+        // The configuration of a product line this machine was built for (docs/adr/0057, section 7), one feature
+        // to a statement, so the machine generated for every build of the line holds each feature under its own
+        // condition (section 10).
+        let features = SavedFeatures.configured { on in
+{% for feature in static_saved_shape.features %}
+            on.append("{{ feature | escape_swift }}")
+{% endfor %}
+        }
+        return SavedShape(
+{% else %}
         SavedShape(
+{% endif %}
             first: "{{ static_saved_shape.first }}",
             revised: "{{ static_saved_shape.revised }}",
             format2First: "{{ static_saved_shape.format2_first }}",
@@ -170,7 +183,8 @@ extension {{ machine_name }}Policy: SavedPolicy {
 {% endfor %}
                     ]),
 {% endfor %}
-            ]{% endif %})
+            ]{% endif %}{% if static_saved_shape.features is not none %},
+            features: features{% endif %})
     }
 
 {% if model.history_states %}

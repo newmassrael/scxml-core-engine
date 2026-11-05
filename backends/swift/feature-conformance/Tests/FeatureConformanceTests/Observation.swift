@@ -28,15 +28,18 @@ struct Observation: Equatable, CustomStringConvertible {
     /// Names the machine has no event for: neither machine can be handed one.
     var unnamed: UInt32 = 0
     var terminal = ""
+    /// The text the machine saves where it stands (docs/adr/0045), with the session id its draw gave it left out,
+    /// which differs between two machines by chance; empty where a machine cannot be saved, one that has ended.
+    var saved = ""
 
     var description: String {
-        "active=\(active) calls=\(calls) discarded=\(discarded) unnamed=\(unnamed) terminal=\(terminal)"
+        "active=\(active) calls=\(calls) discarded=\(discarded) unnamed=\(unnamed) terminal=\(terminal) saved=\(saved)"
     }
 }
 
 /// The observation of the machine `policy` describes after `run`, `calls` reading the
 /// calls its host has recorded.
-func observe<Policy: StatePolicy>(
+func observe<Policy: SavedPolicy>(
     _ policy: Policy, calls: () -> [String], run: [String]
 ) -> Observation {
     let engine = Engine(policy: policy)
@@ -54,6 +57,10 @@ func observe<Policy: StatePolicy>(
     seen.calls = calls().map { $0 + ";" }.joined()
     seen.discarded = engine.discardedExternalEvents
     seen.terminal = engine.terminalState.map { policy.getStateName($0) } ?? ""
+    if var state = try? engine.save(wallNowMs: 0) {
+        state.sessionID = ""
+        seen.saved = state.toJSON()
+    }
     return seen
 }
 
@@ -67,6 +74,7 @@ func expectEveryRunIsObservedAlike(
     var runs = 0
     var ended = false
     var calledHost = false
+    var saved = false
     for length in 0...longestRun {
         var index = [Int](repeating: 0, count: length)
         while true {
@@ -82,6 +90,7 @@ func expectEveryRunIsObservedAlike(
             }
             ended = ended || !theirs.terminal.isEmpty
             calledHost = calledHost || !theirs.calls.isEmpty
+            saved = saved || !theirs.saved.isEmpty
             // The next run of this length, the last event turning fastest.
             var digit = length
             while digit > 0 {
@@ -99,5 +108,6 @@ func expectEveryRunIsObservedAlike(
     }
     #expect(ended, "no run ended the machine, so the comparison held the machines to less than it says")
     #expect(calledHost, "no run called the host, so the comparison held the machines to less than it says")
+    #expect(saved, "no run could be saved, so the comparison held the saved text to nothing")
     #expect(runs > 0)
 }

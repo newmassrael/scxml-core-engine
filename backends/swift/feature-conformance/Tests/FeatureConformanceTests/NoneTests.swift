@@ -17,6 +17,12 @@ import Testing
         #expect(lifted([]).active == "idle;")
     }
 
+    /// A saved state records the configuration it was taken in (docs/adr/0057, section 7): this build turns no
+    /// feature on, and says so, which is not the same as saying nothing.
+    @Test func aSavedStateNamesTheFeaturesThisBuildTurnsOn() {
+        #expect(lifted([]).saved.contains(#""features":[]"#))
+    }
+
     private func lifted(_ run: [String]) -> Observation {
         let host = LiftedNone.RecordingSessionActions()
         return observe(
