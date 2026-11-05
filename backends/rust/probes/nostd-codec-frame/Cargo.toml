@@ -22,7 +22,7 @@ name = "sce-nostd-codec-frame-probe"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "MCU-target frame instrument: the stack frame of a codec's lent decode_into"
+description = "MCU-target frame instrument: the stack frame of a codec's lent decode_into and a reply's encode"
 license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 
 [lib]

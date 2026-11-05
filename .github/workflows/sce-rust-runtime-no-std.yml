@@ -23,9 +23,10 @@ name: sce-rust-runtime no_std MCU target build
 # (`backends/rust/forge-runtime/src/queue/mod.rs`), which thumbv7em cannot show, and a consumer that
 # builds the runtime for ARMv6-M found a module that was not.
 #
-# It also reads the stack frame of three codecs' lent `decode_into` on thumbv7em
-# (`backends/rust/probes/nostd-codec-frame`, `scripts/codec_frame_probe.sh`): the
-# committed goldens it decodes, the runtime and the probe trigger it.
+# It also reads the stack frame of four codecs' lent `decode_into`, and of a
+# reply's encode, on thumbv7em (`backends/rust/probes/nostd-codec-frame`,
+# `scripts/codec_frame_probe.sh`): the committed goldens it reads, the runtime
+# and the probe trigger it.
 
 on:
   push:
@@ -50,10 +51,17 @@ on:
       - 'tests/forge/expected/codec_chain_has_slice.rs'
       - 'tests/forge/expected/codec_repeat_elem.rs'
       - 'tests/forge/expected/codec_repeat_unconditional_count.rs'
+      - 'tests/forge/expected/codec_zenoh_del.rs'
+      - 'tests/forge/expected/codec_zenoh_encoding.rs'
+      - 'tests/forge/expected/codec_zenoh_err.rs'
       - 'tests/forge/expected/codec_zenoh_ext_entry.rs'
       - 'tests/forge/expected/codec_zenoh_ext_unit.rs'
       - 'tests/forge/expected/codec_zenoh_ext_zbuf.rs'
       - 'tests/forge/expected/codec_zenoh_ext_zint.rs'
+      - 'tests/forge/expected/codec_zenoh_push_body.rs'
+      - 'tests/forge/expected/codec_zenoh_put.rs'
+      - 'tests/forge/expected/codec_zenoh_reply.rs'
+      - 'tests/forge/expected/codec_zenoh_response.rs'
       - 'backends/rust/portable-bytes/**'
       - 'sce-build/src/forge/composed_lowering.rs'
       - 'sce-build/src/forge/static_lowering.rs'
@@ -90,10 +98,17 @@ on:
       - 'tests/forge/expected/codec_chain_has_slice.rs'
       - 'tests/forge/expected/codec_repeat_elem.rs'
       - 'tests/forge/expected/codec_repeat_unconditional_count.rs'
+      - 'tests/forge/expected/codec_zenoh_del.rs'
+      - 'tests/forge/expected/codec_zenoh_encoding.rs'
+      - 'tests/forge/expected/codec_zenoh_err.rs'
       - 'tests/forge/expected/codec_zenoh_ext_entry.rs'
       - 'tests/forge/expected/codec_zenoh_ext_unit.rs'
       - 'tests/forge/expected/codec_zenoh_ext_zbuf.rs'
       - 'tests/forge/expected/codec_zenoh_ext_zint.rs'
+      - 'tests/forge/expected/codec_zenoh_push_body.rs'
+      - 'tests/forge/expected/codec_zenoh_put.rs'
+      - 'tests/forge/expected/codec_zenoh_reply.rs'
+      - 'tests/forge/expected/codec_zenoh_response.rs'
       - 'backends/rust/portable-bytes/**'
       - 'sce-build/src/forge/composed_lowering.rs'
       - 'sce-build/src/forge/static_lowering.rs'
