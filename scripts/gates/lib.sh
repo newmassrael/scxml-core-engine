@@ -532,7 +532,8 @@ sce_gate_activate_emsdk() {
 # The emscripten build tree, and the one configure every gate that builds in it
 # runs.
 #
-# `visualizer-wasm` and `w3c-wasm` build different targets of the same tree.
+# `visualizer-wasm` and `w3c-wasm` build different targets of the same tree,
+# `cpp-suite-wasm` and `scripts/build_wasm.sh` all of it.
 # Two spellings of its configure would be two trees in one directory: a
 # generator chosen by one gate and refused by the next ("Does not match the
 # generator used previously"), or a build type that flips the whole tree from

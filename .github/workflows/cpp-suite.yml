@@ -351,3 +351,93 @@ jobs:
         ctest --test-dir build -N -LE c11 | tail -5
         echo "=== Last failures ==="
         cat build/Testing/Temporary/LastTestsFailed.log || echo "no failure log"
+
+  # The WebAssembly half of the suite above: the emscripten tree built whole
+  # and every case it registers run under Node, the engine compiled the way the
+  # published visualizer is. A job of its own rather than a step after the
+  # native suite: the two trees share no build, and either one red must not
+  # stop the other from reporting. SCE_REQUIRE_TOOLS turns the gate's "emsdk
+  # missing, skipping" into a failure here, where emsdk is installed.
+  cpp-suite-wasm:
+    name: C++ ctest Suite (WASM, under Node)
+    runs-on: ubuntu-latest
+    # An allowance, not a measurement: the tree had never been built whole when
+    # this job arrived (2026-11-05). The W3C job's cold build of two of its
+    # programs took 21 minutes; the first run of this one is the reading.
+    timeout-minutes: 150
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          pkg-config \
+          clang-format-19
+    # clang-format-19: `sce-codegen` formats the C++ it generates with
+    # clang-format pinned to major 19 and refuses without it
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9).
+
+    - name: Setup Problem Matchers
+      run: |
+        echo "::add-matcher::.github/problem-matchers/gcc.json"
+        echo "::add-matcher::.github/problem-matchers/cmake.json"
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: |
+        # The Cargo cache restores all of `target`, but this step only builds
+        # the debug profile, so a release binary the cache still holds is not a
+        # product of this commit.
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
+        cargo build --bin sce-codegen --features cli -p sce-build
+
+    - name: Setup Emscripten (emsdk)
+      run: |
+        git clone https://github.com/emscripten-core/emsdk.git
+        cd emsdk
+        ./emsdk install latest
+        ./emsdk activate latest
+
+    - name: Run the C++ ctest suite under Node
+      env:
+        SCE_REQUIRE_TOOLS: 1
+      run: |
+        source emsdk/emsdk_env.sh
+        scripts/gate cpp-suite-wasm
+
+    # The gate keeps both logs in the build tree: the build's, which names
+    # every failed edge, and the run's.
+    - name: Upload the WASM suite logs
+      uses: actions/upload-artifact@v7
+      if: ${{ !cancelled() }}
+      with:
+        name: cpp-suite-wasm-logs
+        path: |
+          build_wasm/cpp_suite_wasm_build.log
+          build_wasm/cpp_suite_wasm_ctest.log
+        retention-days: 30
+        if-no-files-found: ignore

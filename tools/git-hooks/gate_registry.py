@@ -385,7 +385,11 @@ COST_MEASURED: dict[str, str] = {
 # 28 -> 29 on 2026-11-04, the same direction again: `w3c-wasm` arrived with a
 # cost summed from readings of its parts, not a timing of its script. Its entry
 # says which parts.
-UNMEASURED_COST_CEILING = 29
+#
+# 29 -> 30 on 2026-11-05, again: `cpp-suite-wasm` arrived as the lane for a
+# tree nothing built whole, so its cost is an estimate its entry derives. The
+# lane's first run is the reading.
+UNMEASURED_COST_CEILING = 30
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -2347,6 +2351,44 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5.3,
+    },
+    # The emscripten tree, all of it: every target built, every registered
+    # ctest case run under Node. Measured 2026-11-05: the tree declared 388
+    # programs and the two gates above built three of them, and
+    # `integration_tests` could not build there at all.
+    #
+    # ⚠ `cost_s` is an ESTIMATE, not a reading. The tree had never been built
+    # whole when the gate arrived: the figure scales the 21 minutes the
+    # `w3c-wasm` lane took to build two of its programs cold on a hosted
+    # runner to the engine's suites, and the lane's first run is the reading.
+    "cpp-suite-wasm": {
+        "workflows": ["cpp-suite.yml"],
+        "runner_workflow": True,
+        "narrows": "the same catch-all reading as `cpp-suite`, whose "
+                   "WebAssembly half this is: it builds the whole emscripten "
+                   "tree, so its inputs are the engine, its tests, the CMake "
+                   "that registers them (the root list carries the WASM "
+                   "settings and says what the tree does not declare), the "
+                   "generator and its templates, and the documents.",
+        "extra": ["sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
+                  "resources/**", "integration_resources/**",
+                  "tools/codegen/templates/**", "sce-build/src/**"],
+        "deps": ["codegen-build"],
+        "ci_only": "an estimated 2400s cold, no reading yet: the whole "
+                   "emscripten tree, each suite linked with ASYNCIFY, and "
+                   "every case run under Node. It needs emsdk, which a push "
+                   "host is not required to carry. cpp-suite.yml runs it in "
+                   "a job of its own beside the native suite.",
+        "cost_s": 2400,
+        "summary": "C++ ctest suite built with emscripten, every case under Node",
+        "cache": False,
+        "no_cache_reason": "skip-capable: it exits 0 on a machine without "
+                           "emsdk, which bx.toml requires by no name, and the "
+                           "Node it runs on is the one that emsdk ships, at no "
+                           "version a declaration pins",
+        "inputs": None,
+        "commits": [],
+        "peak_gb": 5,
     },
 }
 

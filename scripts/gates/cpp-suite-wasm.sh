@@ -61,9 +61,12 @@ if ! cmake --build "$SCE_WASM_BUILD_DIR" --parallel "$(sce_build_jobs)" \
     if (( failed_edges > 0 )); then
         printf '  [%s] %s edge(s) failed:\n' "$SCE_GATE_SLUG" "$failed_edges" >&2
         grep '^FAILED:' "$BUILD_LOG" >&2
-        first_failed="$(grep -n '^FAILED:' "$BUILD_LOG" | head -1 | cut -d: -f1)"
+        # Line ranges in `sed` rather than `| head`: under `pipefail` a reader
+        # that closes early is a writer killed by SIGPIPE, which `cpp-suite`
+        # measured as a red verdict with no failing test.
+        first_failed="$(sed -n '/^FAILED:/{=;q;}' "$BUILD_LOG")"
         printf '  [%s] from the first FAILED edge:\n' "$SCE_GATE_SLUG" >&2
-        sed -n "${first_failed},\$p" "$BUILD_LOG" | head -80 >&2
+        sed -n "${first_failed},$((first_failed + 79))p" "$BUILD_LOG" >&2
     else
         tail -n 60 "$BUILD_LOG" >&2
     fi
