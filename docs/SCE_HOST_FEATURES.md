@@ -362,6 +362,20 @@ harness the exhaustive run of docs/adr/0087 step 7 drives. Each lane runs
 says it publishes. The host still judges the request first: a request it
 refuses is refused whatever the class.
 
+**The reference harness** (docs/adr/0087, section 6 and step 7). The harness,
+`static_model_harness`, is replayed against the scripted provider by five
+scenarios, `static_model_harness_*.json`, one a case of section 9.1 item 8: a run
+of the harness ends at one of its finals, so a case is a run of its own and a
+driver replays a scenario by its file's name against the machine it names. Each
+lane also runs the harness against the exhaustive provider for every sequence of
+the harness section's `bound` classes (each a run, so every shorter sequence the
+harness can consume is a prefix of one), sets the transition observer of
+docs/adr/0089, and requires the runs together to take every row of the
+harness's emitted transition table, to reach every refusal code (the harness keeps
+each refusal it answered in `refusals`), and to reach every host outcome at every
+call site, a row whose `targets` is the state that holds the call; the test fails
+naming the rows, codes or outcomes never reached.
+
 A reference host is the whole of a feature's semantics, as one object that is told
 a start (the type and the request's text parameters) and answers a completion, a
 refusal, or nothing yet. Each lane has one, with its own clock and transport, and
@@ -385,7 +399,8 @@ document `sce-codegen lower` makes of the machine, with the reference host regis
 on the `StateMachine` as it is on the generated engine (`SCE::StandardHost::serve`;
 docs/adr/0084, D7), and moves its scheduler's logical clock for `advance_ms`. The
 lowering refuses a model's generation by name (docs/adr/0087, section 7.1), so the
-Interpreter's driver holds `static_host_model` to that refusal instead of replaying it.
+Interpreter's driver holds `static_host_model` and the reference harness
+`static_model_harness` to that refusal instead of replaying them.
 
 Each driver runs the machine on a manual clock and the host on a scripted one, so a
 scenario is deterministic. The transports that exist are held by a test against a

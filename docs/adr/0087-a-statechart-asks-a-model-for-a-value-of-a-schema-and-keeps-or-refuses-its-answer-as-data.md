@@ -2,7 +2,7 @@
 
 - Status: Accepted (2026-11-04), with each open question answered as recommended ("Owner's answers"). Written for
   the owner's decision under the standing rule of 2026-10-26 and 2026-10-27: the most long-term correct structure,
-  textbook in its foundations, cost ignored. Steps 1 to 6 of "Landing order" have landed:
+  textbook in its foundations, cost ignored. Steps 1 to 7 of "Landing order" have landed:
   - step 1, the refusal record in the readers: `c737b5d40f` (the record and its code in the standard library),
     `78e916eefe` (the shared refusal table), `cd9941f679`, `6af8c1dc41`, `7fefde1eb0`, `21604ece92` and
     `34bb5595e5` (the Rust, Go, Kotlin, Swift and Interpreter readers), `6e258f2db2`, `6a0b86c791` and `82130a816c`
@@ -17,9 +17,13 @@
   - step 6, `sce-host-model-generate`: `51ec444f8b` (the operation and the answer-schema table), `4a38c87f41` (the
     model machine, its scenario and the outcome class table), `ac36708d25`, `e238bfa039`, `6f16d93285`,
     `76f8c3791c`, `851acfe462`, `caea8f7507` and `9a70353eb7` (the seven reference hosts), `3831b713e7` (the
-    trees).
+    trees);
+  - step 7, the reference harness: `<commit>` (the `model` directive in a scenario's vocabulary), `<commit>` (its
+    documents, its five scenarios and the class table's harness section), `<commit>` and `<commit>` (the seven
+    lanes' replays and exhaustive runs with measured coverage, the Interpreter's refusal), `<commit>`
+    (`examples/model_harness/`), `<commit>` (the mutation cases), `<commit>` (the trees).
 
-  Step 7 is open; its coverage is measured by the transition observer of ADR 0089. Step 8 waits on ADR 0086 step 3.
+  Step 8 waits on ADR 0086 step 3; what it still needs is recorded under "Landing order", item 8.
 - Date: 2026-11-04
 - Amends:
   - ADR 0086 section 4.2: a refused delivery keeps its sentence, whose path that section calls a JSON Pointer; it is
@@ -770,7 +774,18 @@ again with the same prompt), and two final states, **accepted** and **gave up**.
 5. **Where it lives.** The documents are fixtures of `sce-build/tests/fixtures/static_datamodel/` (a harness statechart,
    its answer schema, its two templates, the application refusal schema), replayed by section 9's scenario, and
    `examples/model_harness/` holds a host program that runs the same documents by path and a README, so there is one
-   copy of each document.
+   copy of each document. As landed (step 7): the statechart is `static_model_harness.scxml`; its answer schema is
+   `lift_answer.scxml`, the schema the texts of the outcome class table are written against, so a class refuses at
+   the same place in the harness as in `static_host_model`; the templates are `harness_ask.scxml` and
+   `harness_repair.scxml`, the refusal record `harness_refusal.scxml` and its code enum `enum_harness_code.scxml`
+   (`notOffered` after the thirteen); the offered ids arrive by `harness_offer.scxml`, one id an event appended to a
+   list, until ADR 0086 step 3 lowers an event that carries a list, and the request by `harness_start.scxml`. The
+   attempt bound is the named limit `harness_attempts` (3), the capacity of `refusals`, which keeps each refusal the
+   harness answered, read by its name in the guards (`_x.limits.harness_attempts`). The finals are children of a root
+   state, so a run's last configuration and variables stay where a host reads them. A transition's `cond` proves no
+   variable present in its content, so the carry-over of item 2 reads `why.value.code` under an `<if>` that makes
+   the test again. The example program is C++, the one lane with an example harness, whose smallest
+   (`examples/cmake_function/`) it follows; it is the build's test `model_harness_example`.
 
 #### 6.2 Reason
 
@@ -923,6 +938,14 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    carries a `harness` section, which names the harness machine, the event that starts it, how a held call is left
    (the engine's clock moved past the call's deadline) and that deadline; the exhaustive run of section 9.4 reads
    its classes and its harness section from that one table, and there is no second table.
+   As landed (step 7), a run of the harness ends at one of its finals, so each case is a scenario of its own and the
+   five live beside the other host-feature scenarios, where the drivers that take `host` directives read them:
+   `tests/host_features/scenarios/static_model_harness_{accepted,repaired,not_offered,exhausted,timeout}.json`,
+   each naming `static_model_harness`, which a driver replays by the file's name. The harness section also states
+   the start's `data`, the event the harness is `offer`ed an id by and the ids `offered`, the state whose invoke is
+   the `call` (a call site is a row of the table whose `targets` is that state) and the attempt `bound` (3, every
+   sequence of that many classes being a run, so every shorter sequence the harness consumes is a prefix of one);
+   a held call of either class that holds is left by its own deadline.
 9. **Mutation casefiles** under `sce-build/tests/mutations`: the lift's choice of which variable to write, the depth
    comparison, the pointer's `~` escapes, the marker removal's repetition, the template bound's sum, and the GBNF
    chain's byte weights.
@@ -1012,8 +1035,22 @@ A feature that asks a model is tested in two layers, which answer two different 
    outcome reached at every call site. Transition coverage is the rows of the harness's emitted transition table that
    the transition observer of ADR 0089 is told across the run, on each of the seven lanes that run the harness; the
    observer landed with that ADR, and the class `notOffered` and the table's `harness` section landed with it.
+   Landed (see "Status"): the exhaustive run is
+   `every_sequence_of_outcome_classes_takes_every_row_of_the_reference_harness` and its spelling on each lane, beside
+   each lane's `every_sequence_of_outcome_classes_is_read_as_its_classes_say`; the rows are read from the generated
+   table accessor, the codes from the `refusals` the harness keeps, and the test names each row, code and outcome
+   never reached. The Interpreter's refusal is held by `the_reference_harness_is_refused_by_the_name_of_its_generation`
+   (`sce-build`) and by the C++ Interpreter's host-feature replay; `tooMany` stays deferred, as the class table says.
 8. **After ADR 0086 step 3**: the lift, the grammar and the harness over records holding lists and records, with
-   `lift_answer_list.scxml`.
+   `lift_answer_list.scxml`. What it still needs, with step 7 landed:
+   - `lift_answer_list.scxml` and the lift scenario's composed cases (section 9.1 items 1 and 2);
+   - a class of the outcome table for `tooMany` (a list past its bound) in place of its `deferred` entry, and
+     `tooDeep` at depths 2 and 3, so the exhaustive runs of `static_host_model` and the harness require them reached;
+   - the harness's offered set carried by one event as a list (`harness_offer.scxml` then holds `list<uint32>[8]`),
+     replacing the one id an event appended, and an answer schema whose record holds a list (the general use of
+     section 7.1), with the GBNF and JSON Schema of the composed record in the machine's answer-schema table;
+   - the composed lowering of the lift, the templates and the harness on every lane that refuses a composed schema
+     by name until then (section 7.1).
 
 ## Consequences
 
