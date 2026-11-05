@@ -908,7 +908,7 @@ static jn_t *static_host_model_value_answer(const void *sm) {
     jn_set(answer, "id", jn_int((long long)held.value.id));
     jn_set(answer, "amount", jn_str(digits));
     jn_set(answer, "title", jn_str(held.value.title.data));
-    jn_set(answer, "kind", jn_str(lift_kind_declared_name(held.value.kind)));
+    jn_set(answer, "kind", jn_str(enum_lift_kind_declared_name(held.value.kind)));
     jn_set(answer, "note", held.value.note.present ? jn_str(held.value.note.value.data) : jn_new(J_NULL));
     jn_set(answer, "tag", latin1_text(held.value.tag.data, held.value.tag.len));
     jn_set(answer, "priority", jn_int((long long)held.value.priority));
