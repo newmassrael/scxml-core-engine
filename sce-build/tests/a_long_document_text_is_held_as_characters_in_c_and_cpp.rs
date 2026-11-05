@@ -31,7 +31,7 @@
 //!   (`xmlns="http://www.w3.org/2005/07/scxml"`), not the characters written
 //!   between the tags; each text is padded until the model holds exactly the
 //!   limit.
-//! * A literal is what translation phase 6 makes of adjacent literals. The
+//! * A literal is what the compiler's concatenation of adjacent literals makes. The
 //!   C++ output passes through clang-format, whose `BreakStringLiterals`
 //!   splits a long literal into adjacent pieces at the column limit; the
 //!   compiler joins them back, and its limit counts the joined literal. A
