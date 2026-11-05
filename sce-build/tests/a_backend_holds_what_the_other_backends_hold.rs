@@ -448,11 +448,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     ),
     // What the emitters carry, once they exist.
     (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_STATIC_IN_PART)),
-    (
-        Language::Swift,
-        "save and restore",
-        Why::NotYet("the saved-state surface is built for Swift after its machine emitter and runtime"),
-    ),
     // The script engine. Swift lowers a guard and a `<data>` initialiser to Lua (so it is entered
     // beside the other lowering backends above, as Design); the gate that reads the lowered
     // artifact is not built for it yet.
