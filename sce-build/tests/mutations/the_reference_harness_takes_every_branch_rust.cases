@@ -1,0 +1,76 @@
+# Mutation cases for the reference harness (docs/adr/0087, section 6), held by its
+# five scenarios and its exhaustive run with measured transition coverage (section
+# 9.4 item 1) on the Rust lane.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_reference_harness_takes_every_branch_rust.cases`.
+#
+# The harness is a document, not engine code: what an application copies is the
+# statechart, so its branches are what a mutation takes away. Each case below removes
+# or bends one decision of the harness and must make a test red: a scenario that
+# states what the case would change, or the exhaustive run, which requires every row
+# of the harness's emitted transition table taken, every refusal code reached and every
+# host outcome reached at every call site, and so reds a branch no run takes any more.
+#
+#   a call whose own deadline passed gives up instead of being asked again;
+#   the application's check lets an id it was not offered through;
+#   a repair is not counted against the attempt bound;
+#   the attempt bound is passed by one;
+#   the overall deadline is never armed;
+#   a lift's refusal is carried into the application's record by another number.
+#
+# The document reaches the tests only through the committed tree the regeneration
+# writes, so the tree is a declared target and the command is what carries a mutated
+# document into it.
+#
+# Anchors are literal slices of the documents; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-scenarios --test host_features harness
+mutation_targets sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml sce-build/tests/fixtures/static_datamodel/enum_harness_code.scxml
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/scenarios/tests/host_features.rs tests/host_features/model_outcome_classes.json tests/host_features/scenarios/static_model_harness_accepted.json tests/host_features/scenarios/static_model_harness_exhausted.json tests/host_features/scenarios/static_model_harness_not_offered.json tests/host_features/scenarios/static_model_harness_repaired.json tests/host_features/scenarios/static_model_harness_timeout.json
+
+# The timeout case gives up at the first call's deadline, and no run enters `retry`.
+mutation_case "a call whose own deadline passed gives up instead of being asked again" <<'PY'
+edit("sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml",
+     "<transition event=\"error.invoke.gen\" target=\"retry\"/>",
+     "<transition event=\"error.invoke.gen\" target=\"gave_up\"/>")
+PY
+
+# The not-offered case accepts the id 99, and no run takes the check's second row.
+mutation_case "the application's check lets an id it was not offered through" <<'PY'
+edit("sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml",
+     "<transition cond=\"!offered_ok\" target=\"repair\">",
+     "<transition cond=\"false\" target=\"repair\">")
+PY
+
+# The exhausted case asks a fourth time and accepts the fourth answer; an exhaustive
+# run asks the provider past its sequence.
+mutation_case "a repair is not counted against the attempt bound" <<'PY'
+edit("sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml",
+     "          <assign location=\"attempts\" expr=\"attempts + 1\"/>\n          <sce:append target=\"refusals\" expr=\"refused\"/>\n",
+     "          <sce:append target=\"refusals\" expr=\"refused\"/>\n")
+PY
+
+# The same, by the comparison: three refusals leave a fourth call to be made.
+mutation_case "the attempt bound is passed by one" <<'PY'
+edit("sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml",
+     "          </sce:render>\n        </onentry>\n        <transition cond=\"attempts &gt;= _x.limits.harness_attempts\" target=\"gave_up\">",
+     "          </sce:render>\n        </onentry>\n        <transition cond=\"attempts &gt; _x.limits.harness_attempts\" target=\"gave_up\">")
+PY
+
+# The timeout case's third call is never left, and no run takes `work`'s row.
+mutation_case "the overall deadline is never armed" <<'PY'
+edit("sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml",
+     "        <send event=\"harness.timeout\" id=\"overall\" delay=\"20s\"/>\n",
+     "")
+PY
+
+# A lift's `tooLong` (9) is carried over as the application's `tooMany`: the repaired
+# case's prompt names the wrong code, and no run keeps `tooLong`.
+mutation_case "a lift's refusal is carried into the application's record by another number" <<'PY'
+edit("sce-build/tests/fixtures/static_datamodel/enum_harness_code.scxml",
+     "<sce:variant name=\"tooLong\" value=\"9\"/>\n      <sce:variant name=\"tooMany\" value=\"10\"/>",
+     "<sce:variant name=\"tooLong\" value=\"10\"/>\n      <sce:variant name=\"tooMany\" value=\"9\"/>")
+PY
