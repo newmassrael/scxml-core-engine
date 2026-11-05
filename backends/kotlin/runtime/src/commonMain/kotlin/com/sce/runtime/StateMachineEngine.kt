@@ -879,11 +879,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * and is counted ([unseenExternalEvents]), and an ending finds its
      * invocation over. A closed channel still yields what it holds to
      * [drainInbox], so nothing taken is dropped unsaid.
+     *
+     * A child session then leaves the tree's directory, so a post naming it is
+     * refused from here and never while its inbox is open (docs/adr/0084, D2 as
+     * amended at step 10). The one place it leaves, whichever way it ended: its
+     * top-level `<final>`, its stop by the parent's cancel or the parent's own
+     * stop, or its release by the parent's [cleanup]. Each is made by the
+     * child's owner: the tree's owner, or in the coroutine mode the child's own
+     * loop, or a thread holding its macrostep lock.
      */
     private fun closeInbox() {
         eventChannel.close()
         inboxClosed = true
         drainInbox()
+        assignedSessionId?.let { tree.leave(it, this) }
     }
 
     /** A [drainInbox] is applying what the inbox held; the owner's only. */
@@ -4376,12 +4385,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun cleanup() {
         withMacrostepLock(macrostepLock) {
+            // A child session is released with its parent and never runs again:
+            // its inbox closes, applying what it holds as at the end of a run, and
+            // it leaves the tree's directory ([closeInbox]). A root keeps its inbox
+            // open for its next run.
+            if (assignedSessionId != null) closeInbox()
             scheduledSends.clear()
             externalEventQueue.clear()
             for ((_, entry) in activeInvokes) {
                 entry.child.cleanup()
-                // Released with this machine: the tree holds it no more.
-                leaveTree(entry.child)
             }
             activeInvokes.clear()
             pendingInvokes.clear()
@@ -4876,7 +4888,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // Cut off before the stop, as in [cancelInvoke].
                 entry.child.onSendToParent = null
                 entry.child.stop()
-                leaveTree(entry.child)
                 entry.monitorJob.cancel()
                 entry.child.detachMesh()
             }
@@ -5388,7 +5399,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * under the id it was given where it was built ([adoptChild]): from here an
      * input posted for it is posted to its inbox. Made by this owner when the
      * child starts or resumes, before the child's first macrostep, so nothing
-     * posted for it waits anywhere else.
+     * posted for it waits anywhere else. It leaves when its inbox closes
+     * ([closeInbox]).
      *
      * @throws IllegalStateException for a child given no id (codegen invariant).
      */
@@ -5397,17 +5409,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
             "a child session is given its id where it is built, before it starts (codegen invariant)"
         }
         tree.enter(id, child)
-    }
-
-    /**
-     * Take [child], which has ended, out of the tree's directory: a post naming
-     * it is refused from here. Made by this owner after the child's inbox closed,
-     * by its stop or by its top-level `<final>`, which applied what it held as at
-     * the end of a run, so an ending held there was refused by the token check.
-     */
-    private fun leaveTree(child: StateMachineEngine<*, *>) {
-        val id = child.assignedSessionId ?: return
-        tree.leave(id, child)
     }
 
     /**
@@ -5449,8 +5450,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // dropped rather than delivered by a session already cancelled.
             it.child.onSendToParent = null
             it.child.stop()
-            // After the stop closed the child's inbox.
-            leaveTree(it.child)
             it.monitorJob.cancel()
             // SCE_MESH.md, Child Sessions in Mesh: the session ended, after the
             // child stopped, so what it sent while stopping was handed over first.
@@ -5949,8 +5948,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val ended = activeInvokes.filterValues { it.child.isInFinalState }
         for ((invokeId, entry) in ended) {
             activeInvokes.remove(invokeId)
-            // Its final state closed its inbox.
-            leaveTree(entry.child)
             // SCE_MESH.md, Child Sessions in Mesh: the session ended in its
             // final state; its router is told so.
             entry.child.detachMesh()

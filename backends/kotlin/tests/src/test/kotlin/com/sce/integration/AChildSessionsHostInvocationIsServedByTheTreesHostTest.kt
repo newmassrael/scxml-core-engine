@@ -260,6 +260,32 @@ class AChildSessionsHostInvocationIsServedByTheTreesHostTest {
     }
 
     /**
+     * A child released by its parent's `cleanup` closes its inbox and leaves the
+     * tree's directory as one that ended does: a post naming `worker` is refused
+     * from then on, never taken by an inbox nothing will drain.
+     */
+    @Test
+    fun aPostForAChildSessionReleasedByItsParentsCleanupIsRefused() {
+        val (sm, starts) = started()
+        try {
+            intoSecond(sm)
+            val request = starts.only()
+            sm.cleanup()
+            var taken = emptyList<Boolean>()
+            val host = Thread { taken = postsFor(request).map { sm.inbox.post(it) } }
+            host.start()
+            host.join(10_000)
+            assertEquals(
+                listOf(false, false),
+                taken,
+                "a post naming `worker` was taken after its parent's cleanup released it",
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
      * In the coroutine mode the child runs a loop of its own and is its own owner:
      * the root's loop does not reach into it. What was posted for it goes straight
      * to its inbox, and the child applies it on its loop.
