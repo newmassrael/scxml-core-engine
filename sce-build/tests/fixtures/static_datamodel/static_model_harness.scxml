@@ -34,7 +34,7 @@
 
   A repair and a retry count against one bound, `attempts`, read by its name,
   `_x.limits.harness_attempts`: the capacity of `refusals`, so a build that moves
-  the bound (`--limit harness_attempts=N`) moves the list that keeps a refusal of
+  the bound (the build's limit option, `harness_attempts=N`) moves the list that keeps a refusal of
   each attempt with it. With a call deadline of 8 s, an overall one of 20 s and
   three attempts, a provider that never answers ends the first call at 8 s and
   the second at 16 s, and the overall deadline passes during the third
