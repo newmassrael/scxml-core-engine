@@ -24,10 +24,14 @@
 //     stopped or has ended, after what the inbox still held is applied;
 //   - the external queue takes events in the order they arrived: a post made
 //     during a macrostep is applied before an event that macrostep sends to its
-//     own session after it (W3C test 201's shape).
+//     own session after it (W3C test 201's shape);
+//   - an ending posted for a child session, from inside the parent's macrostep,
+//     is taken by the child before an event the parent sends it later in that
+//     macrostep (docs/adr/0084, D2 as amended at step 10).
 //
-// The machine is written by hand, as the Kotlin one is: the smallest one with a
-// host-run invocation. `working` (initial) starts `job` when the macrostep that
+// The probe machine is written by hand, as the Kotlin one is: the smallest one
+// with a host-run invocation. The tree cases drive generated machines instead,
+// since a child session is the generated parent's to start. `working` (initial) starts `job` when the macrostep that
 // entered it ends and cancels it on exit; `leave` goes to `idle` and `go` back,
 // which starts `job` again under a new token; `finish` goes to the top-level
 // <final> `over`. `ping`, `done.invoke.job` and `error.invoke.job` are taken in
@@ -52,6 +56,8 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_ending_order"
 )
 
 type probeState int
@@ -526,7 +532,7 @@ func replay(t *testing.T, posted []post) ([]string, []string) {
 
 // postFromAnotherGoroutine posts with send from a goroutine of its own, as a
 // host's worker does, and answers whether the inbox took it.
-func postFromAnotherGoroutine(t *testing.T, inbox sce.Inbox[probeEvent], send func(sce.Inbox[probeEvent]) bool) bool {
+func postFromAnotherGoroutine[E comparable](t *testing.T, inbox sce.Inbox[E], send func(sce.Inbox[E]) bool) bool {
 	t.Helper()
 	answer := make(chan bool, 1)
 	go func() { answer <- send(inbox) }()
@@ -862,5 +868,117 @@ func TestAnEventPostedBeforeTheMachinesOwnSendIsTakenFirst(t *testing.T) {
 	if want := []string{"ping:posted", "ping:own"}; !slices.Equal(pr.policy.taken, want) {
 		t.Fatalf("the machine's own send overtook an event that arrived before it: took %v, want %v",
 			pr.policy.taken, want)
+	}
+}
+
+const (
+	// treeRoot is the session id the tree cases give their root.
+	treeRoot = "fixture-root"
+	// treeClock is the standard host type `worker` asks, and clockID the id of
+	// its invocation.
+	treeClock = "sce-host-clock-now"
+	clockID   = "clock"
+	// clockNow is a completion of the clock the child's result record reads.
+	clockNow = `{"error":"","utc_ms":1700000000000,"monotonic_ms":5}`
+	// treeDrives is far above the drives a tree case needs, so a stall fails
+	// rather than loops.
+	treeDrives = 16
+)
+
+type orderEvent = static_invoke_ending_order.StaticInvokeEndingOrderEvent
+
+type orderEngine = sce.Engine[static_invoke_ending_order.StaticInvokeEndingOrderState, orderEvent]
+
+// orderHost is the host of static_invoke_ending_order: it serves the clock
+// `worker` asks, recording each start and answering none, and performs
+// `beforeQuestion`, the act `ask` makes before it sends `question` to `worker`.
+type orderHost struct {
+	inbox  sce.Inbox[orderEvent]
+	starts []sce.HostInvokeRequest
+	// duringQuestion, when set, is what `beforeQuestion` does.
+	duringQuestion func()
+}
+
+// BeforeQuestion is `<sce:action name="beforeQuestion">`.
+func (h *orderHost) BeforeQuestion() {
+	if h.duringQuestion != nil {
+		h.duringQuestion()
+	}
+}
+
+// clockEnding is the completion of start, the clock's.
+func clockEnding(start sce.HostInvokeRequest) sce.HostInvokeEnding {
+	return sce.HostInvokeEnding{ProcessorType: treeClock, InvokeID: clockID, Token: start.Token, Done: true, Data: clockNow}
+}
+
+// orderStarted is static_invoke_ending_order started under treeRoot, its clock
+// served by host, driven until `worker` has started the clock. It answers the
+// root, its policy, and the clock's start.
+func orderStarted(t *testing.T, host *orderHost) (*orderEngine, *static_invoke_ending_order.StaticInvokeEndingOrderPolicy, sce.HostInvokeRequest) {
+	t.Helper()
+	policy := static_invoke_ending_order.NewStaticInvokeEndingOrderPolicy(host)
+	if err := policy.SetSessionID(treeRoot); err != nil {
+		t.Fatal(err)
+	}
+	engine := sce.NewEngine[static_invoke_ending_order.StaticInvokeEndingOrderState, orderEvent](&policy)
+	engine.SetClock(sce.NewManualClock(0))
+	host.inbox = engine.Inbox()
+	engine.RegisterInvoker(treeClock, func(event sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if event.Start != nil {
+			host.starts = append(host.starts, *event.Start)
+		}
+		return nil
+	})
+	engine.Initialize()
+	for drives := 0; len(host.starts) == 0 && drives < treeDrives; drives++ {
+		engine.Tick()
+	}
+	if len(host.starts) != 1 {
+		t.Fatalf("`worker` did not start the clock once: the host was handed %+v", host.starts)
+	}
+	start := host.starts[0]
+	if start.ProcessorType != treeClock || start.InvokeID != clockID || start.SessionID == treeRoot {
+		t.Fatalf("the clock's start is not `worker`'s: %+v", start)
+	}
+	return engine, &policy, start
+}
+
+// driveUntilBothHeard ticks engine until the parent has heard `stamped` and
+// `answer`, or treeDrives ticks have passed.
+func driveUntilBothHeard(engine *orderEngine, policy *static_invoke_ending_order.StaticInvokeEndingOrderPolicy) {
+	for drives := 0; (policy.StampedAt() == 0 || policy.AnswerAt() == 0) && drives < treeDrives; drives++ {
+		engine.Tick()
+	}
+}
+
+// docs/adr/0084, D2 as amended at step 10: the host posts the clock's ending,
+// naming `worker`, from inside the parent's macrostep (`beforeQuestion`, from a
+// goroutine it waits for), and the parent then sends `question` to `worker` in
+// that macrostep. The ending was posted first, so `worker` takes
+// `done.invoke.clock` first and the parent hears `stamped` before `answer`.
+func TestAnEndingPostedForAChildBeforeItsParentSendsToItIsTakenFirst(t *testing.T) {
+	host := &orderHost{}
+	engine, policy, start := orderStarted(t, host)
+	posted, asked := false, false
+	host.duringQuestion = func() {
+		asked = true
+		posted = postFromAnotherGoroutine(t, host.inbox, func(in sce.Inbox[orderEvent]) bool {
+			return in.EndHostInvoke(start.SessionID, clockEnding(start))
+		})
+	}
+
+	engine.RaiseExternalByName("ask", "")
+	driveUntilBothHeard(engine, policy)
+
+	if !asked {
+		t.Fatalf("`ask` never performed `beforeQuestion`")
+	}
+	if !posted {
+		t.Fatalf("the inbox refused the ending the host posted for `worker` (%s)", start.SessionID)
+	}
+	if policy.StampedAt() != 1 || policy.AnswerAt() != 2 {
+		t.Fatalf("`worker` took the question its parent sent after the clock's ending was posted before "+
+			"that ending: the parent heard `stamped` as number %d and `answer` as number %d, want 1 and 2",
+			policy.StampedAt(), policy.AnswerAt())
 	}
 }
