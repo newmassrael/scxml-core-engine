@@ -22,58 +22,72 @@ use crate::forge::encode_plan::{
 /// The first form of `plan` the C++ printer does not print yet, or `None`
 /// where it prints the codec whole.
 pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
+    unlowered_forms(plan).into_iter().next()
+}
+
+/// Every form of `plan` the C++ printer does not print yet, in the order
+/// [`unlowered`] meets them; empty where it prints the codec whole. A codec
+/// moves at the landing that lowers the last of them, so a landing is chosen
+/// by the codecs whose every form it lowers.
+pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
     let plan = match plan {
         CodecPlan::Positional(plan) => plan,
-        CodecPlan::Cbor(_) => return Some("a CBOR codec".to_string()),
-        CodecPlan::ContentLine(_) => return Some("a content-line codec".to_string()),
+        CodecPlan::Cbor(_) => return vec!["a CBOR codec".to_string()],
+        CodecPlan::ContentLine(_) => return vec!["a content-line codec".to_string()],
     };
     let m = plan.model;
+    let mut forms = Vec::new();
     if m.variant.is_some() {
-        return Some("a variant".to_string());
+        forms.push("a variant".to_string());
     }
     for element in &plan.elements {
         let id = &element.field.id;
         match &element.value {
             Value::Scalar(t) if t.int_bit_width().is_some() => {}
             Value::Scalar(_) => {
-                return Some(format!("`{id}`, which is not an integer or a flag set"))
+                forms.push(format!("`{id}`, which is not an integer or a flag set"))
             }
             // A byte string is presented within its bound (docs/adr/0077 §3),
             // which a type holds only where the protocol states one.
             Value::Bytes(Bound { most: None, .. }) => {
-                return Some(format!("`{id}`, bytes of no stated bound"))
+                forms.push(format!("`{id}`, bytes of no stated bound"))
             }
             Value::Bytes(_) => {}
-            Value::Text(_) => return Some(format!("`{id}`, a text")),
-            Value::Body { .. } => return Some(format!("`{id}`, a body")),
-            Value::List { .. } => return Some(format!("`{id}`, a list")),
+            Value::Text(_) => forms.push(format!("`{id}`, a text")),
+            Value::Body { .. } => forms.push(format!("`{id}`, a body")),
+            Value::List { .. } => forms.push(format!("`{id}`, a list")),
         }
         if element.presence != Presence::Always {
-            return Some(format!("`{id}`, which a gate decides"));
+            forms.push(format!("`{id}`, which a gate decides"));
         }
     }
     if !plan.groups().is_empty() {
-        return Some("fields one gate decides together".to_string());
+        forms.push("fields one gate decides together".to_string());
     }
-    if let Some(why) = plan.derivations.iter().find_map(derivation_unlowered) {
-        return Some(why);
-    }
+    forms.extend(plan.derivations.iter().filter_map(derivation_unlowered));
     // Each field is an element the value presents, or a length the encode
     // derives (docs/adr/0081 §3).
-    if let Some(field) = m.fields.iter().find(|f| {
-        !plan.elements.iter().any(|e| e.field.id == f.id) && derived_length(plan, &f.id).is_none()
-    }) {
-        return Some(format!("`{}`, which no element presents", field.id));
-    }
+    forms.extend(
+        m.fields
+            .iter()
+            .filter(|f| {
+                !plan.elements.iter().any(|e| e.field.id == f.id)
+                    && derived_length(plan, &f.id).is_none()
+            })
+            .map(|field| format!("`{}`, which no element presents", field.id)),
+    );
     if !m.flag_inputs.is_empty() {
-        return Some("a flag input".to_string());
+        forms.push("a flag input".to_string());
     }
     if !plan.gate_checks.is_empty() || !plan.input_checks.is_empty() || !plan.totality.is_total() {
-        return Some("an encode that can refuse".to_string());
+        forms.push("an encode that can refuse".to_string());
     }
-    if let Some(field) = m.fields.iter().find(|f| f.quantity.is_some()) {
-        return Some(format!("`{}`, a physical quantity", field.id));
-    }
+    forms.extend(
+        m.fields
+            .iter()
+            .filter(|f| f.quantity.is_some())
+            .map(|field| format!("`{}`, a physical quantity", field.id)),
+    );
     for write in &plan.program {
         match write {
             Write::Packed(_) | Write::Fixed(_) | Write::Tail { .. } => {}
@@ -85,39 +99,42 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
                 // A streamed field is written whole, in bytes the sink writes.
                 if matches!(field.bit_size, BitSize::Fixed { bits } if !matches!(bits, 8 | 16 | 32 | 64))
                 {
-                    return Some(format!(
+                    forms.push(format!(
                         "`{}`, a streamed field of less than a byte",
                         field.id
                     ));
                 }
             }
-            Write::Streamed { field, .. } => {
-                return Some(format!(
-                    "`{}`, a streamed field written where it is present",
-                    field.id
-                ))
-            }
-            Write::Variant => return Some("a variant".to_string()),
+            Write::Streamed { field, .. } => forms.push(format!(
+                "`{}`, a streamed field written where it is present",
+                field.id
+            )),
+            // The variant is named once, by the model.
+            Write::Variant if m.variant.is_some() => {}
+            Write::Variant => forms.push("a variant".to_string()),
         }
     }
     // A field is written in its declared bits (a byte or less, or one of the
     // sink's whole widths), as the bytes it holds, or as a VLE of a width the
     // sink writes.
-    if let Some(field) = m.fields.iter().find(|f| {
-        !matches!(
-            f.bit_size,
-            BitSize::Fixed {
-                bits: 1..=8 | 16 | 32 | 64
-            } | BitSize::Tail
-                | BitSize::LengthRef
-                | BitSize::Vle {
-                    width_bits: 16 | 32 | 64
-                }
-        )
-    }) {
-        return Some(format!("`{}`, of no width the sink writes whole", field.id));
-    }
-    None
+    forms.extend(
+        m.fields
+            .iter()
+            .filter(|f| {
+                !matches!(
+                    f.bit_size,
+                    BitSize::Fixed {
+                        bits: 1..=8 | 16 | 32 | 64
+                    } | BitSize::Tail
+                        | BitSize::LengthRef
+                        | BitSize::Vle {
+                            width_bits: 16 | 32 | 64
+                        }
+                )
+            })
+            .map(|field| format!("`{}`, of no width the sink writes whole", field.id)),
+    );
+    forms
 }
 
 /// What of the derivation `derived` the printer does not print yet, or `None`

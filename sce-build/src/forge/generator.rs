@@ -7527,6 +7527,13 @@ pub(crate) fn cpp_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bo
     cpp_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
 }
 
+/// Every form of `m`'s encode plan the C++ printer does not lower, each of
+/// which keeps `m` on the template's encode; empty where
+/// [`cpp_codec_printed`].
+pub(crate) fn cpp_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
+    cpp_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+}
+
 /// Whether the eager form at the default profile, `{Codec}In<Lent<'a>>`,
 /// holds `m` (`CodecModel::lent_holds_with`, docs/adr/0077 §7), the codecs it
 /// imports answered by their import's [`ImportContext::codec_lent_holds`].

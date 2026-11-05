@@ -3187,6 +3187,21 @@ pub fn cpp_codec_printed_file(
     })
 }
 
+/// Every form of the codec at `path` that the C++ printer does not lower
+/// (docs/adr/0081 step 4, §6), in the order the printer meets them, each of
+/// which keeps the codec on the template's encode; empty where it lowers every
+/// form and the codec is printed. Read as [`cpp_codec_printed_file`] reads it.
+/// `None` for a document that is not a codec.
+pub fn cpp_codec_unlowered_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<Vec<String>>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file(path, include_dirs, options, |model, imports, _| {
+        forge::generator::cpp_codec_unlowered(&model, imports)
+    })
+}
+
 /// A codec a codec imports: the alias it is imported as, the file it is read
 /// from, and the names the Rust generator gives it, so a caller can read the
 /// codec it holds as it read the codec holding it.

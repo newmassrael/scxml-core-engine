@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::{cpp_codec_printed_file, ForgeCompileOptions};
+use sce_build::{cpp_codec_printed_file, cpp_codec_unlowered_file, ForgeCompileOptions};
 
 /// The codecs of `tests/forge/resources` the C++ backend prints, by document
 /// stem, in order.
@@ -82,25 +82,45 @@ fn resource_documents() -> Vec<PathBuf> {
 
 #[test]
 fn the_cpp_backend_prints_exactly_the_codecs_whose_every_form_it_lowers() {
-    let printed: Vec<String> = resource_documents()
-        .into_iter()
-        .filter(|path| {
-            // A document the generator refuses is printed by no backend.
-            matches!(
-                cpp_codec_printed_file(path, &[], &ForgeCompileOptions::default()),
-                Ok(Some(true))
-            )
-        })
-        .map(|path| {
-            path.file_stem()
-                .expect("a document has a stem")
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
+    let mut printed: Vec<String> = Vec::new();
+    // Each codec the printer keeps on the template's encode, with every form
+    // it does not lower: what a later landing lowers to move it.
+    let mut kept: Vec<String> = Vec::new();
+    for path in resource_documents() {
+        let stem = path
+            .file_stem()
+            .expect("a document has a stem")
+            .to_string_lossy()
+            .into_owned();
+        // A document the generator refuses is printed by no backend, and a
+        // document that is no codec has no encode to print.
+        let Ok(Some(unlowered)) =
+            cpp_codec_unlowered_file(&path, &[], &ForgeCompileOptions::default())
+        else {
+            continue;
+        };
+        assert_eq!(
+            cpp_codec_printed_file(&path, &[], &ForgeCompileOptions::default()).ok(),
+            Some(Some(unlowered.is_empty())),
+            "{stem}: printed exactly where no form is unlowered"
+        );
+        if unlowered.is_empty() {
+            printed.push(stem);
+        } else {
+            kept.push(format!("{stem}: {}", unlowered.join("; ")));
+        }
+    }
+    // The census of what keeps each codec, shown with `--nocapture`.
+    eprintln!("{} codec(s) kept on the template's encode:", kept.len());
+    for line in &kept {
+        eprintln!("  {line}");
+    }
     assert_eq!(
-        printed, PRINTED,
+        printed,
+        PRINTED,
         "the C++ backend prints these codecs of the resources from their plan; a landing \
-         that moves a codec names it here (docs/adr/0081 §6)"
+         that moves a codec names it here (docs/adr/0081 §6). Each codec it keeps, with \
+         the forms it does not lower:\n  {}",
+        kept.join("\n  ")
     );
 }
