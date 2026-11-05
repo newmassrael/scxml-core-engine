@@ -161,7 +161,9 @@ endfunction()
 # ============================================================================
 # Performance Benchmarks (Optional)
 # ============================================================================
-# List of all test target names
+# List of all test target names. A program that exists only under an option is
+# appended inside that option's block, so this list never names a target the
+# build can lack (`cmake_option_guard_scope`).
 set(SCE_TEST_TARGETS
     sce_scxml_tests
     js_engine_tests
@@ -1531,6 +1533,7 @@ if(SCE_ENABLE_HTTP AND NOT EMSCRIPTEN)
     apply_sce_test_policies(http_bridge_tests)
 
     add_test(NAME HttpBridgeTests COMMAND http_bridge_tests)
+    list(APPEND SCE_TEST_TARGETS http_bridge_tests)
 endif()
 
 # ============================================================================
@@ -2074,6 +2077,7 @@ if(SCE_DISPATCHER_QT)
     apply_sce_test_policies(qt_dispatcher_tests)
 
     add_test(NAME QtDispatcherTests COMMAND qt_dispatcher_tests)
+    list(APPEND SCE_TEST_TARGETS qt_dispatcher_tests)
     message(STATUS "SCE Tests: Qt dispatcher tests enabled")
 endif()
 
@@ -2103,6 +2107,7 @@ if(SCE_DISPATCHER_GLIB)
     apply_sce_test_policies(glib_dispatcher_tests)
 
     add_test(NAME GLibDispatcherTests COMMAND glib_dispatcher_tests)
+    list(APPEND SCE_TEST_TARGETS glib_dispatcher_tests)
     message(STATUS "SCE Tests: GLib dispatcher tests enabled")
 endif()
 
