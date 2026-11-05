@@ -17,16 +17,21 @@
 //     takes posts again once its owner has applied what it held;
 //   * a post made before the owner puts an event of its own on the external
 //     queue is taken before that event (W3C test 201's shape), whether the
-//     event is a host-run invocation's completion or the host's own raise.
+//     event is a host-run invocation's completion or the host's own raise;
+//   * an ending posted for a child session is in that session's inbox when it
+//     is posted, so the child takes it before an event its parent sends it
+//     later in the same macrostep (ADR 0084, D2 as amended at step 10).
 //
 // Built once per row of the queue, as a deployment states its atomics
 // (`SCE_INBOX_ATOMIC_RMW_WIDTH` 64, 32 and 0), each with `SCE_MAX_INBOX`
 // declared (backends/c/tests/CMakeLists.txt).
 //
-// Fixture: tests/integration/inbox_probe.scxml, the document the C++ engine's
+// Fixtures: tests/integration/inbox_probe.scxml, the document the C++ engine's
 // inbox test drives, generated with the host-invoker declaration `x-sce-host`.
 // `taken` is what the machine took, in order, as `ping:<data>;`,
-// `done:<data>;` and `failed:<data>;`.
+// `done:<data>;` and `failed:<data>;`. And
+// sce-build/tests/fixtures/static_datamodel/static_invoke_ending_order.scxml, a
+// tree whose child session `worker` runs a host invocation of its own.
 
 // pthreads, sched_yield and clock_gettime are POSIX, and the target is built
 // with C_EXTENSIONS OFF, so the feature-test macro precedes every include.
@@ -42,6 +47,7 @@
 #include <time.h>
 
 #include "inbox_probe_sm.h"
+#include "static_invoke_ending_order_sm.h"
 
 /* The type the fixture was generated for, and its one host-run invocation. */
 #define TYPE "x-sce-host"
@@ -626,6 +632,139 @@ static int a_post_made_before_the_hosts_own_raise_is_taken_before_it(void) {
     return bad;
 }
 
+/* ── A child session's own inbox ───────────────────────────────────── */
+
+/* `static_invoke_ending_order`: the child session `worker` asks the host for the
+   time (`clock`, an invocation of `sce-host-clock-now`) and the host does not
+   answer at once. The parent's `ask` calls the host (`beforeQuestion`) and then
+   sends `question` to `worker`; `worker` reports `stamped` when the clock's
+   ending reaches it and `answer` when `question` does, and the parent numbers
+   what it hears in `stamped_at` and `answer_at`. */
+#define ORDER_CLOCK_TYPE "sce-host-clock-now"
+#define ORDER_CLOCK_ID "clock"
+#define ORDER_CLOCK_NOW "{\"error\":\"\",\"utc_ms\":1700000000000,\"monotonic_ms\":5}"
+
+/* The host of the tree: it serves the clock, keeping the session and the token
+   of the start without answering, and performs `beforeQuestion` by having a
+   thread of its own post the clock's ending, naming `worker`'s session, joined
+   before the action returns, so the post happens-before the parent's send. */
+typedef struct {
+    static_invoke_ending_order_actions_t table;
+    static_invoke_ending_order_t *sm;
+    int starts;
+    uint64_t token;
+    char session[SCE_MAX_SESSION_ID_LEN];
+    bool asked;
+    bool posted;
+} ordering_host_t;
+
+static void serve_clock(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
+    ordering_host_t *host = (ordering_host_t *)user_data;
+    (void)out;
+    if (event->phase != SCE_HOST_INVOKE_START) {
+        return;
+    }
+    host->starts++;
+    host->token = event->token;
+    (void)snprintf(host->session, sizeof(host->session), "%s", event->session_id);
+}
+
+typedef struct {
+    static_invoke_ending_order_t *sm;
+    const static_invoke_ending_order_inbox_input_t *input;
+    bool taken;
+} ordering_post_t;
+
+static void *post_ordering_once(void *arg) {
+    ordering_post_t *post = (ordering_post_t *)arg;
+    post->taken = static_invoke_ending_order_inbox_post(post->sm, post->input);
+    return NULL;
+}
+
+static void before_question(void *user_data) {
+    ordering_host_t *host = (ordering_host_t *)user_data;
+    static_invoke_ending_order_inbox_input_t input;
+    ordering_post_t post;
+    pthread_t poster;
+    host->asked = true;
+    memset(&input, 0, sizeof(input));
+    input.kind = STATIC_INVOKE_ENDING_ORDER_INBOX_HOST_INVOKE_ENDING;
+    (void)snprintf(input.as.ending.session_id, sizeof(input.as.ending.session_id), "%s", host->session);
+    (void)snprintf(input.as.ending.processor_type, sizeof(input.as.ending.processor_type), "%s", ORDER_CLOCK_TYPE);
+    (void)snprintf(input.as.ending.invoke_id, sizeof(input.as.ending.invoke_id), "%s", ORDER_CLOCK_ID);
+    input.as.ending.token = host->token;
+    input.as.ending.done = true;
+    (void)snprintf(input.as.ending.data, sizeof(input.as.ending.data), "%s", ORDER_CLOCK_NOW);
+    post.sm = host->sm;
+    post.input = &input;
+    post.taken = false;
+    if (pthread_create(&poster, NULL, post_ordering_once, &post) != 0) {
+        (void)fprintf(stderr, "FAIL: a posting thread could not be started\n");
+        return;
+    }
+    (void)pthread_join(poster, NULL);
+    host->posted = post.taken;
+}
+
+/* ADR 0084, D2 as amended at step 10: the address of a posted input is resolved
+   when it is posted. The ending names `worker`, so it is on `worker`'s own inbox
+   before the parent's `question` is sent, and `worker`'s chokepoint applies it
+   before `question` joins its queue: the parent hears `stamped` first. */
+static int a_childs_ending_posted_before_its_parents_send_is_taken_before_it(void) {
+    static static_invoke_ending_order_t sm;
+    static ordering_host_t host;
+    sce_host_invoker_registry_t wiring;
+    static_invoke_ending_order_event_with_meta_t ask;
+    int bad = 0;
+
+    memset(&host, 0, sizeof(host));
+    memset(&wiring, 0, sizeof(wiring));
+    host.sm = &sm;
+    host.table.before_question = before_question;
+    host.table.user_data = &host;
+    (void)sce_host_invoker_register(&wiring, ORDER_CLOCK_TYPE, serve_clock, &host);
+    if (!static_invoke_ending_order_init_with_host_invokers(&sm, &wiring, &host.table)) {
+        (void)fprintf(stderr, "FAIL: the machine refused a host table that performs `beforeQuestion`\n");
+        return 1;
+    }
+    for (int i = 0; i < 16 && host.starts == 0; i++) {
+        static_invoke_ending_order_step(&sm);
+    }
+    if (host.starts != 1 || host.session[0] == '\0') {
+        (void)fprintf(stderr, "FAIL: `worker` did not start `clock` once (%d starts)\n", host.starts);
+        static_invoke_ending_order_destroy(&sm);
+        return 1;
+    }
+
+    memset(&ask, 0, sizeof(ask));
+    (void)static_invoke_ending_order_resolve_event_by_name("ask", &ask.event);
+    static_invoke_ending_order_raise_external(&sm, &ask);
+    for (int i = 0; i < 16; i++) {
+        static_invoke_ending_order_step(&sm);
+    }
+
+    if (!host.asked) {
+        (void)fprintf(stderr, "FAIL: the parent took `ask` without calling `beforeQuestion`\n");
+        bad = 1;
+    }
+    if (!host.posted) {
+        (void)fprintf(stderr, "FAIL: the tree refused an ending posted for `worker`, a session it holds\n");
+        bad = 1;
+    }
+    const uint32_t stamped_at = static_invoke_ending_order_get_stamped_at(&sm);
+    const uint32_t answer_at = static_invoke_ending_order_get_answer_at(&sm);
+    if (stamped_at != 1u || answer_at != 2u) {
+        (void)fprintf(stderr,
+                      "FAIL: `worker` took the parent's `question` ahead of the clock's ending posted for it "
+                      "before the send, so the parent heard `stamped` as number %u and `answer` as number %u, "
+                      "where 1 and 2 were due\n",
+                      (unsigned)stamped_at, (unsigned)answer_at);
+        bad = 1;
+    }
+    static_invoke_ending_order_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= posts_from_many_threads_are_taken_as_a_single_threaded_replay_takes_them();
@@ -633,6 +772,7 @@ int main(void) {
     bad |= a_full_inbox_refuses_a_post_and_reports_it();
     bad |= a_post_made_before_the_owner_queues_its_own_event_is_taken_before_it();
     bad |= a_post_made_before_the_hosts_own_raise_is_taken_before_it();
+    bad |= a_childs_ending_posted_before_its_parents_send_is_taken_before_it();
     if (bad == 0) {
         (void)printf("PASS: the inbox (SCE_INBOX_ATOMIC_RMW_WIDTH %d, SCE_MAX_INBOX %d)\n", SCE_INBOX_ATOMIC_RMW_WIDTH,
                      SCE_MAX_INBOX);
