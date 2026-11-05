@@ -326,6 +326,11 @@ const NOT_PRODUCTION: &[&str] = &[
     // Build outputs that happen to be tracked.
     "build/",
     "target/",
+    // Measurement programs: each is built over the crates the generator writes for the fixture
+    // documents, only to measure what it produces (a decode's frame, a queue's size), and ships
+    // in nothing. A fixture is named for the wire format it was derived from, and that name
+    // reaches the probe as the type it imports, which is a test's position and not a branch.
+    "backends/rust/probes/",
 ];
 
 /// Whether the sweep reads this path.
