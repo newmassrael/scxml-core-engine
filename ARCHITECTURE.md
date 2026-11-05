@@ -1602,7 +1602,7 @@ BasicHTTP Event I/O Processor support for `<send type="BasicHTTPEventProcessor">
 
 - `StaticExecutionEngine.raiseExternal()` detects HTTP target URLs
 - `HttpEventTarget` performs real HTTP POST operations
-- `HttpAotTest` base class: starts `W3CHttpTestServer` on localhost:8080/test
+- `HttpAotTest` base class: starts `W3CHttpTestServer` in process on localhost, at `/test`, on the port `SCE_W3C_HTTP_PORT` names or else one the kernel assigns, and hands the machine the location the server bound (`tests/w3c/basic_http_test_endpoint.h` says why; out-of-process listeners keep `SCE_W3C_HTTP_PORT` and its default)
 - Zero Duplication: Reuses Interpreter's `HttpEventTarget`, `W3CHttpTestServer`
 - Hybrid Strategy: Pure AOT structure + external HTTP server (not engine mixing)
 

@@ -27,6 +27,10 @@ class W3CHttpTestServer {
 public:
     using EventCallback = std::function<void(const std::string &eventName, const std::string &data)>;
 
+    /**
+     * @param port The port to bind, or 0 for one the kernel assigns (read it
+     *        back with getPort() or accessUri() once start() has succeeded)
+     */
     W3CHttpTestServer(int port, const std::string &path = "/test");
     ~W3CHttpTestServer();
 
@@ -60,18 +64,33 @@ public:
         return running_.load();
     }
 
+    /// The port the server is bound to: the one it was given, or the one the
+    /// kernel assigned; 0 before start() has bound one.
     int getPort() const {
-        return port_;
+        return boundPort_;
     }
 
     std::string getPath() const {
         return path_;
     }
 
+    /**
+     * @brief The BasicHTTP location of this listener, from the port it bound
+     *
+     * §scxml-C-2-3: what a machine this server serves is handed as the
+     * processor's published location. Read from the bound socket rather than
+     * recomputed from the environment, so it names the port the kernel
+     * assigned when the server was given 0.
+     *
+     * @throws std::logic_error before start() has bound a port
+     */
+    std::string accessUri() const;
+
 private:
     void handlePost(const httplib::Request &req, httplib::Response &res);
 
-    int port_;
+    int requestedPort_;  // What the constructor was given: 0 lets the kernel assign one
+    int boundPort_{0};   // What start() bound; 0 until then
     std::string path_;
     std::string instanceId_;  // Unique ID to track which server instance responds
     std::unique_ptr<httplib::Server> server_;

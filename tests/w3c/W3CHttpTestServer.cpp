@@ -15,8 +15,13 @@
 namespace SCE {
 namespace W3C {
 
+/// The port a server was given, in words: 0 means the kernel assigns one.
+static std::string describePort(int requestedPort) {
+    return requestedPort == 0 ? std::string("a port the kernel assigns") : "port " + std::to_string(requestedPort);
+}
+
 W3CHttpTestServer::W3CHttpTestServer(int port, const std::string &path)
-    : port_(port), path_(path), server_(std::make_unique<httplib::Server>()) {
+    : requestedPort_(port), path_(path), server_(std::make_unique<httplib::Server>()) {
     // Generate unique instance ID for tracking
     auto now = std::chrono::system_clock::now().time_since_epoch().count();
     instanceId_ = "srv_" + std::to_string(now);
@@ -24,7 +29,8 @@ W3CHttpTestServer::W3CHttpTestServer(int port, const std::string &path)
     // Set up POST handler for W3C HTTP event processing
     server_->Post(path_, [this](const httplib::Request &req, httplib::Response &res) { handlePost(req, res); });
 
-    SCE_LOG_INFO("W3CHttpTestServer: Created server instance {} for {}:{}{}", instanceId_, "localhost", port_, path_);
+    SCE_LOG_INFO("W3CHttpTestServer: Created server instance {} for {}, {}, path {}", instanceId_,
+                 SCE_W3C_HTTP_TEST_HOST, describePort(requestedPort_), path_);
 }
 
 W3CHttpTestServer::~W3CHttpTestServer() {
@@ -48,15 +54,27 @@ bool W3CHttpTestServer::start() {
 #endif
     });
 
-    // Bind port on the calling thread — guarantees the port is ready before returning
-    if (!server_->bind_to_port("localhost", port_)) {
-        SCE_LOG_ERROR("W3CHttpTestServer: [{}] Failed to bind to port {}", instanceId_, port_);
-        return false;
+    // Bind port on the calling thread — guarantees the port is ready before returning.
+    // Port 0 asks the kernel for one, and the port it chose is what accessUri() publishes.
+    if (requestedPort_ == 0) {
+        const int assigned = server_->bind_to_any_port(SCE_W3C_HTTP_TEST_HOST);
+        if (assigned <= 0) {
+            SCE_LOG_ERROR("W3CHttpTestServer: [{}] Failed to bind to {}", instanceId_, describePort(requestedPort_));
+            return false;
+        }
+        boundPort_ = assigned;
+    } else {
+        if (!server_->bind_to_port(SCE_W3C_HTTP_TEST_HOST, requestedPort_)) {
+            SCE_LOG_ERROR("W3CHttpTestServer: [{}] Failed to bind to {}", instanceId_, describePort(requestedPort_));
+            return false;
+        }
+        boundPort_ = requestedPort_;
     }
 
     // Start the accept loop in a background thread (port is already bound)
     serverThread_ = std::thread([this]() {
-        SCE_LOG_INFO("W3CHttpTestServer: [{}] Accepting connections on localhost:{}{}", instanceId_, port_, path_);
+        SCE_LOG_INFO("W3CHttpTestServer: [{}] Accepting connections on {}:{}{}", instanceId_, SCE_W3C_HTTP_TEST_HOST,
+                     boundPort_, path_);
         running_ = true;
 
         bool success = server_->listen_after_bind();
@@ -83,19 +101,27 @@ bool W3CHttpTestServer::start() {
     if (!serverReady) {
         SCE_LOG_ERROR("W3CHttpTestServer: [{}] Server failed to become ready within timeout", instanceId_);
         stop();
+        boundPort_ = 0;
         return false;
     }
 
-    SCE_LOG_INFO("W3CHttpTestServer: [{}] HTTP server ready on localhost:{}{}", instanceId_, port_, path_);
+    SCE_LOG_INFO("W3CHttpTestServer: [{}] HTTP server ready on {}", instanceId_, accessUri());
     return true;
 }
 
 void W3CHttpTestServer::startOrThrow() {
     if (!start()) {
-        throw std::runtime_error(
-            "the W3C BasicHTTP fixture listener could not start on localhost:" + std::to_string(port_) + path_ +
-            " (another process may hold the port; " SCE_W3C_HTTP_PORT_ENV " moves it)");
+        throw std::runtime_error("the W3C BasicHTTP fixture listener could not start on " SCE_W3C_HTTP_TEST_HOST ", " +
+                                 describePort(requestedPort_) + ", path " + path_ +
+                                 " (another process may hold the port; " SCE_W3C_HTTP_PORT_ENV " moves it)");
     }
+}
+
+std::string W3CHttpTestServer::accessUri() const {
+    if (boundPort_ == 0) {
+        throw std::logic_error("W3CHttpTestServer::accessUri: the listener has not bound a port; call start() first");
+    }
+    return basicHttpAccessUri(boundPort_, path_);
 }
 
 void W3CHttpTestServer::stop() {

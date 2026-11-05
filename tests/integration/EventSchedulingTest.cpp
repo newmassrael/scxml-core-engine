@@ -6,6 +6,8 @@
 #include <future>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <stdexcept>
+#include <string>
 #include <thread>
 
 #include "actions/CancelAction.h"
@@ -1879,6 +1881,45 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     httpServer->stop();
 
     SCE_LOG_DEBUG("=== W3C Test 513 PASSED: BasicHTTPEventProcessor returned 2XX success response ===");
+}
+
+/**
+ * The W3C runner's in-process listener is not told a port: given 0 it binds
+ * one the kernel assigns, and the location it publishes names that port
+ * (tests/w3c/basic_http_test_endpoint.h says why). Before it has bound one
+ * there is no location to publish, and asking for it is a harness error.
+ */
+TEST_F(EventSchedulingTest, W3CHttpTestServer_PortZeroPublishesTheKernelAssignedPort) {
+    if (SCE::Test::Utils::isThreadSanitizerBuild()) {
+        GTEST_SKIP() << "Skipping HTTP test under ThreadSanitizer";
+    }
+
+    SCE::W3C::W3CHttpTestServer httpServer(0, "/test");
+    EXPECT_EQ(httpServer.getPort(), 0);
+    EXPECT_THROW(httpServer.accessUri(), std::logic_error);
+
+    std::atomic<bool> eventReceived{false};
+    httpServer.setEventCallback(
+        [&eventReceived](const std::string &, const std::string &) { eventReceived.store(true); });
+
+    ASSERT_TRUE(httpServer.start()) << "a listener on a kernel-assigned port could not start";
+    const int port = httpServer.getPort();
+    ASSERT_GT(port, 0) << "the server reports no bound port after start()";
+    EXPECT_EQ(httpServer.accessUri(), "http://localhost:" + std::to_string(port) + "/test");
+
+    // The published location is where the listener answers: the server hands
+    // the event over before it writes the response.
+    httplib::Client client("localhost", port);
+    client.set_connection_timeout(5, 0);
+    client.set_read_timeout(5, 0);
+    httplib::Params params;
+    params.emplace("_scxmleventname", "probe");
+    auto response = client.Post("/test", params);
+    ASSERT_TRUE(response) << "nothing answered at the published location " << httpServer.accessUri();
+    EXPECT_EQ(response->status, 200);
+    EXPECT_TRUE(eventReceived.load());
+
+    httpServer.stop();
 }
 
 }  // namespace SCE

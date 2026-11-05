@@ -1288,10 +1288,12 @@ TestReport W3CTestRunner::runInterpreterFixture(const std::string &testDir) {
 #ifndef __EMSCRIPTEN__
     // The listener, in process: started for the fixture and stopped after it,
     // whether the run returns or throws. A listener that cannot start throws,
-    // and the caller reports the fixture as an ERROR (errorReport).
-    W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
+    // and the caller reports the fixture as an ERROR (errorReport). It binds
+    // the port SCE_W3C_HTTP_PORT names, or one the kernel assigns, and the
+    // machine is handed what it bound (basic_http_test_endpoint.h).
+    W3CHttpTestServer httpServer(basicHttpInProcessPort(), basicHttpTestPath());
     httpServer.startOrThrow();
-    SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testDir, basicHttpTestAccessUri());
+    SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testDir, httpServer.accessUri());
 
     struct StopOnExit {
         W3CHttpTestServer &server;
@@ -1595,6 +1597,11 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
             SCE_LOG_DEBUG("StateMachineTestExecutor (HTTP): Starting test execution for test {}", report.metadata.id);
 
 #ifndef __EMSCRIPTEN__
+            // §scxml-C-2-3: the location the machine publishes is the
+            // in-process listener's own bound address; with no listener of
+            // its own the run posts to the agreed out-of-process one.
+            const std::string accessUri = (httpServer != nullptr) ? httpServer->accessUri() : basicHttpTestAccessUri();
+
             // Set up HTTP server eventCallback to use the EventRaiser
             // W3C SCXML compliance: HTTP events must use EXTERNAL priority (test 510)
             if (httpServer != nullptr) {
@@ -1609,8 +1616,10 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
             }
 #else
             // The host's listener answers each POST with the event it made,
-            // and the engine's HttpEventTarget raises it.
+            // and the engine's HttpEventTarget raises it. It is out of
+            // process, at the agreed SCE_W3C_HTTP_PORT.
             (void)httpServer;
+            const std::string accessUri = basicHttpTestAccessUri();
 #endif
 
             // Build StateMachine with resource injection, then wrap in RAII context
@@ -1622,7 +1631,7 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
                                           .withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
                                           .withEventDispatcher(resources->eventDispatcher)
                                           .withEventRaiser(resources->eventRaiser)
-                                          .withBasicHttpAccessUri(basicHttpTestAccessUri())
+                                          .withBasicHttpAccessUri(accessUri)
                                           .build();
 
             // Wrap in StateMachineContext for RAII cleanup

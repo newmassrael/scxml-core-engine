@@ -108,22 +108,27 @@ public:
         // hands each event over before the POST that made it returns. One
         // that cannot start throws, and the runner reports the test as an
         // ERROR (W3CTestRunner::errorReport): the machine never ran, so it
-        // did not fail.
-        W3C::W3CHttpTestServer httpServer(W3C::basicHttpTestPort(), W3C::basicHttpTestPath());
+        // did not fail. It binds the port SCE_W3C_HTTP_PORT names, or one the
+        // kernel assigns, and publishes what it bound
+        // (basic_http_test_endpoint.h).
+        W3C::W3CHttpTestServer httpServer(W3C::basicHttpInProcessPort(), W3C::basicHttpTestPath());
         httpServer.startOrThrow();
         httpServer.setEventCallback(deliver);
+        const std::string accessUri = httpServer.accessUri();
         using HttpClientType = SCE::CppHttplibClient;
 #else
-        // The listener, the host's: started before main(), at the same port
-        // and path, it answers each POST with the event it made.
+        // The listener, the host's: started before main(), out of process at
+        // the agreed SCE_W3C_HTTP_PORT and path, it answers each POST with the
+        // event it made.
+        const std::string accessUri = W3C::basicHttpTestAccessUri();
         using HttpClientType = SCE::EmscriptenFetchClient;
 #endif
-        SCE_LOG_DEBUG("HttpAotTest {}: listening at {}", TestNum, W3C::basicHttpTestAccessUri());
+        SCE_LOG_DEBUG("HttpAotTest {}: listening at {}", TestNum, accessUri);
 
         // §scxml-C-2-3: the test owns the listener, so it declares the access
         // URI the machine publishes. The converted documents address their
         // sends through that published entry.
-        sm.setBasicHttpAccessUri(W3C::basicHttpTestAccessUri());
+        sm.setBasicHttpAccessUri(accessUri);
 
         // W3C SCXML C.2: Wire performHttpSend() callback (Kotlin W3CHttpTestBase parity)
         // Generated code calls engine.performHttpSend() which delegates to this callback.

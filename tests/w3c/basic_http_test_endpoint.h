@@ -34,6 +34,26 @@
  * quietly used 8080 after being told to use something else would bind the port
  * the other tree is using and report the collision as a test failure in
  * whichever tree lost -- the misattribution this harness exists to avoid.
+ *
+ * WHO NEEDS A PORT NAMED, AND WHO DOES NOT
+ * ----------------------------------------
+ * A listener in the SAME PROCESS as the machine it serves (the C++ runner's
+ * W3CHttpTestServer, for the Interpreter and the C++ AOT runs) has no reason to
+ * be told a port. When SCE_W3C_HTTP_PORT is unset it binds one the kernel
+ * assigns (sce_w3c_http_in_process_port answers 0), and the location the
+ * machine is handed is read from that listener after it binds
+ * (W3CHttpTestServer::accessUri), never recomputed from the environment. Such a
+ * run cannot collide with another tree, or with another account's process on
+ * the host: measured 2026-11-05, an account holding 8080 made the C++ runner's
+ * every BasicHTTP test fail to start. When the variable IS set, that port is
+ * bound exactly, as before.
+ *
+ * A listener in ANOTHER PROCESS cannot hand a kernel-assigned port to the
+ * machine: the Node server (standalone_http_server.js) that the C11 AOT
+ * runners (sce_w3c_http_test_access_uri), the Rust and Go harnesses and the
+ * WASM run post to, started by a ctest fixture, a gate, a CI job or the WASM
+ * host. Its port must be agreed by both processes before either starts, so it
+ * stays SCE_W3C_HTTP_PORT with its default (sce_w3c_http_test_port).
  */
 
 #include <stdio.h>
@@ -47,18 +67,25 @@
 #define SCE_W3C_HTTP_DEFAULT_PORT 8080
 #define SCE_W3C_HTTP_TEST_PATH "/test"
 
+/* The host every listener binds and every published location names. */
+#define SCE_W3C_HTTP_TEST_HOST "localhost"
+
+/* The published location, from a port and a path: one format for the listener
+ * that publishes its bound port and for the one whose port was agreed. */
+#define SCE_W3C_HTTP_URI_FORMAT "http://" SCE_W3C_HTTP_TEST_HOST ":%d%s"
+
 /* Longest string sce_w3c_http_test_access_uri can produce, plus its NUL:
  * "http://localhost:" (17) + 5 port digits + "/test" (5) + 1. */
 #define SCE_W3C_HTTP_URI_MAX 28
 
-/* The port the fixture listener binds and the published location names. */
-static inline int sce_w3c_http_test_port(void) {
+/* The port SCE_W3C_HTTP_PORT names, or `when_unset` when it names none. */
+static inline int sce_w3c_http_named_port(int when_unset) {
     const char *raw = getenv(SCE_W3C_HTTP_PORT_ENV);
     char *end;
     long value;
 
     if (raw == NULL || raw[0] == '\0') {
-        return SCE_W3C_HTTP_DEFAULT_PORT;
+        return when_unset;
     }
 
     end = NULL;
@@ -75,6 +102,19 @@ static inline int sce_w3c_http_test_port(void) {
     return (int)value;
 }
 
+/* The port an out-of-process fixture listener binds and the published location
+ * names: both processes read it before either starts. */
+static inline int sce_w3c_http_test_port(void) {
+    return sce_w3c_http_named_port(SCE_W3C_HTTP_DEFAULT_PORT);
+}
+
+/* The port an in-process fixture listener binds: the one SCE_W3C_HTTP_PORT
+ * names, or 0 for one the kernel assigns. The location it publishes is read
+ * from the listener after it binds, not from here. */
+static inline int sce_w3c_http_in_process_port(void) {
+    return sce_w3c_http_named_port(0);
+}
+
 /* The path the fixture listener answers on. Fixed: the documents address it by
  * the published location, so nothing outside this header needs to vary it. */
 static inline const char *sce_w3c_http_test_path(void) {
@@ -85,7 +125,7 @@ static inline const char *sce_w3c_http_test_path(void) {
  * caller owns the storage and this header needs no allocator. `size` must be at
  * least SCE_W3C_HTTP_URI_MAX. */
 static inline const char *sce_w3c_http_test_access_uri(char *buf, size_t size) {
-    int written = snprintf(buf, size, "http://localhost:%d%s", sce_w3c_http_test_port(), sce_w3c_http_test_path());
+    int written = snprintf(buf, size, SCE_W3C_HTTP_URI_FORMAT, sce_w3c_http_test_port(), sce_w3c_http_test_path());
     if (written < 0 || (size_t)written >= size) {
         fprintf(stderr,
                 "sce_w3c_http_test_access_uri: %zu-byte buffer cannot hold the "
