@@ -132,3 +132,54 @@ fun assignmentOperand(expression: String): String {
     val trimmed = expression.trimEnd()
     return if (trimmed.endsWith(';')) trimmed.dropLast(1).trimEnd() else trimmed
 }
+
+/**
+ * The ECMAScript an `<assign>` runs on an ECMAScript engine: the language's
+ * own assignment, with the write made as strict code makes it and the value
+ * computed as sloppy code computes it. C++ writes the same script
+ * (`strictAssignmentScript` in `sce/src/scripting/JSEngineImpl.cpp`), and the
+ * reasons are the same:
+ *
+ * - A write that does not take effect must fail, since the `<assign>` clause
+ *   makes a value that is not a legal value for the location
+ *   error.execution. Sloppy code ignores a write to a non-writable property,
+ *   to an accessor with no setter and of a new key onto a non-extensible
+ *   object; strict code throws for each, so the assignment is the body of a
+ *   strict function.
+ * - An unresolvable identifier is created as a global, as every engine of
+ *   this data model creates it, where strict code would throw. It is told
+ *   apart before anything runs, as ECMAScript resolves the left-hand side
+ *   before the right: a property of the global object (`in` runs no getter)
+ *   or a binding of the global lexical environment (reading one runs
+ *   nothing). An unresolvable name is written onto the global object, in
+ *   strict code too.
+ * - The expression stays sloppy: it is an arrow written in the sloppy code
+ *   that calls the strict function, evaluated exactly once, after the
+ *   left-hand side and before the write. If it throws, nothing is written
+ *   and no name is created.
+ *
+ * [expression] is the author's value expression; [assignmentOperand] is
+ * applied here.
+ */
+fun strictEcmascriptAssignment(location: String, expression: String): String {
+    val value = "(() => (\n${assignmentOperand(expression)}\n))"
+    if (!isIdentifierReference(location)) {
+        return "(function (__sce_assign_value) {\n\"use strict\";\n" +
+            "$location = __sce_assign_value();\n})($value);"
+    }
+    val quoted = "\"$location\""
+    return "(function (__sce_assign_global, __sce_assign_value) {\n\"use strict\";\n" +
+        "var __sce_assign_bound = $quoted in __sce_assign_global;\n" +
+        "if (!__sce_assign_bound) {\ntry {\n$location;\n__sce_assign_bound = true;\n" +
+        "} catch (__sce_assign_unbound) {\n}\n}\n" +
+        "if (__sce_assign_bound) {\n$location = __sce_assign_value();\n} else {\n" +
+        "__sce_assign_global[$quoted] = __sce_assign_value();\n}\n" +
+        "})(this, $value);"
+}
+
+/** Whether a location is an IdentifierReference: the one left-hand side that can be unresolvable. */
+private fun isIdentifierReference(location: String): Boolean {
+    fun isStart(c: Char) = c in 'a'..'z' || c in 'A'..'Z' || c == '_' || c == '$'
+    if (location.isEmpty() || !isStart(location[0])) return false
+    return location.drop(1).all { isStart(it) || it in '0'..'9' }
+}

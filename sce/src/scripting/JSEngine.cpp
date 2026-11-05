@@ -293,8 +293,8 @@ std::future<ScriptResult> JSEngine::doAssign(const std::string &sessionId, const
                                              const ScriptSource &expr) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync(
-        [this, sessionId, assignment = assignmentStatement(location, expr).text()]() {
-            return assignInternal(sessionId, assignment);
+        [this, sessionId, target = location.text(), operand = assignmentOperand(expr).text()]() {
+            return assignInternal(sessionId, target, operand);
         });
 }
 

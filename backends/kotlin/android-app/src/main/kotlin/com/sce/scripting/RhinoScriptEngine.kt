@@ -14,7 +14,7 @@ import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
-import com.sce.runtime.assignmentOperand
+import com.sce.runtime.strictEcmascriptAssignment
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Scriptable
@@ -191,11 +191,12 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             cx.languageVersion = Context.VERSION_ES6
             cx.optimizationLevel = -1
 
-            // One statement Rhino runs itself, for every location, as the JVM
+            // One assignment Rhino runs itself, for every location, as the JVM
             // test engine (`backends/kotlin/rhino`) runs it: the value never
             // leaves the engine, so `_event`, a DOM or a function is the same
-            // object at the location afterwards.
-            cx.evaluateString(session.scope, "$location = (${assignmentOperand(expr)});", "assign", 1, null)
+            // object at the location afterwards, and a write that cannot take
+            // effect fails rather than being ignored.
+            cx.evaluateString(session.scope, strictEcmascriptAssignment(location, expr), "assign", 1, null)
         } catch (e: ScriptEngineException) {
             throw e
         } catch (e: Exception) {

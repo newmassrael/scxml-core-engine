@@ -358,12 +358,23 @@ protected:
                                                const ScriptSource &expr) = 0;
 
     /**
+     * @brief The value expression as the operand of an assignment.
+     *
+     * One trailing `;`, and the whitespace around it, dropped: the
+     * terminator an author may write after an expression (W3C test 452
+     * writes `new testobject();`) would be a syntax error inside the
+     * parentheses an assignment puts around its operand, in either language.
+     */
+    static ScriptSource assignmentOperand(const ScriptSource &expr);
+
+    /**
      * @brief `<location> = (<expr>);`, in the language both halves share.
      *
      * Valid as written in ECMAScript and in Lua alike. The parentheses keep
-     * the expression one operand whatever it contains; the trailing `;` an
-     * author may write after an expression is dropped first, since inside
-     * them it would be a syntax error in either language.
+     * the expression one operand whatever it contains, and the expression is
+     * `assignmentOperand(expr)`. An engine whose language can let a write
+     * fail in silence composes its own statement around the same operand
+     * (`JSEngine::assignInternal`).
      */
     static ScriptSource assignmentStatement(const ScriptSource &location, const ScriptSource &expr);
 

@@ -134,6 +134,29 @@ void expectAnAssignedNameIsDeclared(SCE::IScriptEngine &engine, const std::strin
     assign(engine, sessionId, "fresh", "undefined");
     auto read = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("fresh")).get();
     EXPECT_TRUE(read.isSuccess()) << "reading the name the assignment created raised: " << read.getErrorMessage();
+
+    assign(engine, sessionId, "created", "5");
+    EXPECT_TRUE(holds(engine, sessionId, "created === 5")) << "a write to an undeclared name did not create it";
+}
+
+// Whether `<assign location expr>` was refused: the helper answered false and
+// reported the error that becomes error.execution.
+bool refused(SCE::IScriptEngine &engine, const std::string &sessionId, const std::string &location,
+             const std::string &expr) {
+    bool reported = false;
+    const bool assigned = SCE::AssignmentExecutionHelper::executeAssignment(
+        engine, sessionId, SCE::ScriptSource::ecmascript(location), SCE::ScriptSource::ecmascript(expr),
+        [&reported](const std::string &) { reported = true; });
+    EXPECT_EQ(assigned, !reported) << location << " = " << expr << ": the answer and the report disagree";
+    return !assigned && reported;
+}
+
+// An expression that raises at a name nothing declared creates no name: the
+// write never happens, as it never did.
+void expectARaisingExpressionCreatesNoName(SCE::IScriptEngine &engine, const std::string &sessionId) {
+    EXPECT_TRUE(refused(engine, sessionId, "ghost", "undefined.invalidProperty"));
+    auto read = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("ghost")).get();
+    EXPECT_FALSE(read.isSuccess()) << "a failed assignment left the name `ghost` behind";
 }
 
 void expectAnAssignmentStaysInTheEngine(SCE::IScriptEngine &engine, const std::string &prefix) {
@@ -147,6 +170,7 @@ void expectAnAssignmentStaysInTheEngine(SCE::IScriptEngine &engine, const std::s
     expectTheExpressionIsEvaluatedOnce(engine, sessionId);
     expectARaisingExpressionChangesNothing(engine, sessionId);
     expectAnAssignedNameIsDeclared(engine, sessionId);
+    expectARaisingExpressionCreatesNoName(engine, sessionId);
 
     engine.destroySession(sessionId);
 }
@@ -158,6 +182,59 @@ TEST(AnAssignmentStaysInTheEngine, QuickJsKeepsTheValueItIsGiven) {
     auto &engine = SCE::JSEngine::instance();
     ASSERT_TRUE(engine.initialize());
     expectAnAssignmentStaysInTheEngine(engine, "assign_js");
+}
+
+// A write that does not take effect is the assignment's failure: the value is
+// not a legal value for that location, which is error.execution. Sloppy
+// ECMAScript ignores each of these writes in silence; the assignment makes
+// them as strict code does, so each throws, and the location keeps its value.
+// (A Lua location has no such state: a global is an entry of the global table
+// and a field write either stores or raises.)
+TEST(AnAssignmentStaysInTheEngine, QuickJsRefusesAWriteThatDoesNotTakeEffect) {
+    auto &engine = SCE::JSEngine::instance();
+    ASSERT_TRUE(engine.initialize());
+    const std::string sessionId = "assign_js_write_that_does_not_take_effect";
+    ASSERT_TRUE(engine.createSession(sessionId, ""));
+
+    // A non-writable global.
+    EXPECT_TRUE(refused(engine, sessionId, "NaN", "1")) << "a write to NaN was reported as assigned";
+    EXPECT_TRUE(holds(engine, sessionId, "NaN !== NaN"));
+
+    // A property of a frozen object.
+    runs(engine, sessionId, "var frozen = Object.freeze({k: 1});");
+    EXPECT_TRUE(refused(engine, sessionId, "frozen.k", "2")) << "a write to a frozen object was reported as assigned";
+    EXPECT_TRUE(holds(engine, sessionId, "frozen.k === 1"));
+
+    // A property with a getter and no setter.
+    runs(engine, sessionId, "var guarded = {}; Object.defineProperty(guarded, 'k', {get: function () { return 1; }});");
+    EXPECT_TRUE(refused(engine, sessionId, "guarded.k", "2"))
+        << "a write to a getter-only property was reported as assigned";
+    EXPECT_TRUE(holds(engine, sessionId, "guarded.k === 1"));
+
+    // The writable counterparts still take the value, so the refusals above
+    // are about the target and not about strict code refusing every write.
+    runs(engine, sessionId, "var open = {k: 1};");
+    EXPECT_FALSE(refused(engine, sessionId, "open.k", "2"));
+    EXPECT_TRUE(holds(engine, sessionId, "open.k === 2"));
+
+    engine.destroySession(sessionId);
+}
+
+// The write is strict and the expression is not: a function the expression
+// defines is sloppy code, so called plainly it sees the global object as
+// `this`, as it does written anywhere else in the document.
+TEST(AnAssignmentStaysInTheEngine, QuickJsLeavesTheExpressionSloppy) {
+    auto &engine = SCE::JSEngine::instance();
+    ASSERT_TRUE(engine.initialize());
+    const std::string sessionId = "assign_js_expression_stays_sloppy";
+    ASSERT_TRUE(engine.createSession(sessionId, ""));
+
+    runs(engine, sessionId, "var marker = 7;");
+    assign(engine, sessionId, "reads", "function () { return this.marker; }");
+    EXPECT_TRUE(holds(engine, sessionId, "reads() === 7"))
+        << "the function the expression defined is strict code: `this` was not the global object";
+
+    engine.destroySession(sessionId);
 }
 #endif
 

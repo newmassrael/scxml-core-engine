@@ -96,11 +96,18 @@ std::string asOperand(const std::string &expression) {
 
 }  // namespace
 
+ScriptSource IScriptEngine::assignmentOperand(const ScriptSource &expr) {
+    return expr.language() == ScriptLanguage::Lua ? ScriptSource::lua(asOperand(expr.text()), asOperand(expr.source()))
+                                                  : ScriptSource::ecmascript(asOperand(expr.source()));
+}
+
 ScriptSource IScriptEngine::assignmentStatement(const ScriptSource &location, const ScriptSource &expr) {
-    const ScriptSource operand = expr.language() == ScriptLanguage::Lua
-                                     ? ScriptSource::lua(asOperand(expr.text()), asOperand(expr.source()))
-                                     : ScriptSource::ecmascript(asOperand(expr.source()));
-    return ScriptSourceBuilder(expr.language()).add(location).add(" = (").add(operand).add(");").build();
+    return ScriptSourceBuilder(expr.language())
+        .add(location)
+        .add(" = (")
+        .add(assignmentOperand(expr))
+        .add(");")
+        .build();
 }
 
 std::future<ScriptResult> IScriptEngine::refuseLanguage(const ScriptSource &code) const {

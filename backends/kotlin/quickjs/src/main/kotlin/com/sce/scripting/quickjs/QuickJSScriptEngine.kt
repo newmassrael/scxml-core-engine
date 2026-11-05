@@ -19,6 +19,7 @@ import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
+import com.sce.runtime.strictEcmascriptAssignment
 import org.w3c.dom.Node
 
 /**
@@ -242,9 +243,10 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             throw ScriptEngineException("Illegal assignment location: '$location'")
         }
 
-        // Native JS assignment — handles simple and complex paths (a.b.c) uniformly
-        val cleaned = cleanExpr(expr)
-        val err = QuickJSNative.eval(session.handle, "$location = ($cleaned)")
+        // One assignment the engine runs itself, for every location, whose
+        // write fails rather than being ignored when it cannot take effect
+        // (strictEcmascriptAssignment says how, and why).
+        val err = QuickJSNative.eval(session.handle, strictEcmascriptAssignment(location, expr))
         if (err != null) {
             throw ScriptEngineException("Assignment failed: $location = $expr ($err)")
         }

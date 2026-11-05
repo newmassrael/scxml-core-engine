@@ -510,7 +510,7 @@ private:
 
     // QuickJS helpers
     ScriptResult executeScriptInternal(const std::string &sessionId, const std::string &script);
-    ScriptResult assignInternal(const std::string &sessionId, const std::string &assignment);
+    ScriptResult assignInternal(const std::string &sessionId, const std::string &location, const std::string &operand);
     ScriptResult evaluateExpressionInternal(const std::string &sessionId, const std::string &expression);
     ScriptResult validateExpressionInternal(const std::string &sessionId, const std::string &expression);
     ScriptResult setVariableInternal(const std::string &sessionId, const std::string &name, const ScriptValue &value);

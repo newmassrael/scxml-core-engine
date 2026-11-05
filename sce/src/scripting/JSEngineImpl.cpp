@@ -6,6 +6,8 @@
 #include "quickjs.h"
 #include "scripting/DOMBinding.h"
 #include "scripting/JSEngine.h"
+#include <algorithm>
+#include <cctype>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -53,7 +55,70 @@ ScriptResult JSEngine::executeScriptInternal(const std::string &sessionId, const
     return ScriptResult::createSuccess(jsResult);
 }
 
-ScriptResult JSEngine::assignInternal(const std::string &sessionId, const std::string &assignment) {
+// Whether a location is an IdentifierReference rather than a member path:
+// the one shape of left-hand side whose reference can be unresolvable.
+static bool isIdentifierReference(const std::string &location) {
+    if (location.empty()) {
+        return false;
+    }
+    const auto isStart = [](unsigned char c) { return std::isalpha(c) || c == '_' || c == '$'; };
+    const auto isPart = [&isStart](unsigned char c) { return isStart(c) || std::isdigit(c); };
+    if (!isStart(static_cast<unsigned char>(location.front()))) {
+        return false;
+    }
+    return std::all_of(location.begin() + 1, location.end(), [&isPart](char c) { return isPart(c); });
+}
+
+// The script an `<assign>` runs: ECMAScript's own assignment, with the write
+// made as strict code makes it and the value computed as sloppy code
+// computes it.
+//
+// A write that does not take effect must fail: the `<assign>` clause makes a
+// value that is not a legal value for the location error.execution. Sloppy code
+// ignores a write to a non-writable property, to an accessor with no setter
+// and of a new key onto a non-extensible object; strict code throws a
+// TypeError for each. So the assignment is the body of a strict function.
+//
+// Strict code also throws for an unresolvable identifier, where this data
+// model creates a global (the frontend's `lower_location` reads a location
+// as a declaration, and every engine creates the name). That case is told
+// apart before anything runs, as ECMAScript itself resolves the left-hand
+// side before it evaluates the right: the name is a property of the global
+// object (`in`, which runs no getter) or a binding in the global lexical
+// environment (reading such a binding runs nothing either). An unresolvable
+// name is written as a property of the global object, which is the global
+// sloppy code would create, by a strict [[Set]] that still throws on a
+// non-extensible global.
+//
+// The expression must not become strict code: a function it defines would
+// see `this` as undefined. It is an arrow written in the sloppy global code
+// that calls the strict function, so it is sloppy, sees the global `this`,
+// and is evaluated exactly once, inside the assignment, after the left-hand
+// side and before the write — the order of `<location> = (<expr>)`. If it
+// throws, nothing is written and no name is created, as before. The one
+// difference from evaluating it as global code is the variable environment
+// of a direct `eval` inside it, which is the arrow's.
+static std::string strictAssignmentScript(const std::string &location, const std::string &operand) {
+    const std::string value = "(() => (\n" + operand + "\n))";
+    if (!isIdentifierReference(location)) {
+        return "(function (__sce_assign_value) {\n\"use strict\";\n" + location + " = __sce_assign_value();\n})(" +
+               value + ");";
+    }
+    const std::string quoted = "\"" + location + "\"";
+    return "(function (__sce_assign_global, __sce_assign_value) {\n\"use strict\";\n"
+           "var __sce_assign_bound = " +
+           quoted +
+           " in __sce_assign_global;\n"
+           "if (!__sce_assign_bound) {\ntry {\n" +
+           location +
+           ";\n__sce_assign_bound = true;\n} catch (__sce_assign_unbound) {\n}\n}\n"
+           "if (__sce_assign_bound) {\n" +
+           location + " = __sce_assign_value();\n} else {\n__sce_assign_global[" + quoted +
+           "] = __sce_assign_value();\n}\n})(this, " + value + ");";
+}
+
+ScriptResult JSEngine::assignInternal(const std::string &sessionId, const std::string &location,
+                                      const std::string &operand) {
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
         return ScriptResult::createError("Session not found: " + sessionId);
@@ -61,12 +126,12 @@ ScriptResult JSEngine::assignInternal(const std::string &sessionId, const std::s
 
     JSContext *ctx = session->jsContext;
 
-    // The assignment runs as one statement and its completion value, which is
-    // the assigned value, is released unread. Converting it
-    // to a ScriptValue, as `executeScriptInternal` converts a script's result,
+    // The script's completion value is released unread. Converting it to a
+    // ScriptValue, as `executeScriptInternal` converts a script's result,
     // would be the crossing out of the engine the assignment exists to avoid:
     // wasted for a DOM, which has no own properties to copy, and without end
     // for an object that holds itself.
+    const std::string assignment = strictAssignmentScript(location, operand);
     ::JSValue result = JS_Eval(ctx, assignment.c_str(), assignment.length(), "<assign>", JS_EVAL_TYPE_GLOBAL);
     if (JS_IsException(result)) {
         ScriptResult error = createErrorFromException(ctx);

@@ -11,7 +11,7 @@ import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
-import com.sce.runtime.assignmentOperand
+import com.sce.runtime.strictEcmascriptAssignment
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Scriptable
@@ -186,12 +186,13 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             cx.languageVersion = Context.VERSION_ES6
             cx.optimizationLevel = -1
 
-            // W3C SCXML 5.4 / B.2: one statement Rhino runs itself, for every
+            // W3C SCXML 5.4 / B.2: one assignment Rhino runs itself, for every
             // location, as C++'s `IScriptEngine::assign` runs it. The value
             // never leaves the engine, so `_event` (test 329), a DOM held in
             // `_event.data` or a function is the same object at the location
-            // afterwards, with no list of spellings to route around a loss.
-            cx.evaluateString(session.scope, "$location = (${assignmentOperand(expr)});", "assign", 1, null)
+            // afterwards, and a write that cannot take effect fails rather
+            // than being ignored (strictEcmascriptAssignment says how).
+            cx.evaluateString(session.scope, strictEcmascriptAssignment(location, expr), "assign", 1, null)
         } catch (e: ScriptEngineException) {
             throw e
         } catch (e: Exception) {
