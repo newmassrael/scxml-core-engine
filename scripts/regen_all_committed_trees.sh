@@ -261,6 +261,12 @@ scripts/regen_external_chain_is_bounded_python.sh
 stage "Long-text documents Kotlin trees"
 scripts/regen_jvm_long_text_kotlin.sh
 
+# The document whose transition content, written as one method, passes the
+# 65,535 bytes of code one JVM method holds sits beside them for the same reason:
+# the limit it reaches is the class file's.
+stage "Method-size document Kotlin tree"
+scripts/regen_jvm_method_size_kotlin.sh
+
 # The Mesh trees are generated from the standard library's stdlib/mesh by
 # their own scripts, and this script did not know about them — so a change
 # to what a source-hash covers left all three stale with nothing here to
