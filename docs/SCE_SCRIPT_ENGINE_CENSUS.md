@@ -100,9 +100,9 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 274
 native-prefix-documents 2
-datamodel-variable-init 468
+datamodel-variable-init 473
 transition-guard 256
-assign-action 406
+assign-action 410
 child-invoke-needs-script-engine 57
 log-expr 46
 send-param-expr 49
@@ -110,14 +110,14 @@ send-dynamic-attr 96
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
-donedata-content 9
+donedata-content 10
 inline-script-action 3
-send-namelist 9
+send-namelist 10
 if-condition 19
 elseif-condition 4
 global-script 3
-mesh-rpc-srcexpr 2
-mesh-rpc-request-expr 2
+mesh-rpc-srcexpr 3
+mesh-rpc-request-expr 3
 hybrid-invoke 7
 cancel-expr 3
 ```
@@ -128,6 +128,22 @@ means editing this table in the same commit that causes it. A row whose
 population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
+
+⚠ **2026-11-05, deliberately, one day late:** three fixtures landed on
+2026-11-04 without this table, and each exists to need an engine.
+- `backends/kotlin/tests/fixtures/jvm_long_text/jvm_long_text_ecmascript.scxml`
+  (713f6141c9) hands texts past one JVM class-file constant to the Kotlin
+  script engine: through a variable's `expr`, an `<assign>` and a final's
+  `<donedata>` content.
+- `sce-build/tests/fixtures/host_processor/statechart_host_request.scxml` and
+  `statechart_host_mesh_request.scxml` (c5f9236049) hold both engines' host
+  requests to one shared table: a `<send namelist>`, and a mesh-rpc invoke
+  whose peer is a `srcexpr` and whose params are expressions.
+
+Together they raised `assign-action` by four, `datamodel-variable-init` by five,
+and `donedata-content`, `send-namelist`, `mesh-rpc-srcexpr` and
+`mesh-rpc-request-expr` by one each, as the census measured them. Tree Hygiene
+was red from the next push that reached this test until this entry.
 
 ⚠ **2026-10-31, deliberately:** the four `datamodel="ecmascript"` fixtures of the
 Swift backend's script engine (`sce-build/tests/fixtures/swift_ecmascript/`:
