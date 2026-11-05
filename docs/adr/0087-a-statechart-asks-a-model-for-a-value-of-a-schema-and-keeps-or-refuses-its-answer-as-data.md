@@ -18,10 +18,10 @@
     model machine, its scenario and the outcome class table), `ac36708d25`, `e238bfa039`, `6f16d93285`,
     `76f8c3791c`, `851acfe462`, `caea8f7507` and `9a70353eb7` (the seven reference hosts), `3831b713e7` (the
     trees);
-  - step 7, the reference harness: `<commit>` (the `model` directive in a scenario's vocabulary), `<commit>` (its
-    documents, its five scenarios and the class table's harness section), `<commit>` and `<commit>` (the seven
-    lanes' replays and exhaustive runs with measured coverage, the Interpreter's refusal), `<commit>`
-    (`examples/model_harness/`), `<commit>` (the mutation cases), `<commit>` (the trees).
+  - step 7, the reference harness: b636964457 (the `model` directive in a scenario's vocabulary), 342e3db412 and
+    fd90578981 (its documents, its five scenarios and the class table's harness section), 105a69819c and
+    56e8ebec54 (the seven lanes' replays and exhaustive runs with measured coverage, the Interpreter's refusal),
+    ab09967403 (`examples/model_harness/`), baca2a702d (the mutation cases), 2cacf88151 (the trees).
 
   Step 8 waits on ADR 0086 step 3; what it still needs is recorded under "Landing order", item 8.
 - Date: 2026-11-04
