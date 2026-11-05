@@ -3309,10 +3309,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/done_data.rs",
-          "kind": "references"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/entry_exit.rs",
           "kind": "references"
         },
@@ -7541,6 +7537,12 @@
       "target_kind": "section",
       "target_id": "synth-5-P",
       "reason": "ADR 0088 retires the intrusive node codec: the queue links nodes its runtime defines, and the conformance queues hold queue_conformance_event"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-J-2",
+      "reason": "uncalled once donedata Literal was retired; file removed"
     }
   ],
   "frames": {},

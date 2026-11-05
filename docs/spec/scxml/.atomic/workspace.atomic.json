@@ -4793,11 +4793,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "isSystemVariableReference",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/common/DoneDataHelper.h",
           "symbol": "evaluateContent",
           "kind": "references"
@@ -7219,18 +7214,8 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/model/DoneData.h",
-          "symbol": "setContentLiteral",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/model/IStateNode.h",
           "symbol": "setDoneDataContentExpression",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/model/IStateNode.h",
-          "symbol": "setDoneDataContentLiteral",
           "kind": "implements"
         },
         {
@@ -7331,17 +7316,8 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/done_data.rs",
-          "kind": "references"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/invoke_processing.rs",
           "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/done_data.go",
-          "symbol": "EmitContentLiteral",
-          "kind": "implements"
         },
         {
           "file": "backends/go/runtime/engine.go",
@@ -7356,11 +7332,6 @@
         {
           "file": "backends/go/runtime/invoke.go",
           "symbol": "RaiseDoneInvoke",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DoneDataHelper.kt",
-          "symbol": "emitContentLiteral",
           "kind": "implements"
         },
         {
@@ -7420,6 +7391,16 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "completionCallback",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/model/DoneData.h",
+          "symbol": "setContentInlineText",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/model/IStateNode.h",
+          "symbol": "setDoneDataContentInlineText",
           "kind": "implements"
         }
       ],
@@ -22495,6 +22476,42 @@
       "target_kind": "section",
       "target_id": "scxml-6.4.1",
       "reason": "ADR 0084 step 5 moved the start of a host-run invocation into the shared host-invoke ledger (core/HostInvokeLedger.h, startRun)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "assignment runs inside the data model as one statement; the special case is gone"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "the symbol was removed when the rule moved to its one reading"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "the symbol was removed when the rule moved to its one reading"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "uncalled once donedata Literal was retired; file removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "uncalled once donedata Literal was retired; file removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "uncalled once donedata Literal was retired; file removed"
     }
   ],
   "frames": {},

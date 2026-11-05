@@ -24,7 +24,6 @@
 //! - [`configuration`]: §scxml-3.3 / §scxml-3.4 restored-configuration validation
 //! - [`datamodel_init`]: Datamodel initialization helpers
 //! - `datamodel_read` (std-only): Typed reads of a live datamodel variable
-//! - [`done_data`]: Donedata processing
 //! - [`entry_exit`]: Entry/exit action block execution with error isolation
 //! - `event_data` (std-only): Event data JSON construction
 //! - [`event_matching`]: W3C 5.9.3 event descriptor matching
@@ -69,7 +68,6 @@ pub mod datamodel_init;
 // no_std machine has.
 #[cfg(feature = "std")]
 pub mod datamodel_read;
-pub mod done_data;
 pub mod entry_exit;
 // SCE Protocol-Synthesis RFC §synth-5-J-2: event-data JSON construction is alloc-coupled
 // (BTreeMap<String, Vec<String>> input, String output). No template emits
