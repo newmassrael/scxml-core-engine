@@ -4468,17 +4468,50 @@ public:
     }
 
     /**
+     * @brief End the child session this machine is, because its parent cancelled
+     *        it, before the parent drops it
+     *
+     * Not exited: its `<onexit>` would send to the parent at once, and a parent
+     * takes nothing from a session it cancelled (W3C test 252). Its run is over
+     * all the same, and ends as any run ends (docs/adr/0084, D2): the sessions it
+     * started end first, innermost first; the host-run invocations it started are
+     * over, and their invokers are told to stop them; then its inbox closes and
+     * what it holds is applied, so an ending finds its invocation over and is
+     * refused by the token check and an event joins a queue nothing dequeues and
+     * is counted unseen; and it leaves the tree's directory (`closeInbox`). Last,
+     * its Mesh router is told (`detachMesh`). The generated parent calls it from
+     * the exit of the invoking state, which the parent's own `stop` and final
+     * state reach too.
+     */
+    void endAsCancelled() {
+        requireOwner("endAsCancelled");
+        if constexpr (SCE::Core::HasCancellableChildrenTrait<StatePolicy>::value) {
+            policy_.endChildrenAsCancelled();
+        }
+        // The ledger's requests change as each is cancelled, so the ones to cancel
+        // are named first.
+        std::vector<std::pair<std::string, std::string>> started;
+        for (const auto &running : hostInvokes_.running(scheduler_, [this] { return schedNowMs(); })) {
+            started.emplace_back(running.request->processorType, running.request->invokeId);
+        }
+        for (const auto &[processorType, invokeId] : started) {
+            (void)hostInvokes_.cancel(*invokers_, processorType, invokeId, scheduler_);
+        }
+        isRunning_ = false;
+        closeInbox();
+        recordUnseenExternalEvents();
+        inbox_.state().releaseOwner();
+        detachMesh();
+    }
+
+    /**
      * @brief The child session this machine is has ended: tell the routers of
      *        the sessions it still runs, innermost first, then the router its
      *        parent gave it, each once (SCE_MESH.md, Child Sessions in Mesh)
      *
-     * The generated parent calls it after the child reached a top-level
-     * `<final>`, and when it cancels the child because the invoking state
-     * exited. A cancelled child is dropped without being exited: its `<onexit>`
-     * would send to the parent at once, and a parent takes nothing from a
-     * session it cancelled (W3C test 252). So the sessions the child
-     * started end with it here, and are told before it, a grandchild before
-     * its parent. Does nothing for a session given no router, or told already.
+     * Called after the child reached a top-level `<final>`, and by
+     * `endAsCancelled` when its parent cancels it. Does nothing for a session
+     * given no router, or told already.
      */
     void detachMesh() {
         if constexpr (SCE::Core::HasChildMeshDetachTrait<StatePolicy>::value) {

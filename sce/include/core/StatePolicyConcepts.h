@@ -78,6 +78,15 @@ template <typename P>
 struct HasChildMeshDetachTrait<P, std::void_t<decltype(std::declval<P &>().detachChildMeshSessions())>>
     : std::true_type {};
 
+// docs/adr/0084, D2: a policy that ends the children it runs when the session it
+// is the policy of is cancelled, each as its own run ends. Emitted beside
+// `tickChildren`, and asked only through this trait.
+template <typename P, typename = void> struct HasCancellableChildrenTrait : std::false_type {};
+
+template <typename P>
+struct HasCancellableChildrenTrait<P, std::void_t<decltype(std::declval<P &>().endChildrenAsCancelled())>>
+    : std::true_type {};
+
 /// Policy supports autoforward to children (§scxml-6.4)
 template <typename P, typename E, typename = void> struct HasAutoforwardTrait : std::false_type {};
 

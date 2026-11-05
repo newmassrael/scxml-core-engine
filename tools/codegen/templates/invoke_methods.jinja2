@@ -991,6 +991,33 @@
         {% endfor %}
     }
 
+    // docs/adr/0084, D2: the session this machine is was cancelled by its parent,
+    // so each child it still runs ends with it, as a cancelled session ends
+    // (`endAsCancelled`), the child's own children first. Emitted beside
+    // `tickChildren`, so the trait that finds one finds both.
+    void endChildrenAsCancelled() {
+        {% for state_id, state in model.states | dictsort %}
+        {% for invoke_info in state.invokes | scxml %}
+        if (child_{{ invoke_info.field_suffix }}_) {
+            child_{{ invoke_info.field_suffix }}_->endAsCancelled();
+        }
+        {% endfor %}
+        {% for invoke_info in state.invokes | hybrid %}
+        {% if invoke_info.candidates %}
+        {% for candidate in invoke_info.candidates %}
+        if (child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_) {
+            child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->endAsCancelled();
+        }
+        {% endfor %}
+        {% else %}
+        if (child_{{ invoke_info.field_suffix }}_) {
+            child_{{ invoke_info.field_suffix }}_->endAsCancelled();
+        }
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+    }
+
     // W3C SCXML 6.4: the nearest deadline among the running children, so a host
     // that walks time by `timeUntilNextScheduled()` does not step over a timer a
     // child armed. The ticking above is what makes it this machine's. Emitted

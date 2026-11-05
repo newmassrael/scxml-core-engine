@@ -210,6 +210,8 @@ constexpr const char *NOW = R"({"error":"","utc_ms":1700000000000,"monotonic_ms"
 struct EndingOrderHost : SCE::Generated::static_invoke_ending_order::StaticInvokeEndingOrderActions {
     OrderTree *tree = nullptr;
     std::vector<SCE::HostInvokeRequest> starts;
+    /// The token of each start the host was told to stop.
+    std::vector<uint64_t> cancels;
     std::optional<bool> postTaken;
 
     void serve(OrderTree &machine) {
@@ -218,8 +220,25 @@ struct EndingOrderHost : SCE::Generated::static_invoke_ending_order::StaticInvok
             if (event.start.has_value()) {
                 starts.push_back(*event.start);
             }
+            if (event.cancel.has_value()) {
+                cancels.push_back(event.cancel->token);
+            }
             return std::optional<SCE::HostInvokeResponse>();
         });
+    }
+
+    /// The ending of the latest start of `clock`, completed with `NOW`, naming the
+    /// session that started it.
+    OrderTree::InboxHostInvokeEnding clockEnding() const {
+        const SCE::HostInvokeRequest &clock = starts.back();
+        return OrderTree::InboxHostInvokeEnding{/*sessionId=*/clock.sessionId,
+                                                /*ending=*/SCE::HostInvokeEnding{/*processorType=*/CLOCK,
+                                                                                 /*invokeId=*/"clock",
+                                                                                 /*token=*/clock.token,
+                                                                                 /*done=*/true,
+                                                                                 /*data=*/NOW,
+                                                                                 /*origin=*/"",
+                                                                                 /*originType=*/""}};
     }
 
     void beforeQuestion() override {
@@ -227,22 +246,17 @@ struct EndingOrderHost : SCE::Generated::static_invoke_ending_order::StaticInvok
             ADD_FAILURE() << "the parent took `ask` before `worker` asked its host for the time";
             return;
         }
-        const SCE::HostInvokeRequest clock = starts.back();
+        postTaken = postAside(clockEnding());
+    }
+
+    /// Post @p ending through the root's handle from a thread of its own, joined
+    /// before it returns; whether it was taken.
+    bool postAside(const OrderTree::InboxHostInvokeEnding &ending) const {
         const OrderTree::Inbox inbox = tree->inbox();
         bool taken = false;
-        std::thread host([&inbox, &clock, &taken] {
-            taken =
-                inbox.post(OrderTree::InboxHostInvokeEnding{/*sessionId=*/clock.sessionId,
-                                                            /*ending=*/SCE::HostInvokeEnding{/*processorType=*/CLOCK,
-                                                                                             /*invokeId=*/"clock",
-                                                                                             /*token=*/clock.token,
-                                                                                             /*done=*/true,
-                                                                                             /*data=*/NOW,
-                                                                                             /*origin=*/"",
-                                                                                             /*originType=*/""}});
-        });
+        std::thread host([&inbox, &ending, &taken] { taken = inbox.post(ending); });
         host.join();
-        postTaken = taken;
+        return taken;
     }
 };
 
@@ -564,6 +578,34 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, AChildsEndingPostedBeforeIts
         << "`worker` did not take the ending of `clock` first, though it was posted before the parent's `question`";
     EXPECT_EQ(tree.answer_at(), 2u)
         << "`worker` answered the parent's `question` before it took the ending posted ahead of it";
+}
+
+// D2: a child session's run ends when its parent cancels it, as every run ends.
+// The ending of `worker`'s `clock` is posted, naming `worker`, and before any drive
+// applies it the root is stopped, which exits `working` and cancels `worker`. Its
+// run is over, so `clock` is over: the host is told to stop it, and the ending held
+// in `worker`'s inbox is applied then and refused by the token check, so nothing
+// reaches the parent. `worker` has left the tree's directory, so an ending naming
+// it afterwards is refused where it is posted.
+TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, AnEndingHeldForAChildItsParentCancelsIsAppliedAsTheRunEnds) {
+    EndingOrderHost host;
+    OrderTree tree(host);
+    host.serve(tree);
+    tree.initialize();
+    for (int round = 0; round < 8 && host.starts.empty(); ++round) {
+        tree.tick();
+    }
+    ASSERT_EQ(host.starts.size(), 1u) << "`worker` never asked its host for the time";
+    const uint64_t token = host.starts.front().token;
+
+    ASSERT_TRUE(host.postAside(host.clockEnding())) << "`worker`'s inbox refused an ending while it ran";
+    tree.stop();
+
+    EXPECT_EQ(host.cancels, std::vector<uint64_t>{token})
+        << "cancelling `worker` did not end its `clock` and tell the host to stop it";
+    EXPECT_EQ(tree.stamped_at(), 0u) << "the ending held for the cancelled `worker` reached its parent";
+    EXPECT_FALSE(host.postAside(host.clockEnding()))
+        << "an ending naming `worker` was taken after its parent cancelled it";
 }
 
 }  // namespace SCE::Tests

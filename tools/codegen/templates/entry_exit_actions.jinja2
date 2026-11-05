@@ -898,11 +898,13 @@
                 // §scxml-6.4: cancelling raises nothing in this session —
                 // the spec defines no `cancel.invoke` event, and a document
                 // that named one used to receive it here. Before the child is
-                // dropped, the Mesh routers of its session and of the sessions
-                // it started are told they ended, a grandchild first
-                // (SCE_MESH.md, Child Sessions in Mesh).
+                // dropped its run ends as a cancelled session's does: what its
+                // inbox holds is applied, it leaves the tree's directory
+                // (docs/adr/0084, D2), and the Mesh routers of its session and
+                // of the sessions it started are told they ended, a grandchild
+                // first (SCE_MESH.md, Child Sessions in Mesh).
                 if (child_{{ invoke_info.field_suffix }}_) {
-                    child_{{ invoke_info.field_suffix }}_->detachMesh();
+                    child_{{ invoke_info.field_suffix }}_->endAsCancelled();
                     child_{{ invoke_info.field_suffix }}_.reset();
                 }
                 // SCE_MESH.md §16.7 row 5 sub-atomic C — the peer-down path
@@ -917,13 +919,13 @@
    single-slot shape used. Told and dropped as a static child is above. #}
 {% for candidate in invoke_info.candidates %}
                 if (child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_) {
-                    child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->detachMesh();
+                    child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->endAsCancelled();
                     child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_.reset();
                 }
 {% endfor %}
 {% else %}
                 if (child_{{ invoke_info.field_suffix }}_) {
-                    child_{{ invoke_info.field_suffix }}_->detachMesh();
+                    child_{{ invoke_info.field_suffix }}_->endAsCancelled();
                     child_{{ invoke_info.field_suffix }}_.reset();
                 }
 {% endif %}
