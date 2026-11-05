@@ -3468,13 +3468,10 @@ justified for that many enqueuers or dequeuers only (Nikolaev 2019
 | `segmented` | the injected allocator | yes | refused: `queue/segmented-needs-alloc` | retired segments through a hazard-pointer domain |
 | `intrusive` | how many nodes the caller owns | yes | yes | none; the caller owns every node |
 
-In the no-alloc profile the whole of memory is fixed at build time,
-so an unbounded queue can mean only that the queue itself imposes no
-bound. `intrusive` is that mode: the queue links nodes of a type its
-runtime defines, each holding an element as its value and the list's
-link beside it, the caller owns every node, and push cannot fail. The
-element is a value and carries no link, so `<sce:intrusive/>` takes no
-attribute (ADR 0088).
+In the no-alloc profile the whole of memory is fixed at build time, so an unbounded queue can mean only
+that the queue itself imposes no bound. `intrusive` is that mode: the queue links nodes of a type its runtime
+defines, each holding an element as its value and the list's link beside it, the caller owns every node, and
+push cannot fail. The element is a value and carries no link, so `<sce:intrusive/>` takes no attribute (ADR 0088).
 
 **Algorithm selection.** The generator takes the first row that
 matches the storage mode and cardinality and whose guarantee is at
