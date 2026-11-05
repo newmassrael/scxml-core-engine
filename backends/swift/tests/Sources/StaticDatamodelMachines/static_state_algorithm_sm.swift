@@ -735,7 +735,30 @@ extension StaticStateAlgorithmPolicy: SavedPolicy {
             first: "9974bd59dfcaa3327314694f10c51b9c6ca6182a91e88cc96fb36c167a4eb0da",
             revised: "4fb501ba430e00423e29ccdd50010c6e3c4909d1de3df4c575ac6341cb1d2a5f",
             format2First: "9974bd59dfcaa3327314694f10c51b9c6ca6182a91e88cc96fb36c167a4eb0da",
-            format2Revised: "4fb501ba430e00423e29ccdd50010c6e3c4909d1de3df4c575ac6341cb1d2a5f")
+            format2Revised: "4fb501ba430e00423e29ccdd50010c6e3c4909d1de3df4c575ac6341cb1d2a5f",
+            records: [
+                SavedRecordLineage(
+                    event: "ledger.entry", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "entries", list: true),
+                        SavedRecordHolder(variable: "last", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "ledger.total", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "total", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

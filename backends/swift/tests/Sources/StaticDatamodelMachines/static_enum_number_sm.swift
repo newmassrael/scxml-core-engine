@@ -682,7 +682,17 @@ extension StaticEnumNumberPolicy: SavedPolicy {
             first: "0f8485a669758b7a5073da4026dd97bacd7efa02082fd04b6d3328f819136dc3",
             revised: "60b9a8563c43e410203cc6d326d4621c05c5e2e84f609a2325743588d9b77094",
             format2First: "63ac68ae088325edeec1675143c366e81754d7ab2eb2ad55743b258844e1215c",
-            format2Revised: "fa6bfd376f19a7cee4db623937dbeb9e646051e24b0a7ce3792120145a761e8a")
+            format2Revised: "fa6bfd376f19a7cee4db623937dbeb9e646051e24b0a7ce3792120145a761e8a",
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_item_status.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "status", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

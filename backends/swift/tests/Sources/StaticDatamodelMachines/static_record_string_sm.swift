@@ -1008,7 +1008,20 @@ extension StaticRecordStringPolicy: SavedPolicy {
             first: "2d4abb7c5b44b37484e095adbc16d0d2cd766c64317344ff2d6da5cfe3032c86",
             revised: "99115f5e5956fca06cf060ea01da1957f57b5efdd9a0b4372efbc4580cc98e25",
             format2First: "2d4abb7c5b44b37484e095adbc16d0d2cd766c64317344ff2d6da5cfe3032c86",
-            format2Revised: "99115f5e5956fca06cf060ea01da1957f57b5efdd9a0b4372efbc4580cc98e25")
+            format2Revised: "99115f5e5956fca06cf060ea01da1957f57b5efdd9a0b4372efbc4580cc98e25",
+            records: [
+                SavedRecordLineage(
+                    event: "labelled.taken", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "last", list: false),
+                        SavedRecordHolder(variable: "labels", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

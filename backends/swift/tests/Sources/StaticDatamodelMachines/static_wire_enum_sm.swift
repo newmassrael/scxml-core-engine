@@ -779,7 +779,31 @@ extension StaticWireEnumPolicy: SavedPolicy {
             first: "c9a87f3c40076e0e661152c1c51fc9f5bab2cc48d50cc9aedc07d730e887d3ce",
             revised: "fbe8dae8a62e3cd95f9b387047b050003b24228f9d4ae84bbfe22bda18c1fd98",
             format2First: "78445a09acf694cb490c6eb144464277b5f79d54bbbc3a183fdc310a75e79492",
-            format2Revised: "c9033f9dff50f0277e04dd2a71973d9afcbd7eb9c46e79fb71d0febfc4029379")
+            format2Revised: "c9033f9dff50f0277e04dd2a71973d9afcbd7eb9c46e79fb71d0febfc4029379",
+            records: [
+                SavedRecordLineage(
+                    event: "view.shown", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "shown", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "layout", field: nil, list: false),
+                        SavedEnumHolder(variable: "shown", field: "layout", list: false),
+                        SavedEnumHolder(variable: "received", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

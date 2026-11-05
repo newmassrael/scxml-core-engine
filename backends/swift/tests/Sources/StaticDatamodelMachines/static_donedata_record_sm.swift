@@ -522,7 +522,29 @@ extension StaticDonedataRecordPolicy: SavedPolicy {
             first: "fd144745a4a7d0c2313c4f28ec7184ffb7a698b5ed3361febe933a4c30ecea2b",
             revised: "ebd993c1f24e924115faaa5e255372a3b115e2f411bf7ecb2a7916d2d3f9d9d6",
             format2First: "d970d9ee33befac8cf9cc4a9714612ec08f38f4a62dfb180819023d45115ddd8",
-            format2Revised: "1e9cc61e79646577eca59b39e3156b57111c0d74f7e15e1b9a14d676d63dcf21")
+            format2Revised: "1e9cc61e79646577eca59b39e3156b57111c0d74f7e15e1b9a14d676d63dcf21",
+            records: [
+                SavedRecordLineage(
+                    event: "view.shown", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "shown", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "shown", field: "layout", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

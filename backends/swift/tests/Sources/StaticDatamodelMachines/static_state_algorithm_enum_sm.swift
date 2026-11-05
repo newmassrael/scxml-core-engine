@@ -809,7 +809,32 @@ extension StaticStateAlgorithmEnumPolicy: SavedPolicy {
             first: "1281fa7afe0032f4ca9df6e2eab14d8e902566321a56264f5a071aa354e7b0a0",
             revised: "bd414277a1759a184a40341a429d5f4c069357ddf31a20ac51ba23bfbeca2bd3",
             format2First: "5addb038b50a9b6dd7ccc1d18de4809fbaed360a881124cf17816629947adb50",
-            format2Revised: "5aa2ed9946edb35a3b75bb5bd278885e9d4926e0c2409ccf94c0221fbf435c3c")
+            format2Revised: "5aa2ed9946edb35a3b75bb5bd278885e9d4926e0c2409ccf94c0221fbf435c3c",
+            records: [
+                SavedRecordLineage(
+                    event: "item.added", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "items", list: true),
+                        SavedRecordHolder(variable: "draft", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_item_status.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "items", field: "status", list: true),
+                        SavedEnumHolder(variable: "draft", field: "status", list: false),
+                        SavedEnumHolder(variable: "last", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

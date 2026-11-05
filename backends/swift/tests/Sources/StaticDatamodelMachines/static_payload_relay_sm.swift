@@ -702,7 +702,17 @@ extension StaticPayloadRelayPolicy: SavedPolicy {
             first: "46a1d9b8bf0bd4bc55ac5b3b8080579e9e13beba2911ad0c38119420f6b7529a",
             revised: "b62b50537b02adc8c64ddc624169fd1ecd9b11141e9f0fd35dd775e192d7895f",
             format2First: "5944e62bcf2f3e9f69840baf245d92f6f5a418b398518647d7920951786609d8",
-            format2Revised: "33d6229addd77a4755f7ccb8b0c45e742db7b525ed6cb7b0c38eac6437990519")
+            format2Revised: "33d6229addd77a4755f7ccb8b0c45e742db7b525ed6cb7b0c38eac6437990519",
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "layout", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

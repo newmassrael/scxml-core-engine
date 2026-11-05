@@ -847,7 +847,22 @@ extension StaticOptionalRecordPolicy: SavedPolicy {
             first: "4392a90d18937454f42b4496c0de4f16d5994e9117645033f72fdff9375d9bbf",
             revised: "6bfecb8074e65f88f572cb1e9ccfec46d785c2eea2908d71654fd318a64b213b",
             format2First: "4392a90d18937454f42b4496c0de4f16d5994e9117645033f72fdff9375d9bbf",
-            format2Revised: "6bfecb8074e65f88f572cb1e9ccfec46d785c2eea2908d71654fd318a64b213b")
+            format2Revised: "6bfecb8074e65f88f572cb1e9ccfec46d785c2eea2908d71654fd318a64b213b",
+            records: [
+                SavedRecordLineage(
+                    event: "item.picked", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "pick", list: false),
+                        SavedRecordHolder(variable: "found", list: false),
+                        SavedRecordHolder(variable: "draft", list: false),
+                        SavedRecordHolder(variable: "items", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

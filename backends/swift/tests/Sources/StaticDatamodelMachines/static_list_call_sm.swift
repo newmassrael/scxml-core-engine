@@ -602,7 +602,20 @@ extension StaticListCallPolicy: SavedPolicy {
             first: "cc3c6a68d49a4f3f4a0a60a12e419e42e4fe45aa3cf7178b225123dabc1bdec0",
             revised: "fab3769be78802f970514e036b890a74516228c9f439de1d7feb81ae829a23b7",
             format2First: "cc3c6a68d49a4f3f4a0a60a12e419e42e4fe45aa3cf7178b225123dabc1bdec0",
-            format2Revised: "fab3769be78802f970514e036b890a74516228c9f439de1d7feb81ae829a23b7")
+            format2Revised: "fab3769be78802f970514e036b890a74516228c9f439de1d7feb81ae829a23b7",
+            records: [
+                SavedRecordLineage(
+                    event: "ledger.entry", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "entries", list: true),
+                        SavedRecordHolder(variable: "line", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

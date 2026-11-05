@@ -566,7 +566,17 @@ extension StaticDonedataPolicy: SavedPolicy {
             first: "0d0759aeddae60c9eb915b9c754c292935f6f65a9f8c69a23d950ddd6d8adc6d",
             revised: "8dd92a183235e2d9c1a44309a93537d8e17e06426fd3354f2621ba63e309c2d1",
             format2First: "35e6bdb9f8bdfe06bc168111a18d43678c65e4ae45b4e7780d761df46ff34de2",
-            format2Revised: "aa75f4a4d744b247fc26347060f6bca356dfffde8e6be6b3b4d57799f7483b93")
+            format2Revised: "aa75f4a4d744b247fc26347060f6bca356dfffde8e6be6b3b4d57799f7483b93",
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "layout", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

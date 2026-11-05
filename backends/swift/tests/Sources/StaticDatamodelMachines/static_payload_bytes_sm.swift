@@ -711,7 +711,20 @@ extension StaticPayloadBytesPolicy: SavedPolicy {
             first: "1d99c0231d4ab8a7c44c92f7adf331ab1bfc3c6129d0ab0293cbbc7394d4f46a",
             revised: "fe0a0f7e2b6e502d7e3540680d34108416e8900538fc98fe0767b11f788432be",
             format2First: "1d99c0231d4ab8a7c44c92f7adf331ab1bfc3c6129d0ab0293cbbc7394d4f46a",
-            format2Revised: "fe0a0f7e2b6e502d7e3540680d34108416e8900538fc98fe0767b11f788432be")
+            format2Revised: "fe0a0f7e2b6e502d7e3540680d34108416e8900538fc98fe0767b11f788432be",
+            records: [
+                SavedRecordLineage(
+                    event: "framed.taken", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "last", list: false),
+                        SavedRecordHolder(variable: "frames", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

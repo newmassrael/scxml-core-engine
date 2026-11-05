@@ -757,7 +757,22 @@ extension StaticRecordListPolicy: SavedPolicy {
             first: "e6e67decba7328a76e16c522269b667c9df51c2beab7540118fb8a22a0ce7f0b",
             revised: "afe024a9eb8d535a9f2b9d73afbed9506d1090ad1174fcc2e106fa6eb2ca4a66",
             format2First: "e6e67decba7328a76e16c522269b667c9df51c2beab7540118fb8a22a0ce7f0b",
-            format2Revised: "afe024a9eb8d535a9f2b9d73afbed9506d1090ad1174fcc2e106fa6eb2ca4a66")
+            format2Revised: "afe024a9eb8d535a9f2b9d73afbed9506d1090ad1174fcc2e106fa6eb2ca4a66",
+            records: [
+                SavedRecordLineage(
+                    event: "day.picked", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "draft", list: false),
+                        SavedRecordHolder(variable: "last", list: false),
+                        SavedRecordHolder(variable: "days", list: true),
+                        SavedRecordHolder(variable: "copies", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

@@ -967,7 +967,20 @@ extension StaticRecordBytesPolicy: SavedPolicy {
             first: "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8",
             revised: "a4673fed412eef9b82de968dadba304e219c25bfc193ba1b4a9a8579adf08aab",
             format2First: "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8",
-            format2Revised: "a4673fed412eef9b82de968dadba304e219c25bfc193ba1b4a9a8579adf08aab")
+            format2Revised: "a4673fed412eef9b82de968dadba304e219c25bfc193ba1b4a9a8579adf08aab",
+            records: [
+                SavedRecordLineage(
+                    event: "framed.taken", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "last", list: false),
+                        SavedRecordHolder(variable: "frames", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

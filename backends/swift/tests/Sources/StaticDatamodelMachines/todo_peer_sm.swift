@@ -5851,7 +5851,98 @@ extension TodoPeerPolicy: SavedPolicy {
             first: "84564493f4d6537649fd21f55b4a724e9dc0e6a879081544fc16a50dfa5dc34d",
             revised: "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17",
             format2First: "84564493f4d6537649fd21f55b4a724e9dc0e6a879081544fc16a50dfa5dc34d",
-            format2Revised: "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17")
+            format2Revised: "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17",
+            records: [
+                SavedRecordLineage(
+                    event: "calendar.answer", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "answers", list: true),
+                        SavedRecordHolder(variable: "answer", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "calendar.member", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "roster", list: true),
+                    ]),
+                SavedRecordLineage(
+                    event: "calendar.occurrence", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "agenda", list: true),
+                        SavedRecordHolder(variable: "local", list: true),
+                        SavedRecordHolder(variable: "occ", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "calendar.schedule", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "sched", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.hlc_timestamp", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "clock", list: false),
+                        SavedRecordHolder(variable: "stamp", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.merkle_node", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "digest", list: true),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.mv_value", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "values", list: true),
+                        SavedRecordHolder(variable: "held", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.orset_entry", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "adds", list: true),
+                        SavedRecordHolder(variable: "tombstones", list: true),
+                        SavedRecordHolder(variable: "one", list: true),
+                        SavedRecordHolder(variable: "stable", list: true),
+                        SavedRecordHolder(variable: "entry", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

@@ -3237,7 +3237,65 @@ extension SheetPeerPolicy: SavedPolicy {
             first: "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
             revised: "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08",
             format2First: "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
-            format2Revised: "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08")
+            format2Revised: "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08",
+            records: [
+                SavedRecordLineage(
+                    event: "merge.hlc_timestamp", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "clock", list: false),
+                        SavedRecordHolder(variable: "stamp", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.lww_cell", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "cells", list: true),
+                        SavedRecordHolder(variable: "write", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.rga_gone", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "gone", list: true),
+                        SavedRecordHolder(variable: "goneCols", list: true),
+                        SavedRecordHolder(variable: "removal", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.rga_node", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "rows", list: true),
+                        SavedRecordHolder(variable: "cols", list: true),
+                        SavedRecordHolder(variable: "placed", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.sheet_shown", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "shown", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

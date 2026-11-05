@@ -679,7 +679,17 @@ extension StaticRenderPolicy: SavedPolicy {
             first: "f69330de1791fac4fea5443a4edb47d0b9a30c16b89d6dbcba340f782e4e6aa2",
             revised: "3b0435a93c7b5401f210480d9b9ab31575bf6b795c919383efe5380c8760991b",
             format2First: "522b69050aa237fcced921551aef5849aa167a4155596f8d416507e26d97f826",
-            format2Revised: "fb1a6efe0b66163a599c2f55f653c13992b856df2aef90c049830b22bbc184d1")
+            format2Revised: "fb1a6efe0b66163a599c2f55f653c13992b856df2aef90c049830b22bbc184d1",
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "view", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

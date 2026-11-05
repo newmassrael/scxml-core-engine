@@ -1402,7 +1402,21 @@ extension PresencePeerPolicy: SavedPolicy {
             first: "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3",
             revised: "b0d96ebe733fde22663f4d265dac2287795efe126ca751ed6753da1ff2c53a4a",
             format2First: "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3",
-            format2Revised: "b0d96ebe733fde22663f4d265dac2287795efe126ca751ed6753da1ff2c53a4a")
+            format2Revised: "b0d96ebe733fde22663f4d265dac2287795efe126ca751ed6753da1ff2c53a4a",
+            records: [
+                SavedRecordLineage(
+                    event: "presence.seen", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "online", list: true),
+                        SavedRecordHolder(variable: "rebuilt", list: true),
+                        SavedRecordHolder(variable: "entry", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

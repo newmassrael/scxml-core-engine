@@ -674,7 +674,38 @@ extension StaticPayloadEnumUnimportedPolicy: SavedPolicy {
             first: "60b1f94fa3bf7ca3236aafdd09c81831b91b1473dba7a603b712203b06b90104",
             revised: "abcc6fca73cad31c2aec6e1e94f26d004b87084345c8e133e718fe481447e64d",
             format2First: "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d",
-            format2Revised: "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f")
+            format2Revised: "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f",
+            records: [
+                SavedRecordLineage(
+                    event: "record_list.refused", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "kept", list: true),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:sce:std/shared/record_command.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "kept", field: "kind", list: true),
+                    ]),
+                SavedEnumLineage(
+                    key: "enum:sce:std/shared/record_refusal.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "last", field: nil, list: false),
+                        SavedEnumHolder(variable: "kept", field: "reason", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

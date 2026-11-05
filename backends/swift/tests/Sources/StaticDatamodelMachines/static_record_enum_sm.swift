@@ -872,7 +872,31 @@ extension StaticRecordEnumPolicy: SavedPolicy {
             first: "5badf5f6ffa55e8a6f26846fbf63d8ca259130207872c648bab3f3409f8e1f2d",
             revised: "eff355fd92e600e6884c26774ee3427b6462f1bc44eea6ef5815eed90de08699",
             format2First: "53ac1c2171b6036049abade6e69f7a185458bd5da1cbdcbcb4f7d189f01e7223",
-            format2Revised: "22904e1b1af8b2718c84d1c67c153536ef878fcce7962c8e3b46bade94c12474")
+            format2Revised: "22904e1b1af8b2718c84d1c67c153536ef878fcce7962c8e3b46bade94c12474",
+            records: [
+                SavedRecordLineage(
+                    event: "view.shown", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "shown", list: false),
+                        SavedRecordHolder(variable: "seen", list: true),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "shown", field: "layout", list: false),
+                        SavedEnumHolder(variable: "seen", field: "layout", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

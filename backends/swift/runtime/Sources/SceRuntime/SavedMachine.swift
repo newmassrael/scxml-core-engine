@@ -54,17 +54,28 @@ public struct SavedShape: Sendable, Equatable {
     /// `revised` as a format-2 state names it.
     public let format2Revised: String
 
+    /// Each record schema a variable is of, by the event it declares, ordered by it: the revision the machine
+    /// holds it at, what each revision declared, and the variables that hold a record of it. Empty for a document
+    /// that holds none.
+    public let records: [SavedRecordLineage]
+
+    /// Each enum a value of the state is of, by its key, ordered by it. Empty for a document that holds none.
+    public let enums: [SavedEnumLineage]
+
     /// The configuration of a product line the machine was generated for (docs/adr/0057, section 7): the
     /// features it turns on, sorted, each once; nil for a machine of no product line.
     public let features: [String]?
 
     public init(
-        first: String, revised: String, format2First: String, format2Revised: String, features: [String]? = nil
+        first: String, revised: String, format2First: String, format2Revised: String,
+        records: [SavedRecordLineage] = [], enums: [SavedEnumLineage] = [], features: [String]? = nil
     ) {
         self.first = first
         self.revised = revised
         self.format2First = format2First
         self.format2Revised = format2Revised
+        self.records = records
+        self.enums = enums
         self.features = features
     }
 }
@@ -162,27 +173,6 @@ extension SavedState {
             "the saved state was taken with the features \(list(taken)) on, and this machine is built with \(list(features)): \(differ.joined(separator: ", "))"
         )
     }
-
-    /// Refuses `saved` unless it is a state of the machine whose saved state is bound to `shape`, judged before
-    /// any variable is read, as `checkShape` is: the configuration it was taken in first, then the shape, then
-    /// the revisions it names. A machine of this runtime holds no schema that has a revision yet, so a state
-    /// that names one is refused for naming it.
-    public static func judge(_ saved: SavedState, against shape: SavedShape) throws {
-        try checkFeatures(saved, shape.features)
-        let first = saved.formatVersion == format2 ? shape.format2First : shape.first
-        let revised = saved.formatVersion == format2 ? shape.format2Revised : shape.revised
-        if saved.revisions.isEmpty {
-            try checkShape(saved, first)
-        } else if saved.shape == first {
-            throw StateRefusal(
-                "the saved state names revisions of its schemas and has the shape of a state that names none")
-        } else {
-            try checkShape(saved, revised)
-        }
-        if let named = saved.revisions.first {
-            throw StateRefusal("'revisions' names '\(named.key)', which no record or enum of this machine is")
-        }
-    }
 }
 
 private func savedEvent<Event>(_ queued: EventWithMetadata<Event>, name: String) -> SavedEvent {
@@ -230,11 +220,17 @@ extension Engine where Policy: SavedPolicy {
             let ordered = recorded.sorted { policy.getDocumentOrder($0) < policy.getDocumentOrder($1) }
             return SavedEntry(declared.id, ordered.map { policy.getStateName($0) })
         }
+        // A schema past its first revision is named with the digest of what that revision declares, and the state
+        // is of the revised shape; one whose schemas are all in their first is the text it was before schemas had
+        // revisions.
+        let shape = Policy.savedShape
+        let revisions = shape.currentRevisions()
         return SavedState(
-            shape: Policy.savedShape.format2First, configuration: active.map { policy.getStateName($0) },
+            shape: revisions.isEmpty ? shape.format2First : shape.format2Revised,
+            configuration: active.map { policy.getStateName($0) },
             current: policy.getStateName(getCurrentState()), variables: policy.savedVariables(), history: history,
             pending: pending, invokes: .resumed([]), sessionID: policy.sessionID, autoSendSeq: Int64(generatedSendIDCount),
-            external: external, features: Policy.savedShape.features)
+            external: external, revisions: revisions, features: shape.features)
     }
 
     /// Stands this machine where `saved` left one, in place of `initialize`: no `<onentry>` runs and no `<data>`
@@ -253,7 +249,9 @@ extension Engine where Policy: SavedPolicy {
         guard !isRunning else {
             throw StateRefusal("the machine has started: a saved state is restored into one that has not")
         }
-        try SavedState.judge(saved, against: Policy.savedShape)
+        // The state as one of this machine: each record saved at an earlier revision of its schema holds the
+        // defaults of the fields added since.
+        let saved = try SavedState.upgrade(saved, against: Policy.savedShape)
         if let child = saved.invokes.ids.first {
             throw StateRefusal(
                 "the saved state holds a running child session '\(child)', which this machine does not start")

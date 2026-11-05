@@ -843,7 +843,25 @@ extension StaticForgeCallsPolicy: SavedPolicy {
             first: "f8c208dcc14ca056d0b9299f9ccd618ec2750f05632205a4c651d46096c9344a",
             revised: "25698583336d197df47e95c878010ab439aed9ae9aaf753df2da2a80ee38651f",
             format2First: "e1ceb88b42e3ad186cb83379ddd3fac6c041b4cd242dee005c43a6acf78cbcba",
-            format2Revised: "47d468eaf1347e8d4209e924eca025b0aee6cf836f6689fc2013b701e7531b53")
+            format2Revised: "47d468eaf1347e8d4209e924eca025b0aee6cf836f6689fc2013b701e7531b53",
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:forge_call_level.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "weight", field: nil, list: false),
+                    ]),
+                SavedEnumLineage(
+                    key: "enum:forge_call_status.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "phase", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

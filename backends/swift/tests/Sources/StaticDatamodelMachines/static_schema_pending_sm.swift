@@ -660,3 +660,69 @@ extension Engine where Policy == StaticSchemaPendingPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticSchemaPendingPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "f7e359f42783c9931d2c1dbf44f80fee16a403f0e56b70bbc26ff6874c901834",
+            revised: "2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2",
+            format2First: "c0a487fdd7e3380c9c4044d0fa1211b81a23cbe90c581ff9490a619a0447a749",
+            format2Revised: "3fbeae2b4200145eef7af1a2e393f315a5466a7f5ff65b7bcabbb7ed2e75c9fa",
+            records: [
+                SavedRecordLineage(
+                    event: "signal.raised", revision: 2,
+                    revisions: ["2b64de54f91bff7c63333f77d7362c701e702ab2379252eaf60d39931148ad66"],
+                    added: [
+                        SavedAddedField(id: "urgent", since: 2, defaultJSON: "true"),
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "last", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_signal_level.scxml", revision: 2,
+                    revisions: ["48003474fab3bfc2bc59b262dfe3b3f85acd0f80271e6f72432dd8bf1319603c"],
+                    added: [
+                        SavedAddedVariant(name: "critical", since: 2),
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "last", field: "level", list: false),
+                    ]),
+            ])
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("last", vLast.toSaved()),
+            SavedEntry("taken", SavedValues.of(vTaken)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticSchemaPendingSignalRecord.fromSaved(try saved.variable("last"), "last")
+        let value1 = try SavedValues.uint32(try saved.variable("taken"), "taken")
+        let value2 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vLast = value0
+            self.vTaken = value1
+            self.vRefusals = value2
+        }
+    }
+}

@@ -811,3 +811,92 @@ extension Engine where Policy == StaticLiftPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticLiftPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "884dfb541f11437c383220a4a8943e853f0fff42e87f118143145b03a9aee339",
+            revised: "b65930f928a4dfd860d83ab4fb45775b4494c49bb97c6a9faf342d80438a049d",
+            format2First: "89179c86cd5b354ab3abf1b5c8c7c4815b51864b4a0423fd58ba7cced2f087d3",
+            format2Revised: "8cd69763111ad98c584d6d129ad6990993578ebd60f3dd907a5e5e4de7995830",
+            records: [
+                SavedRecordLineage(
+                    event: "lift.answer", revision: 2,
+                    revisions: ["346ba2c78ac1d5e5d878a2f364be668e2f2503a0f555b1d323584dc30cd26483"],
+                    added: [
+                        SavedAddedField(id: "priority", since: 2, defaultJSON: "3"),
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "answer", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "lift.refusal", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "why", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_lift_kind.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "answer", field: "kind", list: false),
+                    ]),
+                SavedEnumLineage(
+                    key: "enum:sce:std/lift/refusal_code.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "why", field: "code", list: false),
+                    ]),
+            ])
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("answer", SavedValues.optional(vAnswer) { $0.toSaved() }),
+            SavedEntry("why", SavedValues.optional(vWhy) { $0.toSaved() }),
+            SavedEntry("said", SavedValues.of(vSaid)),
+            SavedEntry("lifts", SavedValues.of(vLifts)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.optional(try saved.variable("answer"), "answer") { e, w in try StaticLiftAnswerRecord.fromSaved(e, w) }
+        let value1 = try SavedValues.optional(try saved.variable("why"), "why") { e, w in try StaticLiftLiftRefusalRecord.fromSaved(e, w) }
+        let value2 = try SavedValues.string(try saved.variable("said"), "said", capacity: 512)
+        let value3 = try SavedValues.uint32(try saved.variable("lifts"), "lifts")
+        let value4 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vAnswer = value0
+            self.vWhy = value1
+            self.vSaid = value2
+            self.vLifts = value3
+            self.vErrors = value4
+        }
+    }
+}

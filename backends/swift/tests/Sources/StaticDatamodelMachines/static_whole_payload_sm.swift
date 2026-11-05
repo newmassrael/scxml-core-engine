@@ -663,7 +663,31 @@ extension StaticWholePayloadPolicy: SavedPolicy {
             first: "b012d52eed2aa7c4c21026e8b9a1e1e55411a4dccd8a7ff7e6a30934ff248236",
             revised: "4ff99c413cce990942da692970977ab9e43384c109f943d60a83941cddf3d590",
             format2First: "630f70df52332fd1d901f9e652918616f8b5296268086f555c35dc7c21951176",
-            format2Revised: "46e2a51975b77a21618ab3fbbddc6bd11c97ec93b0cbe15c7894469c4f57f604")
+            format2Revised: "46e2a51975b77a21618ab3fbbddc6bd11c97ec93b0cbe15c7894469c4f57f604",
+            records: [
+                SavedRecordLineage(
+                    event: "view.shown", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "shown", list: false),
+                        SavedRecordHolder(variable: "seen", list: true),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "shown", field: "layout", list: false),
+                        SavedEnumHolder(variable: "seen", field: "layout", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

@@ -726,7 +726,18 @@ extension StaticSendNamelistPolicy: SavedPolicy {
             first: "4c5fcd09ccb548a79be78a0a5ea36c3c9f17a5dfb4706bc3b43fd85462ba40d9",
             revised: "87f4f5810c33f9a12f673899e60ceb33c0f6a149ce6aa220e3ab32c3a77c8f23",
             format2First: "16febb7498164599d53f3e3d58a01519e95524ba7cefbf3bad4f9cc092be55be",
-            format2Revised: "269f7e6c12c145c071ff88e74b99934e502cee8877afee65ddedea936e511571")
+            format2Revised: "269f7e6c12c145c071ff88e74b99934e502cee8877afee65ddedea936e511571",
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "layout", field: nil, list: false),
+                        SavedEnumHolder(variable: "received", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

@@ -782,7 +782,30 @@ extension StaticSendContentPolicy: SavedPolicy {
             first: "6f33e5b00a3a440af82bab37051ecfb5a5a93fab315376e997123933d7aa034e",
             revised: "cde129524ee5f351001fc3bfe85e45638f9602adfb1eafc0335c4aeb2f6ec51b",
             format2First: "4bf189c4ee8d5e8b3e8fedae3e4a2c1e29e96ae199286f52d04877741cd5c027",
-            format2Revised: "fa1c69819a3e2f8e92cb2938fa14c111813365c6eea453a634f658cdb689cc01")
+            format2Revised: "fa1c69819a3e2f8e92cb2938fa14c111813365c6eea453a634f658cdb689cc01",
+            records: [
+                SavedRecordLineage(
+                    event: "view.shown", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "shown", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "shown", field: "layout", list: false),
+                        SavedEnumHolder(variable: "received", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

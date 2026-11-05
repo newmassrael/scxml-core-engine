@@ -7028,7 +7028,113 @@ extension RecordListPolicy: SavedPolicy {
             first: "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
             revised: "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
             format2First: "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
-            format2Revised: "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547")
+            format2Revised: "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547",
+            records: [
+                SavedRecordLineage(
+                    event: "merge.hlc_timestamp", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "clock", list: false),
+                        SavedRecordHolder(variable: "stamp", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.merkle_node", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "digest", list: true),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.mv_value", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "values", list: true),
+                        SavedRecordHolder(variable: "held", list: false),
+                        SavedRecordHolder(variable: "live", list: true),
+                        SavedRecordHolder(variable: "empty", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "merge.orset_entry", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "adds", list: true),
+                        SavedRecordHolder(variable: "tombstones", list: true),
+                        SavedRecordHolder(variable: "one", list: true),
+                        SavedRecordHolder(variable: "stable", list: true),
+                        SavedRecordHolder(variable: "entry", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "record_list.answer", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "answers", list: true),
+                        SavedRecordHolder(variable: "answer", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "record_list.member", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "roster", list: true),
+                    ]),
+                SavedRecordLineage(
+                    event: "record_list.part", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "staged", list: true),
+                        SavedRecordHolder(variable: "taking", list: true),
+                        SavedRecordHolder(variable: "passing", list: true),
+                        SavedRecordHolder(variable: "waiting", list: true),
+                        SavedRecordHolder(variable: "kept", list: true),
+                        SavedRecordHolder(variable: "part", list: false),
+                        SavedRecordHolder(variable: "op", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:sce:std/shared/record_command.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "namedKind", field: nil, list: false),
+                    ]),
+                SavedEnumLineage(
+                    key: "enum:sce:std/shared/record_refusal.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "probe", field: nil, list: false),
+                        SavedEnumHolder(variable: "spoiledFor", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

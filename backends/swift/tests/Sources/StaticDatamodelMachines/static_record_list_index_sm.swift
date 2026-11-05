@@ -845,7 +845,21 @@ extension StaticRecordListIndexPolicy: SavedPolicy {
             first: "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8",
             revised: "f8bd629347138fed4eef08c8e38f31d2583238f54c1aa4deb4acb2039f0fe050",
             format2First: "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8",
-            format2Revised: "f8bd629347138fed4eef08c8e38f31d2583238f54c1aa4deb4acb2039f0fe050")
+            format2Revised: "f8bd629347138fed4eef08c8e38f31d2583238f54c1aa4deb4acb2039f0fe050",
+            records: [
+                SavedRecordLineage(
+                    event: "day.picked", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "draft", list: false),
+                        SavedRecordHolder(variable: "picked", list: false),
+                        SavedRecordHolder(variable: "days", list: true),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

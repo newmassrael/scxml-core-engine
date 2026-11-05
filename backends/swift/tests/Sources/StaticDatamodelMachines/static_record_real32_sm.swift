@@ -600,7 +600,19 @@ extension StaticRecordReal32Policy: SavedPolicy {
             first: "c893e233c9dc158798b2e4ba26c92528fbf675fb7b763ec6857c744284638233",
             revised: "ab6931a3750df3c6618dfe4e9b369c7863961c31f997f70a686f66cd7c8eda90",
             format2First: "c893e233c9dc158798b2e4ba26c92528fbf675fb7b763ec6857c744284638233",
-            format2Revised: "ab6931a3750df3c6618dfe4e9b369c7863961c31f997f70a686f66cd7c8eda90")
+            format2Revised: "ab6931a3750df3c6618dfe4e9b369c7863961c31f997f70a686f66cd7c8eda90",
+            records: [
+                SavedRecordLineage(
+                    event: "reading32.taken", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "last", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

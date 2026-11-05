@@ -654,7 +654,21 @@ extension StaticTextRecordPolicy: SavedPolicy {
             first: "58fff1e777041e7697c25e2df69b4fe0c77d445be391d30ae03c3f285ae9076d",
             revised: "2cde5acaac7e84bf9fcd80e0d7634ff9754198115b76527014df8fd4758406bf",
             format2First: "58fff1e777041e7697c25e2df69b4fe0c77d445be391d30ae03c3f285ae9076d",
-            format2Revised: "2cde5acaac7e84bf9fcd80e0d7634ff9754198115b76527014df8fd4758406bf")
+            format2Revised: "2cde5acaac7e84bf9fcd80e0d7634ff9754198115b76527014df8fd4758406bf",
+            records: [
+                SavedRecordLineage(
+                    event: "text.slot", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "slots", list: true),
+                        SavedRecordHolder(variable: "held", list: false),
+                        SavedRecordHolder(variable: "incoming", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

@@ -724,7 +724,34 @@ extension StaticOptionalUnwidenedPolicy: SavedPolicy {
             first: "107ff83fbd2c38a87a0f71adfa81fcc3c27bf980240687ee0f9999ecfbc460e2",
             revised: "446e9f68a2de213abce540de0df591de51badabf09d45a8b571910ae823c15fc",
             format2First: "97c67c3845141fbd65d751eef23b71ca25329452523e524d81ed9621ca5b8d74",
-            format2Revised: "51b560ebab5c70ad2a607bce4b26e572a1110fc5f8cd00d8a79692205886638b")
+            format2Revised: "51b560ebab5c70ad2a607bce4b26e572a1110fc5f8cd00d8a79692205886638b",
+            records: [
+                SavedRecordLineage(
+                    event: "due.unwidened", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "item", list: false),
+                        SavedRecordHolder(variable: "items", list: true),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_item_status.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "status", field: nil, list: false),
+                        SavedEnumHolder(variable: "item", field: "status", list: false),
+                        SavedEnumHolder(variable: "items", field: "status", list: true),
+                        SavedEnumHolder(variable: "plain", field: nil, list: false),
+                        SavedEnumHolder(variable: "echoStatus", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

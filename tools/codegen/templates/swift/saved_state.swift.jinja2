@@ -79,7 +79,46 @@ extension {{ machine_name }}Policy: SavedPolicy {
             first: "{{ static_saved_shape.first }}",
             revised: "{{ static_saved_shape.revised }}",
             format2First: "{{ static_saved_shape.format2_first }}",
-            format2Revised: "{{ static_saved_shape.format2_revised }}")
+            format2Revised: "{{ static_saved_shape.format2_revised }}"{% if static_saved_shape.records %},
+            records: [
+{% for record in static_saved_shape.records %}
+                SavedRecordLineage(
+                    event: "{{ record.event | escape_swift }}", revision: {{ record.revision }},
+                    revisions: [{% for fields in record.revisions %}"{{ fields }}"{{ ", " if not loop.last }}{% endfor %}],
+                    added: [
+{% for field in record.added %}
+                        SavedAddedField(id: "{{ field.id | escape_swift }}", since: {{ field.since }}, defaultJSON: "{{ field.default | escape_swift }}"),
+{% endfor %}
+                    ],
+                    widened: [
+{% for field in record.widened %}
+                        SavedWidenedField(id: "{{ field.id | escape_swift }}", since: {{ field.since }}, optionalSince: {{ field.optional_since }}),
+{% endfor %}
+                    ],
+                    holders: [
+{% for holder in record.holders %}
+                        SavedRecordHolder(variable: "{{ holder.variable | escape_swift }}", list: {{ "true" if holder.list else "false" }}),
+{% endfor %}
+                    ]),
+{% endfor %}
+            ]{% endif %}{% if static_saved_shape.enums %},
+            enums: [
+{% for lineage in static_saved_shape.enums %}
+                SavedEnumLineage(
+                    key: "{{ lineage.key | escape_swift }}", revision: {{ lineage.revision }},
+                    revisions: [{% for fields in lineage.revisions %}"{{ fields }}"{{ ", " if not loop.last }}{% endfor %}],
+                    added: [
+{% for variant in lineage.added %}
+                        SavedAddedVariant(name: "{{ variant.name | escape_swift }}", since: {{ variant.since }}),
+{% endfor %}
+                    ],
+                    holders: [
+{% for holder in lineage.holders %}
+                        SavedEnumHolder(variable: "{{ holder.variable | escape_swift }}", field: {% if holder.field is not none %}"{{ holder.field | escape_swift }}"{% else %}nil{% endif %}, list: {{ "true" if holder.list else "false" }}),
+{% endfor %}
+                    ]),
+{% endfor %}
+            ]{% endif %})
     }
 
 {% if model.history_states %}

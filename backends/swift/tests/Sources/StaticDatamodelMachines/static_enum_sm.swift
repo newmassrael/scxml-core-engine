@@ -605,7 +605,18 @@ extension StaticEnumPolicy: SavedPolicy {
             first: "520180e6f3f0c0a8ba6940f472c5d101a70edffe748e29d09589295b8c6ea8eb",
             revised: "287bca93940141dc0a8bb0516a22420ab9fd19d66a3332aee27231f47c2b6fda",
             format2First: "f4b82d70d61f1a107887fbbef7b3f95ff21face9f668501207e0d75867026323",
-            format2Revised: "ecefc2229c4f081c4c6dc1ac139be1e3cab924452a146a1fd066aa138f25c98e")
+            format2Revised: "ecefc2229c4f081c4c6dc1ac139be1e3cab924452a146a1fd066aa138f25c98e",
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "layout", field: nil, list: false),
+                        SavedEnumHolder(variable: "previous", field: nil, list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

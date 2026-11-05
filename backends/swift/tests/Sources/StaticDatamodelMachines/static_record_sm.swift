@@ -599,7 +599,19 @@ extension StaticRecordPolicy: SavedPolicy {
             first: "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba",
             revised: "d6fc801793f9575ceaff9c00d28636af536443c5cca8199f8353e6fa4d99c1b9",
             format2First: "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba",
-            format2Revised: "d6fc801793f9575ceaff9c00d28636af536443c5cca8199f8353e6fa4d99c1b9")
+            format2Revised: "d6fc801793f9575ceaff9c00d28636af536443c5cca8199f8353e6fa4d99c1b9",
+            records: [
+                SavedRecordLineage(
+                    event: "day.picked", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "shown", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

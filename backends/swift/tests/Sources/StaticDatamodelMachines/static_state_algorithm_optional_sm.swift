@@ -759,7 +759,20 @@ extension StaticStateAlgorithmOptionalPolicy: SavedPolicy {
             first: "7307b7bfcadb8bdd01e279cefed31fec3445cce0265d74b56d005a0220d09ef9",
             revised: "2ac037b6dacd401bd691f3d511299403df4ebfeae17964fb4fc8733f14099c4c",
             format2First: "7307b7bfcadb8bdd01e279cefed31fec3445cce0265d74b56d005a0220d09ef9",
-            format2Revised: "2ac037b6dacd401bd691f3d511299403df4ebfeae17964fb4fc8733f14099c4c")
+            format2Revised: "2ac037b6dacd401bd691f3d511299403df4ebfeae17964fb4fc8733f14099c4c",
+            records: [
+                SavedRecordLineage(
+                    event: "goal.added", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "goals", list: true),
+                        SavedRecordHolder(variable: "draft", list: false),
+                    ]),
+            ])
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the
