@@ -13,11 +13,16 @@
    as static inline helpers — no .c source.                             #}
 {%- import 'c/param_macros.jinja2' as param_macros %}
 {%- import '_macros/c_child_begin.jinja2' as child_begin %}
+{%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
 {# §scxml-6.4: the clock a child this machine starts measures its delays on —
    this machine's own, read through `sce_clock_following`, so a host that owns
    the parent's time owns the child's too. A parent with no scheduler has no
    clock of its own to hand over, and the child keeps the monotonic default. #}
 {% set child_clock_c = 'sce_clock_following(&sm->clock)' if model.needs_event_scheduler else 'sce_clock_monotonic()' %}
+{# docs/adr/0084: whether this machine keeps a directory of the sessions its slots
+   hold (`_directory` members, `_macros/c_tree_directory.jinja2`). Kept in step
+   with the same `set` in `state_machine.h.jinja2`. #}
+{% set inbox_endings = model.host_invoker_types or static_datamodel %}
 
 {# ── §scxml-6.4: a namelist the invoke cannot read starts nothing ──────
    One check for every child the invoke may start — a static child, or the
@@ -748,6 +753,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 }
             }
 {% endif %}
+{{ tree_directory.enter('child_' ~ invoke_info.field_suffix, inbox_endings) }}
             {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});
             {% endif %}
             /* W3C SCXML 6.4: drive the child's deferred main event loop
@@ -973,6 +979,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                     }
                 }
 {% endif %}
+{{ tree_directory.enter('child_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), inbox_endings) }}
                 {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }});
                 /* The macrostep that follows the entry walk, now that the values
                    are in and parent routing is live: a candidate that ends on
@@ -1187,6 +1194,10 @@ static void {{ csym_prefix }}{{ model.name }}_destroy_active_children({{ csym_pr
     {% for state_id, state in model.states | dictsort %}
     {% for invoke_info in state.invokes | scxml %}
     if (sm->child_{{ invoke_info.field_suffix }}_active) {
+{% if invoke_info.child_is_static %}
+{{ tree_directory.leave('child_' ~ invoke_info.field_suffix, inbox_endings) }}
+{{ tree_directory.apply_held(csym_prefix, invoke_info.child_name, 'child_' ~ invoke_info.field_suffix) }}
+{% endif %}
         {{ csym_prefix }}{{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
         sm->child_{{ invoke_info.field_suffix }}_active = false;
     }
@@ -1196,6 +1207,10 @@ static void {{ csym_prefix }}{{ model.name }}_destroy_active_children({{ csym_pr
 {% for target in destroy_targets %}
 {% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
     if (sm->{{ slot }}_active) {
+{% if invoke_info.candidates and target.child_is_static %}
+{{ tree_directory.leave(slot, inbox_endings) }}
+{{ tree_directory.apply_held(csym_prefix, target.stem, slot) }}
+{% endif %}
         {{ csym_prefix }}{{ target.stem }}_destroy(&sm->{{ slot }});
         sm->{{ slot }}_active = false;
     }

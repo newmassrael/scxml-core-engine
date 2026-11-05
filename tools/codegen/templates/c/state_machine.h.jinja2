@@ -625,6 +625,21 @@ typedef struct {{ csym_prefix }}{{ model.name }}_restored_host {
    whose `_complete_host_invoke_in` reaches the sessions below it. Kept in step
    with the same `set` in `state_machine.c.jinja2`. #}
 {% set inbox_endings = model.host_invoker_types or static_datamodel %}
+{# docs/adr/0084, D2 as amended at step 10: the slots of this machine that hold
+   a `sce-static` child session, the sessions of the tree below it an input can
+   name. Kept in step with the same `set` in `state_machine.c.jinja2`. #}
+{% set tree_slots = namespace(targets=[]) %}
+{% for inv in model.invokes | scxml_family %}
+{% if inv.candidates %}
+{% for c in inv.candidates %}
+{% if c.child_is_static %}
+{% set tree_slots.targets = tree_slots.targets + [{'slot': 'child_' ~ (inv.field_suffix | candidate_identifier(c.stem)), 'stem': c.stem}] %}
+{% endif %}
+{% endfor %}
+{% elif inv.kind == 'Scxml' and inv.child_is_static %}
+{% set tree_slots.targets = tree_slots.targets + [{'slot': 'child_' ~ inv.field_suffix, 'stem': inv.child_name}] %}
+{% endif %}
+{% endfor %}
 #if SCE_MAX_INBOX > 0
 /* ── docs/adr/0084: what another context may post ─────────────────── */
 /* The set is closed: it is the inputs that have a caller on another thread,
@@ -639,11 +654,12 @@ typedef enum {{ csym_prefix }}{{ model.name }}_inbox_kind_e {
        it is applied, and dropped then if none of them could take it. */
     {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT_BY_NAME{% if inbox_endings %},
     /* `as.ending`, the end of a host-run invocation's start, applied with
-       `_complete_host_invoke_from` or `_fail_host_invoke` when it names no
-       session, and with their `_in` spellings when it names one. The token
-       check those make is made when the input is applied, so an ending posted
-       for a start that was cancelled or started again by then raises nothing,
-       as a direct one would. */
+       `_complete_host_invoke_from` or `_fail_host_invoke` by the session it
+       names: one naming a session below this one is put in that session's
+       inbox when it is posted (`_inbox_post`). The token check those make is
+       made when the input is applied, so an ending posted for a start that was
+       cancelled or started again by then raises nothing, as a direct one
+       would. */
     {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING{% endif %}
 
 } {{ csym_prefix }}{{ model.name }}_inbox_kind_t;
@@ -891,12 +907,11 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     /* W3C SCXML 6.4: pending invokes deferred to macrostep end + per-site
        child SM instance. cpp uses `std::vector<PendingInvoke>` and
        `std::shared_ptr<ChildSM>`; C11 mirrors with the bounded queue
-       from `sce/invoke.h` and value-typed embedded child structs.
-       `_active` flips on at execute-pending-invokes, off at destroy /
-       cancel. */
+       from `sce/invoke.h` and value-typed embedded child structs, which
+       stand at the end of this struct (see there). `_active` flips on at
+       execute-pending-invokes, off at destroy / cancel. */
     sce_invoke_pending_queue_t pending_invokes;
     {% for invoke_info in model.invokes | scxml %}
-    {{ csym_prefix }}{{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
     bool child_{{ invoke_info.field_suffix }}_active;
     /* W3C SCXML 6.4 / 6.3.1: spawn-time invoke id stamped from
        `sce_invoke_pending_t::invoke_id` so `_drive_active_children`
@@ -918,12 +933,10 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        cpp backend uses — a slot each, every lifecycle site guarded by its
        own `_active` flag. */
 {% for candidate in invoke_info.candidates %}
-    {{ csym_prefix }}{{ candidate.stem }}_t child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }};
     bool child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_active;
 {% endfor %}
     char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
 {% else %}
-    {{ csym_prefix }}{{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
     bool child_{{ invoke_info.field_suffix }}_active;
     char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
 {% endif %}
@@ -1014,16 +1027,46 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
 {% endif %}
     {% endif %}
 #if SCE_MAX_INBOX > 0
-    /* docs/adr/0084: the inbox, built empty by every initialiser, and the slots
-       its inputs are copied into. The queue keeps the address of its own rings,
-       so a machine is not moved once it is initialised. */
-    sce_inbox_t inbox;
-    {{ csym_prefix }}{{ model.name }}_inbox_input_t inbox_slots[SCE_MAX_INBOX];
     /* A drain is applying what the inbox held. An input it applies raises an
        external event, which asks for a drain first; this makes that request
        nothing rather than a drain inside the drain. */
     bool draining_inbox;
+    /* docs/adr/0084: what follows `inbox` is the part of the machine another
+       context may reach, so a child session started again in the same slot keeps
+       it (`_invoked_begin` zeroes the machine up to `inbox`): a post that found
+       the slot's session a moment before may still be writing to it. It is built
+       once, by the initialiser of the tree's root (`_build_inboxes`). */
+    /* The inbox, and the slots its inputs are copied into. The queue keeps the
+       address of its own rings, so a machine is not moved once it is
+       initialised. */
+    sce_inbox_t inbox;
+    {{ csym_prefix }}{{ model.name }}_inbox_input_t inbox_slots[SCE_MAX_INBOX];
+{% if inbox_endings %}
+{% for target in tree_slots.targets %}
+    /* D2 as amended at step 10: the directory's entry for `{{ target.slot }}`, the
+       session it holds now or none (sce/inbox.h). */
+    sce_inbox_directory_slot_t {{ target.slot }}_directory;
+{% endfor %}
+{% endif %}
 #endif
+{% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
+    /* §scxml-6.4: the embedded child machines, one per `<invoke>` slot (one
+       per candidate of a hybrid invoke that declares them), each live while its
+       `_active` flag above is set. Last, behind the inbox, because each holds
+       the inbox of the session it runs. */
+{% for invoke_info in model.invokes | scxml %}
+    {{ csym_prefix }}{{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
+{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+    {{ csym_prefix }}{{ candidate.stem }}_t child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }};
+{% endfor %}
+{% else %}
+    {{ csym_prefix }}{{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
+{% endif %}
+{% endfor %}
+{% endif %}
 } {{ csym_prefix }}{{ model.name }}_t;
 
 /* ── Public API ───────────────────────────────────────────────────── */
@@ -1371,7 +1414,10 @@ void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ mode
    the entry walk (each variable at its declared value, the session identity,
    the parent's clock and, for a child that addresses its parent, the routing
    `_init_with_parent` stamps); the parent then writes the values it was asked
-   to hand over, and `_invoked_enter` runs the entry walk.
+   to hand over, and `_invoked_enter` runs the entry walk. `_invoked_begin`
+   keeps what the machine holds from `inbox` on, which the parent built with the
+   tree (`_build_inboxes`), so a slot started again keeps its inbox while
+   another context may be posting to it (docs/adr/0084).
 {% if has_native_duties %}
    This child states a duty (docs/adr/0038), so `accept_simulated` follows the
    table: a table that says `SCE_ACTION_SIMULATES`, or says nothing, refuses the
@@ -1847,6 +1893,15 @@ void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }
    `kind` names. The inbox is built by the initialiser and is handed to other
    contexts after it returns.
 
+   Every session of a tree has its own inbox, each of the `SCE_MAX_INBOX`
+   capacity the deployment declares, and the root's `_inbox_post` is the
+   tree's handle: an ending that names a session below the root is put in that
+   session's inbox through the tree's directory (sce/inbox.h), and the session
+   applies it at its own boundary and its own `_raise_external`. A post to any
+   session wakes the waker installed on the root, and the root's `_step` drives
+   every running child, so a child that holds a post applies it on the host's
+   normal drive (ADR 0084, D2 as amended at step 10).
+
    A posted input waits in the inbox while the external queue has no room for
    the one event it raises, so the bound a poster meets is the inbox's, which
    refuses and reports, and never the queue's. The inbox does not close when the
@@ -1854,22 +1909,56 @@ void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }
    direct call would be then, so an event is counted by
    `_unseen_external_events` and an ending finds its invocation over. */
 #if SCE_MAX_INBOX > 0
-/* Post `input`; whether the inbox took it. Safe from any context. A full inbox
-   refuses it, counted by `_refused_inbox_posts`; after a post the inbox took,
-   the waker `_inbox_wake_with` installed is called on this context. */
+/* Post `input` to the session of the tree it is for; whether that session's
+   inbox took it. Safe from any context, on the root of the tree. An input is
+   for the root unless it is an ending naming another session, which is posted
+   to the inbox of the session it names; one naming a session the tree does not
+   hold is refused. A full inbox refuses too. A refusal is counted by
+   `_refused_inbox_posts`; after a post an inbox took, the waker
+   `_inbox_wake_with` installed is called on this context. */
 bool {{ csym_prefix }}{{ model.name }}_inbox_post({{ csym_prefix }}{{ model.name }}_t *sm,
                                                   const {{ csym_prefix }}{{ model.name }}_inbox_input_t *input);
 
-/* Install `waker`, called with `context` after each post the inbox takes, so a
-   host that drives the machine itself knows when to drive it; NULL removes it.
-   An owner-thread operation, made before the machine is handed to another
-   context. */
+/* Install `waker`, called with `context` after each post the inbox of a session
+   of this tree takes, so a host that drives the machine itself knows when to
+   drive it; NULL removes it. An owner-thread operation, made before the
+   machine is handed to another context. */
 void {{ csym_prefix }}{{ model.name }}_inbox_wake_with({{ csym_prefix }}{{ model.name }}_t *sm, sce_inbox_waker_fn waker,
                                                        void *context);
 
-/* How many posts this machine's inbox refused since it was initialised. Safe
-   from any context. */
+/* How many posts the inboxes of this tree refused since it was initialised.
+   Safe from any context. */
 uint32_t {{ csym_prefix }}{{ model.name }}_refused_inbox_posts(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* Build the inbox of this session and of every `sce-static` session its slots
+   can hold, each empty and with no waker, on a machine just zeroed. The
+   initialiser's, and a parent's for the slots it holds: a child keeps its
+   inbox from one start to the next, so a post in flight never meets one being
+   built. */
+void {{ csym_prefix }}{{ model.name }}_build_inboxes({{ csym_prefix }}{{ model.name }}_t *sm);
+{% if inbox_endings %}
+
+/* The tree's directory, walked by a parent's `_inbox_post` (ADR 0084, D2 as
+   amended at step 10). Safe from any context.
+
+   `_inbox_post_ending` posts `ending`, which names this session, to this
+   session's inbox, and answers whether it took it. `_inbox_route_ending`
+   finds the session `ending` names in a slot below this one, at any depth,
+   and posts it there: it answers whether it found the session, and `*taken`
+   whether that session's inbox took the ending. */
+bool {{ csym_prefix }}{{ model.name }}_inbox_post_ending({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                         const sce_host_invoke_ending_t *ending);
+bool {{ csym_prefix }}{{ model.name }}_inbox_route_ending({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                          const sce_host_invoke_ending_t *ending, bool *taken);
+{% endif %}
+{% if static_datamodel %}
+
+/* The owner's, when this session's parent removes it from the tree: after the
+   directory no longer names it, and after it was stopped when it is cancelled,
+   what its inbox still holds is applied, as at the end of a run, so an ending
+   finds its invocation over and the token check refuses it. */
+void {{ csym_prefix }}{{ model.name }}_invoked_end({{ csym_prefix }}{{ model.name }}_t *sm);
+{% endif %}
 #endif
 
 /* W3C SCXML 3.2: configuration query helpers. `_active_states` exposes

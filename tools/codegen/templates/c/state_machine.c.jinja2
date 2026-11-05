@@ -15,6 +15,7 @@
 {%- import '_macros/c_invoke_defer.jinja2' as invoke_defer %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
 
 {# W3C SCXML 5.10 + 6.2 — build a `<send>`'s payload as JSON in `_ed`, the
    text the event's `data[]` carries to `set_current_event`.
@@ -2817,15 +2818,34 @@ SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.na
    that declared no inbox. */
 SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm);
 
-/* docs/adr/0084: build the inbox empty, with no waker. Called by every
-   initialiser right after it zeroes the machine, since the queue keeps the
-   address of its own rings and a zeroed queue is not an empty one. */
+{# docs/adr/0084: a machine whose tree can run a host-run invocation takes its
+   ending through the inbox — one that runs one itself, and a `sce-static` one,
+   whose `_complete_host_invoke_in` reaches the sessions below it. Kept in step
+   with the same `set` in `state_machine.h.jinja2`. #}
+{% set inbox_endings = model.host_invoker_types or static_datamodel %}
+{# docs/adr/0084, D2 as amended at step 10: the slots of this machine that hold
+   a `sce-static` child session, the sessions of the tree below it an input can
+   name and the direct `_complete_host_invoke_in` reaches. Kept in step with the
+   same `set` in `state_machine.h.jinja2`. #}
+{% set tree_slots = namespace(targets=[]) %}
+{% for inv in model.invokes | scxml_family %}
+{% if inv.candidates %}
+{% for c in inv.candidates %}
+{% if c.child_is_static %}
+{% set tree_slots.targets = tree_slots.targets + [{'slot': 'child_' ~ (inv.field_suffix | candidate_identifier(c.stem)), 'stem': c.stem}] %}
+{% endif %}
+{% endfor %}
+{% elif inv.kind == 'Scxml' and inv.child_is_static %}
+{% set tree_slots.targets = tree_slots.targets + [{'slot': 'child_' ~ inv.field_suffix, 'stem': inv.child_name}] %}
+{% endif %}
+{% endfor %}
+/* docs/adr/0084: build the inboxes of the tree this machine is the root of, each
+   empty and with no waker (`_build_inboxes`). Called by every initialiser that
+   zeroes the whole machine, right after it, since the queue keeps the address of
+   its own rings and a zeroed queue is not an empty one. */
 SCE_SM_FN static void build_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
 #if SCE_MAX_INBOX > 0
-    /* False only for a shape the queue refuses, which sce/inbox.h rules out at
-       compile time. */
-    (void)sce_inbox_init(&sm->inbox);
-    sm->draining_inbox = false;
+    {{ csym_prefix }}{{ model.name }}_build_inboxes(sm);
 #else
     (void)sm;
 #endif
@@ -3332,9 +3352,15 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
                takes this branch. */
             sm->child_{{ invoke_info.field_suffix }}.parent_dispatch = NULL;
             {% endif %}
+{% if invoke_info.child_is_static %}
+{{ tree_directory.leave('child_' ~ invoke_info.field_suffix, inbox_endings) }}
+{% endif %}
             /* §scxml-D-exitInterpreter: a cancelled session is exited --
                its states' `<onexit>` run (test250) -- before it is freed. */
             {{ csym_prefix }}{{ invoke_info.child_name }}_stop(&sm->child_{{ invoke_info.field_suffix }});
+{% if invoke_info.child_is_static %}
+{{ tree_directory.apply_held(csym_prefix, invoke_info.child_name, 'child_' ~ invoke_info.field_suffix) }}
+{% endif %}
             {{ csym_prefix }}{{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
             sm->child_{{ invoke_info.field_suffix }}_active = false;
         }
@@ -3350,6 +3376,10 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
 {% for target in cancel_targets %}
 {% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
         if (sm->{{ slot }}_active) {
+{% if invoke_info.candidates and target.child_is_static %}
+{{ tree_directory.leave(slot, inbox_endings) }}
+{{ tree_directory.apply_held(csym_prefix, target.stem, slot) }}
+{% endif %}
             {{ csym_prefix }}{{ target.stem }}_destroy(&sm->{{ slot }});
             sm->{{ slot }}_active = false;
         }
@@ -4930,10 +4960,12 @@ SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *s
            not been consulted. What other contexts posted since the last
            boundary is applied here, in the order the inbox took it, as the same
            direct calls made between two drives would be: an event joins the
-           external queue behind what the macrostep queued, and an ending for a
-           session below this one reaches that session before the children are
-           driven below. Each input raises at most one external event and none
-           raises an internal one, so the macrostep stays complete. */
+           external queue behind what the macrostep queued. An ending for a
+           session below this one is not here: it was put in that session's own
+           inbox when it was posted, and the session applies it when it is
+           driven below (D2 as amended at step 10). Each input raises at most one
+           external event and none raises an internal one, so the macrostep
+           stays complete. */
         drain_inbox(sm);
 
         {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
@@ -5407,8 +5439,13 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
 
    Returns false only when the host's act table is incomplete; that check stays
    FIRST, before the memset, so a refused call leaves the caller's storage
-   exactly as it was — the same rule the configuration door follows. #}
-SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
+   exactly as it was — the same rule the configuration door follows.
+
+   `keep_tree_inboxes` is true for a child session its parent begins
+   (`_invoked_begin`): the slot it stands in keeps the part of it from `inbox`
+   on, which its parent built with the tree, because another context may be
+   posting to it (docs/adr/0084, D2 as amended at step 10). #}
+SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_prefix }}{{ model.name }}_t *sm, bool keep_tree_inboxes{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
                                                        const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
@@ -5437,8 +5474,18 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
         return false;
     }
 {% endif %}
+#if SCE_MAX_INBOX > 0
+    if (keep_tree_inboxes) {
+        memset(sm, 0, offsetof({{ csym_prefix }}{{ model.name }}_t, inbox));
+    } else {
+        memset(sm, 0, sizeof(*sm));
+        build_inbox(sm);
+    }
+#else
+    (void)keep_tree_inboxes;
     memset(sm, 0, sizeof(*sm));
     build_inbox(sm);
+#endif
 {% if has_native_actions %}
     /* Copied in before the entry walk, for the reason the host-processor
        registry below is: the first `<onentry>` body may already perform an
@@ -5539,7 +5586,7 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
                                                        const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
                                                        const {{ native_actions_interface }} *actions{% endif %}{% if takes_simulated_host %},
                                                        bool accept_simulated{% endif %}) {
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{% if takes_simulated_host %}, accept_simulated{% endif %})) {
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm, false{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{% if takes_simulated_host %}, accept_simulated{% endif %})) {
 {% if has_native_actions %}
         return false;
 {% else %}
@@ -5639,13 +5686,13 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
     }
 
 {% if has_native_actions %}
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{{ simulated_refused }})) {
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm, false{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{{ simulated_refused }})) {
         return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_HOST_ACTIONS_INCOMPLETE;
     }
 {% else %}
     /* Cannot fail for this document: the act table is the only thing
        construction refuses, and this document declares no acts. */
-    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, false{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 {% endif %}
 
     {{ csym_prefix }}{{ model.name }}_stand_in(sm, configuration, count);
@@ -6663,11 +6710,11 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}
        copied in by the construction before the entry walk. A NULL or incomplete
        one is refused FIRST, so the child's storage is as the parent left it and
        the parent can report the start as failed. */
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{% if has_native_duties %}, accept_simulated{% elif takes_simulated_host %}, false{% endif %})) {
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm, true{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{% if has_native_duties %}, accept_simulated{% elif takes_simulated_host %}, false{% endif %})) {
         return false;
     }
 {% else %}
-    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, true{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 {% endif %}
 {% if model.may_address_parent %}
     /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry
@@ -6739,24 +6786,14 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_install_host_invokers({{ csym_p
 {% endif %}
 }
 
-{# The sessions of the tree below this one that can run a host-run invocation of their own: a
-   child session written as a `sce-static` document, and each candidate of a hybrid invoke that
-   is one. #}
-{% set complete_in = namespace(targets=[]) %}
-{% for inv in model.invokes | scxml_family %}
-{% if inv.candidates %}
-{% for c in inv.candidates %}
-{% if c.child_is_static %}
-{% set complete_in.targets = complete_in.targets + [{'slot': 'child_' ~ (inv.field_suffix | candidate_identifier(c.stem)), 'stem': c.stem}] %}
-{% endif %}
-{% endfor %}
-{% elif inv.kind == 'Scxml' and inv.child_is_static %}
-{% set complete_in.targets = complete_in.targets + [{'slot': 'child_' ~ inv.field_suffix, 'stem': inv.child_name}] %}
-{% endif %}
-{% endfor %}
+{# The sessions of the tree below this one that can run a host-run invocation of their own are
+   `tree_slots`, set beside `build_inbox`: a child session written as a `sce-static` document,
+   and each candidate of a hybrid invoke that is one. #}
 /* The one walk behind `_complete_host_invoke_in` and `_fail_host_invoke_in`: the ending of a
    host-run invocation of the session named `session_id`, found wherever it stands in the tree.
-   `failed` says which ending it is, and `data` is its `done_data` or `error_data`. */
+   `failed` says which ending it is, and `data` is its `done_data` or `error_data`. A direct
+   owner-thread call, made between macrosteps; a posted ending does not come this way, since it
+   is put in the inbox of the session it names when it is posted (`_inbox_post`). */
 SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_end_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
                                          const char *session_id, const char *processor_type,
                                          const char *invoke_id, uint64_t token, bool failed, const char *data,
@@ -6770,7 +6807,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_end_host_invoke_in({{ cs
                       : {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from(sm, processor_type, invoke_id, token, data, origin, origin_type);
     }
 {% endif %}
-{% for target in complete_in.targets %}
+{% for target in tree_slots.targets %}
     if (sm->{{ target.slot }}_active &&
         (failed ? {{ csym_prefix }}{{ target.stem }}_fail_host_invoke_in(&sm->{{ target.slot }}, session_id, processor_type,
                                                                          invoke_id, token, data, origin, origin_type)
@@ -6871,32 +6908,21 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_detach_mesh({{ csym_prefix }}{{
 {% endif %}
 
 /* ── docs/adr/0084: the inbox (ARCHITECTURE.md "Engine Threading") ── */
-{# Kept in step with the same `set` in `state_machine.h.jinja2`. #}
-{% set inbox_endings = model.host_invoker_types or static_datamodel %}
+{# `inbox_endings` and `tree_slots` are set beside `build_inbox`. #}
 #if SCE_MAX_INBOX > 0
 {% if inbox_endings %}
 /* Apply a posted ending by the operation a direct call on the owner makes: the
-   body behind `_complete_host_invoke_from` and `_fail_host_invoke` for an
-   ending that names no session, and the walk behind their `_in` spellings for
-   one that names a session. */
+   body behind `_complete_host_invoke_from` and `_fail_host_invoke`. An ending
+   that names a session is put in the inbox of that session when it is posted
+   (`_inbox_post`, D2 as amended at step 10), so the one session an ending held
+   here reaches is this one. One naming another was posted for the session this
+   slot held before it was started again, and reaches no session, as a post
+   naming a session the tree does not hold reaches none. */
 SCE_SM_FN static void apply_host_invoke_ending({{ csym_prefix }}{{ model.name }}_t *sm,
                                                const sce_host_invoke_ending_t *ending) {
-{% if static_datamodel %}
-    if (ending->session_id[0] != '\0') {
-        (void){{ csym_prefix }}{{ model.name }}_end_host_invoke_in(sm, ending->session_id, ending->processor_type,
-                                                                 ending->invoke_id, ending->token, !ending->done,
-                                                                 ending->data, ending->origin, ending->origin_type);
-        return;
-    }
-{% else %}
-    /* Only a `sce-static` machine has the `_in` doors that walk its children
-       for an ending, and this one is not, so the one session an ending reaches
-       through it is its own: one that names another reaches no session, as a
-       session `_complete_host_invoke_in` cannot find. */
     if (ending->session_id[0] != '\0' && strcmp(ending->session_id, sm->session_id) != 0) {
         return;
     }
-{% endif %}
 {% if model.host_invoker_types %}
     (void)end_host_invoke(sm, ending->processor_type, ending->invoke_id, ending->token, !ending->done, ending->data,
                           ending->origin, ending->origin_type);
@@ -6962,25 +6988,108 @@ SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
 }
 #if SCE_MAX_INBOX > 0
 
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_build_inboxes({{ csym_prefix }}{{ model.name }}_t *sm) {
+    /* False only for a shape the queue refuses, which sce/inbox.h rules out at
+       compile time. */
+    (void)sce_inbox_init(&sm->inbox);
+    sm->draining_inbox = false;
+{% for target in tree_slots.targets %}
+    {{ csym_prefix }}{{ target.stem }}_build_inboxes(&sm->{{ target.slot }});
+{% endfor %}
+}
+{% if inbox_endings %}
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_post_ending({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                   const sce_host_invoke_ending_t *ending) {
+    {{ csym_prefix }}{{ model.name }}_inbox_input_t input;
+    if (sm == NULL || ending == NULL) {
+        return false;
+    }
+    memset(&input, 0, sizeof(input));
+    input.kind = {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING;
+    input.as.ending = *ending;
+    return sce_inbox_post(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), &input);
+}
+
+/* D2 as amended at step 10: each slot's entry is read where it stands, in the
+   part of the machine a restart keeps, and the slot's child is asked for the
+   slots below it whether or not it holds a session, since an ended child's
+   slots hold none. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_route_ending({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                    const sce_host_invoke_ending_t *ending,
+                                                                    bool *taken) {
+    if (sm == NULL || ending == NULL || taken == NULL) {
+        return false;
+    }
+{% for target in tree_slots.targets %}
+    if (sce_inbox_directory_holds(&sm->{{ target.slot }}_directory, ending->session_id)) {
+        *taken = {{ csym_prefix }}{{ target.stem }}_inbox_post_ending(&sm->{{ target.slot }}, ending);
+        return true;
+    }
+    if ({{ csym_prefix }}{{ target.stem }}_inbox_route_ending(&sm->{{ target.slot }}, ending, taken)) {
+        return true;
+    }
+{% endfor %}
+    return false;
+}
+{% endif %}
+
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_post({{ csym_prefix }}{{ model.name }}_t *sm,
                                                             const {{ csym_prefix }}{{ model.name }}_inbox_input_t *input) {
     if (sm == NULL || input == NULL) {
         return false;
     }
+{% if inbox_endings %}
+    /* D2 as amended at step 10: an ending's address is resolved here, when it is
+       posted. One naming a session below this one goes to that session's own
+       inbox, ahead of whatever its parent sends it later, and one naming a
+       session the tree does not hold is refused. */
+    if (input->kind == {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING &&
+        input->as.ending.session_id[0] != '\0' && strcmp(input->as.ending.session_id, sm->session_id) != 0) {
+        bool taken = false;
+        if (!{{ csym_prefix }}{{ model.name }}_inbox_route_ending(sm, &input->as.ending, &taken)) {
+            sce_inbox_count_refusal(&sm->inbox);
+            return false;
+        }
+        return taken;
+    }
+{% endif %}
     return sce_inbox_post(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), input);
 }
 
+/* D2 as amended at step 10: the tree has one waker, the one the host installs on
+   the root, and every session's inbox calls it. */
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_inbox_wake_with({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                  sce_inbox_waker_fn waker, void *context) {
     if (sm == NULL) {
         return;
     }
     sce_inbox_wake_with(&sm->inbox, waker, context);
+{% for target in tree_slots.targets %}
+    {{ csym_prefix }}{{ target.stem }}_inbox_wake_with(&sm->{{ target.slot }}, waker, context);
+{% endfor %}
 }
 
 SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_refused_inbox_posts(const {{ csym_prefix }}{{ model.name }}_t *sm) {
-    return (sm == NULL) ? 0u : sce_inbox_refused(&sm->inbox);
+    uint32_t refused;
+    if (sm == NULL) {
+        return 0u;
+    }
+    refused = sce_inbox_refused(&sm->inbox);
+{% for target in tree_slots.targets %}
+    refused += {{ csym_prefix }}{{ target.stem }}_refused_inbox_posts(&sm->{{ target.slot }});
+{% endfor %}
+    return refused;
 }
+{% if static_datamodel %}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_end({{ csym_prefix }}{{ model.name }}_t *sm) {
+    if (sm == NULL) {
+        return;
+    }
+    drain_inbox(sm);
+}
+{% endif %}
 #endif
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ model.name }}_t *sm) {

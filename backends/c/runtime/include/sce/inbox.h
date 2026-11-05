@@ -194,6 +194,125 @@ static inline bool sce_inbox_take(sce_inbox_t *inbox, unsigned char *slots, size
     return taken;
 }
 
+/* The directory of a tree (docs/adr/0084, D2 as amended at step 10).
+
+   Every session of a tree has an inbox, a child's as well as the root's, and an
+   input that names a session is posted straight to that session's inbox. The
+   child sessions of a generated machine stand in slots its generated code fixes,
+   so the directory is one `sce_inbox_directory_slot_t` beside each slot that
+   holds a `sce-static` child: the id of the session the slot holds now, or none.
+   The owner enters a session when the slot's child starts and removes it when the
+   child ends; any context reads it, without a lock and without waiting for the
+   owner, so an interrupt handler posts by session as it posts to the root.
+
+   The id is held as 32-bit words, `SCE_MAX_SESSION_ID_LEN` bytes of it, the most
+   an ending names (`sce_host_invoke_ending_t::session_id`). On an SCQ row the
+   owner writes them between two stamps, odd while it writes and even once it
+   has, and a reader that sees the same even stamp before and after its reading
+   read the words as one id; one that sees the stamp move reads no session, since
+   the slot was taking a session that had not started or giving up one that had
+   ended. On the interrupt-masked row both sides mask interrupts instead. */
+#define SCE_INBOX_DIRECTORY_WORDS (((size_t)SCE_MAX_SESSION_ID_LEN + 3u) / 4u)
+
+typedef struct sce_inbox_directory_slot_s {
+    uint32_t stamp;
+    uint32_t words[SCE_INBOX_DIRECTORY_WORDS];
+} sce_inbox_directory_slot_t;
+
+/* The length of `id` when it holds fewer than SCE_MAX_SESSION_ID_LEN bytes, and
+   SCE_MAX_SESSION_ID_LEN otherwise: an id no ending can name. */
+static inline size_t sce_inbox_directory_length_(const char *id) {
+    size_t len = 0u;
+    while (len < (size_t)SCE_MAX_SESSION_ID_LEN && id[len] != '\0') {
+        len++;
+    }
+    return len;
+}
+
+/* Word `k` of `id`, `len` bytes long: its bytes 4k to 4k + 3, the first in the
+   lowest byte, and zero past its end. */
+static inline uint32_t sce_inbox_directory_word_(const char *id, size_t len, size_t k) {
+    uint32_t word = 0u;
+    size_t j;
+    for (j = 0u; j < 4u; j++) {
+        const size_t at = (4u * k) + j;
+        if (at < len) {
+            word |= (uint32_t)(unsigned char)id[at] << (8u * (uint32_t)j);
+        }
+    }
+    return word;
+}
+
+/* Hold the `len` bytes of `id` in `slot`; `len` 0 for no session. The owner's. */
+static inline void sce_inbox_directory_write_(sce_inbox_directory_slot_t *slot, const char *id, size_t len) {
+    size_t k;
+#if SCE_INBOX_ATOMIC_RMW_WIDTH == 0
+    const irq_state_t state = sce_irq_save();
+    for (k = 0u; k < SCE_INBOX_DIRECTORY_WORDS; k++) {
+        slot->words[k] = sce_inbox_directory_word_(id, len, k);
+    }
+    sce_irq_restore(state);
+#else
+    /* Only the owner writes the stamp, so its own reading of it needs no order. */
+    const uint32_t stamp = sce_atomic_load_relaxed_u32(&slot->stamp);
+    sce_atomic_store_release_u32(&slot->stamp, stamp + 1u);
+    /* The odd stamp before any word, for a reader whose second load sees a word
+       of this write: the release fence orders the stamp before the words. */
+    sce_atomic_fence_release();
+    for (k = 0u; k < SCE_INBOX_DIRECTORY_WORDS; k++) {
+        sce_atomic_store_relaxed_u32(&slot->words[k], sce_inbox_directory_word_(id, len, k));
+    }
+    sce_atomic_store_release_u32(&slot->stamp, stamp + 2u);
+#endif
+}
+
+/* `slot` holds the session `session_id` from now on. The owner's, when the child
+   of the slot starts, before its first macrostep. An id of
+   SCE_MAX_SESSION_ID_LEN bytes or more is one no ending can name, so the slot
+   then holds no session a post can reach. */
+static inline void sce_inbox_directory_enter(sce_inbox_directory_slot_t *slot, const char *session_id) {
+    const size_t len = sce_inbox_directory_length_(session_id);
+    sce_inbox_directory_write_(slot, session_id, len < (size_t)SCE_MAX_SESSION_ID_LEN ? len : 0u);
+}
+
+/* `slot` holds no session from now on. The owner's, when the child of the slot
+   ends, before what its inbox holds is applied. A zeroed slot holds none too. */
+static inline void sce_inbox_directory_leave(sce_inbox_directory_slot_t *slot) {
+    sce_inbox_directory_write_(slot, "", 0u);
+}
+
+/* Whether `slot` holds the session `session_id` names. Any context's: it waits
+   for nothing, and a slot the owner is writing holds no session for it. */
+static inline bool sce_inbox_directory_holds(const sce_inbox_directory_slot_t *slot, const char *session_id) {
+    const size_t len = sce_inbox_directory_length_(session_id);
+    const size_t last = len / 4u;
+    bool same = true;
+    size_t k;
+    if (len == 0u || len >= (size_t)SCE_MAX_SESSION_ID_LEN) {
+        return false;
+    }
+#if SCE_INBOX_ATOMIC_RMW_WIDTH == 0
+    const irq_state_t state = sce_irq_save();
+    for (k = 0u; same && k <= last; k++) {
+        same = slot->words[k] == sce_inbox_directory_word_(session_id, len, k);
+    }
+    sce_irq_restore(state);
+    return same;
+#else
+    const uint32_t before = sce_atomic_load_acquire_u32(&slot->stamp);
+    same = (before & 1u) == 0u;
+    /* Through the word that holds the id's terminator: a longer id held in the
+       slot differs there, and a shorter one sooner. */
+    for (k = 0u; same && k <= last; k++) {
+        same = sce_atomic_load_relaxed_u32(&slot->words[k]) == sce_inbox_directory_word_(session_id, len, k);
+    }
+    /* The words before the second load of the stamp: an unchanged stamp then
+       means the words read were one write's. */
+    sce_atomic_fence_acquire();
+    return same && sce_atomic_load_acquire_u32(&slot->stamp) == before;
+#endif
+}
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

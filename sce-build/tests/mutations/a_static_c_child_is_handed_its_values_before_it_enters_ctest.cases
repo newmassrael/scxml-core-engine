@@ -33,8 +33,8 @@ mutation_oracles backends/c/tests/integration/test_static_invoke.c tests/integra
 
 mutation_case "a child is entered before it is handed its values" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "{% endif %}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n",
-     "{% endif %}\n")
+     "{{ tree_directory.enter('child_' ~ invoke_info.field_suffix, inbox_endings) }}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n",
+     "{{ tree_directory.enter('child_' ~ invoke_info.field_suffix, inbox_endings) }}\n")
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
      "{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}\n",
      "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}\n")
@@ -79,7 +79,7 @@ PY
 
 mutation_case "a child begins with none of its variables at their declared values" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});\n{% endif %}\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry",
+     "    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, true{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});\n{% endif %}\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry",
      "    memset(sm, 0, sizeof(*sm));\n    sm->is_running = true;\n{% if model.needs_event_scheduler %}\n    sm->clock = clock;\n{% endif %}\n{% endif %}\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry")
 PY
 

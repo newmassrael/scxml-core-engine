@@ -1,0 +1,47 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    The owner's half of a C11 tree's directory (docs/adr/0084, D2 as amended at
+    step 10; ARCHITECTURE.md "Engine Threading"): a `sce-static` child session
+    enters the directory of its parent's slot when it starts, before its first
+    macrostep, and leaves it when it ends, after which what its inbox still holds
+    is applied, as at the end of a run. One text for the start of an `<invoke>`
+    (`c/invoke_methods.jinja2`), the resume of a saved child (`c/saved.c.jinja2`)
+    and the two ways a child ends (its state's exit in `c/state_machine.c.jinja2`,
+    its parent's `_destroy` in `c/invoke_methods.jinja2`), so the directory
+    cannot name a session differently from one site to the next.
+
+    `slot` is the member the child stands in (`child_<suffix>`), `stem` its
+    document, `keeps_directory` whether the parent keeps a directory (a machine
+    whose inbox takes host-invoke endings, `inbox_endings`), and `prefix` the
+    symbol prefix.
+#}
+{% macro enter(slot, keeps_directory) -%}
+{% if keeps_directory %}
+#if SCE_MAX_INBOX > 0
+/* docs/adr/0084, D2 as amended at step 10: the session enters the tree's
+   directory before its first macrostep, so a post naming it from now on is put
+   in its own inbox. */
+sce_inbox_directory_enter(&sm->{{ slot }}_directory, sm->{{ slot }}.session_id);
+#endif
+{% endif %}
+{%- endmacro %}
+
+{% macro leave(slot, keeps_directory) -%}
+{% if keeps_directory %}
+#if SCE_MAX_INBOX > 0
+/* docs/adr/0084, D2 as amended at step 10: the session leaves the tree's
+   directory as it ends, so a post naming it from now on is refused. */
+sce_inbox_directory_leave(&sm->{{ slot }}_directory);
+#endif
+{% endif %}
+{%- endmacro %}
+
+{% macro apply_held(prefix, stem, slot) -%}
+#if SCE_MAX_INBOX > 0
+/* docs/adr/0084: what the ended session's inbox still holds is applied, as at
+   the end of a run. */
+{{ prefix }}{{ stem }}_invoked_end(&sm->{{ slot }});
+#endif
+{%- endmacro %}

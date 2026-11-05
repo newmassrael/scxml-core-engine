@@ -20,6 +20,7 @@
 #}
 
 {%- import '_macros/c_child_begin.jinja2' as child_begin %}
+{%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
 {#- A variable's saved form. `is_enum` says the value is of an enum, written and
     read by the functions its type declares beside it. -#}
 {% macro put_scalar(is_enum, stype, expr) -%}
@@ -100,6 +101,10 @@ if (({{ expr }}).present) {
 {# §scxml-6.4: the clock a child this machine starts measures its delays on, as the start gives
    it (`c/invoke_methods.jinja2`). #}
 {% set child_clock_c = 'sce_clock_following(&sm->clock)' if model.needs_event_scheduler else 'sce_clock_monotonic()' %}
+{# docs/adr/0084: whether this machine keeps a directory of the sessions its slots
+   hold, which a resumed child enters. Kept in step with the same `set` in
+   `state_machine.h.jinja2`. #}
+{% set inbox_endings = model.host_invoker_types or static_datamodel %}
 {# What `_restore` is handed besides the text: the seams every `_init*` takes
    (the clock, the host's processors and invokers, the acts it performs). Kept in
    step with the same `set`s in `state_machine.h.jinja2`. #}
@@ -1034,8 +1039,13 @@ SCE_SM_FN static bool {{ _t }}_saved_resume_child({{ _t }}_t *sm, const sce_save
 {% endif %}
         sm->{{ slot }}_active = true;
         sce_copy_bounded_id(sm->child_{{ inv.field_suffix }}_invoke_id, invoke_id);
-        return {{ csym_prefix }}{{ target.stem }}_resume(&sm->{{ slot }}, child->session, wall_now_ms, err) ||
-               sce_saved_within(err, path);
+        if (!{{ csym_prefix }}{{ target.stem }}_resume(&sm->{{ slot }}, child->session, wall_now_ms, err)) {
+            return sce_saved_within(err, path);
+        }
+{% if (inv.candidates and target.child_is_static) or (not inv.candidates and inv.child_is_static) %}
+{{ tree_directory.enter(slot, inbox_endings) }}
+{% endif %}
+        return true;
     }
 {% endfor %}
 {% endfor %}
@@ -1815,7 +1825,7 @@ bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall
         args = &defaults;
     }
 {% endif %}
-    if (!{{ _t }}_init_construct(sm{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %})) {
+    if (!{{ _t }}_init_construct(sm, false{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %})) {
         return sce_saved_refuse(err, "the host does not perform every act this document declares");
     }
     return {{ _t }}_saved_apply(sm, &session, &judged, wall_now_ms, err);

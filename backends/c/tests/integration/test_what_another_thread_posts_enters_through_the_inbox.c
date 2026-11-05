@@ -20,7 +20,8 @@
 //     event is a host-run invocation's completion or the host's own raise;
 //   * an ending posted for a child session is in that session's inbox when it
 //     is posted, so the child takes it before an event its parent sends it
-//     later in the same macrostep (ADR 0084, D2 as amended at step 10).
+//     later in the same macrostep (ADR 0084, D2 as amended at step 10), and a
+//     post naming a session the tree does not hold is refused and counted.
 //
 // Built once per row of the queue, as a deployment states its atomics
 // (`SCE_INBOX_ATOMIC_RMW_WIDTH` 64, 32 and 0), each with `SCE_MAX_INBOX`
@@ -681,15 +682,16 @@ static void *post_ordering_once(void *arg) {
     return NULL;
 }
 
-static void before_question(void *user_data) {
-    ordering_host_t *host = (ordering_host_t *)user_data;
+/* Post the completion of the clock's start, naming `session`, from a thread of
+   its own; whether the tree took it. Joined before it returns, so the post
+   happens-before what the caller does next. */
+static bool post_clock_ending(const ordering_host_t *host, const char *session) {
     static_invoke_ending_order_inbox_input_t input;
     ordering_post_t post;
     pthread_t poster;
-    host->asked = true;
     memset(&input, 0, sizeof(input));
     input.kind = STATIC_INVOKE_ENDING_ORDER_INBOX_HOST_INVOKE_ENDING;
-    (void)snprintf(input.as.ending.session_id, sizeof(input.as.ending.session_id), "%s", host->session);
+    (void)snprintf(input.as.ending.session_id, sizeof(input.as.ending.session_id), "%s", session);
     (void)snprintf(input.as.ending.processor_type, sizeof(input.as.ending.processor_type), "%s", ORDER_CLOCK_TYPE);
     (void)snprintf(input.as.ending.invoke_id, sizeof(input.as.ending.invoke_id), "%s", ORDER_CLOCK_ID);
     input.as.ending.token = host->token;
@@ -700,10 +702,42 @@ static void before_question(void *user_data) {
     post.taken = false;
     if (pthread_create(&poster, NULL, post_ordering_once, &post) != 0) {
         (void)fprintf(stderr, "FAIL: a posting thread could not be started\n");
-        return;
+        return false;
     }
     (void)pthread_join(poster, NULL);
-    host->posted = post.taken;
+    return post.taken;
+}
+
+static void before_question(void *user_data) {
+    ordering_host_t *host = (ordering_host_t *)user_data;
+    host->asked = true;
+    host->posted = post_clock_ending(host, host->session);
+}
+
+/* Initialise `sm` with `host` as its invokers and its table, on the calling
+   thread, which makes it the owner, and drive it until `worker` has started
+   `clock`; false, with `sm` destroyed, when it did not start it once. */
+static bool start_ordering_tree(static_invoke_ending_order_t *sm, ordering_host_t *host) {
+    sce_host_invoker_registry_t wiring;
+    memset(host, 0, sizeof(*host));
+    memset(&wiring, 0, sizeof(wiring));
+    host->sm = sm;
+    host->table.before_question = before_question;
+    host->table.user_data = host;
+    (void)sce_host_invoker_register(&wiring, ORDER_CLOCK_TYPE, serve_clock, host);
+    if (!static_invoke_ending_order_init_with_host_invokers(sm, &wiring, &host->table)) {
+        (void)fprintf(stderr, "FAIL: the machine refused a host table that performs `beforeQuestion`\n");
+        return false;
+    }
+    for (int i = 0; i < 16 && host->starts == 0; i++) {
+        static_invoke_ending_order_step(sm);
+    }
+    if (host->starts != 1 || host->session[0] == '\0') {
+        (void)fprintf(stderr, "FAIL: `worker` did not start `clock` once (%d starts)\n", host->starts);
+        static_invoke_ending_order_destroy(sm);
+        return false;
+    }
+    return true;
 }
 
 /* ADR 0084, D2 as amended at step 10: the address of a posted input is resolved
@@ -713,26 +747,10 @@ static void before_question(void *user_data) {
 static int a_childs_ending_posted_before_its_parents_send_is_taken_before_it(void) {
     static static_invoke_ending_order_t sm;
     static ordering_host_t host;
-    sce_host_invoker_registry_t wiring;
     static_invoke_ending_order_event_with_meta_t ask;
     int bad = 0;
 
-    memset(&host, 0, sizeof(host));
-    memset(&wiring, 0, sizeof(wiring));
-    host.sm = &sm;
-    host.table.before_question = before_question;
-    host.table.user_data = &host;
-    (void)sce_host_invoker_register(&wiring, ORDER_CLOCK_TYPE, serve_clock, &host);
-    if (!static_invoke_ending_order_init_with_host_invokers(&sm, &wiring, &host.table)) {
-        (void)fprintf(stderr, "FAIL: the machine refused a host table that performs `beforeQuestion`\n");
-        return 1;
-    }
-    for (int i = 0; i < 16 && host.starts == 0; i++) {
-        static_invoke_ending_order_step(&sm);
-    }
-    if (host.starts != 1 || host.session[0] == '\0') {
-        (void)fprintf(stderr, "FAIL: `worker` did not start `clock` once (%d starts)\n", host.starts);
-        static_invoke_ending_order_destroy(&sm);
+    if (!start_ordering_tree(&sm, &host)) {
         return 1;
     }
 
@@ -765,6 +783,66 @@ static int a_childs_ending_posted_before_its_parents_send_is_taken_before_it(voi
     return bad;
 }
 
+/* The waker the host of the tree installs on the root: counts the posts any
+   session's inbox took. */
+static void count_tree_wake(void *context) {
+    (*(uint32_t *)context)++;
+}
+
+/* ADR 0084, D2 as amended at step 10: the tree's handle looks the named session
+   up when the post is made. A session the tree does not hold is refused and the
+   refusal counted, with nothing woken; one it holds is put in that session's
+   inbox, which wakes the waker installed on the root, and the root's drive
+   reaches the child that holds it. */
+static int a_post_names_a_session_of_the_tree_or_is_refused(void) {
+    static static_invoke_ending_order_t sm;
+    static ordering_host_t host;
+    static uint32_t wakes;
+    int bad = 0;
+
+    if (!start_ordering_tree(&sm, &host)) {
+        return 1;
+    }
+    wakes = 0u;
+    /* Installed before any other thread can reach the tree. */
+    static_invoke_ending_order_inbox_wake_with(&sm, count_tree_wake, &wakes);
+
+    if (post_clock_ending(&host, "no.such.session")) {
+        (void)fprintf(stderr, "FAIL: the tree took an ending naming a session it does not hold\n");
+        bad = 1;
+    }
+    if (static_invoke_ending_order_refused_inbox_posts(&sm) != 1u || wakes != 0u) {
+        (void)fprintf(stderr,
+                      "FAIL: an ending naming no session of the tree was counted %u times as refused and woke "
+                      "the owner %u times, where 1 and 0 were due\n",
+                      (unsigned)static_invoke_ending_order_refused_inbox_posts(&sm), (unsigned)wakes);
+        bad = 1;
+    }
+
+    if (!post_clock_ending(&host, host.session)) {
+        (void)fprintf(stderr, "FAIL: the tree refused an ending posted for `worker`, a session it holds\n");
+        bad = 1;
+    }
+    if (wakes != 1u) {
+        (void)fprintf(stderr, "FAIL: a post to `worker`'s inbox woke the root's waker %u times, where 1 was due\n",
+                      (unsigned)wakes);
+        bad = 1;
+    }
+    if (static_invoke_ending_order_get_stamped_at(&sm) != 0u) {
+        (void)fprintf(stderr, "FAIL: a post was applied before the owner drove the tree\n");
+        bad = 1;
+    }
+    static_invoke_ending_order_step(&sm);
+    static_invoke_ending_order_step(&sm);
+    if (static_invoke_ending_order_get_stamped_at(&sm) != 1u) {
+        (void)fprintf(stderr, "FAIL: the root's drive did not reach `worker`, whose inbox held the clock's ending; "
+                              "the parent never heard `stamped`\n");
+        bad = 1;
+    }
+    static_invoke_ending_order_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= posts_from_many_threads_are_taken_as_a_single_threaded_replay_takes_them();
@@ -773,6 +851,7 @@ int main(void) {
     bad |= a_post_made_before_the_owner_queues_its_own_event_is_taken_before_it();
     bad |= a_post_made_before_the_hosts_own_raise_is_taken_before_it();
     bad |= a_childs_ending_posted_before_its_parents_send_is_taken_before_it();
+    bad |= a_post_names_a_session_of_the_tree_or_is_refused();
     if (bad == 0) {
         (void)printf("PASS: the inbox (SCE_INBOX_ATOMIC_RMW_WIDTH %d, SCE_MAX_INBOX %d)\n", SCE_INBOX_ATOMIC_RMW_WIDTH,
                      SCE_MAX_INBOX);
