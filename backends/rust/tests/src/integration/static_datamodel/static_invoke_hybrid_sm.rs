@@ -980,6 +980,9 @@ impl StaticInvokeHybridPolicy {
                     // docs/adr/0045: the tree's host invokers serve the child, whose
                     // host-run invocations name it by its session id.
                     engine.share_host_invokers_with(&mut child_engine);
+                    // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                    // enters the tree's directory before its first macrostep.
+                    engine.share_tree_inboxes_with(&mut child_engine);
                     child_engine.initialize();
 
                     self.child_first_run_0j_static_hybrid_first = Some(Box::new(child_engine));
@@ -1076,6 +1079,9 @@ impl StaticInvokeHybridPolicy {
                     // docs/adr/0045: the tree's host invokers serve the child, whose
                     // host-run invocations name it by its session id.
                     engine.share_host_invokers_with(&mut child_engine);
+                    // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                    // enters the tree's directory before its first macrostep.
+                    engine.share_tree_inboxes_with(&mut child_engine);
                     child_engine.initialize();
 
                     self.child_first_run_0j_static_hybrid_second = Some(Box::new(child_engine));
@@ -1208,6 +1214,9 @@ impl StaticInvokeHybridPolicy {
                     // docs/adr/0045: the tree's host invokers serve the child, whose
                     // host-run invocations name it by its session id.
                     engine.share_host_invokers_with(&mut child_engine);
+                    // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                    // enters the tree's directory before its first macrostep.
+                    engine.share_tree_inboxes_with(&mut child_engine);
                     child_engine.initialize();
 
                     self.child_lossy_run_0j_static_hybrid_first = Some(Box::new(child_engine));
@@ -1306,6 +1315,9 @@ impl StaticInvokeHybridPolicy {
                     // docs/adr/0045: the tree's host invokers serve the child, whose
                     // host-run invocations name it by its session id.
                     engine.share_host_invokers_with(&mut child_engine);
+                    // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                    // enters the tree's directory before its first macrostep.
+                    engine.share_tree_inboxes_with(&mut child_engine);
                     child_engine.initialize();
 
                     self.child_lossy_run_0j_static_hybrid_second = Some(Box::new(child_engine));
@@ -1423,6 +1435,9 @@ impl StaticInvokeHybridPolicy {
                     // docs/adr/0045: the tree's host invokers serve the child, whose
                     // host-run invocations name it by its session id.
                     engine.share_host_invokers_with(&mut child_engine);
+                    // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                    // enters the tree's directory before its first macrostep.
+                    engine.share_tree_inboxes_with(&mut child_engine);
                     child_engine.initialize();
 
                     self.child_missing_run_0j_static_hybrid_first = Some(Box::new(child_engine));
@@ -1508,6 +1523,9 @@ impl StaticInvokeHybridPolicy {
                     // docs/adr/0045: the tree's host invokers serve the child, whose
                     // host-run invocations name it by its session id.
                     engine.share_host_invokers_with(&mut child_engine);
+                    // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                    // enters the tree's directory before its first macrostep.
+                    engine.share_tree_inboxes_with(&mut child_engine);
                     child_engine.initialize();
 
                     self.child_missing_run_0j_static_hybrid_second = Some(Box::new(child_engine));
@@ -1640,6 +1658,9 @@ impl StaticInvokeHybridPolicy {
                     // docs/adr/0045: the tree's host invokers serve the child, whose
                     // host-run invocations name it by its session id.
                     engine.share_host_invokers_with(&mut child_engine);
+                    // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                    // enters the tree's directory before its first macrostep.
+                    engine.share_tree_inboxes_with(&mut child_engine);
                     child_engine.initialize();
 
                     self.child_second_run_0j_static_hybrid_first = Some(Box::new(child_engine));
@@ -1740,6 +1761,9 @@ impl StaticInvokeHybridPolicy {
                     // docs/adr/0045: the tree's host invokers serve the child, whose
                     // host-run invocations name it by its session id.
                     engine.share_host_invokers_with(&mut child_engine);
+                    // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                    // enters the tree's directory before its first macrostep.
+                    engine.share_tree_inboxes_with(&mut child_engine);
                     child_engine.initialize();
 
                     self.child_second_run_0j_static_hybrid_second = Some(Box::new(child_engine));
@@ -1877,8 +1901,10 @@ impl StaticInvokeHybridPolicy {
         );
         if child.is_in_final_state() && !self.pending_done_invoke_first_run {
             self.pending_done_invoke_first_run = true;
-            // The session ended: its Mesh router is told so.
+            // The session ended: its Mesh router is told so, and its inbox
+            // leaves the tree's directory (ARCHITECTURE.md "Engine Threading").
             child.detach_mesh();
+            child.leave_tree_inboxes();
             // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
             // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
             // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1907,8 +1933,10 @@ impl StaticInvokeHybridPolicy {
         );
         if child.is_in_final_state() && !self.pending_done_invoke_first_run {
             self.pending_done_invoke_first_run = true;
-            // The session ended: its Mesh router is told so.
+            // The session ended: its Mesh router is told so, and its inbox
+            // leaves the tree's directory (ARCHITECTURE.md "Engine Threading").
             child.detach_mesh();
+            child.leave_tree_inboxes();
             // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
             // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
             // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1937,8 +1965,10 @@ impl StaticInvokeHybridPolicy {
         );
         if child.is_in_final_state() && !self.pending_done_invoke_second_run {
             self.pending_done_invoke_second_run = true;
-            // The session ended: its Mesh router is told so.
+            // The session ended: its Mesh router is told so, and its inbox
+            // leaves the tree's directory (ARCHITECTURE.md "Engine Threading").
             child.detach_mesh();
+            child.leave_tree_inboxes();
             // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
             // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
             // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1967,8 +1997,10 @@ impl StaticInvokeHybridPolicy {
         );
         if child.is_in_final_state() && !self.pending_done_invoke_second_run {
             self.pending_done_invoke_second_run = true;
-            // The session ended: its Mesh router is told so.
+            // The session ended: its Mesh router is told so, and its inbox
+            // leaves the tree's directory (ARCHITECTURE.md "Engine Threading").
             child.detach_mesh();
+            child.leave_tree_inboxes();
             // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
             // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
             // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1997,8 +2029,10 @@ impl StaticInvokeHybridPolicy {
         );
         if child.is_in_final_state() && !self.pending_done_invoke_lossy_run {
             self.pending_done_invoke_lossy_run = true;
-            // The session ended: its Mesh router is told so.
+            // The session ended: its Mesh router is told so, and its inbox
+            // leaves the tree's directory (ARCHITECTURE.md "Engine Threading").
             child.detach_mesh();
+            child.leave_tree_inboxes();
             // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
             // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
             // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -2027,8 +2061,10 @@ impl StaticInvokeHybridPolicy {
         );
         if child.is_in_final_state() && !self.pending_done_invoke_lossy_run {
             self.pending_done_invoke_lossy_run = true;
-            // The session ended: its Mesh router is told so.
+            // The session ended: its Mesh router is told so, and its inbox
+            // leaves the tree's directory (ARCHITECTURE.md "Engine Threading").
             child.detach_mesh();
+            child.leave_tree_inboxes();
             // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
             // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
             // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -2057,8 +2093,10 @@ impl StaticInvokeHybridPolicy {
         );
         if child.is_in_final_state() && !self.pending_done_invoke_missing_run {
             self.pending_done_invoke_missing_run = true;
-            // The session ended: its Mesh router is told so.
+            // The session ended: its Mesh router is told so, and its inbox
+            // leaves the tree's directory (ARCHITECTURE.md "Engine Threading").
             child.detach_mesh();
+            child.leave_tree_inboxes();
             // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
             // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
             // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -2087,8 +2125,10 @@ impl StaticInvokeHybridPolicy {
         );
         if child.is_in_final_state() && !self.pending_done_invoke_missing_run {
             self.pending_done_invoke_missing_run = true;
-            // The session ended: its Mesh router is told so.
+            // The session ended: its Mesh router is told so, and its inbox
+            // leaves the tree's directory (ARCHITECTURE.md "Engine Threading").
             child.detach_mesh();
+            child.leave_tree_inboxes();
             // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
             // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
             // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -2434,6 +2474,9 @@ impl StaticInvokeHybridPolicy {
                 // docs/adr/0045: the tree's host invokers, handed on before the
                 // child's re-armed invocations start at its first drive.
                 engine.share_host_invokers_with(&mut child_engine);
+                // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                // enters the tree's directory before its first drive.
+                engine.share_tree_inboxes_with(&mut child_engine);
                 self.child_first_run_0j_static_hybrid_first = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -2491,6 +2534,9 @@ impl StaticInvokeHybridPolicy {
                 // docs/adr/0045: the tree's host invokers, handed on before the
                 // child's re-armed invocations start at its first drive.
                 engine.share_host_invokers_with(&mut child_engine);
+                // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                // enters the tree's directory before its first drive.
+                engine.share_tree_inboxes_with(&mut child_engine);
                 self.child_first_run_0j_static_hybrid_second = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -2548,6 +2594,9 @@ impl StaticInvokeHybridPolicy {
                 // docs/adr/0045: the tree's host invokers, handed on before the
                 // child's re-armed invocations start at its first drive.
                 engine.share_host_invokers_with(&mut child_engine);
+                // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                // enters the tree's directory before its first drive.
+                engine.share_tree_inboxes_with(&mut child_engine);
                 self.child_second_run_0j_static_hybrid_first = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -2605,6 +2654,9 @@ impl StaticInvokeHybridPolicy {
                 // docs/adr/0045: the tree's host invokers, handed on before the
                 // child's re-armed invocations start at its first drive.
                 engine.share_host_invokers_with(&mut child_engine);
+                // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                // enters the tree's directory before its first drive.
+                engine.share_tree_inboxes_with(&mut child_engine);
                 self.child_second_run_0j_static_hybrid_second = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -2662,6 +2714,9 @@ impl StaticInvokeHybridPolicy {
                 // docs/adr/0045: the tree's host invokers, handed on before the
                 // child's re-armed invocations start at its first drive.
                 engine.share_host_invokers_with(&mut child_engine);
+                // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                // enters the tree's directory before its first drive.
+                engine.share_tree_inboxes_with(&mut child_engine);
                 self.child_lossy_run_0j_static_hybrid_first = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -2719,6 +2774,9 @@ impl StaticInvokeHybridPolicy {
                 // docs/adr/0045: the tree's host invokers, handed on before the
                 // child's re-armed invocations start at its first drive.
                 engine.share_host_invokers_with(&mut child_engine);
+                // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                // enters the tree's directory before its first drive.
+                engine.share_tree_inboxes_with(&mut child_engine);
                 self.child_lossy_run_0j_static_hybrid_second = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -2776,6 +2834,9 @@ impl StaticInvokeHybridPolicy {
                 // docs/adr/0045: the tree's host invokers, handed on before the
                 // child's re-armed invocations start at its first drive.
                 engine.share_host_invokers_with(&mut child_engine);
+                // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                // enters the tree's directory before its first drive.
+                engine.share_tree_inboxes_with(&mut child_engine);
                 self.child_missing_run_0j_static_hybrid_first = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -2833,6 +2894,9 @@ impl StaticInvokeHybridPolicy {
                 // docs/adr/0045: the tree's host invokers, handed on before the
                 // child's re-armed invocations start at its first drive.
                 engine.share_host_invokers_with(&mut child_engine);
+                // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
+                // enters the tree's directory before its first drive.
+                engine.share_tree_inboxes_with(&mut child_engine);
                 self.child_missing_run_0j_static_hybrid_second = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -3219,10 +3283,12 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                 if let Some(mut child) = self.child_first_run_0j_static_hybrid_first.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
                 if let Some(mut child) = self.child_first_run_0j_static_hybrid_second.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
                 self.active_invokes.remove("first_run");
                 self.pending_done_invoke_first_run = false;
@@ -3239,10 +3305,12 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                 if let Some(mut child) = self.child_lossy_run_0j_static_hybrid_first.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
                 if let Some(mut child) = self.child_lossy_run_0j_static_hybrid_second.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
                 self.active_invokes.remove("lossy_run");
                 self.pending_done_invoke_lossy_run = false;
@@ -3259,10 +3327,12 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                 if let Some(mut child) = self.child_missing_run_0j_static_hybrid_first.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
                 if let Some(mut child) = self.child_missing_run_0j_static_hybrid_second.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
                 self.active_invokes.remove("missing_run");
                 self.pending_done_invoke_missing_run = false;
@@ -3279,10 +3349,12 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                 if let Some(mut child) = self.child_second_run_0j_static_hybrid_first.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
                 if let Some(mut child) = self.child_second_run_0j_static_hybrid_second.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
                 self.active_invokes.remove("second_run");
                 self.pending_done_invoke_second_run = false;
@@ -3932,6 +4004,35 @@ impl StatePolicy for StaticInvokeHybridPolicy {
         }
         if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_second {
             child.adopt_host_invokers(invokers);
+        }
+    }
+
+    // ARCHITECTURE.md "Engine Threading", item 3: the tree's inboxes, handed to
+    // each child this session holds, and by each child to its own.
+    fn adopt_tree_inboxes_in_children(&mut self, tree: &::sce_rust_runtime::TreeInboxes) {
+        if let Some(ref mut child) = self.child_first_run_0j_static_hybrid_first {
+            child.adopt_tree_inboxes(tree);
+        }
+        if let Some(ref mut child) = self.child_first_run_0j_static_hybrid_second {
+            child.adopt_tree_inboxes(tree);
+        }
+        if let Some(ref mut child) = self.child_second_run_0j_static_hybrid_first {
+            child.adopt_tree_inboxes(tree);
+        }
+        if let Some(ref mut child) = self.child_second_run_0j_static_hybrid_second {
+            child.adopt_tree_inboxes(tree);
+        }
+        if let Some(ref mut child) = self.child_lossy_run_0j_static_hybrid_first {
+            child.adopt_tree_inboxes(tree);
+        }
+        if let Some(ref mut child) = self.child_lossy_run_0j_static_hybrid_second {
+            child.adopt_tree_inboxes(tree);
+        }
+        if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_first {
+            child.adopt_tree_inboxes(tree);
+        }
+        if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_second {
+            child.adopt_tree_inboxes(tree);
         }
     }
 

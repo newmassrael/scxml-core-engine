@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "41a11c3",
+  "embed_version": "b0fb0a6",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 517,
+  "symbol_count": 506,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -833,6 +833,12 @@
     },
     {
       "header": "core/EngineInbox.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::InboxWaker"
+    },
+    {
+      "header": "core/EngineInbox.h",
       "kind": "struct",
       "members": [
         "method void (void *, std::size_t, std::size_t) noexcept deallocate",
@@ -1530,6 +1536,12 @@
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Core::HasCancellableChildrenTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Core::HasChildMeshDetachTrait<T>"
     },
     {
@@ -1765,6 +1777,26 @@
       "kind": "function",
       "name": "SCE::Core::TransitionHelper::matchesEventDescriptor",
       "signature": "bool SCE::Core::TransitionHelper::matchesEventDescriptor(const std::string &, const std::string &)"
+    },
+    {
+      "header": "core/TreeSessions.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::TreeSessions"
+    },
+    {
+      "header": "core/TreeSessions.h",
+      "kind": "struct",
+      "members": [
+        "field std::shared_ptr< ::SCE::TreeInvokers> invokers",
+        "field std::shared_ptr<InboxWaker> waker",
+        "field std::shared_ptr<TreeSessions> sessions",
+        "method SessionTree &(SessionTree &&) operator=",
+        "method SessionTree &(const SessionTree &) operator=",
+        "method void (SessionTree &&) SessionTree",
+        "method void (const SessionTree &) SessionTree"
+      ],
+      "name": "SCE::Core::SessionTree"
     },
     {
       "header": "core/TypedHostInvokeRequest.h",
@@ -2912,96 +2944,6 @@
       "kind": "typedef",
       "name": "SCE::Forge::Detail::Ring",
       "type": "std::common_type_t<unsigned int, std::make_unsigned_t<T>>"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Forge::Bounded<T>"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "function",
-      "name": "SCE::Forge::Detail::converts_to<T>",
-      "signature": "void SCE::Forge::Detail::converts_to<T>(To) noexcept"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "function",
-      "name": "SCE::Forge::Detail::equal_elements<T>",
-      "signature": "bool SCE::Forge::Detail::equal_elements<T>(const A &, const B &)"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "function",
-      "name": "SCE::Forge::operator!=<T>",
-      "signature": "bool SCE::Forge::operator!=<T>(const Bounded<L, Max, Min> &, const Bounded<L2, Max2, Min2> &)"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "function",
-      "name": "SCE::Forge::operator!=<T>",
-      "signature": "bool SCE::Forge::operator!=<T>(const Bounded<L, Max, Min> &, const R &)"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "function",
-      "name": "SCE::Forge::operator!=<T>",
-      "signature": "bool SCE::Forge::operator!=<T>(const R &, const Bounded<L, Max, Min> &)"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "function",
-      "name": "SCE::Forge::operator==<T>",
-      "signature": "bool SCE::Forge::operator==<T>(const Bounded<L, Max, Min> &, const Bounded<L2, Max2, Min2> &)"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "function",
-      "name": "SCE::Forge::operator==<T>",
-      "signature": "bool SCE::Forge::operator==<T>(const Bounded<L, Max, Min> &, const R &)"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "function",
-      "name": "SCE::Forge::operator==<T>",
-      "signature": "bool SCE::Forge::operator==<T>(const R &, const Bounded<L, Max, Min> &)"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "struct",
-      "members": [],
-      "name": "SCE::Forge::Detail::CopiesFrom<T>"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "struct",
-      "members": [],
-      "name": "SCE::Forge::Detail::IsBounded<T>"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "struct",
-      "members": [],
-      "name": "SCE::Forge::Detail::IsContiguous<T>"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "struct",
-      "members": [],
-      "name": "SCE::Forge::Detail::MakesCopies<T>"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "struct",
-      "members": [],
-      "name": "SCE::Forge::Detail::WithinBounds<T>"
-    },
-    {
-      "header": "sce/forge/bounded.h",
-      "kind": "typedef",
-      "name": "SCE::Forge::Bytes",
-      "type": "Bounded<Span<const std::uint8_t>, Max, Min>"
     },
     {
       "header": "sce/forge/broadcast_log.h",
