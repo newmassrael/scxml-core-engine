@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: dcc96ea8c5321d36e69f038b98535f0793d14bdbecc7d72d9cf5831d9f96378c
+// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
 #![doc = "SCE-MAP: schema_item_pick.scxml:10 :: _forge_body"]
 // SCE-MAP: schema_item_pick.scxml:10 :: _forge_body
 
@@ -28,7 +28,7 @@ pub const SCHEMA_ID: &str = "urn:sce:schema:schema_item_pick:1";
 /// The payload as a JSON Schema (2020-12): one spelling of each value, every
 /// bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
 #[allow(dead_code)]
-pub const JSON_SCHEMA: &str = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:schema_item_pick:1\",\"x-sce-source-hash\":\"dcc96ea8c5321d36e69f038b98535f0793d14bdbecc7d72d9cf5831d9f96378c\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"title\":{\"type\":\"string\",\"maxLength\":16,\"x-sce-max-bytes\":16},\"count\":{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647}},\"required\":[\"id\",\"title\",\"count\"],\"additionalProperties\":false}";
+pub const JSON_SCHEMA: &str = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:schema_item_pick:1\",\"x-sce-source-hash\":\"3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"title\":{\"type\":\"string\",\"maxLength\":16,\"x-sce-max-bytes\":16},\"count\":{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647}},\"required\":[\"id\",\"title\",\"count\"],\"additionalProperties\":false}";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SchemaItemPickPayload {
