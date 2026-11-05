@@ -493,11 +493,10 @@ int main(int argc, char *argv[]) {
                     std::vector<SCE::W3C::TestReport> testReports;
                     try {
                         SCE_LOG_INFO("W3C CLI: Running test {} (including variants if any)", testId);
-                        testReports = runner.runAllMatchingTests(testId);
+                        testReports = runner.runAllMatchingTests(testId, runInterpreter, runAot);
                     } catch (const std::exception &e) {
-                        // runAllMatchingTests runs both engines
                         SCE_LOG_ERROR("W3C CLI: Error running test {}: {}", testId, e.what());
-                        testReports = unrunReports(std::to_string(testId), true, true, e.what(), runner);
+                        testReports = unrunReports(std::to_string(testId), runInterpreter, runAot, e.what(), runner);
                     }
 
                     // No report means no test has this ID: the numbering is sparse
@@ -597,55 +596,10 @@ int main(int argc, char *argv[]) {
 
                         if (isNumeric) {
                             // Numeric test ID - run all variants (e.g., "403" runs 403a, 403b, 403c)
+                            // on the engines asked for; the runner reports each run
+                            // through the one reporter, whichever engine ran it
                             SCE_LOG_INFO("W3C CLI: Running test {} (including all variants)", testId);
-
-                            if (runInterpreter && runAot) {
-                                // Case 1: Both engines - runAllMatchingTests already runs both
-                                testReports = runner.runAllMatchingTests(std::stoi(testId));
-                            } else if (runInterpreter && !runAot) {
-                                // Case 2: Interpreter only - run all, then filter out AOT reports
-                                testReports = runner.runAllMatchingTests(std::stoi(testId));
-                                testReports.erase(std::remove_if(testReports.begin(), testReports.end(),
-                                                                 [](const auto &r) { return r.engineType == "aot"; }),
-                                                  testReports.end());
-                            } else if (!runInterpreter && runAot) {
-                                // Case 3: AOT only - discover variants and run AOT manually
-                                std::vector<std::string> variantIds;
-                                auto discoveredTests = runner.getTestSuite()->discoverTests();
-                                for (const auto &testPath : discoveredTests) {
-                                    // Extract test ID from path (e.g., "resources/403:a" -> "403a")
-                                    size_t colonPos = testPath.find(':');
-                                    size_t slashPos = testPath.rfind('/');
-                                    if (slashPos != std::string::npos) {
-                                        // Extract numeric part only (before colon if present)
-                                        std::string numericPart;
-                                        if (colonPos != std::string::npos && colonPos > slashPos) {
-                                            numericPart =
-                                                testPath.substr(slashPos + 1, colonPos - slashPos - 1);  // "403"
-                                        } else {
-                                            numericPart = testPath.substr(slashPos + 1);  // "403"
-                                        }
-
-                                        int discoveredId = std::stoi(numericPart);
-                                        if (discoveredId == std::stoi(testId)) {
-                                            if (colonPos != std::string::npos && colonPos > slashPos) {
-                                                std::string variant = testPath.substr(colonPos + 1);
-                                                variantIds.push_back(numericPart + variant);  // "403" + "a" = "403a"
-                                            } else {
-                                                variantIds.push_back(numericPart);
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Run AOT for each discovered variant (runAotTest
-                                // reports a throw as an ERROR)
-                                for (const auto &variantId : variantIds) {
-                                    SCE::W3C::TestReport aotReport = runner.runAotTest(variantId);
-                                    aotReport.testId = variantId;
-                                    testReports.push_back(aotReport);
-                                }
-                            }
+                            testReports = runner.runAllMatchingTests(std::stoi(testId), runInterpreter, runAot);
                         } else {
                             // Test ID with variant suffix - run exact match only (e.g., "403a" runs only
                             // test403a.scxml)
@@ -659,11 +613,10 @@ int main(int argc, char *argv[]) {
                                 }
                             }
 
-                            // Run AOT for specific variant (runAotTest reports a throw as an ERROR)
+                            // Run AOT for specific variant (runAotTest reports a throw as an
+                            // ERROR, and hands the report to the reporter as runTest does)
                             if (runAot && testExists) {
-                                SCE::W3C::TestReport aotReport = runner.runAotTest(testId);
-                                aotReport.testId = testId;
-                                testReports.push_back(aotReport);
+                                testReports.push_back(runner.runAotTest(testId));
                             }
                         }
                     } catch (const std::exception &e) {
@@ -769,27 +722,9 @@ int main(int argc, char *argv[]) {
                         }
                     }
                 } else {
-                    // If interpreter not running, discover all test IDs manually
-                    auto discoveredTests = runner.getTestSuite()->discoverTests();
-                    for (const auto &testPath : discoveredTests) {
-                        // Extract test ID from path (e.g., "resources/403:a" -> "403a")
-                        size_t colonPos = testPath.find(':');
-                        size_t slashPos = testPath.rfind('/');
-                        std::string testId;
-                        if (slashPos != std::string::npos) {
-                            // Extract numeric part only (before colon if present)
-                            std::string numericPart;
-                            if (colonPos != std::string::npos && colonPos > slashPos) {
-                                numericPart = testPath.substr(slashPos + 1, colonPos - slashPos - 1);  // "403"
-                                std::string variant = testPath.substr(colonPos + 1);                   // "a"
-                                testId = numericPart + variant;  // "403" + "a" = "403a"
-                            } else {
-                                numericPart = testPath.substr(slashPos + 1);  // "403"
-                                testId = numericPart;
-                            }
-                            allTestIds.push_back(testId);
-                        }
-                    }
+                    // If interpreter not running, the runner names every fixture by
+                    // the full ID its reports carry (e.g., "403a")
+                    allTestIds = runner.discoverFixtureIds();
                 }
 
                 // Run AOT engine tests for all test IDs (including variants)
@@ -800,13 +735,11 @@ int main(int argc, char *argv[]) {
                         if (shouldStop) {
                             break;
                         }
-                        // Use string version of runAotTest to preserve variant suffix (e.g., "403a", "403b");
-                        // it reports a throw as an ERROR
+                        // runAotTest names the report by the full ID it was given (e.g.,
+                        // "403a"), reports a throw as an ERROR, and hands the report to
+                        // the reporter the Interpreter's reports went through
                         SCE::W3C::TestReport aotReport = runner.runAotTest(testIdStr);
-                        // Preserve the original testId (with variant suffix if present)
-                        aotReport.testId = testIdStr;
                         allReports.push_back(aotReport);
-                        runner.getReporter()->reportTestResult(aotReport);
 
                         // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
                         // Zero Duplication: Centralized summary update

@@ -15,7 +15,6 @@
 #include "events/EmscriptenFetchClient.h"
 #include <nlohmann/json.hpp>
 #endif
-#include "common/TestUtils.h"
 #include "scripting/ScriptEngineProvider.h"
 #include "static/StaticExecutionEngine.h"
 #include <chrono>
@@ -51,19 +50,10 @@ public:
     static constexpr int TEST_ID = TestNum;
 
     bool run() override {
-#ifndef __EMSCRIPTEN__
-        // W3C SCXML C.2 BasicHTTPEventProcessor: ThreadSanitizer build incompatibility
-        // TSAN crashes in getaddrinfo("localhost") due to glibc nscd thread safety issues
-        // See DOCKER_TSAN_README.md for nscd workaround details
-        // Skip HTTP tests to avoid TSAN false positives in DNS resolution
-        if (SCE::Test::Utils::isThreadSanitizerBuild()) {
-            SCE_LOG_WARN("HttpAotTest {}: Skipping W3C SCXML C.2 test under ThreadSanitizer (getaddrinfo DNS "
-                         "resolution incompatible with TSAN)",
-                         TestNum);
-            return true;  // Report as PASS (skip, not fail)
-        }
-#endif
-
+        // Under ThreadSanitizer the runner does not call this: whether a
+        // BasicHTTP fixture runs there is one decision for both engines, made
+        // on the fixture's full ID (W3CTestRunner::tsanSkipReport), since
+        // getaddrinfo("localhost") and the listener's threads are not TSan-clean.
         using SM = typename Derived::SM;
         using Event = typename SM::Event;
         using Policy = typename SM::PolicyType;

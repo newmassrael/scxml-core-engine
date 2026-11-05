@@ -994,30 +994,10 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
                       heapBefore / (1024 * 1024));
 #endif
 
-        // Extract test ID from directory name
-        std::filesystem::path path(testDir);
-        std::string dirName = path.filename().string();
-        int testId = 0;
-        try {
-            testId = std::stoi(dirName);
-        } catch (...) {
-            testId = 0;
-        }
-
-        // Check if HTTP test should be skipped under ThreadSanitizer
-        if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
-            reports.push_back(*skipReport);
-            reporter_->reportTestResult(*skipReport);
-            continue;
-        }
-
         // A test that throws is reported as an ERROR and counted, never left
-        // out of the run (errorReport says why).
-        TestReport report = reportingErrors(fixtureIdOf(testDir), "interpreter",
-                                            [this, &testDir] { return runInterpreterFixture(testDir); });
-
-        reports.push_back(report);
-        reporter_->reportTestResult(report);
+        // out of the run (errorReport says why); each report names the
+        // fixture by its full ID, a skip under ThreadSanitizer included.
+        reports.push_back(runOnInterpreter(testDir));
 
 #ifdef __EMSCRIPTEN__
         // WASM memory leak investigation: Log heap size AFTER test but BEFORE cleanup
@@ -1084,18 +1064,8 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
         SCE_LOG_DEBUG("W3C Single Test: Parsing metadata from {}", metadataPath);
         report.metadata = metadataParser_->parseMetadata(metadataPath);
 
-        // Extract variant suffix if present (format: "path/403:a")
-        std::string variantSuffix;
-        size_t colonPos = testDirectory.find(':');
-        if (colonPos != std::string::npos) {
-            variantSuffix = testDirectory.substr(colonPos + 1);
-        }
-
-        // Set testId with variant suffix if present
-        report.testId = std::to_string(report.metadata.id);
-        if (!variantSuffix.empty()) {
-            report.testId += variantSuffix;
-        }
+        // The fixture's full ID, variant suffix included ("path/403:a" is "403a")
+        report.testId = fixtureIdOf(testDirectory);
 
         // W3C SCXML 6.2: Special handling for Test 178 (manual duplicate param verification)
         if (report.metadata.id == 178 && report.metadata.manual) {
@@ -1312,40 +1282,44 @@ TestReport W3CTestRunner::runInterpreterFixture(const std::string &testDir) {
 #endif
 }
 
-std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestUnderTsan(const std::string &testDir, int testId) const {
-    if (!requiresHttpServer(testDir) || !SCE::Test::Utils::isThreadSanitizerBuild()) {
+std::optional<TestReport> W3CTestRunner::tsanSkipReport(const std::string &fixtureId, const std::string &engineType) {
+    if (!SCE::Test::Utils::isThreadSanitizerBuild() || !W3CTestRegistry::needsHttpEndpoint(fixtureId)) {
         return std::nullopt;
     }
 
-    SCE_LOG_WARN("W3C Test {}: Skipping HTTP test under ThreadSanitizer (cpp-httplib thread creation incompatible "
-                 "with TSAN)",
-                 testId);
+    SCE_LOG_WARN("W3C Test {} ({}): Skipping HTTP test under ThreadSanitizer (the listener's threads and "
+                 "getaddrinfo are incompatible with TSAN)",
+                 fixtureId, engineType);
 
     TestReport report;
-    report.testId = std::to_string(testId);
-    report.engineType = "interpreter";
-    report.metadata.id = testId;
+    report.timestamp = std::chrono::system_clock::now();
+    report.testId = fixtureId;
+    report.engineType = engineType;
     report.validationResult = ValidationResult(true, TestResult::PASS, "Skipped: HTTP test under ThreadSanitizer");
 
     return report;
 }
 
-std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestUnderTsan(const std::string &testDir,
-                                                                     const std::string &testId) const {
-    if (!requiresHttpServer(testDir) || !SCE::Test::Utils::isThreadSanitizerBuild()) {
-        return std::nullopt;
-    }
-
-    SCE_LOG_WARN("W3C Test {}: Skipping HTTP test under ThreadSanitizer (cpp-httplib thread creation incompatible "
-                 "with TSAN)",
-                 testId);
-
-    TestReport report;
-    report.testId = testId;
-    report.engineType = "interpreter";
-    report.validationResult = ValidationResult(true, TestResult::PASS, "Skipped: HTTP test under ThreadSanitizer");
-
+TestReport W3CTestRunner::reported(TestReport report) {
+    reporter_->reportTestResult(report);
     return report;
+}
+
+TestReport W3CTestRunner::runOnInterpreter(const std::string &testDir) {
+    const std::string fixtureId = fixtureIdOf(testDir);
+    if (auto skipReport = tsanSkipReport(fixtureId, "interpreter")) {
+        return reported(*skipReport);
+    }
+    return reported(
+        reportingErrors(fixtureId, "interpreter", [this, &testDir] { return runInterpreterFixture(testDir); }));
+}
+
+std::vector<std::string> W3CTestRunner::discoverFixtureIds() {
+    std::vector<std::string> fixtureIds;
+    for (const auto &testDir : testSuite_->discoverTests()) {
+        fixtureIds.push_back(fixtureIdOf(testDir));
+    }
+    return fixtureIds;
 }
 
 TestRunSummary W3CTestRunner::calculateSummary(const std::vector<TestReport> &reports) {
@@ -1354,97 +1328,18 @@ TestRunSummary W3CTestRunner::calculateSummary(const std::vector<TestReport> &re
     return Common::TestSummaryHelper::calculateSummary(reports);
 }
 
-std::optional<TestReport> W3CTestRunner::runSpecificTest(int testId) {
-    auto testDirectories = testSuite_->discoverTests();
-
-    for (const auto &testDir : testDirectories) {
-        // Extract testId from directory path (handle both normal and variant paths)
-        // Variant paths: "path/403:a" -> extract 403
-        // Normal paths: "path/403" -> extract 403
-        std::string pathStr = testDir;
-        size_t colonPos = pathStr.find(':');
-        if (colonPos != std::string::npos) {
-            pathStr = pathStr.substr(0, colonPos);
-        }
-
-        std::filesystem::path path(pathStr);
-        std::string dirName = path.filename().string();
-
-        int currentTestId = 0;
-        try {
-            currentTestId = std::stoi(dirName);
-        } catch (...) {
-            continue;
-        }
-
-        if (currentTestId == testId) {
-            // Check if HTTP test should be skipped under ThreadSanitizer
-            if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
-                return skipReport;
-            }
-
-            return reportingErrors(fixtureIdOf(testDir), "interpreter",
-                                   [this, &testDir] { return runInterpreterFixture(testDir); });
-        }
-    }
-
-    // No test has this ID: the W3C numbering is sparse.
-    return std::nullopt;
-}
-
 std::optional<TestReport> W3CTestRunner::runTest(const std::string &testId) {
     auto testDirectories = testSuite_->discoverTests();
-
-    // Exact match on test ID string
-    // Test directories are in format "resources/NNN:testNNNx.scxml"
-    // We need to match the filename part exactly
 
     SCE_LOG_DEBUG("W3CTestRunner: Looking for exact test ID: {}", testId);
     SCE_LOG_DEBUG("W3CTestRunner: Total discovered test directories: {}", testDirectories.size());
 
     for (const auto &testDir : testDirectories) {
-        SCE_LOG_DEBUG("W3CTestRunner: Checking testDir: {}", testDir);
-        std::string pathStr = testDir;
-
-        // Test directories are in format "../../resources/NNN:x" where NNN is test number and x is variant (a,b,c)
-        // Or "../../resources/NNN" for non-variant tests
-        size_t colonPos = pathStr.find(':');
-
-        // Extract directory path and variant suffix
-        std::filesystem::path dirPath;
-        std::string variantSuffix;
-
-        if (colonPos != std::string::npos) {
-            // Has variant suffix (e.g., "../../resources/403:a")
-            dirPath = pathStr.substr(0, colonPos);
-            variantSuffix = pathStr.substr(colonPos + 1);
-        } else {
-            // No variant suffix (e.g., "../../resources/192")
-            dirPath = pathStr;
-            variantSuffix = "";
-        }
-
-        // Extract test number from directory name
-        std::string dirName = dirPath.filename().string();
-
-        // Construct full test ID: test number + variant suffix (e.g., "403" + "a" = "403a")
-        std::string fileTestId = dirName + variantSuffix;
-
-        SCE_LOG_DEBUG("W3CTestRunner: Extracted fileTestId: {}", fileTestId);
-
-        // Exact string match
-        if (fileTestId == testId) {
+        // Exact match on the fixture's full ID: "../../resources/403:a" is
+        // "403a", "../../resources/192" is "192"
+        if (fixtureIdOf(testDir) == testId) {
             SCE_LOG_INFO("W3CTestRunner: Found exact match for test ID '{}': {}", testId, testDir);
-
-            // Check if HTTP test should be skipped under ThreadSanitizer
-            if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
-                return skipReport;
-            }
-
-            TestReport report =
-                reportingErrors(testId, "interpreter", [this, &testDir] { return runInterpreterFixture(testDir); });
-            reporter_->reportTestResult(report);
-            return report;
+            return runOnInterpreter(testDir);
         }
     }
 
@@ -1452,7 +1347,7 @@ std::optional<TestReport> W3CTestRunner::runTest(const std::string &testId) {
     return std::nullopt;
 }
 
-std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
+std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId, bool onInterpreter, bool onAot) {
     std::vector<TestReport> matchingReports;
     auto testDirectories = testSuite_->discoverTests();
 
@@ -1463,65 +1358,36 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
     }
 
     for (const auto &testDir : testDirectories) {
-        // Extract testId from directory path (handle both normal and variant paths)
-        std::string pathStr = testDir;
-        size_t colonPos = pathStr.find(':');
-        if (colonPos != std::string::npos) {
-            pathStr = pathStr.substr(0, colonPos);
-        }
-
-        std::filesystem::path path(pathStr);
-        std::string dirName = path.filename().string();
-
-        int currentTestId = 0;
+        // The fixture's full ID ("path/403:a" is "403a") and the test number
+        // it begins with (403), which is what this call matches on
+        const std::string fixtureId = fixtureIdOf(testDir);
+        int fixtureNumber = 0;
         try {
-            currentTestId = std::stoi(dirName);
+            fixtureNumber = std::stoi(fixtureId);
         } catch (...) {
             continue;
         }
 
-        if (currentTestId == testId) {
-            // Extract variant suffix from testDir (e.g., "path/403:a" -> "a")
-            std::string variantSuffix;
-            size_t variantPos = testDir.find(':');
-            if (variantPos != std::string::npos) {
-                variantSuffix = testDir.substr(variantPos + 1);
-            }
-
-            // Construct full test ID with variant suffix (e.g., "403" + "a" -> "403a")
-            const std::string fullTestId = std::to_string(testId) + variantSuffix;
-
-            // Each engine leaves one report for the variant, an ERROR when its
-            // run throws (errorReport): an Interpreter throw neither drops the
-            // Interpreter report nor skips the AOT run.
-            //
-            // Check if HTTP test should be skipped under ThreadSanitizer (Interpreter only)
-            // AOT tests will handle TSAN skip logic in HttpAotTest::run()
-            if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
-                matchingReports.push_back(*skipReport);
-                reporter_->reportTestResult(*skipReport);
-                // Don't continue - still run AOT test below
-            } else {
-                TestReport report = reportingErrors(fullTestId, "interpreter",
-                                                    [this, &testDir] { return runInterpreterFixture(testDir); });
-                matchingReports.push_back(report);
-                reporter_->reportTestResult(report);
-            }
-
-            // Run AOT engine test (runAotTest reports a throw as an ERROR)
-            SCE_LOG_INFO("W3C Test {}: Running AOT engine test for variant", fullTestId);
-            TestReport aotReport = runAotTest(fullTestId);
-            // testId should already be set correctly by runAotTest, but preserve if needed
-            if (aotReport.testId.empty() && !matchingReports.empty()) {
-                aotReport.testId = matchingReports.back().testId;
-            }
-            matchingReports.push_back(aotReport);
-            reporter_->reportTestResult(aotReport);
-            SCE_LOG_INFO("W3C Test {}: AOT engine test completed for variant", fullTestId);
-
-            // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
-            cleanupBetweenTests();
+        if (fixtureNumber != testId) {
+            continue;
         }
+
+        // Each engine asked for leaves one report for the variant, under its
+        // full ID, an ERROR when its run throws (errorReport): an Interpreter
+        // throw neither drops the Interpreter report nor skips the AOT run.
+        // Both report through the run's reporter (reported).
+        if (onInterpreter) {
+            matchingReports.push_back(runOnInterpreter(testDir));
+        }
+
+        if (onAot) {
+            SCE_LOG_INFO("W3C Test {}: Running AOT engine test for variant", fixtureId);
+            matchingReports.push_back(runAotTest(fixtureId));
+            SCE_LOG_INFO("W3C Test {}: AOT engine test completed for variant", fixtureId);
+        }
+
+        // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
+        cleanupBetweenTests();
     }
 
     // Empty when no test has this ID: the W3C numbering is sparse, and the
@@ -1542,18 +1408,8 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         SCE_LOG_DEBUG("W3C Single Test (HTTP): Parsing metadata from {}", metadataPath);
         report.metadata = metadataParser_->parseMetadata(metadataPath);
 
-        // Extract variant suffix if present (format: "path/403:a")
-        std::string variantSuffix;
-        size_t colonPos = testDirectory.find(':');
-        if (colonPos != std::string::npos) {
-            variantSuffix = testDirectory.substr(colonPos + 1);
-        }
-
-        // Set testId with variant suffix if present
-        report.testId = std::to_string(report.metadata.id);
-        if (!variantSuffix.empty()) {
-            report.testId += variantSuffix;
-        }
+        // The fixture's full ID, variant suffix included ("path/403:a" is "403a")
+        report.testId = fixtureIdOf(testDirectory);
 
         // Skip if necessary
         if (validator_->shouldSkipTest(report.metadata)) {
@@ -1733,138 +1589,13 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
     }
 }
 
-TestReport W3CTestRunner::runAotTest(int testId) {
-    return reportingErrors(std::to_string(testId), "aot", [this, testId] { return runAotTestOrThrow(testId); });
-}
-
 TestReport W3CTestRunner::runAotTest(const std::string &testId) {
-    return reportingErrors(testId, "aot", [this, &testId] { return runAotTestOrThrow(testId); });
-}
-
-TestReport W3CTestRunner::runAotTestOrThrow(int testId) {
-    // Check W3CTestRegistry to determine if test should use Interpreter fallback
-    if (W3CTestRegistry::isInterpreterTest(testId)) {
-        SCE_LOG_INFO("AOT Test {}: Using Interpreter fallback (Interpreter-only per W3CTestRegistry)", testId);
-
-        // Run with Interpreter engine as fallback
-        auto testDirectories = testSuite_->discoverTests();
-        for (const auto &testDir : testDirectories) {
-            std::filesystem::path path(testDir);
-            std::string dirName = path.filename().string();
-            int currentTestId = 0;
-            try {
-                currentTestId = std::stoi(dirName);
-            } catch (...) {
-                continue;
-            }
-
-            if (currentTestId == testId) {
-                TestReport report = runSingleTest(testDir);
-                // Mark as AOT engine but using Interpreter fallback
-                report.engineType = "aot";
-                report.testType = "interpreter_fallback";
-
-                return report;
-            }
-        }
-
-        // Test not found in test suite
-        TestReport report;
-        report.timestamp = std::chrono::system_clock::now();
-        report.testId = std::to_string(testId);
-        report.engineType = "aot";
-        report.testType = "interpreter_fallback";
-        report.validationResult = ValidationResult(false, TestResult::ERROR, "Test not found in test suite");
-        report.executionContext.finalState = "error";
-        report.executionContext.executionTime = std::chrono::milliseconds(0);
-        return report;
+    // The skip under ThreadSanitizer is the Interpreter's decision, on the
+    // same full ID: one rule for both engines (tsanSkipReport).
+    if (auto skipReport = tsanSkipReport(testId, "aot")) {
+        return reported(*skipReport);
     }
-
-    // Try registry-based test first (new modular system)
-    auto registryTest = SCE::W3C::AotTests::AotTestRegistry::instance().createTest(testId);
-    if (registryTest) {
-        TestReport report;
-        report.timestamp = std::chrono::system_clock::now();
-        report.testId = std::to_string(testId);
-        report.engineType = "aot";
-        report.testType =
-            registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_SCRIPT_ENGINE
-
-        // Start log capture for failure diagnostics
-        if (!failedLogDir_.empty()) {
-            SCE::Logger::startCapture();
-        }
-
-        auto startTime = std::chrono::steady_clock::now();
-
-        try {
-            bool testPassed = registryTest->run();
-            std::string testDescription = registryTest->getDescription();
-
-            auto endTime = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-            if (testPassed) {
-                report.validationResult = ValidationResult(true, TestResult::PASS, testDescription);
-                report.executionContext.finalState = "pass";
-            } else {
-                report.validationResult = ValidationResult(false, TestResult::FAIL, testDescription);
-                report.executionContext.finalState = "fail";
-            }
-
-            report.executionContext.executionTime = duration;
-
-            SCE_LOG_INFO("AOT Test {} ({}): {} in {}ms", testId, testDescription, testPassed ? "PASS" : "FAIL",
-                         duration.count());
-
-            // Save captured logs on failure
-            if (!failedLogDir_.empty()) {
-                SCE::Logger::stopCapture();
-                if (report.validationResult.finalResult != TestResult::PASS) {
-                    saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report,
-                                      SCE::Logger::getCapturedLogs());
-                } else {
-                    SCE::Logger::getCapturedLogs();  // Discard
-                }
-            }
-
-            return report;
-
-        } catch (const std::exception &e) {
-            auto endTime = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-            SCE_LOG_ERROR("AOT Test {} failed with exception: {}", testId, e.what());
-            const std::string testType = report.testType;
-            report = errorReport(report.testId, report.engineType, e.what());
-            report.testType = testType;
-            report.executionContext.executionTime = duration;
-
-            // Save captured logs on exception
-            if (!failedLogDir_.empty()) {
-                SCE::Logger::stopCapture();
-                saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report,
-                                  SCE::Logger::getCapturedLogs());
-            }
-
-            return report;
-        }
-    }
-
-    // Fallback: Test not registered in AOT system
-    // This should not happen if W3CTestRegistry is properly maintained
-    TestReport report;
-    report.timestamp = std::chrono::system_clock::now();
-    report.testId = std::to_string(testId);
-    report.engineType = "aot";
-    report.testType = "not_registered";
-
-    SCE_LOG_WARN("W3C AOT Test: Test {} not registered in AotTestRegistry - check CMakeLists.txt", testId);
-    report.validationResult = ValidationResult(false, TestResult::FAIL, "Test not registered in AOT system");
-    report.executionContext.finalState = "fail";
-    report.executionContext.executionTime = std::chrono::milliseconds(0);
-
-    return report;
+    return reported(reportingErrors(testId, "aot", [this, &testId] { return runAotTestOrThrow(testId); }));
 }
 
 TestReport W3CTestRunner::runAotTestOrThrow(const std::string &testId) {
@@ -1875,21 +1606,7 @@ TestReport W3CTestRunner::runAotTestOrThrow(const std::string &testId) {
         // Run with Interpreter engine as fallback
         auto testDirectories = testSuite_->discoverTests();
         for (const auto &testDir : testDirectories) {
-            // Extract test ID from directory (handle variant suffix)
-            // testDir format: "path/403:a" or "path/144"
-            std::string pathStr = testDir;
-            size_t colonPos = pathStr.find(':');
-            std::string variantSuffix;
-            if (colonPos != std::string::npos) {
-                variantSuffix = pathStr.substr(colonPos + 1);
-                pathStr = pathStr.substr(0, colonPos);
-            }
-
-            std::filesystem::path path(pathStr);
-            std::string dirName = path.filename().string();
-            std::string fullTestId = dirName + variantSuffix;
-
-            if (fullTestId == testId) {
+            if (fixtureIdOf(testDir) == testId) {
                 TestReport report = runSingleTest(testDir);
                 // Mark as AOT engine but using Interpreter fallback
                 report.engineType = "aot";

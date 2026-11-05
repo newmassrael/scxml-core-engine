@@ -8085,8 +8085,8 @@ endif()
 # a kernel-assigned port and points SCE_W3C_HTTP_PORT at it, so it collides
 # with nothing else on the host. The fixture it runs is the first the registry
 # runs under its `http` harness (W3C_HTTP_TEST_IDS). Not under
-# ThreadSanitizer, where the HTTP tests are skipped as passes
-# (SCE::Test::Utils::isThreadSanitizerBuild).
+# ThreadSanitizer, where the HTTP tests are skipped as passes on both engines
+# (W3CTestRunner::tsanSkipReport).
 if(Python3_FOUND AND NOT EMSCRIPTEN AND NOT ENABLE_TSAN AND W3C_HTTP_TEST_IDS)
     list(GET W3C_HTTP_TEST_IDS 0 _W3C_UNBINDABLE_LISTENER_FIXTURE)
     add_test(NAME W3CUnbindableListenerReportsErrors
@@ -8095,6 +8095,35 @@ if(Python3_FOUND AND NOT EMSCRIPTEN AND NOT ENABLE_TSAN AND W3C_HTTP_TEST_IDS)
                 "$<TARGET_FILE:w3c_test_cli>" "${_W3C_UNBINDABLE_LISTENER_FIXTURE}"
     )
     set_tests_properties(W3CUnbindableListenerReportsErrors PROPERTIES TIMEOUT 300)
+endif()
+
+# Both engines report through the one reporter, under each fixture's full ID:
+# a run of a test number on both engines, on AOT alone, on the Interpreter
+# alone, and of one variant on AOT alone, each lists in its XML report exactly
+# the runs it made. The AOT reports once reached the XML reporter only where
+# the CLI handed them over in the run of every test. The fixtures are the
+# first test number the registry runs as variants (403 as 403a, 403b, 403c),
+# read from W3C_AOT_TESTS, so the variant suffix is in every name checked.
+set(_W3C_VARIANT_NUMBER "")
+foreach(_w3c_id IN LISTS W3C_AOT_TESTS)
+    if(_w3c_id MATCHES "^([0-9]+)[a-z]$")
+        set(_W3C_VARIANT_NUMBER "${CMAKE_MATCH_1}")
+        break()
+    endif()
+endforeach()
+set(_W3C_VARIANT_IDS "")
+foreach(_w3c_id IN LISTS W3C_AOT_TESTS)
+    if(_W3C_VARIANT_NUMBER AND _w3c_id MATCHES "^${_W3C_VARIANT_NUMBER}[a-z]$")
+        list(APPEND _W3C_VARIANT_IDS "${_w3c_id}")
+    endif()
+endforeach()
+if(Python3_FOUND AND NOT EMSCRIPTEN AND _W3C_VARIANT_IDS)
+    add_test(NAME W3COneReporterForBothEngines
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/w3c/expect_one_reporter_for_both_engines.py"
+                "$<TARGET_FILE:w3c_test_cli>" "${_W3C_VARIANT_NUMBER}" ${_W3C_VARIANT_IDS}
+    )
+    set_tests_properties(W3COneReporterForBothEngines PROPERTIES TIMEOUT 300)
 endif()
 
 # ============================================================================

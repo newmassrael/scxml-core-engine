@@ -183,27 +183,38 @@ private:
     bool requiresHttpServer(const std::string &testDirectory) const;
 
     /**
-     * @brief Create skip report if HTTP test should be skipped under ThreadSanitizer
+     * @brief The report of a BasicHTTP fixture this build does not run
      *
-     * Checks if the test requires HTTP server and running under ThreadSanitizer.
-     * Returns a TestReport with PASS status and skip reason if test should be skipped.
+     * Under ThreadSanitizer the fixtures the registry runs under its `http`
+     * harness are run on neither engine: the listener's and the client's
+     * threads, and getaddrinfo("localhost"), are not TSan-clean. The one
+     * decision for both engines, keyed by the fixture's full ID (variant
+     * suffix included, e.g. "403a"), the same ID every other report of the
+     * fixture carries, so a skip names the fixture it skipped.
      *
-     * @param testDir Test directory path
-     * @param testId Test ID number
-     * @return TestReport if test should be skipped, std::nullopt otherwise
+     * @param fixtureId The fixture's full ID, as reports carry it
+     * @param engineType "interpreter" or "aot"
+     * @return The skip report, or std::nullopt when the fixture runs
      */
-    std::optional<TestReport> shouldSkipHttpTestUnderTsan(const std::string &testDir, int testId) const;
+    static std::optional<TestReport> tsanSkipReport(const std::string &fixtureId, const std::string &engineType);
 
     /**
-     * @brief Create skip report if HTTP test should be skipped under ThreadSanitizer (string overload)
+     * @brief Hand a report to the run's reporter and return it
      *
-     * Overload for tests with string IDs (e.g., "403a", "192").
-     *
-     * @param testDir Test directory path
-     * @param testId Test ID string
-     * @return TestReport if test should be skipped, std::nullopt otherwise
+     * Every report a run method returns, on either engine, passes here once,
+     * so the console and the XML reporter see the same reports the caller
+     * gets back.
      */
-    std::optional<TestReport> shouldSkipHttpTestUnderTsan(const std::string &testDir, const std::string &testId) const;
+    TestReport reported(TestReport report);
+
+    /**
+     * @brief Run one fixture on the Interpreter and report it
+     *
+     * The fixture's report under its full ID: the skip report under
+     * ThreadSanitizer (tsanSkipReport), an ERROR when the run throws
+     * (reportingErrors), or what the run returned.
+     */
+    TestReport runOnInterpreter(const std::string &testDir);
 
     /**
      * @brief W3C SCXML 6.2: Manual verification for Test 178 (duplicate param keys)
@@ -225,7 +236,6 @@ private:
      *
      * The body of runAotTest, which turns a throw into the test's ERROR report.
      */
-    TestReport runAotTestOrThrow(int testId);
     TestReport runAotTestOrThrow(const std::string &testId);
 
 public:
@@ -278,15 +288,19 @@ public:
     TestRunSummary runAllTests(bool skipReporting = false);
 
     /**
-     * @brief Run specific test by ID
-     * @param testId W3C test ID (e.g., 144)
-     * @return The test's report, or std::nullopt when no test has this ID
-     *         (the W3C numbering is sparse)
+     * @brief The full ID of every fixture the suite holds, in discovery order
+     *
+     * The ID every report of a fixture carries, variant suffix included
+     * ("403a"), so a caller that runs fixtures by ID names them as the
+     * reports will.
      */
-    std::optional<TestReport> runSpecificTest(int testId);
+    std::vector<std::string> discoverFixtureIds();
 
     /**
      * @brief Run a specific test by exact test ID string (e.g., "403a" runs only test403a.scxml)
+     *
+     * The report is handed to the run's reporter before it is returned.
+     *
      * @param testId Exact test ID string (e.g., "403a", "192", "215")
      * @return The test's report, or std::nullopt when no test has this ID
      */
@@ -294,25 +308,25 @@ public:
 
     /**
      * @brief Run all tests matching the given test ID (includes variants)
+     *
+     * Each report is handed to the run's reporter before it is returned.
+     *
      * @param testId W3C test ID (e.g., 403 will run 403a, 403b, 403c if they exist)
-     * @return The reports of every matching test on both engines; empty when
-     *         no test has this ID (the W3C numbering is sparse)
+     * @param onInterpreter Run each matching test on the Interpreter
+     * @param onAot Run each matching test on the AOT engine
+     * @return The reports of every matching test on the engines asked for;
+     *         empty when no test has this ID (the W3C numbering is sparse)
      */
-    std::vector<TestReport> runAllMatchingTests(int testId);
+    std::vector<TestReport> runAllMatchingTests(int testId, bool onInterpreter = true, bool onAot = true);
 
     /**
      * @brief Run a single test with AOT engine (static generated code)
-     * @param testId Test ID number (e.g., 144, 147)
-     * @return TestReport with engineType="aot"; ERROR when the run threw
-     */
-    TestReport runAotTest(int testId);
-
-    /**
-     * @brief Run a single test with AOT engine (string variant)
      *
-     * Supports variant test IDs like "403a", "403b", "403c"
+     * Supports variant test IDs like "403a", "403b", "403c". The report is
+     * handed to the run's reporter before it is returned, as an Interpreter
+     * report is: both engines report through the one reporter.
      *
-     * @param testId Test ID string (e.g., "144", "403a", "403b")
+     * @param testId The test's full ID (e.g., "144", "403a", "403b")
      * @return TestReport with engineType="aot"; ERROR when the run threw
      */
     TestReport runAotTest(const std::string &testId);
