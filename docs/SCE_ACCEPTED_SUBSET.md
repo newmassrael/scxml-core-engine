@@ -224,7 +224,12 @@ Three deliberate narrowings, all extensions rather than readings:
   when they carry literals, because §B.1 withholds four *languages* and a
   literal payload names an expression in none of them. An `expr` on any
   of them is still refused — by the §B.1.3/§B.1.4 rows, under the
-  sub-section that actually withholds the language.
+  sub-section that actually withholds the language. Inline `<content>`
+  text, of a `<send>` and of a `<donedata>` alike, takes the one reading
+  inline content has under every data model, with no expression to read
+  in it: the XML as written, or the space-normalized string. It is
+  finished at build time and costs no script engine, and the Interpreter
+  reads it the same way.
 - **Native `<script><cpp>…</cpp></script>` / `<kt>` is admitted.** It is
   SCE's native host action (§2.11), lowered straight into the generated
   language with no script engine involved, so §B.1.5 withholds nothing it

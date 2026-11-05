@@ -665,14 +665,6 @@
                         },
                         &typedData
                     );
-{% elif state.donedata.content.kind == "literal" %}
-                    // W3C SCXML 5.5: inline text children are used **as the content
-                    // value** — no evaluation, no script engine. Linkable against sce_base.
-                    ::SCE::DoneDataHelper::emitContentLiteral(
-                        {{ state.donedata.content.text | cpp_text_expr }},
-                        eventData,
-                        &typedData
-                    );
 {% endif %}
 
                     AOT_DEBUG("Final state {{ state_id }} reached with event data: {}", eventData);

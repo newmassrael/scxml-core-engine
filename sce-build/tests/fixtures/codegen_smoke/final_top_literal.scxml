@@ -1,18 +1,20 @@
 <?xml version="1.0"?>
 <!--
-  Structural smoke fixture: top-level <final> + <donedata> with literal
+  Structural smoke fixture: top-level <final> + <donedata> with inline
   <content> under the null datamodel.
 
   Exercises the template path state.is_final && state.donedata &&
-  !state.parent && donedata.content.kind == "literal". Pre-commit
-  d6ca6b19 this cross-product produced a brace-imbalanced C++ header
-  because the `if not state.parent` close was missing. Compiling the
-  four generated artefacts is the regression guard.
+  !state.parent with inline text the null datamodel reads as the string
+  it spells (`inline_content_reading`), finished at build time in a
+  machine with no script engine. Pre-commit d6ca6b19 this cross-product
+  produced a brace-imbalanced C++ header because the `if not
+  state.parent` close was missing. Compiling the generated artefacts is
+  the regression guard.
 
-  `datamodel="null"` is what makes the sentence above true, and it was
-  absent while the sentence was here: SCE's platform-specific default is
-  ECMAScript, so this document reached the *expression* arm and the
-  literal cross-product it names went unexercised.
+  `datamodel="null"` is what makes the sentence above true: SCE's
+  platform-specific default is ECMAScript, under which the same text is
+  read for an expression first. The null datamodel's inline text had a
+  verbatim reading of its own until it took the one reading.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="null" name="final_top_literal" initial="done">

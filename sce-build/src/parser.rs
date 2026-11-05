@@ -4309,8 +4309,7 @@ impl SCXMLParser {
 
             // Parse donedata
             if let Some(dd_elem) = scxml_child(&child, "donedata") {
-                state.donedata =
-                    Some(self.parse_donedata(&dd_elem, model.datamodel, source_name)?);
+                state.donedata = Some(self.parse_donedata(&dd_elem, source_name)?);
             }
 
             model.states.insert(final_id, state);
@@ -6046,7 +6045,6 @@ impl SCXMLParser {
     fn parse_donedata(
         &mut self,
         elem: &roxmltree::Node,
-        datamodel: Datamodel,
         source_name: &str,
     ) -> Result<DoneData, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         let mut dd = DoneData::default();
@@ -6070,19 +6068,19 @@ impl SCXMLParser {
         // §scxml-5.5 + 5.6 + §scxml-B-2-6:
         //   - `<content expr="X"/>` → Expression (MUST be evaluated against
         //     the datamodel at runtime — script engine required).
-        //   - `<content>text</content>` with ECMAScript datamodel →
-        //     InlineText, which takes the ECMAScript data model appendix's
-        //     ordered readings the way inline `<data>` text does: an
-        //     expression if it is one
-        //     (`21` yields number 21, `'foo'` yields string "foo", which
-        //     W3C tests 529 and 294 require), and otherwise the string.
-        //     Emitting it as an Expression instead made the second reading
-        //     unreachable — `<content>inline payload</content>` lowered to
-        //     an expression that could only raise.
-        //   - `<content>text</content>` with the "null" datamodel → Literal:
-        //     the children are used **as the content value**, no evaluation,
-        //     no script engine required. This is the `sce_base`-linkable
-        //     path for native-only (`cpp:` / `kt:`) state machines.
+        //   - `<content>text</content>` → InlineText, under every data model,
+        //     which takes the one reading inline content has
+        //     (`filters::inline_content_reading`): under ECMAScript an
+        //     expression if it is one (`21` yields number 21, `'foo'` yields
+        //     string "foo", which W3C tests 529 and 294 require), and
+        //     otherwise the XML as written or the string. Emitting it as an
+        //     Expression instead made the second reading unreachable —
+        //     `<content>inline payload</content>` lowered to an expression
+        //     that could only raise. Under the "null" datamodel, which has no
+        //     expressions, the text is the XML as written or the
+        //     space-normalized string, finished at build time with no script
+        //     engine: the reading a `<send>`'s content takes there, and no
+        //     second, verbatim one.
         //   - Omitted → None.
         //
         // The children are read by `inline_data_value`, the one reading
@@ -6101,11 +6099,7 @@ impl SCXMLParser {
                 let trimmed = value.trim();
                 if !trimmed.is_empty() {
                     dd.content_text_spelling = AttributeSpelling::of_character_data(&content_elem);
-                    dd.content = if datamodel == Datamodel::Null {
-                        crate::model::DoneDataContent::Literal(trimmed.to_string())
-                    } else {
-                        crate::model::DoneDataContent::InlineText(trimmed.to_string())
-                    };
+                    dd.content = crate::model::DoneDataContent::InlineText(trimmed.to_string());
                 }
             }
         }
@@ -9148,9 +9142,10 @@ mod tests {
             crate::model::DoneDataContent::InlineText(text) => assert_eq!(text, xml),
             other => panic!("expected the XML as inline text, got {other:?}"),
         }
+        // The Null data model reads the same children by the same reading.
         match donedata_content("null", content) {
-            crate::model::DoneDataContent::Literal(text) => assert_eq!(text, xml),
-            other => panic!("expected the XML as a literal, got {other:?}"),
+            crate::model::DoneDataContent::InlineText(text) => assert_eq!(text, xml),
+            other => panic!("expected the XML as inline text, got {other:?}"),
         }
     }
 

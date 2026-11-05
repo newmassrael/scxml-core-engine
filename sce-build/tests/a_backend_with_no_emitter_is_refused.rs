@@ -60,15 +60,27 @@ fn a_statechart_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
         .unwrap_or_else(|e| panic!("{language:?} refused a machine it lowers: {e:?}"));
         assert!(!output.files.is_empty(), "{language:?} wrote nothing");
 
-        // What it does not is refused by the construct, naming the backend. The construct is one
-        // no lowering will ever write, so the probe does not outlive the backend's growth: a
-        // `<donedata>` of a `null` document needs a script engine to read its value, and a
-        // `null` document has none.
+        // What it does not is refused by the construct, naming the backend: a `null` document
+        // starting a child that runs a script engine, which the backend links only into an
+        // `ecmascript` parent. When the backend learns to write it, the probe moves to another
+        // construct it refuses, as it moved here from a `null` document's `<donedata>` once
+        // that document's inline `<content>` became the text the build finishes, which needs
+        // no engine.
         std::fs::write(
             &path,
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a" name="machine" datamodel="null">
-  <state id="a"><transition event="go" target="b"/></state>
-  <final id="b"><donedata><content>done</content></donedata></final>
+  <state id="a">
+    <invoke type="scxml" id="worker">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="w" datamodel="ecmascript">
+          <datamodel><data id="n" expr="1 + 1"/></datamodel>
+          <final id="w"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="go" target="b"/>
+  </state>
+  <final id="b"/>
 </scxml>"#,
         )
         .unwrap();
@@ -81,7 +93,7 @@ fn a_statechart_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
         .unwrap_or_else(|| panic!("{language:?} generated a machine it does not lower"));
         let text = format!("{error:?}");
         assert!(
-            text.contains(&format!("{language:?}")) && text.contains("<donedata>"),
+            text.contains(&format!("{language:?}")) && text.contains("<invoke>"),
             "{language:?}: the refusal names neither the backend nor the construct: {text}"
         );
     }

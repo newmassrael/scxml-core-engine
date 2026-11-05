@@ -1554,13 +1554,12 @@ impl DoneData {
 /// - [`DoneDataContent::None`] — no `<content>` child (`{"kind":"none"}`).
 /// - [`DoneDataContent::Expression`] — `<content expr="X"/>`, MUST be
 ///   evaluated against the active datamodel (`{"kind":"expression","text":"X"}`).
-/// - [`DoneDataContent::InlineText`] — `<content>text</content>` under a
-///   data model that has a value expression language
-///   (`{"kind":"inline_text","text":"..."}`).
-/// - [`DoneDataContent::Literal`] — `<content>inline text</content>` under
-///   the Null data model; per §scxml-5.5 the children are used **as the
-///   content value**, not re-evaluated as an expression. Literal means no
-///   script engine required at runtime (`{"kind":"literal","text":"..."}`).
+/// - [`DoneDataContent::InlineText`] — `<content>text</content>`
+///   (`{"kind":"inline_text","text":"..."}`), read by the one reading inline
+///   content has under its document's data model
+///   (`filters::inline_content_reading`). Under the Null data model, which has
+///   no expressions, that is the XML as written or the space-normalized
+///   string, and no script engine is asked for it.
 ///
 /// # Why inline text is not the `expr` attribute
 ///
@@ -1591,7 +1590,6 @@ pub enum DoneDataContent {
     None,
     Expression(String),
     InlineText(String),
-    Literal(String),
 }
 
 /// §scxml-5.7: Done data parameter.

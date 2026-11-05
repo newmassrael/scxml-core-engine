@@ -4888,14 +4888,11 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
             }
         }
         // A `sce-static` document's <donedata> is native code the lowering has finished
-        // (SCE Accepted Subset §2.15), and an `ecmascript` one is read by the engine; a `null`
-        // document would need a script engine it does not have.
-        if !is_static && !is_ecma && state.is_final && state.donedata.is_some() {
-            return Err(swift_unsupported(
-                format!("the <donedata> of final state '{}'", state.id),
-                state.source_location.clone(),
-            ));
-        }
+        // (SCE Accepted Subset §2.15), and an `ecmascript` one is read by the engine. A `null`
+        // document's can only be inline `<content>`, since a `<param>` needs an `expr` or a
+        // `location` the parser refuses under it, and that text is finished at build time
+        // (`filters::inline_content_reading`, which reads no expression in it), so every
+        // data model's <donedata> is lowered.
         if is_static {
             // The host call is rendered before the static lowering judges the rest, so an
             // argument it cannot spell is named here, where a renderer has not run.

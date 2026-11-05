@@ -492,6 +492,19 @@ fn a_static_childs_done_data_reaches_its_parent() {
     );
 }
 
+/// A `null` child's inline done data is read by the one reading inline content
+/// has, which finds no expression under a data model that has none: the
+/// space-normalized string, finished at build time, which reaches the parent
+/// as an engine child's does.
+#[test]
+fn a_null_childs_done_data_reaches_its_parent() {
+    assert_an_engine_less_childs_done_data_reaches_its_parent(
+        "null",
+        "null   words",
+        "\\\"null words\\\"",
+    );
+}
+
 /// Text that is an expression of the document is evaluated when the send
 /// runs, and that is what costs the machine its engine: the analysis names
 /// the content as the cause.

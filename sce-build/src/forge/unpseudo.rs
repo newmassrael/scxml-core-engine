@@ -3406,7 +3406,6 @@ fn parse_scxml_donedata(kids: &[&Line<'_>]) -> Result<crate::model::DoneData, Pa
             d.content = match kind {
                 "expr" => crate::model::DoneDataContent::Expression(undo(value, k.number)?),
                 "text" => crate::model::DoneDataContent::InlineText(undo(value, k.number)?),
-                "literal" => crate::model::DoneDataContent::Literal(undo(value, k.number)?),
                 other => {
                     return Err(ParseError {
                         line: k.number,

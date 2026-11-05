@@ -286,13 +286,6 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 				}
 			}
 		}
-{% elif state.donedata.content.kind == "literal" %}
-		{
-			// W3C SCXML 5.5: inline text children are used **as the content
-			// value** — no evaluation, no script engine required.
-			// Delegates to the SSoT helper shared with C++/Rust/Kotlin backends.
-			doneEventData = sce.EmitContentLiteral(`{{ state.donedata.content.text | escape_go }}`)
-		}
 {% endif %}
 		_ = doneEventData
 {% endif %}

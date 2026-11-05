@@ -506,24 +506,10 @@
    script engine is asked for any of them. Nor is one asked for inline text the
    data model reads as a value fixed by the text alone (`inline_content_reading`,
    the one answer every backend and the script-engine analysis read), which a
-   machine with no engine carries as well. #}
+   machine with no engine carries as well, under the `null` data model too. #}
 {% set done_inline_fixed = state.donedata and state.donedata.content.kind == "inline_text" and (state.donedata.content.text | inline_content_reading(model.datamodel)).kind != "expression" %}
 {% set done_native = state.donedata and ((state.donedata.params | selectattr("native_value") | list | length > 0) or state.donedata.native_content or state.donedata.native_content_value or done_inline_fixed) %}
-{% if state.is_final and state.donedata and state.donedata.content.kind == "literal" and not state.donedata.params %}
-                // W3C SCXML 5.5: inline <content> text is the value itself — no script engine needed.
-                // Delegates to the SSoT helper shared with C++/Rust/Go backends.
-                run {
-                    val doneEventData = emitContentLiteral("{{ state.donedata.content.text | escape_kotlin }}")
-{% if has_done_event %}
-                    raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }}, EventMetadata.platform(doneEventData))
-{% elif is_top_final %}
-                    // W3C SCXML 5.5 + 6.3.1: stash onto the engine so the invoking parent's
-                    // startInvoke completion callback can lift the payload onto
-                    // done.invoke.<id>._event.data. Mirrors C++ AOT stashDonedataAtFinal.
-                    stashDonedataAtFinal(doneEventData)
-{% endif %}
-                }
-{% elif state.is_final and state.donedata and (model.needs_script_engine or done_native) %}
+{% if state.is_final and state.donedata and (model.needs_script_engine or done_native) %}
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
 {% if not done_native %}
@@ -585,10 +571,6 @@
                     } catch (_: Exception) {
                         raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <content expr> failed to evaluate")
                     }
-{% elif state.donedata.content.kind == "literal" %}
-                    // W3C SCXML 5.5: inline text is the content value (literal path alongside params).
-                    // Delegates to the SSoT helper shared with C++/Rust/Go backends.
-                    doneEventData = emitContentLiteral("{{ state.donedata.content.text | escape_kotlin }}")
 {% elif state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()

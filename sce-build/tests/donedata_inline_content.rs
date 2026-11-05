@@ -23,8 +23,11 @@
 // Rust rather than off the emitted text.
 
 use sce_build::ecmascript::DocumentScope;
-use sce_build::filters::{to_author_data_content, to_lua_data_content, to_lua_expr};
-use sce_build::model::{DoneDataContent, SCXMLModel};
+use sce_build::filters::{
+    inline_content_reading, to_author_data_content, to_lua_data_content, to_lua_expr,
+    InlineContentReading,
+};
+use sce_build::model::{Datamodel, DoneDataContent, SCXMLModel};
 use sce_build::parser::SCXMLParser;
 use sce_rust_lua::LuaEngine;
 use sce_rust_runtime::scripting::{IScriptEngine, ScriptValue};
@@ -82,30 +85,49 @@ fn the_attribute_and_the_body_are_not_the_same_kind() {
         ),
         "inline text under a value expression language is the inline form"
     );
+    // The Null data model's inline text is the same construct, read by the
+    // same reading: it has no expressions, so `'foo'` is the string it spells,
+    // quotes and all, finished at build time.
+    let null_model = model_with_content("null", "<content>'foo'</content>");
     assert!(
         matches!(
-            content_of(&model_with_content("null", "<content>'foo'</content>")),
-            DoneDataContent::Literal(ref text) if text == "'foo'"
+            content_of(&null_model),
+            DoneDataContent::InlineText(ref text) if text == "'foo'"
         ),
-        "inline text under the Null data model is the literal form"
+        "inline text under the Null data model is the inline form"
+    );
+    assert_eq!(
+        inline_content_reading(
+            "'foo'",
+            Datamodel::Null,
+            &DocumentScope::from_model(&null_model)
+        ),
+        InlineContentReading::Value("\"'foo'\"".to_string()),
+        "the Null data model reads no expression in inline text"
     );
 }
 
 /// An absent `datamodel` attribute is ECMAScript, so inline text under it
-/// takes the ordered readings rather than the verbatim one.
+/// is read with that model's expressions rather than the Null model's none.
 ///
 /// This is the case the two Null-data-model smoke fixtures were written
-/// for and did not reach: their prose named the literal arm while the
-/// documents, carrying no attribute, went to the other one.
+/// for and did not reach: their prose named the Null data model's reading
+/// while the documents, carrying no attribute, went to the other one.
 #[test]
 fn an_absent_datamodel_attribute_is_not_the_null_data_model() {
-    assert!(
-        matches!(
-            content_of(&model_with_content("", "<content>plain words</content>")),
-            DoneDataContent::InlineText(_)
-        ),
-        "the platform-specific default is ECMAScript, and inline text under \
-         it is not a Null-data-model literal"
+    let model = model_with_content("", "<content>21</content>");
+    assert_eq!(
+        model.datamodel,
+        Datamodel::EcmaScript,
+        "the platform-specific default is ECMAScript"
+    );
+    let DoneDataContent::InlineText(text) = content_of(&model) else {
+        panic!("inline text did not reach the inline form");
+    };
+    assert_eq!(
+        inline_content_reading(&text, model.datamodel, &DocumentScope::from_model(&model)),
+        InlineContentReading::Value("21".to_string()),
+        "under the default `21` is the number, not the Null data model's string"
     );
 }
 

@@ -123,8 +123,8 @@ pub enum ScriptEngineCauseKind {
     /// ([`crate::filters::inline_content_reading`]), as
     /// [`Self::SendContentExpr`] is for a `<send>`. Text that reads as a fixed
     /// value — XML, a literal, the string it spells — is finished at build
-    /// time and costs nothing, and so is a Null-data-model body, used as the
-    /// value directly (§scxml-5.5, [`DoneDataContent::Literal`]).
+    /// time and costs nothing, which under the Null data model, with no
+    /// expressions to read, every inline text is (§scxml-5.5).
     DonedataContent { state_id: String },
     /// §scxml-6.4 — a static `<invoke>` targets a child SCXML whose
     /// own analyzer output declared `needs_script_engine = true`; the
@@ -912,16 +912,15 @@ fn collect_donedata_causes(
     // from the text and never the text's reading from the engine, as for a
     // `<send>`'s. Text that reads as a fixed value — XML, a literal, the
     // string it spells — is finished at build time; a machine with no engine
-    // holds it itself ([`SCXMLModel::holds_done_data_outside_engine`]). A
-    // Null-data-model body is the string it spells and never reaches here as
-    // inline text.
+    // holds it itself ([`SCXMLModel::holds_done_data_outside_engine`]). The
+    // Null data model has no expressions, so its inline text is never one.
     let evaluated = match &dd.content {
         DoneDataContent::Expression(_) => true,
         DoneDataContent::InlineText(text) => {
             crate::filters::inline_content_reading(text, document.datamodel, document.scope)
                 .is_evaluated()
         }
-        DoneDataContent::None | DoneDataContent::Literal(_) => false,
+        DoneDataContent::None => false,
     };
     if evaluated {
         out.push(NeedsScriptEngineCause::new(
@@ -1529,27 +1528,50 @@ mod tests {
         );
     }
 
+    /// §scxml-5.5 + `datamodel="null"`: inline text is the same construct
+    /// under the Null data model, read by the one reading, which finds no
+    /// expression in it since the model has none: the XML as written or the
+    /// space-normalized string, finished at build time, so no script engine.
+    /// This is the native-only path (`cpp:` / `kt:` documents, tc8-harness
+    /// verdict payloads). Text an ECMAScript document would evaluate is a
+    /// string here.
     #[test]
-    fn donedata_content_literal_null_datamodel_does_not_trigger() {
-        // §scxml-5.5 + `datamodel="null"`: inline text is the content value
-        // verbatim — no evaluation, no script engine. This is the
-        // native-only path (`cpp:` / `kt:` documents, tc8-harness verdict
-        // payloads). The same text under the ECMAScript datamodel takes that
-        // model's readings, exercised in
-        // `donedata_content_that_is_fixed_does_not_trigger`.
-        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="s">
-            <state id="s" initial="f">
-                <final id="f"><donedata><content>{"verdict":"pass"}</content></donedata></final>
-            </state>
-        </scxml>"##;
-        let model = parse(scxml);
-        let causes = analyze(&model);
-        assert!(
-            causes.is_empty(),
-            "literal <content> under null datamodel must not force a script engine, got {:?}",
-            causes,
-        );
-        assert!(!requires_script_engine(&model));
+    fn donedata_content_inline_text_under_null_does_not_trigger() {
+        for content in [
+            "{\"verdict\":\"pass\"}",
+            "1 + 1",
+            "<books xmlns=\"\"><book title=\"x\"/></books>",
+        ] {
+            let scxml = format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="s">
+                    <state id="s" initial="f">
+                        <final id="f"><donedata><content>{content}</content></donedata></final>
+                    </state>
+                </scxml>"#
+            );
+            let model = parse(&scxml);
+            assert!(
+                matches!(
+                    model.states["f"]
+                        .donedata
+                        .as_ref()
+                        .map(|done| &done.content),
+                    Some(DoneDataContent::InlineText(_))
+                ),
+                "{content}: inline text under the null datamodel is the inline form"
+            );
+            let causes = analyze(&model);
+            assert!(
+                causes.is_empty(),
+                "{content}: inline <content> under the null datamodel must not force a \
+                 script engine, got {causes:?}"
+            );
+            assert!(!requires_script_engine(&model));
+            assert!(
+                model.holds_done_data_outside_engine(),
+                "{content}: a machine with no engine holds its done data itself"
+            );
+        }
     }
 
     /// A `<final>` whose `<donedata>` holds the inline `<content>` `content`, in

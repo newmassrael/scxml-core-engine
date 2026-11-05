@@ -2864,17 +2864,15 @@ fn render_donedata(d: &crate::model::DoneData, out: &mut Out<'_>) {
                 Part::Word(Word::Expr),
                 Part::Text(text(e).into_owned()),
             ]),
-            // ⚠ `text` and `literal` stay inside the value for now: they
-            // are grammar words with no `Word` yet, and inventing one in
-            // the same edit as a mechanical migration would hide a
-            // vocabulary decision inside a refactor.
+            // ⚠ `text` stays inside the value for now: it is a grammar
+            // word with no `Word` yet, and inventing one in the same edit
+            // as a mechanical migration would hide a vocabulary decision
+            // inside a refactor. Inline text under every data model is this
+            // one kind; the Null data model's had a `literal` of its own
+            // until it took the one reading.
             crate::model::DoneDataContent::InlineText(e) => out.line_of(vec![
                 Part::Word(Word::Content),
                 Part::Text(format!("text {}", text(e))),
-            ]),
-            crate::model::DoneDataContent::Literal(e) => out.line_of(vec![
-                Part::Word(Word::Content),
-                Part::Text(format!("literal {}", text(e))),
             ]),
         }
     });

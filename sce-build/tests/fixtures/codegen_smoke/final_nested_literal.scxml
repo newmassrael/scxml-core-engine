@@ -1,15 +1,17 @@
 <?xml version="1.0"?>
 <!--
-  Structural smoke fixture: nested <final> + <donedata> literal.
+  Structural smoke fixture: nested <final> + <donedata> inline text
+  under the null datamodel.
 
   Parent-state variant of final_top_literal. Exercises the
   `done.state.<parent>` emission branch (state.parent is set) alongside
-  the literal content handling. Distinct from the top-level case
-  because the close braces diverge on `state.parent` presence.
+  inline content the build finished in a machine with no script engine.
+  Distinct from the top-level case because the close braces diverge on
+  `state.parent` presence.
 
   Carries `datamodel="null"` for the reason its top-level sibling does:
-  the literal arm is reached by the Null data model, and without the
-  attribute this document exercised the expression arm instead.
+  under the null datamodel the text is the string it spells, and without
+  the attribute it is read for an expression first.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="null" name="final_nested_literal" initial="compound">
