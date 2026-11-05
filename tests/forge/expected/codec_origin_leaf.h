@@ -12,14 +12,79 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecOriginLeaf {
 
+/// The elements a value of `CodecOriginLeaf` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_data {
+void data() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.data())) -> decltype(s.data()) {
+    return s.data();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(data(s))) -> decltype(data(s)) {
+    return data(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_data
+/// The `data` element of a source.
+inline constexpr detail_data::Read data{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecOriginLeaf`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::data(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::data(std::declval<const S&>())), ::SCE::Forge::Bytes<16>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Bytes<16>>(source::data(std::declval<const S&>())))> {};
+
+/// The encode of `CodecOriginLeaf` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecOriginLeaf: data");
+        const auto& _r_data = source::data(src);
+        const ::SCE::Forge::Bytes<16> _e_data = _r_data;
+        const uint8_t _d_len = static_cast<uint8_t>(_e_data.size());
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_d_len)); _e) return _e;
+        if (auto _e = w.write_bytes(_e_data.data(), _e_data.size()); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecOriginLeaf {
-    uint8_t len{};
-    std::vector<uint8_t> data{};
+    CodecOriginLeaf() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecOriginLeaf(::SCE::Forge::Bytes<16> data)
+        : data_(data) {}
+    /// The `data` element.
+    [[nodiscard]] ::SCE::Forge::Bytes<16> data() const noexcept { return data_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -38,9 +103,14 @@ struct CodecOriginLeaf {
         }
         if (_frame_len < static_cast<std::size_t>(1 + len)) return std::nullopt;
         std::vector<uint8_t> data = std::vector<uint8_t>(raw + 1, raw + 1 + len);
+        const auto _b_data = ::SCE::Forge::Bytes<16>::make(data);
+        if (!_b_data) {
+            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
+            return std::nullopt;
+        }
+        (void)len;
         CodecOriginLeaf _decoded{
-            /*len=*/len,
-            /*data=*/data,
+            /*data=*/*_b_data,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return _decoded;
@@ -57,32 +127,25 @@ struct CodecOriginLeaf {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (data.size() > 16) return ::SCE::Forge::CodecError::LengthOutOfRange;
-        if (auto _e = w.write_u8(len); _e) return _e;
-        if (auto _e = w.write_bytes(this->data.data(), this->data.size()); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
-    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
-    /// refuses the value before its first byte: a gated field and the
-    /// `sce:present-if` that gates it contradict each other
-    /// (`CodecError::PresentIfMismatch`), or a byte string, text or list
-    /// lies outside its bound (`CodecError::LengthOutOfRange`,
-    /// `CodecError::TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        if (encode(_sce_sink)) {
-            return std::nullopt;
-        }
+        (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    ::SCE::Forge::Bounded<std::vector<std::uint8_t>, 16> data_{};
 };
 
 }  // namespace SCE::Generated::CodecOriginLeaf

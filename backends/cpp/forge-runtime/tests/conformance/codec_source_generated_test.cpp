@@ -15,16 +15,21 @@
 // read), and states at compile time which types are sources.
 //
 // The codecs are tests/forge/resources/codec_simple_frame.scxml (big endian:
-// msgId u8, length u8, payload u16) and codec_little_endian.scxml (little
-// endian: sensorId u8, value u16, status u8), whose headers the harness's
-// generation writes.
+// msgId u8, length u8, payload u16), codec_little_endian.scxml (little
+// endian: sensorId u8, value u16, status u8) and codec_length_ref.scxml
+// (msgId u8, then the length of the payload, then a payload of at most 32
+// bytes), whose headers the harness's generation writes. The last presents
+// its payload as `Bytes<32>`, which holds the bound, and derives the length,
+// which it does not present.
 
+#include "codec_length_ref.h"
 #include "codec_little_endian.h"
 #include "codec_simple_frame.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -157,7 +162,71 @@ struct PartialFrame {
     }
 };
 
+// A message that owns its payload within the codec's bound and presents it by
+// a member function; the length is the codec's to derive, so it presents none.
+struct Message {
+    std::uint8_t id;
+    ::SCE::Forge::Bounded<std::vector<std::uint8_t>, 32> body;
+
+    [[nodiscard]] std::uint8_t msgId() const noexcept {
+        return id;
+    }
+
+    [[nodiscard]] const ::SCE::Forge::Bounded<std::vector<std::uint8_t>, 32> &payload() const noexcept {
+        return body;
+    }
+};
+
+// A message whose payload is held to a tighter bound than the codec's, and
+// presented by a function of its namespace: within the codec's bound by its
+// type, so it converts unchecked.
+struct ShortMessage {
+    std::uint8_t id;
+    ::SCE::Forge::Bytes<16> body;
+};
+
+[[nodiscard]] std::uint8_t msgId(const ShortMessage &m) noexcept {
+    return m.id;
+}
+
+[[nodiscard]] ::SCE::Forge::Bytes<16> payload(const ShortMessage &m) noexcept {
+    return m.body;
+}
+
+// A message whose payload no type bounds: the encode would have to refuse a
+// long one, so it is no source.
+struct UnboundedMessage {
+    [[nodiscard]] std::uint8_t msgId() const noexcept {
+        return 1;
+    }
+
+    [[nodiscard]] std::vector<std::uint8_t> payload() const {
+        return {};
+    }
+};
+
+// A message whose payload is held to a looser bound than the codec's: no
+// source either, since its type admits a payload the codec has no frame for.
+struct LongMessage {
+    [[nodiscard]] std::uint8_t msgId() const noexcept {
+        return 1;
+    }
+
+    [[nodiscard]] ::SCE::Forge::Bytes<64> payload() const noexcept {
+        return {};
+    }
+};
+
 }  // namespace consumer
+
+namespace detect {
+
+/// Whether `T` presents an element named `len`.
+template <class T, class = void> struct presents_len : std::false_type {};
+
+template <class T> struct presents_len<T, std::void_t<decltype(std::declval<const T &>().len())>> : std::true_type {};
+
+}  // namespace detect
 
 namespace Frame = ::SCE::Generated::CodecSimpleFrame;
 namespace Sensor = ::SCE::Generated::CodecLittleEndian;
@@ -186,6 +255,23 @@ static_assert(!noexcept(Frame::Wire::encode_source(std::declval<const consumer::
               "the encode over a source that may throw is not noexcept");
 static_assert(noexcept(std::declval<const Frame::CodecSimpleFrame &>().encode(std::declval<::SCE::Forge::SceSink &>())),
               "the generated value's encode stays noexcept");
+
+namespace Length = ::SCE::Generated::CodecLengthRef;
+
+// A byte string is presented within its bound, and a length the encode derives
+// is no element (docs/adr/0081 §3).
+static_assert(
+    std::is_same<decltype(std::declval<const Length::CodecLengthRef &>().payload()), ::SCE::Forge::Bytes<32>>::value,
+    "the payload is presented within its bound");
+static_assert(!detect::presents_len<Length::CodecLengthRef>::value, "the derived length is no element");
+static_assert(Length::is_source<Length::CodecLengthRef>::value, "the generated value is a source of its own codec");
+static_assert(Length::is_source<consumer::Message>::value, "an owned payload within the bound presents it");
+static_assert(Length::is_source<consumer::ShortMessage>::value, "a payload within a tighter bound presents it");
+static_assert(!Length::is_source<consumer::UnboundedMessage>::value, "a payload no type bounds is no source");
+static_assert(!Length::is_source<consumer::LongMessage>::value, "a payload of a looser bound is no source");
+static_assert(Length::is_nothrow_source<consumer::Message>::value, "viewing an owned payload throws nothing");
+static_assert(noexcept(std::declval<const Length::CodecLengthRef &>().encode(std::declval<::SCE::Forge::SceSink &>())),
+              "the encode of a value that holds a byte string is noexcept");
 
 namespace {
 
@@ -237,6 +323,60 @@ void a_consumer_type_encodes_as_the_generated_value_does() {
           "free functions encode the little-endian codec's bytes");
 }
 
+void a_length_is_derived_from_the_payload_the_source_presents() {
+    const std::vector<std::uint8_t> body{0xDE, 0xAD, 0xBE};
+    const auto payload = ::SCE::Forge::Bytes<32>::make(body);
+    CHECK(payload.has_value(), "three bytes lie within the bound");
+    if (!payload) {
+        return;
+    }
+    const Length::CodecLengthRef generated{0x42, *payload};
+    const std::vector<std::uint8_t> expected{0x42, 0x03, 0xDE, 0xAD, 0xBE};
+    CHECK(generated.encode_to_vec() == expected, "the length is the payload's, written before it");
+    CHECK(generated.payload() == body, "the value presents the payload it was made from");
+
+    ::SCE::Forge::SceCursor cursor(expected.data(), expected.size());
+    const auto decoded = Length::CodecLengthRef::decode(cursor);
+    CHECK(decoded.has_value() && decoded->msgId() == 0x42 && decoded->payload() == body,
+          "the decoded value presents the elements it was made from");
+
+    const auto owned = ::SCE::Forge::Bounded<std::vector<std::uint8_t>, 32>::make(body);
+    CHECK(owned.has_value(), "an owned payload within the bound is made");
+    if (owned) {
+        CHECK(encoded<Length::Wire>(consumer::Message{0x42, *owned}) == expected,
+              "an owned payload encodes the generated value's bytes");
+    }
+    const auto short_body = ::SCE::Forge::Bytes<16>::make(body);
+    CHECK(short_body.has_value(), "three bytes lie within the tighter bound");
+    if (short_body) {
+        CHECK(encoded<Length::Wire>(consumer::ShortMessage{0x42, *short_body}) == expected,
+              "a payload of a tighter bound encodes the generated value's bytes");
+    }
+
+    // The fewest bytes the bound admits: none, and a length of 0, through a
+    // sink over the caller's buffer.
+    const Length::CodecLengthRef empty{};
+    std::uint8_t buffer[2] = {0xFF, 0xFF};
+    ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
+    CHECK(!empty.encode(sink).has_value() && sink.position() == 2 && buffer[0] == 0 && buffer[1] == 0,
+          "an empty payload encodes as a zero length and nothing after it");
+}
+
+void a_payload_past_its_bound_cannot_be_made() {
+    const std::vector<std::uint8_t> long_body(33, 0xAA);
+    CHECK(!::SCE::Forge::Bytes<32>::make(long_body).has_value(), "33 bytes lie past the bound of 32");
+
+    // A frame whose length says more than the bound is refused by the decode,
+    // as the value could not hold it.
+    std::vector<std::uint8_t> frame{0x01, 33};
+    frame.insert(frame.end(), long_body.begin(), long_body.end());
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    CHECK(!Length::CodecLengthRef::decode(cursor).has_value() &&
+              cursor.last_refusal() ==
+                  std::optional<::SCE::Forge::CodecError>(::SCE::Forge::CodecError::LengthOutOfRange),
+          "a length past the bound is refused as LengthOutOfRange");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -250,6 +390,8 @@ void encode_source_reports_the_sinks_failure() {
 int main() {
     the_generated_value_is_made_and_read_by_its_constructor_and_accessors();
     a_consumer_type_encodes_as_the_generated_value_does();
+    a_length_is_derived_from_the_payload_the_source_presents();
+    a_payload_past_its_bound_cannot_be_made();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

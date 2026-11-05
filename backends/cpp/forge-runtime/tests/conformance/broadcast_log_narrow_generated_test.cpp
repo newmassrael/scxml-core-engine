@@ -37,6 +37,7 @@
 #include <cstdio>
 #include <optional>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -106,13 +107,17 @@ void the_narrow_header_states_what_the_document_its_element_and_the_target_give(
 
 // ─── The narrow log: a record whose bytes cross a 32-bit word ───
 
+/// The record of `tag` and the payload 1, 2, ... `length`, made through the
+/// type its payload is presented as, which holds the record's bound.
 Record make_record(std::uint8_t tag, std::size_t length) {
-    Record record{};
-    record.tag = tag;
+    using Payload = decltype(std::declval<const Record &>().payload());
+    std::vector<std::uint8_t> bytes;
     for (std::size_t i = 0; i < length; ++i) {
-        record.payload.push_back(static_cast<std::uint8_t>(i + 1));
+        bytes.push_back(static_cast<std::uint8_t>(i + 1));
     }
-    return record;
+    const std::optional<Payload> payload = Payload::make(bytes);
+    CHECK(payload.has_value(), "a payload within its bound is made");
+    return payload.has_value() ? Record{tag, *payload} : Record{};
 }
 
 std::uint64_t publish_record(narrow::BroadcastLogCppNarrowPublisher &publisher, std::uint8_t tag, std::size_t length) {
@@ -124,11 +129,11 @@ std::uint64_t publish_record(narrow::BroadcastLogCppNarrowPublisher &publisher, 
 // Whether `got` is the entry `seq`, a record of `tag` and `length` payload bytes whole.
 bool is_record(const NarrowRead &got, std::uint64_t seq, std::uint8_t tag, std::size_t length) {
     const NarrowItem *item = std::get_if<NarrowItem>(&got);
-    if (item == nullptr || item->seq != seq || item->element.tag != tag || item->element.payload.size() != length) {
+    if (item == nullptr || item->seq != seq || item->element.tag() != tag || item->element.payload().size() != length) {
         return false;
     }
     for (std::size_t i = 0; i < length; ++i) {
-        if (item->element.payload[i] != static_cast<std::uint8_t>(i + 1)) {
+        if (item->element.payload()[i] != static_cast<std::uint8_t>(i + 1)) {
             return false;
         }
     }

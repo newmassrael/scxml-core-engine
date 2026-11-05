@@ -12,13 +12,75 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecZenohUndeclKexpr {
 
+/// The elements a value of `CodecZenohUndeclKexpr` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_id {
+void id() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.id())) -> decltype(s.id()) {
+    return s.id();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(id(s))) -> decltype(id(s)) {
+    return id(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_id
+/// The `id` element of a source.
+inline constexpr detail_id::Read id{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecZenohUndeclKexpr`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::id(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::id(std::declval<const S&>())), uint16_t>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint16_t>(source::id(std::declval<const S&>())))> {};
+
+/// The encode of `CodecZenohUndeclKexpr` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecZenohUndeclKexpr: id");
+        if (auto _e = w.write_vle_u16(static_cast<std::uint16_t>(source::id(src))); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecZenohUndeclKexpr {
-    uint16_t id{};
+    CodecZenohUndeclKexpr() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    constexpr CodecZenohUndeclKexpr(uint16_t id) noexcept
+        : id_(id) {}
+    /// The `id` element.
+    [[nodiscard]] constexpr uint16_t id() const noexcept { return id_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -41,9 +103,10 @@ struct CodecZenohUndeclKexpr {
         auto id_opt = cursor.read_vle_u16();
         if (!id_opt.has_value()) return std::nullopt;
         auto id = static_cast<std::uint16_t>(*id_opt);
-        return CodecZenohUndeclKexpr{
+        CodecZenohUndeclKexpr _decoded{
             /*id=*/id,
         };
+        return _decoded;
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
@@ -57,16 +120,8 @@ struct CodecZenohUndeclKexpr {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_vle_u16(static_cast<std::uint16_t>(id)); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -81,6 +136,9 @@ struct CodecZenohUndeclKexpr {
         (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint16_t id_{};
 };
 
 }  // namespace SCE::Generated::CodecZenohUndeclKexpr

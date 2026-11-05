@@ -18150,13 +18150,16 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
 
 // ── A value past its bound: what the generated encode DOES ─────────────────
 //
-// C++, Go, Kotlin and Python hold a byte string and a list in a container any
-// length fits, so their encode refuses a value outside the field's bound before
-// its first byte, with the error a decode of that frame gives (docs/adr/0077
-// §3), and their convenience facade answers no frame. Rust cannot be handed
-// such a value (its types hold the bounds), and C11 is held by
-// `codec_encode_bound_test.c`. `codec_length_ref` holds at most 32 bytes and
-// `codec_repeat_basic` at most 32 two-byte entries.
+// Go, Kotlin and Python hold a byte string and a list in a container any length
+// fits, so their encode refuses a value outside the field's bound before its
+// first byte, with the error a decode of that frame gives (docs/adr/0077 §3),
+// and their convenience facade answers no frame. C++ does so for a list; a C++
+// codec printed from its plan presents a byte string as `Bytes<MAX>`, which
+// holds the bound, so such a value cannot be made and its encode refuses
+// nothing (docs/adr/0081 step 4). Rust cannot be handed such a value either
+// (its types hold the bounds), and C11 is held by `codec_encode_bound_test.c`.
+// `codec_length_ref` holds at most 32 bytes and `codec_repeat_basic` at most
+// 32 two-byte entries.
 
 const BOUND_SET: &[&str] = &[
     "codec_length_ref.scxml",
@@ -18239,6 +18242,7 @@ func TestAValuePastItsBoundIsRefusedBeforeItsFirstByte(t *testing.T) {{
 fn bound_cpp_program() -> String {
     r#"#include <cstdint>
 #include <cstdio>
+#include <utility>
 #include <vector>
 
 #include "codec_length_ref.h"
@@ -18258,24 +18262,18 @@ int main() {
         }
     };
 
-    LengthRef long_value{};
-    long_value.msgId = 1;
-    long_value.len = 33;
-    long_value.payload.assign(33, 0);
-    std::vector<std::uint8_t> out;
-    ::SCE::Forge::VectorSink sink(out);
-    const auto refused = long_value.encode(sink);
-    check(refused.has_value() && *refused == CodecError::LengthOutOfRange,
-          "33 bytes past a bound of 32 are refused as a length out of range");
-    check(out.empty(), "a refusal writes nothing");
-    check(!long_value.encode_to_vec().has_value(), "the facade answers no frame");
+    using Payload = decltype(std::declval<const LengthRef &>().payload());
+    const std::vector<std::uint8_t> past(33, 0);
+    check(!Payload::make(past).has_value(), "33 bytes past a bound of 32 cannot be made");
 
-    LengthRef at{};
-    at.msgId = 1;
-    at.len = 32;
-    at.payload.assign(32, 0);
-    const auto at_bytes = at.encode_to_vec();
-    check(at_bytes.has_value() && at_bytes->size() == 34, "32 bytes at the bound encode");
+    const std::vector<std::uint8_t> bound(32, 0);
+    const auto at_payload = Payload::make(bound);
+    check(at_payload.has_value(), "32 bytes at the bound are made");
+    if (at_payload.has_value()) {
+        const LengthRef at{1, *at_payload};
+        const std::vector<std::uint8_t> at_bytes = at.encode_to_vec();
+        check(at_bytes.size() == 34 && at_bytes[1] == 32, "32 bytes at the bound encode, their length derived");
+    }
 
     Repeat many{};
     many.num_frags = 33;

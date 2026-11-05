@@ -1123,6 +1123,29 @@ Every other C++ codec is unchanged until the landing that moves it.
   expression reads `frame_.msgId()`, and a procedure's `<assign location="frame.msgId">` makes the value again,
   `frame_ = CodecSimpleFrame(msgId_, frame_.length(), frame_.payload())`. The document does not change.
 
+## A printed C++ codec holds a byte string to its bound as a type, and its derived length leaves the value (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the positional codecs
+that also hold byte strings of a stated bound, lengths derived from one byte string, variable-length integers, a
+padded tail or a streamed write (47 codecs of the resources in all). The section above applies to each of them too.
+
+- A byte string element is `::SCE::Forge::Bytes<MAX>` (`sce/forge/bounded.h`), a view of at most `MAX` bytes. Make
+  one from your bytes with `Bytes<MAX>::make(bytes)`, which returns `std::nullopt` for a list past the bound, then
+  make the value: `CodecLengthRef{1, *payload}`. A `std::vector` is not converted silently; the bound is checked
+  once, where you make the view.
+- The accessor returns the same view: `msg.payload().size()`, `msg.payload()[i]`, `msg.payload().data()`, a range
+  `for`, and `==` against a vector. It views the value's own bytes; copy it out
+  (`std::vector<std::uint8_t>(p.begin(), p.end())`) to keep it past the value.
+- A length derived from a byte string is no longer an element: `msg.len` is gone, the constructor does not take it,
+  and the encode writes the payload's own size. Drop it from your constructor calls and your sources.
+- `encode_to_vec` returns `std::vector<std::uint8_t>`, no longer an optional: a value past its bound cannot be
+  made, so the encode refuses nothing. Replace `if (auto bytes = msg.encode_to_vec()) use(*bytes);` with
+  `use(msg.encode_to_vec());`. `encode` keeps its signature and returns only the sink's own failure.
+- A source of the codec presents each byte string as anything that converts to `Bytes<MAX>` (a `Bytes<N>` with
+  `N <= MAX`, or a `Bounded<std::vector<std::uint8_t>, N>`); a plain vector or a looser bound does not, and
+  `is_source<S>` says so at compile time.
+- `decode` is unchanged in signature and in what it refuses.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

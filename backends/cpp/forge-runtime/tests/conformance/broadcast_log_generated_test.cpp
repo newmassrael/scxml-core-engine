@@ -31,6 +31,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -205,29 +207,35 @@ void two_readers_keep_separate_cursors() {
 
 // ─── What the element's bound does ───
 
-void a_record_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated() {
+void a_record_larger_than_its_bound_cannot_be_made_and_is_never_truncated() {
     DeployedLog log;
     auto publisher = log.publisher();
     CHECK(publisher.has_value(), "the first publisher");
 
-    // 1 + 9 = 10 bytes is one past the entry's 9, and 1 + 20 = 21 is well past.
+    // The record presents its payload as `Bytes<8>`, which holds at most eight
+    // bytes (docs/adr/0077 §3, docs/adr/0081 step 4): a record of 1 + 9 = 10
+    // bytes, one past the entry's 9, or of 1 + 20 = 21 has no value to publish,
+    // so the encode has nothing to refuse and the log nothing to truncate.
+    using Payload = ::SCE::Forge::Bytes<8>;
+    static_assert(std::is_same<decltype(std::declval<const Record &>().payload()), Payload>::value,
+                  "the record presents its payload within its bound");
     for (const std::size_t length : {std::size_t{9}, std::size_t{20}}) {
-        const Record too_long{.tag = 1, .payload = std::vector<std::uint8_t>(length, 0xAA)};
-        const deployed::BroadcastLogConformanceDeployedPublished refused = deployed::publish(*publisher, too_long);
-        CHECK(!refused.published(), "a payload past its bound is not published");
-        // The codec refuses the payload before its first byte, with the error a
-        // decode of that frame gives (docs/adr/0077 §3).
-        CHECK(refused.error.has_value() && *refused.error == ::SCE::Forge::CodecError::LengthOutOfRange,
-              "the codec refuses it");
-        CHECK(refused.seq == broadcast::kNoSequence, "a refused element has no sequence number");
-        CHECK(log.head() == 0, "a refused element publishes nothing");
+        const std::vector<std::uint8_t> too_long(length, 0xAA);
+        CHECK(!Payload::make(too_long).has_value(), "a payload past its bound cannot be made");
     }
+    CHECK(log.head() == 0, "nothing was published");
 
     // Exactly the bound, and under it: the length word keeps what was written.
     const std::vector<std::uint8_t> full{1, 2, 3, 4, 5, 6, 7, 8};
     const std::vector<std::uint8_t> short_payload{7, 7, 7};
-    const Record at_bound{.tag = 0x5A, .payload = full};
-    const Record under_bound{.tag = 0x5B, .payload = short_payload};
+    const std::optional<Payload> full_payload = Payload::make(full);
+    const std::optional<Payload> under_payload = Payload::make(short_payload);
+    CHECK(full_payload.has_value() && under_payload.has_value(), "a payload within its bound is made");
+    if (!full_payload.has_value() || !under_payload.has_value()) {
+        return;
+    }
+    const Record at_bound{0x5A, *full_payload};
+    const Record under_bound{0x5B, *under_payload};
     const auto first = deployed::publish(*publisher, at_bound);
     CHECK(first.published() && first.seq == 0, "a record of exactly 9 bytes is published");
     const auto second = deployed::publish(*publisher, under_bound);
@@ -249,13 +257,13 @@ void a_record_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated() 
     auto reader = log.reader_oldest();
     const DeployedRead a = deployed::read(log, reader);
     const DeployedItem *record_a = std::get_if<DeployedItem>(&a);
-    CHECK(record_a != nullptr && record_a->seq == 0 && record_a->element.tag == 0x5A &&
-              record_a->element.payload == full,
+    CHECK(record_a != nullptr && record_a->seq == 0 && record_a->element.tag() == 0x5A &&
+              record_a->element.payload() == full,
           "the record of exactly 9 bytes comes back whole");
     const DeployedRead b = deployed::read(log, reader);
     const DeployedItem *record_b = std::get_if<DeployedItem>(&b);
-    CHECK(record_b != nullptr && record_b->seq == 1 && record_b->element.tag == 0x5B &&
-              record_b->element.payload == short_payload,
+    CHECK(record_b != nullptr && record_b->seq == 1 && record_b->element.tag() == 0x5B &&
+              record_b->element.payload() == short_payload,
           "the shorter record comes back whole");
     CHECK(std::holds_alternative<DeployedEmpty>(deployed::read(log, reader)), "drained");
 }
@@ -307,7 +315,7 @@ int main() {
     an_entry_holds_its_length_and_its_bytes_little_endian_eight_to_a_word();
     a_reader_the_publisher_laps_is_told_how_many_it_missed_and_resumes_at_the_oldest();
     two_readers_keep_separate_cursors();
-    a_record_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated();
+    a_record_larger_than_its_bound_cannot_be_made_and_is_never_truncated();
     a_stored_length_above_the_bound_is_malformed_and_never_a_copy_out_of_bounds();
     an_entry_whose_bytes_are_no_element_is_malformed();
 

@@ -11650,6 +11650,7 @@ fn render_codec(
                 "before": printed.before,
                 "members": printed.members,
                 "private": printed.private,
+                "decoded": printed.decoded,
             }),
         );
     }
@@ -11970,8 +11971,14 @@ fn render_codec(
         (String::new(), false)
     };
     // A value outside a field's bound is refused there too, on the backends
-    // whose containers hold any length (docs/adr/0077 §3).
-    let (bound_lines, bound_failures) = encode_bound_guard_lines(&m.fields, lang);
+    // whose containers hold any length (docs/adr/0077 §3). A C++ codec printed
+    // from its plan presents each byte string through a type that holds its
+    // bound, so nothing is left to refuse (docs/adr/0081 step 4).
+    let (bound_lines, bound_failures) = if cpp_printed.is_some() {
+        (Vec::new(), Vec::new())
+    } else {
+        encode_bound_guard_lines(&m.fields, lang)
+    };
     let indent = encode_body_indent(lang);
     for line in &bound_lines {
         present_if_encode_prologue.push_str(&format!("{indent}{line}\n"));

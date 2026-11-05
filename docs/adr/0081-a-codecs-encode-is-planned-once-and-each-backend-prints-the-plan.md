@@ -382,6 +382,17 @@ old encode, the old encode and its templates are removed in the same landing.
    printed value by its constructor and reads it by its accessors; `codec_source_generated_test` holds a consumer's
    types, presenting the elements by member functions, by functions of their namespace, or by both, to the generated
    value's bytes.
+
+   *The second C++ landing, 2026-11-05:* byte strings of a stated bound, lengths derived from one byte string,
+   variable-length integers, a tail padded to its offset, and a streamed write that is always made. A byte string is
+   presented as `::SCE::Forge::Bytes<MAX>` (`sce/forge/bounded.h`): the accessor returns it, the constructor takes
+   it, and a source's element converts to it. The value holds its bytes as `Bounded<std::vector<std::uint8_t>, MAX>`,
+   and `make` is the only way to hold a list, so no value holds bytes past its bound and the encode is total:
+   `encode_to_vec` returns the bytes, not an optional. A derived length is no longer an element (§3): the encode
+   counts it from the bytes it writes, and the decode reads it and makes no member of it. The printed set is 47
+   codecs of the resources, which `a_cpp_codec_is_printed_from_its_plan_once_it_lowers_every_form` pins by name.
+   Text, bodies, lists, gated elements and lengths counted in encoded bytes still keep a codec on the template's
+   encode.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

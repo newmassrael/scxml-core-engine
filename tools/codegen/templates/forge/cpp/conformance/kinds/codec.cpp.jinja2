@@ -33,7 +33,9 @@
     for (const auto &case_entry : spec["cases"]) {
 {% if f.fields %}
         const auto &decoded_json = case_entry["decoded"];
-{% for field in f.fields %}
+{# A field the encode derives is no element of a printed value, so it is
+   neither read from the case nor read back (docs/adr/0081 §3). #}
+{% for field in f.fields if not (f.cpp_printed and field.derived) %}
 {% if field.optional %}
         {# An absent entry is JSON `null` in the case and empty in the struct. #}
         std::optional<{{ field.type | cpp_type }}> input_{{ field.name }};
@@ -52,10 +54,27 @@
 
 {% if f.cpp_printed %}
         {# A codec printed from its plan (docs/adr/0081 step 4) is made by its
-           constructor, its elements in declaration order. #}
-        SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{
-{% for field in f.fields %}
+           constructor, its elements in declaration order; a field the encode
+           derives is no element of it. A byte string is made through its
+           bound's one door, the type the value presents it as; every case is
+           a value inside it. #}
+        using Codec = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }};
+{% for field in f.fields if field.bounded and not field.derived %}
+        const auto bounded_{{ field.name }} =
+            decltype(std::declval<const Codec &>().{{ field.name }}())::make(input_{{ field.name }});
+        CHECK(bounded_{{ field.name }}.has_value(), "{{ f.name }} case %d: {{ field.name }} is outside its bound", i);
+        if (!bounded_{{ field.name }}.has_value()) {
+            ++i;
+            continue;
+        }
+{% endfor %}
+        Codec _codec_val{
+{% for field in f.fields if not field.derived %}
+{% if field.bounded %}
+            /*{{ field.name }}=*/*bounded_{{ field.name }},
+{% else %}
             /*{{ field.name }}=*/input_{{ field.name }},
+{% endif %}
 {% endfor %}
         };
 {% else %}
@@ -85,7 +104,7 @@
         if (round_tripped.has_value()) {
 {# A printed codec's element is read through its accessor. #}
 {% set acc = "()" if f.cpp_printed else "" %}
-{% for field in f.fields %}
+{% for field in f.fields if not (f.cpp_printed and field.derived) %}
 {% if field.optional %}
             CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: present actual=%d expected=%d, or the values differ",

@@ -20,6 +20,8 @@
 #include <optional>
 #include <vector>
 
+#include "sce/forge/bounded.h"
+
 namespace SCE::Forge {
 
 /// Typed codec error. Used by decode (returned via `std::nullopt`
@@ -456,6 +458,11 @@ public:
     [[nodiscard]] std::optional<CodecError> write_bytes(const std::uint8_t *data, std::size_t n) noexcept override {
         if (cap_ - pos_ < n) {
             return CodecError::BufferOverflow;
+        }
+        // An empty byte string may be viewed through a null pointer, which
+        // `memcpy` must not be given even for no bytes.
+        if (n == 0) {
+            return std::nullopt;
         }
         std::memcpy(buf_ + pos_, data, n);
         pos_ += n;

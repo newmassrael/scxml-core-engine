@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "622b27e",
+  "embed_version": "41a11c3",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 502,
+  "symbol_count": 517,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -2912,6 +2912,96 @@
       "kind": "typedef",
       "name": "SCE::Forge::Detail::Ring",
       "type": "std::common_type_t<unsigned int, std::make_unsigned_t<T>>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Bounded<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::Detail::converts_to<T>",
+      "signature": "void SCE::Forge::Detail::converts_to<T>(To) noexcept"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::Detail::equal_elements<T>",
+      "signature": "bool SCE::Forge::Detail::equal_elements<T>(const A &, const B &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Bounded<L, Max, Min> &, const Bounded<L2, Max2, Min2> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Bounded<L, Max, Min> &, const R &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const R &, const Bounded<L, Max, Min> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Bounded<L, Max, Min> &, const Bounded<L2, Max2, Min2> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Bounded<L, Max, Min> &, const R &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const R &, const Bounded<L, Max, Min> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::CopiesFrom<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsBounded<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsContiguous<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::MakesCopies<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::WithinBounds<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Bytes",
+      "type": "Bounded<Span<const std::uint8_t>, Max, Min>"
     },
     {
       "header": "sce/forge/broadcast_log.h",

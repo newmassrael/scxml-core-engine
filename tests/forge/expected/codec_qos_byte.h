@@ -59,7 +59,7 @@ template <class S, class = void>
 struct is_nothrow_source : std::false_type {};
 template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
-    : std::bool_constant<noexcept(source::qos(std::declval<const S&>()))> {};
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::qos(std::declval<const S&>())))> {};
 
 /// The encode of `CodecQosByte` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It

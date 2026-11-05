@@ -373,6 +373,13 @@ pub struct StructField {
     /// door. Derived from the document, like `optional`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub bounded: bool,
+    /// The field is an element the encode of a positional codec derives whole
+    /// — a length of the bytes it measures — which a value printed from its
+    /// plan does not present (docs/adr/0081 §3), so a fragment neither makes
+    /// the value with it nor reads it back. Derived from the document, like
+    /// `optional`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub derived: bool,
     /// The field is a list — a property of an `sce:encoding="content-line"`
     /// codec that declares `sce:max-count` (a list of lines) or
     /// `sce:separator` (a list of the values of one line), which each language
@@ -2689,6 +2696,29 @@ fn derive_codec_shape(
                     crate::forge::codec_totality::byte_bound(f, &model.fields).is_some()
                 });
         }
+        // The fields the encode derives whole (docs/adr/0081 §3), as its plan
+        // says.
+        let derived: Vec<String> = crate::encode_plan_file(
+            scxml_path,
+            &[],
+            &crate::ForgeCompileOptions::default(),
+            |plan| match plan {
+                crate::forge::encode_plan::CodecPlan::Positional(plan) => plan
+                    .derivations
+                    .iter()
+                    .filter_map(|d| match &d.element {
+                        crate::forge::codec_roles::ElementId::Field(id) => Some(id.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
+        )
+        .map_err(|e| format!("{}: {e:?}", scxml_path.display()))?
+        .unwrap_or_default();
+        for field in fields.iter_mut() {
+            field.derived = derived.contains(&field.name);
+        }
     }
     if let Some(lines) = model.content_line.as_ref().filter(|_| *content_line) {
         let entries = &lines.entries;
@@ -2770,6 +2800,7 @@ fn derive_codec_shape(
                             compare: CompareMode::Equality,
                             optional: !p.is_required(),
                             bounded: false,
+                            derived: false,
                             list: false,
                             enum_document: entry_document(p)?,
                             enum_open: entry_open(p)?,
@@ -2784,6 +2815,7 @@ fn derive_codec_shape(
                     compare: CompareMode::Equality,
                     optional: false,
                     bounded: false,
+                    derived: false,
                     list: has_list,
                     enum_document: entry_document(entry)?,
                     enum_open: entry_open(entry)?,
@@ -3843,10 +3875,14 @@ pub fn render_harness(
                     }
                     if !*cbor && !*content_line {
                         let model = read_codec_model(&scxml_path, &fixture_name)?;
-                        *encode_refuses_bound = crate::forge::generator::encode_refuses_a_bound(
-                            &model.fields,
-                            language,
-                        );
+                        // A C++ codec printed from its plan holds each bound in
+                        // a type, and its encode refuses nothing of it
+                        // (docs/adr/0081 step 4).
+                        *encode_refuses_bound = !*cpp_printed
+                            && crate::forge::generator::encode_refuses_a_bound(
+                                &model.fields,
+                                language,
+                            );
                         // A positional codec has an eager form at the default
                         // profile only where `Inline` holds every list of it
                         // and of what it holds; otherwise a fragment names the
@@ -4248,6 +4284,7 @@ mod tests {
             compare: CompareMode::Equality,
             optional: false,
             bounded: false,
+            derived: false,
             list: false,
             enum_document: None,
             enum_open: false,

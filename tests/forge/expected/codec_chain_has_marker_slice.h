@@ -12,15 +12,103 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecChainHasMarkerSlice {
 
+/// The elements a value of `CodecChainHasMarkerSlice` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_kind {
+void kind() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.kind())) -> decltype(s.kind()) {
+    return s.kind();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(kind(s))) -> decltype(kind(s)) {
+    return kind(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_kind
+/// The `kind` element of a source.
+inline constexpr detail_kind::Read kind{};
+namespace detail_data {
+void data() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.data())) -> decltype(s.data()) {
+    return s.data();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(data(s))) -> decltype(data(s)) {
+    return data(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_data
+/// The `data` element of a source.
+inline constexpr detail_data::Read data{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecChainHasMarkerSlice`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::kind(std::declval<const S&>())), decltype(source::data(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::kind(std::declval<const S&>())), uint16_t>, std::is_convertible<decltype(source::data(std::declval<const S&>())), ::SCE::Forge::Bytes<256>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint16_t>(source::kind(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Bytes<256>>(source::data(std::declval<const S&>())))> {};
+
+/// The encode of `CodecChainHasMarkerSlice` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecChainHasMarkerSlice: kind, data");
+        const auto& _r_data = source::data(src);
+        const ::SCE::Forge::Bytes<256> _e_data = _r_data;
+        const uint64_t _d_size = static_cast<uint64_t>(_e_data.size());
+        if (auto _e = w.write_vle_u16(static_cast<std::uint16_t>(source::kind(src))); _e) return _e;
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(_d_size)); _e) return _e;
+        if (auto _e = w.write_bytes(_e_data.data(), _e_data.size()); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecChainHasMarkerSlice {
-    uint16_t kind{};
-    uint64_t size{};
-    std::vector<uint8_t> data{};
+    CodecChainHasMarkerSlice() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecChainHasMarkerSlice(uint16_t kind, ::SCE::Forge::Bytes<256> data)
+        : kind_(kind), data_(data) {}
+    /// The `kind` element.
+    [[nodiscard]] constexpr uint16_t kind() const noexcept { return kind_; }
+    /// The `data` element.
+    [[nodiscard]] ::SCE::Forge::Bytes<256> data() const noexcept { return data_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -58,11 +146,17 @@ struct CodecChainHasMarkerSlice {
             data.assign(raw, raw + _n);
             if (!cursor.advance(_n)) return std::nullopt;
         }
-        return CodecChainHasMarkerSlice{
+        const auto _b_data = ::SCE::Forge::Bytes<256>::make(data);
+        if (!_b_data) {
+            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
+            return std::nullopt;
+        }
+        (void)size;
+        CodecChainHasMarkerSlice _decoded{
             /*kind=*/kind,
-            /*size=*/size,
-            /*data=*/data,
+            /*data=*/*_b_data,
         };
+        return _decoded;
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
@@ -76,41 +170,26 @@ struct CodecChainHasMarkerSlice {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (data.size() > 256) return ::SCE::Forge::CodecError::LengthOutOfRange;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_vle_u16(static_cast<std::uint16_t>(kind)); _e) return _e;
-        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(size)); _e) return _e;
-        if (auto _e = w.write_bytes(data.data(), data.size()); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
-    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
-    /// refuses the value before its first byte: a gated field and the
-    /// `sce:present-if` that gates it contradict each other
-    /// (`CodecError::PresentIfMismatch`), or a byte string, text or list
-    /// lies outside its bound (`CodecError::LengthOutOfRange`,
-    /// `CodecError::TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        if (encode(_sce_sink)) {
-            return std::nullopt;
-        }
+        (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint16_t kind_{};
+    ::SCE::Forge::Bounded<std::vector<std::uint8_t>, 256> data_{};
 };
 
 }  // namespace SCE::Generated::CodecChainHasMarkerSlice

@@ -291,11 +291,16 @@ struct {{ struct_name }} {
         {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
+{% if cpp_source %}
+{{ cpp_source.decoded }}
+        return _decoded;
+{% else %}
         return {{ struct_name }}{
 {% for field in fields %}
             /*{{ field.id }}=*/{{ field.id }},
 {% endfor %}
         };
+{% endif %}
 {% elif has_variable_fields %}
         std::size_t _frame_len = cursor.remaining();
 {% if min_bytes > 0 %}
@@ -306,11 +311,15 @@ struct {{ struct_name }} {
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
+{% if cpp_source %}
+{{ cpp_source.decoded }}
+{% else %}
         {{ struct_name }} _decoded{
 {% for field in fields %}
             /*{{ field.id }}=*/{{ field.id }},
 {% endfor %}
         };
+{% endif %}
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return _decoded;
 {% else %}
@@ -319,11 +328,15 @@ struct {{ struct_name }} {
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
+{% if cpp_source %}
+{{ cpp_source.decoded }}
+{% else %}
         {{ struct_name }} _decoded{
 {% for field in fields %}
             /*{{ field.id }}=*/{{ field.id }},
 {% endfor %}
         };
+{% endif %}
         if (!cursor.advance({{ min_bytes }})) return std::nullopt;
         return _decoded;
 {% endif %}

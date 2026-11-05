@@ -925,6 +925,10 @@
         "compare": {
           "$ref": "#/definitions/CompareMode"
         },
+        "derived": {
+          "description": "The field is an element the encode of a positional codec derives whole — a length of the bytes it measures — which a value printed from its plan does not present (docs/adr/0081 §3), so a fragment neither makes the value with it nor reads it back. Derived from the document, like `optional`.",
+          "type": "boolean"
+        },
         "enum_document": {
           "description": "The name of the enum document this field reads by the text of its variants — an entry or a parameter of an `sce:encoding=\"content-line\"` codec typed `enum:<alias>` (docs/adr/0015). A round-trip case writes the value as the carrier number the enum document gives the variant, and a language's fragment takes it to and from its own enum type through the enum's conversions; this names the type that conversion belongs to. Derived from the document, like `optional`.",
           "type": [

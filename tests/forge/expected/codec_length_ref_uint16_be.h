@@ -12,14 +12,79 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecLengthRefUint16Be {
 
+/// The elements a value of `CodecLengthRefUint16Be` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_payload {
+void payload() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.payload())) -> decltype(s.payload()) {
+    return s.payload();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(payload(s))) -> decltype(payload(s)) {
+    return payload(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_payload
+/// The `payload` element of a source.
+inline constexpr detail_payload::Read payload{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecLengthRefUint16Be`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::payload(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::payload(std::declval<const S&>())), ::SCE::Forge::Bytes<1024>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Bytes<1024>>(source::payload(std::declval<const S&>())))> {};
+
+/// The encode of `CodecLengthRefUint16Be` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecLengthRefUint16Be: payload");
+        const auto& _r_payload = source::payload(src);
+        const ::SCE::Forge::Bytes<1024> _e_payload = _r_payload;
+        const uint16_t _d_payload_len = static_cast<uint16_t>(_e_payload.size());
+        if (auto _e = w.write_u16_be(static_cast<std::uint16_t>(_d_payload_len)); _e) return _e;
+        if (auto _e = w.write_bytes(_e_payload.data(), _e_payload.size()); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecLengthRefUint16Be {
-    uint16_t payload_len{};
-    std::vector<uint8_t> payload{};
+    CodecLengthRefUint16Be() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecLengthRefUint16Be(::SCE::Forge::Bytes<1024> payload)
+        : payload_(payload) {}
+    /// The `payload` element.
+    [[nodiscard]] ::SCE::Forge::Bytes<1024> payload() const noexcept { return payload_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -38,9 +103,14 @@ struct CodecLengthRefUint16Be {
         }
         if (_frame_len < static_cast<std::size_t>(2 + payload_len)) return std::nullopt;
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 2, raw + 2 + payload_len);
+        const auto _b_payload = ::SCE::Forge::Bytes<1024>::make(payload);
+        if (!_b_payload) {
+            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
+            return std::nullopt;
+        }
+        (void)payload_len;
         CodecLengthRefUint16Be _decoded{
-            /*payload_len=*/payload_len,
-            /*payload=*/payload,
+            /*payload=*/*_b_payload,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return _decoded;
@@ -57,33 +127,25 @@ struct CodecLengthRefUint16Be {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (payload.size() > 1024) return ::SCE::Forge::CodecError::LengthOutOfRange;
-        if (auto _e = w.write_u8(static_cast<uint8_t>((payload_len >> 8) & 0xFF)); _e) return _e;
-        if (auto _e = w.write_u8(static_cast<uint8_t>(payload_len & 0xFF)); _e) return _e;
-        if (auto _e = w.write_bytes(this->payload.data(), this->payload.size()); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
-    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
-    /// refuses the value before its first byte: a gated field and the
-    /// `sce:present-if` that gates it contradict each other
-    /// (`CodecError::PresentIfMismatch`), or a byte string, text or list
-    /// lies outside its bound (`CodecError::LengthOutOfRange`,
-    /// `CodecError::TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        if (encode(_sce_sink)) {
-            return std::nullopt;
-        }
+        (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    ::SCE::Forge::Bounded<std::vector<std::uint8_t>, 1024> payload_{};
 };
 
 }  // namespace SCE::Generated::CodecLengthRefUint16Be

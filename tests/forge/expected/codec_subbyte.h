@@ -101,7 +101,7 @@ template <class S, class = void>
 struct is_nothrow_source : std::false_type {};
 template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
-    : std::bool_constant<noexcept(source::priority(std::declval<const S&>())) && noexcept(source::channel(std::declval<const S&>())) && noexcept(source::direction(std::declval<const S&>()))> {};
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::priority(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::channel(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::direction(std::declval<const S&>())))> {};
 
 /// The encode of `CodecSubbyte` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It

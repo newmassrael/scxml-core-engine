@@ -306,6 +306,17 @@ target_include_directories(span_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
 target_compile_options(span_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME span_runtime COMMAND span_runtime_test)
 
+# The runtime's bounded list on its own (sce/forge/bounded.h, docs/adr/0077
+# section 3, docs/adr/0081 step 4), at C++17 and under the same blanket -Werror:
+# what converts to what is asserted at compile time, what `make` admits and what
+# a held list reads at run time. What a generated value presents through it is
+# judged by codec_source_generated_test and the harness above.
+add_executable(bounded_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/bounded_runtime_test.cpp")
+set_target_properties(bounded_runtime_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(bounded_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(bounded_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME bounded_runtime COMMAND bounded_runtime_test)
+
 # The runtime's wrapping and saturating integer helpers on their own
 # (sce/forge/algorithm.h, docs/adr/0063) against their definition, at C++17,
 # the standard the interface is for, and under the same blanket -Werror with the

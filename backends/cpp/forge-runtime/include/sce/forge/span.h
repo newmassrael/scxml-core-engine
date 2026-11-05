@@ -92,16 +92,20 @@ public:
     constexpr Span(const Span<U> &other) noexcept : data_(other.data()), size_(other.size()) {}
 
     /// Every element of a contiguous container the caller may write through:
-    /// `data()` and `size()` of `container`.
+    /// `data()` and `size()` of `container`. It throws what those throw, and
+    /// nothing else, as `std::span` does.
     template <typename C, typename = std::enable_if_t<Detail::IsContiguousSourceOf<C &, T>::value>>
-    constexpr Span(C &container) : data_(container.data()), size_(static_cast<std::size_t>(container.size())) {}
+    constexpr Span(C &container) noexcept(noexcept(container.data()) && noexcept(container.size()))
+        : data_(container.data()), size_(static_cast<std::size_t>(container.size())) {}
 
     /// Every element of a contiguous container read as `const`, a temporary
     /// included, which is what lets a `Span<const T>` parameter take a
     /// `std::vector` built in the call. A temporary's elements last until the
-    /// end of the full expression the call is in.
+    /// end of the full expression the call is in. It throws what `data()` and
+    /// `size()` throw.
     template <typename C, typename = std::enable_if_t<Detail::IsContiguousSourceOf<const C &, T>::value>>
-    constexpr Span(const C &container) : data_(container.data()), size_(static_cast<std::size_t>(container.size())) {}
+    constexpr Span(const C &container) noexcept(noexcept(container.data()) && noexcept(container.size()))
+        : data_(container.data()), size_(static_cast<std::size_t>(container.size())) {}
 
     /// The first element viewed; a null pointer for a view made empty.
     constexpr T *data() const noexcept {

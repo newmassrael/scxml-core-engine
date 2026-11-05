@@ -101,7 +101,7 @@ template <class S, class = void>
 struct is_nothrow_source : std::false_type {};
 template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
-    : std::bool_constant<noexcept(source::sensorId(std::declval<const S&>())) && noexcept(source::value(std::declval<const S&>())) && noexcept(source::status(std::declval<const S&>()))> {};
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::sensorId(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<uint16_t>(source::value(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::status(std::declval<const S&>())))> {};
 
 /// The encode of `CodecLittleEndian` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It
