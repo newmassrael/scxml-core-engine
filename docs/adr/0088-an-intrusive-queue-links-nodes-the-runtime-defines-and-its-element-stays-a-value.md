@@ -1,6 +1,6 @@
 # ADR 0088 — An intrusive queue links nodes the runtime defines, and its element stays a value
 
-- Status: Accepted (2026-11-05). The owner ordered this structure ("시작") after reviewing its alternatives, under the
+- Status: Accepted (2026-11-05). The owner ordered this structure to start (reply: "start") after reviewing its alternatives, under the
   rule of 2026-10-26 and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored.
   The question came up in ADR 0081 step 4: a printed C++ codec value is made only by its constructor, and the
   intrusive queue wrote a field of its element in place.
@@ -178,5 +178,5 @@ The checks on the target's atomics (a 32-bit exchange, or masked interrupts for 
 
 ## Owner's answers
 
-- 2026-11-05: the link is the list's hook, not an element of the value; the runtime defines the node ("시작", in
-  answer to the recommendation of this structure over the three alternatives above).
+- 2026-11-05: the link is the list's hook, not an element of the value; the runtime defines the node (reply: "start",
+  in answer to the recommendation of this structure over the three alternatives above).
