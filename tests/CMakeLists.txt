@@ -531,10 +531,10 @@ sce_add_static_scenario_suite(
 )
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which
-# candidate starts; the pending schema revision a saved state is restored into; and
-# the tree a host posts a child's ending to from inside the parent's macrostep
-# (docs/adr/0084, D2 as amended at step 10), a post a scenario has no step for.
-foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_hybrid_saved static_schema_pending static_invoke_ending_order)
+# candidate starts; and the pending schema revision a saved state is restored into.
+# The tree a host posts a child's ending to from inside the parent's macrostep is
+# generated for integration_tests, whose inbox driver posts to it.
+foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_hybrid_saved static_schema_pending)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
@@ -2756,6 +2756,15 @@ sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/inbox_probe.scxml
     HOST_INVOKER x-sce-host
+)
+
+# docs/adr/0084, D2 as amended at step 10: the tree whose host posts a child's
+# ending from inside the parent's macrostep, which the same driver posts to. No
+# scenario replays it, since a scenario has no step for such a post. Its `clock`
+# is a standard host type, which a `sce-static` document needs no declaration for.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_invoke_ending_order.scxml
 )
 
 # §scxml-G-7: `<sce:action>` native host dispatch, compiled for C++ from the
@@ -8358,6 +8367,11 @@ add_test(NAME ComprehensiveInteractiveTests COMMAND comprehensive_interactive_te
 add_test(NAME TXMLConverterTests COMMAND txml_converter_tests)
 add_test(NAME ConcurrencyTests COMMAND concurrency_tests)
 add_test(NAME IntegrationTests COMMAND integration_tests)
+# WhatAnotherThreadPostsEntersThroughTheInboxTest runs `static_invoke_ending_order`
+# on the Interpreter as `sce-codegen lower` writes it (docs/adr/0084, D2 as amended
+# at step 10), spawned as static_datamodel_lowered_test spawns it; a WASM build
+# skips that case.
+set_tests_properties(IntegrationTests PROPERTIES ENVIRONMENT "SCE_CODEGEN_BIN=${SCE_CODEGEN}")
 
 # Priority Level 4: W3C SCXML compliance validation (comprehensive validation, ~40s)
 # WASM: the same registry set and generated AOT headers, run under Node

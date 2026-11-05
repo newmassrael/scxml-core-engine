@@ -24,7 +24,10 @@
 //   * a host-run invocation's ending posted from another thread raises what a
 //     direct one raises, and is refused by the same token check;
 //   * what is held when the run ends is applied as a direct call would be then,
-//     and a post after the end is refused, answered and counted.
+//     and a post after the end is refused, answered and counted;
+//   * an ending made on another thread for a child session, found through the
+//     tree's directory, enters that session's queue ahead of an event its parent
+//     sends it afterwards in the same macrostep (D2 as amended at step 10).
 //
 // The Interpreter has no owner-thread refusal for a host to meet, unlike the
 // generated engine's debug check: every call that hands it an input is taken on
@@ -34,13 +37,16 @@
 //
 // Fixture: inbox_probe.scxml, beside this file, the machine the generated
 // engine's inbox test posts to; read here as written. `taken` is what the machine
-// took, in order, as `ping:<data>;`, `done:<data>;` and `failed:<data>;`.
+// took, in order, as `ping:<data>;`, `done:<data>;` and `failed:<data>;`. The tree
+// of the last case is `sce-build/tests/fixtures/static_datamodel/
+// static_invoke_ending_order.scxml`, run as `sce-codegen lower` writes it.
 
 #include "core/HostProcessor.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "runtime/EventRaiserImpl.h"
+#include "runtime/INativeActionHost.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
 
@@ -48,6 +54,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <gtest/gtest.h>
 #include <map>
@@ -176,6 +184,91 @@ std::string expectedFrom(const std::vector<Call> &calls) {
     }
     return expected;
 }
+
+/// The standard host type the child of `static_invoke_ending_order` asks for the time.
+constexpr const char *CLOCK = "sce-host-clock-now";
+/// A completion of the clock, as the child's `ClockNowResult` reads it.
+constexpr const char *NOW = R"({"error":"","utc_ms":1700000000000,"monotonic_ms":5})";
+
+#ifndef __EMSCRIPTEN__
+/// `sce-codegen lower <fixture>`, as static_datamodel_lowered_test spawns it: the
+/// lowered document on stdout, or empty when the command failed or refused.
+std::string lowered(const std::string &fixture) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    EXPECT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    if (bin == nullptr) {
+        return "";
+    }
+    const std::string command = std::string("\"") + bin + "\" lower \"" + fixture + "\" 2>/dev/null";
+    FILE *pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        return "";
+    }
+    std::string document;
+    char buffer[4096];
+    while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        document += buffer;
+    }
+    return pclose(pipe) == 0 ? document : std::string();
+}
+#endif
+
+/// What the host of `static_invoke_ending_order` saw and did, shared with the
+/// handlers the machine holds, which may run after the case has returned (a stop
+/// cancels `clock`): the clock's starts, and what the post `beforeQuestion` made
+/// was answered.
+struct EndingOrderRecord {
+    std::mutex mutex;
+    std::vector<HostInvokeRequest> starts;
+    std::optional<HostInvokeEndOutcome> posted;
+
+    std::optional<HostInvokeRequest> latestStart() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (starts.empty()) {
+            return std::nullopt;
+        }
+        return starts.back();
+    }
+};
+
+/// The host of the parent of `static_invoke_ending_order`. `beforeQuestion`, which
+/// the parent performs inside the macrostep that takes `ask`, before it sends
+/// `question` to `worker`, ends the clock of `worker` from a thread it joins before
+/// it returns, naming `worker`'s session to the root: the ending happens-before the
+/// parent's send.
+class EndingOrderHost : public INativeActionHost {
+public:
+    EndingOrderHost(std::weak_ptr<StateMachine> root, std::shared_ptr<EndingOrderRecord> record)
+        : root_(std::move(root)), record_(std::move(record)) {}
+
+    ActionRealization realization() const override {
+        return ActionRealization::Performs;
+    }
+
+    bool performNativeAction(const std::string &name, const std::vector<ScriptValue> &) override {
+        if (name != "beforeQuestion") {
+            return false;
+        }
+        const std::shared_ptr<StateMachine> root = root_.lock();
+        const std::optional<HostInvokeRequest> clock = record_->latestStart();
+        if (!root || !clock.has_value()) {
+            ADD_FAILURE() << "the parent took `ask` before `worker` asked its host for the time";
+            return true;
+        }
+        std::optional<HostInvokeEndOutcome> outcome;
+        std::thread host([&root, &clock, &outcome] {
+            outcome = root->completeHostInvokeIn(clock->sessionId, CLOCK, "clock", clock->token, NOW);
+        });
+        host.join();
+        std::lock_guard<std::mutex> lock(record_->mutex);
+        record_->posted = outcome;
+        return true;
+    }
+
+private:
+    std::weak_ptr<StateMachine> root_;
+    std::shared_ptr<EndingOrderRecord> record_;
+};
 
 class WhatAnotherThreadPostsEntersThroughTheInterpretersInbox : public ::testing::Test {
 protected:
@@ -651,6 +744,69 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInterpretersInbox, ARunRestoredRunn
     EXPECT_FALSE(posted->success) << "an event posted during a macrostep was answered as taken by it";
     EXPECT_EQ(sm->refusedInboxPosts(), 0u) << "the restored run's inbox was still closed";
     EXPECT_EQ(taken(*sm), "ping:1;") << "the event posted to the restored run was not taken";
+}
+
+// D2 as amended at step 10: an ending made on another thread for a child session
+// is handed to that session when it is made, found in the tree's directory rather
+// than by walking the tree from the calling thread. Inside the macrostep that takes
+// `ask`, the host ends `worker`'s `clock`, naming `worker`, and the parent then
+// sends `question` to `worker`. The ending came first, so `worker` takes
+// `done.invoke.clock` first and the parent hears `stamped` (1) before `answer` (2).
+// A child session runs on threads other than the case's, so the case waits, for a
+// bounded time, for what it reads.
+TEST_F(WhatAnotherThreadPostsEntersThroughTheInterpretersInbox,
+       AChildsEndingMadeBeforeItsParentsSendIsTakenBeforeTheSend) {
+#ifdef __EMSCRIPTEN__
+    GTEST_SKIP() << "the case spawns `sce-codegen lower`, which a WASM build cannot";
+#else
+    const std::string document = lowered(std::string(SCE_PROJECT_ROOT) +
+                                         "/sce-build/tests/fixtures/static_datamodel/static_invoke_ending_order.scxml");
+    ASSERT_FALSE(document.empty()) << "`sce-codegen lower` did not lower static_invoke_ending_order";
+
+    auto sm = prepareText(document);
+    const auto record = std::make_shared<EndingOrderRecord>();
+    sm->registerInvoker(CLOCK, [record](const HostInvokeEvent &event) -> std::optional<HostInvokeResponse> {
+        if (event.start.has_value()) {
+            std::lock_guard<std::mutex> lock(record->mutex);
+            record->starts.push_back(*event.start);
+        }
+        return std::nullopt;
+    });
+    sm->setNativeActionHost(std::make_shared<EndingOrderHost>(sm, record));
+
+    const auto valueOf = [this, &sm](const std::string &variable) {
+        const auto result = engine_->evaluateExpression(sm->getSessionId(), "String(" + variable + ")").get();
+        return result.isSuccess() ? result.getValue<std::string>() : std::string("<unreadable>");
+    };
+    const auto settles = [](const std::function<bool()> &done) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (done()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return done();
+    };
+
+    ASSERT_TRUE(sm->start());
+    ASSERT_TRUE(settles([&record] { return record->latestStart().has_value(); }))
+        << "`worker` never asked its host for the time";
+
+    sm->processEvent("ask", "");
+    ASSERT_TRUE(settles([&valueOf] { return valueOf("stamped_at") != "0" && valueOf("answer_at") != "0"; }))
+        << "the parent did not hear both `stamped` and `answer`: stamped_at is " << valueOf("stamped_at")
+        << " and answer_at " << valueOf("answer_at");
+    {
+        std::lock_guard<std::mutex> lock(record->mutex);
+        ASSERT_EQ(record->posted, std::optional<HostInvokeEndOutcome>(HostInvokeEndOutcome::Delivered))
+            << "the parent never performed `beforeQuestion`, or `worker` did not take the ending made for it";
+    }
+    EXPECT_EQ(valueOf("stamped_at"), "1")
+        << "`worker` did not take the ending of `clock` first, though it was made before the parent's `question`";
+    EXPECT_EQ(valueOf("answer_at"), "2")
+        << "`worker` answered the parent's `question` before it took the ending made ahead of it";
+#endif
 }
 
 }  // namespace SCE::Tests

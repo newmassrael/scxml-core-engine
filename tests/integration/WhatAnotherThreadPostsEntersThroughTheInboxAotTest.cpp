@@ -24,12 +24,18 @@
 //     `processEvent` takes its event after what was posted before the call;
 //   * a post is taken before the run starts and refused once it is stopped;
 //   * an owner-thread operation called from another thread is refused with an
-//     error that names the inbox, and changes nothing (debug builds).
+//     error that names the inbox, and changes nothing (debug builds);
+//   * an ending posted for a child session enters that session's queue in the
+//     order it was posted, ahead of an event its parent sends it afterwards in
+//     the same macrostep (D2 as amended at step 10).
 //
 // Fixture: inbox_probe.scxml, beside this file. `taken` is what the machine took,
-// in order, as `ping:<data>;`, `done:<data>;` and `failed:<data>;`.
+// in order, as `ping:<data>;`, `done:<data>;` and `failed:<data>;`. The tree of
+// the last case is `sce-build/tests/fixtures/static_datamodel/
+// static_invoke_ending_order.scxml`.
 
 #include "inbox_probe_sm.h"
+#include "static_invoke_ending_order_sm.h"
 
 #include <atomic>
 #include <chrono>
@@ -187,6 +193,58 @@ std::string expectedFrom(const std::vector<Post> &posted) {
     }
     return expected;
 }
+
+/// The tree whose host posts a child's ending inside the parent's macrostep.
+using OrderTree = SCE::Generated::static_invoke_ending_order::static_invoke_ending_order;
+/// The standard host type `worker` asks for the time.
+constexpr const char *CLOCK = "sce-host-clock-now";
+/// A completion of the clock, as the child's `ClockNowResult` reads it.
+constexpr const char *NOW = R"({"error":"","utc_ms":1700000000000,"monotonic_ms":5})";
+
+/// The host of `static_invoke_ending_order`, all on the owner but for one post. Its
+/// clock records each start and answers nothing, so `clock` keeps running.
+/// `beforeQuestion`, which the parent performs inside the macrostep that takes
+/// `ask`, before it sends `question` to `worker`, posts the clock's ending naming
+/// `worker`'s session to the root's inbox, from a thread it joins before it
+/// returns: the post happens-before the parent's send.
+struct EndingOrderHost : SCE::Generated::static_invoke_ending_order::StaticInvokeEndingOrderActions {
+    OrderTree *tree = nullptr;
+    std::vector<SCE::HostInvokeRequest> starts;
+    std::optional<bool> postTaken;
+
+    void serve(OrderTree &machine) {
+        tree = &machine;
+        machine.registerInvoker(CLOCK, [this](const SCE::HostInvokeEvent &event) {
+            if (event.start.has_value()) {
+                starts.push_back(*event.start);
+            }
+            return std::optional<SCE::HostInvokeResponse>();
+        });
+    }
+
+    void beforeQuestion() override {
+        if (tree == nullptr || starts.empty()) {
+            ADD_FAILURE() << "the parent took `ask` before `worker` asked its host for the time";
+            return;
+        }
+        const SCE::HostInvokeRequest clock = starts.back();
+        const OrderTree::Inbox inbox = tree->inbox();
+        bool taken = false;
+        std::thread host([&inbox, &clock, &taken] {
+            taken =
+                inbox.post(OrderTree::InboxHostInvokeEnding{/*sessionId=*/clock.sessionId,
+                                                            /*ending=*/SCE::HostInvokeEnding{/*processorType=*/CLOCK,
+                                                                                             /*invokeId=*/"clock",
+                                                                                             /*token=*/clock.token,
+                                                                                             /*done=*/true,
+                                                                                             /*data=*/NOW,
+                                                                                             /*origin=*/"",
+                                                                                             /*originType=*/""}});
+        });
+        host.join();
+        postTaken = taken;
+    }
+};
 
 class WhatAnotherThreadPostsEntersThroughTheInbox : public ::testing::Test {
 protected:
@@ -476,6 +534,36 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, AnOwnerThreadOperationFromAn
     EXPECT_EQ(sm.getPolicy().taken(), std::optional<std::string>("done:owner;"))
         << "a refused raise reached the queue, or the owner's completion did not";
 #endif
+}
+
+// D2 as amended at step 10: an input that names a session is resolved when it is
+// posted. Inside the macrostep that takes `ask`, the host posts the ending of
+// `worker`'s `clock`, naming `worker`, and the parent then sends `question` to
+// `worker`. The ending was posted first, so `worker` takes `done.invoke.clock`
+// first and the parent hears `stamped` (1) before `answer` (2). An ending held in
+// the root's inbox until the root's next boundary would reach `worker`'s queue
+// behind `question`, and the parent would hear them the other way round.
+TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, AChildsEndingPostedBeforeItsParentsSendIsTakenBeforeTheSend) {
+    EndingOrderHost host;
+    OrderTree tree(host);
+    host.serve(tree);
+    tree.initialize();
+    for (int round = 0; round < 8 && host.starts.empty(); ++round) {
+        tree.tick();
+    }
+    ASSERT_EQ(host.starts.size(), 1u) << "`worker` never asked its host for the time";
+
+    tree.raiseExternal("ask");
+    for (int round = 0; round < 16 && (tree.stamped_at() == 0 || tree.answer_at() == 0); ++round) {
+        tree.tick();
+    }
+
+    ASSERT_EQ(host.postTaken, std::optional<bool>(true))
+        << "the parent never performed `beforeQuestion`, or the tree refused the ending it posted";
+    EXPECT_EQ(tree.stamped_at(), 1u)
+        << "`worker` did not take the ending of `clock` first, though it was posted before the parent's `question`";
+    EXPECT_EQ(tree.answer_at(), 2u)
+        << "`worker` answered the parent's `question` before it took the ending posted ahead of it";
 }
 
 }  // namespace SCE::Tests
