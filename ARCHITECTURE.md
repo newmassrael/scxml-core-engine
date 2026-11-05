@@ -1278,7 +1278,8 @@ middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
    may be posted is closed: an external event, a host-invoke ending, a Mesh
    delivery for a session. A post returns whether the inbox took it; a post
    naming a session the tree does not hold is refused. A bounded inbox (C11,
-   `no_std` Rust) is declared per session, refuses when full and says so;
+   `no_std` Rust) is held per session, each of the capacity the deployment
+   declares (`SCE_MAX_INBOX` in C11), refuses when full and says so;
    nothing is dropped silently.
 4. **Draining.** The owner drains the inbox at each macrostep boundary, before
    the external queue is consulted, in the order the posts linearised. It

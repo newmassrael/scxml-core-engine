@@ -20,6 +20,10 @@
   an input posted for it. The owner chose, with cost ignored, that an input's address is resolved when it is posted:
   every session has its own inbox and the tree a directory of them (D2 as amended at step 10). A processor of the
   tree owning every session's queue was the first recommendation and was set aside (Alternatives rejected).
+  Step 10 done (2026-11-05): every runtime that posts an input naming a child session posts it to that session's
+  own inbox, found through a directory the tree keeps, and a test on `static_invoke_ending_order.scxml` in each such
+  runtime's inbox conformance test holds a child's queue to arrival order. Recorded, with each runtime's directory,
+  in D2 as amended at step 10.
 - Date: 2026-11-03
 - Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
   `main` first.
@@ -211,11 +215,30 @@ host is the arrangement measured above to fail.
   chokepoint; on the Interpreter, whose doors are taken from any thread, it finds the session through the directory
   instead of walking the tree from the calling thread.
   - Kotlin's coroutine mode: the directory holds each child loop's `Channel`, and the root's forwarding goes.
-  - A bounded inbox (C11, `no_std` Rust) is declared per session: the deployment declares a capacity for each child
-    slot the generated code fixes, as it does for the root. An interrupt posts by the slot's current session id, read
-    atomically; an ending that lands in a slot restarted since is refused by the token check, as before.
+  - A bounded inbox (C11, `no_std` Rust) is held per session: each child slot the generated code fixes has its own,
+    of the capacity the deployment declares for the root (`SCE_MAX_INBOX`). An interrupt posts by the slot's current
+    session id, read atomically; an ending that lands in a slot restarted since is refused by the token check, as
+    before.
   - Swift posts no input that names a child session (its `HostInvokeEnding` names none, and it has no
     `endHostInvokeIn`), so nothing in it changes; an input of that kind it gains (ADR 0045) takes this route.
+  The directories, as step 10 built them:
+  - the Interpreter and the generated C++ engine: `TreeSessions` (`core/TreeSessions.h`), one layer for both. The
+    generated engine's tree shares it with its invokers and its waker (`SessionTree`, `InboxWaker`), and a cancelled
+    child ends its run as every run ends (`endAsCancelled`): its host invocations are cancelled, its inbox is closed
+    and applied, and it leaves the directory. On the Interpreter `endHostInvokeIn` asks the directory;
+  - Rust: `TreeInboxes` (`inbox.rs`); `held_child_endings` and the lent-policy bookkeeping are gone. A `BoundedInbox`
+    answers a post that names a session when it is posted, by the id its engine had when it was attached; `no_std`
+    has no child sessions, so its directory holds only the root;
+  - C11: one directory slot per child slot, holding the session id the slot runs, read under a sequence stamp (rows
+    64 and 32) or with interrupts masked (row 0), so a post never waits. C11 never closes an inbox, so a child
+    leaves the directory and then what its inbox holds is applied;
+  - Kotlin: `SessionTree`, holding each child's engine (in the coroutine mode a child's inbox is its `Channel`); a
+    child leaves it when its inbox closes, on every path;
+  - Go: `sessionDirectory`, held by `TreeInvokers`; the root enters it when it is made, and `Engine.SetSessionID`
+    moves the entry;
+  - Python: `TreeInboxes` (`inbox.py`), shared with a child by `share_tree_with`.
+  A post naming a session the tree does not hold, which every runtime used to take and then drop at the drain, is now
+  refused when it is posted, and the refusal is counted where the runtime counts refusals.
 - A post returns whether the inbox took it. A bounded inbox (C11 and `no_std` Rust, whose capacity the deployment
   declares) refuses a post when full and says so; nothing is dropped silently. A hosted runtime's inbox is unbounded.
 - A post wakes the owner through a waker the host installs (`wakeWith` and its spellings; a runtime with its own loop,
@@ -417,11 +440,12 @@ check, since the exit cancelled its invocation), and a later post is refused and
    W3C HTTP harness worked around exactly this by raising the listener's event on the owner instead of posting it
    (`tests/w3c/aot_tests/HttpAotTest.h`); it now posts it, natively from the listener's thread and under WASM from
    the owner inside the send.
-10. Owed by D2 as amended at step 10, in this order:
+10. Done (2026-11-05). Owed by D2 as amended at step 10, in this order:
     1. This amendment, and ARCHITECTURE.md "Engine Threading" item 3. Documentation only.
-    2. A test in each runtime's inbox conformance test, on `static_invoke_tree.scxml` (the shared scenario set has
-       no inbox scenario): with `worker` in `second` and its `clock` invocation started, an ending for `clock` is
-       posted naming `worker`, and then the parent takes `ask`, which sends `question` to `worker` in that
+    2. A test in each runtime's inbox conformance test, on `static_invoke_ending_order.scxml` (the shared scenario
+       set has no inbox scenario, and `static_invoke_tree.scxml` gives the host no point inside the parent's
+       macrostep): with `worker`'s `clock` invocation started, the parent takes `ask`, whose host action
+       `beforeQuestion` posts an ending for `clock` naming `worker`, and then sends `question` to `worker` in that
        macrostep. The parent must take `stamped` (sent on `done.invoke.clock`) before `answer` (sent on
        `question`). It fails on every runtime that posts an input naming a child session, before that runtime's
        change; Swift posts none.
