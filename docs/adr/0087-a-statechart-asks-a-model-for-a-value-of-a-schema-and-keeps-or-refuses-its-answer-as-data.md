@@ -627,12 +627,28 @@ an evaluation depend on a setting the document does not show.
    | `comingWeekday` | `weekday` | the first day after `today` with that weekday (1 to 7 days ahead) |
    | `previousWeekday` | `weekday` | the last day before `today` with that weekday |
    | `weekdayOfWeek` | `weekday`, `count` | the day with that weekday in the ISO 8601 week (Monday first) `count` weeks from `today`'s: 0 this week, 1 the next |
+   | `dayOfMonthOffset` (revision 2) | `day`, `count` | day `day` of the month `count` months from `today`'s month (`add_months` of its 1st by `count`): 0 this month, a negative `count` an earlier one; before or after `today` as the month falls |
 
 3. **Failures**: `precondition` when a field the kind reads is absent, a month is outside 1 to 12, a day the month
    does not have, or a weekday past 6; `overflow` when a result leaves `int64` or its year leaves `int32`. A statechart
-   receives either as any `may-fail` call's failure, and a harness turns it into a repair (section 6).
+   receives either as any `may-fail` call's failure, and a harness turns it into a repair (section 6). Every
+   precondition is judged before `today` is read but one: a `dayOfMonthOffset` day within 1 to 31 that the month it
+   lands in does not have (30 February, 31 April, 29 February of a common year) is judged once that month is known,
+   so a `today` or a landing month whose year leaves `int32` fails `overflow` first. The day is refused, never held
+   to the month's last day as `relativeMonths` holds it: the expression names the day, and a different day would be
+   an answer the text did not give.
 4. **The set grows by revision** (ADR 0044, "An enum that grows"); a revision adds kinds and never changes what an
-   existing one resolves to.
+   existing one resolves to. A revision declares `sce:revision` on `date_kind.scxml`'s root and `sce:since` on each
+   kind it adds, takes the next unused number, and lands with its arm in `resolve_date.scxml` and its rows in the
+   calendar table (`tests/forge/conformance/gen_cases.py`), so no build holds a kind the resolver refuses.
+   - Revision 2 (2026-11-05) adds `dayOfMonthOffset`. Measured: "the 5th of next month" could be written only as
+     `absolute` with the month and year worked out by the caller, or as `monthDay` with next month's number, which
+     is the date arithmetic this section moves out of the model and its caller. The kind reads a day and a count
+     because those are what the text gives. A date before `today` is allowed, unlike `monthDay`: `monthDay` leaves
+     the year unnamed and picks the first such date on or after `today`, while this kind names its month as
+     `absolute` names its year, so there is nothing left to choose and the date is the one named ("the 1st of this
+     month" on the 4th is three days back, and a negative `count` is always in the past, as `relativeMonths` with
+     one is).
 
 #### 5.2 Reason
 
