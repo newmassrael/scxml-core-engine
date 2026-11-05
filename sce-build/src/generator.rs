@@ -4997,6 +4997,9 @@ fn swift_ecmascript_cause_unlowered(
         // reads and the pair carries with its type (`evaluateJSON`).
         | Cause::SendNamelist { .. }
         | Cause::SendParamExpr { .. }
+        // The inline text of a `<content>` that reads as an expression is evaluated as the send
+        // runs (`evaluateJSON`) and fails as a `<content expr>` does.
+        | Cause::SendContentExpr { .. }
         | Cause::ForeachAction { .. }
         // The data of a final state's done event: each `<param>` and the `<content>` are values
         // the engine reads as the state is entered (`evaluateJSON`).
