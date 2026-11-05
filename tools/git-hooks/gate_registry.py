@@ -387,8 +387,8 @@ COST_MEASURED: dict[str, str] = {
 # says which parts.
 #
 # 29 -> 30 on 2026-11-05, again: `cpp-suite-wasm` arrived as the lane for a
-# tree nothing built whole, so its cost is an estimate its entry derives. The
-# lane's first run is the reading.
+# tree nothing built whole, so its cost is an estimate its entry derives. Its
+# first run read the build half only; the first green run reads the whole.
 UNMEASURED_COST_CEILING = 30
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
@@ -2357,10 +2357,11 @@ GATES: dict[str, dict] = {
     # programs and the two gates above built three of them, and
     # `integration_tests` could not build there at all.
     #
-    # ⚠ `cost_s` is an ESTIMATE, not a reading. The tree had never been built
-    # whole when the gate arrived: the figure scales the 21 minutes the
-    # `w3c-wasm` lane took to build two of its programs cold on a hosted
-    # runner to the engine's suites, and the lane's first run is the reading.
+    # ⚠ `cost_s` is HALF a reading. The first run built the tree cold in 3328s
+    # on a hosted runner and failed seven links before ctest started, so the
+    # Node half is not in the figure; the arrival estimate it replaces, 2400s
+    # scaled from the `w3c-wasm` lane, was low by the build alone. The first
+    # green run reads the whole.
     "cpp-suite-wasm": {
         "workflows": ["cpp-suite.yml"],
         "runner_workflow": True,
@@ -2374,12 +2375,15 @@ GATES: dict[str, dict] = {
                   "resources/**", "integration_resources/**",
                   "tools/codegen/templates/**", "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "ci_only": "an estimated 2400s cold, no reading yet: the whole "
-                   "emscripten tree, each suite linked with ASYNCIFY, and "
-                   "every case run under Node. It needs emsdk, which a push "
+        "ci_only": "the whole emscripten tree, each suite linked with "
+                   "ASYNCIFY, and every case run under Node. Its first run "
+                   "(cpp-suite.yml run 41956988917, 2026-11-05) configured "
+                   "and built the tree cold in 3328s and stopped at seven "
+                   "links, so the figure is that build alone and the ctest "
+                   "half has no reading yet. It needs emsdk, which a push "
                    "host is not required to carry. cpp-suite.yml runs it in "
                    "a job of its own beside the native suite.",
-        "cost_s": 2400,
+        "cost_s": 3328,
         "summary": "C++ ctest suite built with emscripten, every case under Node",
         "cache": False,
         "no_cache_reason": "skip-capable: it exits 0 on a machine without "
