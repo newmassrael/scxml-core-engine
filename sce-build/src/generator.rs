@@ -4527,7 +4527,7 @@ pub(crate) fn swift_invoke_unlowered(
             return Some("a Mesh remote-procedure <invoke>".to_string())
         }
         crate::model::Invoke::Unsupported(info) => {
-            return swift_host_invoke_unlowered(info, statically_lowered)
+            return swift_host_invoke_unlowered(info, statically_lowered, is_ecma)
         }
     };
     if info.remote_mesh_target.is_some() {
@@ -4579,11 +4579,14 @@ pub(crate) fn swift_invoke_unlowered(
 /// request record when it types one, and the text the host is handed otherwise; a
 /// `_sce_deadline_ms` among them is the engine's, which arms it and does not hand it on.
 /// Its `src` and `<content>` are the request's, as written or, for a `sce-static` document,
-/// as the string the expression computes when the invocation starts. What else the request
-/// carries is not lowered yet: a `namelist` and an `idlocation` each is named.
+/// as the string the expression computes when the invocation starts, and for an `ecmascript` one
+/// as the engine computes it, which also reads its `<param>`s, its namelist and the `idlocation`
+/// it writes the id to. What else the request carries is not lowered yet: a `namelist` of a
+/// `sce-static` document, and any of these under a data model with no engine, each is named.
 fn swift_host_invoke_unlowered(
     info: &crate::model::UnsupportedInvokeInfo,
     statically_lowered: bool,
+    is_ecma: bool,
 ) -> Option<String> {
     let type_name = &info.invoke_type;
     if !info.host_served {
@@ -4594,26 +4597,37 @@ fn swift_host_invoke_unlowered(
         // something the clause says.
         return (!info.base.idlocation.is_empty()).then(|| "an <invoke idlocation>".to_string());
     }
-    if !info.namelist.is_empty() {
+    // A `sce-static` document's request is native code its static lowering writes, which has no
+    // namelist; the engine of an `ecmascript` one reads the namelist with the rest.
+    if statically_lowered && !info.namelist.is_empty() {
         return Some(format!(
             "an <invoke type=\"{type_name}\"> a host runs with a namelist"
         ));
     }
     // A `src` and a `<content>` the document writes are the request's, as written. One an
-    // expression computes is a string of the machine's fields only for a `sce-static`
-    // document, whose static lowering writes it; a script data model's is known to a script
-    // engine, which the host-run start does not ask.
-    if !statically_lowered && !info.srcexpr.is_empty() {
-        return Some(format!(
-            "an <invoke type=\"{type_name}\"> a host runs with a srcexpr a script engine computes"
-        ));
+    // expression computes is a string of the machine's fields for a `sce-static` document,
+    // whose static lowering writes it, and the engine's for an `ecmascript` one; a document
+    // of neither has nothing to compute it with.
+    if !statically_lowered && !is_ecma {
+        for (written, what) in [
+            (&info.namelist, "a namelist"),
+            (&info.srcexpr, "a srcexpr a script engine computes"),
+            (
+                &info.contentexpr,
+                "a <content expr> a script engine computes",
+            ),
+        ] {
+            if !written.is_empty() {
+                return Some(format!(
+                    "an <invoke type=\"{type_name}\"> a host runs with {what}"
+                ));
+            }
+        }
     }
-    if !statically_lowered && !info.contentexpr.is_empty() {
-        return Some(format!(
-            "an <invoke type=\"{type_name}\"> a host runs with a <content expr> a script engine computes"
-        ));
-    }
-    if !info.base.idlocation.is_empty() {
+    // The id the invocation starts under is written to the location by the engine of an
+    // `ecmascript` document; a static one writes it by native code the host-run start does not
+    // carry yet.
+    if !is_ecma && !info.base.idlocation.is_empty() {
         return Some("an <invoke idlocation>".to_string());
     }
     None
@@ -5005,11 +5019,13 @@ fn swift_ecmascript_cause_unlowered(
         Cause::UnresolvedExternalScript => {
             Some("a top-level <script src> it could not read".to_string())
         }
+        // The request of an `<invoke>` a host runs is read by the engine as the invocation starts: its `src`
+        // and `<content>`, the namelist and each `<param>` (`evaluateWire`), and one that cannot be read is
+        // the element's `error.execution`. A Mesh request is such an invoke once the build has lowered it to
+        // the host-served invoke of the same type, so the cause it costs is this one.
+        Cause::HostInvokeExpr { .. } => None,
         Cause::MeshRpcSrcExpr { invoke_id } | Cause::MeshRpcRequestExpr { invoke_id } => {
             named("a Mesh <invoke> evaluated at its start", invoke_id)
-        }
-        Cause::HostInvokeExpr { invoke_id } => {
-            named("a host <invoke> whose request is evaluated", invoke_id)
         }
     }
 }

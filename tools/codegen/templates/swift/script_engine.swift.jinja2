@@ -234,6 +234,31 @@
         }
     }
 
+{% if model.invokes | host_invoker %}
+    /// W3C SCXML 6.4.1 + 5.7.1: the value of an expression, already lowered to Lua, as the two spellings a
+    /// request to a host carries it in: the text a form carries (ECMAScript's `String(value)`), which
+    /// the request's `params` hold, and the JSON that keeps its type, which the request's event data holds.
+    /// The expression is run once, so one with a side effect (`n++`) takes effect once and both
+    /// spellings are the same value. One that cannot be run is nil (the caller's `error.execution`).
+    private func evaluateWire(_ expression: String) -> (text: String, json: String)? {
+        do {
+            let session = try ensureLua()
+            try session.defineGlobal("_scxml_wire_value", as: expression, chunkName: "=wire")
+            defer { try? session.setGlobal("_scxml_wire_value", .nilValue) }
+            guard case .string(let text) = try session.evaluate("_scxml_tostring(_scxml_wire_value)", name: "=wire") else {
+                return nil
+            }
+            var json = "null"
+            if case .string(let written) = try session.evaluate("JSON.stringify(_scxml_wire_value)", name: "=wire") {
+                json = written
+            }
+            return (text, json)
+        } catch {
+            return nil
+        }
+    }
+
+{% endif %}
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
     /// `<data>` here, at document load, before the state that holds it is visited; late binding
     /// declares a state's own on its first entry (`executeEntryActions`).

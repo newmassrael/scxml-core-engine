@@ -474,7 +474,82 @@
     /// fact as an unsupported one, so the same event, and not a silence that reads as
     /// started.
     private func sceStartHostInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: Engine<{{ machine_name }}Policy>) {
-{% if invoke_info.params %}
+{% set host_namelist_bad = (first_undeclared_name(invoke_info.namelist) | trim) if ecmascript_datamodel else '' %}
+{% if host_namelist_bad %}
+        // W3C SCXML 6.4: the namelist names a location that cannot be read, so the element ends here: one
+        // error.execution however many names are bad, no request is made and no invoker is asked.
+        raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
+{% else %}
+{% if ecmascript_datamodel %}
+        // W3C SCXML 6.4.1: what the request says is evaluated now, when the invocation starts, by the engine
+        // that runs the document: the `src` and the `<content>`, then the namelist and the `<param>`s, each
+        // run once and read as the text a form carries and as the typed JSON the event data holds. A value
+        // that cannot be evaluated is an argument of the element that cannot be, which raises error.execution
+        // and starts nothing (W3C SCXML 5.7.1).
+{% if invoke_info.idlocation %}
+        // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names before the
+        // request is read.
+        if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
+            raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
+        }
+{% endif %}
+{% if invoke_info.srcexpr %}
+        guard let hostSrc = evaluateText("{{ invoke_info.srcexpr | to_lua_expr | escape_swift }}") else {
+            raiseExecutionError("<invoke> srcexpr failed to evaluate", engine: engine)
+            return
+        }
+{% endif %}
+{% if invoke_info.contentexpr %}
+        guard let hostContent = evaluateText("{{ invoke_info.contentexpr | to_lua_expr | escape_swift }}") else {
+            raiseExecutionError("<invoke> content expr failed to evaluate", engine: engine)
+            return
+        }
+{% endif %}
+{% set host_namelist = (invoke_info.namelist or '') | trim %}
+{% set host_unnamed = invoke_info.params | rejectattr('is_static_literal') | rejectattr('expr') | rejectattr('location') | list %}
+{% if invoke_info.params or host_namelist %}
+        var hostParams: [String: [String]] = [:]
+        var hostParts: [PayloadPair] = []
+{% endif %}
+{% if host_unnamed %}
+        var requestRefused = false
+{% endif %}
+{% for namelist_id in (invoke_info.namelist or '') | split %}
+        if let wire = evaluateWire("{{ namelist_id | to_lua_expr | escape_swift }}") {
+            hostParams["{{ namelist_id | escape_swift }}", default: []].append(wire.text)
+            hostParts.append(PayloadPair.json("{{ namelist_id | escape_swift }}", rawJSON: wire.json))
+        } else {
+            raiseExecutionError("<invoke> namelist entry '{{ namelist_id | escape_swift }}' failed to evaluate", engine: engine)
+            return
+        }
+{% endfor %}
+{% for param in invoke_info.params %}
+{% if param.is_static_literal %}
+        hostParams["{{ param.name | escape_swift }}", default: []].append("{{ param.static_value | escape_swift }}")
+{% if not param.envelope_metadata %}
+        hostParts.append(PayloadPair("{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}")))
+{% endif %}
+{% elif param.expr or param.location %}
+        if let wire = evaluateWire("{{ (param.expr or param.location) | to_lua_expr | escape_swift }}") {
+            hostParams["{{ param.name | escape_swift }}", default: []].append(wire.text)
+{% if not param.envelope_metadata %}
+            hostParts.append(PayloadPair.json("{{ param.name | escape_swift }}", rawJSON: wire.json))
+{% endif %}
+        } else {
+            raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> failed to evaluate", engine: engine)
+            return
+        }
+{% else %}
+        raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> names no location", engine: engine)
+        requestRefused = true
+{% endif %}
+{% endfor %}
+{% if host_unnamed %}
+        if requestRefused {
+            return
+        }
+{% endif %}
+{% elif invoke_info.params %}
 {% set refusing = invoke_info.params | selectattr('native_fails') | list %}
         // W3C SCXML 6.4.1: what the request says is evaluated now, when the invocation
         // starts. The text the host reads is the one each value spells; the JSON is the
@@ -556,16 +631,16 @@
         let request = HostInvokeRequest(
             processorType: "{{ invoke_info.invoke_type | escape_swift }}",
             invokeID: "{{ invoke_info.invoke_id | escape_swift }}",
-{% if invoke_info.native_src %}
+{% if invoke_info.native_src or (ecmascript_datamodel and invoke_info.srcexpr) %}
             src: hostSrc,
 {% elif invoke_info.src %}
             src: "{{ invoke_info.src | escape_swift }}",
 {% endif %}
-{% if invoke_info.params %}
+{% if invoke_info.params or (ecmascript_datamodel and (invoke_info.namelist or '') | trim) %}
             params: hostParams,
             eventData: hostParts.isEmpty ? "" : payloadJSON(hostParts),
 {% endif %}
-{% if invoke_info.native_content %}
+{% if invoke_info.native_content or (ecmascript_datamodel and invoke_info.contentexpr) %}
             content: hostContent,
 {% elif invoke_info.content %}
             content: "{{ invoke_info.content | escape_swift }}",
@@ -577,6 +652,7 @@
             engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> names an invoker the host declared but never registered"))
 {% endif %}
         }
+{% endif %}
     }
 {% endfor %}
 {% if child_invokes %}
