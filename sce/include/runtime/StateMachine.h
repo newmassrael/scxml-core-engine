@@ -13,6 +13,7 @@
 #include "core/InvokeHelper.h"  // §scxml-6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "core/LogMacros.h"
 #include "core/MacrostepCeilings.h"
+#include "core/TreeSessions.h"
 #include "events/IEventDispatcher.h"
 #include "model/IStateNode.h"
 #include "model/SCXMLModel.h"
@@ -803,11 +804,14 @@ public:
      * @brief End a host-run invocation of the session @p sessionId names, this one
      *        or one it started at any depth (docs/adr/0045)
      *
-     * Each session runs a loop of its own, so the session found takes the ending
-     * through its own door, as `completeHostInvoke` takes one (docs/adr/0084, D2):
-     * posted to that session's inbox while another thread runs it, when the
-     * outcome is `Delivered` if the inbox took it and `NotRunning` if the
-     * session's run had ended.
+     * Safe from any thread. The session is found in the tree's directory, which
+     * every session enters when it starts and leaves when its run ends
+     * (docs/adr/0084, D2 as amended at step 10), and not by walking the tree from
+     * the calling thread. The session found takes the ending through its own door,
+     * as `completeHostInvoke` takes one: posted to that session's inbox while
+     * another thread runs it, when the outcome is `Delivered` if the inbox took it
+     * and `NotRunning` if the session's run had ended. `NoSuchSession` when the
+     * tree holds no session of that id.
      */
     HostInvokeEndOutcome endHostInvokeIn(const std::string &sessionId, const HostInvokeEnding &ending);
 
@@ -827,7 +831,8 @@ public:
 
     /**
      * @brief Be served by the registries of @p parent's tree, as a child session
-     *        it starts is (docs/adr/0045)
+     *        it starts is (docs/adr/0045), and be found in its directory of
+     *        sessions once this one starts (docs/adr/0084, D2)
      *
      * The invoke executor calls it before the child runs.
      */
@@ -1071,8 +1076,12 @@ private:
     /// what the inbox holds, when the calling thread runs this machine.
     void applyHeldBeforeExternalEnqueue();
     /// Close the inbox and apply what it still holds: the run has ended or was
-    /// stopped, and takes no more posts.
+    /// stopped, and takes no more posts. The session then leaves the tree's
+    /// directory.
     void closeInbox();
+    /// Enter this session in the tree's directory as its run starts, before the
+    /// run's first macrostep (docs/adr/0084, D2 as amended at step 10).
+    void enterTree();
     /// Apply one posted @p input by the operation a direct call makes.
     void applyInboxInput(InboxInput &&input);
     /// Refuse @p operation, which only the owner may make, on a thread that does
@@ -1081,6 +1090,13 @@ private:
     /// Post @p event, handed to this machine while another thread runs it, and
     /// answer the caller as `processEvent` answers.
     TransitionResult postDelivery(Core::EventMetadata event, bool fromExternalQueue);
+
+    // docs/adr/0084, D2 as amended at step 10: the directory of the tree's sessions,
+    // shared as the tree's registries are (`adoptHostProcessorsOf`), and this
+    // session's entry in it, made when a run starts (`enterTree`) and removed when the
+    // run ends (`closeInbox`) or the machine goes.
+    std::shared_ptr<Core::TreeSessions> treeSessions_ = std::make_shared<Core::TreeSessions>();
+    Core::TreeSessions::Membership treeMembership_;
 
     // docs/adr/0084: what other threads posted, applied at each macrostep
     // boundary of the drive that runs when they post, and the record of which
@@ -1266,6 +1282,10 @@ private:
     /// another thread runs it, post @p posted, the same input, for that thread to
     /// apply. What @p apply answered, or, posted, whether the inbox took it.
     bool applyAsOwner(const std::function<bool()> &apply, InboxInput posted);
+    /// Take @p ending, of a host-run invocation of this session, through this
+    /// session's own door (`applyAsOwner`): what `completeHostInvoke`,
+    /// `failHostInvoke` and this session's entry in the tree's directory do.
+    bool endHostInvokeHere(const HostInvokeEnding &ending);
     /// The one body behind every ending of a host-run invocation: the ledger's
     /// token check, and the `done.invoke` or `error.invoke` on the external queue.
     bool endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token, bool failed,
@@ -1274,8 +1294,6 @@ private:
     void raiseHostInvokeReport(const Core::HostInvokeReport &report);
     /// The deadline of a start came due on the scheduler.
     void expireHostInvoke(const HostInvokeDeadline &deadline);
-    /// Deliver @p ending to the session @p sessionId names, here or below.
-    HostInvokeRoute routeHostInvokeEnd(const std::string &sessionId, const HostInvokeEnding &ending);
     /// Put one event of a host-run invocation on the external queue.
     void raiseHostInvokeEvent(const std::string &name, const std::string &data, const std::string &invokeId,
                               const std::string &origin, const std::string &originType);

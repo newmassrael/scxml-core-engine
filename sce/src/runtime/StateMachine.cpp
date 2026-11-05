@@ -332,6 +332,21 @@ void StateMachine::closeInbox() {
     requireOwnedHere("closeInbox");
     inbox_.state().close();
     drainInbox();
+    // docs/adr/0084, D2 as amended at step 10: the session has ended, so it leaves
+    // the tree's directory, after what its inbox held was applied; an ending that
+    // names it from now on finds no such session.
+    treeMembership_.leave();
+}
+
+void StateMachine::enterTree() {
+    // An ending that names this session, made on any thread, is found here and taken
+    // through this session's own door, as `completeHostInvoke` takes one. The entry
+    // holds the machine weakly, so a machine that goes is not kept by it.
+    const std::weak_ptr<StateMachine> self = weak_from_this();
+    treeMembership_ = treeSessions_->enter(sessionId_, [self](const HostInvokeEnding &ending) {
+        const std::shared_ptr<StateMachine> machine = self.lock();
+        return machine != nullptr && machine->endHostInvokeHere(ending);
+    });
 }
 
 void StateMachine::applyInboxInput(InboxInput &&input) {
@@ -706,8 +721,10 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
 
     // docs/adr/0084: a run takes posts from its start (one that ended or was
     // stopped closed the inbox), and what was posted while it was being entered is
-    // applied at its first macrostep boundary.
+    // applied at its first macrostep boundary. The session enters its tree's
+    // directory before its first macrostep (D2 as amended at step 10).
     inbox_.state().open();
+    enterTree();
     {
         MacrostepScope macrostep(*this);
 
@@ -1827,10 +1844,14 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
         // child lost its done.invoke to that cancel in a branch taken from
         // the restored step.
         isRunning_ = running;
-        // docs/adr/0084: a run restored running takes posts as a started one does;
-        // a stop before the restore had closed the inbox.
+        // docs/adr/0084: a run restored running takes posts as a started one does,
+        // and is in its tree's directory as a started one is; a stop before the
+        // restore had closed the inbox.
         if (running) {
             inbox_.state().open();
+            enterTree();
+        } else {
+            treeMembership_.leave();
         }
         SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: running restored as {}, mutex will release", running);
 
@@ -2508,6 +2529,9 @@ void StateMachine::registerMeshRpcInvoker(HostInvokeHandler router) {
 void StateMachine::adoptHostProcessorsOf(const StateMachine &parent) {
     invokers_ = parent.invokers_;
     eventProcessors_ = parent.eventProcessors_;
+    // docs/adr/0084, D2 as amended at step 10: the tree's directory, which this
+    // session enters when it starts.
+    treeSessions_ = parent.treeSessions_;
     if (cachedExecutorImpl_) {
         cachedExecutorImpl_->setHostEventProcessors(eventProcessors_);
     }
@@ -2530,37 +2554,42 @@ bool StateMachine::cancelHostInvoke(const std::string &processorType, const std:
 bool StateMachine::completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
                                       const std::string &doneData, const std::string &origin,
                                       const std::string &originType) {
-    return applyAsOwner(
-        [&] { return endHostInvoke(processorType, invokeId, token, false, doneData, origin, originType); },
-        InboxHostInvokeEnding{HostInvokeEnding{/*processorType=*/processorType,
-                                               /*invokeId=*/invokeId,
-                                               /*token=*/token,
-                                               /*done=*/true,
-                                               /*data=*/doneData,
-                                               /*origin=*/origin,
-                                               /*originType=*/originType}});
+    return endHostInvokeHere(HostInvokeEnding{/*processorType=*/processorType,
+                                              /*invokeId=*/invokeId,
+                                              /*token=*/token,
+                                              /*done=*/true,
+                                              /*data=*/doneData,
+                                              /*origin=*/origin,
+                                              /*originType=*/originType});
 }
 
 bool StateMachine::failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
                                   const std::string &errorData, const std::string &origin,
                                   const std::string &originType) {
+    return endHostInvokeHere(HostInvokeEnding{/*processorType=*/processorType,
+                                              /*invokeId=*/invokeId,
+                                              /*token=*/token,
+                                              /*done=*/false,
+                                              /*data=*/errorData,
+                                              /*origin=*/origin,
+                                              /*originType=*/originType});
+}
+
+bool StateMachine::endHostInvokeHere(const HostInvokeEnding &ending) {
     return applyAsOwner(
-        [&] { return endHostInvoke(processorType, invokeId, token, true, errorData, origin, originType); },
-        InboxHostInvokeEnding{HostInvokeEnding{/*processorType=*/processorType,
-                                               /*invokeId=*/invokeId,
-                                               /*token=*/token,
-                                               /*done=*/false,
-                                               /*data=*/errorData,
-                                               /*origin=*/origin,
-                                               /*originType=*/originType}});
+        [&] {
+            return endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
+                                 ending.origin, ending.originType);
+        },
+        InboxHostInvokeEnding{ending});
 }
 
 HostInvokeEndOutcome StateMachine::endHostInvokeIn(const std::string &sessionId, const HostInvokeEnding &ending) {
-    const HostInvokeRoute route = routeHostInvokeEnd(sessionId, ending);
-    if (!route.reached) {
-        return HostInvokeEndOutcome::NoSuchSession;
-    }
-    return route.delivered ? HostInvokeEndOutcome::Delivered : HostInvokeEndOutcome::NotRunning;
+    // docs/adr/0084, D2 as amended at step 10: the session is found in the tree's
+    // directory, safe to read from any thread, and takes the ending through its own
+    // door (`endHostInvokeHere`), which applies it, drives it, or posts it to its
+    // inbox while another thread runs it.
+    return treeSessions_->endHostInvokeIn(sessionId, ending);
 }
 
 HostInvokeEndOutcome StateMachine::completeHostInvokeIn(const std::string &sessionId, const std::string &processorType,
@@ -2585,33 +2614,6 @@ HostInvokeEndOutcome StateMachine::failHostInvokeIn(const std::string &sessionId
                                                        /*data=*/errorData,
                                                        /*origin=*/"",
                                                        /*originType=*/""});
-}
-
-HostInvokeRoute StateMachine::routeHostInvokeEnd(const std::string &sessionId, const HostInvokeEnding &ending) {
-    if (!sessionId.empty() && sessionId == sessionId_) {
-        // docs/adr/0084, D2: this session runs a loop of its own, so the ending
-        // enters through this session's own door, posted to its inbox while another
-        // thread runs it, when the answer is whether the inbox took it.
-        const bool delivered = applyAsOwner(
-            [&] {
-                return endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
-                                     ending.origin, ending.originType);
-            },
-            InboxHostInvokeEnding{ending});
-        return {true, delivered};
-    }
-    // docs/adr/0045: a session of the tree is reached by its id, through the
-    // children this one started, each of which applies the ending as its own.
-    for (const auto &child : getInvokedChildren()) {
-        if (!child) {
-            continue;
-        }
-        const HostInvokeRoute route = child->routeHostInvokeEnd(sessionId, ending);
-        if (route.reached) {
-            return route;
-        }
-    }
-    return {};
 }
 
 bool StateMachine::applyAsOwner(const std::function<bool()> &apply, InboxInput posted) {
