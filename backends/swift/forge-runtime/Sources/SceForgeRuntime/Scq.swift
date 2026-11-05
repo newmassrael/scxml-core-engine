@@ -3,6 +3,18 @@
 
 import Synchronization
 
+// The ring's entries are `Atomic<Int>` words used as 64 bits: the cycle, the IsSafe bit and the index are
+// packed into one, and the wrap bound below is a count of 2^62. On a processor whose `Int` is narrower the
+// words would not hold them, and on one without a lock-free 64-bit compare-and-swap the atomics would
+// run under a lock and the row would give `blocking` where the document asked for more. So the file
+// compiles only for the processors that have both, and says why on the others (SCE Protocol-Synthesis RFC
+// section synth-5-P, Counter width).
+#if !(arch(x86_64) || arch(arm64) || arch(riscv64) || arch(powerpc64le) || arch(s390x))
+#error(
+    "the SCQ queue needs a 64-bit Int and lock-free 64-bit atomics, which this processor is not known to have (SCE Protocol-Synthesis RFC section synth-5-P, Counter width)"
+)
+#endif
+
 /// How many operations a participant may be delayed between reading an entry and acting on it before it
 /// could be misled: 2^(w-2) for a word of w bits, independent of the capacity. An entry's cycle is
 /// compared with a ticket's modulo 2^c, where c = w - 1 - log2(2R), so a delay is safe until the entry's

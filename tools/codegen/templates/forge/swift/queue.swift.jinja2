@@ -1,0 +1,150 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="queue")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// SCE Protocol-Synthesis RFC section synth-5-P queue: a first-in first-out queue that hands elements
+// from one thread to another. The document states the contract (element type, {{ producers }}
+// producer(s), {{ consumers }} consumer(s), `{{ declared_progress }}`) and names no algorithm; the
+// algorithm below is what the selection table gives that contract.
+//
+// Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
+//
+{% if segmented %}
+// The queue is segmented (`<sce:segmented segment="{{ segment }}" allocator-progress="{{ allocator_progress }}"/>`):
+// it grows by segments of {{ segment }} element(s) taken from a `SegmentAllocator` the caller builds it
+// with, and holds as many elements as that allocator allows. Swift reference counts a segment, so what
+// the allocator decides is only whether the queue may have one more segment, and when the queue gives
+// one back: at once for a ring read by one consumer, and through a hazard domain for a list of rings
+// read by several.
+//
+// Operations (from `{{ runtime_type }}`):
+//   make{{ pascal }}(allocator:)  the queue, or nil when the allocator refused the first segment; stops
+//                            the program when the allocator gives less progress than the document
+//                            declared for it
+//   producer() / consumer()  a handle, or nil when every place of that side is taken; release() gives
+//                            the place back, and so does the end of the handle
+//   tryPush(v) -> PushStatus .ok takes the element; .outOfMemory means the allocator refused a
+//                            segment, and the element stays with the caller
+//   tryPop() -> Element?     nil when the queue is empty
+//   segment
+{% else %}
+// Operations (from `{{ runtime_type }}`):
+//   producer() / consumer()  a handle, or nil when every place of that side is taken; release() gives
+//                            the place back, and so does the end of the handle
+//   tryPush(v) -> PushStatus .ok takes the element; .full does not
+//   tryPop() -> Element?     nil when the queue is empty
+//   capacity
+{% endif %}
+{% if ring_slots %}
+//
+// The ring's 64-bit entries are `Synchronization.Atomic<Int>`. The runtime compiles only for the
+// processors whose `Int` is 64 bits wide and whose 64-bit atomics are lock-free, and says why on the
+// others (RFC section synth-5-P, Counter width).
+{% endif %}
+
+import SceForgeRuntime
+
+/// What the document declared, and what the algorithm the selection table gave it provides. A
+/// namespace of its own, so that the units of one module do not meet in constants of the same name.
+public enum {{ pascal }}Contract {
+{% if segmented %}
+    /// The elements one segment holds (`<sce:segmented segment>`).
+    public static let segment: Int = {{ segment }}
+
+    /// What the document declared the allocator gives (`allocator-progress`). The queue is built only
+    /// over an allocator whose progress is at least this: a queue that would claim more than its
+    /// allocator gives does not build.
+    public static let allocatorProgress: QueueProgress = .{{ allocator_case }}
+
+    /// `allocatorProgress` as the document spells it.
+    public static let allocatorProgressWord: String = "{{ allocator_progress }}"
+{% else %}
+    /// The most elements the queue holds (`<sce:bounded>`).
+    public static let capacity: Int = {{ capacity }}
+{% endif %}
+{% if ring_slots %}
+
+{% if segmented %}
+    /// The size of each of the two index rings of each segment: a power of two, at least `segment` and
+    /// at least `participants`. The algorithm's empty test is justified only for as many producers or
+    /// consumers as a ring has slots (Nikolaev 2019, section 5.1), so the ring is sized by both.
+{% else %}
+    /// The size of each of the queue's two index rings: a power of two, at least `capacity` and at
+    /// least `participants`. The algorithm's empty test is justified only for as many producers or
+    /// consumers as the ring has slots (Nikolaev 2019, section 5.1), so the ring is sized by both.
+{% endif %}
+    public static let ringSlots: Int = {{ ring_slots }}
+
+    /// The most threads that hold a handle on one side at the same time (`<sce:participants>`). The
+    /// queue hands out no more handles than `ringSlots` on either side.
+    public static let participants: Int = {{ participants }}
+
+    /// How many operations a participant may be delayed between reading a ring entry and acting on it
+    /// before it could be misled: 2^62 for the 64-bit entries this ring keeps, which at 10^9
+    /// operations a second is 146 years (RFC section synth-5-P, Counter width).
+    public static let wrapBoundOps: Int = scqWrapBoundOps
+{% endif %}
+{% if hazard_slots %}
+
+    /// The slots of the hazard domain the queue builds for itself: one for every handle that can be
+    /// alive, both sides together (RFC section synth-5-P, *Reclamation domain*).
+    public static let hazardSlots: Int = {{ hazard_slots }}
+{% endif %}
+
+    /// What the document requires of push and pop (`<sce:progress>`).
+    public static let declaredProgress: String = "{{ declared_progress }}"
+
+    /// What the selected algorithm gives push.
+    public static let pushProgress: String = "{{ push_progress }}"
+
+    /// What the selected algorithm gives pop.
+    public static let popProgress: String = "{{ pop_progress }}"
+
+    /// The algorithm the selection table gave this contract.
+    public static let algorithm: String = "{{ algorithm }}"
+}
+
+{% if segmented %}
+/// The queue. It grows by segments the allocator gives; an element that has left it is not referenced
+/// by it, and a segment it has left goes back to the allocator.
+public typealias {{ pascal }} = {{ runtime_type }}<{{ element_pascal }}>
+
+/// An empty queue of segments of `{{ pascal }}Contract.segment` elements over `allocator`, or nil when
+/// the allocator will not give the first segment. Stops the program when the allocator's progress is
+/// below `{{ pascal }}Contract.allocatorProgress`.
+public func make{{ pascal }}(allocator: any SegmentAllocator) -> {{ pascal }}? {
+{% if hazard_slots %}
+    {{ runtime_type }}<{{ element_pascal }}>.create(
+        segment: {{ pascal }}Contract.segment,
+        ringSlots: {{ pascal }}Contract.ringSlots,
+        allocator: allocator,
+        domain: HazardDomain(slots: {{ pascal }}Contract.hazardSlots),
+        required: {{ pascal }}Contract.allocatorProgress)
+{% else %}
+    {{ runtime_type }}<{{ element_pascal }}>.create(
+        segment: {{ pascal }}Contract.segment,
+        allocator: allocator,
+        required: {{ pascal }}Contract.allocatorProgress)
+{% endif %}
+}
+{% else %}
+/// The queue. Its storage is one allocation, made when the queue is built and never again; an element
+/// that has left it is not referenced by it.
+public typealias {{ pascal }} = {{ runtime_type }}<{{ element_pascal }}>
+
+/// An empty queue of `{{ pascal }}Contract.capacity` elements.
+public func make{{ pascal }}() -> {{ pascal }} {
+{% if ring_slots %}
+    {{ runtime_type }}<{{ element_pascal }}>(
+        capacity: {{ pascal }}Contract.capacity, ringSlots: {{ pascal }}Contract.ringSlots)
+{% else %}
+    {{ runtime_type }}<{{ element_pascal }}>(capacity: {{ pascal }}Contract.capacity)
+{% endif %}
+}
+{% endif %}

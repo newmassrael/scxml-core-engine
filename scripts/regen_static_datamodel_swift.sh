@@ -259,6 +259,24 @@ if [ ! -e "${BOUNDED_COLLECTION_DOCUMENTS[0]}" ]; then
     echo "error: no bounded collection fixture found under $BOUNDED_COLLECTION_DIR" >&2
     exit 1
 fi
+# The queues (RFC section synth-5-P) and the codec they hold, the fixtures every backend's generated-queue
+# test is built from. A queue is generated from its document SET and never alone, because the element
+# it holds is a document of the set. The two `intrusive` fixtures are not among them: that storage is
+# refused for Swift by name, and a document refused by name has no unit to run.
+QUEUE_DIR="tests/forge/resources"
+QUEUE_DOCUMENTS=(
+    "$QUEUE_DIR/queue_conformance_event.scxml"
+    "$QUEUE_DIR/queue_conformance_spsc.scxml"
+    "$QUEUE_DIR/queue_conformance_scq.scxml"
+    "$QUEUE_DIR/queue_conformance_segmented.scxml"
+    "$QUEUE_DIR/queue_conformance_segmented_many.scxml"
+)
+for document in "${QUEUE_DOCUMENTS[@]}"; do
+    if [ ! -e "$document" ]; then
+        echo "error: no queue fixture $document" >&2
+        exit 1
+    fi
+done
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -288,6 +306,11 @@ for document in "${BOUNDED_COLLECTION_DOCUMENTS[@]}"; do
     BOUNDED_COLLECTION_ARGUMENTS+=(--forge "$document")
 done
 "$CODEGEN" orchestrate "${BOUNDED_COLLECTION_ARGUMENTS[@]}" --language swift --output-dir "$TMP/bounded_collection/" > /dev/null
+QUEUE_ARGUMENTS=()
+for document in "${QUEUE_DOCUMENTS[@]}"; do
+    QUEUE_ARGUMENTS+=(--forge "$document")
+done
+"$CODEGEN" orchestrate "${QUEUE_ARGUMENTS[@]}" --language swift --output-dir "$TMP/queue/" > /dev/null
 
 mkdir -p "$GENERATED_DIR"
 # Every file below is generated and the tests beside them are not: clearing by
@@ -365,6 +388,17 @@ for generated in "$TMP/bounded_collection"/*.swift; do
     UNIT_FROM[$unit]="$BOUNDED_COLLECTION_DIR"
     BOUNDED_COLLECTION_UNITS+=("$unit")
 done
+QUEUE_UNITS=()
+for generated in "$TMP/queue"/*.swift; do
+    unit="$(basename "$generated" .swift)"
+    if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+        echo "error: ${UNIT_FROM[$unit]} and the queue fixtures are both written as $unit; one of them needs another name" >&2
+        exit 1
+    fi
+    cp "$generated" "$GENERATED_DIR/"
+    UNIT_FROM[$unit]="$QUEUE_DIR"
+    QUEUE_UNITS+=("$unit")
+done
 
 # The numerical conformance harness (tests/forge/conformance): the oracle's cases for the
 # units above, held to what each computes. The harness lists the fixtures this backend's
@@ -376,7 +410,7 @@ HARNESS_DIR="backends/swift/tests/Tests/StaticDatamodelTests"
     --manifest "$CORPUS_MANIFEST" \
     --output-dir "$HARNESS_DIR" > /dev/null
 
-echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none}, the event schemas ${SCHEMA_UNITS[*]:-none} and the broadcast logs ${BROADCAST_LOG_UNITS[*]:-none} and the bounded collections ${BOUNDED_COLLECTION_UNITS[*]:-none} under $GENERATED_DIR/"
+echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none}, the event schemas ${SCHEMA_UNITS[*]:-none} and the broadcast logs ${BROADCAST_LOG_UNITS[*]:-none} and the bounded collections ${BOUNDED_COLLECTION_UNITS[*]:-none} and the queues ${QUEUE_UNITS[*]:-none} under $GENERATED_DIR/"
 if [ "${#REFUSED[@]}" -gt 0 ]; then
     echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
     printf '  %s\n' "${REFUSED[@]}"

@@ -27112,7 +27112,7 @@ fn resolve_queue_render_inputs(
                 storage: "intrusive".to_string(),
                 language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
                 implemented: "bounded, segmented".to_string(),
-                status: ", and will not be: a node of a garbage-collected backend is a plain object whose property cannot be an atomic in place, so there is no link for the list to use. SCE Protocol-Synthesis RFC §5.P specifies the mode for the backends that address memory (Rust, C++, C11); this document is valid and is refused rather than lowered to a queue that gives less".to_string(),
+                status: ", and will not be: a node of a garbage-collected or reference-counted backend (Kotlin, Go, Python, Swift) is a plain object whose property cannot be an atomic in place, so there is no link for the list to use. SCE Protocol-Synthesis RFC §5.P specifies the mode for the backends that address memory (Rust, C++, C11); this document is valid and is refused rather than lowered to a queue that gives less".to_string(),
             })
             .at_line(m.storage_line));
         }
@@ -27447,7 +27447,8 @@ fn resolve_queue_render_inputs(
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
-            | crate::generator::Language::Go,
+            | crate::generator::Language::Go
+            | crate::generator::Language::Swift,
             QueueAlgorithm::LamportRing,
             _,
         ) => "Spsc",
@@ -27455,7 +27456,8 @@ fn resolve_queue_render_inputs(
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
-            | crate::generator::Language::Go,
+            | crate::generator::Language::Go
+            | crate::generator::Language::Swift,
             QueueAlgorithm::Scq,
             _,
         ) => "Scq",
@@ -27465,7 +27467,8 @@ fn resolve_queue_render_inputs(
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
-            | crate::generator::Language::Go,
+            | crate::generator::Language::Go
+            | crate::generator::Language::Swift,
             QueueAlgorithm::LinkedLamportRings,
             _,
         ) => "LinkedLamport",
@@ -27473,10 +27476,12 @@ fn resolve_queue_render_inputs(
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
-            | crate::generator::Language::Go,
+            | crate::generator::Language::Go
+            | crate::generator::Language::Swift,
             QueueAlgorithm::Lscq,
             _,
         ) => "Lscq",
+        // The intrusive list is refused for Swift above, so no other row reaches here.
         (crate::generator::Language::Swift, _, _) => {
             no_swift_emitter("resolve_queue_render_inputs")
         }
@@ -27523,10 +27528,11 @@ fn resolve_queue_render_inputs(
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
             | crate::generator::Language::Python
+            | crate::generator::Language::Swift
             | crate::generator::Language::C11,
             _,
         ) => selection.algorithm.name(),
-        (_, crate::generator::Language::Swift, _) => {
+        (true, crate::generator::Language::Swift, _) => {
             no_swift_emitter("resolve_queue_render_inputs")
         }
     };
@@ -28213,6 +28219,56 @@ fn render_queue_kotlin(
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "queue.kt.jinja2 (kotlin): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="queue">` document for Swift (SCE Protocol-Synthesis RFC section synth-5-P): the
+/// contract the document states, the numbers the selection table's row needs, and the constructor
+/// of the runtime's queue over the element codec's struct in the same module. The four rows Swift
+/// has are the Lamport ring, SCQ and the two segmented ones; the `intrusive` storage is refused by
+/// the resolver for the reason it gives.
+fn render_queue_swift(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::QueueModel,
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_queue_render_inputs(m, options, crate::generator::Language::Swift)?;
+    let tmpl = env.get_template("queue.swift.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "queue.swift.jinja2 (swift): {e}"
+        )))
+    })?;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => filters::to_pascal_case(m.name.clone()),
+        element_pascal => filters::to_pascal_case(m.element_type.clone()),
+        capacity => inputs.capacity,
+        ring_slots => inputs.ring_slots,
+        participants => inputs.participants,
+        hazard_slots => inputs.hazard_slots,
+        runtime_type => inputs.runtime_type,
+        segmented => inputs.segment.is_some(),
+        segment => inputs.segment,
+        // The allocator progress the document declared, as the runtime's `QueueProgress` case the
+        // queue is held to when it is built.
+        allocator_progress => inputs.allocator_progress.map(|(_, word)| word),
+        allocator_case => inputs.allocator_progress.map(|(rank, _)| match rank {
+            0 => "blocking",
+            1 => "lockFree",
+            _ => "waitFree",
+        }),
+        algorithm => inputs.algorithm,
+        producers => inputs.producers,
+        consumers => inputs.consumers,
+        declared_progress => inputs.declared_progress,
+        push_progress => inputs.push_progress,
+        pop_progress => inputs.pop_progress,
+        runtime_dep => "SceForgeRuntime",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue.swift.jinja2 (swift): {e}"
         )))
     })
 }
@@ -29592,6 +29648,15 @@ pub fn generate_swift_with_imports(
             .and_then(|resolutions| resolutions.get(&m.name))
             .and_then(|resolution| resolution.element_swift_unlowered.as_ref())
             .map(|why| format!("bounded-collection '{}': {why}", m.name)),
+        // A queue holds its element by the type that document is generated as, so it is refused for
+        // the element Swift does not write, which only the document-set compile has in hand
+        // ([`crate::QueueResolution::element_swift_unlowered`]).
+        ForgeDocument::Queue(m) => options
+            .queue_resolutions
+            .as_ref()
+            .and_then(|resolutions| resolutions.get(&m.name))
+            .and_then(|resolution| resolution.element_swift_unlowered.as_ref())
+            .map(|why| format!("queue '{}': {why}", m.name)),
         // A template's holes are texts, integers and enum names, each a `String`
         // or an integer of the standard library (docs/adr/0087, section 3.1).
         ForgeDocument::TextTemplate(_) => None,
@@ -29635,6 +29700,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Procedure(m) => render_procedure_swift(&env, m, imports)?,
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_swift(&env, m, imports, options)?,
         ForgeDocument::BoundedCollection(m) => render_bounded_collection_swift(&env, m, options)?,
+        ForgeDocument::Queue(m) => render_queue_swift(&env, m, options)?,
         ForgeDocument::TextTemplate(m) => render_text_template(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };

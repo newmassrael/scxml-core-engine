@@ -4443,6 +4443,11 @@ pub struct QueueResolution {
     /// `machines.<m>.queues.<q>.placement`: where each side runs. `None` when
     /// the deploy states none, in which case the placement checks are silent.
     pub placement: Option<mesh::deploy::QueuePlacement>,
+    /// What of the element document the Swift emitter does not write: a queue holds its element by
+    /// the type that document is generated as, so a document Swift refuses (or one that is not a
+    /// codec) leaves the queue naming a type that is not there. `None` for an element it writes, and
+    /// when the element document is not in hand (a single-document compile).
+    pub element_swift_unlowered: Option<String>,
 }
 
 /// ADR 0062 — what a broadcast log's generated module needs of the build and its
@@ -5939,7 +5944,7 @@ fn compile_document_set(
     // against the machine the set is generated for, so what the deploy says of
     // the target's atomics reaches a document-set compile the way it reaches
     // `compile_forge_with_deploy`.
-    let queue_resolutions_override = match (deploy, options.target_machine.as_deref()) {
+    let mut queue_resolutions_override = match (deploy, options.target_machine.as_deref()) {
         (Some(cfg), Some(machine)) if !queues_for_xref.is_empty() => {
             let mut resolved = std::collections::HashMap::new();
             for (label, queue) in &queues_for_xref {
@@ -5952,6 +5957,37 @@ fn compile_document_set(
         }
         _ => None,
     };
+    // A queue holds its element by the type its document is generated as: a codec Swift writes
+    // (through the codecs its lists hold), and no other document. Only this compile has the element
+    // document in hand, so the refusal is read here and carried to the renderer, with or without a
+    // deploy.
+    if language == generator::Language::Swift {
+        for (_label, queue) in &queues_for_xref {
+            let refusal = match element_type_candidates.get(&queue.element_type) {
+                Some(forge::model::ForgeDocument::Codec(codec)) => element_import_sources
+                    .get(&queue.element_type)
+                    .and_then(|(imports, base_dir)| {
+                        forge::static_imports::swift_codec_through_imports(codec, imports, base_dir)
+                            .map(|construct| {
+                                forge::generator::swift_codec_refusal(codec, &construct)
+                            })
+                    }),
+                Some(_) => Some(format!(
+                    "its element '{}' is not a codec, the one document Swift holds a queue's \
+                     element by",
+                    queue.element_type
+                )),
+                None => None,
+            };
+            if let Some(why) = refusal {
+                queue_resolutions_override
+                    .get_or_insert_with(Default::default)
+                    .entry(queue.name.clone())
+                    .or_default()
+                    .element_swift_unlowered = Some(why);
+            }
+        }
+    }
     // ADR 0062: every broadcast log in the set resolves here, where its element
     // document is in hand (the largest encoded size is read from it) and, with a
     // deploy and the machine the set is generated for, where a deploy-key
@@ -8092,6 +8128,7 @@ pub fn resolve_queue_deploy_limits(
         placement: machine
             .and_then(|machine| machine.queues.get(&queue.name))
             .and_then(|queue| queue.placement.clone()),
+        element_swift_unlowered: None,
     })
 }
 

@@ -294,8 +294,10 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // (`sce_forge_runtime.queue`: one ring under one lock, `blocking`) and
         // C11's (`sce/forge/queue.h`: the Lamport ring and SCQ over 64-bit and
         // 32-bit entries, and `queue_irq.h` for a target with no
-        // read-modify-write atomic). Swift has no forge runtime yet, so it has
-        // none either.
+        // read-modify-write atomic). Swift's (`SceForgeRuntime`: the same two and
+        // the two segmented rows) writes a queue in part ([`ships_in_part`]): the
+        // intrusive storage is refused by name, so the matrix does not say it
+        // ships in whole.
         ForgeKind::Queue => match lang {
             Language::Rust
             | Language::Cpp
@@ -467,7 +469,10 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
 /// (`BroadcastLogElementFacts::refusal_for` refuses every other element by the codec's own
 /// refusal, and the narrow row of a deploy whose target has no 64-bit atomic is refused by
 /// name), and its bounded collection one over an element codec Swift writes
-/// (`BoundedCollectionResolution::element_swift_unlowered` refuses every other element).
+/// (`BoundedCollectionResolution::element_swift_unlowered` refuses every other element), and its
+/// queue one over an element codec Swift writes, in the four rows the selection table has for a
+/// `bounded` or `segmented` storage (`QueueResolution::element_swift_unlowered` refuses every other
+/// element; the `intrusive` storage is refused by name for the reason the resolver gives).
 pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
     matches!(
         (kind, lang),
@@ -487,6 +492,7 @@ pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
             | (ForgeKind::Procedure, Language::Swift)
             | (ForgeKind::BroadcastLog, Language::Swift)
             | (ForgeKind::BoundedCollection, Language::Swift)
+            | (ForgeKind::Queue, Language::Swift)
     )
 }
 
@@ -768,9 +774,9 @@ pub const fn queue_progress_ceiling(
             ),
             _ => (QueueProgress::WaitFree, ""),
         },
-        // Swift emits no queue yet (`template_ships`), so this answer is never
-        // read for it; it stays with the backends that take nothing from the
-        // platform until the Swift runtime's atomics decide it.
+        // Swift's rows are built from `Synchronization`'s atomics, and the platforms that have
+        // them have 64-bit read-modify-write ones (the runtime refuses to compile elsewhere), so
+        // the deploy's width does not enter, as it does not for the backends below.
         Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Swift => {
             (QueueProgress::WaitFree, "")
         }
