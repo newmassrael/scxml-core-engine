@@ -120,8 +120,8 @@ private struct HostRig {
                     var text: String?
                     if case .text(let written)? = answer.member("text") {
                         text = written
-                    } else if case .array(let repeat)? = answer.member("text_repeat"), repeat.count == 2,
-                        case .text(let unit) = repeat[0], let count = integerValue(repeat[1], as: Int.self)
+                    } else if case .array(let repeated)? = answer.member("text_repeat"), repeated.count == 2,
+                        case .text(let unit) = repeated[0], let count = integerValue(repeated[1], as: Int.self)
                     {
                         text = String(repeating: unit, count: count)
                     }
