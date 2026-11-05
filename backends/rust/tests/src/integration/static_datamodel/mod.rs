@@ -119,6 +119,8 @@ pub mod static_hybrid_holder_sm;
 pub mod static_hybrid_second_sm;
 pub mod static_hybrid_watcher_sm;
 pub mod static_invoke__sce_synth_invoke__worker_sm;
+pub mod static_invoke_ending_order__sce_synth_invoke__worker_sm;
+pub mod static_invoke_ending_order_sm;
 pub mod static_invoke_hybrid_saved_sm;
 pub mod static_invoke_hybrid_sm;
 pub mod static_invoke_optional__sce_synth_invoke__absent_sm;
