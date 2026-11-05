@@ -1584,7 +1584,13 @@ impl<P: StatePolicy> Engine<P> {
     fn apply_inbox_input(&mut self, input: crate::inbox::InboxInputOf<P>) {
         use crate::inbox::InboxInput;
         match input {
-            InboxInput::ExternalEvent(event) => self.raise_external_with_meta(event),
+            // What `raise_external_with_meta` does, without its drain: the drain
+            // applying this input is the one that would run, and a call back
+            // into `enqueue_external` would be a cycle in the call graph
+            // (raise -> drain -> apply -> raise) that the bare-metal stack bound
+            // (`nostd-footprint`) cannot be computed over, though the
+            // `draining_inbox` guard would stop it after one level.
+            InboxInput::ExternalEvent(event) => Self::enqueue(&mut self.external_queue, event),
             #[cfg(feature = "std")]
             InboxInput::ExternalEventByName { name, metadata } => {
                 self.raise_external_by_name_with_meta(&name, &metadata);
