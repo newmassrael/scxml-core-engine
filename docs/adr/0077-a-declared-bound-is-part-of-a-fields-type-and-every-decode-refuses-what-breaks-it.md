@@ -571,17 +571,15 @@ stack.
 - **What a lent decode builds outside where it lives.** It builds lists, bodies and chains in place; the one value
   it makes elsewhere is a default it installs: a variant's arm holding its body's default
   (`tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2`, each arm and the default arm), a gated
-  body's `Some` (the embed statement, `{_out}.{id}.insert({body}::default())`), a chain's fewest entries
-  (`insert(Default::default())` before its `refill`), and the entry a chain reads each entry into. Rust builds the
-  right side of an assignment in a temporary before it drops the old value, and a default called out of line returns
-  its value through a stack slot of the caller's frame, the whole value with every inline list at its capacity. A
-  reply's arm is a body that holds a chain and a variant of its own, so that slot is the size of a reply. A group's
-  arms are built by closures the chain's door takes and inlines, which is why the three shapes measured below a list.
-- **What changes.** The default of `{Codec}In<S>` and of `{Codec}VariantIn<S>`, `Bounded`'s default and an inline
-  list's fewest entries are `#[inline(always)]`. Built in line, a default is the stores of its scalars and its lists'
-  lengths, and the slot goes. A decode is otherwise unchanged: the same bytes, refused in the same order, with
-  `NeedMoreBytes` before `CapacityExceeded`. C11 decodes an arm through a pointer into it and builds nothing to
-  install, so it has no such slot and is unchanged.
+  body's `Some` (the embed statement), a chain's fewest entries before its `refill`, and the entry a chain reads each
+  entry into. A default called out of line would return its whole value through a slot of the caller's frame, so these
+  were the suspects.
+- **What was measured, and what does not change.** The probe below read the reply decode at 304 bytes of worst-case
+  stack and the reply encode at 232, against one of the response's lists at 520, with the generated code as it is: the
+  defaults are already built in line at the probe's opt-level, and no frame of SCE's decode or encode holds a reply.
+  Marking those defaults `#[inline(always)]` was written and not landed, because it bought no measured byte and costs
+  flash at every install site. If a later toolchain or profile keeps a default out of line, the probe's refusal says
+  so, and that change is the remedy to land then.
 - **The encode.** It reads its value by reference through its source and writes each field into the sink
   (`{Codec}Wire::write_source_in`); the only arrays on its path are the eight bytes or fewer of a fixed-width integer
   or a VLE that `SliceSink` stores in place. Nothing on it grows with the codec, so nothing in it changes; the probe
