@@ -38,6 +38,9 @@ use sce_rust_runtime::{
 use sce_rust_tests::integration::host_processor::{
     InboxProbeEvent as Event, InboxProbePolicy as Policy,
 };
+use sce_rust_tests::integration::static_datamodel::static_invoke_ending_order_sm::{
+    StaticInvokeEndingOrderActions, StaticInvokeEndingOrderEvent, StaticInvokeEndingOrderPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::StaticInvokeTreePolicy;
 
 /// The type the fixture was generated for (`HOST_INVOKER` in
@@ -597,5 +600,99 @@ fn an_ending_for_a_child_session_posted_before_the_childs_report_is_applied() {
         engine.policy().stamps(),
         1,
         "the ending posted for the child session was never applied"
+    );
+}
+
+/// What `beforeQuestion` does, put in place by the test once the machine runs.
+type HostAct = Box<dyn FnMut() + Send>;
+
+/// The host of `static_invoke_ending_order`: its one action, `beforeQuestion`,
+/// runs what the test put in the slot it shares with it, if anything.
+struct BeforeQuestion(Arc<Mutex<Option<HostAct>>>);
+
+impl StaticInvokeEndingOrderActions for BeforeQuestion {
+    fn before_question(&mut self) {
+        if let Some(act) = self.0.lock().expect("the host action").as_mut() {
+            act();
+        }
+    }
+}
+
+// docs/adr/0084, D2 as amended at step 10. Inside the parent's macrostep that
+// takes `ask`, the host posts the ending of `worker`'s `clock`, naming `worker`,
+// from a thread of its own (`beforeQuestion`), and then the parent sends
+// `question` to `worker`. The post came first, so `worker` takes
+// `done.invoke.clock` before `question`, and the parent hears `stamped` before
+// `answer`.
+//
+// Fixture: sce-build/tests/fixtures/static_datamodel/static_invoke_ending_order.scxml.
+#[test]
+fn an_ending_posted_for_a_child_before_its_parents_send_to_it_is_taken_first() {
+    const ROOT: &str = "fixture-root";
+    const WORKER: &str = "fixture-root.working.1.worker";
+    const CLOCK: &str = "sce-host-clock-now";
+    const NOW: &str = r#"{"error":"","utc_ms":1700000000000,"monotonic_ms":5}"#;
+
+    let act: Arc<Mutex<Option<HostAct>>> = Arc::default();
+    let mut engine = Engine::new(
+        StaticInvokeEndingOrderPolicy::new_with_session_id(ROOT, BeforeQuestion(Arc::clone(&act)))
+            .expect("an Nmtoken"),
+    );
+    engine.set_clock(SceClock::Manual(0));
+    // The clock records each start's token and does not answer, so the
+    // invocation keeps running.
+    let tokens: Arc<Mutex<Vec<u64>>> = Arc::default();
+    let seen = Arc::clone(&tokens);
+    engine.register_invoker(CLOCK, move |event: HostInvokeEvent| {
+        if let HostInvokeEvent::Start(request) = event {
+            seen.lock().expect("the starts").push(request.token);
+        }
+        None
+    });
+    engine.initialize();
+    // Driven until `worker` has started its clock, a bounded number of times,
+    // so a start that never comes fails the case rather than hangs it.
+    for _ in 0..8 {
+        if !tokens.lock().expect("the starts").is_empty() {
+            break;
+        }
+        engine.tick();
+    }
+    let token = {
+        let tokens = tokens.lock().expect("the starts");
+        assert_eq!(tokens.len(), 1, "one start of the clock: {tokens:?}");
+        tokens[0]
+    };
+
+    let inbox = engine.inbox();
+    *act.lock().expect("the host action") = Some(Box::new(move || {
+        let inbox = inbox.clone();
+        let ending = InboxInput::host_invoke_ending(
+            Some(WORKER),
+            HostInvokeEnding {
+                processor_type: CLOCK,
+                invoke_id: "clock",
+                token,
+                done: true,
+                data: NOW,
+            },
+        );
+        let taken = std::thread::spawn(move || inbox.post(ending).is_ok())
+            .join()
+            .expect("the posting thread");
+        assert!(taken, "the inbox refused the ending posted for `worker`");
+    }));
+
+    engine.raise_external(StaticInvokeEndingOrderEvent::Ask, "", "");
+    for _ in 0..4 {
+        engine.tick();
+    }
+
+    let heard = (engine.policy().stamped_at(), engine.policy().answer_at());
+    assert_eq!(
+        heard,
+        (1, 2),
+        "the parent heard `stamped` and `answer` in the places {heard:?}, so `worker` took \
+         the parent's `question` before the ending the host had posted for it first"
     );
 }
