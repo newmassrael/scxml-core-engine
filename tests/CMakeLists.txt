@@ -4183,6 +4183,44 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_session_f_eventful
              COMMAND mesh_session_f_eventful_test)
 
+    # ── SCE_MESH §9.6.3 origin endpoints: a reply reaches the sender ──
+    # The parent answers the child's `ping` by sending `pong` to the
+    # event's origin, the child session's endpoint, with the SCXML
+    # processor's type (wire-17); the child answers `ack` to the origin of
+    # `pong`, the parent session's endpoint (wire-16). docs/adr/0090.
+    set(MESH_SESSION_F_REPLY_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_reply_generated")
+
+    sce_mesh_fixture_generations(MESH_SESSION_F_REPLY_HEADERS
+        OUTPUT_DIR "${MESH_SESSION_F_REPLY_OUTPUT_DIR}"
+        MACHINES parent_session_f_reply worker_session_f_reply
+        DEPLOY "${MESH_TEST_DIR}/deploy_session_f_reply.yaml"
+        LABEL "Mesh §9.6.3 reply round trip")
+
+    add_executable(mesh_session_f_reply_test
+        mesh/test_mesh_session_f_reply.cpp
+        ${MESH_SESSION_F_REPLY_HEADERS}
+    )
+
+    target_include_directories(mesh_session_f_reply_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_REPLY_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_session_f_reply_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_session_f_reply_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_session_f_reply_test)
+
+    add_test(NAME mesh_session_f_reply
+             COMMAND mesh_session_f_reply_test)
+
     # ── SCE_MESH §9.6.5 autoforward="true" verification (wire-17) ──
     # Parent autoforwards external `trigger` onto the child; child
     # transitions to `<final>` and wire-18 fires.

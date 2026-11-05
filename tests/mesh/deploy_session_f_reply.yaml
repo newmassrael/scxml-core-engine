@@ -1,0 +1,15 @@
+# SCE Mesh §9.6.3 reply round-trip fixture.
+#
+# Two machines on one device, the shape of deploy_session_f_eventful.yaml:
+# the parent's `<invoke src="#worker_session_f_reply">` is a remote mesh
+# invoke, so each side's events at the other carry the sender session's
+# endpoint, `mesh://ecu1/<machine>/<session>`, as `_event.origin`, and a
+# `<send>` of the SCXML processor's type to that origin is the reply.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_session_f_reply:
+        source: parent_session_f_reply.scxml
+      worker_session_f_reply:
+        source: worker_session_f_reply.scxml

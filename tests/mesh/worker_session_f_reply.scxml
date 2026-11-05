@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.3 reply round-trip (worker-side fixture).
+
+     Hosted by `WorkerSessionHost` as the remote child of
+     parent_session_f_reply. It sends `ping` to `#_parent`, and answers the
+     parent's `pong`, whose origin is the parent session's endpoint
+     (`mesh://ecu1/parent_session_f_reply/<session>`) from the SCXML Event I/O
+     Processor, with `ack` sent to that origin. A `pong` from any other origin
+     is reported to the parent as `refused`. The child never reaches a final
+     state, so the parent's pass is decided by the replies alone. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="announce" name="worker_session_f_reply">
+    <state id="announce">
+        <onentry>
+            <send target="#_parent" event="ping"/>
+        </onentry>
+        <transition event="pong"
+                    cond="_event.origintype === 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' &amp;&amp; _event.origin.indexOf('mesh://ecu1/parent_session_f_reply/') === 0"
+                    target="answered">
+            <send event="ack" targetexpr="_event.origin"
+                  type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"/>
+        </transition>
+        <transition event="pong" target="refused">
+            <send target="#_parent" event="refused"/>
+        </transition>
+    </state>
+    <state id="answered"/>
+    <state id="refused"/>
+</scxml>

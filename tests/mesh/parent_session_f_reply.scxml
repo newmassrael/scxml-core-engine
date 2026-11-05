@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.3 + docs/adr/0090: the origin of a remote child's event is
+     an address a reply reaches, and so is the origin of its parent's event at
+     the child.
+
+     The worker child sends `ping` to `#_parent`. Its origin here is the child
+     session's endpoint, `mesh://ecu1/worker_session_f_reply/<session>`, from
+     the SCXML Event I/O Processor. The parent answers `pong` to that origin,
+     with the processor's type, while it stays in the invoking state (leaving
+     it would cancel the child). The child, which sees `pong` from the
+     parent's endpoint, answers `ack` to that origin, and the parent passes
+     when `ack` comes from the same endpoint `ping` did.
+
+     `refused` is the child's report that `pong` reached it from another
+     origin; `error.*` covers a reply the processor could not deliver. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="talking" name="parent_session_f_reply">
+    <datamodel>
+        <data id="childOrigin" expr="''"/>
+    </datamodel>
+    <state id="talking" initial="awaitPing">
+        <invoke type="scxml" src="#worker_session_f_reply" id="remote_inv"/>
+        <state id="awaitPing">
+            <transition event="ping"
+                        cond="_event.origintype === 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' &amp;&amp; _event.origin.indexOf('mesh://ecu1/worker_session_f_reply/') === 0"
+                        target="awaitAck">
+                <assign location="childOrigin" expr="_event.origin"/>
+                <send event="pong" targetexpr="_event.origin"
+                      type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"/>
+            </transition>
+        </state>
+        <state id="awaitAck">
+            <transition event="ack"
+                        cond="_event.origin === childOrigin &amp;&amp; _event.origintype === 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"
+                        target="pass"/>
+        </state>
+        <transition event="ping" target="fail"/>
+        <transition event="ack" target="fail"/>
+        <transition event="refused" target="fail"/>
+        <transition event="error.*" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>
