@@ -126,6 +126,10 @@ public enum StaticSchemaPendingSignalLevelEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticSchemaPendingSignalLevelEnum: SavedEnumeration {
+    public static var savedAlias: String { "SignalLevel" }
+}
+
 /// SCE Accepted Subset §2.15: a `record:Signal` datamodel value.
 public struct StaticSchemaPendingSignalRecord: Equatable, Sendable, SceDefault {
     public var level: StaticSchemaPendingSignalLevelEnum = StaticSchemaPendingSignalLevelEnum.allCases[0]

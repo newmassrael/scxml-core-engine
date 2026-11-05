@@ -540,3 +540,45 @@ public final class StaticHostCallPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticHostCallPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a",
+            revised: "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48",
+            format2First: "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a",
+            format2Revised: "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("attempts", SavedValues.of(vAttempts)),
+            SavedEntry("due", SavedValues.optional(vDue) { SavedValues.of($0) }),
+            SavedEntry("urgent", SavedValues.optional(vUrgent) { SavedValues.of($0) }),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(try saved.variable("attempts"), "attempts")
+        let value1 = try SavedValues.optional(try saved.variable("due"), "due") { e, w in try SavedValues.int32(e, w) }
+        let value2 = try SavedValues.optional(try saved.variable("urgent"), "urgent") { e, w in try SavedValues.bool(e, w) }
+        return { [self] in
+            self.vAttempts = value0
+            self.vDue = value1
+            self.vUrgent = value2
+        }
+    }
+}

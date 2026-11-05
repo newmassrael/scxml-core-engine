@@ -129,6 +129,10 @@ public enum StaticOptionalUnwidenedStatusEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticOptionalUnwidenedStatusEnum: SavedEnumeration {
+    public static var savedAlias: String { "Status" }
+}
+
 /// SCE Accepted Subset §2.15: a `record:Due` datamodel value.
 public struct StaticOptionalUnwidenedDueRecord: Equatable, Sendable, SceDefault {
     public var id: UInt32 = 0

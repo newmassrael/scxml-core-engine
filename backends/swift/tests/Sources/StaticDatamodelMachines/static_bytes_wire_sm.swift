@@ -694,3 +694,48 @@ extension Engine where Policy == StaticBytesWirePolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticBytesWirePolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "5fad297f365d60541d683880cd6295ab14643581b611eda79152e6085f6ef5da",
+            revised: "feac77ce380918573f6ee3aca8512f290e18a8fa719b2ab1a65cd60e549bcb0d",
+            format2First: "5fad297f365d60541d683880cd6295ab14643581b611eda79152e6085f6ef5da",
+            format2Revised: "feac77ce380918573f6ee3aca8512f290e18a8fa719b2ab1a65cd60e549bcb0d")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("held", SavedValues.of(vHeld)),
+            SavedEntry("echo", SavedValues.of(vEcho)),
+            SavedEntry("relays", SavedValues.of(vRelays)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.bytes(try saved.variable("held"), "held", capacity: 8)
+        let value1 = try SavedValues.bytes(try saved.variable("echo"), "echo", capacity: 8)
+        let value2 = try SavedValues.uint32(try saved.variable("relays"), "relays")
+        let value3 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vHeld = value0
+            self.vEcho = value1
+            self.vRelays = value2
+            self.vErrors = value3
+        }
+    }
+}

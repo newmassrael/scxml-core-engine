@@ -128,6 +128,10 @@ public enum StaticWholePayloadViewModeEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticWholePayloadViewModeEnum: SavedEnumeration {
+    public static var savedAlias: String { "ViewMode" }
+}
+
 /// SCE Accepted Subset §2.15: a `record:View` datamodel value.
 public struct StaticWholePayloadViewRecord: Equatable, Sendable, SceDefault {
     public var layout: StaticWholePayloadViewModeEnum = StaticWholePayloadViewModeEnum.allCases[0]

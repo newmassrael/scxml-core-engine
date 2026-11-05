@@ -407,8 +407,7 @@ extension StaticInvokeStringSceSynthInvokeFitsPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.string(
-            try saved.variable("title"), "title", capacity: 4)
+        let value0 = try SavedValues.string(try saved.variable("title"), "title", capacity: 4)
         return { [self] in
             self.vTitle = value0
         }

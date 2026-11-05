@@ -651,16 +651,11 @@ extension StaticStringCapacityPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.string(
-            try saved.variable("title"), "title", capacity: 4)
-        let value1 = try SavedValues.string(
-            try saved.variable("body"), "body", capacity: 16)
-        let value2 = try SavedValues.uint32(
-            try saved.variable("copied"), "copied")
-        let value3 = try SavedValues.uint32(
-            try saved.variable("measured"), "measured")
-        let value4 = try SavedValues.uint32(
-            try saved.variable("refusals"), "refusals")
+        let value0 = try SavedValues.string(try saved.variable("title"), "title", capacity: 4)
+        let value1 = try SavedValues.string(try saved.variable("body"), "body", capacity: 16)
+        let value2 = try SavedValues.uint32(try saved.variable("copied"), "copied")
+        let value3 = try SavedValues.uint32(try saved.variable("measured"), "measured")
+        let value4 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         return { [self] in
             self.vTitle = value0
             self.vBody = value1

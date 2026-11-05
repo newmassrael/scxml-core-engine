@@ -127,6 +127,10 @@ public enum StaticPayloadEnumViewModeEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticPayloadEnumViewModeEnum: SavedEnumeration {
+    public static var savedAlias: String { "ViewMode" }
+}
+
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
 // events whose payload a natively lowered expression reads: a tag, and one
 // `pending<Event>Payload` view per event on the policy.
@@ -598,3 +602,48 @@ extension Engine where Policy == StaticPayloadEnumPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticPayloadEnumPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "1b285f0009995c3b4881af97d94c25e4e3673020ba3c53351fd4a413ae0ac64f",
+            revised: "31e2fa158b14337ea1e405a1b1f9ced4a60c1c4fd4ea0410219e80e6a74b592b",
+            format2First: "aae91d478539bd99337e05e9f505a402677de9616f66ecd9e05ef34b97826db5",
+            format2Revised: "5bdea80956eb1aecd3e03d1b9d61af320561a0a4e2288b05c8cd5ce910877677")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("layout", SavedValues.of(vLayout)),
+            SavedEntry("zoom", SavedValues.of(vZoom)),
+            SavedEntry("agenda", SavedValues.of(vAgenda)),
+            SavedEntry("shown", SavedValues.of(vShown)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.enumeration(try saved.variable("layout"), "layout", as: StaticPayloadEnumViewModeEnum.self)
+        let value1 = try SavedValues.uint8(try saved.variable("zoom"), "zoom")
+        let value2 = try SavedValues.bool(try saved.variable("agenda"), "agenda")
+        let value3 = try SavedValues.uint32(try saved.variable("shown"), "shown")
+        return { [self] in
+            self.vLayout = value0
+            self.vZoom = value1
+            self.vAgenda = value2
+            self.vShown = value3
+        }
+    }
+}

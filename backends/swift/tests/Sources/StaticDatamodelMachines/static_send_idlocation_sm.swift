@@ -698,18 +698,12 @@ extension StaticSendIdlocationPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.string(
-            try saved.variable("first"), "first", capacity: 32)
-        let value1 = try SavedValues.string(
-            try saved.variable("second"), "second", capacity: 32)
-        let value2 = try SavedValues.uint32(
-            try saved.variable("scale"), "scale")
-        let value3 = try SavedValues.uint32(
-            try saved.variable("first_fired"), "first_fired")
-        let value4 = try SavedValues.uint32(
-            try saved.variable("second_fired"), "second_fired")
-        let value5 = try SavedValues.uint32(
-            try saved.variable("refusals"), "refusals")
+        let value0 = try SavedValues.string(try saved.variable("first"), "first", capacity: 32)
+        let value1 = try SavedValues.string(try saved.variable("second"), "second", capacity: 32)
+        let value2 = try SavedValues.uint32(try saved.variable("scale"), "scale")
+        let value3 = try SavedValues.uint32(try saved.variable("first_fired"), "first_fired")
+        let value4 = try SavedValues.uint32(try saved.variable("second_fired"), "second_fired")
+        let value5 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         return { [self] in
             self.vFirst = value0
             self.vSecond = value1

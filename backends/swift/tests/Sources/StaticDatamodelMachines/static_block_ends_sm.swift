@@ -659,26 +659,16 @@ extension StaticBlockEndsPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint8(
-            try saved.variable("a"), "a")
-        let value1 = try SavedValues.uint8(
-            try saved.variable("b"), "b")
-        let value2 = try SavedValues.uint8(
-            try saved.variable("afterAssign"), "afterAssign")
-        let value3 = try SavedValues.uint8(
-            try saved.variable("thenRan"), "thenRan")
-        let value4 = try SavedValues.uint8(
-            try saved.variable("elseRan"), "elseRan")
-        let value5 = try SavedValues.uint8(
-            try saved.variable("afterIf"), "afterIf")
-        let value6 = try SavedValues.uint8(
-            try saved.variable("inBranch"), "inBranch")
-        let value7 = try SavedValues.uint8(
-            try saved.variable("afterBranch"), "afterBranch")
-        let value8 = try SavedValues.uint8(
-            try saved.variable("afterOk"), "afterOk")
-        let value9 = try SavedValues.uint8(
-            try saved.variable("errors"), "errors")
+        let value0 = try SavedValues.uint8(try saved.variable("a"), "a")
+        let value1 = try SavedValues.uint8(try saved.variable("b"), "b")
+        let value2 = try SavedValues.uint8(try saved.variable("afterAssign"), "afterAssign")
+        let value3 = try SavedValues.uint8(try saved.variable("thenRan"), "thenRan")
+        let value4 = try SavedValues.uint8(try saved.variable("elseRan"), "elseRan")
+        let value5 = try SavedValues.uint8(try saved.variable("afterIf"), "afterIf")
+        let value6 = try SavedValues.uint8(try saved.variable("inBranch"), "inBranch")
+        let value7 = try SavedValues.uint8(try saved.variable("afterBranch"), "afterBranch")
+        let value8 = try SavedValues.uint8(try saved.variable("afterOk"), "afterOk")
+        let value9 = try SavedValues.uint8(try saved.variable("errors"), "errors")
         return { [self] in
             self.vA = value0
             self.vB = value1

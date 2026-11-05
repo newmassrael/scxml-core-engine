@@ -414,10 +414,8 @@ extension StaticHybridFirstPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint32(
-            try saved.variable("start"), "start")
-        let value1 = try SavedValues.bool(
-            try saved.variable("enabled"), "enabled")
+        let value0 = try SavedValues.uint32(try saved.variable("start"), "start")
+        let value1 = try SavedValues.bool(try saved.variable("enabled"), "enabled")
         return { [self] in
             self.vStart = value0
             self.vEnabled = value1

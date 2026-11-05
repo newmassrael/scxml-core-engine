@@ -383,3 +383,42 @@ public final class StaticInvokeOptionalSceSynthInvokeLiftedPolicy: InvocablePoli
     public func executeTransitionContent(source: StaticInvokeOptionalSceSynthInvokeLiftedState, transitionIndex: Int, engine: Engine<StaticInvokeOptionalSceSynthInvokeLiftedPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeOptionalSceSynthInvokeLiftedPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "7be98a8a9fce9dbd7ddaf28afd90d93868f0c33710ac5032569150aa3c6f76bb",
+            revised: "b6e22e3b6c4c1a37c7210573ff2f5fa0ccfb36fab551eccae1792185e850f67d",
+            format2First: "7be98a8a9fce9dbd7ddaf28afd90d93868f0c33710ac5032569150aa3c6f76bb",
+            format2Revised: "b6e22e3b6c4c1a37c7210573ff2f5fa0ccfb36fab551eccae1792185e850f67d")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("size", SavedValues.optional(vSize) { SavedValues.of($0) }),
+            SavedEntry("label", SavedValues.optional(vLabel) { SavedValues.of($0) }),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.optional(try saved.variable("size"), "size") { e, w in try SavedValues.int32(e, w) }
+        let value1 = try SavedValues.optional(try saved.variable("label"), "label") { e, w in try SavedValues.string(e, w, capacity: 8) }
+        return { [self] in
+            self.vSize = value0
+            self.vLabel = value1
+        }
+    }
+}

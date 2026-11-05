@@ -296,6 +296,10 @@ public enum RecordListParentSceSynthInvokeListRefusalEnum: UInt8, CaseIterable, 
     }
 }
 
+extension RecordListParentSceSynthInvokeListRefusalEnum: SavedEnumeration {
+    public static var savedAlias: String { "Refusal" }
+}
+
 /// SCE Accepted Subset §2.15: an `enum:Command` datamodel value.
 public enum RecordListParentSceSynthInvokeListCommandEnum: UInt8, CaseIterable, Sendable {
     case edit = 0
@@ -331,6 +335,10 @@ public enum RecordListParentSceSynthInvokeListCommandEnum: UInt8, CaseIterable, 
         default: return nil
         }
     }
+}
+
+extension RecordListParentSceSynthInvokeListCommandEnum: SavedEnumeration {
+    public static var savedAlias: String { "Command" }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the

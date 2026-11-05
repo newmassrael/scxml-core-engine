@@ -139,6 +139,10 @@ public enum StaticPayloadEnumUnimportedWhyEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticPayloadEnumUnimportedWhyEnum: SavedEnumeration {
+    public static var savedAlias: String { "Why" }
+}
+
 /// SCE Accepted Subset §2.15: an `enum:record_command` datamodel value.
 public enum StaticPayloadEnumUnimportedRecordCommandEnum: UInt8, CaseIterable, Sendable {
     case edit = 0
@@ -174,6 +178,10 @@ public enum StaticPayloadEnumUnimportedRecordCommandEnum: UInt8, CaseIterable, S
         default: return nil
         }
     }
+}
+
+extension StaticPayloadEnumUnimportedRecordCommandEnum: SavedEnumeration {
+    public static var savedAlias: String { "record_command" }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Refused` datamodel value.

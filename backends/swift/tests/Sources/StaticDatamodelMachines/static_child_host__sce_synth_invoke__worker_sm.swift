@@ -529,8 +529,7 @@ extension StaticChildHostSceSynthInvokeWorkerPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint32(
-            try saved.variable("steps"), "steps")
+        let value0 = try SavedValues.uint32(try saved.variable("steps"), "steps")
         return { [self] in
             self.vSteps = value0
         }

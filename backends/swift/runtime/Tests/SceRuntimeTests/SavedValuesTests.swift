@@ -86,3 +86,86 @@ private func refusal<T>(_ read: () throws -> T) -> String? {
     #expect(refusal { try SavedValues.string(.text("éé"), "name", capacity: 3) } == "'name' holds 4 UTF-8 bytes, past the 3 it is bounded by")
     #expect(try SavedValues.string(.text("éé"), "name", capacity: 4) == "éé")
 }
+
+private enum Shade: UInt8, SavedEnumeration {
+    case light = 1
+    case dark = 2
+
+    static var savedAlias: String { "Shade" }
+
+    var declaredName: String { self == .light ? "light" : "dark" }
+
+    init?(declaredName: String) {
+        switch declaredName {
+        case "light": self = .light
+        case "dark": self = .dark
+        default: return nil
+        }
+    }
+}
+
+@Test func anEnumIsTheNameItsDocumentDeclaresAndNothingElse() throws {
+    #expect(writeJSON(SavedValues.of(Shade.dark)) == "\"dark\"")
+    #expect(try SavedValues.enumeration(.text("light"), "tone", as: Shade.self) == .light)
+    #expect(
+        refusal { try SavedValues.enumeration(.text("grey"), "tone", as: Shade.self) }
+            == "'tone' (grey) is not a variant of Shade")
+    // A number is the underlying value, which a state does not hold: a build that renumbered would read it wrong.
+    #expect(
+        refusal { try SavedValues.enumeration(.number("2"), "tone", as: Shade.self) } == "'tone' is not a text")
+}
+
+@Test func aByteStringIsItsLatin1TextAndAnyCharacterPastItIsNoByte() throws {
+    #expect(writeJSON(SavedValues.of([UInt8]([0x41, 0xE9, 0xFF]))) == "\"A\u{E9}\u{FF}\"")
+    #expect(try SavedValues.bytes(.text("A\u{E9}\u{FF}"), "blob") == [0x41, 0xE9, 0xFF])
+    #expect(try SavedValues.bytes(SavedValues.of([UInt8]([])), "blob") == [])
+    #expect(
+        refusal { try SavedValues.bytes(.text("A\u{100}"), "blob") }
+            == "'blob' holds U+0100, which is past U+00FF and so no byte")
+    #expect(
+        refusal { try SavedValues.bytes(.text("abcd"), "blob", capacity: 3) }
+            == "'blob' holds 4 bytes, past the 3 it is bounded by")
+    #expect(try SavedValues.bytes(.text("abc"), "blob", capacity: 3) == [0x61, 0x62, 0x63])
+}
+
+@Test func aValueThatMayBeAbsentIsNullOrItsPresentValue() throws {
+    #expect(writeJSON(SavedValues.optional(UInt32?.none) { SavedValues.of($0) }) == "null")
+    #expect(writeJSON(SavedValues.optional(UInt32?.some(7)) { SavedValues.of($0) }) == "7")
+    #expect(try SavedValues.optional(.null, "due") { try SavedValues.uint32($0, $1) } == nil)
+    #expect(try SavedValues.optional(.number("7"), "due") { try SavedValues.uint32($0, $1) } == 7)
+    // The present value is held to its type as anywhere: what is wrong with it names what holds it.
+    #expect(
+        refusal { try SavedValues.optional(.text("x"), "due") { try SavedValues.uint32($0, $1) } }
+            == "'due' is not a number")
+}
+
+@Test func aListIsReadBackElementByElementWithinItsBound() throws {
+    #expect(writeJSON(SavedValues.list([4 as UInt8, 2]) { SavedValues.of($0) }) == "[4,2]")
+    #expect(
+        try SavedValues.list(.array([.number("4"), .number("2")]), "picked", capacity: 2) {
+            try SavedValues.uint8($0, $1)
+        } == [4, 2])
+    #expect(
+        refusal {
+            try SavedValues.list(.array([.number("1"), .number("2"), .number("3")]), "picked", capacity: 2) {
+                try SavedValues.uint8($0, $1)
+            }
+        } == "'picked' holds 3 elements, past the 2 it is bounded by")
+    #expect(
+        refusal {
+            try SavedValues.list(.array([.number("1"), .text("x")]), "picked", capacity: 2) {
+                try SavedValues.uint8($0, $1)
+            }
+        } == "'picked[1]' is not a number")
+    #expect(
+        refusal { try SavedValues.list(.number("1"), "picked", capacity: 2) { try SavedValues.uint8($0, $1) } }
+            == "'picked' is not an array")
+}
+
+@Test func aRecordFieldIsFoundByItsIdAndAMissingOneIsRefusedByName() throws {
+    let record = SavedValues.record([(key: "id", value: .number("2")), (key: "title", value: .text("beta"))])
+    #expect(writeJSON(record) == "{\"id\":2,\"title\":\"beta\"}")
+    #expect(try SavedValues.field(record, "item", "title") == .text("beta"))
+    #expect(refusal { try SavedValues.field(record, "item", "count") } == "'item' has no field 'count'")
+    #expect(refusal { try SavedValues.field(.number("1"), "item", "id") } == "'item' is not an object")
+}

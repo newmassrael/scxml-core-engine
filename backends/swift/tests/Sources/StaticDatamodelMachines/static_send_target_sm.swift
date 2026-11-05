@@ -728,12 +728,9 @@ extension StaticSendTargetPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.string(
-            try saved.variable("route"), "route", capacity: 24)
-        let value1 = try SavedValues.uint32(
-            try saved.variable("landed"), "landed")
-        let value2 = try SavedValues.uint32(
-            try saved.variable("refused"), "refused")
+        let value0 = try SavedValues.string(try saved.variable("route"), "route", capacity: 24)
+        let value1 = try SavedValues.uint32(try saved.variable("landed"), "landed")
+        let value2 = try SavedValues.uint32(try saved.variable("refused"), "refused")
         return { [self] in
             self.vRoute = value0
             self.vLanded = value1

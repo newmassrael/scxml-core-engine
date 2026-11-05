@@ -134,6 +134,10 @@ public enum StaticDonedataViewModeEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticDonedataViewModeEnum: SavedEnumeration {
+    public static var savedAlias: String { "ViewMode" }
+}
+
 // ======================================================================
 // Policy
 // ======================================================================
@@ -546,3 +550,48 @@ public final class StaticDonedataPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticDonedataPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "0d0759aeddae60c9eb915b9c754c292935f6f65a9f8c69a23d950ddd6d8adc6d",
+            revised: "8dd92a183235e2d9c1a44309a93537d8e17e06426fd3354f2621ba63e309c2d1",
+            format2First: "35e6bdb9f8bdfe06bc168111a18d43678c65e4ae45b4e7780d761df46ff34de2",
+            format2Revised: "aa75f4a4d744b247fc26347060f6bca356dfffde8e6be6b3b4d57799f7483b93")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("count", SavedValues.of(vCount)),
+            SavedEntry("small", SavedValues.of(vSmall)),
+            SavedEntry("label", SavedValues.of(vLabel)),
+            SavedEntry("layout", SavedValues.of(vLayout)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(try saved.variable("count"), "count")
+        let value1 = try SavedValues.uint8(try saved.variable("small"), "small")
+        let value2 = try SavedValues.string(try saved.variable("label"), "label", capacity: 16)
+        let value3 = try SavedValues.enumeration(try saved.variable("layout"), "layout", as: StaticDonedataViewModeEnum.self)
+        return { [self] in
+            self.vCount = value0
+            self.vSmall = value1
+            self.vLabel = value2
+            self.vLayout = value3
+        }
+    }
+}

@@ -520,12 +520,9 @@ extension StaticWrappingCounterPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint8(
-            try saved.variable("ticks"), "ticks")
-        let value1 = try SavedValues.uint8(
-            try saved.variable("fuel"), "fuel")
-        let value2 = try SavedValues.uint32(
-            try saved.variable("refusals"), "refusals")
+        let value0 = try SavedValues.uint8(try saved.variable("ticks"), "ticks")
+        let value1 = try SavedValues.uint8(try saved.variable("fuel"), "fuel")
+        let value2 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         return { [self] in
             self.vTicks = value0
             self.vFuel = value1

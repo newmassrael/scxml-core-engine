@@ -636,3 +636,54 @@ public final class StaticBytesPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticBytesPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "fcf32d76d2b60386c38cfd8fd7745bc78c43607cdef76f053c793de0e1e93351",
+            revised: "ee9457b9f547d6f6e940839a148d86a62fc21b6f656ea74ab5d368c162cf3487",
+            format2First: "fcf32d76d2b60386c38cfd8fd7745bc78c43607cdef76f053c793de0e1e93351",
+            format2Revised: "ee9457b9f547d6f6e940839a148d86a62fc21b6f656ea74ab5d368c162cf3487")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("frame", SavedValues.of(vFrame)),
+            SavedEntry("tail", SavedValues.of(vTail)),
+            SavedEntry("size", SavedValues.of(vSize)),
+            SavedEntry("matches", SavedValues.of(vMatches)),
+            SavedEntry("misses", SavedValues.of(vMisses)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.bytes(try saved.variable("frame"), "frame", capacity: 8)
+        let value1 = try SavedValues.bytes(try saved.variable("tail"), "tail", capacity: 4)
+        let value2 = try SavedValues.uint32(try saved.variable("size"), "size")
+        let value3 = try SavedValues.uint32(try saved.variable("matches"), "matches")
+        let value4 = try SavedValues.uint32(try saved.variable("misses"), "misses")
+        let value5 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vFrame = value0
+            self.vTail = value1
+            self.vSize = value2
+            self.vMatches = value3
+            self.vMisses = value4
+            self.vErrors = value5
+        }
+    }
+}

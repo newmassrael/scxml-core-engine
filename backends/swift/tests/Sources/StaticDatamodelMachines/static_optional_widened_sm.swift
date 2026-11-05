@@ -559,3 +559,51 @@ extension Engine where Policy == StaticOptionalWidenedPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticOptionalWidenedPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "38e864a9ddfa2b05f7fccc665febabfee57f778c7e4b5c2ab35f7d7c92d210c7",
+            revised: "3ccffe0f17d5d5f88c7cc7659f03f10cab579a3feefd728f043b8703b520e696",
+            format2First: "38e864a9ddfa2b05f7fccc665febabfee57f778c7e4b5c2ab35f7d7c92d210c7",
+            format2Revised: "3ccffe0f17d5d5f88c7cc7659f03f10cab579a3feefd728f043b8703b520e696")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("entry", SavedValues.of(vEntry)),
+            SavedEntry("due", SavedValues.optional(vDue) { SavedValues.of($0) }),
+            SavedEntry("remind", SavedValues.optional(vRemind) { SavedValues.of($0) }),
+            SavedEntry("taken", SavedValues.of(vTaken)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(try saved.variable("entry"), "entry")
+        let value1 = try SavedValues.optional(try saved.variable("due"), "due") { e, w in try SavedValues.int64(e, w) }
+        let value2 = try SavedValues.optional(try saved.variable("remind"), "remind") { e, w in try SavedValues.int64(e, w) }
+        let value3 = try SavedValues.uint32(try saved.variable("taken"), "taken")
+        let value4 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vEntry = value0
+            self.vDue = value1
+            self.vRemind = value2
+            self.vTaken = value3
+            self.vRefusals = value4
+        }
+    }
+}

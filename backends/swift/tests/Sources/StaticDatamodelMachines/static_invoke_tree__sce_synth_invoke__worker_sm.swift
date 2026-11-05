@@ -141,6 +141,10 @@ public enum StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum: UInt8, CaseIterabl
     }
 }
 
+extension StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum: SavedEnumeration {
+    public static var savedAlias: String { "ViewMode" }
+}
+
 /// SCE Accepted Subset §2.15: a `record:Revised` datamodel value.
 public struct StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord: Equatable, Sendable, SceDefault {
     public var level: UInt8 = 0

@@ -128,6 +128,10 @@ public enum StaticSchemaRevisionViewModeEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticSchemaRevisionViewModeEnum: SavedEnumeration {
+    public static var savedAlias: String { "ViewMode" }
+}
+
 /// SCE Accepted Subset §2.15: a `record:Revised` datamodel value.
 public struct StaticSchemaRevisionRevisedRecord: Equatable, Sendable, SceDefault {
     public var level: UInt8 = 0

@@ -146,6 +146,10 @@ public enum StaticHostModelEnumLiftKindEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticHostModelEnumLiftKindEnum: SavedEnumeration {
+    public static var savedAlias: String { "enum_lift_kind" }
+}
+
 /// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
 public struct StaticHostModelAnswerRecord: Equatable, Sendable, SceDefault {
     public var id: UInt32 = 0
@@ -234,6 +238,10 @@ public enum StaticHostModelRefusalCodeEnum: UInt8, CaseIterable, Sendable {
         default: return nil
         }
     }
+}
+
+extension StaticHostModelRefusalCodeEnum: SavedEnumeration {
+    public static var savedAlias: String { "refusal_code" }
 }
 
 /// SCE Accepted Subset §2.15: a `record:LiftRefusal` datamodel value.

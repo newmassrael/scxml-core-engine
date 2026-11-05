@@ -187,6 +187,10 @@ public enum RecordListParentRecordCommandEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension RecordListParentRecordCommandEnum: SavedEnumeration {
+    public static var savedAlias: String { "record_command" }
+}
+
 /// SCE Accepted Subset §2.15: an `enum:record_refusal` datamodel value.
 public enum RecordListParentRecordRefusalEnum: UInt8, CaseIterable, Sendable {
     case notWriter = 1
@@ -237,6 +241,10 @@ public enum RecordListParentRecordRefusalEnum: UInt8, CaseIterable, Sendable {
         default: return nil
         }
     }
+}
+
+extension RecordListParentRecordRefusalEnum: SavedEnumeration {
+    public static var savedAlias: String { "record_refusal" }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Refused` datamodel value.

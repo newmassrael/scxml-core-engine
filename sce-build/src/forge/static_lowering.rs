@@ -14196,11 +14196,21 @@ impl StaticTarget for SwiftTarget {
     // The enum the enum document is written as, under the machine's own name for it
     // (`crate::forge::generator::swift_enum_declaration`, which the unit of the
     // document is declared by too).
+    // Its saved form is the name the enum document declares for the variant, which the type already
+    // answers (`declaredName`, `init?(declaredName:)`): the conformance names the enum's alias, which a
+    // refusal of a saved state names, and `SavedValues` writes and reads every enum by it.
     fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
-        crate::forge::generator::swift_enum_declaration(
+        let declaration = crate::forge::generator::swift_enum_declaration(
             ty,
             &format!("/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value."),
             model,
+        );
+        format!(
+            "{declaration}\n\n\
+             extension {ty}: SavedEnumeration {{\n\
+             \x20   public static var savedAlias: String {{ \"{alias}\" }}\n\
+             }}",
+            alias = filters::escape_swift(alias.to_string()),
         )
     }
     fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {

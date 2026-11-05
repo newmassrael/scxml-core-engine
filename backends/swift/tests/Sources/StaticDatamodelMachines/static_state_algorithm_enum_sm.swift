@@ -128,6 +128,10 @@ public enum StaticStateAlgorithmEnumStatusEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticStateAlgorithmEnumStatusEnum: SavedEnumeration {
+    public static var savedAlias: String { "Status" }
+}
+
 /// SCE Accepted Subset §2.15: a `record:Item` datamodel value.
 public struct StaticStateAlgorithmEnumItemRecord: Equatable, Sendable, SceDefault {
     public var id: UInt32 = 0

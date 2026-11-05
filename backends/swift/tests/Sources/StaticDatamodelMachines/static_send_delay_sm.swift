@@ -672,12 +672,9 @@ extension StaticSendDelayPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint32(
-            try saved.variable("wait"), "wait")
-        let value1 = try SavedValues.uint32(
-            try saved.variable("beats"), "beats")
-        let value2 = try SavedValues.uint32(
-            try saved.variable("refusals"), "refusals")
+        let value0 = try SavedValues.uint32(try saved.variable("wait"), "wait")
+        let value1 = try SavedValues.uint32(try saved.variable("beats"), "beats")
+        let value2 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         return { [self] in
             self.vWait = value0
             self.vBeats = value1

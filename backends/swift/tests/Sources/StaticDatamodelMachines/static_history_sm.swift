@@ -869,8 +869,7 @@ extension StaticHistoryPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint8(
-            try saved.variable("resumed"), "resumed")
+        let value0 = try SavedValues.uint8(try saved.variable("resumed"), "resumed")
         return { [self] in
             self.vResumed = value0
         }

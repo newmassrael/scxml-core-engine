@@ -5085,17 +5085,18 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
 }
 
 /// The scalar `sce:type`s the Swift runtime saves and restores a variable of (`SavedValues`): the numbers,
-/// the truth value and the bounded text. A list, a record, an enum, a byte string and a value that may be
-/// absent are not among them yet.
+/// the truth value, the bounded text and the byte string (its Latin-1 text). A list and a record are not
+/// among them yet.
 const SWIFT_SAVED_SCALARS: &[&str] = &[
     "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64",
-    "bool", "string",
+    "bool", "string", "bytes",
 ];
 
 /// The shape a Swift machine's saved state is bound to, or `None` for a machine the Swift runtime does not save
 /// yet. The generator computes the shape of every machine whose state a saved state can hold whole
 /// ([`crate::forge::static_lowering::StaticLowering::saved_shape`]); what Swift adds is what its runtime holds
-/// of that state so far: every variable a scalar of [`SWIFT_SAVED_SCALARS`], no `<invoke>` in the document,
+/// of that state so far: every variable a scalar of [`SWIFT_SAVED_SCALARS`], an enum, or one of those that may
+/// be absent (see [`swift_saves_field`]), no `<invoke>` in the document,
 /// and a machine of no product line. A machine past that is generated without the save API
 /// rather than with one that would silently drop part of its state, as the generator does for a machine whose
 /// state no backend can hold.
@@ -5114,7 +5115,15 @@ fn swift_saved_shape(
 
 /// Whether the Swift runtime saves and restores a variable of this kind.
 fn swift_saves_field(field: &crate::forge::static_lowering::StaticField) -> bool {
-    field.saved_kind == "scalar" && SWIFT_SAVED_SCALARS.contains(&field.saved_type.as_str())
+    let scalar = SWIFT_SAVED_SCALARS.contains(&field.saved_type.as_str());
+    match (field.saved_kind, field.saved_elem) {
+        ("scalar", _) => scalar,
+        ("enum", _) => true,
+        // A value that may be absent is saved as `null` or as its present value, a scalar or an enum.
+        ("optional", Some("scalar")) => scalar,
+        ("optional", Some("enum")) => true,
+        _ => false,
+    }
 }
 
 // ── Python generator ────────────────────────────────────────────

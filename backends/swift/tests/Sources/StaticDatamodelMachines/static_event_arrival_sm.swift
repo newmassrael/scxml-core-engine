@@ -458,10 +458,8 @@ extension StaticEventArrivalPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint32(
-            try saved.variable("requests"), "requests")
-        let value1 = try SavedValues.uint32(
-            try saved.variable("specials"), "specials")
+        let value0 = try SavedValues.uint32(try saved.variable("requests"), "requests")
+        let value1 = try SavedValues.uint32(try saved.variable("specials"), "specials")
         return { [self] in
             self.vRequests = value0
             self.vSpecials = value1

@@ -1116,24 +1116,15 @@ extension SyncClientPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.bool(
-            try saved.variable("byToken"), "byToken")
-        let value1 = try SavedValues.bool(
-            try saved.variable("fullListing"), "fullListing")
-        let value2 = try SavedValues.uint8(
-            try saved.variable("outcome"), "outcome")
-        let value3 = try SavedValues.int64(
-            try saved.variable("retryAt"), "retryAt")
-        let value4 = try SavedValues.uint32(
-            try saved.variable("deleted"), "deleted")
-        let value5 = try SavedValues.uint32(
-            try saved.variable("uploaded"), "uploaded")
-        let value6 = try SavedValues.uint32(
-            try saved.variable("discarded"), "discarded")
-        let value7 = try SavedValues.uint32(
-            try saved.variable("pages"), "pages")
-        let value8 = try SavedValues.uint32(
-            try saved.variable("refusals"), "refusals")
+        let value0 = try SavedValues.bool(try saved.variable("byToken"), "byToken")
+        let value1 = try SavedValues.bool(try saved.variable("fullListing"), "fullListing")
+        let value2 = try SavedValues.uint8(try saved.variable("outcome"), "outcome")
+        let value3 = try SavedValues.int64(try saved.variable("retryAt"), "retryAt")
+        let value4 = try SavedValues.uint32(try saved.variable("deleted"), "deleted")
+        let value5 = try SavedValues.uint32(try saved.variable("uploaded"), "uploaded")
+        let value6 = try SavedValues.uint32(try saved.variable("discarded"), "discarded")
+        let value7 = try SavedValues.uint32(try saved.variable("pages"), "pages")
+        let value8 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         return { [self] in
             self.vByToken = value0
             self.vFullListing = value1

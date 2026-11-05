@@ -127,6 +127,10 @@ public enum StaticEnumNumberStatusEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticEnumNumberStatusEnum: SavedEnumeration {
+    public static var savedAlias: String { "Status" }
+}
+
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
 // events whose payload a natively lowered expression reads: a tag, and one
 // `pending<Event>Payload` view per event on the policy.
@@ -662,3 +666,48 @@ extension Engine where Policy == StaticEnumNumberPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticEnumNumberPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "0f8485a669758b7a5073da4026dd97bacd7efa02082fd04b6d3328f819136dc3",
+            revised: "60b9a8563c43e410203cc6d326d4621c05c5e2e84f609a2325743588d9b77094",
+            format2First: "63ac68ae088325edeec1675143c366e81754d7ab2eb2ad55743b258844e1215c",
+            format2Revised: "fa6bfd376f19a7cee4db623937dbeb9e646051e24b0a7ce3792120145a761e8a")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("number", SavedValues.of(vNumber)),
+            SavedEntry("status", SavedValues.of(vStatus)),
+            SavedEntry("checks", SavedValues.of(vChecks)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.int64(try saved.variable("number"), "number")
+        let value1 = try SavedValues.enumeration(try saved.variable("status"), "status", as: StaticEnumNumberStatusEnum.self)
+        let value2 = try SavedValues.uint32(try saved.variable("checks"), "checks")
+        let value3 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vNumber = value0
+            self.vStatus = value1
+            self.vChecks = value2
+            self.vRefusals = value3
+        }
+    }
+}

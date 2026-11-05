@@ -673,16 +673,11 @@ extension StaticCancelExprPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.string(
-            try saved.variable("which"), "which", capacity: 8)
-        let value1 = try SavedValues.uint32(
-            try saved.variable("scale"), "scale")
-        let value2 = try SavedValues.uint32(
-            try saved.variable("a_fired"), "a_fired")
-        let value3 = try SavedValues.uint32(
-            try saved.variable("b_fired"), "b_fired")
-        let value4 = try SavedValues.uint32(
-            try saved.variable("refusals"), "refusals")
+        let value0 = try SavedValues.string(try saved.variable("which"), "which", capacity: 8)
+        let value1 = try SavedValues.uint32(try saved.variable("scale"), "scale")
+        let value2 = try SavedValues.uint32(try saved.variable("a_fired"), "a_fired")
+        let value3 = try SavedValues.uint32(try saved.variable("b_fired"), "b_fired")
+        let value4 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         return { [self] in
             self.vWhich = value0
             self.vScale = value1

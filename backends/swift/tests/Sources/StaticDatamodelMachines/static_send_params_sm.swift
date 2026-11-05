@@ -812,24 +812,15 @@ extension StaticSendParamsPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint32(
-            try saved.variable("count"), "count")
-        let value1 = try SavedValues.uint8(
-            try saved.variable("small"), "small")
-        let value2 = try SavedValues.string(
-            try saved.variable("label"), "label", capacity: 16)
-        let value3 = try SavedValues.uint32(
-            try saved.variable("total"), "total")
-        let value4 = try SavedValues.bool(
-            try saved.variable("ok"), "ok")
-        let value5 = try SavedValues.string(
-            try saved.variable("tag"), "tag", capacity: 16)
-        let value6 = try SavedValues.uint32(
-            try saved.variable("partialTotal"), "partialTotal")
-        let value7 = try SavedValues.uint8(
-            try saved.variable("partialPart"), "partialPart")
-        let value8 = try SavedValues.uint32(
-            try saved.variable("refusals"), "refusals")
+        let value0 = try SavedValues.uint32(try saved.variable("count"), "count")
+        let value1 = try SavedValues.uint8(try saved.variable("small"), "small")
+        let value2 = try SavedValues.string(try saved.variable("label"), "label", capacity: 16)
+        let value3 = try SavedValues.uint32(try saved.variable("total"), "total")
+        let value4 = try SavedValues.bool(try saved.variable("ok"), "ok")
+        let value5 = try SavedValues.string(try saved.variable("tag"), "tag", capacity: 16)
+        let value6 = try SavedValues.uint32(try saved.variable("partialTotal"), "partialTotal")
+        let value7 = try SavedValues.uint8(try saved.variable("partialPart"), "partialPart")
+        let value8 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         return { [self] in
             self.vCount = value0
             self.vSmall = value1

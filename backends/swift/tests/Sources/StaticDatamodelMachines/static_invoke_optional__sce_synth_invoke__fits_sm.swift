@@ -377,3 +377,39 @@ public final class StaticInvokeOptionalSceSynthInvokeFitsPolicy: InvocablePolicy
     public func executeTransitionContent(source: StaticInvokeOptionalSceSynthInvokeFitsState, transitionIndex: Int, engine: Engine<StaticInvokeOptionalSceSynthInvokeFitsPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeOptionalSceSynthInvokeFitsPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "09673d9c8a1b6c3f6f5398fec74ad88ce49bcfc4a0dda850fad1b194cac8f82f",
+            revised: "2621702ad47125bdac775ccb68982f4bd35a6a6477926daa0d49fd6d0a6f6385",
+            format2First: "09673d9c8a1b6c3f6f5398fec74ad88ce49bcfc4a0dda850fad1b194cac8f82f",
+            format2Revised: "2621702ad47125bdac775ccb68982f4bd35a6a6477926daa0d49fd6d0a6f6385")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("label", SavedValues.optional(vLabel) { SavedValues.of($0) }),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.optional(try saved.variable("label"), "label") { e, w in try SavedValues.string(e, w, capacity: 4) }
+        return { [self] in
+            self.vLabel = value0
+        }
+    }
+}

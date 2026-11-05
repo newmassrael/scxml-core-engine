@@ -521,12 +521,9 @@ extension StaticCounterPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint32(
-            try saved.variable("count"), "count")
-        let value1 = try SavedValues.bool(
-            try saved.variable("ready"), "ready")
-        let value2 = try SavedValues.uint32(
-            try saved.variable("step"), "step")
+        let value0 = try SavedValues.uint32(try saved.variable("count"), "count")
+        let value1 = try SavedValues.bool(try saved.variable("ready"), "ready")
+        let value2 = try SavedValues.uint32(try saved.variable("step"), "step")
         return { [self] in
             self.vCount = value0
             self.vReady = value1

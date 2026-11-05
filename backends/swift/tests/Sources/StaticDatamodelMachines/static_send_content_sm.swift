@@ -131,6 +131,10 @@ public enum StaticSendContentViewModeEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticSendContentViewModeEnum: SavedEnumeration {
+    public static var savedAlias: String { "ViewMode" }
+}
+
 /// SCE Accepted Subset §2.15: a `record:View` datamodel value.
 public struct StaticSendContentViewRecord: Equatable, Sendable, SceDefault {
     public var layout: StaticSendContentViewModeEnum = StaticSendContentViewModeEnum.allCases[0]

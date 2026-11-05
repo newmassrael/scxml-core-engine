@@ -13,10 +13,42 @@
     written and read as its `sce:type` says (`SavedValues`).
 
     Written only for a machine whose state the Swift runtime holds whole
-    (`swift_saved_shape` of the generator): every variable a number, a truth value or a bounded
-    text, and no `<invoke>` or product line in the document. What each `<history>` recorded is saved
-    and restored through the ids the document gives them.
+    (`swift_saved_shape` of the generator): every variable a number, a truth value, a bounded text,
+    a byte string or an enum, or one of those that may be absent, and no `<invoke>` or product line
+    in the document. What each `<history>` recorded is saved and restored through the ids the
+    document gives them.
 #}
+{#- How a variable is written: by `SavedValues.of`, which every scalar, byte string and enum has; a value that
+   may be absent is `null` or as its present value is written (docs/adr/0055, section 4). #}
+{%- macro saved_write(field) -%}
+{%- if field.saved_kind == 'optional' -%}
+SavedValues.optional({{ field.name }}) { SavedValues.of($0) }
+{%- else -%}
+SavedValues.of({{ field.name }})
+{%- endif -%}
+{%- endmacro %}
+{#- A present value read as its type says: an enum by its own type, a byte string and a text held to the bound
+   the machine keeps them to, anything else by the function its `sce:type` names. #}
+{%- macro saved_present(type, enumerated, value, what, bound) -%}
+{%- if enumerated -%}
+try SavedValues.enumeration({{ value }}, {{ what }}, as: {{ type }}.self)
+{%- elif type == 'bytes' -%}
+try SavedValues.bytes({{ value }}, {{ what }}{% if bound is not none %}, capacity: {{ bound }}{% endif %})
+{%- elif type == 'string' -%}
+try SavedValues.string({{ value }}, {{ what }}{% if bound is not none %}, capacity: {{ bound }}{% endif %})
+{%- else -%}
+try SavedValues.{{ type }}({{ value }}, {{ what }})
+{%- endif -%}
+{%- endmacro %}
+{%- macro saved_read(field) -%}
+{%- set value -%}try saved.variable("{{ field.id | escape_swift }}"){%- endset -%}
+{%- set what -%}"{{ field.id | escape_swift }}"{%- endset -%}
+{%- if field.saved_kind == 'optional' -%}
+try SavedValues.optional({{ value }}, {{ what }}) { e, w in {{ saved_present(field.saved_type, field.saved_elem == 'enum', 'e', 'w', field.bound) }} }
+{%- else -%}
+{{ saved_present(field.saved_type, field.saved_kind == 'enum', value, what, field.bound) }}
+{%- endif -%}
+{%- endmacro %}
 // ======================================================================
 // Saved state (docs/adr/0045)
 // ======================================================================
@@ -65,7 +97,7 @@ extension {{ machine_name }}Policy: SavedPolicy {
     public func savedVariables() -> [SavedEntry<JSONValue>] {
         [
 {% for field in static_fields %}
-            SavedEntry("{{ field.id | escape_swift }}", SavedValues.of({{ field.name }})),
+            SavedEntry("{{ field.id | escape_swift }}", {{ saved_write(field) }}),
 {% endfor %}
         ]
     }
@@ -74,8 +106,7 @@ extension {{ machine_name }}Policy: SavedPolicy {
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
 {% for field in static_fields %}
-        let value{{ loop.index0 }} = try SavedValues.{{ field.saved_type }}(
-            try saved.variable("{{ field.id | escape_swift }}"), "{{ field.id | escape_swift }}"{% if field.saved_type == 'string' %}, capacity: {{ field.bound }}{% endif %})
+        let value{{ loop.index0 }} = {{ saved_read(field) }}
 {% endfor %}
 {% if static_fields %}
         return { [self] in

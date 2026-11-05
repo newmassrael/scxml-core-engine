@@ -709,18 +709,12 @@ extension StaticWireWidePolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint64(
-            try saved.variable("low"), "low")
-        let value1 = try SavedValues.int64(
-            try saved.variable("smallLow"), "smallLow")
-        let value2 = try SavedValues.bool(
-            try saved.variable("large"), "large")
-        let value3 = try SavedValues.bool(
-            try saved.variable("negative"), "negative")
-        let value4 = try SavedValues.uint32(
-            try saved.variable("relays"), "relays")
-        let value5 = try SavedValues.uint32(
-            try saved.variable("refusals"), "refusals")
+        let value0 = try SavedValues.uint64(try saved.variable("low"), "low")
+        let value1 = try SavedValues.int64(try saved.variable("smallLow"), "smallLow")
+        let value2 = try SavedValues.bool(try saved.variable("large"), "large")
+        let value3 = try SavedValues.bool(try saved.variable("negative"), "negative")
+        let value4 = try SavedValues.uint32(try saved.variable("relays"), "relays")
+        let value5 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         return { [self] in
             self.vLow = value0
             self.vSmallLow = value1

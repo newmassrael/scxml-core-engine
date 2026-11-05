@@ -131,6 +131,10 @@ public enum StaticForgeCallsStatusEnum: UInt8, CaseIterable, Sendable {
     }
 }
 
+extension StaticForgeCallsStatusEnum: SavedEnumeration {
+    public static var savedAlias: String { "Status" }
+}
+
 /// SCE Accepted Subset §2.15: an `enum:Level` datamodel value.
 public enum StaticForgeCallsLevelEnum: UInt8, CaseIterable, Sendable {
     case light = 10
@@ -163,6 +167,10 @@ public enum StaticForgeCallsLevelEnum: UInt8, CaseIterable, Sendable {
         default: return nil
         }
     }
+}
+
+extension StaticForgeCallsLevelEnum: SavedEnumeration {
+    public static var savedAlias: String { "Level" }
 }
 
 // ======================================================================
@@ -819,3 +827,78 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticForgeCallsPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "f8c208dcc14ca056d0b9299f9ccd618ec2750f05632205a4c651d46096c9344a",
+            revised: "25698583336d197df47e95c878010ab439aed9ae9aaf753df2da2a80ee38651f",
+            format2First: "e1ceb88b42e3ad186cb83379ddd3fac6c041b4cd242dee005c43a6acf78cbcba",
+            format2Revised: "47d468eaf1347e8d4209e924eca025b0aee6cf836f6689fc2013b701e7531b53")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("gear", SavedValues.of(vGear)),
+            SavedEntry("ratio", SavedValues.of(vRatio)),
+            SavedEntry("code", SavedValues.of(vCode)),
+            SavedEntry("misses", SavedValues.of(vMisses)),
+            SavedEntry("level", SavedValues.of(vLevel)),
+            SavedEntry("offset", SavedValues.of(vOffset)),
+            SavedEntry("accepted", SavedValues.of(vAccepted)),
+            SavedEntry("rpm", SavedValues.of(vRpm)),
+            SavedEntry("limit", SavedValues.of(vLimit)),
+            SavedEntry("highs", SavedValues.of(vHighs)),
+            SavedEntry("phase", SavedValues.of(vPhase)),
+            SavedEntry("weight", SavedValues.of(vWeight)),
+            SavedEntry("customer", SavedValues.of(vCustomer)),
+            SavedEntry("known", SavedValues.of(vKnown)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint8(try saved.variable("gear"), "gear")
+        let value1 = try SavedValues.int32(try saved.variable("ratio"), "ratio")
+        let value2 = try SavedValues.int32(try saved.variable("code"), "code")
+        let value3 = try SavedValues.uint32(try saved.variable("misses"), "misses")
+        let value4 = try SavedValues.int32(try saved.variable("level"), "level")
+        let value5 = try SavedValues.int32(try saved.variable("offset"), "offset")
+        let value6 = try SavedValues.bool(try saved.variable("accepted"), "accepted")
+        let value7 = try SavedValues.uint16(try saved.variable("rpm"), "rpm")
+        let value8 = try SavedValues.float64(try saved.variable("limit"), "limit")
+        let value9 = try SavedValues.uint32(try saved.variable("highs"), "highs")
+        let value10 = try SavedValues.enumeration(try saved.variable("phase"), "phase", as: StaticForgeCallsStatusEnum.self)
+        let value11 = try SavedValues.enumeration(try saved.variable("weight"), "weight", as: StaticForgeCallsLevelEnum.self)
+        let value12 = try SavedValues.string(try saved.variable("customer"), "customer", capacity: 16)
+        let value13 = try SavedValues.bool(try saved.variable("known"), "known")
+        return { [self] in
+            self.vGear = value0
+            self.vRatio = value1
+            self.vCode = value2
+            self.vMisses = value3
+            self.vLevel = value4
+            self.vOffset = value5
+            self.vAccepted = value6
+            self.vRpm = value7
+            self.vLimit = value8
+            self.vHighs = value9
+            self.vPhase = value10
+            self.vWeight = value11
+            self.vCustomer = value12
+            self.vKnown = value13
+        }
+    }
+}
