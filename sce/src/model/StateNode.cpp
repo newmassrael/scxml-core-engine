@@ -133,21 +133,12 @@ void SCE::StateNode::setDoneDataContentExpression(const std::string &expr) {
     }
 }
 
-void SCE::StateNode::setDoneDataContentLiteral(const std::string &literal) {
-    SCE_LOG_DEBUG("Setting donedata <content> literal for {}", id_);
-    if (literal.empty()) {
-        doneData_.clearContent();
-    } else {
-        doneData_.setContentLiteral(literal);
-    }
-}
-
-void SCE::StateNode::setDoneDataContentInlineText(const std::string &text) {
+void SCE::StateNode::setDoneDataContentInlineText(const std::string &text, bool underNullDatamodel) {
     SCE_LOG_DEBUG("Setting donedata <content> in-line children for {}", id_);
     if (text.empty()) {
         doneData_.clearContent();
     } else {
-        doneData_.setContentInlineText(text);
+        doneData_.setContentInlineText(text, underNullDatamodel);
     }
 }
 

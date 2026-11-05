@@ -55,6 +55,25 @@ std::string documentSending(const std::string &content) {
 </scxml>)scxml";
 }
 
+// A session whose compound state `outer` ends at once in a `<final>` whose
+// `<donedata>` holds `content`, and halts in `received` on taking the
+// `done.state.outer` that carries it.
+std::string documentEndingWith(const std::string &content) {
+    return std::string(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="outer">
+  <state id="outer" initial="ended">
+    <final id="ended">
+      <donedata><content>)scxml") +
+           content + R"scxml(</content></donedata>
+    </final>
+    <transition event="done.state.outer" target="received"/>
+    <transition event="error" target="failed"/>
+  </state>
+  <final id="received"/>
+  <final id="failed"/>
+</scxml>)scxml";
+}
+
 }  // namespace
 
 class NullDataModelContentTakesTheInlineReadingTest : public ::testing::Test {
@@ -74,6 +93,18 @@ protected:
     /// Runs the document that sends `content` until it halts, and returns the
     /// data its `carried` event arrived with, as the JSON text it is bound as.
     std::string deliveredData(const std::string &content) {
+        return dataOfTheLastEvent(documentSending(content));
+    }
+
+    /// Runs the document whose `<donedata>` holds `content` until it halts,
+    /// and returns the data its `done.state.outer` arrived with.
+    std::string doneData(const std::string &content) {
+        return dataOfTheLastEvent(documentEndingWith(content));
+    }
+
+    /// Runs `document` until it halts in `received`, and returns the data of
+    /// the event it halted on taking, as the JSON text it is bound as.
+    std::string dataOfTheLastEvent(const std::string &document) {
         sm_ = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
 
         // §scxml-6.2: the `<send>` needs the dispatcher chain
@@ -93,7 +124,7 @@ protected:
         sm_->setEventDispatcher(
             std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(eventRaiser)));
 
-        EXPECT_TRUE(sm_->loadSCXMLFromString(documentSending(content)));
+        EXPECT_TRUE(sm_->loadSCXMLFromString(document));
         EXPECT_TRUE(sm_->start());
 
         // A top-level `<final>` halts processing, so nothing is taken after
@@ -106,9 +137,9 @@ protected:
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
-        EXPECT_FALSE(sm_->isRunning()) << "the session did not halt within 5s: `carried` never reached it";
+        EXPECT_FALSE(sm_->isRunning()) << "the session did not halt within 5s: the event never reached it";
         EXPECT_EQ(sm_->terminalState().value_or(""), "received")
-            << "the run did not end on `carried`: an error was raised while the send was made";
+            << "the run did not end on the event: an error was raised while its data was made";
         return sm_->getCurrentEventData();
     }
 
@@ -137,6 +168,25 @@ TEST_F(NullDataModelContentTakesTheInlineReadingTest, AnExpressionElsewhereIsIts
 // inside it is the document's and is not normalized away.
 TEST_F(NullDataModelContentTakesTheInlineReadingTest, MarkupTravelsAsWritten) {
     const std::string data = deliveredData("<a>b  c</a>");
+    EXPECT_EQ(data.rfind("<a", 0), 0u) << data;
+    EXPECT_NE(data.find("b  c"), std::string::npos) << data;
+}
+
+// A `<donedata>`'s children are the same construct and take the same reading:
+// the space-normalized string, where the null model's done data used to be
+// the text verbatim, line breaks and runs of spaces included.
+TEST_F(NullDataModelContentTakesTheInlineReadingTest, DoneDataTextIsItsSpaceNormalizedString) {
+    EXPECT_EQ(doneData("\n        alpha    beta\n        gamma \t delta\n      "), "\"alpha beta gamma delta\"");
+}
+
+// Nor does a `<donedata>` read an expression the null model does not have.
+TEST_F(NullDataModelContentTakesTheInlineReadingTest, DoneDataExpressionElsewhereIsItsNormalizedString) {
+    EXPECT_EQ(doneData("1  +   1"), "\"1 + 1\"");
+}
+
+// And its markup is the XML document as written, not a quoted string.
+TEST_F(NullDataModelContentTakesTheInlineReadingTest, DoneDataMarkupTravelsAsWritten) {
+    const std::string data = doneData("<a>b  c</a>");
     EXPECT_EQ(data.rfind("<a", 0), 0u) << data;
     EXPECT_NE(data.find("b  c"), std::string::npos) << data;
 }

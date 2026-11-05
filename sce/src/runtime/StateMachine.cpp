@@ -2980,8 +2980,9 @@ void StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
     //   Expression => evaluate against the datamodel.
     //   InlineText => the children, read as a `<send>`'s in-line content is
     //                 read: the expression's value, the XML as written, or
-    //                 the space-normalized string.
-    //   Literal    => children used as the content value, no evaluation.
+    //                 the space-normalized string. Under the `null` data
+    //                 model the expression step reads none, so no engine is
+    //                 asked.
     switch (doneData.getContentKind()) {
     case DoneData::ContentKind::Expression:
         SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating donedata <content expr>: '{}'", doneData.getContent());
@@ -2995,17 +2996,21 @@ void StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
             },
             &outTypedData);
         return;
-    case DoneData::ContentKind::InlineText:
+    case DoneData::ContentKind::InlineText: {
         SCE_LOG_DEBUG("Reading donedata <content> children: '{}'", doneData.getContent());
         // The Interpreter parses SCXML at run time, so the children are the
-        // author's own text; no build step could have lowered them.
+        // author's own text; no build step could have lowered them. The one
+        // reading, with the expression step answered by the document's data
+        // model, as a `<send>`'s in-line content is read
+        // (`ActionExecutorImpl::executeSendAction`).
+        const DataModelInitHelper::ExpressionReading readExpression =
+            doneData.isContentUnderNullDatamodel()
+                ? DataModelInitHelper::nullDataModelExpressionReading()
+                : DataModelInitHelper::engineExpressionReading(scriptEngine_, sessionId_);
         outEventData = DataModelInitHelper::inlineContentEventData(
-            scriptEngine_, sessionId_, ScriptSource::ecmascript(doneData.getContent()), &outTypedData);
+            readExpression, ScriptSource::ecmascript(doneData.getContent()), &outTypedData);
         return;
-    case DoneData::ContentKind::Literal:
-        SCE_LOG_DEBUG("W3C SCXML 5.5: Emitting donedata literal content: '{}'", doneData.getContent());
-        DoneDataHelper::emitContentLiteral(doneData.getContent(), outEventData, &outTypedData);
-        return;
+    }
     case DoneData::ContentKind::None:
         break;
     }

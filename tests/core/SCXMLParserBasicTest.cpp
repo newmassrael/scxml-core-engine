@@ -331,6 +331,9 @@ TEST_F(SCXMLParserBasicTest, AReusedParserReadsEachDocumentUnderItsOwnDatamodel)
     const auto doneDataKind = [](const std::shared_ptr<SCXMLModel> &model) {
         return model->findStateById("f")->getDoneData().getContentKind();
     };
+    const auto doneDataIsUnderNull = [](const std::shared_ptr<SCXMLModel> &model) {
+        return model->findStateById("f")->getDoneData().isContentUnderNullDatamodel();
+    };
     const auto sendIsUnderNull = [](const std::shared_ptr<SCXMLModel> &model) {
         const auto blocks = model->findStateById("s")->getEntryActionBlocks();
         EXPECT_EQ(blocks.size(), 1u);
@@ -342,12 +345,14 @@ TEST_F(SCXMLParserBasicTest, AReusedParserReadsEachDocumentUnderItsOwnDatamodel)
 
     auto nullModel = parser_->parseContent(document(R"(datamodel="null")"));
     ASSERT_NE(nullModel, nullptr);
-    EXPECT_EQ(doneDataKind(nullModel), DoneData::ContentKind::Literal);
+    EXPECT_EQ(doneDataKind(nullModel), DoneData::ContentKind::InlineText);
+    EXPECT_TRUE(doneDataIsUnderNull(nullModel));
     EXPECT_TRUE(sendIsUnderNull(nullModel));
 
     auto defaultModel = parser_->parseContent(document(""));
     ASSERT_NE(defaultModel, nullptr);
-    EXPECT_EQ(doneDataKind(defaultModel), DoneData::ContentKind::InlineText)
+    EXPECT_EQ(doneDataKind(defaultModel), DoneData::ContentKind::InlineText);
+    EXPECT_FALSE(doneDataIsUnderNull(defaultModel))
         << "a document naming no data model was read under the previous document's";
     EXPECT_FALSE(sendIsUnderNull(defaultModel))
         << "a document naming no data model was read under the previous document's";

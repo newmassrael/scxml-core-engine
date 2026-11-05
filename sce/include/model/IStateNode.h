@@ -98,21 +98,14 @@ public:
     virtual void setDoneDataContentExpression(const std::string &expr) = 0;
 
     /**
-     * @brief Set `<donedata><content>inline text</content>` (§scxml-5.5 literal path)
-     *
-     * Per §scxml-5.5 the children of `<content>` are used **as the content
-     * value** — no evaluation, no script engine required.
-     */
-    virtual void setDoneDataContentLiteral(const std::string &literal) = 0;
-
-    /**
-     * @brief Set `<donedata><content>children</content>` under a data model
+     * @brief Set `<donedata><content>children</content>`
      *
      * The children are read at run time as in-line content is read
-     * (`DoneData::ContentKind::InlineText`). Pass an empty string to clear
-     * any previously-set content.
+     * (`DoneData::ContentKind::InlineText`), with the expression step
+     * answered by the `null` data model when `underNullDatamodel` is true.
+     * Pass an empty string to clear any previously-set content.
      */
-    virtual void setDoneDataContentInlineText(const std::string &text) = 0;
+    virtual void setDoneDataContentInlineText(const std::string &text, bool underNullDatamodel) = 0;
 
     /**
      * @brief Add <param> element to <donedata>

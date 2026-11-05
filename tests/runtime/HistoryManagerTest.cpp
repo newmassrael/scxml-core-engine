@@ -160,19 +160,11 @@ public:
         }
     }
 
-    void setDoneDataContentLiteral(const std::string &literal) override {
-        if (literal.empty()) {
-            doneData_.clearContent();
-        } else {
-            doneData_.setContentLiteral(literal);
-        }
-    }
-
-    void setDoneDataContentInlineText(const std::string &text) override {
+    void setDoneDataContentInlineText(const std::string &text, bool underNullDatamodel) override {
         if (text.empty()) {
             doneData_.clearContent();
         } else {
-            doneData_.setContentInlineText(text);
+            doneData_.setContentInlineText(text, underNullDatamodel);
         }
     }
 

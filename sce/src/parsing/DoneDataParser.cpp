@@ -50,7 +50,7 @@ bool SCE::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &done
             hasParam = false;
         } else {
             // Keep param, remove content
-            stateNode->setDoneDataContentLiteral("");
+            stateNode->setDoneDataContentExpression("");
             hasContent = false;
         }
 
@@ -94,30 +94,26 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
     // are read as the data model reads in-line content rather than used verbatim.
     // §scxml-5.5 + 5.6 + §scxml-B-2-6:
     //   - `expr` attribute => Expression (evaluated against the datamodel).
-    //   - Children under a data model => InlineText, given the ordered
-    //     readings at run time (`DataModelInitHelper::inlineContentEventData`,
-    //     the reading a `<send>`'s in-line `<content>` gets): an expression
-    //     when they are one, so `<content>21</content>` yields number 21 for
-    //     `_event.data == 21` style guards; the XML as written when they open
-    //     with `<`; and otherwise the space-normalized string, so
+    //   - Children => InlineText, given the one reading at run time
+    //     (`DataModelInitHelper::inlineContentEventData`, the reading a
+    //     `<send>`'s in-line `<content>` gets): an expression when the data
+    //     model reads them as one, so `<content>21</content>` yields number 21
+    //     for `_event.data == 21` style guards; the XML as written when they
+    //     open with `<`; and otherwise the space-normalized string, so
     //     `<content>hello world</content>` is the string the generated
-    //     engines carry rather than an expression that can only fail.
-    //   - Children under the "null" datamodel => Literal (used **as the
-    //     content value** verbatim — no script engine needed).
+    //     engines carry rather than an expression that can only fail. The
+    //     "null" datamodel has no expressions, so under it the first step
+    //     reads none and no script engine is asked.
     if (!exprValue.empty()) {
         stateNode->setDoneDataContentExpression(exprValue);
         return true;
     } else if (!textContent.empty()) {
-        if (datamodelType_ == "null") {
-            stateNode->setDoneDataContentLiteral(textContent);
-        } else {
-            stateNode->setDoneDataContentInlineText(textContent);
-        }
+        stateNode->setDoneDataContentInlineText(textContent, datamodelType_ == "null");
         return true;
     }
 
-    // Empty <content/> — treat as literal empty value.
-    stateNode->setDoneDataContentLiteral("");
+    // Empty <content/> — no content: the done event carries no data.
+    stateNode->setDoneDataContentExpression("");
     return true;
 }
 

@@ -20,28 +20,27 @@ class IDataModelItem;
  *   - None       — `<content>` absent.
  *   - Expression — `<content expr="X"/>`; X MUST be evaluated against the
  *                  datamodel at runtime (requires a script engine).
- *   - InlineText — `<content>children</content>` under a data model; the
- *                  children take the readings in-line content takes there:
- *                  the value of the expression they are when they are one,
- *                  the XML as written when they open with `<`, and their
- *                  space-normalized text otherwise. The same reading a
- *                  `<send>`'s in-line `<content>` gets, and the one the
+ *   - InlineText — `<content>children</content>`; the children take the
+ *                  one reading in-line content has: the value of the
+ *                  expression they are when the data model reads them as
+ *                  one, the XML as written when they open with `<`, and
+ *                  their space-normalized text otherwise. The same reading
+ *                  a `<send>`'s in-line `<content>` gets, and the one the
  *                  code generator's `DoneDataContent::InlineText` names.
- *   - Literal    — `<content>inline text</content>` under the `null` data
- *                  model; per §scxml-5.5 the children are used **as the
- *                  content value** — no evaluation, no script engine
- *                  required.
+ *                  Under the `null` data model, which has no expressions,
+ *                  the first step reads none
+ *                  (`DataModelInitHelper::nullDataModelExpressionReading`),
+ *                  so no script engine is asked.
  *
- * Collapsing the two into a single string was a spec misreading: the
- * literal path was silently routed through `evaluateExpression` which
- * forced a script engine even when the document only needed to emit a
- * fixed verdict payload. Reading in-line children as an Expression was the
- * same misreading one rung down: `<content>hello world</content>` could
- * only fail to evaluate, where the generated engines carry the string.
+ * Reading in-line children as an Expression was a spec misreading:
+ * `<content>hello world</content>` could only fail to evaluate, where the
+ * generated engines carry the string. A separate verbatim reading under the
+ * `null` data model was the same misreading the other way: the text went
+ * unnormalized where every generated machine normalizes it.
  */
 class DoneData {
 public:
-    enum class ContentKind { None, Expression, InlineText, Literal };
+    enum class ContentKind { None, Expression, InlineText };
 
     DoneData() = default;
     ~DoneData() = default;
@@ -50,29 +49,32 @@ public:
     void setContentExpression(const std::string &expr) {
         content_ = expr;
         contentKind_ = ContentKind::Expression;
+        contentUnderNull_ = false;
     }
 
-    /// `<content>children</content>` under a data model — read at run time
-    /// as in-line content is read (see `ContentKind::InlineText`).
-    void setContentInlineText(const std::string &text) {
+    /// `<content>children</content>` — read at run time as in-line content is
+    /// read (see `ContentKind::InlineText`), with the expression step answered
+    /// by the `null` data model when `underNullDatamodel` is true.
+    void setContentInlineText(const std::string &text, bool underNullDatamodel) {
         content_ = text;
         contentKind_ = ContentKind::InlineText;
+        contentUnderNull_ = underNullDatamodel;
     }
 
-    /// §scxml-5.5: `<content>inline text</content>` — children are the value.
-    void setContentLiteral(const std::string &literal) {
-        content_ = literal;
-        contentKind_ = ContentKind::Literal;
+    /// Whether in-line children are read under the `null` data model.
+    bool isContentUnderNullDatamodel() const {
+        return contentUnderNull_;
     }
 
     /// Clear content (used by XOR-resolution in `DoneDataParser`).
     void clearContent() {
         content_.clear();
         contentKind_ = ContentKind::None;
+        contentUnderNull_ = false;
     }
 
-    /// Raw payload (expression source, in-line children or literal text,
-    /// depending on kind).
+    /// Raw payload (expression source or in-line children, depending on
+    /// kind).
     const std::string &getContent() const {
         return content_;
     }
@@ -105,6 +107,7 @@ private:
     std::string content_;
     std::vector<std::pair<std::string, std::string>> params_;
     ContentKind contentKind_ = ContentKind::None;
+    bool contentUnderNull_ = false;
 };
 
 }  // namespace SCE
