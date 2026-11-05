@@ -121,8 +121,8 @@ type Engine[S comparable, E comparable] struct {
 	// treeInvokers is what runs the host's own `<invoke type>`s for this session,
 	// and for every other session of the tree it is the root of: the one registry
 	// a parent hands each child it starts or resumes (docs/adr/0045), with the
-	// tree's directory of inboxes. Made with the engine; a child's is replaced by
-	// its parent's (AdoptHostInvokers). See tree.
+	// tree's directory of inboxes. Made by NewEngine, or on first use for a zero
+	// value; a child's is replaced by its parent's (AdoptHostInvokers). See tree.
 	treeInvokers *TreeInvokers
 
 	// enteredAs is the session id this session is entered under in its tree's

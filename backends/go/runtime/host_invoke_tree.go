@@ -20,10 +20,11 @@ import "fmt"
 
 // TreeInvokers is what every session of one tree shares: the invokers a host
 // registered for the types it serves, and the directory of the tree's sessions'
-// inboxes with the tree's one waker (sessionDirectory). Every engine is made with
-// one, and a parent hands its own to each child it starts or resumes, so the
-// tree's is the root's. Opaque: a host registers through Engine.RegisterInvoker
-// and posts through Engine.Inbox, and the generated parent only passes it on.
+// inboxes with the tree's one waker (sessionDirectory). Every engine has one
+// (Engine.tree), and a parent hands its own to each child it starts or resumes,
+// so the tree's is the root's. Opaque: a host registers through
+// Engine.RegisterInvoker and posts through Engine.Inbox, and the generated
+// parent only passes it on.
 type TreeInvokers struct {
 	// handlers is the owner's.
 	handlers map[string]HostInvokeHandler
@@ -40,8 +41,16 @@ func newTreeInvokers() *TreeInvokers {
 	}
 }
 
-// tree is what this session shares with the rest of its tree.
+// tree is what this session shares with the rest of its tree. NewEngine makes
+// it; an engine that is a zero value makes it here, when it is first used, and
+// its inbox, when it has one, joins its directory.
 func (e *Engine[S, E]) tree() *TreeInvokers {
+	if e.treeInvokers == nil {
+		e.treeInvokers = newTreeInvokers()
+		if e.inbox != nil {
+			e.inbox.joinDirectory(e.treeInvokers.directory)
+		}
+	}
 	return e.treeInvokers
 }
 
@@ -141,7 +150,9 @@ func (e *Engine[S, E]) ShareHostInvokersWith(child HostInvokeTree) {
 func (e *Engine[S, E]) AdoptHostInvokers(invokers *TreeInvokers) {
 	e.leaveDirectory()
 	e.treeInvokers = invokers
-	e.inbox.joinDirectory(invokers.directory)
+	if e.inbox != nil {
+		e.inbox.joinDirectory(invokers.directory)
+	}
 	if e.isRunning {
 		e.enterDirectory()
 	}

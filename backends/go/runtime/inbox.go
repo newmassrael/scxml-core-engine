@@ -265,11 +265,12 @@ func (d *sessionDirectory) wake() {
 // enterDirectory enters this session in its tree's directory under its session
 // id, so a post naming it reaches its inbox: when the engine is made, when its
 // run starts, and when a session whose run is going joins a tree. A session with
-// no id is not entered.
+// no id is not entered, nor is an engine that has no inbox (a zero value, which
+// NewEngine did not make).
 func (e *Engine[S, E]) enterDirectory() {
 	e.leaveDirectory()
 	id := e.sessionID()
-	if id == "" {
+	if id == "" || e.inbox == nil {
 		return
 	}
 	e.tree().directory.enter(id, e.inbox)
