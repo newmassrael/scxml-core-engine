@@ -418,3 +418,107 @@ fn a_restore_that_lists_a_deadline_is_refused_by_a_machine_with_no_queue() {
         "{refusal}"
     );
 }
+
+// ──────────────────────────────────────────────
+// Which row of the transition table a transition is (docs/adr/0089)
+//
+// `running` holds two written transitions, so the second of them is the one
+// whose position in its state (1) differs both from its number in the tables
+// (2) and from the position every first transition has (0).
+// ──────────────────────────────────────────────
+
+#[test]
+fn a_written_transition_is_named_by_its_source_and_its_place_in_it() {
+    let tables = HwPolicy::TABLES;
+    assert_eq!(
+        tables.position_in_source(STOPPED_PLAY),
+        Some((StateId(0), 0))
+    );
+    assert_eq!(
+        tables.position_in_source(RUNNING_STOP),
+        Some((StateId(1), 0))
+    );
+    assert_eq!(
+        tables.position_in_source(RUNNING_END),
+        Some((StateId(1), 1)),
+        "the second transition of `running` is its row 1, not the tables' number 2"
+    );
+    assert_eq!(
+        tables.position_in_source(TransitionId(3)),
+        None,
+        "the document's initial transition has no source and no row"
+    );
+}
+
+#[cfg(feature = "transition-observer")]
+mod transition_observer {
+    use super::{HwEvent, HwPolicy, HwState};
+    use sce_rust_runtime::{Engine, TransitionTaken};
+    use std::sync::{Arc, Mutex};
+
+    type Seen = Arc<Mutex<Vec<(HwState, u32)>>>;
+
+    /// An engine whose observer keeps each pair it is told in `seen`.
+    fn observed(seen: &Seen) -> Engine<HwPolicy> {
+        let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
+        let sink = Arc::clone(seen);
+        engine.set_transition_observer(move |taken: TransitionTaken<HwState>| {
+            sink.lock()
+                .expect("the observer's list is not poisoned")
+                .push((taken.source, taken.index));
+        });
+        engine
+    }
+
+    fn drive(engine: &mut Engine<HwPolicy>) {
+        engine.initialize();
+        for event in [HwEvent::Play, HwEvent::Stop, HwEvent::Play, HwEvent::End] {
+            engine.process_event(event);
+        }
+    }
+
+    #[test]
+    fn the_observer_is_told_each_transition_by_its_row_in_the_order_taken() {
+        let seen = Seen::default();
+        let mut engine = observed(&seen);
+        drive(&mut engine);
+
+        assert_eq!(engine.terminal_state(), Some(HwState::Done));
+        assert_eq!(
+            *seen.lock().expect("not poisoned"),
+            vec![
+                (HwState::Stopped, 0),
+                (HwState::Running, 0),
+                (HwState::Stopped, 0),
+                (HwState::Running, 1),
+            ],
+            "`end` is the second transition of `running`, its row 1"
+        );
+    }
+
+    #[test]
+    fn an_unmatched_event_tells_the_observer_nothing() {
+        let seen = Seen::default();
+        let mut engine = observed(&seen);
+        engine.initialize();
+        engine.process_event(HwEvent::Stop);
+
+        assert_eq!(engine.get_current_state(), HwState::Stopped);
+        assert!(seen.lock().expect("not poisoned").is_empty());
+    }
+
+    #[test]
+    fn a_cleared_observer_is_told_nothing_and_the_run_is_the_same() {
+        let seen = Seen::default();
+        let mut engine = observed(&seen);
+        engine.clear_transition_observer();
+        drive(&mut engine);
+
+        let mut plain = Engine::<HwPolicy>::new(HwPolicy::new());
+        drive(&mut plain);
+
+        assert!(seen.lock().expect("not poisoned").is_empty());
+        assert_eq!(engine.terminal_state(), Some(HwState::Done));
+        assert_eq!(engine.terminal_state(), plain.terminal_state());
+    }
+}

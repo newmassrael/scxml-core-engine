@@ -1153,6 +1153,12 @@ pub struct Engine<P: StatePolicy> {
     /// drain already running is that drain, so the flag turns the second one
     /// into nothing rather than into a drain inside a drain.
     pub(crate) draining_inbox: bool,
+    /// What [`set_transition_observer`](Engine::set_transition_observer) set,
+    /// told each transition the engine takes (docs/adr/0089); `None` until a
+    /// host sets one. Absent from a build without the feature, so such a build
+    /// carries neither the field nor the check.
+    #[cfg(feature = "transition-observer")]
+    pub(crate) transition_observer: Option<crate::transition_observer::Observer<P::State>>,
 }
 
 /// Every field of a new [`Engine`] and the value it starts at, handed to
@@ -1203,6 +1209,8 @@ macro_rules! engine_initial_fields {
             tree_inboxes: crate::inbox::TreeInboxes::default(),
             attached_inbox: None,
             draining_inbox: false,
+            #[cfg(feature = "transition-observer")]
+            transition_observer: None,
         }
     };
 }
@@ -3759,6 +3767,55 @@ impl<P: StatePolicy> Engine<P> {
         self.completion_callback = Some(Box::new(callback));
     }
 
+    /// Tell `observer` each transition this engine takes from now on, by the
+    /// row of its emitted transition table: its source state and its position
+    /// among that state's own transitions in document order (docs/adr/0089).
+    ///
+    /// The observer is told after the selection and before the microstep's
+    /// first exit, each transition of the optimal enabled set once and in
+    /// selection order, so a run's set of pairs is the set of rows it took. It
+    /// reads and is asked nothing: a machine with one set takes the same
+    /// transitions as one without. It runs on the thread that drives the
+    /// engine, inside the macrostep; being `'static`, it cannot hold the engine
+    /// it observes, and a panic in it unwinds out of the call that drove the
+    /// engine. Set it before [`initialize`](Self::initialize) to be told the
+    /// transitions the first macrostep takes.
+    ///
+    /// The bare-metal profile takes a `fn` pointer of the same signature, which
+    /// this form accepts too.
+    #[cfg(all(feature = "transition-observer", feature = "std"))]
+    pub fn set_transition_observer<F>(&mut self, observer: F)
+    where
+        F: FnMut(crate::transition_observer::TransitionTaken<P::State>) + Send + 'static,
+    {
+        self.transition_observer = Some(Box::new(observer));
+    }
+
+    /// Tell `observer` each transition this engine takes from now on, by the
+    /// row of its emitted transition table: its source state and its position
+    /// among that state's own transitions in document order (docs/adr/0089).
+    ///
+    /// The observer is told after the selection and before the microstep's
+    /// first exit, each transition of the optimal enabled set once and in
+    /// selection order. The bare-metal profile has no allocator to box a
+    /// closure in, so it is a `fn` pointer; what it keeps across calls it keeps
+    /// in storage of its own. Set it before [`initialize`](Self::initialize) to
+    /// be told the transitions the first macrostep takes.
+    #[cfg(all(feature = "transition-observer", not(feature = "std")))]
+    pub fn set_transition_observer(
+        &mut self,
+        observer: fn(crate::transition_observer::TransitionTaken<P::State>),
+    ) {
+        self.transition_observer = Some(observer);
+    }
+
+    /// Stop telling an observer anything; the engine is then as it was before
+    /// one was set (docs/adr/0089).
+    #[cfg(feature = "transition-observer")]
+    pub fn clear_transition_observer(&mut self) {
+        self.transition_observer = None;
+    }
+
     /// §scxml-C-2: Register an HTTP send dispatcher callback.
     ///
     /// The callback receives an [`HttpSendRequest`] and returns an optional
@@ -5669,6 +5726,10 @@ trait MainLoop {
     fn start_pending_invokes(&mut self);
     /// Apply what other threads posted to the engine's inbox (docs/adr/0084).
     fn drain_inbox(&mut self);
+    /// Tell the transition observer, if one is set, each transition of
+    /// `enabled` by its row of the emitted transition table (docs/adr/0089).
+    #[cfg(feature = "transition-observer")]
+    fn observe_transitions(&mut self, enabled: &[TransitionId]);
 }
 
 impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
@@ -5727,6 +5788,23 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
 
     fn drain_inbox(&mut self) {
         self.engine.drain_inbox();
+    }
+
+    #[cfg(feature = "transition-observer")]
+    fn observe_transitions(&mut self, enabled: &[TransitionId]) {
+        let Some(observer) = self.engine.transition_observer.as_mut() else {
+            return;
+        };
+        for &transition in enabled {
+            // The selection returns written transitions only, and every one of
+            // them has a source; a row without one names nothing to tell.
+            if let Some((source, index)) = P::TABLES.position_in_source(transition) {
+                observer(crate::transition_observer::TransitionTaken {
+                    source: P::state_of(source),
+                    index,
+                });
+            }
+        }
     }
 }
 
@@ -6008,6 +6086,10 @@ impl Turn<'_> {
     /// Appendix D's microstep over the enabled set, and the current state it
     /// leaves the machine in.
     fn take_microstep(&mut self) {
+        // docs/adr/0089: the selected set, before the first exit, each
+        // transition once and in selection order, as the Python engine tells it.
+        #[cfg(feature = "transition-observer")]
+        self.host.observe_transitions(&self.enabled);
         let entered = microstep::microstep(
             self.tables,
             self.host.behaviour(),

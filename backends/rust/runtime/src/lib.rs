@@ -79,6 +79,10 @@
 //!   accessors that read it (`truncated_macrosteps` and its siblings). The
 //!   bound it reports on is in every build; a bare-metal crate that reads the
 //!   report asks for this feature.
+//! - `transition-observer`: `Engine::set_transition_observer`, which tells a
+//!   host each transition the engine takes by the row of its emitted
+//!   transition table (docs/adr/0089). Without it the engine holds no field
+//!   and makes no call for it.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(clippy::undocumented_unsafe_blocks)]
@@ -490,6 +494,9 @@ pub mod scheduler_storage;
 /// materialises.
 #[cfg(feature = "std")]
 pub mod scripting;
+// Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
+#[cfg(feature = "transition-observer")]
+pub mod transition_observer;
 
 // Public re-exports — the primary API surface
 
@@ -570,3 +577,7 @@ pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
 pub use scheduler_storage::{NoDelayedSends, SchedulerStorage};
 #[cfg(feature = "std")]
 pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};
+/// docs/adr/0089: what the observer `Engine::set_transition_observer` takes is
+/// told, named at the crate root beside the engine it observes.
+#[cfg(feature = "transition-observer")]
+pub use transition_observer::TransitionTaken;

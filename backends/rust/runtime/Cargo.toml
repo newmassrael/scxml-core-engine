@@ -97,6 +97,21 @@ test-clock = []
 # so `release_max_level_off` bought them exactly zero bytes.
 macrostep-diagnostics = []
 
+# A read-only observer of each transition the engine takes, told the transition
+# by the pair the emitted transition table names its rows by: its source state
+# and its position among that state's own transitions in document order
+# (docs/adr/0089). A run's set of rows is then the table's coverage, measured
+# rather than predicted.
+#
+# It only adds (docs/adr/0053). Without it the engine has no field and no call
+# for an observer, so its code is what it was before the feature existed; with
+# it and no observer set, each microstep checks one `Option`. The observer is any
+# `FnMut + Send` closure in the `std` profile and a `fn` pointer in the
+# bare-metal one, and `set_transition_observer` takes both forms where `std` is
+# on, so a bare-metal crate that names it still compiles in a build that unifies
+# `std` in.
+transition-observer = []
+
 [dependencies]
 log = { workspace = true }
 # `thiserror` is consumed only inside `pub mod scripting` (gated to

@@ -577,6 +577,27 @@ impl DocumentTables {
         }
     }
 
+    /// A written transition as the emitted transition table names its row: its
+    /// source, and its position among the source's own transitions in document
+    /// order (the row's `index`, docs/SCE_TRANSITION_TABLE.md).
+    ///
+    /// The written transitions are the first rows, grouped by source in state
+    /// order and within a source in the order they are written (the module
+    /// documentation), so the position is the transition's number less the
+    /// number of the first row with the same source, and no table of first rows
+    /// is carried for it. `None` for a row with no source, which is the
+    /// document's initial transition. Asked of a transition the selection
+    /// returned, which is always a written one; for a compound state's initial
+    /// transition or a history's default the answer means nothing.
+    pub fn position_in_source(&self, transition: TransitionId) -> Option<(StateId, u32)> {
+        let source = self.transition(transition).source()?;
+        let first = self.transitions[..transition.index()]
+            .iter()
+            .rposition(|row| row.source() != Some(source))
+            .map_or(0, |other| other + 1);
+        Some((source, (transition.index() - first) as u32))
+    }
+
     /// Whether `event` is an `error.*` event ([`DocumentTables::error_events`]).
     #[inline]
     pub fn is_error_event(&self, event: EventId) -> bool {
