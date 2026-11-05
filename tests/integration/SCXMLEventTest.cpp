@@ -737,8 +737,10 @@ TEST_F(SCXMLEventTest, W3C_Test178_NamelistWithDuplicateParams) {
     constexpr size_t EXPECTED_PARAM_COUNT = 2;
 
     // Setup: Create variables in datamodel
-    ScriptEngineProvider::getScriptEngine().setVariable(sessionId_, VAR1_NAME, VAR1_VALUE).get();
-    ScriptEngineProvider::getScriptEngine().setVariable(sessionId_, VAR2_NAME, VAR2_VALUE).get();
+    ASSERT_TRUE(
+        ScriptEngineProvider::getScriptEngine().setVariable(sessionId_, VAR1_NAME, VAR1_VALUE).get().isSuccess());
+    ASSERT_TRUE(
+        ScriptEngineProvider::getScriptEngine().setVariable(sessionId_, VAR2_NAME, VAR2_VALUE).get().isSuccess());
 
     auto sendAction = std::make_shared<SendAction>(EVENT_NAME, "test178_namelist_send");
     sendAction->setTarget("#_internal");
