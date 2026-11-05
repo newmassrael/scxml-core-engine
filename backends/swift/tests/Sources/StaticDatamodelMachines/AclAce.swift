@@ -28,7 +28,7 @@ public enum AclAce {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:acl_ace:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"principal\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"privilege\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"principal\",\"privilege\"],\"type\":\"object\",\"x-sce-source-hash\":\"c59281ae7be4758cbffb01ac828a80a4489cab0ae77d7577e991e823091b27bc\"}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:acl_ace:1\",\"x-sce-source-hash\":\"c59281ae7be4758cbffb01ac828a80a4489cab0ae77d7577e991e823091b27bc\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"principal\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"privilege\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"principal\",\"privilege\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,

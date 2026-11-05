@@ -34,7 +34,7 @@ public enum ClockZoneResult {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:clock_zone_result:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"error\":{\"maxLength\":24,\"type\":\"string\",\"x-sce-max-bytes\":24},\"utc_offset_s\":{\"maximum\":2147483647,\"minimum\":-2147483648,\"type\":\"integer\"},\"zone_id\":{\"maxLength\":64,\"type\":\"string\",\"x-sce-max-bytes\":64}},\"required\":[\"error\",\"utc_offset_s\",\"zone_id\"],\"type\":\"object\",\"x-sce-source-hash\":\"1f01cd741ca0d625188a4b5d3fc338154b34cfdf32194edda139c3bc09e0016b\"}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:clock_zone_result:1\",\"x-sce-source-hash\":\"1f01cd741ca0d625188a4b5d3fc338154b34cfdf32194edda139c3bc09e0016b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"zone_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"utc_offset_s\":{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647}},\"required\":[\"error\",\"zone_id\",\"utc_offset_s\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,
