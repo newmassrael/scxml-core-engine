@@ -228,14 +228,14 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'seen' with expr
         try {
-            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
             engine.setVariable(sid, "seen", initResult_seen)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'token' with expr
         try {
-            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"child\"", "'child'"))
+            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'child'"))
             engine.setVariable(sid, "token", initResult_token)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
@@ -437,8 +437,8 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
     // report's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReport(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(seen == \"parent\")", "seen === 'parent'")) -> TransitionsPart0.transitionReportAt0
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(seen == \"child\")", "seen === 'child'")) -> TransitionsPart0.transitionReportAt1
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'parent'")) -> TransitionsPart0.transitionReportAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'child'")) -> TransitionsPart0.transitionReportAt1
         event == null -> TransitionsPart0.transitionReportAt2
         else -> null
     }

@@ -454,7 +454,7 @@ class Test338StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test338State, event: Test338Event?): EnabledTransition<Test338State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(Var1 == Var2)", "Var1 === Var2")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 === Var2")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -543,7 +543,7 @@ class Test338StateMachine(
                 // idlocation, through the assignment `<assign>` makes — a member
                 // path lands, and a location that cannot take the id raises
                 // error.execution and the invocation is never deferred.
-                if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), generatedInvokeId, "<invoke>")) return@run
+                if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("Var1"), generatedInvokeId, "<invoke>")) return@run
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = adoptChild(Test338SceSynthInvokeInvoke0StateMachine(), generatedInvokeId)
@@ -614,7 +614,7 @@ class Test338StateMachine(
                 // SCE-MAP: test338.scxml:27 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.invokeid", "_event.invokeid"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.invokeid"))) {
                 return
             }
     }

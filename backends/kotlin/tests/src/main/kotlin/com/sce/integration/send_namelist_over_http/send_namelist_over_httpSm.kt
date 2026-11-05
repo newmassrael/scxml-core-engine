@@ -314,21 +314,21 @@ class SendNamelistOverHttpStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("2"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'echoed' with expr
         try {
-            val initResult_echoed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_echoed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "echoed", initResult_echoed)
         } catch (e: Exception) {
             raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='echoed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sawNamelistError' with expr
         try {
-            val initResult_sawNamelistError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_sawNamelistError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "sawNamelistError", initResult_sawNamelistError)
         } catch (e: Exception) {
             raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='sawNamelistError'> expr failed to evaluate")
@@ -534,7 +534,7 @@ class SendNamelistOverHttpStateMachine(
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfDiscardPhase(state: SendNamelistOverHttpState, event: SendNamelistOverHttpEvent?): EnabledTransition<SendNamelistOverHttpState, HistoryId>? = when {
         event is SendNamelistOverHttpEvent.Error.Execution -> TransitionsPart0.transitionDiscardPhaseAt0
         event is SendNamelistOverHttpEvent.ShouldNotArrive -> TransitionsPart0.transitionDiscardPhaseAt1
-        event is SendNamelistOverHttpEvent.TimeoutDiscard && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawNamelistError ~= 1)", "sawNamelistError !== 1")) -> TransitionsPart0.transitionDiscardPhaseAt2
+        event is SendNamelistOverHttpEvent.TimeoutDiscard && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawNamelistError !== 1")) -> TransitionsPart0.transitionDiscardPhaseAt2
         event is SendNamelistOverHttpEvent.TimeoutDiscard -> TransitionsPart0.transitionDiscardPhaseAt3
         else -> null
     }
@@ -550,7 +550,7 @@ class SendNamelistOverHttpStateMachine(
 
     // mapVerdict's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfMapVerdict(state: SendNamelistOverHttpState, event: SendNamelistOverHttpEvent?): EnabledTransition<SendNamelistOverHttpState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(echoed, 2)", "echoed == 2")) -> TransitionsPart0.transitionMapVerdictAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("echoed == 2")) -> TransitionsPart0.transitionMapVerdictAt0
         event == null -> TransitionsPart0.transitionMapVerdictAt1
         else -> null
     }
@@ -600,7 +600,7 @@ class SendNamelistOverHttpStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
                 raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_3")
                 return@send true
@@ -706,7 +706,7 @@ class SendNamelistOverHttpStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
                 raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
@@ -851,7 +851,7 @@ class SendNamelistOverHttpStateMachine(
                 // SCE-MAP: send_namelist_over_http.scxml:106 :: discardPhase :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sawNamelistError", "sawNamelistError"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sawNamelistError"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return
             }
     }
@@ -873,7 +873,7 @@ class SendNamelistOverHttpStateMachine(
                 // SCE-MAP: send_namelist_over_http.scxml:82 :: mapPhase :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("echoed", "echoed"), com.sce.runtime.ScriptSource.lua("_event.data.Var1", "_event.data.Var1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("echoed"), com.sce.runtime.ScriptSource.ecmascript("_event.data.Var1"))) {
                 return
             }
     }

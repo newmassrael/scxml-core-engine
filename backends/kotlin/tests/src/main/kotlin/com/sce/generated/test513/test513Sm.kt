@@ -413,7 +413,7 @@ class Test513StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\"", "\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\""))?.toString() ?: ""))
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\""))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test513Event.Error.Execution, "<log> expr failed to evaluate")
@@ -437,7 +437,7 @@ class Test513StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\"", "\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\""))?.toString() ?: ""))
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\""))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test513Event.Error.Execution, "<log> expr failed to evaluate")
@@ -476,7 +476,7 @@ class Test513StateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
                 raisePlatformError(Test513Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
@@ -568,7 +568,7 @@ class Test513StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Test 513: Received HTTP event - server responded with 200 OK\"", "\"Test 513: Received HTTP event - server responded with 200 OK\""))?.toString() ?: ""))
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("\"Test 513: Received HTTP event - server responded with 200 OK\""))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test513Event.Error.Execution, "<log> expr failed to evaluate")
@@ -587,7 +587,7 @@ class Test513StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Test 513: Timeout - no HTTP event received\"", "\"Test 513: Timeout - no HTTP event received\""))?.toString() ?: ""))
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("\"Test 513: Timeout - no HTTP event received\""))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test513Event.Error.Execution, "<log> expr failed to evaluate")

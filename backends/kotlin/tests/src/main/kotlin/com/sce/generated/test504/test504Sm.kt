@@ -428,35 +428,35 @@ class Test504StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test504Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test504Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var3' with expr
         try {
-            val initResult_Var3 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_Var3 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var3", initResult_Var3)
         } catch (e: Exception) {
             raisePlatformError(Test504Event.Error.Execution, "<data id='Var3'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var4' with expr
         try {
-            val initResult_Var4 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_Var4 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var4", initResult_Var4)
         } catch (e: Exception) {
             raisePlatformError(Test504Event.Error.Execution, "<data id='Var4'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var5' with expr
         try {
-            val initResult_Var5 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_Var5 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var5", initResult_Var5)
         } catch (e: Exception) {
             raisePlatformError(Test504Event.Error.Execution, "<data id='Var5'> expr failed to evaluate")
@@ -664,7 +664,7 @@ class Test504StateMachine(
     // p's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
         event is Test504Event.Foo -> TransitionsPart0.transitionPAt0
-        event is Test504Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var4, 1)", "Var4 == 1")) -> TransitionsPart0.transitionPAt1
+        event is Test504Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4 == 1")) -> TransitionsPart0.transitionPAt1
         event is Test504Event.Bar -> TransitionsPart0.transitionPAt2
         else -> null
     }
@@ -679,7 +679,7 @@ class Test504StateMachine(
 
     // s3's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionsPart0.transitionS3At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionsPart0.transitionS3At0
         event == null -> TransitionsPart0.transitionS3At1
         else -> null
     }
@@ -687,7 +687,7 @@ class Test504StateMachine(
 
     // s4's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS4(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 2)", "Var2 == 2")) -> TransitionsPart0.transitionS4At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 2")) -> TransitionsPart0.transitionS4At0
         event == null -> TransitionsPart0.transitionS4At1
         else -> null
     }
@@ -695,7 +695,7 @@ class Test504StateMachine(
 
     // s5's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS5(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var3, 2)", "Var3 == 2")) -> TransitionsPart0.transitionS5At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == 2")) -> TransitionsPart0.transitionS5At0
         event == null -> TransitionsPart0.transitionS5At1
         else -> null
     }
@@ -703,7 +703,7 @@ class Test504StateMachine(
 
     // s6's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS6(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var5, 1)", "Var5 == 1")) -> TransitionsPart0.transitionS6At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var5 == 1")) -> TransitionsPart0.transitionS6At0
         event == null -> TransitionsPart0.transitionS6At1
         else -> null
     }
@@ -815,7 +815,7 @@ class Test504StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
                 return@run
             }
                 }
@@ -831,7 +831,7 @@ class Test504StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("Var2 + 1"))) {
                 return@run
             }
                 }
@@ -843,7 +843,7 @@ class Test504StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var3", "Var3"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var3, 1)", "Var3 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var3"), com.sce.runtime.ScriptSource.ecmascript("Var3 + 1"))) {
                 return@run
             }
                 }
@@ -859,7 +859,7 @@ class Test504StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var5", "Var5"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var5, 1)", "Var5 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var5"), com.sce.runtime.ScriptSource.ecmascript("Var5 + 1"))) {
                 return@run
             }
                 }
@@ -910,7 +910,7 @@ class Test504StateMachine(
                 // SCE-MAP: test504.scxml:31 :: p :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var4", "Var4"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var4, 1)", "Var4 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var4"), com.sce.runtime.ScriptSource.ecmascript("Var4 + 1"))) {
                 return
             }
     }

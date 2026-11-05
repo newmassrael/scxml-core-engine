@@ -190,7 +190,7 @@ class BareStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'nowhere' with expr
         try {
-            val initResult_nowhere = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            val initResult_nowhere = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
             engine.setVariable(sid, "nowhere", initResult_nowhere)
         } catch (e: Exception) {
             raisePlatformError(BareEvent.Error.Execution, "<data id='nowhere'> expr failed to evaluate")

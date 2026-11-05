@@ -204,7 +204,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'seen' with expr
         try {
-            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
             engine.setVariable(sid, "seen", initResult_seen)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
@@ -406,7 +406,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
 
     // report's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReport(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(seen == \"sole\")", "seen === 'sole'")) -> TransitionsPart0.transitionReportAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'sole'")) -> TransitionsPart0.transitionReportAt0
         event == null -> TransitionsPart0.transitionReportAt1
         else -> null
     }

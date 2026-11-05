@@ -906,17 +906,15 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 	// W3C SCXML 6.2: send id="__send_3"
 	{
 	{
-		// W3C SCXML B.2: inline text takes the ordered readings, decided by
-		// the same filter inline `<data>` and `<donedata>` text goes
-		// through — see `rust/actions/send.rs.jinja2` for what reading it
-		// at run time instead did.
-		// The reading was decided at codegen time; the VALUE is produced
-		// here, at send time, and serialized so the far end parses.
-		p.ensureScriptEngine()
-		eventDataStr := ""
-		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `10`); contentErr == nil {
-			eventDataStr = sce.ScriptValueToJSON(contentVal)
-		}
+		// W3C SCXML B.2: inline text takes the ordered readings the data
+		// model gives it, decided at codegen time by the one answer every
+		// backend reads (`inline_content_reading`) — see
+		// `rust/actions/send.rs.jinja2` for what reading it at run time
+		// instead did.
+		// A value the text fixes on its own, finished at codegen time as the
+		// JSON the event carries: a literal under ECMAScript, and otherwise
+		// the space-normalized string, §scxml-B-2-8-1's last rung.
+		eventDataStr := "10"
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
 	{

@@ -458,7 +458,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "unrelated", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("5", "5")))
+                putParam(sendPayload, "unrelated", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("5")))
             } catch (_: Exception) {
                 raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent.Error.Execution, "<send> <param name='unrelated'> could not be read")
                 paramFailed = true

@@ -213,7 +213,7 @@ class Test148StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test148Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -415,7 +415,7 @@ class Test148StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test148State, event: Test148Event?): EnabledTransition<Test148State, HistoryId>? = when {
-        event is Test148Event.Baz && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionS0At0
+        event is Test148Event.Baz && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -454,20 +454,20 @@ class Test148StateMachine(
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("false", "false")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("false")) { ifCondFailed1 = true }) {
 
             raiseInternal(Test148Event.Foo)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
                 return@run
             }
-            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("false", "false")) { ifCondFailed1 = true }) {
+            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("false")) { ifCondFailed1 = true }) {
 
             raiseInternal(Test148Event.Bar)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
                 return@run
             }
             } else {
@@ -475,7 +475,7 @@ class Test148StateMachine(
             raiseInternal(Test148Event.Baz)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
                 return@run
             }
             }

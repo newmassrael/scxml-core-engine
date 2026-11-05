@@ -448,7 +448,7 @@ class Test532StateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
                 raisePlatformError(Test532Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
@@ -465,7 +465,7 @@ class Test532StateMachine(
                 raisePlatformError(Test532Event.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
                 return@send true
             }
-            val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("\"some content\"", "'some content'"))
+            val sendData = "\"some content\""
             val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {

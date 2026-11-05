@@ -371,7 +371,7 @@ class Test233SceSynthInvokeInvoke0StateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "aParam", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("2", "2")))
+                putParam(sendPayload, "aParam", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("2")))
             } catch (_: Exception) {
                 raisePlatformError(Test233SceSynthInvokeInvoke0Event.Error.Execution, "<send> <param name='aParam'> could not be read")
                 paramFailed = true

@@ -548,7 +548,7 @@ class Test343StateMachine(
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
                     try {
-                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("error(\"SCXML expr is not valid ECMAScript: foo: foo is not declared by this document\")", "foo"))
+                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("foo"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(Test343Event.Error.Execution, "<donedata> <param name='someParam'> failed to evaluate")

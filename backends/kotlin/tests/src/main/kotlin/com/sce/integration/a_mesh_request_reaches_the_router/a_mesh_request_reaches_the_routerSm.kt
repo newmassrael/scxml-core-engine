@@ -250,21 +250,21 @@ class AMeshRequestReachesTheRouterStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'answered' with expr
         try {
-            val initResult_answered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_answered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "answered", initResult_answered)
         } catch (e: Exception) {
             raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<data id='answered'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'failed' with expr
         try {
-            val initResult_failed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_failed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "failed", initResult_failed)
         } catch (e: Exception) {
             raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<data id='failed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'refused' with expr
         try {
-            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "refused", initResult_refused)
         } catch (e: Exception) {
             raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
@@ -466,8 +466,8 @@ class AMeshRequestReachesTheRouterStateMachine(
 
     // asking's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAsking(state: AMeshRequestReachesTheRouterState, event: AMeshRequestReachesTheRouterEvent?): EnabledTransition<AMeshRequestReachesTheRouterState, HistoryId>? = when {
-        event is AMeshRequestReachesTheRouterEvent.Done.Invoke.Ask && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == \"ask\")", "_event.invokeid === 'ask'")) -> TransitionsPart0.transitionAskingAt0
-        event is AMeshRequestReachesTheRouterEvent.Error.Invoke.Ask && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_event.invokeid == \"ask\") and (_event.data == \"unreachable\"))", "_event.invokeid === 'ask' && _event.data === 'unreachable'")) -> TransitionsPart0.transitionAskingAt1
+        event is AMeshRequestReachesTheRouterEvent.Done.Invoke.Ask && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === 'ask'")) -> TransitionsPart0.transitionAskingAt0
+        event is AMeshRequestReachesTheRouterEvent.Error.Invoke.Ask && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === 'ask' && _event.data === 'unreachable'")) -> TransitionsPart0.transitionAskingAt1
         event is AMeshRequestReachesTheRouterEvent.Error.Execution -> TransitionsPart0.transitionAskingAt2
         else -> null
     }
@@ -521,7 +521,7 @@ class AMeshRequestReachesTheRouterStateMachine(
                         try {
                             // The param crosses as text, and `toString()` is the platform's
                             // spelling of the value; this is the document's.
-                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("(1 + 2)", "1 + 2"))
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("1 + 2"))
                             hostInvokeParams["force"] =
                                 (hostInvokeParams["force"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "force", v)
@@ -617,7 +617,7 @@ class AMeshRequestReachesTheRouterStateMachine(
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:48 :: asking :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("answered", "answered"), com.sce.runtime.ScriptSource.lua("_scxml_add(answered, 1)", "answered + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("answered"), com.sce.runtime.ScriptSource.ecmascript("answered + 1"))) {
                 return
             }
     }
@@ -626,7 +626,7 @@ class AMeshRequestReachesTheRouterStateMachine(
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:51 :: asking :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("failed", "failed"), com.sce.runtime.ScriptSource.lua("_scxml_add(failed, 1)", "failed + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("failed"), com.sce.runtime.ScriptSource.ecmascript("failed + 1"))) {
                 return
             }
     }
@@ -635,7 +635,7 @@ class AMeshRequestReachesTheRouterStateMachine(
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:56 :: asking :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("refused"), com.sce.runtime.ScriptSource.ecmascript("refused + 1"))) {
                 return
             }
     }

@@ -373,49 +373,49 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pick' with expr
         try {
-            val initResult_pick = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"file:keeper.scxml\"", "'file:keeper.scxml'"))
+            val initResult_pick = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'file:keeper.scxml'"))
             engine.setVariable(sid, "pick", initResult_pick)
         } catch (e: Exception) {
             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='pick'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'v' with expr
         try {
-            val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
+            val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("7"))
             engine.setVariable(sid, "v", initResult_v)
         } catch (e: Exception) {
             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'seed' with expr
         try {
-            val initResult_seed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("41", "41"))
+            val initResult_seed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("41"))
             engine.setVariable(sid, "seed", initResult_seed)
         } catch (e: Exception) {
             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='seed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'started' with expr
         try {
-            val initResult_started = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_started = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "started", initResult_started)
         } catch (e: Exception) {
             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='started'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'paramsOk' with expr
         try {
-            val initResult_paramsOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_paramsOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "paramsOk", initResult_paramsOk)
         } catch (e: Exception) {
             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='paramsOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'namelistOk' with expr
         try {
-            val initResult_namelistOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_namelistOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "namelistOk", initResult_namelistOk)
         } catch (e: Exception) {
             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='namelistOk'> expr failed to evaluate")
@@ -755,7 +755,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // "the child could not be started". A `null` result took
                             // neither path and returned silently.
                             val filePath = try {
-                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("pick", "pick"))?.toString()
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("pick"))?.toString()
                             } catch (_: Exception) {
                                 null
                             }
@@ -825,7 +825,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // "the child could not be started". A `null` result took
                             // neither path and returned silently.
                             val filePath = try {
-                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("pick", "pick"))?.toString()
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("pick"))?.toString()
                             } catch (_: Exception) {
                                 null
                             }
@@ -863,7 +863,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["seed"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("_scxml_add(seed, 1)", "seed + 1"))
+                            invokeParams["seed"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("seed + 1"))
                         } catch (_: Exception) {
                             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='seed'> could not be read")
                         }
@@ -872,7 +872,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["fromLoc"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("v", "v"))
+                            invokeParams["fromLoc"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("v"))
                         } catch (_: Exception) {
                             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='fromLoc'> could not be read")
                         }
@@ -882,7 +882,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"leaked\"", "'leaked'"))
+                            invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("'leaked'"))
                         } catch (_: Exception) {
                             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='nowhere'> could not be read")
                         }
@@ -918,7 +918,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // "the child could not be started". A `null` result took
                             // neither path and returned silently.
                             val filePath = try {
-                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("pick", "pick"))?.toString()
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("pick"))?.toString()
                             } catch (_: Exception) {
                                 null
                             }
@@ -961,7 +961,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["seed"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("seed", "seed"))
+                            invokeParams["seed"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("seed"))
                         } catch (_: Exception) {
                             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='seed'> could not be read")
                         }
@@ -1065,16 +1065,16 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:79 :: namelistPhase :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("started"), com.sce.runtime.ScriptSource.ecmascript("started + 1"))) {
                 return
             }
 
 
             var ifCondFailed2 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(((_event.data.seed == 41) and (_event.data.fromLoc == \"unset\")) and (_event.data.leak == \"undefined\"))", "_event.data.seed === 41 && _event.data.fromLoc === 'unset' && _event.data.leak === 'undefined'")) { ifCondFailed2 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.data.seed === 41 && _event.data.fromLoc === 'unset' && _event.data.leak === 'undefined'")) { ifCondFailed2 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("namelistOk", "namelistOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("namelistOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return
             }
             }
@@ -1100,16 +1100,16 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:68 :: paramsPhase :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("started"), com.sce.runtime.ScriptSource.ecmascript("started + 1"))) {
                 return
             }
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("((((_event.data.seed == 42) and (_event.data.fromLoc == 7)) and (_event.data.emptyLoc == \"unset\")) and (_event.data.leak == \"undefined\"))", "_event.data.seed === 42 && _event.data.fromLoc === 7 && _event.data.emptyLoc === 'unset' && _event.data.leak === 'undefined'")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.data.seed === 42 && _event.data.fromLoc === 7 && _event.data.emptyLoc === 'unset' && _event.data.leak === 'undefined'")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("paramsOk", "paramsOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("paramsOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return
             }
             }
@@ -1135,7 +1135,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:93 :: refusedPhase :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
                 return
             }
     }
@@ -1157,7 +1157,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:55 :: run :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
                 return
             }
     }

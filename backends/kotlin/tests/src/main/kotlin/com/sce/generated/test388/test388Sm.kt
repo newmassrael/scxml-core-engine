@@ -404,7 +404,7 @@ class Test388StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test388Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -608,11 +608,11 @@ class Test388StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test388State, event: Test388Event?): EnabledTransition<Test388State, HistoryId>? = when {
-        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionS0At0
-        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionsPart0.transitionS0At1
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionsPart0.transitionS0At2
-        event is Test388Event.Entering.S011 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 3)", "Var1 == 3")) -> TransitionsPart0.transitionS0At3
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 3)", "Var1 == 3")) -> TransitionsPart0.transitionS0At4
+        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionsPart0.transitionS0At0
+        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionsPart0.transitionS0At1
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionsPart0.transitionS0At2
+        event is Test388Event.Entering.S011 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionsPart0.transitionS0At3
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionsPart0.transitionS0At4
         event is Test388Event.Timeout -> TransitionsPart0.transitionS0At5
         else -> null
     }
@@ -672,7 +672,7 @@ class Test388StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
                 return@run
             }
                 }

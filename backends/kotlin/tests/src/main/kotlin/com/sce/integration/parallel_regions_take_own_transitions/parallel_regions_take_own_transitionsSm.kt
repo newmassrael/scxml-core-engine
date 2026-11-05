@@ -307,14 +307,14 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'n' with expr
         try {
-            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "n", initResult_n)
         } catch (e: Exception) {
             raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'm' with expr
         try {
-            val initResult_m = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_m = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "m", initResult_m)
         } catch (e: Exception) {
             raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<data id='m'> expr failed to evaluate")
@@ -518,7 +518,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
 
     // judging's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfJudging(state: ParallelRegionsTakeOwnTransitionsState, event: ParallelRegionsTakeOwnTransitionsEvent?): EnabledTransition<ParallelRegionsTakeOwnTransitionsState, HistoryId>? = when {
-        event is ParallelRegionsTakeOwnTransitionsEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_eq(n, 1) and _scxml_eq(m, 1))", "n == 1 && m == 1")) -> TransitionsPart0.transitionJudgingAt0
+        event is ParallelRegionsTakeOwnTransitionsEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("n == 1 && m == 1")) -> TransitionsPart0.transitionJudgingAt0
         else -> null
     }
 
@@ -668,7 +668,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:62 :: within :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("m", "m"), com.sce.runtime.ScriptSource.lua("_scxml_add(m, 1)", "m + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("m"), com.sce.runtime.ScriptSource.ecmascript("m + 1"))) {
                 return
             }
     }
@@ -690,7 +690,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:38 :: working :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("n", "n"), com.sce.runtime.ScriptSource.lua("_scxml_add(n, 1)", "n + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("n"), com.sce.runtime.ScriptSource.ecmascript("n + 1"))) {
                 return
             }
     }

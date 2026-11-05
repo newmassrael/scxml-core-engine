@@ -325,28 +325,28 @@ class ErrorCascadeIsBoundedStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'repairs' with expr
         try {
-            val initResult_repairs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_repairs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "repairs", initResult_repairs)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='repairs'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'runs' with expr
         try {
-            val initResult_runs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_runs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "runs", initResult_runs)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='runs'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'ticks' with expr
         try {
-            val initResult_ticks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_ticks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "ticks", initResult_ticks)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='ticks'> expr failed to evaluate")
@@ -569,7 +569,7 @@ class ErrorCascadeIsBoundedStateMachine(
 
     // settling's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSettling(state: ErrorCascadeIsBoundedState, event: ErrorCascadeIsBoundedEvent?): EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>? = when {
-        event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(repairs < 3)", "repairs < 3")) -> TransitionsPart0.transitionSettlingAt0
+        event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("repairs < 3")) -> TransitionsPart0.transitionSettlingAt0
         event is ErrorCascadeIsBoundedEvent.Poke -> TransitionsPart0.transitionSettlingAt1
         event is ErrorCascadeIsBoundedEvent.Reset -> TransitionsPart0.transitionSettlingAt2
         else -> null
@@ -684,7 +684,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:68 :: idle :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }
@@ -723,7 +723,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("runs", "runs"), com.sce.runtime.ScriptSource.lua("_scxml_add(runs, 1)", "runs + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("runs"), com.sce.runtime.ScriptSource.ecmascript("runs + 1"))) {
                 return
             }
 
@@ -745,7 +745,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ticks", "ticks"), com.sce.runtime.ScriptSource.lua("_scxml_add(ticks, 1)", "ticks + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("ticks"), com.sce.runtime.ScriptSource.ecmascript("ticks + 1"))) {
                 return
             }
     }
@@ -754,7 +754,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }
@@ -777,7 +777,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("repairs", "repairs"), com.sce.runtime.ScriptSource.lua("_scxml_add(repairs, 1)", "repairs + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("repairs"), com.sce.runtime.ScriptSource.ecmascript("repairs + 1"))) {
                 return
             }
 
@@ -797,7 +797,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }

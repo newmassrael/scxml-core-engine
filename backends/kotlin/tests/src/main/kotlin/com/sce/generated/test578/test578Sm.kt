@@ -380,7 +380,7 @@ class Test578StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test578State, event: Test578Event?): EnabledTransition<Test578State, HistoryId>? = when {
-        event is Test578Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data.productName, \"bar\")", "_event.data.productName == 'bar'")) -> TransitionsPart0.transitionS0At0
+        event is Test578Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.productName == 'bar'")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -419,7 +419,7 @@ class Test578StateMachine(
 
 
             if (run send@{
-            val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("{[\"productName\"] = \"bar\", [\"size\"] = 27}", "{ \"productName\" : \"bar\", \"size\" : 27 }"))
+            val sendData = "{\"productName\":\"bar\",\"size\":27}"
             // W3C SCXML 6.2: send to this session's external queue
             send(Test578Event.Foo, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false

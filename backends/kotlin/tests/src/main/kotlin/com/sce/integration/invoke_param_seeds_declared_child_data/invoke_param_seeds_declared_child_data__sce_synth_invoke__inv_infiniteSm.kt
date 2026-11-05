@@ -216,7 +216,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'seen' with expr
         try {
-            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
             engine.setVariable(sid, "seen", initResult_seen)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
@@ -418,8 +418,8 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(
 
     // report's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReport(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_typeof(seen) == \"number\") and (seen > 1e308))", "typeof seen === 'number' && seen > 1e308")) -> TransitionsPart0.transitionReportAt0
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(seen) == \"string\")", "typeof seen === 'string'")) -> TransitionsPart0.transitionReportAt1
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'number' && seen > 1e308")) -> TransitionsPart0.transitionReportAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'string'")) -> TransitionsPart0.transitionReportAt1
         event == null -> TransitionsPart0.transitionReportAt2
         else -> null
     }

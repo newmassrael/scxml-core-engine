@@ -485,49 +485,49 @@ class ExternalChainIsBoundedStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'links' with expr
         try {
-            val initResult_links = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_links = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "links", initResult_links)
         } catch (e: Exception) {
             raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='links'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'laps' with expr
         try {
-            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "laps", initResult_laps)
         } catch (e: Exception) {
             raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='laps'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'beats' with expr
         try {
-            val initResult_beats = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_beats = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "beats", initResult_beats)
         } catch (e: Exception) {
             raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='beats'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'blinks' with expr
         try {
-            val initResult_blinks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_blinks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "blinks", initResult_blinks)
         } catch (e: Exception) {
             raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='blinks'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'exprs' with expr
         try {
-            val initResult_exprs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_exprs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "exprs", initResult_exprs)
         } catch (e: Exception) {
             raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='exprs'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pulses' with expr
         try {
-            val initResult_pulses = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_pulses = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pulses", initResult_pulses)
         } catch (e: Exception) {
             raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='pulses'> expr failed to evaluate")
@@ -734,7 +734,7 @@ class ExternalChainIsBoundedStateMachine(
 
     // bounded's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBounded(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
-        event is ExternalChainIsBoundedEvent.Lap && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 4)", "laps < 4")) -> TransitionsPart0.transitionBoundedAt0
+        event is ExternalChainIsBoundedEvent.Lap && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 4")) -> TransitionsPart0.transitionBoundedAt0
         event is ExternalChainIsBoundedEvent.Lap -> TransitionsPart0.transitionBoundedAt1
         event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionBoundedAt2
         else -> null
@@ -756,7 +756,7 @@ class ExternalChainIsBoundedStateMachine(
 
     // resuming's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfResuming(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
-        event is ExternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(beats < 29)", "beats < 29")) -> TransitionsPart0.transitionResumingAt0
+        event is ExternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("beats < 29")) -> TransitionsPart0.transitionResumingAt0
         event is ExternalChainIsBoundedEvent.Beat -> TransitionsPart0.transitionResumingAt1
         event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionResumingAt2
         else -> null
@@ -1010,7 +1010,7 @@ class ExternalChainIsBoundedStateMachine(
             // that is not the CSS2 time the clause names (ARCHITECTURE.md,
             // "Durations"): the message is not scheduled under some default wait.
             val sendDelayText = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0ms\"", "'0ms'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'0ms'")))
             } catch (_: Exception) {
                 raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_9")
                 return@send true
@@ -1110,7 +1110,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:143 :: bounded :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))) {
                 return
             }
 
@@ -1131,7 +1131,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:147 :: bounded :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))) {
                 return
             }
     }
@@ -1140,7 +1140,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:150 :: bounded :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }
@@ -1162,7 +1162,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:110 :: idle :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }
@@ -1186,7 +1186,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:163 :: resuming :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("beats", "beats"), com.sce.runtime.ScriptSource.lua("_scxml_add(beats, 1)", "beats + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("beats"), com.sce.runtime.ScriptSource.ecmascript("beats + 1"))) {
                 return
             }
 
@@ -1207,7 +1207,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:167 :: resuming :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("beats", "beats"), com.sce.runtime.ScriptSource.lua("_scxml_add(beats, 1)", "beats + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("beats"), com.sce.runtime.ScriptSource.ecmascript("beats + 1"))) {
                 return
             }
     }
@@ -1216,7 +1216,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:170 :: resuming :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }
@@ -1239,7 +1239,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:128 :: spin :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("links", "links"), com.sce.runtime.ScriptSource.lua("_scxml_add(links, 1)", "links + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("links"), com.sce.runtime.ScriptSource.ecmascript("links + 1"))) {
                 return
             }
 
@@ -1260,7 +1260,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:132 :: spin :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }
@@ -1283,7 +1283,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:225 :: timing :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pulses", "pulses"), com.sce.runtime.ScriptSource.lua("_scxml_add(pulses, 1)", "pulses + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pulses"), com.sce.runtime.ScriptSource.ecmascript("pulses + 1"))) {
                 return
             }
     }
@@ -1292,7 +1292,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:228 :: timing :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }
@@ -1315,7 +1315,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:183 :: zeroing :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("blinks", "blinks"), com.sce.runtime.ScriptSource.lua("_scxml_add(blinks, 1)", "blinks + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("blinks"), com.sce.runtime.ScriptSource.ecmascript("blinks + 1"))) {
                 return
             }
 
@@ -1336,7 +1336,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:187 :: zeroing :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }
@@ -1359,7 +1359,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:199 :: zeroing_expr :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("exprs", "exprs"), com.sce.runtime.ScriptSource.lua("_scxml_add(exprs, 1)", "exprs + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("exprs"), com.sce.runtime.ScriptSource.ecmascript("exprs + 1"))) {
                 return
             }
 
@@ -1372,7 +1372,7 @@ class ExternalChainIsBoundedStateMachine(
             // that is not the CSS2 time the clause names (ARCHITECTURE.md,
             // "Durations"): the message is not scheduled under some default wait.
             val sendDelayText = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0ms\"", "'0ms'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'0ms'")))
             } catch (_: Exception) {
                 raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_8")
                 return@send true
@@ -1396,7 +1396,7 @@ class ExternalChainIsBoundedStateMachine(
                 // SCE-MAP: external_chain_is_bounded.scxml:203 :: zeroing_expr :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
                 return
             }
     }

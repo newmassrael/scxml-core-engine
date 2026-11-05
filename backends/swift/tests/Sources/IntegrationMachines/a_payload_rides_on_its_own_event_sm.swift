@@ -743,10 +743,9 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
 
                 // W3C SCXML 6.2: send id="__send_3"
                 do {
-                    // W3C SCXML B.2 + §scxml-B-2-8-1: the text travels as it was written, and the
-                    // RECEIVER reads it: as JSON where it parses, else as the space-normalized
-                    // string. Taking the last rung here would hand a script engine a string where
-                    // the document wrote an object, and `_event.data.field` would read nothing.
+                    // W3C SCXML B.2: a value the text fixes on its own, finished at build time as the
+                    // JSON the event carries: a literal under ECMAScript, and otherwise the
+                    // space-normalized string, the last rung of §scxml-B-2-8-1.
                     let sendEventData = "10"
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external

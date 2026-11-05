@@ -378,7 +378,7 @@ class Test245SceSynthInvokeInvoke0StateMachine(
 
     // sub0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSub0(state: Test245SceSynthInvokeInvoke0State, event: Test245SceSynthInvokeInvoke0Event?): EnabledTransition<Test245SceSynthInvokeInvoke0State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var2) ~= \"undefined\")", "typeof Var2 !== 'undefined'")) -> TransitionsPart0.transitionSub0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var2 !== 'undefined'")) -> TransitionsPart0.transitionSub0At0
         event == null -> TransitionsPart0.transitionSub0At1
         else -> null
     }

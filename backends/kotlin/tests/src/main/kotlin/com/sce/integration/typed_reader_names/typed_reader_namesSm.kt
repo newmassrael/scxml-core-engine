@@ -247,77 +247,77 @@ class TypedReaderNamesStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'box' with expr
         try {
-            val initResult_box = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
+            val initResult_box = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
             engine.setVariable(sid, "box", initResult_box)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='box'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'object' with expr
         try {
-            val initResult_object = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2"))
+            val initResult_object = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("2"))
             engine.setVariable(sid, "object", initResult_object)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='object'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pass' with expr
         try {
-            val initResult_pass = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("3", "3"))
+            val initResult_pass = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("3"))
             engine.setVariable(sid, "pass", initResult_pass)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='pass'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'screen-rules' with expr
         try {
-            val initResult_screenRules = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("4", "4"))
+            val initResult_screenRules = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("4"))
             engine.setVariable(sid, "screen-rules", initResult_screenRules)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='screen-rules'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'auto' with expr
         try {
-            val initResult_auto = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("5", "5"))
+            val initResult_auto = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("5"))
             engine.setVariable(sid, "auto", initResult_auto)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='auto'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'self' with expr
         try {
-            val initResult_self = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("6", "6"))
+            val initResult_self = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("6"))
             engine.setVariable(sid, "self", initResult_self)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='self'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'new' with expr
         try {
-            val initResult_new = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
+            val initResult_new = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("7"))
             engine.setVariable(sid, "new", initResult_new)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='new'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'start' with expr
         try {
-            val initResult_start = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("8", "8"))
+            val initResult_start = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("8"))
             engine.setVariable(sid, "start", initResult_start)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='start'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 't' with expr
         try {
-            val initResult_t = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("9", "9"))
+            val initResult_t = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("9"))
             engine.setVariable(sid, "t", initResult_t)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='t'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'a_b' with expr
         try {
-            val initResult_aB = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("10", "10"))
+            val initResult_aB = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("10"))
             engine.setVariable(sid, "a_b", initResult_aB)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='a_b'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'a-b' with expr
         try {
-            val initResult_aB = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("11", "11"))
+            val initResult_aB = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("11"))
             engine.setVariable(sid, "a-b", initResult_aB)
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='a-b'> expr failed to evaluate")
@@ -595,22 +595,22 @@ class TypedReaderNamesStateMachine(
                 // SCE-MAP: typed_reader_names.scxml:49 :: idle :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("box", "box"), com.sce.runtime.ScriptSource.lua("_scxml_add(box, 10)", "box + 10"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("box"), com.sce.runtime.ScriptSource.ecmascript("box + 10"))) {
                 return
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("object", "object"), com.sce.runtime.ScriptSource.lua("_scxml_add(object, 10)", "object + 10"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("object"), com.sce.runtime.ScriptSource.ecmascript("object + 10"))) {
                 return
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pass", "pass"), com.sce.runtime.ScriptSource.lua("_scxml_add(pass, 10)", "pass + 10"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pass"), com.sce.runtime.ScriptSource.ecmascript("pass + 10"))) {
                 return
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("a_b", "a_b"), com.sce.runtime.ScriptSource.lua("_scxml_add(a_b, 10)", "a_b + 10"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("a_b"), com.sce.runtime.ScriptSource.ecmascript("a_b + 10"))) {
                 return
             }
     }

@@ -189,7 +189,7 @@ class InvokeExpressionFailureIsReportedStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'target' with expr
         try {
-            val initResult_target = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
+            val initResult_target = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("null"))
             engine.setVariable(sid, "target", initResult_target)
         } catch (e: Exception) {
             raisePlatformError(InvokeExpressionFailureIsReportedEvent.Error.Execution, "<data id='target'> expr failed to evaluate")
@@ -472,7 +472,7 @@ class InvokeExpressionFailureIsReportedStateMachine(
                             // "the child could not be started". A `null` result took
                             // neither path and returned silently.
                             val filePath = try {
-                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("target.path", "target.path"))?.toString()
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("target.path"))?.toString()
                             } catch (_: Exception) {
                                 null
                             }

@@ -879,32 +879,12 @@ impl StatePolicy for Test294Policy {
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 let mut done_event_data = String::new();
                 {
-                    // W3C SCXML B.2: inline text takes the ordered readings —
-                    // an expression when it is one, otherwise the string. The
-                    // same filter inline `<data>` text goes through decides
-                    // which, so the two cannot answer it differently.
-                    self.ensure_script_engine();
-                    let sid = self.session_id.as_ref().unwrap().clone();
-                    let se = self.script_engine.clone();
-                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    match se.evaluate_expression(&sid, "\"foo\"") {
-                        // §scxml-B-2-9: serialized, not spelled as Lua source
-                        // — the reader is the parent's dequeue, which parses.
-                        Ok(val) => {
-                            done_event_data =
-                                ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val);
-                        }
-                        Err(e) => {
-                            ::sce_rust_runtime::sce_log_error!(
-                                "Donedata content expr eval failed: {}",
-                                e
-                            );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                Test294Event::ErrorExecution,
-                                "<donedata> <content expr> failed to evaluate",
-                            ));
-                        }
-                    }
+                    // W3C SCXML B.2: inline text the data model reads as a value
+                    // fixed by the text alone (`inline_content_reading`, the one
+                    // answer every backend and the script-engine analysis read):
+                    // the XML as written, which the receiver builds the DOM from,
+                    // or a literal's JSON, finished at build time.
+                    done_event_data = String::from("\"foo\"");
                 }
                 // W3C SCXML 3.7: Generate done.state.s1 event
                 // W3C SCXML 5.5: Carry evaluated donedata in done.state event

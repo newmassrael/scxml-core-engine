@@ -761,9 +761,11 @@ impl StatePolicy for Test561Policy {
                         let send_id: &str = "__send_0";
 
                         // W3C SCXML B.2: inline text takes the ordered readings — an expression
-                        // when it is one, XML when it opens with `<`, otherwise the string. The
-                        // same filter inline `<data>` and `<donedata>` text goes through decides
-                        // which, so one clause reaches one answer wherever `<content>` appears.
+                        // when it is one, XML when it opens with `<`, otherwise the string — and
+                        // the data model decides which apply (`inline_content_reading`, the one
+                        // answer every backend and the script-engine analysis read). A literal is
+                        // its value now, so `<content>21</content>` is the number 21 under
+                        // ECMAScript whether or not anything else in the document needs an engine.
                         //
                         // Handing the author's text over unread made this line evaluate it *as
                         // Lua*: `<content>t.length</content>` reached `_event.data` as nil where

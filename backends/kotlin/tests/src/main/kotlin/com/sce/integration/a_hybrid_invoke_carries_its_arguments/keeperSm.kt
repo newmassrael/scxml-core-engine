@@ -214,21 +214,21 @@ class KeeperStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'seed' with expr
         try {
-            val initResult_seed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            val initResult_seed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
             engine.setVariable(sid, "seed", initResult_seed)
         } catch (e: Exception) {
             raisePlatformError(KeeperEvent.Error.Execution, "<data id='seed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'fromLoc' with expr
         try {
-            val initResult_fromLoc = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            val initResult_fromLoc = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
             engine.setVariable(sid, "fromLoc", initResult_fromLoc)
         } catch (e: Exception) {
             raisePlatformError(KeeperEvent.Error.Execution, "<data id='fromLoc'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'emptyLoc' with expr
         try {
-            val initResult_emptyLoc = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            val initResult_emptyLoc = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
             engine.setVariable(sid, "emptyLoc", initResult_emptyLoc)
         } catch (e: Exception) {
             raisePlatformError(KeeperEvent.Error.Execution, "<data id='emptyLoc'> expr failed to evaluate")
@@ -512,28 +512,28 @@ class KeeperStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "seed", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("seed", "seed")))
+                putParam(sendPayload, "seed", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("seed")))
             } catch (_: Exception) {
                 raisePlatformError(KeeperEvent.Error.Execution, "<send> <param name='seed'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "fromLoc", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("fromLoc", "fromLoc")))
+                putParam(sendPayload, "fromLoc", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("fromLoc")))
             } catch (_: Exception) {
                 raisePlatformError(KeeperEvent.Error.Execution, "<send> <param name='fromLoc'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "emptyLoc", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("emptyLoc", "emptyLoc")))
+                putParam(sendPayload, "emptyLoc", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("emptyLoc")))
             } catch (_: Exception) {
                 raisePlatformError(KeeperEvent.Error.Execution, "<send> <param name='emptyLoc'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "leak", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("_typeof(nowhere)", "typeof nowhere")))
+                putParam(sendPayload, "leak", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("typeof nowhere")))
             } catch (_: Exception) {
                 raisePlatformError(KeeperEvent.Error.Execution, "<send> <param name='leak'> could not be read")
                 paramFailed = true

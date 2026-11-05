@@ -548,7 +548,7 @@ class Test488StateMachine(
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
                     try {
-                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))
+                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("undefined.invalidProperty"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(Test488Event.Error.Execution, "<donedata> <param name='someParam'> failed to evaluate")

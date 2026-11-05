@@ -380,7 +380,7 @@ class Test561StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test561State, event: Test561Event?): EnabledTransition<Test561State, HistoryId>? = when {
-        event is Test561Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data:getElementsByTagName(\"book\")[2]:getAttribute(\"title\"), \"title2\")", "_event.data.getElementsByTagName('book')[1].getAttribute('title') == 'title2'")) -> TransitionsPart0.transitionS0At0
+        event is Test561Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.getElementsByTagName('book')[1].getAttribute('title') == 'title2'")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }

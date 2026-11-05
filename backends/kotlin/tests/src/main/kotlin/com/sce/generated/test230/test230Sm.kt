@@ -642,7 +642,7 @@ class Test230StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("name is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))?.toString() ?: ""))
+                    println("name is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.name"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test230Event.Error.Execution, "<log> expr failed to evaluate")
@@ -657,7 +657,7 @@ class Test230StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("type is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))?.toString() ?: ""))
+                    println("type is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.type"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test230Event.Error.Execution, "<log> expr failed to evaluate")
@@ -672,7 +672,7 @@ class Test230StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("sendid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.sendid", "_event.sendid"))?.toString() ?: ""))
+                    println("sendid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.sendid"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test230Event.Error.Execution, "<log> expr failed to evaluate")
@@ -687,7 +687,7 @@ class Test230StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("origin is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin"))?.toString() ?: ""))
+                    println("origin is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.origin"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test230Event.Error.Execution, "<log> expr failed to evaluate")
@@ -702,7 +702,7 @@ class Test230StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("origintype is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype"))?.toString() ?: ""))
+                    println("origintype is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.origintype"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test230Event.Error.Execution, "<log> expr failed to evaluate")
@@ -717,7 +717,7 @@ class Test230StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("invokeid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.invokeid", "_event.invokeid"))?.toString() ?: ""))
+                    println("invokeid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.invokeid"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test230Event.Error.Execution, "<log> expr failed to evaluate")
@@ -732,7 +732,7 @@ class Test230StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("data is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.data", "_event.data"))?.toString() ?: ""))
+                    println("data is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.data"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test230Event.Error.Execution, "<log> expr failed to evaluate")

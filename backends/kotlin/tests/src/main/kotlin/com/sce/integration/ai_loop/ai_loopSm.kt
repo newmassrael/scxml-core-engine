@@ -958,112 +958,112 @@ class AiLoopStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'north_star' with expr
         try {
-            val initResult_northStar = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the outcome this loop exists to reach\"", "'(edit me) the outcome this loop exists to reach'"))
+            val initResult_northStar = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'(edit me) the outcome this loop exists to reach'"))
             engine.setVariable(sid, "north_star", initResult_northStar)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='north_star'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'milestone' with expr
         try {
-            val initResult_milestone = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the next checkpoint on the way there\"", "'(edit me) the next checkpoint on the way there'"))
+            val initResult_milestone = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'(edit me) the next checkpoint on the way there'"))
             engine.setVariable(sid, "milestone", initResult_milestone)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='milestone'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'reference' with expr
         try {
-            val initResult_reference = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) paths, URLs or repos to consult\"", "'(edit me) paths, URLs or repos to consult'"))
+            val initResult_reference = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'(edit me) paths, URLs or repos to consult'"))
             engine.setVariable(sid, "reference", initResult_reference)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='reference'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'start_prompt' with expr
         try {
-            val initResult_startPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring((\"North star: \" .. _scxml_tostring(north_star))) .. \"\\n\")) .. \"Milestone: \"), milestone)) .. \"\\n\")) .. \"Reference: \"), reference)) .. \"\\n\")) .. \"Report what you did and what is left.\")", "'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'"))
+            val initResult_startPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'"))
             engine.setVariable(sid, "start_prompt", initResult_startPrompt)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='start_prompt'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'turn_prompt' with expr
         try {
-            val initResult_turnPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(_scxml_tostring((_scxml_tostring((\"Continue toward: \" .. _scxml_tostring(milestone))) .. \"\\n\")) .. \"Do the next smallest thing that is verifiable, then report.\")", "'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'"))
+            val initResult_turnPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'"))
             engine.setVariable(sid, "turn_prompt", initResult_turnPrompt)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turn_prompt'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'end_prompt' with expr
         try {
-            val initResult_endPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"Summarise what changed, what was verified, and what is left open.\"", "'Summarise what changed, what was verified, and what is left open.'"))
+            val initResult_endPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'Summarise what changed, what was verified, and what is left open.'"))
             engine.setVariable(sid, "end_prompt", initResult_endPrompt)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='end_prompt'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'done_marker' with expr
         try {
-            val initResult_doneMarker = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"MILESTONE REACHED\"", "'MILESTONE REACHED'"))
+            val initResult_doneMarker = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'MILESTONE REACHED'"))
             engine.setVariable(sid, "done_marker", initResult_doneMarker)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='done_marker'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'screen_rules' with expr
         try {
-            val initResult_screenRules = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{{[\"when\"] = \"design-decision\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"design-proposal\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"multiple-choice\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}}", "[             { when: 'design-decision', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'design-proposal', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'multiple-choice', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' }           ]"))
+            val initResult_screenRules = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[             { when: 'design-decision', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'design-proposal', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'multiple-choice', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' }           ]"))
             engine.setVariable(sid, "screen_rules", initResult_screenRules)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screen_rules'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'screen_permissions' with expr
         try {
-            val initResult_screenPermissions = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false"))
+            val initResult_screenPermissions = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("false"))
             engine.setVariable(sid, "screen_permissions", initResult_screenPermissions)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screen_permissions'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'max_turns' with expr
         try {
-            val initResult_maxTurns = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("40", "40"))
+            val initResult_maxTurns = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("40"))
             engine.setVariable(sid, "max_turns", initResult_maxTurns)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='max_turns'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'reflect_every' with expr
         try {
-            val initResult_reflectEvery = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("8", "8"))
+            val initResult_reflectEvery = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("8"))
             engine.setVariable(sid, "reflect_every", initResult_reflectEvery)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='reflect_every'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'max_restarts' with expr
         try {
-            val initResult_maxRestarts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("6", "6"))
+            val initResult_maxRestarts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("6"))
             engine.setVariable(sid, "max_restarts", initResult_maxRestarts)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='max_restarts'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'turns' with expr
         try {
-            val initResult_turns = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_turns = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "turns", initResult_turns)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turns'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'turns_since_reflect' with expr
         try {
-            val initResult_turnsSinceReflect = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_turnsSinceReflect = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "turns_since_reflect", initResult_turnsSinceReflect)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turns_since_reflect'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'screened' with expr
         try {
-            val initResult_screened = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_screened = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "screened", initResult_screened)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screened'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'restarts' with expr
         try {
-            val initResult_restarts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_restarts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "restarts", initResult_restarts)
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='restarts'> expr failed to evaluate")
@@ -1301,8 +1301,8 @@ class AiLoopStateMachine(
 
     // judging's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfJudging(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
-        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> TransitionsPart0.transitionJudgingAt0
-        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(turns_since_reflect >= reflect_every)", "turns_since_reflect >= reflect_every")) -> TransitionsPart0.transitionJudgingAt1
+        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.done")) -> TransitionsPart0.transitionJudgingAt0
+        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("turns_since_reflect >= reflect_every")) -> TransitionsPart0.transitionJudgingAt1
         (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> TransitionsPart0.transitionJudgingAt2
         else -> null
     }
@@ -1342,7 +1342,7 @@ class AiLoopStateMachine(
 
     // restarting's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRestarting(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
-        event is AiLoopEvent.Session.Ready && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(restarts > max_restarts)", "restarts > max_restarts")) -> TransitionsPart0.transitionRestartingAt0
+        event is AiLoopEvent.Session.Ready && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("restarts > max_restarts")) -> TransitionsPart0.transitionRestartingAt0
         event is AiLoopEvent.Session.Ready -> TransitionsPart0.transitionRestartingAt1
         else -> null
     }
@@ -1369,7 +1369,7 @@ class AiLoopStateMachine(
 
     // within's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWithin(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
-        event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_add(turns, 1) >= max_turns)", "turns + 1 >= max_turns")) -> TransitionsPart0.transitionWithinAt0
+        event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("turns + 1 >= max_turns")) -> TransitionsPart0.transitionWithinAt0
         event is AiLoopEvent.Turn.Done -> TransitionsPart0.transitionWithinAt1
         else -> null
     }
@@ -1470,7 +1470,7 @@ class AiLoopStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("end_prompt", "end_prompt")))
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("end_prompt")))
             } catch (_: Exception) {
                 raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
                 paramFailed = true
@@ -1553,7 +1553,7 @@ class AiLoopStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "marker", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("done_marker", "done_marker")))
+                putParam(sendPayload, "marker", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("done_marker")))
             } catch (_: Exception) {
                 raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='marker'> could not be read")
                 paramFailed = true
@@ -1659,7 +1659,7 @@ class AiLoopStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt")))
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("start_prompt")))
             } catch (_: Exception) {
                 raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
                 paramFailed = true
@@ -1717,7 +1717,7 @@ class AiLoopStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("0", "0"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("turns_since_reflect"), com.sce.runtime.ScriptSource.ecmascript("0"))) {
                 return@run
             }
 
@@ -1778,7 +1778,7 @@ class AiLoopStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("restarts", "restarts"), com.sce.runtime.ScriptSource.lua("_scxml_add(restarts, 1)", "restarts + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("restarts"), com.sce.runtime.ScriptSource.ecmascript("restarts + 1"))) {
                 return@run
             }
 
@@ -1836,7 +1836,7 @@ class AiLoopStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("screened", "screened"), com.sce.runtime.ScriptSource.lua("_scxml_add(screened, 1)", "screened + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("screened"), com.sce.runtime.ScriptSource.ecmascript("screened + 1"))) {
                 return@run
             }
 
@@ -2085,7 +2085,7 @@ class AiLoopStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("turn_prompt")))
             } catch (_: Exception) {
                 raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
                 paramFailed = true
@@ -2149,7 +2149,7 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:468 :: paused :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns_since_reflect, 1)", "turns_since_reflect + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("turns_since_reflect"), com.sce.runtime.ScriptSource.ecmascript("turns_since_reflect + 1"))) {
                 return
             }
     }
@@ -2172,17 +2172,17 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:379 :: reflecting :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt"), com.sce.runtime.ScriptSource.lua("_event.data.start_prompt", "_event.data.start_prompt"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("start_prompt"), com.sce.runtime.ScriptSource.ecmascript("_event.data.start_prompt"))) {
                 return
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt"), com.sce.runtime.ScriptSource.lua("_event.data.turn_prompt", "_event.data.turn_prompt"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("turn_prompt"), com.sce.runtime.ScriptSource.ecmascript("_event.data.turn_prompt"))) {
                 return
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("milestone", "milestone"), com.sce.runtime.ScriptSource.lua("_event.data.milestone", "_event.data.milestone"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("milestone"), com.sce.runtime.ScriptSource.ecmascript("_event.data.milestone"))) {
                 return
             }
     }
@@ -2198,7 +2198,7 @@ class AiLoopStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("turn_prompt")))
             } catch (_: Exception) {
                 raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
                 paramFailed = true
@@ -2263,7 +2263,7 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:522 :: within :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("turns"), com.sce.runtime.ScriptSource.ecmascript("turns + 1"))) {
                 return
             }
     }
@@ -2272,7 +2272,7 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:525 :: within :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("turns"), com.sce.runtime.ScriptSource.ecmascript("turns + 1"))) {
                 return
             }
     }
@@ -2294,7 +2294,7 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:311 :: working :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns_since_reflect, 1)", "turns_since_reflect + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("turns_since_reflect"), com.sce.runtime.ScriptSource.ecmascript("turns_since_reflect + 1"))) {
                 return
             }
     }

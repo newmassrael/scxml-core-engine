@@ -301,28 +301,28 @@ class APayloadRidesOnItsOwnEventStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'got' with expr
         try {
-            val initResult_got = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_got = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "got", initResult_got)
         } catch (e: Exception) {
             raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='got'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'stolen' with expr
         try {
-            val initResult_stolen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_stolen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "stolen", initResult_stolen)
         } catch (e: Exception) {
             raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='stolen'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'plains' with expr
         try {
-            val initResult_plains = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_plains = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "plains", initResult_plains)
         } catch (e: Exception) {
             raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='plains'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'v9' with expr
         try {
-            val initResult_v9 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("9", "9"))
+            val initResult_v9 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("9"))
             engine.setVariable(sid, "v9", initResult_v9)
         } catch (e: Exception) {
             raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='v9'> expr failed to evaluate")
@@ -524,12 +524,12 @@ class APayloadRidesOnItsOwnEventStateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: APayloadRidesOnItsOwnEventState, event: APayloadRidesOnItsOwnEventEvent?): EnabledTransition<APayloadRidesOnItsOwnEventState, HistoryId>? = when {
-        (event is APayloadRidesOnItsOwnEventEvent.Plain1 || event is APayloadRidesOnItsOwnEventEvent.Plain2 || event is APayloadRidesOnItsOwnEventEvent.Plain3 || event is APayloadRidesOnItsOwnEventEvent.Plain4) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data)", "_event.data")) -> TransitionsPart0.transitionS0At0
+        (event is APayloadRidesOnItsOwnEventEvent.Plain1 || event is APayloadRidesOnItsOwnEventEvent.Plain2 || event is APayloadRidesOnItsOwnEventEvent.Plain3 || event is APayloadRidesOnItsOwnEventEvent.Plain4) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data")) -> TransitionsPart0.transitionS0At0
         (event is APayloadRidesOnItsOwnEventEvent.Plain1 || event is APayloadRidesOnItsOwnEventEvent.Plain2 || event is APayloadRidesOnItsOwnEventEvent.Plain3 || event is APayloadRidesOnItsOwnEventEvent.Plain4) -> TransitionsPart0.transitionS0At1
-        event is APayloadRidesOnItsOwnEventEvent.WithV && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.v == 7)", "_event.data.v === 7")) -> TransitionsPart0.transitionS0At2
-        event is APayloadRidesOnItsOwnEventEvent.ExtV && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.v == 8)", "_event.data.v === 8")) -> TransitionsPart0.transitionS0At3
-        event is APayloadRidesOnItsOwnEventEvent.ExtN && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.v9 == 9)", "_event.data.v9 === 9")) -> TransitionsPart0.transitionS0At4
-        event is APayloadRidesOnItsOwnEventEvent.ExtC && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == 10)", "_event.data === 10")) -> TransitionsPart0.transitionS0At5
+        event is APayloadRidesOnItsOwnEventEvent.WithV && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.v === 7")) -> TransitionsPart0.transitionS0At2
+        event is APayloadRidesOnItsOwnEventEvent.ExtV && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.v === 8")) -> TransitionsPart0.transitionS0At3
+        event is APayloadRidesOnItsOwnEventEvent.ExtN && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.v9 === 9")) -> TransitionsPart0.transitionS0At4
+        event is APayloadRidesOnItsOwnEventEvent.ExtC && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 10")) -> TransitionsPart0.transitionS0At5
         event is APayloadRidesOnItsOwnEventEvent.Finish -> TransitionsPart0.transitionS0At6
         else -> null
     }
@@ -569,7 +569,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "v", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("7", "7")))
+                putParam(sendPayload, "v", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("7")))
             } catch (_: Exception) {
                 raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> <param name='v'> could not be read")
                 paramFailed = true
@@ -597,7 +597,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "v", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("8", "8")))
+                putParam(sendPayload, "v", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("8")))
             } catch (_: Exception) {
                 raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> <param name='v'> could not be read")
                 paramFailed = true
@@ -658,7 +658,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
 
 
             if (run send@{
-            val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("10", "10"))
+            val sendData = "10"
             // W3C SCXML 6.2: send to this session's external queue
             send(APayloadRidesOnItsOwnEventEvent.ExtC, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
@@ -724,7 +724,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:61 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("stolen", "stolen"), com.sce.runtime.ScriptSource.lua("_scxml_add(stolen, 1)", "stolen + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("stolen"), com.sce.runtime.ScriptSource.ecmascript("stolen + 1"))) {
                 return
             }
     }
@@ -733,7 +733,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:64 :: s0 :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("plains", "plains"), com.sce.runtime.ScriptSource.lua("_scxml_add(plains, 1)", "plains + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("plains"), com.sce.runtime.ScriptSource.ecmascript("plains + 1"))) {
                 return
             }
     }
@@ -742,7 +742,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:67 :: s0 :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("got"), com.sce.runtime.ScriptSource.ecmascript("got + 1"))) {
                 return
             }
     }
@@ -751,7 +751,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:70 :: s0 :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("got"), com.sce.runtime.ScriptSource.ecmascript("got + 1"))) {
                 return
             }
     }
@@ -760,7 +760,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:73 :: s0 :: _transition_4
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("got"), com.sce.runtime.ScriptSource.ecmascript("got + 1"))) {
                 return
             }
     }
@@ -769,7 +769,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:76 :: s0 :: _transition_5
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("got"), com.sce.runtime.ScriptSource.ecmascript("got + 1"))) {
                 return
             }
     }

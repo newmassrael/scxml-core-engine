@@ -501,7 +501,7 @@ class EventDataArrivesAsSentStateMachine(
 
     // documented's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfDocumented(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
-        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_scxml_truthy(_event.data) and _scxml_truthy(_event.data.documentElement)) and (_event.data.documentElement.nodeName == \"books\"))", "_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> TransitionsPart0.transitionDocumentedAt0
+        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> TransitionsPart0.transitionDocumentedAt0
         event is EventDataArrivesAsSentEvent.Doc -> TransitionsPart0.transitionDocumentedAt1
         else -> null
     }
@@ -509,7 +509,7 @@ class EventDataArrivesAsSentStateMachine(
 
     // heard's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfHeard(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
-        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"hold the line\")", "_event.data === 'hold the line'")) -> TransitionsPart0.transitionHeardAt0
+        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 'hold the line'")) -> TransitionsPart0.transitionHeardAt0
         event is EventDataArrivesAsSentEvent.Note -> TransitionsPart0.transitionHeardAt1
         else -> null
     }
@@ -517,7 +517,7 @@ class EventDataArrivesAsSentStateMachine(
 
     // opening's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOpening(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
-        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"<assign> to detail failed\")", "_event.data === '<assign> to detail failed'")) -> TransitionsPart0.transitionOpeningAt0
+        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '<assign> to detail failed'")) -> TransitionsPart0.transitionOpeningAt0
         event is EventDataArrivesAsSentEvent.Broken -> TransitionsPart0.transitionOpeningAt1
         else -> null
     }
@@ -525,7 +525,7 @@ class EventDataArrivesAsSentStateMachine(
 
     // quoted's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfQuoted(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
-        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"2 + 3\")", "_event.data === '2 + 3'")) -> TransitionsPart0.transitionQuotedAt0
+        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '2 + 3'")) -> TransitionsPart0.transitionQuotedAt0
         event is EventDataArrivesAsSentEvent.Arith -> TransitionsPart0.transitionQuotedAt1
         else -> null
     }
@@ -533,7 +533,7 @@ class EventDataArrivesAsSentStateMachine(
 
     // waiting's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
-        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_scxml_truthy(_event.data) and (_event.data.milestone == \"refined\")) and (_event.data.turns == 2))", "_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> TransitionsPart0.transitionWaitingAt0
+        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> TransitionsPart0.transitionWaitingAt0
         event is EventDataArrivesAsSentEvent.Payload -> TransitionsPart0.transitionWaitingAt1
         else -> null
     }

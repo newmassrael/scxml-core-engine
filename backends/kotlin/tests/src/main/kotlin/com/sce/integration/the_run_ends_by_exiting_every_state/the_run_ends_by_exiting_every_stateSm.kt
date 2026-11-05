@@ -259,21 +259,21 @@ class TheRunEndsByExitingEveryStateStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'order' with expr
         try {
-            val initResult_order = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_order = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "order", initResult_order)
         } catch (e: Exception) {
             raisePlatformError(TheRunEndsByExitingEveryStateEvent.Error.Execution, "<data id='order'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'finalExits' with expr
         try {
-            val initResult_finalExits = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_finalExits = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "finalExits", initResult_finalExits)
         } catch (e: Exception) {
             raisePlatformError(TheRunEndsByExitingEveryStateEvent.Error.Execution, "<data id='finalExits'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'selfInFinal' with expr
         try {
-            val initResult_selfInFinal = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_selfInFinal = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "selfInFinal", initResult_selfInFinal)
         } catch (e: Exception) {
             raisePlatformError(TheRunEndsByExitingEveryStateEvent.Error.Execution, "<data id='selfInFinal'> expr failed to evaluate")
@@ -525,7 +525,7 @@ class TheRunEndsByExitingEveryStateStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("finalExits", "finalExits"), com.sce.runtime.ScriptSource.lua("_scxml_add(finalExits, 1)", "finalExits + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("finalExits"), com.sce.runtime.ScriptSource.ecmascript("finalExits + 1"))) {
                 return@run
             }
 
@@ -533,7 +533,7 @@ class TheRunEndsByExitingEveryStateStateMachine(
             if (isStateActive("done")) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("selfInFinal", "selfInFinal"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("selfInFinal"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }
@@ -546,7 +546,7 @@ class TheRunEndsByExitingEveryStateStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 1)", "order * 10 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("order"), com.sce.runtime.ScriptSource.ecmascript("order * 10 + 1"))) {
                 return@run
             }
                 }
@@ -558,7 +558,7 @@ class TheRunEndsByExitingEveryStateStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 2)", "order * 10 + 2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("order"), com.sce.runtime.ScriptSource.ecmascript("order * 10 + 2"))) {
                 return@run
             }
                 }

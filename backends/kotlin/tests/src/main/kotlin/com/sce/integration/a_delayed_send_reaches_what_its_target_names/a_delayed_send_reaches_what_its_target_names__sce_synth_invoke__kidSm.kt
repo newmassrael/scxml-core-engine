@@ -363,7 +363,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
     // wait's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWait(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState, event: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent?): EnabledTransition<ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState, HistoryId>? = when {
-        event is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Ping && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == 7)", "_event.data === 7")) -> TransitionsPart0.transitionWaitAt0
+        event is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Ping && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 7")) -> TransitionsPart0.transitionWaitAt0
         else -> null
     }
 
@@ -416,7 +416,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
             ensureScriptEngine()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("5", "5"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.ecmascript("5"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_2")
@@ -486,7 +486,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
             ensureScriptEngine()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("_scxml_add(_event.data, 1)", "_event.data + 1"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.ecmascript("_event.data + 1"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_0")

@@ -227,7 +227,7 @@ class Test224StateMachine(
         } catch (_: Exception) {}
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"s0.\"", "'s0.'"))
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'s0.'"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test224Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
@@ -457,7 +457,7 @@ class Test224StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test224State, event: Test224Event?): EnabledTransition<Test224State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_indexOf(Var1, Var2) == 0)", "Var1.indexOf(Var2) === 0")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1.indexOf(Var2) === 0")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -546,7 +546,7 @@ class Test224StateMachine(
                 // idlocation, through the assignment `<assign>` makes — a member
                 // path lands, and a location that cannot take the id raises
                 // error.execution and the invocation is never deferred.
-                if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), generatedInvokeId, "<invoke>")) return@run
+                if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("Var1"), generatedInvokeId, "<invoke>")) return@run
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = adoptChild(Test224SceSynthInvokeInvoke0StateMachine(), generatedInvokeId)

@@ -419,7 +419,7 @@ class Test557StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test557State, event: Test557Event?): EnabledTransition<Test557State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var1:getElementsByTagName(\"book\")[1]:getAttribute(\"title\"), \"title1\")", "var1.getElementsByTagName('book')[0].getAttribute('title') == 'title1'")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1.getElementsByTagName('book')[0].getAttribute('title') == 'title1'")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -427,7 +427,7 @@ class Test557StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test557State, event: Test557Event?): EnabledTransition<Test557State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var2:getElementsByTagName(\"book\")[2]:getAttribute(\"title\"), \"title2\")", "var2.getElementsByTagName('book')[1].getAttribute('title') == 'title2'")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var2.getElementsByTagName('book')[1].getAttribute('title') == 'title2'")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }

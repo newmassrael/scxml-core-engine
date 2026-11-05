@@ -436,7 +436,7 @@ class Test223StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test223State, event: Test223Event?): EnabledTransition<Test223State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var1) ~= \"undefined\")", "typeof Var1 !== 'undefined'")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var1 !== 'undefined'")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -525,7 +525,7 @@ class Test223StateMachine(
                 // idlocation, through the assignment `<assign>` makes — a member
                 // path lands, and a location that cannot take the id raises
                 // error.execution and the invocation is never deferred.
-                if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), generatedInvokeId, "<invoke>")) return@run
+                if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("Var1"), generatedInvokeId, "<invoke>")) return@run
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = adoptChild(Test223SceSynthInvokeInvoke0StateMachine(), generatedInvokeId)

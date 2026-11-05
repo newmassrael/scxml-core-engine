@@ -463,14 +463,14 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "kept", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("kept", "kept")))
+                putParam(sendPayload, "kept", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("kept")))
             } catch (_: Exception) {
                 raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution, "<send> <param name='kept'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "brokenPlaceholder", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("(broken == \"\")", "broken === ''")))
+                putParam(sendPayload, "brokenPlaceholder", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("broken === ''")))
             } catch (_: Exception) {
                 raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution, "<send> <param name='brokenPlaceholder'> could not be read")
                 paramFailed = true

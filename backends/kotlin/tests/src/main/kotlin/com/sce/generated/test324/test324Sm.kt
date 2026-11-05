@@ -446,7 +446,7 @@ class Test324StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_name", "_name"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_name"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))) {
                 return@run
             }
                 }

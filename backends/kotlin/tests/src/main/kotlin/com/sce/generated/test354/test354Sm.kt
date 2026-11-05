@@ -276,7 +276,7 @@ class Test354StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test354Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -499,7 +499,7 @@ class Test354StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test354State, event: Test354Event?): EnabledTransition<Test354State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 1)", "Var2 == 1")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 1")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -507,7 +507,7 @@ class Test354StateMachine(
 
     // s2's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: Test354State, event: Test354Event?): EnabledTransition<Test354State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var3, 2)", "Var3 == 2")) -> TransitionsPart0.transitionS2At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == 2")) -> TransitionsPart0.transitionS2At0
         event == null -> TransitionsPart0.transitionS2At1
         else -> null
     }
@@ -515,7 +515,7 @@ class Test354StateMachine(
 
     // s3's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test354State, event: Test354Event?): EnabledTransition<Test354State, HistoryId>? = when {
-        event is Test354Event.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data)", "_event.data")) -> TransitionsPart0.transitionS3At0
+        event is Test354Event.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data")) -> TransitionsPart0.transitionS3At0
         event != null -> TransitionsPart0.transitionS3At1
         else -> null
     }
@@ -592,7 +592,7 @@ class Test354StateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "param1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("2", "2")))
+                putParam(sendPayload, "param1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("2")))
             } catch (_: Exception) {
                 raisePlatformError(Test354Event.Error.Execution, "<send> <param name='param1'> could not be read")
                 paramFailed = true
@@ -640,7 +640,7 @@ class Test354StateMachine(
 
 
             if (run send@{
-            val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("123", "123"))
+            val sendData = "123"
             // W3C SCXML 6.2: send to this session's external queue
             send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
@@ -719,12 +719,12 @@ class Test354StateMachine(
                 // SCE-MAP: test354.scxml:20 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.data.Var1", "_event.data.Var1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.data.Var1"))) {
                 return
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var3", "Var3"), com.sce.runtime.ScriptSource.lua("_event.data.param1", "_event.data.param1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var3"), com.sce.runtime.ScriptSource.ecmascript("_event.data.param1"))) {
                 return
             }
     }

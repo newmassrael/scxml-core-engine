@@ -220,7 +220,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pick' with expr
         try {
-            val initResult_pick = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"file:chosen.scxml\"", "'file:chosen.scxml'"))
+            val initResult_pick = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'file:chosen.scxml'"))
             engine.setVariable(sid, "pick", initResult_pick)
         } catch (e: Exception) {
             raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<data id='pick'> expr failed to evaluate")
@@ -511,7 +511,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
                             // "the child could not be started". A `null` result took
                             // neither path and returned silently.
                             val filePath = try {
-                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("pick", "pick"))?.toString()
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("pick"))?.toString()
                             } catch (_: Exception) {
                                 null
                             }

@@ -88,6 +88,7 @@ pub mod external_chain_is_bounded;
 pub mod flat_lifecycle;
 pub mod host_event_reaches_the_child;
 pub mod host_processor;
+pub mod inline_content_is_read_by_its_data_model;
 pub mod internal_chain_is_bounded;
 pub mod invoke_candidate_selects_the_child;
 pub mod invoke_expression_failure_is_reported;

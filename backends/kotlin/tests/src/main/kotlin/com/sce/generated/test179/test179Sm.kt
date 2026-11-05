@@ -380,7 +380,7 @@ class Test179StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test179State, event: Test179Event?): EnabledTransition<Test179State, HistoryId>? = when {
-        event is Test179Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, 123)", "_event.data == 123")) -> TransitionsPart0.transitionS0At0
+        event is Test179Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 123")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -419,7 +419,7 @@ class Test179StateMachine(
 
 
             if (run send@{
-            val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("123", "123"))
+            val sendData = "123"
             // W3C SCXML 6.2: send to this session's external queue
             send(Test179Event.Event1, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false

@@ -380,7 +380,7 @@ class Test562StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test562State, event: Test562Event?): EnabledTransition<Test562State, HistoryId>? = when {
-        event is Test562Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, \"this is a string\")", "_event.data == 'this is a string'")) -> TransitionsPart0.transitionS0At0
+        event is Test562Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 'this is a string'")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -419,7 +419,7 @@ class Test562StateMachine(
 
 
             if (run send@{
-            val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("\"this is a string\"", "'this is a string'"))
+            val sendData = "\"this is a string\""
             // W3C SCXML 6.2: send to this session's external queue
             send(Test562Event.Foo, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false

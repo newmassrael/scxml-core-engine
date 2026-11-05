@@ -251,7 +251,7 @@ class DonedataLocalInvokeStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'param_ok' with expr
         try {
-            val initResult_paramOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false"))
+            val initResult_paramOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("false"))
             engine.setVariable(sid, "param_ok", initResult_paramOk)
         } catch (e: Exception) {
             raisePlatformError(DonedataLocalInvokeEvent.Error.Execution, "<data id='param_ok'> expr failed to evaluate")
@@ -454,7 +454,7 @@ class DonedataLocalInvokeStateMachine(
 
     // phase_content's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPhaseContent(state: DonedataLocalInvokeState, event: DonedataLocalInvokeEvent?): EnabledTransition<DonedataLocalInvokeState, HistoryId>? = when {
-        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(param_ok) and (_event.data == \"hello_content\"))", "param_ok && _event.data === 'hello_content'")) -> TransitionsPart0.transitionPhaseContentAt0
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("param_ok && _event.data === 'hello_content'")) -> TransitionsPart0.transitionPhaseContentAt0
         event is DonedataLocalInvokeEvent.Done.Invoke.InvContent -> TransitionsPart0.transitionPhaseContentAt1
         event is DonedataLocalInvokeEvent.Error.Execution -> TransitionsPart0.transitionPhaseContentAt2
         else -> null
@@ -463,7 +463,7 @@ class DonedataLocalInvokeStateMachine(
 
     // phase_param's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPhaseParam(state: DonedataLocalInvokeState, event: DonedataLocalInvokeEvent?): EnabledTransition<DonedataLocalInvokeState, HistoryId>? = when {
-        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.result == 42))", "_event.data && _event.data.result === 42")) -> TransitionsPart0.transitionPhaseParamAt0
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> TransitionsPart0.transitionPhaseParamAt0
         event is DonedataLocalInvokeEvent.Done.Invoke.InvParam -> TransitionsPart0.transitionPhaseParamAt1
         event is DonedataLocalInvokeEvent.Error.Execution -> TransitionsPart0.transitionPhaseParamAt2
         else -> null
@@ -625,7 +625,7 @@ class DonedataLocalInvokeStateMachine(
                 // SCE-MAP: donedata_local_invoke.scxml:47 :: phase_param :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("param_ok", "param_ok"), com.sce.runtime.ScriptSource.lua("true", "true"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("param_ok"), com.sce.runtime.ScriptSource.ecmascript("true"))) {
                 return
             }
     }

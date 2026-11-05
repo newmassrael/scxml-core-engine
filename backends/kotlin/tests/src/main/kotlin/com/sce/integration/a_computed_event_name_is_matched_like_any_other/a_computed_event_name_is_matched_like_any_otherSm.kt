@@ -482,42 +482,42 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
-        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.new\")", "_event.name === 'request.new'")) -> TransitionsPart0.transitionS1At0
+        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.name === 'request.new'")) -> TransitionsPart0.transitionS1At0
         else -> null
     }
 
 
     // s2's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
-        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"other.thing\")", "_event.name === 'other.thing'")) -> TransitionsPart0.transitionS2At0
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.name === 'other.thing'")) -> TransitionsPart0.transitionS2At0
         else -> null
     }
 
 
     // s3's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
-        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.again\")", "_event.name === 'request.again'")) -> TransitionsPart0.transitionS3At0
+        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.name === 'request.again'")) -> TransitionsPart0.transitionS3At0
         else -> null
     }
 
 
     // s4's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS4(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
-        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"last.one\")", "_event.name === 'last.one'")) -> TransitionsPart0.transitionS4At0
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.name === 'last.one'")) -> TransitionsPart0.transitionS4At0
         else -> null
     }
 
 
     // s5's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS5(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
-        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.third\")", "_event.name === 'request.third'")) -> TransitionsPart0.transitionS5At0
+        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.name === 'request.third'")) -> TransitionsPart0.transitionS5At0
         else -> null
     }
 
 
     // s6's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS6(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
-        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"last.two\")", "_event.name === 'last.two'")) -> TransitionsPart0.transitionS6At0
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.name === 'last.two'")) -> TransitionsPart0.transitionS6At0
         else -> null
     }
 
@@ -559,7 +559,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("(\"request.\" .. \"new\")", "'request.' + 'new'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'request.' + 'new'")))
             } catch (_: Exception) {
                 ""
             }
@@ -597,7 +597,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("(\"other.\" .. \"thing\")", "'other.' + 'thing'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'other.' + 'thing'")))
             } catch (_: Exception) {
                 ""
             }
@@ -635,7 +635,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("(\"request.\" .. \"again\")", "'request.' + 'again'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'request.' + 'again'")))
             } catch (_: Exception) {
                 ""
             }
@@ -674,7 +674,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("(\"last.\" .. \"one\")", "'last.' + 'one'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'last.' + 'one'")))
             } catch (_: Exception) {
                 ""
             }
@@ -715,7 +715,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("(\"request.\" .. \"third\")", "'request.' + 'third'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'request.' + 'third'")))
             } catch (_: Exception) {
                 ""
             }
@@ -726,7 +726,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'#_internal'")))
             } catch (_: Exception) {
                 raisePlatformError(AComputedEventNameIsMatchedLikeAnyOtherEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_4")
                 return@send true
@@ -825,7 +825,7 @@ sendEventName,
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("(\"last.\" .. \"two\")", "'last.' + 'two'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'last.' + 'two'")))
             } catch (_: Exception) {
                 ""
             }
@@ -836,7 +836,7 @@ sendEventName,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("(\"#_scxml_\" .. _scxml_tostring(_sessionid))", "'#_scxml_' + _sessionid")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'#_scxml_' + _sessionid")))
             } catch (_: Exception) {
                 raisePlatformError(AComputedEventNameIsMatchedLikeAnyOtherEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_5")
                 return@send true

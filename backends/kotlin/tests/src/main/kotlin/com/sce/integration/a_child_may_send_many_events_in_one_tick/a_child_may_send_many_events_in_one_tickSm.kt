@@ -204,7 +204,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'ticks' with expr
         try {
-            val initResult_ticks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_ticks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "ticks", initResult_ticks)
         } catch (e: Exception) {
             raisePlatformError(AChildMaySendManyEventsInOneTickEvent.Error.Execution, "<data id='ticks'> expr failed to evaluate")
@@ -524,7 +524,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
                 // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:60 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ticks", "ticks"), com.sce.runtime.ScriptSource.lua("_scxml_add(ticks, 1)", "ticks + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("ticks"), com.sce.runtime.ScriptSource.ecmascript("ticks + 1"))) {
                 return
             }
     }

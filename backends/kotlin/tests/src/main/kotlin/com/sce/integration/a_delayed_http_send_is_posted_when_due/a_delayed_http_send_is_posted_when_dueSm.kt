@@ -208,7 +208,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'dynamicUrl' with expr
         try {
-            val initResult_dynamicUrl = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"http://127.0.0.1:18081/dynamic\"", "'http://127.0.0.1:18081/dynamic'"))
+            val initResult_dynamicUrl = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'http://127.0.0.1:18081/dynamic'"))
             engine.setVariable(sid, "dynamicUrl", initResult_dynamicUrl)
         } catch (e: Exception) {
             raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<data id='dynamicUrl'> expr failed to evaluate")
@@ -476,7 +476,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             // that is not the CSS2 time the clause names (ARCHITECTURE.md,
             // "Durations"): the message is not scheduled under some default wait.
             val sendDelayText = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0ms\"", "'0ms'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'0ms'")))
             } catch (_: Exception) {
                 raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_2")
                 return@send true
@@ -536,7 +536,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("dynamicUrl", "dynamicUrl")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("dynamicUrl")))
             } catch (_: Exception) {
                 raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<send> targetexpr could not be evaluated", "dynamic")
                 return@send true

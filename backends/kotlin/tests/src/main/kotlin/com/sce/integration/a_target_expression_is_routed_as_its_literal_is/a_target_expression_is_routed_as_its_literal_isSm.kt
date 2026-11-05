@@ -540,140 +540,140 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'tInternal' with expr
         try {
-            val initResult_tInternal = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'"))
+            val initResult_tInternal = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#_internal'"))
             engine.setVariable(sid, "tInternal", initResult_tInternal)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tInternal'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'tKid' with expr
         try {
-            val initResult_tKid = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_kid\"", "'#_kid'"))
+            val initResult_tKid = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#_kid'"))
             engine.setVariable(sid, "tKid", initResult_tKid)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tKid'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'tStranger' with expr
         try {
-            val initResult_tStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_scxml_nosuch\"", "'#_scxml_nosuch'"))
+            val initResult_tStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#_scxml_nosuch'"))
             engine.setVariable(sid, "tStranger", initResult_tStranger)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tStranger'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'tParent' with expr
         try {
-            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_parent\"", "'#_parent'"))
+            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#_parent'"))
             engine.setVariable(sid, "tParent", initResult_tParent)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tParent'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'tBogus' with expr
         try {
-            val initResult_tBogus = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"bogus\"", "'bogus'"))
+            val initResult_tBogus = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'bogus'"))
             engine.setVariable(sid, "tBogus", initResult_tBogus)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tBogus'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'kidLoc' with expr
         try {
-            val initResult_kidLoc = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
+            val initResult_kidLoc = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("''"))
             engine.setVariable(sid, "kidLoc", initResult_kidLoc)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidLoc'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'internalNow' with expr
         try {
-            val initResult_internalNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_internalNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "internalNow", initResult_internalNow)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='internalNow'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'internalLater' with expr
         try {
-            val initResult_internalLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_internalLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "internalLater", initResult_internalLater)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='internalLater'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'kidNow' with expr
         try {
-            val initResult_kidNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_kidNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "kidNow", initResult_kidNow)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidNow'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'kidLater' with expr
         try {
-            val initResult_kidLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_kidLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "kidLater", initResult_kidLater)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidLater'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sessNow' with expr
         try {
-            val initResult_sessNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_sessNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "sessNow", initResult_sessNow)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='sessNow'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sessLater' with expr
         try {
-            val initResult_sessLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_sessLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "sessLater", initResult_sessLater)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='sessLater'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'commErrors' with expr
         try {
-            val initResult_commErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_commErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "commErrors", initResult_commErrors)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='commErrors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'execErrors' with expr
         try {
-            val initResult_execErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_execErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "execErrors", initResult_execErrors)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='execErrors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterStranger' with expr
         try {
-            val initResult_afterStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterStranger", initResult_afterStranger)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterStranger'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterStrangerLater' with expr
         try {
-            val initResult_afterStrangerLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterStrangerLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterStrangerLater", initResult_afterStrangerLater)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterStrangerLater'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterOrphan' with expr
         try {
-            val initResult_afterOrphan = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterOrphan = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterOrphan", initResult_afterOrphan)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterOrphan'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterOrphanLater' with expr
         try {
-            val initResult_afterOrphanLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterOrphanLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterOrphanLater", initResult_afterOrphanLater)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterOrphanLater'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterBogus' with expr
         try {
-            val initResult_afterBogus = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterBogus = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterBogus", initResult_afterBogus)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterBogus'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterBogusLater' with expr
         try {
-            val initResult_afterBogusLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterBogusLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterBogusLater", initResult_afterBogusLater)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterBogusLater'> expr failed to evaluate")
@@ -878,8 +878,8 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
         event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Communication -> TransitionsPart0.transitionRunAt0
         event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution -> TransitionsPart0.transitionRunAt1
         event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Hello -> TransitionsPart0.transitionRunAt2
-        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.InNow && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.type == \"internal\")", "_event.type === 'internal'")) -> TransitionsPart0.transitionRunAt3
-        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.InLater && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.type == \"internal\")", "_event.type === 'internal'")) -> TransitionsPart0.transitionRunAt4
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.InNow && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.type === 'internal'")) -> TransitionsPart0.transitionRunAt3
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.InLater && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.type === 'internal'")) -> TransitionsPart0.transitionRunAt4
         event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.KAckNow -> TransitionsPart0.transitionRunAt5
         event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.KAckLater -> TransitionsPart0.transitionRunAt6
         event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.SAckNow -> TransitionsPart0.transitionRunAt7
@@ -921,7 +921,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tStranger", "tStranger")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tStranger")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_7")
                 return@send true
@@ -1001,7 +1001,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterStranger", "afterStranger"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterStranger"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1016,7 +1016,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tStranger", "tStranger")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tStranger")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_8")
                 return@send true
@@ -1094,7 +1094,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterStrangerLater", "afterStrangerLater"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterStrangerLater"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1109,7 +1109,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tParent")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_9")
                 return@send true
@@ -1189,7 +1189,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterOrphan", "afterOrphan"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterOrphan"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1204,7 +1204,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tParent")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_10")
                 return@send true
@@ -1282,7 +1282,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterOrphanLater", "afterOrphanLater"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterOrphanLater"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1297,7 +1297,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tBogus", "tBogus")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tBogus")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_11")
                 return@send true
@@ -1377,7 +1377,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterBogus", "afterBogus"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterBogus"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1392,7 +1392,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tBogus", "tBogus")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tBogus")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_12")
                 return@send true
@@ -1470,7 +1470,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterBogusLater", "afterBogusLater"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterBogusLater"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1573,7 +1573,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:127 :: run :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("commErrors", "commErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(commErrors, 1)", "commErrors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("commErrors"), com.sce.runtime.ScriptSource.ecmascript("commErrors + 1"))) {
                 return
             }
     }
@@ -1582,7 +1582,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:130 :: run :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("execErrors", "execErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(execErrors, 1)", "execErrors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("execErrors"), com.sce.runtime.ScriptSource.ecmascript("execErrors + 1"))) {
                 return
             }
     }
@@ -1591,7 +1591,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:133 :: run :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("kidLoc", "kidLoc"), com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("kidLoc"), com.sce.runtime.ScriptSource.ecmascript("_event.origin"))) {
                 return
             }
 
@@ -1603,7 +1603,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tInternal", "tInternal")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tInternal")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true
@@ -1690,7 +1690,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.InNow,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tInternal", "tInternal")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tInternal")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
@@ -1775,7 +1775,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.InLater,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tKid", "tKid")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tKid")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_2")
                 return@send true
@@ -1862,7 +1862,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.KNow,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tKid", "tKid")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tKid")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_3")
                 return@send true
@@ -1947,7 +1947,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.KLater,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("kidLoc", "kidLoc")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("kidLoc")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_4")
                 return@send true
@@ -2034,7 +2034,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SNow,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("kidLoc", "kidLoc")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("kidLoc")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_5")
                 return@send true
@@ -2128,7 +2128,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:143 :: run :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("internalNow", "internalNow"), com.sce.runtime.ScriptSource.lua("_scxml_add(internalNow, 1)", "internalNow + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("internalNow"), com.sce.runtime.ScriptSource.ecmascript("internalNow + 1"))) {
                 return
             }
     }
@@ -2137,7 +2137,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:146 :: run :: _transition_4
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("internalLater", "internalLater"), com.sce.runtime.ScriptSource.lua("_scxml_add(internalLater, 1)", "internalLater + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("internalLater"), com.sce.runtime.ScriptSource.ecmascript("internalLater + 1"))) {
                 return
             }
     }
@@ -2146,7 +2146,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:149 :: run :: _transition_5
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("kidNow", "kidNow"), com.sce.runtime.ScriptSource.lua("_scxml_add(kidNow, 1)", "kidNow + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("kidNow"), com.sce.runtime.ScriptSource.ecmascript("kidNow + 1"))) {
                 return
             }
     }
@@ -2155,7 +2155,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:152 :: run :: _transition_6
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("kidLater", "kidLater"), com.sce.runtime.ScriptSource.lua("_scxml_add(kidLater, 1)", "kidLater + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("kidLater"), com.sce.runtime.ScriptSource.ecmascript("kidLater + 1"))) {
                 return
             }
     }
@@ -2164,7 +2164,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:155 :: run :: _transition_7
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sessNow", "sessNow"), com.sce.runtime.ScriptSource.lua("_scxml_add(sessNow, 1)", "sessNow + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sessNow"), com.sce.runtime.ScriptSource.ecmascript("sessNow + 1"))) {
                 return
             }
     }
@@ -2173,7 +2173,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater,
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:158 :: run :: _transition_8
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sessLater", "sessLater"), com.sce.runtime.ScriptSource.lua("_scxml_add(sessLater, 1)", "sessLater + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sessLater"), com.sce.runtime.ScriptSource.ecmascript("sessLater + 1"))) {
                 return
             }
     }

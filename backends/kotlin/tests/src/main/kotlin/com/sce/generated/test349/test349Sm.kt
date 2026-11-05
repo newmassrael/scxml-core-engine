@@ -552,7 +552,7 @@ class Test349StateMachine(
                 // SCE-MAP: test349.scxml:15 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.origin"))) {
                 return
             }
     }

@@ -190,7 +190,7 @@ class Test453StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'var1' with expr
         try {
-            val initResult_var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("function(invar) return _scxml_add(invar, 1) end", "function(invar) {return invar + 1;}"))
+            val initResult_var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("function(invar) {return invar + 1;}"))
             engine.setVariable(sid, "var1", initResult_var1)
         } catch (e: Exception) {
             raisePlatformError(Test453Event.Error.Execution, "<data id='var1'> expr failed to evaluate")
@@ -392,7 +392,7 @@ class Test453StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test453State, event: Test453Event?): EnabledTransition<Test453State, HistoryId>? = when {
-        event is Test453Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var1(2), 3)", "var1(2) == 3")) -> TransitionsPart0.transitionS0At0
+        event is Test453Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1(2) == 3")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }

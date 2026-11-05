@@ -230,7 +230,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'tParent' with expr
         try {
-            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_parent\"", "'#_parent'"))
+            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#_parent'"))
             engine.setVariable(sid, "tParent", initResult_tParent)
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<data id='tParent'> expr failed to evaluate")
@@ -528,7 +528,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tParent")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true
@@ -619,7 +619,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckNow,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tParent")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
@@ -708,7 +708,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckLater,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tParent")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_2")
                 return@send true
@@ -799,7 +799,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SAckNow,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tParent")))
             } catch (_: Exception) {
                 raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_3")
                 return@send true

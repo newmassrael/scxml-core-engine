@@ -384,7 +384,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
 
     // waiting's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, event: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent?): EnabledTransition<AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, HistoryId>? = when {
-        event is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.new\")", "_event.name === 'request.new'")) -> TransitionsPart0.transitionWaitingAt0
+        event is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.name === 'request.new'")) -> TransitionsPart0.transitionWaitingAt0
         event is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Request -> TransitionsPart0.transitionWaitingAt1
         else -> null
     }

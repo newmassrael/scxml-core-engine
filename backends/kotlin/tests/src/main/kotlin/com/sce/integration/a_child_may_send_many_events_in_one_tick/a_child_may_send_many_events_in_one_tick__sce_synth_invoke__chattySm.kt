@@ -182,14 +182,14 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'items' with expr
         try {
-            val initResult_items = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}", "[1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"))
+            val initResult_items = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"))
             engine.setVariable(sid, "items", initResult_items)
         } catch (e: Exception) {
             raisePlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution, "<data id='items'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'item' with expr
         try {
-            val initResult_item = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_item = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "item", initResult_item)
         } catch (e: Exception) {
             raisePlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution, "<data id='item'> expr failed to evaluate")
@@ -411,7 +411,7 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("items", "items"), "item", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("items"), "item", "") {
 
 
             if (run send@{

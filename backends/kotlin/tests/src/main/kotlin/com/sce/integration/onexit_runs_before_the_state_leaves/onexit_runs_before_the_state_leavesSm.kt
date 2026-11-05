@@ -366,35 +366,35 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'selfInInner' with expr
         try {
-            val initResult_selfInInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_selfInInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "selfInInner", initResult_selfInInner)
         } catch (e: Exception) {
             raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='selfInInner'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'parentInInner' with expr
         try {
-            val initResult_parentInInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_parentInInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "parentInInner", initResult_parentInInner)
         } catch (e: Exception) {
             raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='parentInInner'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'selfInOuter' with expr
         try {
-            val initResult_selfInOuter = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_selfInOuter = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "selfInOuter", initResult_selfInOuter)
         } catch (e: Exception) {
             raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='selfInOuter'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'childInOuter' with expr
         try {
-            val initResult_childInOuter = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_childInOuter = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "childInOuter", initResult_childInOuter)
         } catch (e: Exception) {
             raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='childInOuter'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'exits' with expr
         try {
-            val initResult_exits = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_exits = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "exits", initResult_exits)
         } catch (e: Exception) {
             raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='exits'> expr failed to evaluate")
@@ -597,11 +597,11 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
 
     // check's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCheck(state: OnexitRunsBeforeTheStateLeavesState, event: OnexitRunsBeforeTheStateLeavesEvent?): EnabledTransition<OnexitRunsBeforeTheStateLeavesState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(exits, 2))", "exits != 2")) -> TransitionsPart0.transitionCheckAt0
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(selfInInner, 1))", "selfInInner != 1")) -> TransitionsPart0.transitionCheckAt1
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(parentInInner, 1))", "parentInInner != 1")) -> TransitionsPart0.transitionCheckAt2
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(selfInOuter, 1))", "selfInOuter != 1")) -> TransitionsPart0.transitionCheckAt3
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(childInOuter, 0))", "childInOuter != 0")) -> TransitionsPart0.transitionCheckAt4
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("exits != 2")) -> TransitionsPart0.transitionCheckAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("selfInInner != 1")) -> TransitionsPart0.transitionCheckAt1
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("parentInInner != 1")) -> TransitionsPart0.transitionCheckAt2
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("selfInOuter != 1")) -> TransitionsPart0.transitionCheckAt3
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("childInOuter != 0")) -> TransitionsPart0.transitionCheckAt4
         event == null -> TransitionsPart0.transitionCheckAt5
         else -> null
     }
@@ -729,7 +729,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("exits", "exits"), com.sce.runtime.ScriptSource.lua("_scxml_add(exits, 1)", "exits + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("exits"), com.sce.runtime.ScriptSource.ecmascript("exits + 1"))) {
                 return@run
             }
 
@@ -737,7 +737,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             if (isStateActive("inner")) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("selfInInner", "selfInInner"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("selfInInner"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }
@@ -746,7 +746,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             if (isStateActive("outer")) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("parentInInner", "parentInInner"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("parentInInner"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }
@@ -759,7 +759,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("exits", "exits"), com.sce.runtime.ScriptSource.lua("_scxml_add(exits, 1)", "exits + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("exits"), com.sce.runtime.ScriptSource.ecmascript("exits + 1"))) {
                 return@run
             }
 
@@ -767,7 +767,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             if (isStateActive("outer")) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("selfInOuter", "selfInOuter"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("selfInOuter"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }
@@ -776,7 +776,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             if (isStateActive("inner")) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("childInOuter", "childInOuter"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("childInOuter"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }

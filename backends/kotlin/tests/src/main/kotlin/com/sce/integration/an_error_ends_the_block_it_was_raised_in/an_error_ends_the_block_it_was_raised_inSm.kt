@@ -551,175 +551,175 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterAssign' with expr
         try {
-            val initResult_afterAssign = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterAssign = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterAssign", initResult_afterAssign)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterAssign'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterScript' with expr
         try {
-            val initResult_afterScript = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterScript = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterScript", initResult_afterScript)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterScript'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterLog' with expr
         try {
-            val initResult_afterLog = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterLog = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterLog", initResult_afterLog)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterLog'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterCancel' with expr
         try {
-            val initResult_afterCancel = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterCancel = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterCancel", initResult_afterCancel)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterCancel'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterIfInner' with expr
         try {
-            val initResult_afterIfInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterIfInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterIfInner", initResult_afterIfInner)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterIfInner'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterIf' with expr
         try {
-            val initResult_afterIf = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterIf = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterIf", initResult_afterIf)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterIf'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'ifThen' with expr
         try {
-            val initResult_ifThen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_ifThen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "ifThen", initResult_ifThen)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='ifThen'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'ifElse' with expr
         try {
-            val initResult_ifElse = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_ifElse = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "ifElse", initResult_ifElse)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='ifElse'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterIfCond' with expr
         try {
-            val initResult_afterIfCond = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterIfCond = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterIfCond", initResult_afterIfCond)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterIfCond'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'elseifThen' with expr
         try {
-            val initResult_elseifThen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_elseifThen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "elseifThen", initResult_elseifThen)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='elseifThen'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'elseifElse' with expr
         try {
-            val initResult_elseifElse = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_elseifElse = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "elseifElse", initResult_elseifElse)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='elseifElse'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterElseifCond' with expr
         try {
-            val initResult_afterElseifCond = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterElseifCond = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterElseifCond", initResult_afterElseifCond)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterElseifCond'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterNestedIf' with expr
         try {
-            val initResult_afterNestedIf = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterNestedIf = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterNestedIf", initResult_afterNestedIf)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterNestedIf'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterOuterIf' with expr
         try {
-            val initResult_afterOuterIf = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterOuterIf = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterOuterIf", initResult_afterOuterIf)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterOuterIf'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterSingle' with expr
         try {
-            val initResult_afterSingle = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterSingle = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterSingle", initResult_afterSingle)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterSingle'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterTrans' with expr
         try {
-            val initResult_afterTrans = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_afterTrans = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "afterTrans", initResult_afterTrans)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterTrans'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'initRan' with expr
         try {
-            val initResult_initRan = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_initRan = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "initRan", initResult_initRan)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='initRan'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pairs' with expr
         try {
-            val initResult_pairs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_pairs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pairs", initResult_pairs)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='pairs'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sum' with expr
         try {
-            val initResult_sum = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_sum = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "sum", initResult_sum)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='sum'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'outer' with expr
         try {
-            val initResult_outer = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 2}", "[1, 2]"))
+            val initResult_outer = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[1, 2]"))
             engine.setVariable(sid, "outer", initResult_outer)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='outer'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'inner' with expr
         try {
-            val initResult_inner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{10, 20}", "[10, 20]"))
+            val initResult_inner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[10, 20]"))
             engine.setVariable(sid, "inner", initResult_inner)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='inner'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'o' with expr
         try {
-            val initResult_o = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_o = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "o", initResult_o)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='o'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'i' with expr
         try {
-            val initResult_i = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_i = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "i", initResult_i)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='i'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
-            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({})"))
             engine.setVariable(sid, "obj", initResult_obj)
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
@@ -954,12 +954,12 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterSingle", "afterSingle"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterSingle"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -972,7 +972,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                     run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("initRan", "initRan"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("initRan"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                     }
@@ -985,12 +985,12 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterAssign", "afterAssign"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterAssign"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1000,12 +1000,12 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
 
             // W3C SCXML 4.9: a script that fails has raised error.execution, and
             // the error ends the block.
-            if (!executeScriptBlock(com.sce.runtime.ScriptSource.lua("obj.missing.deep = 1", "obj.missing.deep = 1;"))) {
+            if (!executeScriptBlock(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep = 1;"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterScript", "afterScript"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterScript"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1017,7 +1017,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("unreadable: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))?.toString() ?: ""))
+                    println("unreadable: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<log> expr failed to evaluate")
@@ -1028,7 +1028,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterLog", "afterLog"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterLog"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1044,7 +1044,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 val engineCancel = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidCancel = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = engineCancel.evaluateExpr(sidCancel, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
+                    val v = engineCancel.evaluateExpr(sidCancel, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"))
                     val sendidToCancel = v?.toString() ?: ""
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
                     false
@@ -1057,7 +1057,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterCancel", "afterCancel"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterCancel"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1066,15 +1066,15 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("true", "true")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("true")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterIfInner", "afterIfInner"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterIfInner"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }
@@ -1083,7 +1083,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterIf", "afterIf"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterIf"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1092,16 +1092,16 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
 
 
             var ifCondFailed2 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_truthy(obj.missing.deep)", "obj.missing.deep")) { ifCondFailed2 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")) { ifCondFailed2 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ifThen", "ifThen"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("ifThen"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             } else {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ifElse", "ifElse"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("ifElse"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }
@@ -1110,7 +1110,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterIfCond", "afterIfCond"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterIfCond"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1119,22 +1119,22 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
 
 
             var ifCondFailed3 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("false", "false")) { ifCondFailed3 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("false")) { ifCondFailed3 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("elseifThen", "elseifThen"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("elseifThen"), com.sce.runtime.ScriptSource.ecmascript("2"))) {
                 return@run
             }
-            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_truthy(obj.missing.deep)", "obj.missing.deep")) { ifCondFailed3 = true }) {
+            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")) { ifCondFailed3 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("elseifThen", "elseifThen"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("elseifThen"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             } else {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("elseifElse", "elseifElse"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("elseifElse"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }
@@ -1143,7 +1143,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterElseifCond", "afterElseifCond"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterElseifCond"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1152,14 +1152,14 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
 
 
             var ifCondFailed4 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("true", "true")) { ifCondFailed4 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("true")) { ifCondFailed4 = true }) {
 
 
             var ifCondFailed5 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_truthy(obj.missing.deep)", "obj.missing.deep")) { ifCondFailed5 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")) { ifCondFailed5 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ifThen", "ifThen"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("ifThen"), com.sce.runtime.ScriptSource.ecmascript("2"))) {
                 return@run
             }
             }
@@ -1168,7 +1168,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterNestedIf", "afterNestedIf"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterNestedIf"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
             }
@@ -1177,7 +1177,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterOuterIf", "afterOuterIf"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterOuterIf"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
                 }
@@ -1190,7 +1190,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("outer", "outer"), "o", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("outer"), "o", "") {
 
 
             if (run foreach@{
@@ -1198,13 +1198,13 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("inner", "inner"), "i", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("inner"), "i", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.lua("pairs", "pairs"), com.sce.runtime.ScriptSource.lua("_scxml_add(pairs, 1)", "pairs + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("pairs"), com.sce.runtime.ScriptSource.ecmascript("pairs + 1"))
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.lua("sum", "sum"), com.sce.runtime.ScriptSource.lua("_scxml_add(sum, (o * i))", "sum + o * i"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("sum"), com.sce.runtime.ScriptSource.ecmascript("sum + o * i"))
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
@@ -1289,7 +1289,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:85 :: p :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
                 return
             }
     }
@@ -1298,12 +1298,12 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:88 :: p :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterTrans", "afterTrans"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterTrans"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return
             }
     }

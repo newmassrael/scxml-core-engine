@@ -306,14 +306,14 @@ class Test448StateMachine(
     private fun declareStateVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // State 's01' variable 'var1'
         try {
-            val initResult_var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
+            val initResult_var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
             engine.setVariable(sid, "var1", initResult_var1)
         } catch (e: Exception) {
             raisePlatformError(Test448Event.Error.Execution, "<data id='var1'> expr failed to evaluate")
         }
         // State 's01p2' variable 'var2'
         try {
-            val initResult_var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
+            val initResult_var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
             engine.setVariable(sid, "var2", initResult_var2)
         } catch (e: Exception) {
             raisePlatformError(Test448Event.Error.Execution, "<data id='var2'> expr failed to evaluate")
@@ -516,7 +516,7 @@ class Test448StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test448State, event: Test448Event?): EnabledTransition<Test448State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var1, 1)", "var1==1")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1==1")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -524,7 +524,7 @@ class Test448StateMachine(
 
     // s01p1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS01p1(state: Test448State, event: Test448Event?): EnabledTransition<Test448State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var2, 1)", "var2==1")) -> TransitionsPart0.transitionS01p1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var2==1")) -> TransitionsPart0.transitionS01p1At0
         event == null -> TransitionsPart0.transitionS01p1At1
         else -> null
     }

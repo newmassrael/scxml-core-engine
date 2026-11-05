@@ -427,14 +427,14 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'token' with expr
         try {
-            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"parent\"", "'parent'"))
+            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'parent'"))
             engine.setVariable(sid, "token", initResult_token)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'only_here' with expr
         try {
-            val initResult_onlyHere = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"sole\"", "'sole'"))
+            val initResult_onlyHere = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'sole'"))
             engine.setVariable(sid, "only_here", initResult_onlyHere)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<data id='only_here'> expr failed to evaluate")
@@ -839,7 +839,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("(1 / 0)", "1/0"))
+                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("1/0"))
                         } catch (_: Exception) {
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
                         }
@@ -897,7 +897,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("token", "token"))
+                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("token"))
                         } catch (_: Exception) {
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
                         }
@@ -928,7 +928,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("only_here", "only_here"))
+                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("only_here"))
                         } catch (_: Exception) {
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
                         }
@@ -959,7 +959,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["declared"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"carried\"", "'carried'"))
+                            invokeParams["declared"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("'carried'"))
                         } catch (_: Exception) {
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='declared'> could not be read")
                         }
@@ -968,7 +968,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"leaked\"", "'leaked'"))
+                            invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("'leaked'"))
                         } catch (_: Exception) {
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='nowhere'> could not be read")
                         }

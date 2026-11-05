@@ -206,7 +206,7 @@ class Test452StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'foo' with expr
         try {
-            val initResult_foo = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            val initResult_foo = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "foo", initResult_foo)
         } catch (e: Exception) {
             raisePlatformError(Test452Event.Error.Execution, "<data id='foo'> expr failed to evaluate")
@@ -215,7 +215,7 @@ class Test452StateMachine(
 
     private fun runDocumentScriptsPart0(engine: ScxmlScriptEngine, sid: String) {
         try {
-            engine.executeScript(sid, com.sce.runtime.ScriptSource.lua("testobject = function() local self = {} self.bar = 0 return self end", "function testobject() {\n    this.bar = 0;}"))
+            engine.executeScript(sid, com.sce.runtime.ScriptSource.ecmascript("function testobject() {\n    this.bar = 0;}"))
         } catch (e: Exception) {
             raisePlatformError(Test452Event.Error.Execution, "a top-level <script> failed to execute")
         }
@@ -416,7 +416,7 @@ class Test452StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test452State, event: Test452Event?): EnabledTransition<Test452State, HistoryId>? = when {
-        event is Test452Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(foo.bar, 1)", "foo.bar == 1")) -> TransitionsPart0.transitionS0At0
+        event is Test452Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("foo.bar == 1")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -454,12 +454,12 @@ class Test452StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("foo", "foo"), com.sce.runtime.ScriptSource.lua("testobject()", "new testobject();"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("foo"), com.sce.runtime.ScriptSource.ecmascript("new testobject();"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("foo.bar", "foo.bar"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("foo.bar"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
                 return@run
             }
 

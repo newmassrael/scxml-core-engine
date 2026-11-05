@@ -428,7 +428,7 @@ class Test174StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\"", "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"))) {
                 return@run
             }
 
@@ -440,7 +440,7 @@ class Test174StateMachine(
             // W3C SCXML 6.2: a type the platform does not support is the same
             // error as one that cannot be evaluated.
             val sendTypeValue = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("Var1")))
             } catch (_: Exception) {
                 raisePlatformError(Test174Event.Error.Execution, "<send> typeexpr could not be evaluated", "__send_0")
                 return@send true

@@ -204,7 +204,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'token' with expr
         try {
-            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
             engine.setVariable(sid, "token", initResult_token)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
@@ -406,7 +406,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
 
     // report's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReport(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(token == \"parent\")", "token === 'parent'")) -> TransitionsPart0.transitionReportAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("token === 'parent'")) -> TransitionsPart0.transitionReportAt0
         event == null -> TransitionsPart0.transitionReportAt1
         else -> null
     }

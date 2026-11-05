@@ -383,7 +383,7 @@ class Test198StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test198State, event: Test198Event?): EnabledTransition<Test198State, HistoryId>? = when {
-        event is Test198Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.origintype, \"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\")", "_event.origintype == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionsPart0.transitionS0At0
+        event is Test198Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.origintype == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }

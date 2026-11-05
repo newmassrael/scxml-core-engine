@@ -874,30 +874,20 @@ impl StatePolicy for Test520Policy {
     } else {
 
     // W3C SCXML B.2: inline text takes the ordered readings — an expression
-    // when it is one, XML when it opens with `<`, otherwise the string. The
-    // same filter inline `<data>` and `<donedata>` text goes through decides
-    // which, so one clause reaches one answer wherever `<content>` appears.
+    // when it is one, XML when it opens with `<`, otherwise the string — and
+    // the data model decides which apply (`inline_content_reading`, the one
+    // answer every backend and the script-engine analysis read). A literal is
+    // its value now, so `<content>21</content>` is the number 21 under
+    // ECMAScript whether or not anything else in the document needs an engine.
     //
     // Handing the author's text over unread made this line evaluate it *as
     // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
     // the datamodel reads 5, and whether the text was an expression at all
     // was discovered by an evaluation that failed.
-    // The reading is decided at codegen time; the VALUE is produced here, at
-    // send time, and serialized so the far end parses instead of evaluating.
-    let event_data_string: String = {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        match se.evaluate_expression(&sid, "\"this is some content\"") {
-            Ok(val) => ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val),
-            Err(e) => {
-                ::sce_rust_runtime::sce_log_error!("send content eval failed: {}", e);
-                String::new()
-            }
-        }
-    };
-    let event_data: &str = &event_data_string;
+    // A value the text fixes on its own, finished at codegen time as the JSON
+    // the event carries: a literal under ECMAScript, and otherwise the
+    // space-normalized string, §scxml-B-2-8-1's last rung.
+    let event_data: &str = "\"this is some content\"";
 
     // W3C SCXML C.2: BasicHTTP send to HTTP target
     {
