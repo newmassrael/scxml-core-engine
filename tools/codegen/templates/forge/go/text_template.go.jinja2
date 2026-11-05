@@ -11,11 +11,17 @@
 package {{ package }}
 
 {# `strconv` is read off the text by the render door, as every Go unit's
-   standard packages are; `strings` is the builder every render writes into. #}
+   standard packages are; `strings` is the builder every render writes into.
+   `uses_scealgorithm` is the forge runtime's import read off the same text: the door
+   reads both facts for every Go template, so a template that lists the packages lists
+   the runtime too, whether or not a body of this kind ever names it. #}
 import (
 {% for pkg in std_imports %}
 	"{{ pkg }}"
 {% endfor %}
+{% if uses_scealgorithm %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
 	"strings"
 {% if fenced %}
 
