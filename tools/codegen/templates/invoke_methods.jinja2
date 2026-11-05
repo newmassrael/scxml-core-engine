@@ -326,6 +326,13 @@
     - executeFinalizeForChildEvent()    — W3C SCXML 6.5 finalize execution
 #}
 {% if (model.invokes | scxml_family) or (model.invokes | scxml_remote) or (model.invokes | unsupported) %}
+{# The drain exists where something fills the queue: a local, hybrid or
+   unsupported-type invoke defers its start to `pendingInvokes_`, and each of
+   those arms reaches `engine`. A remote `<invoke type="scxml">` never defers,
+   so a machine whose only invokes are remote has nothing to drain; it gets no
+   drain, and the engine's HasInvokeSupportTrait leaves the call out. The same
+   condition declares `pendingInvokes_` in `state_machine.jinja2`. #}
+{% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // Uses InvokeHelper defer/cancel/execute pattern (ARCHITECTURE.md Zero Duplication).
@@ -871,6 +878,7 @@
 
         AOT_DEBUG("All pending invokes executed");
     }
+{% endif %}
 
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
     // is over, delivered to that invocation by name — a child need not declare

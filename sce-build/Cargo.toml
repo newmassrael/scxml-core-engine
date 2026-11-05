@@ -1814,5 +1814,12 @@ name = "a_long_document_text_is_held_as_characters_in_c_and_cpp"
 path = "tests/a_long_document_text_is_held_as_characters_in_c_and_cpp.rs"
 required-features = ["cli"]
 
+# A C++ machine whose only invokes are remote has no pending-invoke queue and no
+# drain. It runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_cpp_machine_whose_invokes_are_all_remote_has_no_queue_to_drain"
+path = "tests/a_cpp_machine_whose_invokes_are_all_remote_has_no_queue_to_drain.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

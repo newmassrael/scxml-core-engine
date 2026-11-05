@@ -869,7 +869,10 @@ struct {{ model.name }}Policy {
     {% endfor %}
     {% endif %}
 
-    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or model.invokes | unsupported %}
+    {# The defer queue and its entry type exist where an invoke defers: a remote
+       `<invoke type="scxml">` starts from onentry and never queues, so it is
+       not named here (the drain in `invoke_methods.jinja2` has this condition). #}
+    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
 
     // W3C SCXML 6.4: Pending invoke structure for defer/cancel/execute pattern
     // ARCHITECTURE.md Zero Duplication: Used with InvokeHelper (Single Source of Truth)
@@ -903,7 +906,7 @@ struct {{ model.name }}Policy {
     // (docs/adr/0084), so the table needs no lock.
     mutable std::unordered_map<std::string, ChildSession> activeInvokes_;
     {% endif %}
-    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or model.invokes | unsupported %}
+    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
     // W3C SCXML 6.4: Pending invokes (deferred until macrostep end)
     mutable std::vector<PendingInvoke> pendingInvokes_;
     {% endif %}
