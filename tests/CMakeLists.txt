@@ -1504,25 +1504,33 @@ target_link_libraries(action_tests
 
 # ============================================================================
 # 4.4. BasicHTTP Event Bridge Tests (W3C SCXML C.2.1 inbound event naming)
+#
+# Declared under the condition sce_runtime compiles HttpEventBridge on
+# (sce/CMakeLists.txt): the inbound bridge is the native listener's, and a
+# build without it has nothing for this program to link.
 # ============================================================================
 
-add_executable(http_bridge_tests
-    events/HttpEventBridgeTest.cpp
-)
+if(SCE_ENABLE_HTTP AND NOT EMSCRIPTEN)
+    add_executable(http_bridge_tests
+        events/HttpEventBridgeTest.cpp
+    )
 
-target_include_directories(http_bridge_tests
-    PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/sce/include
-        ${CMAKE_SOURCE_DIR}/tests
-)
+    target_include_directories(http_bridge_tests
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/tests
+    )
 
-target_link_libraries(http_bridge_tests
-    PRIVATE
-        sce_runtime
-        GTest::gtest_main
-        pthread
-)
+    target_link_libraries(http_bridge_tests
+        PRIVATE
+            sce_runtime
+            GTest::gtest_main
+            pthread
+    )
+
+    add_test(NAME HttpBridgeTests COMMAND http_bridge_tests)
+endif()
 
 # ============================================================================
 # 4.4.1. Session Target Routing Tests (W3C SCXML C.1 `#_scxml_<sessionid>`)
@@ -8330,7 +8338,6 @@ endif()
 add_test(NAME CoreParserTests COMMAND core_parser_tests)
 add_test(NAME StatesTests COMMAND states_tests)
 add_test(NAME HistoryTests COMMAND history_tests)
-add_test(NAME HttpBridgeTests COMMAND http_bridge_tests)
 add_test(NAME SessionTargetRoutingTests COMMAND session_target_routing_tests)
 add_test(NAME SchedulerManualModeTests COMMAND scheduler_manual_mode_tests)
 add_test(NAME SchedulerSessionOrderTests COMMAND scheduler_session_order_tests)
