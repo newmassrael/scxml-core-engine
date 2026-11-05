@@ -20,6 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -62,7 +63,7 @@ fn document(data: &str, number: &str) -> String {
 /// `sce-codegen generate -l <language>` of `doc`: whether it succeeded, its
 /// stdout and stderr (the manifest among them), and the text of every file it
 /// wrote.
-fn generate(language: &str, doc: &str) -> (bool, String, String) {
+fn generate(language: Language, doc: &str) -> (bool, String, String) {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("probe.scxml");
     std::fs::write(&path, doc).expect("write probe");
@@ -72,7 +73,7 @@ fn generate(language: &str, doc: &str) -> (bool, String, String) {
         .arg("--workspace-root")
         .arg(repo_root())
         .arg("--error-format=json")
-        .args(["generate", "-l", language, "-o"])
+        .args(["generate", "-l", language.canonical_name(), "-o"])
         .arg(&out_dir)
         .arg(&path)
         .output()
@@ -91,22 +92,21 @@ fn generate(language: &str, doc: &str) -> (bool, String, String) {
     )
 }
 
-/// The backends whose `<send>` writes inline `<content>`.
-const LANGUAGES: [&str; 7] = ["rust", "go", "kotlin", "swift", "cpp", "c", "python"];
-
 /// How `language` spells the event's data when the build finished it as
 /// `wire`: the string literal carrying the JSON text, or for Python the value
-/// the JSON denotes (`py_json_literal`).
-fn spell(language: &str, wire: &str) -> String {
+/// the JSON denotes (`py_json_literal`). C++ lands it in `contentData`, the
+/// sink the expression-site census reads as verbatim. Every backend writes a
+/// `<send>`'s inline `<content>`, so every one has a spelling.
+fn spell(language: Language, wire: &str) -> String {
     let quoted = format!("\"{}\"", wire.replace('\\', "\\\\").replace('"', "\\\""));
     match language {
-        "rust" => format!("let event_data: &str = {quoted};"),
-        "go" => format!("eventDataStr := {quoted}"),
-        "kotlin" => format!("val sendData = {quoted}"),
-        "swift" => format!("let sendEventData = {quoted}"),
-        "cpp" => format!("eventData = {quoted};"),
-        "c" => format!("static const char _lit[] = {quoted};"),
-        "python" => {
+        Language::Rust => format!("let event_data: &str = {quoted};"),
+        Language::Go => format!("eventDataStr := {quoted}"),
+        Language::Kotlin => format!("val sendData = {quoted}"),
+        Language::Swift => format!("let sendEventData = {quoted}"),
+        Language::Cpp => format!("const std::string contentData = {quoted};"),
+        Language::C11 => format!("static const char _lit[] = {quoted};"),
+        Language::Python => {
             let value = match wire {
                 "21" => "21",
                 "\"two words\"" => "\"two words\"",
@@ -115,7 +115,6 @@ fn spell(language: &str, wire: &str) -> String {
             };
             format!("_data = {value}")
         }
-        other => panic!("no spelling written for {other}"),
     }
 }
 
@@ -128,18 +127,18 @@ const WIRES: [&str; 3] = ["21", "\"two words\"", "{\"k\":7}"];
 #[test]
 fn a_literal_content_is_its_value_and_costs_no_engine() {
     let doc = document("", "21");
-    for language in LANGUAGES {
+    for &language in Language::ALL {
         let (ok, out, generated) = generate(language, &doc);
-        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(ok, "{language:?}: the machine generates:\n{out}");
         assert!(
             out.contains("\"needs_script_engine\":false"),
-            "{language}: no content here is an expression, so no engine:\n{out}"
+            "{language:?}: no content here is an expression, so no engine:\n{out}"
         );
         for wire in WIRES {
             let line = spell(language, wire);
             assert!(
                 generated.contains(&line),
-                "{language}: the event's data is the value the content denotes, \
+                "{language:?}: the event's data is the value the content denotes, \
                  `{line}` was not written"
             );
         }
@@ -152,25 +151,56 @@ fn a_literal_content_is_its_value_and_costs_no_engine() {
 #[test]
 fn the_reading_does_not_follow_from_an_engine_needed_elsewhere() {
     let doc = document(r#"<data id="v" expr="1 + 1"/>"#, "21");
-    for language in LANGUAGES {
+    for &language in Language::ALL {
         let (ok, out, generated) = generate(language, &doc);
-        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(ok, "{language:?}: the machine generates:\n{out}");
         assert!(
             out.contains("\"needs_script_engine\":true"),
-            "{language}: the `<data>` initializer needs the engine:\n{out}"
+            "{language:?}: the `<data>` initializer needs the engine:\n{out}"
         );
         assert!(
             !out.contains("\"kind\":\"send-content-expr\""),
-            "{language}: no content here is an expression:\n{out}"
+            "{language:?}: no content here is an expression:\n{out}"
         );
         for wire in WIRES {
             let line = spell(language, wire);
             assert!(
                 generated.contains(&line),
-                "{language}: with an engine in the machine the content is still the \
+                "{language:?}: with an engine in the machine the content is still the \
                  value it denotes, `{line}` was not written"
             );
         }
+    }
+}
+
+/// How `language` writes the done data it finished at build time, up to the
+/// markup's first element, and how it would have handed the markup to its
+/// engine. C++ and Kotlin land it in `contentData`, the sink the
+/// expression-site census reads as verbatim.
+fn donedata_spelling(language: Language) -> (&'static str, &'static str) {
+    match language {
+        Language::Rust => (
+            "done_event_data = String::from(\"<books",
+            "evaluate_expression(&sid, \"<books",
+        ),
+        Language::Go => (
+            "doneEventData = \"<books",
+            "EvaluateExpression(p.SessionID, `<books",
+        ),
+        Language::Kotlin => ("val contentData = \"<books", "engineDD.evaluateExpr(sidDD"),
+        Language::Swift => ("doneEventData = \"<books", "evaluateJSON(\"<books"),
+        Language::Cpp => (
+            "const std::string contentData = \"<books",
+            "DoneDataHelper::evaluateContent(",
+        ),
+        Language::Python => (
+            "_done_data = \"<books",
+            "_done_data = engine._script_engine.evaluate_expression(",
+        ),
+        Language::C11 => (
+            "_sce_donedata = setmetatable({ \\\"<books",
+            "_sce_donedata = (<books",
+        ),
     }
 }
 
@@ -191,51 +221,17 @@ fn a_donedata_xml_content_is_its_text_and_not_an_expression() {
   </final>
 </scxml>
 "#;
-    // How each backend writes the done data it finished at build time, up to
-    // the markup's first element, and how it would have handed the markup to
-    // its engine.
-    for (language, carried, evaluated) in [
-        (
-            "rust",
-            "done_event_data = String::from(\"<books",
-            "evaluate_expression(&sid, \"<books",
-        ),
-        (
-            "go",
-            "doneEventData = \"<books",
-            "EvaluateExpression(p.SessionID, `<books",
-        ),
-        (
-            "kotlin",
-            "doneEventData = \"<books",
-            "engineDD.evaluateExpr(sidDD",
-        ),
-        ("swift", "doneEventData = \"<books", "evaluateJSON(\"<books"),
-        (
-            "cpp",
-            "eventData = \"<books",
-            "DoneDataHelper::evaluateContent(",
-        ),
-        (
-            "python",
-            "_done_data = \"<books",
-            "_done_data = engine._script_engine.evaluate_expression(",
-        ),
-        (
-            "c",
-            "_sce_donedata = setmetatable({ \\\"<books",
-            "_sce_donedata = (<books",
-        ),
-    ] {
+    for &language in Language::ALL {
+        let (carried, evaluated) = donedata_spelling(language);
         let (ok, out, generated) = generate(language, doc);
-        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(ok, "{language:?}: the machine generates:\n{out}");
         assert!(
             generated.contains(carried),
-            "{language}: the done data is the XML as written, `{carried}` was not written"
+            "{language:?}: the done data is the XML as written, `{carried}` was not written"
         );
         assert!(
             !generated.contains(evaluated),
-            "{language}: the XML is handed to the engine as an expression (`{evaluated}`)"
+            "{language:?}: the XML is handed to the engine as an expression (`{evaluated}`)"
         );
     }
 }
@@ -246,21 +242,21 @@ fn a_donedata_xml_content_is_its_text_and_not_an_expression() {
 #[test]
 fn an_expression_content_costs_the_engine() {
     let doc = document("", "20 + 1");
-    for language in LANGUAGES {
+    for &language in Language::ALL {
         let (ok, out, generated) = generate(language, &doc);
-        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(ok, "{language:?}: the machine generates:\n{out}");
         assert!(
             out.contains("\"needs_script_engine\":true")
                 && out.contains("\"kind\":\"send-content-expr\""),
-            "{language}: the expression is the engine's cause:\n{out}"
+            "{language:?}: the expression is the engine's cause:\n{out}"
         );
         assert!(
             !generated.contains(&spell(language, "21")),
-            "{language}: an expression is not folded into a value at build time"
+            "{language:?}: an expression is not folded into a value at build time"
         );
         assert!(
             generated.contains(&spell(language, "\"two words\"")),
-            "{language}: the text beside it is still the string it spells"
+            "{language:?}: the text beside it is still the string it spells"
         );
     }
 }

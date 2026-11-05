@@ -256,28 +256,38 @@ fn a_basichttp_send_with_no_target_is_an_error_and_reaches_no_transport() {
     );
 }
 
-/// The text of a `<content>` travels as it was written under `ecmascript`, for the receiver's engine
-/// to read as JSON or as a string (§scxml-B-2-8-1, W3C 578); under any other data model it is the
-/// value, the last rung taken at build time.
+/// The text of a `<content>` is the value its data model reads it as, decided at build time by the
+/// one reading every backend takes (`filters::inline_content_reading`). Under `ecmascript` the text
+/// is read first as an expression, so `{ "a" : 1 }` is an object literal and the event carries the
+/// object as the JSON every engine writes it in, members sorted and no layout, which the receiver
+/// reads back as the object (§scxml-B-2-8-1); W3C 578's receiver reads `_event.data.productName`
+/// from exactly that. The text as written would
+/// read the same at the receiver, but only where the receiver parses it as JSON, and it would be a
+/// second spelling of one value that no other backend writes. Under `null` there is no value
+/// expression language, so the value is the string the text spells.
 #[test]
-fn the_content_of_a_send_travels_as_written_for_the_receivers_engine() {
+fn the_content_of_a_send_is_the_value_its_data_model_reads() {
     let body = r#"
   <state id="s0">
     <onentry><send event="e"><content>{ "a" : 1 }</content></send></onentry>
     <transition event="e" target="done"/>
   </state>
   <final id="done"/>"#;
-    let written = r##"let sendEventData = "{ \"a\" : 1 }""##;
+    let object = r##"let sendEventData = "{\"a\":1}""##;
+    let string = r##"let sendEventData = "\"{ \\\"a\\\" : 1 }\"""##;
 
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
     assert_eq!(status, Some(0), "{said}");
-    assert!(machine.contains(written), "{machine}");
+    assert!(
+        machine.contains(object),
+        "under ecmascript the content is the object it denotes: {machine}"
+    );
 
     let (status, machine, said) = generate(&document(r#"datamodel="null""#, body), &[]);
     assert_eq!(status, Some(0), "{said}");
     assert!(
-        !machine.contains(written),
-        "a null data model has no engine to read it, so the value is the string: {machine}"
+        machine.contains(string),
+        "a null data model has no expressions, so the value is the string: {machine}"
     );
 }
 
