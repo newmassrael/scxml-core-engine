@@ -355,7 +355,12 @@ fn every_backend_declares_the_longest_rendering_and_fences_the_untrusted_hole() 
         let expected = match lang {
             // The Rust unit removes them in its one `put_fenced`, called twice.
             Language::Rust => 1,
-            _ => 2,
+            Language::Go
+            | Language::Kotlin
+            | Language::Python
+            | Language::Cpp
+            | Language::C11
+            | Language::Swift => 2,
         };
         assert_eq!(
             calls, expected,
