@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "0c15e2f",
+  "embed_version": "cb90d62",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 499,
+  "symbol_count": 500,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3465,6 +3465,19 @@
         "method void (typename Atomic::value_type) noexcept Padded<Atomic>"
       ],
       "name": "SCE::Forge::Queue::detail::Padded<T>"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "struct",
+      "members": [
+        "field T value",
+        "field std::atomic<std::uint32_t> next",
+        "method Node<T> &(const Node<T> &) operator=",
+        "method void () Node<T>",
+        "method void (T) noexcept(std::is_nothrow_move_constructible_v<T>) Node<T>",
+        "method void (const Node<T> &) Node<T>"
+      ],
+      "name": "SCE::Forge::Queue::Node<T>"
     },
     {
       "header": "sce/forge/queue.h",
