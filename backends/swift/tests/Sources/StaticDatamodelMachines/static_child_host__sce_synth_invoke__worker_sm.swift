@@ -499,3 +499,40 @@ public final class StaticChildHostSceSynthInvokeWorkerPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticChildHostSceSynthInvokeWorkerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "ab673a2340c38fa1f96d8b689fa7e99f02da1f54896b58beb82fe1768df75d4f",
+            revised: "8162d77c6da05a3991246dc77ee21b84f84edba5cf19a4c2177e0471f15b9678",
+            format2First: "ab673a2340c38fa1f96d8b689fa7e99f02da1f54896b58beb82fe1768df75d4f",
+            format2Revised: "8162d77c6da05a3991246dc77ee21b84f84edba5cf19a4c2177e0471f15b9678")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("steps", SavedValues.of(vSteps)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("steps"), "steps")
+        return { [self] in
+            self.vSteps = value0
+        }
+    }
+}

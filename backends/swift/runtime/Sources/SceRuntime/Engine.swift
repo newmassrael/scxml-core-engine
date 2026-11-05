@@ -2288,3 +2288,42 @@ private final class EngineHost<Policy: StatePolicy>: Run {
         engine.policy.executeHistoryDefaultContent(history, engine: engine)
     }
 }
+
+// MARK: - What a saved state holds of the engine itself
+
+// The engine keeps these privately, and `SavedMachine.swift` is the one reader and writer of them: it saves
+// them with a machine's configuration and variables, and puts them back when it restores one.
+extension Engine {
+    /// The events raised to this machine that it has not yet been driven through, front first.
+    func savedExternalEvents() -> [EventWithMetadata<Event>] {
+        externalQueue.snapshot()
+    }
+
+    /// Whether an event waits on the internal queue, which is empty at a macrostep boundary, the one place a
+    /// machine is saved.
+    var internalQueueHoldsEvents: Bool {
+        !internalQueue.isEmpty
+    }
+
+    /// Whether a delayed `<send>` is waiting to come due.
+    var holdsScheduledSends: Bool {
+        scheduler.nextReadyAtMs != nil
+    }
+
+    /// How many ids this engine has generated for a `<send idlocation>`: the number the last one carried.
+    var generatedSendIDCount: UInt64 {
+        autoSendSeq
+    }
+
+    /// Puts back what a saved state held of the engine itself: the external queue, front first, in place of
+    /// the empty one a machine that has not started holds, and the count of generated send ids, which a
+    /// restored machine carries on from, so that an id it generates is never one an earlier run already handed
+    /// to the document.
+    func restoreSavedEngineParts(external: [EventWithMetadata<Event>], generatedSendIDCount: UInt64) {
+        externalQueue.clear()
+        for event in external {
+            externalQueue.raise(event)
+        }
+        autoSendSeq = generatedSendIDCount
+    }
+}

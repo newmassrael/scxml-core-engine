@@ -644,3 +644,7 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
 
 {{ host_invoker_defs }}
 {% endif %}
+{% if static_saved_shape %}
+
+{% include 'saved_state.swift.jinja2' %}
+{% endif %}

@@ -607,3 +607,44 @@ public final class StaticStringLiteralPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticStringLiteralPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "6f1e40ef39b70a13447300ffce9bec90cb1663b9376ffb51ffcd2d1ac65a680d",
+            revised: "870a742563c7601d377427a83417f4c9b169d2cdb70d191393454c03a9ec502e",
+            format2First: "6f1e40ef39b70a13447300ffce9bec90cb1663b9376ffb51ffcd2d1ac65a680d",
+            format2Revised: "870a742563c7601d377427a83417f4c9b169d2cdb70d191393454c03a9ec502e")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("held", SavedValues.of(vHeld)),
+            SavedEntry("measured", SavedValues.of(vMeasured)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(
+            try saved.variable("held"), "held", capacity: 32)
+        let value1 = try SavedValues.uint32(
+            try saved.variable("measured"), "measured")
+        return { [self] in
+            self.vHeld = value0
+            self.vMeasured = value1
+        }
+    }
+}

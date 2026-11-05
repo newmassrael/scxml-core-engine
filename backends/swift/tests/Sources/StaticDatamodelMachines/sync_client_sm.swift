@@ -1078,3 +1078,72 @@ extension Engine where Policy == SyncClientPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension SyncClientPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "b07ee998a49953bb6dcbd8a8f1b5201424834bdf432224e225a612af803dcbe2",
+            revised: "59efa08979bdda6f4ee18d6353512b4c4be9f0964013cc38a9000088eddfdeda",
+            format2First: "b07ee998a49953bb6dcbd8a8f1b5201424834bdf432224e225a612af803dcbe2",
+            format2Revised: "59efa08979bdda6f4ee18d6353512b4c4be9f0964013cc38a9000088eddfdeda")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("byToken", SavedValues.of(vByToken)),
+            SavedEntry("fullListing", SavedValues.of(vFullListing)),
+            SavedEntry("outcome", SavedValues.of(vOutcome)),
+            SavedEntry("retryAt", SavedValues.of(vRetryAt)),
+            SavedEntry("deleted", SavedValues.of(vDeleted)),
+            SavedEntry("uploaded", SavedValues.of(vUploaded)),
+            SavedEntry("discarded", SavedValues.of(vDiscarded)),
+            SavedEntry("pages", SavedValues.of(vPages)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.bool(
+            try saved.variable("byToken"), "byToken")
+        let value1 = try SavedValues.bool(
+            try saved.variable("fullListing"), "fullListing")
+        let value2 = try SavedValues.uint8(
+            try saved.variable("outcome"), "outcome")
+        let value3 = try SavedValues.int64(
+            try saved.variable("retryAt"), "retryAt")
+        let value4 = try SavedValues.uint32(
+            try saved.variable("deleted"), "deleted")
+        let value5 = try SavedValues.uint32(
+            try saved.variable("uploaded"), "uploaded")
+        let value6 = try SavedValues.uint32(
+            try saved.variable("discarded"), "discarded")
+        let value7 = try SavedValues.uint32(
+            try saved.variable("pages"), "pages")
+        let value8 = try SavedValues.uint32(
+            try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vByToken = value0
+            self.vFullListing = value1
+            self.vOutcome = value2
+            self.vRetryAt = value3
+            self.vDeleted = value4
+            self.vUploaded = value5
+            self.vDiscarded = value6
+            self.vPages = value7
+            self.vRefusals = value8
+        }
+    }
+}

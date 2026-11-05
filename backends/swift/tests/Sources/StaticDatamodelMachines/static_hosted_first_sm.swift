@@ -403,3 +403,35 @@ public final class StaticHostedFirstPolicy: InvocablePolicy {
     public func executeTransitionContent(source: StaticHostedFirstState, transitionIndex: Int, engine: Engine<StaticHostedFirstPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticHostedFirstPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "fd7b03b2e4562af6acf12bd49174d042b940a5a511449688a641080b2f84f2d0",
+            revised: "da4f10dbc725e150480434141037c5d47edc7058fea8db62a2eefeccd593aba2",
+            format2First: "fd7b03b2e4562af6acf12bd49174d042b940a5a511449688a641080b2f84f2d0",
+            format2Revised: "da4f10dbc725e150480434141037c5d47edc7058fea8db62a2eefeccd593aba2")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        return {}
+    }
+}

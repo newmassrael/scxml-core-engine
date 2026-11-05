@@ -579,3 +579,40 @@ public final class StaticTimersPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticTimersPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "4ccb8b35ee15410c2fa524072e0d2cc992b50980b7db00f5ea7bd0635c1a5b68",
+            revised: "2731bb99fc2272ab231f5242141b5f33d19d42112b0aded156f8f129fc40e0dc",
+            format2First: "4ccb8b35ee15410c2fa524072e0d2cc992b50980b7db00f5ea7bd0635c1a5b68",
+            format2Revised: "2731bb99fc2272ab231f5242141b5f33d19d42112b0aded156f8f129fc40e0dc")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("trace", SavedValues.of(vTrace)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("trace"), "trace")
+        return { [self] in
+            self.vTrace = value0
+        }
+    }
+}

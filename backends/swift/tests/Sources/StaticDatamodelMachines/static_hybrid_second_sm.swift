@@ -383,3 +383,44 @@ public final class StaticHybridSecondPolicy: InvocablePolicy {
     public func executeTransitionContent(source: StaticHybridSecondState, transitionIndex: Int, engine: Engine<StaticHybridSecondPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticHybridSecondPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "2c3c418e82c7bdcdbb7440ceadf6a9bb76ed0f4a55b1598eccd2df2a3f07dd99",
+            revised: "657eb997cc3609461a6e6c92e51d465fc2202432d5977d38c9e16d032ce371f5",
+            format2First: "2c3c418e82c7bdcdbb7440ceadf6a9bb76ed0f4a55b1598eccd2df2a3f07dd99",
+            format2Revised: "657eb997cc3609461a6e6c92e51d465fc2202432d5977d38c9e16d032ce371f5")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("start", SavedValues.of(vStart)),
+            SavedEntry("extra", SavedValues.of(vExtra)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("start"), "start")
+        let value1 = try SavedValues.uint32(
+            try saved.variable("extra"), "extra")
+        return { [self] in
+            self.vStart = value0
+            self.vExtra = value1
+        }
+    }
+}

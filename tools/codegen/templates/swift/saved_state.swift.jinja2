@@ -1,0 +1,63 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Saved State (Swift Jinja2)
+
+    SCE Accepted Subset, "Saving and restoring" (docs/adr/0045): what a `datamodel="sce-static"`
+    machine's policy answers so that its engine saves the machine and restores one.
+
+    The Swift twin of the `save` and `restore` of kotlin/state_machine.kt.jinja2. The engine knows
+    where the machine stands (`Engine.save`, `Engine.restore`); this writes what only the document
+    knows: the digest of its shape, and each variable, by its document id, in declaration order,
+    written and read as its `sce:type` says (`SavedValues`).
+
+    Written only for a machine whose state the Swift runtime holds whole
+    (`swift_saved_shape` of the generator): every variable a number, a truth value or a bounded
+    text, and no `<history>`, `<invoke>` or product line in the document.
+#}
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension {{ machine_name }}Policy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "{{ static_saved_shape.first }}",
+            revised: "{{ static_saved_shape.revised }}",
+            format2First: "{{ static_saved_shape.format2_first }}",
+            format2Revised: "{{ static_saved_shape.format2_revised }}")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+{% for field in static_fields %}
+            SavedEntry("{{ field.id | escape_swift }}", SavedValues.of({{ field.name }})),
+{% endfor %}
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+{% for field in static_fields %}
+        let value{{ loop.index0 }} = try SavedValues.{{ field.saved_type }}(
+            try saved.variable("{{ field.id | escape_swift }}"), "{{ field.id | escape_swift }}"{% if field.saved_type == 'string' %}, capacity: {{ field.bound }}{% endif %})
+{% endfor %}
+{% if static_fields %}
+        return { [self] in
+{% for field in static_fields %}
+            self.{{ field.name }} = value{{ loop.index0 }}
+{% endfor %}
+        }
+{% else %}
+        return {}
+{% endif %}
+    }
+}

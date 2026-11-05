@@ -5068,6 +5068,9 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
+        // The shape a saved state of this machine is bound to, for a machine the Swift runtime
+        // saves; absent for one it does not yet, which is generated without the save API.
+        static_saved_shape => swift_saved_shape(model, &static_lowering),
         event_payload_active => payload.active,
         event_payload_defs => &payload.defs,
         event_payload_policy_fields => &payload.policy_fields,
@@ -5079,6 +5082,43 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         answer_schemas => answer_schemas_context(model, Language::Swift),
     };
     tmpl.render(ctx).map_err(render_error)
+}
+
+/// The scalar `sce:type`s the Swift runtime saves and restores a variable of (`SavedValues`): the numbers,
+/// the truth value and the bounded text. A list, a record, an enum, a byte string and a value that may be
+/// absent are not among them yet.
+const SWIFT_SAVED_SCALARS: &[&str] = &[
+    "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64",
+    "bool", "string",
+];
+
+/// The shape a Swift machine's saved state is bound to, or `None` for a machine the Swift runtime does not save
+/// yet. The generator computes the shape of every machine whose state a saved state can hold whole
+/// ([`crate::forge::static_lowering::StaticLowering::saved_shape`]); what Swift adds is what its runtime holds
+/// of that state so far: every variable a scalar of [`SWIFT_SAVED_SCALARS`], no `<history>` and no `<invoke>`
+/// in the document, and a machine of no product line. A machine past that is generated without the save API
+/// rather than with one that would silently drop part of its state, as the generator does for a machine whose
+/// state no backend can hold.
+fn swift_saved_shape(
+    model: &SCXMLModel,
+    lowering: &crate::forge::static_lowering::StaticLowering,
+) -> Option<crate::forge::static_lowering::SavedShape> {
+    let shape = lowering.saved_shape.as_ref()?;
+    let holds_invokes = model.states.values().any(|state| !state.invokes.is_empty());
+    let holds_every_field = lowering.fields.iter().all(swift_saves_field);
+    if shape.features.is_some()
+        || !model.history_states.is_empty()
+        || holds_invokes
+        || !holds_every_field
+    {
+        return None;
+    }
+    Some(shape.clone())
+}
+
+/// Whether the Swift runtime saves and restores a variable of this kind.
+fn swift_saves_field(field: &crate::forge::static_lowering::StaticField) -> bool {
+    field.saved_kind == "scalar" && SWIFT_SAVED_SCALARS.contains(&field.saved_type.as_str())
 }
 
 // ── Python generator ────────────────────────────────────────────

@@ -696,3 +696,48 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticSendTargetPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "bc863388d4492ecbc92204f377e9e4bb03c09312cb692c262c1b41146eab182d",
+            revised: "60bbf82df8219cee9dfc10640d609b39d8f38d3101bb4758e6d5e5665cb9236e",
+            format2First: "bc863388d4492ecbc92204f377e9e4bb03c09312cb692c262c1b41146eab182d",
+            format2Revised: "60bbf82df8219cee9dfc10640d609b39d8f38d3101bb4758e6d5e5665cb9236e")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("route", SavedValues.of(vRoute)),
+            SavedEntry("landed", SavedValues.of(vLanded)),
+            SavedEntry("refused", SavedValues.of(vRefused)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(
+            try saved.variable("route"), "route", capacity: 24)
+        let value1 = try SavedValues.uint32(
+            try saved.variable("landed"), "landed")
+        let value2 = try SavedValues.uint32(
+            try saved.variable("refused"), "refused")
+        return { [self] in
+            self.vRoute = value0
+            self.vLanded = value1
+            self.vRefused = value2
+        }
+    }
+}

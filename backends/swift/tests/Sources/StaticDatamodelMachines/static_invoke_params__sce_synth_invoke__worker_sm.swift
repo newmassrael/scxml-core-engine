@@ -383,3 +383,44 @@ public final class StaticInvokeParamsSceSynthInvokeWorkerPolicy: InvocablePolicy
     public func executeTransitionContent(source: StaticInvokeParamsSceSynthInvokeWorkerState, transitionIndex: Int, engine: Engine<StaticInvokeParamsSceSynthInvokeWorkerPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeParamsSceSynthInvokeWorkerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "e1e1861edcac3f5bdfe86401e82341a6b0e0d3386d6b98bfe5a4df301c6dcbfe",
+            revised: "ad6abd5a260bd8977fcbe375d2ed5d177275abbf601331001d9c4d33d0302abc",
+            format2First: "e1e1861edcac3f5bdfe86401e82341a6b0e0d3386d6b98bfe5a4df301c6dcbfe",
+            format2Revised: "ad6abd5a260bd8977fcbe375d2ed5d177275abbf601331001d9c4d33d0302abc")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("start", SavedValues.of(vStart)),
+            SavedEntry("enabled", SavedValues.of(vEnabled)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("start"), "start")
+        let value1 = try SavedValues.bool(
+            try saved.variable("enabled"), "enabled")
+        return { [self] in
+            self.vStart = value0
+            self.vEnabled = value1
+        }
+    }
+}

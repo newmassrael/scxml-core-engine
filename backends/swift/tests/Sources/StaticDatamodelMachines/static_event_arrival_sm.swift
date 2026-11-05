@@ -427,3 +427,44 @@ public final class StaticEventArrivalPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticEventArrivalPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "992cff77681778bf2a87af21f6ccd7e484e625e43a95c41373c35b22f2f582e1",
+            revised: "b2b27da7c053410d9d935db94a7672a9167844a5d8c0ac1ead305a6df3156464",
+            format2First: "992cff77681778bf2a87af21f6ccd7e484e625e43a95c41373c35b22f2f582e1",
+            format2Revised: "b2b27da7c053410d9d935db94a7672a9167844a5d8c0ac1ead305a6df3156464")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("requests", SavedValues.of(vRequests)),
+            SavedEntry("specials", SavedValues.of(vSpecials)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("requests"), "requests")
+        let value1 = try SavedValues.uint32(
+            try saved.variable("specials"), "specials")
+        return { [self] in
+            self.vRequests = value0
+            self.vSpecials = value1
+        }
+    }
+}

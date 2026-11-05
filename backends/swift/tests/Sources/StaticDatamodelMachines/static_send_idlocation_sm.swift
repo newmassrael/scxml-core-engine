@@ -663,3 +663,60 @@ public final class StaticSendIdlocationPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticSendIdlocationPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "9d26aca9bf550afa9c6223d9778d1e41fb770b42e83e11b043af12f5939a6ad5",
+            revised: "8443f060192bbbaa9a2fd887bcd03d301bb1035728e69b1d529101eebf084cc4",
+            format2First: "9d26aca9bf550afa9c6223d9778d1e41fb770b42e83e11b043af12f5939a6ad5",
+            format2Revised: "8443f060192bbbaa9a2fd887bcd03d301bb1035728e69b1d529101eebf084cc4")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("first", SavedValues.of(vFirst)),
+            SavedEntry("second", SavedValues.of(vSecond)),
+            SavedEntry("scale", SavedValues.of(vScale)),
+            SavedEntry("first_fired", SavedValues.of(vFirstFired)),
+            SavedEntry("second_fired", SavedValues.of(vSecondFired)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(
+            try saved.variable("first"), "first", capacity: 32)
+        let value1 = try SavedValues.string(
+            try saved.variable("second"), "second", capacity: 32)
+        let value2 = try SavedValues.uint32(
+            try saved.variable("scale"), "scale")
+        let value3 = try SavedValues.uint32(
+            try saved.variable("first_fired"), "first_fired")
+        let value4 = try SavedValues.uint32(
+            try saved.variable("second_fired"), "second_fired")
+        let value5 = try SavedValues.uint32(
+            try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vFirst = value0
+            self.vSecond = value1
+            self.vScale = value2
+            self.vFirstFired = value3
+            self.vSecondFired = value4
+            self.vRefusals = value5
+        }
+    }
+}

@@ -774,3 +774,72 @@ extension Engine where Policy == StaticSendParamsPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticSendParamsPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "7e5e95cee8de997396fe13304f2b1d4514e4e762405c5db762384b1df906a243",
+            revised: "7e38631c4ad4fb4e0086252d3257a27fbbe316fe81cc222ff55b9a23a0a9825e",
+            format2First: "7e5e95cee8de997396fe13304f2b1d4514e4e762405c5db762384b1df906a243",
+            format2Revised: "7e38631c4ad4fb4e0086252d3257a27fbbe316fe81cc222ff55b9a23a0a9825e")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("count", SavedValues.of(vCount)),
+            SavedEntry("small", SavedValues.of(vSmall)),
+            SavedEntry("label", SavedValues.of(vLabel)),
+            SavedEntry("total", SavedValues.of(vTotal)),
+            SavedEntry("ok", SavedValues.of(vOk)),
+            SavedEntry("tag", SavedValues.of(vTag)),
+            SavedEntry("partialTotal", SavedValues.of(vPartialTotal)),
+            SavedEntry("partialPart", SavedValues.of(vPartialPart)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("count"), "count")
+        let value1 = try SavedValues.uint8(
+            try saved.variable("small"), "small")
+        let value2 = try SavedValues.string(
+            try saved.variable("label"), "label", capacity: 16)
+        let value3 = try SavedValues.uint32(
+            try saved.variable("total"), "total")
+        let value4 = try SavedValues.bool(
+            try saved.variable("ok"), "ok")
+        let value5 = try SavedValues.string(
+            try saved.variable("tag"), "tag", capacity: 16)
+        let value6 = try SavedValues.uint32(
+            try saved.variable("partialTotal"), "partialTotal")
+        let value7 = try SavedValues.uint8(
+            try saved.variable("partialPart"), "partialPart")
+        let value8 = try SavedValues.uint32(
+            try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vCount = value0
+            self.vSmall = value1
+            self.vLabel = value2
+            self.vTotal = value3
+            self.vOk = value4
+            self.vTag = value5
+            self.vPartialTotal = value6
+            self.vPartialPart = value7
+            self.vRefusals = value8
+        }
+    }
+}

@@ -456,3 +456,44 @@ public final class StaticOverflowPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticOverflowPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "36f152960236f7d9e2f8944e15cfae5bbe7d8b406bb28cf433b9deb7f761512e",
+            revised: "c9149ea7ca6640067163c12b233a0cbbba485e8e488f6c63351c63b6c2823101",
+            format2First: "36f152960236f7d9e2f8944e15cfae5bbe7d8b406bb28cf433b9deb7f761512e",
+            format2Revised: "c9149ea7ca6640067163c12b233a0cbbba485e8e488f6c63351c63b6c2823101")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("level", SavedValues.of(vLevel)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint8(
+            try saved.variable("level"), "level")
+        let value1 = try SavedValues.uint32(
+            try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vLevel = value0
+            self.vRefusals = value1
+        }
+    }
+}

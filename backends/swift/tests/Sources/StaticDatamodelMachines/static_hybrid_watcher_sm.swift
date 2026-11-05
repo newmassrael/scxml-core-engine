@@ -377,3 +377,40 @@ public final class StaticHybridWatcherPolicy: InvocablePolicy {
     public func executeTransitionContent(source: StaticHybridWatcherState, transitionIndex: Int, engine: Engine<StaticHybridWatcherPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticHybridWatcherPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "a85ea43d8de628b004074e59c0ca90c198a4f7736073bd953750bca35c174c7a",
+            revised: "96e854dbf8707bf513784c0788fbf785e2280fa487963cf50fd8ff090a58912c",
+            format2First: "a85ea43d8de628b004074e59c0ca90c198a4f7736073bd953750bca35c174c7a",
+            format2Revised: "96e854dbf8707bf513784c0788fbf785e2280fa487963cf50fd8ff090a58912c")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("start", SavedValues.of(vStart)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("start"), "start")
+        return { [self] in
+            self.vStart = value0
+        }
+    }
+}

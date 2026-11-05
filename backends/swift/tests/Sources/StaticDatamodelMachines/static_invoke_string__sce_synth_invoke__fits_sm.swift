@@ -377,3 +377,40 @@ public final class StaticInvokeStringSceSynthInvokeFitsPolicy: InvocablePolicy {
     public func executeTransitionContent(source: StaticInvokeStringSceSynthInvokeFitsState, transitionIndex: Int, engine: Engine<StaticInvokeStringSceSynthInvokeFitsPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeStringSceSynthInvokeFitsPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "df593c22f28e9dcc20fc1d7f3cbca51bf67ceb27334d1bfff4b7ca7538f7adf8",
+            revised: "55a0dc0121ca3585f6254e493e826f2ba027941d30e0e84a637606cd437ec5ae",
+            format2First: "df593c22f28e9dcc20fc1d7f3cbca51bf67ceb27334d1bfff4b7ca7538f7adf8",
+            format2Revised: "55a0dc0121ca3585f6254e493e826f2ba027941d30e0e84a637606cd437ec5ae")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("title", SavedValues.of(vTitle)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(
+            try saved.variable("title"), "title", capacity: 4)
+        return { [self] in
+            self.vTitle = value0
+        }
+    }
+}

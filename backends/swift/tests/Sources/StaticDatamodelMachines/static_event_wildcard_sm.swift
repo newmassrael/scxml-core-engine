@@ -427,3 +427,44 @@ public final class StaticEventWildcardPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticEventWildcardPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "2f459497a93c6d27a1e149454e8c0aa8082dc34f16a7390624a758f009e3bebd",
+            revised: "304fba8306d0087182ef0d9a58369c76da774d8d11e8cd144304072574eaa505",
+            format2First: "2f459497a93c6d27a1e149454e8c0aa8082dc34f16a7390624a758f009e3bebd",
+            format2Revised: "304fba8306d0087182ef0d9a58369c76da774d8d11e8cd144304072574eaa505")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("requests", SavedValues.of(vRequests)),
+            SavedEntry("strays", SavedValues.of(vStrays)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("requests"), "requests")
+        let value1 = try SavedValues.uint32(
+            try saved.variable("strays"), "strays")
+        return { [self] in
+            self.vRequests = value0
+            self.vStrays = value1
+        }
+    }
+}

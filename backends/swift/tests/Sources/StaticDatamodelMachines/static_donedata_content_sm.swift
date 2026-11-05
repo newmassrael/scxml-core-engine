@@ -576,3 +576,44 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticDonedataContentPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "e61d59da70b1aa48f4d6540ebd68da5b1b606474d9f1fdd93c9d10c9d2fa90e4",
+            revised: "f9aabedc97ffc5a6ec9a10b5f043898f4f86a0ce8c168e2aa8dfe35c689cac1c",
+            format2First: "e61d59da70b1aa48f4d6540ebd68da5b1b606474d9f1fdd93c9d10c9d2fa90e4",
+            format2Revised: "f9aabedc97ffc5a6ec9a10b5f043898f4f86a0ce8c168e2aa8dfe35c689cac1c")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("count", SavedValues.of(vCount)),
+            SavedEntry("label", SavedValues.of(vLabel)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("count"), "count")
+        let value1 = try SavedValues.string(
+            try saved.variable("label"), "label", capacity: 16)
+        return { [self] in
+            self.vCount = value0
+            self.vLabel = value1
+        }
+    }
+}

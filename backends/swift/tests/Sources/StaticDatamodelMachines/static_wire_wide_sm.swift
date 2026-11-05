@@ -674,3 +674,60 @@ extension Engine where Policy == StaticWireWidePolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticWireWidePolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "e5c2a79f4a67f967a86bc7c09af85d1e1482468f8ce173db72d9c3e90c6c7fbf",
+            revised: "e5554aa626dd97594f1f67371b7e9975e5ac74460f1206f3003d8988dbbfdf93",
+            format2First: "e5c2a79f4a67f967a86bc7c09af85d1e1482468f8ce173db72d9c3e90c6c7fbf",
+            format2Revised: "e5554aa626dd97594f1f67371b7e9975e5ac74460f1206f3003d8988dbbfdf93")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("low", SavedValues.of(vLow)),
+            SavedEntry("smallLow", SavedValues.of(vSmallLow)),
+            SavedEntry("large", SavedValues.of(vLarge)),
+            SavedEntry("negative", SavedValues.of(vNegative)),
+            SavedEntry("relays", SavedValues.of(vRelays)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint64(
+            try saved.variable("low"), "low")
+        let value1 = try SavedValues.int64(
+            try saved.variable("smallLow"), "smallLow")
+        let value2 = try SavedValues.bool(
+            try saved.variable("large"), "large")
+        let value3 = try SavedValues.bool(
+            try saved.variable("negative"), "negative")
+        let value4 = try SavedValues.uint32(
+            try saved.variable("relays"), "relays")
+        let value5 = try SavedValues.uint32(
+            try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vLow = value0
+            self.vSmallLow = value1
+            self.vLarge = value2
+            self.vNegative = value3
+            self.vRelays = value4
+            self.vRefusals = value5
+        }
+    }
+}

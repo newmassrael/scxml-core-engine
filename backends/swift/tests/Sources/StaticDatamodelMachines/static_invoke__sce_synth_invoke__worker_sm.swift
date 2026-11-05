@@ -386,3 +386,35 @@ public final class StaticInvokeSceSynthInvokeWorkerPolicy: InvocablePolicy {
     public func executeTransitionContent(source: StaticInvokeSceSynthInvokeWorkerState, transitionIndex: Int, engine: Engine<StaticInvokeSceSynthInvokeWorkerPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeSceSynthInvokeWorkerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "688ad00d954ad9f35bdaa5eae06768a788173e0f8a8236e670efa68038781a6d",
+            revised: "38159d9913b229e5a218bb8a42f452ceb1fa0452b7aef974b612de1e5fabbd74",
+            format2First: "688ad00d954ad9f35bdaa5eae06768a788173e0f8a8236e670efa68038781a6d",
+            format2Revised: "38159d9913b229e5a218bb8a42f452ceb1fa0452b7aef974b612de1e5fabbd74")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        return {}
+    }
+}

@@ -391,3 +391,35 @@ public final class StaticMeshRelaySceSynthInvokeInnerPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticMeshRelaySceSynthInvokeInnerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "fcde5ccc7bbe96d580c215a7dd7a771f26a24d604aa198c1a6ac1f7b88663205",
+            revised: "4ea0e0e30338d81d9fbe2eabbbf391c38461f625b495ef1c6480c3c246ff5130",
+            format2First: "fcde5ccc7bbe96d580c215a7dd7a771f26a24d604aa198c1a6ac1f7b88663205",
+            format2Revised: "4ea0e0e30338d81d9fbe2eabbbf391c38461f625b495ef1c6480c3c246ff5130")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        return {}
+    }
+}

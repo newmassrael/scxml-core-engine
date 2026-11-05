@@ -617,3 +617,56 @@ public final class StaticStringCapacityPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticStringCapacityPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797",
+            revised: "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2",
+            format2First: "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797",
+            format2Revised: "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("title", SavedValues.of(vTitle)),
+            SavedEntry("body", SavedValues.of(vBody)),
+            SavedEntry("copied", SavedValues.of(vCopied)),
+            SavedEntry("measured", SavedValues.of(vMeasured)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(
+            try saved.variable("title"), "title", capacity: 4)
+        let value1 = try SavedValues.string(
+            try saved.variable("body"), "body", capacity: 16)
+        let value2 = try SavedValues.uint32(
+            try saved.variable("copied"), "copied")
+        let value3 = try SavedValues.uint32(
+            try saved.variable("measured"), "measured")
+        let value4 = try SavedValues.uint32(
+            try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vTitle = value0
+            self.vBody = value1
+            self.vCopied = value2
+            self.vMeasured = value3
+            self.vRefusals = value4
+        }
+    }
+}

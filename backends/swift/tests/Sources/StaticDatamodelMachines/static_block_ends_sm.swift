@@ -620,3 +620,76 @@ public final class StaticBlockEndsPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticBlockEndsPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "3392e4c39beb56ba9cc0d257d4b7e2fe3e78865fd9251747ebba45ab05882c51",
+            revised: "49722041863d35d2b2ef736d0a7663d2462f845efe740a017d404a4897ec0292",
+            format2First: "3392e4c39beb56ba9cc0d257d4b7e2fe3e78865fd9251747ebba45ab05882c51",
+            format2Revised: "49722041863d35d2b2ef736d0a7663d2462f845efe740a017d404a4897ec0292")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("a", SavedValues.of(vA)),
+            SavedEntry("b", SavedValues.of(vB)),
+            SavedEntry("afterAssign", SavedValues.of(vAfterAssign)),
+            SavedEntry("thenRan", SavedValues.of(vThenRan)),
+            SavedEntry("elseRan", SavedValues.of(vElseRan)),
+            SavedEntry("afterIf", SavedValues.of(vAfterIf)),
+            SavedEntry("inBranch", SavedValues.of(vInBranch)),
+            SavedEntry("afterBranch", SavedValues.of(vAfterBranch)),
+            SavedEntry("afterOk", SavedValues.of(vAfterOk)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint8(
+            try saved.variable("a"), "a")
+        let value1 = try SavedValues.uint8(
+            try saved.variable("b"), "b")
+        let value2 = try SavedValues.uint8(
+            try saved.variable("afterAssign"), "afterAssign")
+        let value3 = try SavedValues.uint8(
+            try saved.variable("thenRan"), "thenRan")
+        let value4 = try SavedValues.uint8(
+            try saved.variable("elseRan"), "elseRan")
+        let value5 = try SavedValues.uint8(
+            try saved.variable("afterIf"), "afterIf")
+        let value6 = try SavedValues.uint8(
+            try saved.variable("inBranch"), "inBranch")
+        let value7 = try SavedValues.uint8(
+            try saved.variable("afterBranch"), "afterBranch")
+        let value8 = try SavedValues.uint8(
+            try saved.variable("afterOk"), "afterOk")
+        let value9 = try SavedValues.uint8(
+            try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vA = value0
+            self.vB = value1
+            self.vAfterAssign = value2
+            self.vThenRan = value3
+            self.vElseRan = value4
+            self.vAfterIf = value5
+            self.vInBranch = value6
+            self.vAfterBranch = value7
+            self.vAfterOk = value8
+            self.vErrors = value9
+        }
+    }
+}

@@ -578,3 +578,52 @@ extension Engine where Policy == StaticPayloadPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticPayloadPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "ac4f8425a964a524cc7580fefe89402b4ca0003a776cebb0521f1eb9ab3dbb27",
+            revised: "10510c0c03e13e2c651d3e5231f709161ec7022b59c103a2d61b1b31733d78a3",
+            format2First: "ac4f8425a964a524cc7580fefe89402b4ca0003a776cebb0521f1eb9ab3dbb27",
+            format2Revised: "10510c0c03e13e2c651d3e5231f709161ec7022b59c103a2d61b1b31733d78a3")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("day", SavedValues.of(vDay)),
+            SavedEntry("late", SavedValues.of(vLate)),
+            SavedEntry("sinceEpoch", SavedValues.of(vSinceEpoch)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint8(
+            try saved.variable("day"), "day")
+        let value1 = try SavedValues.bool(
+            try saved.variable("late"), "late")
+        let value2 = try SavedValues.uint16(
+            try saved.variable("sinceEpoch"), "sinceEpoch")
+        let value3 = try SavedValues.uint32(
+            try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vDay = value0
+            self.vLate = value1
+            self.vSinceEpoch = value2
+            self.vRefusals = value3
+        }
+    }
+}

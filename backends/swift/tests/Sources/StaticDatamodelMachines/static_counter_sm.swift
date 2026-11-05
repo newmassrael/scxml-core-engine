@@ -489,3 +489,48 @@ public final class StaticCounterPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticCounterPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "b1e55a5fb4149b2224d189f552488790e62394135415d7e93c3423ce7d4f4da6",
+            revised: "9e81e07793879a193c502fb56f49ebf7e9ef54bf8e9258775a47df18e340aac0",
+            format2First: "b1e55a5fb4149b2224d189f552488790e62394135415d7e93c3423ce7d4f4da6",
+            format2Revised: "9e81e07793879a193c502fb56f49ebf7e9ef54bf8e9258775a47df18e340aac0")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("count", SavedValues.of(vCount)),
+            SavedEntry("ready", SavedValues.of(vReady)),
+            SavedEntry("step", SavedValues.of(vStep)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("count"), "count")
+        let value1 = try SavedValues.bool(
+            try saved.variable("ready"), "ready")
+        let value2 = try SavedValues.uint32(
+            try saved.variable("step"), "step")
+        return { [self] in
+            self.vCount = value0
+            self.vReady = value1
+            self.vStep = value2
+        }
+    }
+}

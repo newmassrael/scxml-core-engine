@@ -598,3 +598,60 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticSendHttpPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "00fa415a572dac70afc92855a696126c6cba10c087c24cf7bb2a7d49fa3af55e",
+            revised: "d427bc0c830426e6e58b59700bf6df2e93a80bd1c187d436535a9a141233963f",
+            format2First: "00fa415a572dac70afc92855a696126c6cba10c087c24cf7bb2a7d49fa3af55e",
+            format2Revised: "d427bc0c830426e6e58b59700bf6df2e93a80bd1c187d436535a9a141233963f")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("count", SavedValues.of(vCount)),
+            SavedEntry("ready", SavedValues.of(vReady)),
+            SavedEntry("label", SavedValues.of(vLabel)),
+            SavedEntry("delta", SavedValues.of(vDelta)),
+            SavedEntry("ratio", SavedValues.of(vRatio)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(
+            try saved.variable("count"), "count")
+        let value1 = try SavedValues.bool(
+            try saved.variable("ready"), "ready")
+        let value2 = try SavedValues.string(
+            try saved.variable("label"), "label", capacity: 16)
+        let value3 = try SavedValues.int16(
+            try saved.variable("delta"), "delta")
+        let value4 = try SavedValues.float64(
+            try saved.variable("ratio"), "ratio")
+        let value5 = try SavedValues.uint32(
+            try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vCount = value0
+            self.vReady = value1
+            self.vLabel = value2
+            self.vDelta = value3
+            self.vRatio = value4
+            self.vErrors = value5
+        }
+    }
+}

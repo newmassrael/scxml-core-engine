@@ -639,3 +639,56 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticCancelExprPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "3931ee52e0ca82c24127717dc9133799a7f0ac200b2fbd10b7fb89b77838dc7f",
+            revised: "17bda9c93136de5ecc612c39876f588c68fca5ef1340164058fe13f2de780e16",
+            format2First: "3931ee52e0ca82c24127717dc9133799a7f0ac200b2fbd10b7fb89b77838dc7f",
+            format2Revised: "17bda9c93136de5ecc612c39876f588c68fca5ef1340164058fe13f2de780e16")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("which", SavedValues.of(vWhich)),
+            SavedEntry("scale", SavedValues.of(vScale)),
+            SavedEntry("a_fired", SavedValues.of(vAFired)),
+            SavedEntry("b_fired", SavedValues.of(vBFired)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(
+            try saved.variable("which"), "which", capacity: 8)
+        let value1 = try SavedValues.uint32(
+            try saved.variable("scale"), "scale")
+        let value2 = try SavedValues.uint32(
+            try saved.variable("a_fired"), "a_fired")
+        let value3 = try SavedValues.uint32(
+            try saved.variable("b_fired"), "b_fired")
+        let value4 = try SavedValues.uint32(
+            try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vWhich = value0
+            self.vScale = value1
+            self.vAFired = value2
+            self.vBFired = value3
+            self.vRefusals = value4
+        }
+    }
+}
