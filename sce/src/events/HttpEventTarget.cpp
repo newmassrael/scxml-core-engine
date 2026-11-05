@@ -5,6 +5,7 @@
 #include "common/JsonText.h"
 #include "common/LogToLogger.h"
 #include "common/SendHelper.h"
+#include "common/ThreadSupport.h"
 #include "common/UrlEncodingHelper.h"
 #include <algorithm>
 #include <chrono>
@@ -36,7 +37,11 @@ HttpEventTarget::HttpEventTarget(const std::string &targetUri, std::chrono::mill
 std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
     auto self = shared_from_this();
 
-    return std::async(std::launch::async, [self, event]() -> SendResult {
+    // A build with threads posts on a thread of its own; a build without them
+    // (common/ThreadSupport.h) can start none, so the post runs on the thread
+    // that reads the result, when it reads it.
+    constexpr std::launch policy = SCE_HAS_THREADS ? std::launch::async : std::launch::deferred;
+    return std::async(policy, [self, event]() -> SendResult {
         try {
             SCE_LOG_DEBUG("HttpEventTarget: Sending event '{}' to '{}'", event.eventName, self->targetUri_);
 
@@ -155,19 +160,9 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
 
         } catch (const std::exception &e) {
             SCE_LOG_ERROR("HttpEventTarget: Exception during send: {}", e.what());
-#ifdef __EMSCRIPTEN__
-            // WASM memory investigation: Log thread completion (exception path)
-            SCE_LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (exception) for event '{}'",
-                         event.eventName);
-#endif
             return SendResult::error("HTTP send exception: " + std::string(e.what()),
                                      SendResult::ErrorType::INTERNAL_ERROR);
         }
-#ifdef __EMSCRIPTEN__
-        // WASM memory investigation: Log thread completion (success path)
-        SCE_LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (success) for event '{}'",
-                     event.eventName);
-#endif
     });
 }
 

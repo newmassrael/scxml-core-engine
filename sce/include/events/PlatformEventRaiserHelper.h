@@ -17,12 +17,12 @@ class EventRaiserImpl;
 /**
  * @brief W3C SCXML Platform Abstraction: Event Processing Strategy Helper
  *
- * Zero Duplication Principle: Single Source of Truth for platform-specific
- * event processing logic (WASM synchronous vs Native pthread worker).
+ * Zero Duplication Principle: Single Source of Truth for the event processing
+ * logic of the two execution models (common/ThreadSupport.h).
  *
- * This Helper abstracts the event processing model differences between platforms:
- * - WASM (Emscripten): Synchronous immediate mode (no pthread support)
- * - Native (Linux/macOS): Pthread-based worker thread for async event processing
+ * This Helper abstracts the difference between them:
+ * - Host-driven (a build without threads): synchronous immediate mode
+ * - Threaded (native, or Emscripten with pthreads): a worker thread for async event processing
  *
  * Asynchronous event processing required for non-blocking state machine operations
  *
@@ -48,8 +48,8 @@ public:
      * @brief Start platform-specific event processing infrastructure
      *
      * Platform-specific behavior:
-     * - WASM: Enable immediate mode (no worker thread to start)
-     * - Native: Start worker thread for async event processing
+     * - Host-driven: Enable immediate mode (no worker thread to start)
+     * - Threaded: Start worker thread for async event processing
      *
      * W3C SCXML: Initialize event processing capability
      */
@@ -59,8 +59,8 @@ public:
      * @brief Shutdown platform-specific event processing infrastructure
      *
      * Platform-specific behavior:
-     * - WASM: No-op (no worker thread to stop)
-     * - Native: Signal worker thread to stop and join
+     * - Host-driven: No-op (no worker thread to stop)
+     * - Threaded: Signal worker thread to stop and join
      *
      * W3C SCXML: Clean shutdown of event processing resources
      */
@@ -70,8 +70,8 @@ public:
      * @brief Notify platform-specific infrastructure of new queued event
      *
      * Platform-specific behavior:
-     * - WASM: No-op (immediate mode processes synchronously)
-     * - Native: Signal condition variable to wake worker thread
+     * - Host-driven: No-op (immediate mode processes synchronously)
+     * - Threaded: Signal condition variable to wake worker thread
      *
      * W3C SCXML: Enable async event processing notification
      */
@@ -81,19 +81,19 @@ public:
      * @brief Check if event processing should continue
      *
      * Platform-specific behavior:
-     * - WASM: Always returns false (no worker thread loop)
-     * - Native: Returns true until shutdown requested
+     * - Host-driven: Always returns false (no worker thread loop)
+     * - Threaded: Returns true until shutdown requested
      *
      * Used by worker thread main loop condition
      */
     virtual bool shouldProcessEvents() const = 0;
 
     /**
-     * @brief Wait for new events or shutdown signal (for Native worker thread)
+     * @brief Wait for new events or shutdown signal (for the threaded model's worker)
      *
      * Platform-specific behavior:
-     * - WASM: Not called (no worker thread)
-     * - Native: Blocks on condition variable until event or shutdown
+     * - Host-driven: Not called (no worker thread)
+     * - Threaded: Blocks on condition variable until event or shutdown
      *
      * W3C SCXML: Worker thread blocking for event-driven processing
      */
@@ -103,8 +103,8 @@ public:
      * @brief Poll EventScheduler for ready delayed events
      *
      * Platform-specific behavior:
-     * - WASM: Calls scheduler->poll() to process delayed events synchronously
-     * - Native: No-op (background timer thread handles scheduling automatically)
+     * - Host-driven: Calls scheduler->poll() to process delayed events synchronously
+     * - Threaded: No-op (background timer thread handles scheduling automatically)
      *
      * §scxml-6.2: Delayed send element support across platforms
      *
@@ -119,12 +119,12 @@ class IEventScheduler;
 /**
  * @brief Factory function to create platform-appropriate event raiser helper
  *
- * Compile-time platform selection:
- * - __EMSCRIPTEN__ defined: Returns SynchronousEventRaiserHelper (with scheduler polling)
- * - __EMSCRIPTEN__ not defined: Returns QueuedEventRaiserHelper (scheduler handled by background thread)
+ * Compile-time selection by SCE_HAS_THREADS (common/ThreadSupport.h):
+ * - 0: Returns SynchronousEventRaiserHelper (with scheduler polling)
+ * - 1: Returns QueuedEventRaiserHelper (scheduler handled by its timer thread)
  *
  * @param raiser Pointer to EventRaiserImpl instance (for callbacks)
- * @param scheduler Shared pointer to EventScheduler (for delayed event polling on WASM)
+ * @param scheduler Shared pointer to EventScheduler (polled for delayed events when there are no threads)
  * @return std::unique_ptr<PlatformEventRaiserHelper> Platform-specific helper
  *
  * Zero Duplication: Single factory function replaces #ifdef guards throughout EventRaiserImpl

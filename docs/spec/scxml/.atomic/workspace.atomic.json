@@ -9274,6 +9274,10 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "SendNamedInternal",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/common/ThreadSupport.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

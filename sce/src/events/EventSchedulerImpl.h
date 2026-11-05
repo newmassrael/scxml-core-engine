@@ -5,6 +5,7 @@
 
 #include "IEventDispatcher.h"
 #include "IEventTarget.h"
+#include "common/ThreadSupport.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -93,7 +94,14 @@ public:
      */
     size_t advanceTime(std::chrono::milliseconds delta);
 
-#ifdef __EMSCRIPTEN__
+#if !SCE_HAS_THREADS
+    /**
+     * @brief Release what fell due, on the calling thread (host-driven model)
+     *
+     * A build without threads has no timer thread to do it
+     * (common/ThreadSupport.h): the machine's thread calls this when it
+     * looks for work.
+     */
     size_t poll();
 #endif
 
@@ -166,7 +174,7 @@ private:
     void executeScheduledEvent(const ScheduledEventPtr &eventPtr, const std::string &sessionId,
                                const std::string &context);
 
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
     void timerThreadMain();
     void callbackWorker();
     void ensureThreadsStarted();
@@ -182,7 +190,7 @@ private:
 
     // Thread safety: Single mutex for both queue and index (always modified together)
     mutable std::shared_mutex mutex_;
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
     std::condition_variable_any timerCondition_;
 #endif
 
@@ -205,7 +213,7 @@ private:
     std::unordered_map<std::string, std::queue<ScheduledEventPtr>> sessionQueues_;
     std::unordered_map<std::string, bool> sessionExecuting_;
 
-#ifdef __EMSCRIPTEN__
+#if !SCE_HAS_THREADS
     std::atomic<bool> shutdownRequested_{false};
     std::atomic<bool> running_{false};
 #else

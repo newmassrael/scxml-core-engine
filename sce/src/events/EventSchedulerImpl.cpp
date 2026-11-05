@@ -20,8 +20,8 @@ EventSchedulerImpl::EventSchedulerImpl(EventExecutionCallback executionCallback)
 
     running_ = true;
 
-#ifdef __EMSCRIPTEN__
-    SCE_LOG_DEBUG("EventSchedulerImpl: Scheduler started in WASM polling mode");
+#if !SCE_HAS_THREADS
+    SCE_LOG_DEBUG("EventSchedulerImpl: Scheduler started host-driven (no threads in this build)");
 #else
     SCE_LOG_DEBUG("EventSchedulerImpl: Scheduler started with timer thread and {} callback threads",
                   CALLBACK_THREAD_POOL_SIZE);
@@ -31,9 +31,7 @@ EventSchedulerImpl::EventSchedulerImpl(EventExecutionCallback executionCallback)
 EventSchedulerImpl::~EventSchedulerImpl() {
     requestThreadsStop();
 
-#ifdef __EMSCRIPTEN__
-    // WASM: No threads to clean up
-#else
+#if SCE_HAS_THREADS
     callbackCondition_.notify_all();
     timerCondition_.notify_all();
 
@@ -57,7 +55,7 @@ EventSchedulerImpl::~EventSchedulerImpl() {
         sessionQueues_.clear();
         sessionExecuting_.clear();
 
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
         std::queue<std::function<void()>> emptyCallbackQueue;
         std::swap(callbackQueue_, emptyCallbackQueue);
 #endif
@@ -84,7 +82,7 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
         return errorPromise.get_future();
     }
 
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
     {
         std::unique_lock<std::shared_mutex> lock(mutex_);
         ensureThreadsStarted();
@@ -146,7 +144,7 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
     SCE_LOG_DEBUG("EventSchedulerImpl: Scheduled event '{}' with sendId '{}' for {}ms delay in session '{}'",
                   event.eventName, actualSendId, delay.count(), sessionId);
 
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
     timerCondition_.notify_one();
 #endif
 
@@ -177,7 +175,7 @@ bool EventSchedulerImpl::cancelEvent(const std::string &sendId, const std::strin
         sendIdIndex_.erase(it);
         queueSize_.fetch_sub(1, std::memory_order_release);
 
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
         timerCondition_.notify_one();
 #endif
         return true;
@@ -219,7 +217,7 @@ size_t EventSchedulerImpl::cancelEventsForSession(const std::string &sessionId) 
 
     if (cancelledCount > 0) {
         SCE_LOG_DEBUG("EventSchedulerImpl: Cancelled {} events for session '{}'", cancelledCount, sessionId);
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
         timerCondition_.notify_one();
 #endif
     }
@@ -254,7 +252,7 @@ void EventSchedulerImpl::requestThreadsStop() {
         std::unique_lock<std::shared_mutex> lock(mutex_);
         shutdownRequested_ = true;
     }
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
     {
         std::lock_guard<std::mutex> lock(callbackQueueMutex_);
         callbackShutdownRequested_ = true;
@@ -271,9 +269,7 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
 
     requestThreadsStop();
 
-#ifdef __EMSCRIPTEN__
-    // WASM: No threads to signal
-#else
+#if SCE_HAS_THREADS
     callbackCondition_.notify_all();
 
     bool calledFromSchedulerThread = isInSchedulerThread_;
@@ -305,7 +301,7 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
         }
     }
 
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
     {
         // The per-session queues are the callback workers' to read, so they are cleared under
         // the lock the workers hold, with the tasks that would have drained them.
@@ -414,8 +410,8 @@ size_t EventSchedulerImpl::processReadyEvents() {
         sessionEventGroups[event->sessionId].emplace_back(event);
     }
 
-#ifdef __EMSCRIPTEN__
-    executeSessionEventsSync(sessionEventGroups, "WASM");
+#if !SCE_HAS_THREADS
+    executeSessionEventsSync(sessionEventGroups, "Host-driven");
 #else
     if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
         executeSessionEventsSync(sessionEventGroups, "MANUAL mode");
@@ -434,7 +430,7 @@ size_t EventSchedulerImpl::processReadyEvents() {
     return readyEvents.size();
 }
 
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
 void EventSchedulerImpl::enqueueSessionEvents(const std::string &sessionId, std::vector<ScheduledEventPtr> &&events) {
     bool startDrain = false;
     {
@@ -483,9 +479,6 @@ void EventSchedulerImpl::drainSession(const std::string &sessionId) {
         executeScheduledEvent(next, sessionId, "Callback worker");
     }
 }
-#endif
-
-#ifndef __EMSCRIPTEN__
 
 void EventSchedulerImpl::timerThreadMain() {
     isInSchedulerThread_ = true;
@@ -610,9 +603,8 @@ void EventSchedulerImpl::callbackWorker() {
 
 thread_local bool EventSchedulerImpl::isInSchedulerThread_ = false;
 
-#endif  // __EMSCRIPTEN__
+#else  // !SCE_HAS_THREADS
 
-#ifdef __EMSCRIPTEN__
 size_t EventSchedulerImpl::poll() {
     if (!isRunning()) {
         return 0;
@@ -620,7 +612,8 @@ size_t EventSchedulerImpl::poll() {
 
     return processReadyEvents();
 }
-#endif
+
+#endif  // SCE_HAS_THREADS
 
 std::string EventSchedulerImpl::generateSendId() {
     return UniqueIdGenerator::generateSendId();
@@ -672,7 +665,7 @@ void EventSchedulerImpl::setMode(SchedulerMode mode) {
     }
     SCE_LOG_INFO("EventSchedulerImpl: Scheduler mode set to {}",
                  mode == SchedulerMode::AUTOMATIC ? "AUTOMATIC" : "MANUAL");
-#ifndef __EMSCRIPTEN__
+#if SCE_HAS_THREADS
     // The timer thread parks itself while the mode is MANUAL (see
     // `timerThreadMain`). Waking it is what lets a switch back to AUTOMATIC
     // take effect on events that are already queued, rather than at whatever

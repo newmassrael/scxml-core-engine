@@ -3,6 +3,7 @@
 
 #include "scripting/PlatformExecutionHelper.h"
 #include "common/LogToLogger.h"
+#include "common/ThreadSupport.h"
 #include "quickjs.h"
 #include <condition_variable>
 #include <mutex>
@@ -11,12 +12,13 @@
 
 namespace SCE {
 
+#if !SCE_HAS_THREADS
+
 /**
- * @brief WASM Synchronous Executor: Direct function calls without threading
+ * @brief Host-driven executor: direct function calls on the caller's thread
  *
- * Zero Duplication: WASM platform logic isolated in this class
- *
- * W3C SCXML: Synchronous execution model for single-threaded JavaScript engines
+ * The model of a build without threads (common/ThreadSupport.h): there is no
+ * worker to queue to, so an operation runs when it is asked for.
  */
 class SynchronousExecutionHelper : public PlatformExecutionHelper {
 private:
@@ -24,9 +26,9 @@ private:
 
 public:
     SynchronousExecutionHelper() {
-        SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor initialized (WASM mode)");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor initialized (host-driven)");
 
-        // W3C SCXML: Create QuickJS runtime on main thread for WASM
+        // The QuickJS runtime lives on the one thread there is
         runtime_ = JS_NewRuntime();
         if (!runtime_) {
             SCE_LOG_ERROR("PlatformExecutionHelper: Failed to create QuickJS runtime");
@@ -42,7 +44,7 @@ public:
     }
 
     std::future<ScriptResult> executeAsync(std::function<ScriptResult()> operation) override {
-        // WASM: Execute immediately (no worker thread)
+        // Execute immediately (no worker thread)
         ScriptResult result = operation();
         std::promise<ScriptResult> promise;
         promise.set_value(std::move(result));
@@ -50,7 +52,7 @@ public:
     }
 
     void shutdown() override {
-        // WASM: Free runtime during shutdown (not in destructor)
+        // Free the runtime during shutdown (not in the destructor)
         // QuickJS: All contexts must be freed before freeing runtime
         if (runtime_) {
             SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor - freeing runtime");
@@ -61,7 +63,7 @@ public:
     }
 
     void reset() override {
-        // WASM: No worker thread to restart
+        // No worker thread to restart
         SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor reset (no-op)");
     }
 
@@ -70,16 +72,16 @@ public:
     }
 
     void waitForRuntimeInitialization() override {
-        // WASM: Runtime created synchronously, no wait needed
+        // Runtime created synchronously, no wait needed
     }
 };
 
-#ifndef __EMSCRIPTEN__
+#else  // SCE_HAS_THREADS
 
 /**
- * @brief Native Pthread Queue Executor: Worker thread with request queue
+ * @brief Threaded executor: worker thread with request queue
  *
- * Zero Duplication: Native platform logic isolated in this class
+ * Zero Duplication: the threaded model's logic isolated in this class
  *
  * Thread-safe execution for concurrent state machine instances
  *
@@ -294,15 +296,15 @@ public:
     }
 };
 
-#endif  // !__EMSCRIPTEN__
+#endif  // SCE_HAS_THREADS
 
 // Factory function implementation
 std::unique_ptr<PlatformExecutionHelper> createPlatformExecutor() {
-#ifdef __EMSCRIPTEN__
-    SCE_LOG_DEBUG("PlatformExecutionHelper: Creating synchronous executor (WASM)");
+#if !SCE_HAS_THREADS
+    SCE_LOG_DEBUG("PlatformExecutionHelper: Creating synchronous executor (host-driven)");
     return std::make_unique<SynchronousExecutionHelper>();
 #else
-    SCE_LOG_DEBUG("PlatformExecutionHelper: Creating queued executor (Native pthread)");
+    SCE_LOG_DEBUG("PlatformExecutionHelper: Creating queued executor (threaded)");
     return std::make_unique<QueuedExecutionHelper>();
 #endif
 }

@@ -27,12 +27,12 @@ namespace SCE {
 /**
  * @brief W3C SCXML Platform Abstraction: Execution Strategy Helper
  *
- * Zero Duplication Principle: Single Source of Truth for platform-specific
- * execution logic (WASM synchronous vs Native pthread queue).
+ * Zero Duplication Principle: Single Source of Truth for the execution logic
+ * of the two execution models (common/ThreadSupport.h).
  *
- * This Helper abstracts the execution model differences between platforms:
- * - WASM (Emscripten): Synchronous direct execution (no pthread support)
- * - Native (Linux/macOS): Pthread-based worker queue for thread safety
+ * This Helper abstracts the difference between them:
+ * - Host-driven (a build without threads): synchronous direct execution
+ * - Threaded (native, or Emscripten with pthreads): a worker queue for thread safety
  *
  * Thread-safe execution required for concurrent state machine instances
  *
@@ -58,8 +58,8 @@ public:
      * @brief Execute operation asynchronously and return future
      *
      * Platform-specific behavior:
-     * - WASM: Execute immediately and wrap result in promise
-     * - Native: Queue operation for worker thread execution
+     * - Host-driven: Execute immediately and wrap result in promise
+     * - Threaded: Queue operation for worker thread execution
      *
      * @param operation Lambda function returning ScriptResult
      * @return std::future<ScriptResult> Future that will contain operation result
@@ -125,8 +125,8 @@ public:
      * @brief Shutdown platform-specific execution infrastructure
      *
      * Platform-specific behavior:
-     * - WASM: No-op (no worker thread to stop)
-     * - Native: Signal worker thread to stop and join
+     * - Host-driven: No-op (no worker thread to stop)
+     * - Threaded: Signal worker thread to stop and join
      *
      * W3C SCXML: Clean shutdown of JavaScript engine resources
      */
@@ -136,8 +136,8 @@ public:
      * @brief Reset platform-specific execution infrastructure
      *
      * Platform-specific behavior:
-     * - WASM: No-op (no worker thread to restart)
-     * - Native: Stop existing worker thread and start new one
+     * - Host-driven: No-op (no worker thread to restart)
+     * - Threaded: Stop existing worker thread and start new one
      *
      * W3C SCXML: Reset JavaScript engine to initial state
      */
@@ -147,8 +147,8 @@ public:
      * @brief Get QuickJS runtime pointer created by this executor
      *
      * Platform-specific behavior:
-     * - WASM: Runtime created on main thread during construction
-     * - Native: Runtime created on worker thread, pointer returned after initialization
+     * - Host-driven: Runtime created on main thread during construction
+     * - Threaded: Runtime created on worker thread, pointer returned after initialization
      *
      * QuickJS Thread Safety: Runtime must be created and used on same thread
      *
@@ -157,11 +157,11 @@ public:
     virtual JSRuntime *getRuntimePointer() = 0;
 
     /**
-     * @brief Wait for runtime to be initialized (for Native pthread executor)
+     * @brief Wait for runtime to be initialized (for the threaded executor)
      *
      * Platform-specific behavior:
-     * - WASM: Returns immediately (runtime created synchronously)
-     * - Native: Blocks until worker thread has created runtime
+     * - Host-driven: Returns immediately (runtime created synchronously)
+     * - Threaded: Blocks until worker thread has created runtime
      *
      * W3C SCXML: Ensure runtime is ready before session operations
      */
@@ -171,9 +171,9 @@ public:
 /**
  * @brief Factory function to create platform-appropriate executor
  *
- * Compile-time platform selection:
- * - __EMSCRIPTEN__ defined: Returns SynchronousExecutionHelper
- * - __EMSCRIPTEN__ not defined: Returns QueuedExecutionHelper
+ * Compile-time selection by SCE_HAS_THREADS (common/ThreadSupport.h):
+ * - 0: Returns SynchronousExecutionHelper
+ * - 1: Returns QueuedExecutionHelper
  *
  * @return std::unique_ptr<PlatformExecutionHelper> Platform-specific executor
  *

@@ -125,7 +125,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
   Go `ReadDatamodel*`, Kotlin `DatamodelRead` and Python `datamodel_read` are
   the same three coercions, so every backend's accessor answers alike.
 - `DOMBinding` / `LuaDOMBinding` — DOM access for script engines
-- `PlatformExecutionHelper` — Platform abstraction (Native pthread vs WASM synchronous)
+- `PlatformExecutionHelper` — Execution-model abstraction (threaded vs host-driven, chosen by whether the build has threads; see Platform Support)
 - `EventRaiserService` / `EventRaiserRegistry` — the session → `IEventRaiser` registry both engines route a script's raise through (headers under `events/`)
 
 **Link target**: Static Hybrid AOT (JSEngine-embedded expressions) and Interpreter consumers.
@@ -1612,16 +1612,32 @@ BasicHTTP Event I/O Processor support for `<send type="BasicHTTPEventProcessor">
 
 ## Platform Support
 
+### Execution model: threaded or host-driven
+
+The engine runs in one of two models, and which one a build gets is a fact about the build, not about the platform it targets: it has threads or it has not (`sce/include/common/ThreadSupport.h`, `SCE_HAS_THREADS`).
+
+| | Threaded | Host-driven |
+|---|---|---|
+| Builds | native; Emscripten with `-pthread` (`__EMSCRIPTEN_PTHREADS__`) | Emscripten without `-pthread` |
+| Delayed `<send>` (§scxml-6.2) | the scheduler's timer thread fires it when it falls due | fires when the machine's thread polls the scheduler, or when the host moves a MANUAL-mode clock on |
+| Event processing | `QueuedEventRaiserHelper`, a worker thread | `SynchronousEventRaiserHelper`, immediate mode |
+| Scripts | `QueuedExecutionHelper`, the QuickJS runtime on its worker | `SynchronousExecutionHelper`, on the calling thread |
+| BasicHTTP send | on a thread of its own | on the thread that reads the result |
+
+The three factories (`EventSchedulerImpl`, `createPlatformEventRaiserHelper()`, `createPlatformExecutor()`) and `HttpEventTarget::send` select at compile time on `SCE_HAS_THREADS`. They selected on `__EMSCRIPTEN__` before, which gave the Node programs of the emscripten tree, which have threads, the host-driven model: a delayed event could not fire while the machine's thread was held, and four integration cases that pass natively failed there.
+
+The host-driven model is the one a target without threads has, as the Rust engine's thread-less targets are driven by their host's clock (see "Targets with no operating-system clock" below).
+
 ### Native (Linux, macOS, Windows)
-- `QueuedExecutionHelper`: Worker thread with operation queue for QuickJS thread safety
+- Threaded model
 - pthread for `EventDispatcherImpl`
 
 ### WASM (Emscripten)
-- `SynchronousExecutionHelper`: Direct synchronous execution (no pthread for QuickJS)
+Two build trees, one per model, because `-pthread` is part of every object's ABI (shared memory and atomics) and so one setting of a whole tree (`SCE_WASM_THREADS`, root `CMakeLists.txt`):
+- `build_wasm` (threads): the Node programs: the engine's suites (`cpp-suite-wasm`) and the W3C runner (`w3c-wasm`)
+- `build_wasm_web` (no threads): the browser visualizer (`visualizer-wasm`, deployed), which runs in a page without cross-origin isolation and so without SharedArrayBuffer
 - Emscripten Fetch API for HTTP requests (`EmscriptenFetchClient`)
 - Configurable memory: `WASM_INITIAL_MEMORY`, fixed allocation (no growth)
-
-**Factory**: `PlatformExecutionHelper::createPlatformExecutor()` selects at compile-time (`#ifdef __EMSCRIPTEN__`).
 
 ### Python Bindings (pybind11)
 
