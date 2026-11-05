@@ -101,6 +101,18 @@
         {
           "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Endpoint.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Outbound.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
         }
       ]
     },
@@ -376,6 +388,18 @@
         {
           "file": "backends/rust/mesh/src/peers.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Inbound.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Peers.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
         }
       ]
     },
@@ -476,6 +500,14 @@
         {
           "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Inbound.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
         }
       ]
     },
@@ -534,6 +566,14 @@
         },
         {
           "file": "backends/rust/mesh/src/peers.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Inbound.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Peers.swift",
           "kind": "references"
         }
       ],
@@ -611,6 +651,14 @@
         {
           "file": "backends/rust/mesh/src/signal.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Inbound.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
         }
       ]
     },
@@ -654,6 +702,10 @@
         },
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Inbound.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Inbound.swift",
           "kind": "references"
         }
       ]
@@ -769,6 +821,18 @@
         {
           "file": "backends/rust/runtime/src/host_processor.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Endpoint.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Rpc.swift",
+          "kind": "references"
         }
       ]
     },
@@ -849,6 +913,14 @@
         {
           "file": "backends/rust/runtime/src/host_processor.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Rpc.swift",
+          "kind": "implements"
         }
       ]
     },
@@ -1733,6 +1805,18 @@
         {
           "file": "sce-build/src/mesh/transport/mod.rs",
           "symbol": "WSS",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Rpc.swift",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Signal.swift",
           "kind": "references"
         }
       ]
@@ -2733,6 +2817,26 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "deliverRouted",
           "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Endpoint.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Peers.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Rpc.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Signal.swift",
+          "kind": "references"
         }
       ]
     },
@@ -3026,6 +3130,14 @@
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Link.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Peers.swift",
+          "kind": "references"
         }
       ]
     },
@@ -3094,6 +3206,14 @@
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Endpoint.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Peers.swift",
+          "kind": "references"
         }
       ]
     },
@@ -3188,6 +3308,14 @@
         },
         {
           "file": "backends/c/runtime/include/sce/host_processor.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Peers.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Rpc.swift",
           "kind": "references"
         }
       ]
@@ -3694,6 +3822,10 @@
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction"
@@ -3790,6 +3922,14 @@
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Endpoint.swift",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
         }
       ]
     },
@@ -3882,6 +4022,10 @@
         },
         {
           "file": "backends/rust/mesh/src/router.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
           "kind": "references"
         }
       ]
@@ -4350,6 +4494,22 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "SCE::Static",
+          "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Endpoint.swift",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Rpc.swift",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Signal.swift",
           "kind": "references"
         }
       ]

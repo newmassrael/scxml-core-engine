@@ -167,6 +167,10 @@ paths = [
     # Its Kotlin twin (`sce-kotlin-mesh`), cited section for section. Its
     # generated tree likewise carries only §synth- cites, measured 2026-09-28.
     "backends/kotlin/mesh/src",
+    # And its Swift twin (`SceMesh`), the same files cited section for section. The
+    # generated tree under `Sources/SceMesh/Generated` carries no §mesh- cite, as the
+    # Kotlin one does not.
+    "backends/swift/mesh/Sources",
     # The two files outside those trees that cite §18.4, the WebSocket
     # binding's implementations: the Rust crate's manifest (the `wss` feature)
     # and the lowering that makes a Mesh send and request host-served (§19).
