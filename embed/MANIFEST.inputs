@@ -77,6 +77,7 @@ f5aceaf6fa506e091867d85acdb620cb37e56d98 sce/include/common/SendHelper.h
 1498584b86600df6a85f44103642240cd5650876 sce/include/common/SendSchedulingHelper.h
 3f85b8512ea7a82df14037e7dd49308334b3ea58 sce/include/common/SourceLocation.h
 c5c17c74062330d93a921a982cebf24ba9f30faf sce/include/common/StringUtils.h
+f81e33868abc32982309e91fb39ddf36787c4f78 sce/include/common/ThreadSupport.h
 6659f7bd7deb840145f474497b9076d88730d94c sce/include/common/UniqueIdGenerator.h
 37c209dc1eb9d6da6a6d1107f42b4a3ca5fd3c3b sce/include/common/UrlEncodingHelper.h
 efd360451a93c5964d2ba19f2e181556d5b19b74 sce/include/common/Uuid.h
@@ -132,7 +133,7 @@ c9af06a3e47301850fef7fb16a594efc3e7d5c7b sce/include/events/IEventTarget.h
 371343164e715558dc7dba03927e597718287de1 sce/include/events/InternalEventTarget.h
 c6745e11739bded8972d909265359969b6495dd1 sce/include/events/InvokeEventTarget.h
 b234d4335cee46bf866361b2183e0b8068e6aac8 sce/include/events/ParentEventTarget.h
-aae10e8aef413ea932275f762e8d73c51fb89b7f sce/include/events/PlatformEventRaiserHelper.h
+1a3d4730bf1cd3b2d2d935e4ebed288f7fe6b259 sce/include/events/PlatformEventRaiserHelper.h
 cf35ceae077d36122be3aad077c36b62302406b7 sce/include/model/DataModelItem.h
 89299477bbb89e2a4c0e6a32d242a8bbd00e278f sce/include/model/DoneData.h
 345a7821fe274fc4bedaeff88b4a9f8d566fdca8 sce/include/model/GuardNode.h
@@ -184,7 +185,7 @@ efa2dfb835179ed2ea742e4fbab2efdbc1461e64 sce/include/scripting/ISessionManager.h
 ebde7e606017aafc7b55dc0d04c7d6c4570fe876 sce/include/scripting/LoweringScope.h
 ceb2995bd3244c925168f47cbb4f7f1b332b52be sce/include/scripting/LuaDOMBinding.h
 8a9d9d86a35037741a0007ca47c7603cf0971447 sce/include/scripting/LuaEngine.h
-86e5197ab4c18910d9904e9a985aaa1bc50e5880 sce/include/scripting/PlatformExecutionHelper.h
+890cb03b878e050b631faf41941f09ada2470516 sce/include/scripting/PlatformExecutionHelper.h
 7d245bc0b3ca794aa947db5780e1968487ff55f6 sce/include/scripting/SceLowering.h
 32d5c4bdcef45dfdbeb3eb331d5d1a8bdc237f17 sce/include/scripting/ScriptDialect.h
 b5ab6b9b0e0aedff2603051d0fff204d1994c6b8 sce/include/scripting/ScriptEngineProvider.h
