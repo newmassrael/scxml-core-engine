@@ -14,24 +14,36 @@
 
     Written only for a machine whose state the Swift runtime holds whole
     (`swift_saved_shape` of the generator): every variable a number, a truth value, a bounded text,
-    a byte string or an enum, or one of those that may be absent, and no `<invoke>` or product line
-    in the document. What each `<history>` recorded is saved and restored through the ids the
+    a byte string, an enum, a record or a list of them, or one of those that may be absent, every
+    record schema in its first revision, and no `<invoke>` or product line in the document. What each `<history>` recorded is saved and restored through the ids the
     document gives them.
 #}
-{#- How a variable is written: by `SavedValues.of`, which every scalar, byte string and enum has; a value that
-   may be absent is `null` or as its present value is written (docs/adr/0055, section 4). #}
+{#- How a variable is written: by `SavedValues.of`, which every scalar, byte string and enum has, and by the
+   record's own `toSaved`; a list writes each element so, and a value that may be absent is `null` or as its
+   present value is written (docs/adr/0055, section 4). #}
 {%- macro saved_write(field) -%}
-{%- if field.saved_kind == 'optional' -%}
+{%- if field.saved_kind == 'optional' and field.saved_elem == 'record' -%}
+SavedValues.optional({{ field.name }}) { $0.toSaved() }
+{%- elif field.saved_kind == 'optional' -%}
 SavedValues.optional({{ field.name }}) { SavedValues.of($0) }
+{%- elif field.saved_kind == 'record' -%}
+{{ field.name }}.toSaved()
+{%- elif field.saved_kind == 'record_list' -%}
+SavedValues.list({{ field.name }}) { $0.toSaved() }
+{%- elif field.saved_kind == 'list' -%}
+SavedValues.list({{ field.name }}) { SavedValues.of($0) }
 {%- else -%}
 SavedValues.of({{ field.name }})
 {%- endif -%}
 {%- endmacro %}
-{#- A present value read as its type says: an enum by its own type, a byte string and a text held to the bound
-   the machine keeps them to, anything else by the function its `sce:type` names. #}
-{%- macro saved_present(type, enumerated, value, what, bound) -%}
-{%- if enumerated -%}
+{#- A present value read as its type says: an enum by its own type, a record by its own `fromSaved`, a byte
+   string and a text held to the bound the machine keeps them to, anything else by the function its
+   `sce:type` names. `shape` is `enum`, `record` or `scalar`. #}
+{%- macro saved_present(type, shape, value, what, bound) -%}
+{%- if shape == 'enum' -%}
 try SavedValues.enumeration({{ value }}, {{ what }}, as: {{ type }}.self)
+{%- elif shape == 'record' -%}
+try {{ type }}.fromSaved({{ value }}, {{ what }})
 {%- elif type == 'bytes' -%}
 try SavedValues.bytes({{ value }}, {{ what }}{% if bound is not none %}, capacity: {{ bound }}{% endif %})
 {%- elif type == 'string' -%}
@@ -44,9 +56,13 @@ try SavedValues.{{ type }}({{ value }}, {{ what }})
 {%- set value -%}try saved.variable("{{ field.id | escape_swift }}"){%- endset -%}
 {%- set what -%}"{{ field.id | escape_swift }}"{%- endset -%}
 {%- if field.saved_kind == 'optional' -%}
-try SavedValues.optional({{ value }}, {{ what }}) { e, w in {{ saved_present(field.saved_type, field.saved_elem == 'enum', 'e', 'w', field.bound) }} }
+try SavedValues.optional({{ value }}, {{ what }}) { e, w in {{ saved_present(field.saved_type, field.saved_elem, 'e', 'w', field.bound) }} }
+{%- elif field.saved_kind == 'list' -%}
+try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.bound is not none else '.max' }}) { e, w in {{ saved_present(field.saved_type, 'scalar', 'e', 'w', none) }} }
+{%- elif field.saved_kind == 'record_list' -%}
+try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.bound is not none else '.max' }}) { e, w in {{ saved_present(field.saved_type, 'record', 'e', 'w', none) }} }
 {%- else -%}
-{{ saved_present(field.saved_type, field.saved_kind == 'enum', value, what, field.bound) }}
+{{ saved_present(field.saved_type, field.saved_kind if field.saved_kind in ['enum', 'record'] else 'scalar', value, what, field.bound) }}
 {%- endif -%}
 {%- endmacro %}
 // ======================================================================

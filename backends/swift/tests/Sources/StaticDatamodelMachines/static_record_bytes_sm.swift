@@ -115,6 +115,22 @@ public struct StaticRecordBytesFramedRecord: Equatable, Sendable, SceDefault {
         self.sensor = sensor
         self.frame = frame
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "sensor", value: SavedValues.of(sensor)),
+            (key: "frame", value: SavedValues.of(frame)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticRecordBytesFramedRecord {
+        StaticRecordBytesFramedRecord(
+            sensor: try SavedValues.uint8(try SavedValues.field(value, what, "sensor"), "\(what).sensor"),
+            frame: try SavedValues.bytes(try SavedValues.field(value, what, "frame"), "\(what).frame", capacity: 8)
+        )
+    }
 }
 
 // ======================================================================
@@ -935,3 +951,60 @@ public final class StaticRecordBytesPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticRecordBytesPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8",
+            revised: "a4673fed412eef9b82de968dadba304e219c25bfc193ba1b4a9a8579adf08aab",
+            format2First: "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8",
+            format2Revised: "a4673fed412eef9b82de968dadba304e219c25bfc193ba1b4a9a8579adf08aab")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("last", vLast.toSaved()),
+            SavedEntry("spare", SavedValues.of(vSpare)),
+            SavedEntry("frames", SavedValues.list(vFrames) { $0.toSaved() }),
+            SavedEntry("size", SavedValues.of(vSize)),
+            SavedEntry("matches", SavedValues.of(vMatches)),
+            SavedEntry("misses", SavedValues.of(vMisses)),
+            SavedEntry("leads", SavedValues.of(vLeads)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticRecordBytesFramedRecord.fromSaved(try saved.variable("last"), "last")
+        let value1 = try SavedValues.bytes(try saved.variable("spare"), "spare", capacity: 16)
+        let value2 = try SavedValues.list(try saved.variable("frames"), "frames", capacity: 3) { e, w in try StaticRecordBytesFramedRecord.fromSaved(e, w) }
+        let value3 = try SavedValues.uint32(try saved.variable("size"), "size")
+        let value4 = try SavedValues.uint32(try saved.variable("matches"), "matches")
+        let value5 = try SavedValues.uint32(try saved.variable("misses"), "misses")
+        let value6 = try SavedValues.uint32(try saved.variable("leads"), "leads")
+        let value7 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vLast = value0
+            self.vSpare = value1
+            self.vFrames = value2
+            self.vSize = value3
+            self.vMatches = value4
+            self.vMisses = value5
+            self.vLeads = value6
+            self.vErrors = value7
+        }
+    }
+}

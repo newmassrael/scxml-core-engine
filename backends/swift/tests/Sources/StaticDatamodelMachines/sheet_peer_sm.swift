@@ -113,6 +113,24 @@ public struct SheetPeerHlcRecord: Equatable, Sendable, SceDefault {
         self.counter = counter
         self.nodeId = nodeId
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> SheetPeerHlcRecord {
+        SheetPeerHlcRecord(
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:LwwCell` datamodel value.
@@ -152,6 +170,48 @@ public struct SheetPeerLwwCellRecord: Equatable, Sendable, SceDefault {
         self.bCol = bCol
         self.bVal = bVal
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "row", value: SavedValues.of(row)),
+            (key: "col", value: SavedValues.of(col)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+            (key: "op", value: SavedValues.of(op)),
+            (key: "aRef", value: SavedValues.of(aRef)),
+            (key: "aRow", value: SavedValues.of(aRow)),
+            (key: "aCol", value: SavedValues.of(aCol)),
+            (key: "aVal", value: SavedValues.of(aVal)),
+            (key: "bRef", value: SavedValues.of(bRef)),
+            (key: "bRow", value: SavedValues.of(bRow)),
+            (key: "bCol", value: SavedValues.of(bCol)),
+            (key: "bVal", value: SavedValues.of(bVal)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> SheetPeerLwwCellRecord {
+        SheetPeerLwwCellRecord(
+            row: try SavedValues.uint64(try SavedValues.field(value, what, "row"), "\(what).row"),
+            col: try SavedValues.uint64(try SavedValues.field(value, what, "col"), "\(what).col"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId"),
+            op: try SavedValues.uint8(try SavedValues.field(value, what, "op"), "\(what).op"),
+            aRef: try SavedValues.bool(try SavedValues.field(value, what, "aRef"), "\(what).aRef"),
+            aRow: try SavedValues.uint64(try SavedValues.field(value, what, "aRow"), "\(what).aRow"),
+            aCol: try SavedValues.uint64(try SavedValues.field(value, what, "aCol"), "\(what).aCol"),
+            aVal: try SavedValues.int64(try SavedValues.field(value, what, "aVal"), "\(what).aVal"),
+            bRef: try SavedValues.bool(try SavedValues.field(value, what, "bRef"), "\(what).bRef"),
+            bRow: try SavedValues.uint64(try SavedValues.field(value, what, "bRow"), "\(what).bRow"),
+            bCol: try SavedValues.uint64(try SavedValues.field(value, what, "bCol"), "\(what).bCol"),
+            bVal: try SavedValues.int64(try SavedValues.field(value, what, "bVal"), "\(what).bVal")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:RgaNode` datamodel value.
@@ -165,6 +225,22 @@ public struct SheetPeerRgaNodeRecord: Equatable, Sendable, SceDefault {
         self.key = key
         self.after = after
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "key", value: SavedValues.of(key)),
+            (key: "after", value: SavedValues.of(after)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> SheetPeerRgaNodeRecord {
+        SheetPeerRgaNodeRecord(
+            key: try SavedValues.uint64(try SavedValues.field(value, what, "key"), "\(what).key"),
+            after: try SavedValues.uint64(try SavedValues.field(value, what, "after"), "\(what).after")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:RgaGone` datamodel value.
@@ -177,6 +253,22 @@ public struct SheetPeerRgaGoneRecord: Equatable, Sendable, SceDefault {
     public init(key: UInt64, by: UInt64) {
         self.key = key
         self.by = by
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "key", value: SavedValues.of(key)),
+            (key: "by", value: SavedValues.of(by)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> SheetPeerRgaGoneRecord {
+        SheetPeerRgaGoneRecord(
+            key: try SavedValues.uint64(try SavedValues.field(value, what, "key"), "\(what).key"),
+            by: try SavedValues.uint64(try SavedValues.field(value, what, "by"), "\(what).by")
+        )
     }
 }
 
@@ -194,6 +286,26 @@ public struct SheetPeerShownRecord: Equatable, Sendable, SceDefault {
         self.col = col
         self.value = value
         self.fault = fault
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "row", value: SavedValues.of(row)),
+            (key: "col", value: SavedValues.of(col)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "fault", value: SavedValues.of(fault)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> SheetPeerShownRecord {
+        SheetPeerShownRecord(
+            row: try SavedValues.uint64(try SavedValues.field(value, what, "row"), "\(what).row"),
+            col: try SavedValues.uint64(try SavedValues.field(value, what, "col"), "\(what).col"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            fault: try SavedValues.uint8(try SavedValues.field(value, what, "fault"), "\(what).fault")
+        )
     }
 }
 
@@ -3109,3 +3221,96 @@ extension Engine where Policy == SheetPeerPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension SheetPeerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
+            revised: "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08",
+            format2First: "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
+            format2Revised: "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("node", SavedValues.of(vNode)),
+            SavedEntry("hub", SavedValues.of(vHub)),
+            SavedEntry("clock", vClock.toSaved()),
+            SavedEntry("stamp", vStamp.toSaved()),
+            SavedEntry("cells", SavedValues.list(vCells) { $0.toSaved() }),
+            SavedEntry("rows", SavedValues.list(vRows) { $0.toSaved() }),
+            SavedEntry("gone", SavedValues.list(vGone) { $0.toSaved() }),
+            SavedEntry("cols", SavedValues.list(vCols) { $0.toSaved() }),
+            SavedEntry("goneCols", SavedValues.list(vGoneCols) { $0.toSaved() }),
+            SavedEntry("trail", SavedValues.list(vTrail) { SavedValues.of($0) }),
+            SavedEntry("shown", SavedValues.list(vShown) { $0.toSaved() }),
+            SavedEntry("write", vWrite.toSaved()),
+            SavedEntry("placed", vPlaced.toSaved()),
+            SavedEntry("removal", vRemoval.toSaved()),
+            SavedEntry("lamport", SavedValues.of(vLamport)),
+            SavedEntry("newKey", SavedValues.of(vNewKey)),
+            SavedEntry("noKey", SavedValues.of(vNoKey)),
+            SavedEntry("noNumber", SavedValues.of(vNoNumber)),
+            SavedEntry("orphans", SavedValues.of(vOrphans)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint64(try saved.variable("node"), "node")
+        let value1 = try SavedValues.bool(try saved.variable("hub"), "hub")
+        let value2 = try SheetPeerHlcRecord.fromSaved(try saved.variable("clock"), "clock")
+        let value3 = try SheetPeerHlcRecord.fromSaved(try saved.variable("stamp"), "stamp")
+        let value4 = try SavedValues.list(try saved.variable("cells"), "cells", capacity: 256) { e, w in try SheetPeerLwwCellRecord.fromSaved(e, w) }
+        let value5 = try SavedValues.list(try saved.variable("rows"), "rows", capacity: 256) { e, w in try SheetPeerRgaNodeRecord.fromSaved(e, w) }
+        let value6 = try SavedValues.list(try saved.variable("gone"), "gone", capacity: 256) { e, w in try SheetPeerRgaGoneRecord.fromSaved(e, w) }
+        let value7 = try SavedValues.list(try saved.variable("cols"), "cols", capacity: 256) { e, w in try SheetPeerRgaNodeRecord.fromSaved(e, w) }
+        let value8 = try SavedValues.list(try saved.variable("goneCols"), "goneCols", capacity: 256) { e, w in try SheetPeerRgaGoneRecord.fromSaved(e, w) }
+        let value9 = try SavedValues.list(try saved.variable("trail"), "trail", capacity: 768) { e, w in try SavedValues.int64(e, w) }
+        let value10 = try SavedValues.list(try saved.variable("shown"), "shown", capacity: 256) { e, w in try SheetPeerShownRecord.fromSaved(e, w) }
+        let value11 = try SheetPeerLwwCellRecord.fromSaved(try saved.variable("write"), "write")
+        let value12 = try SheetPeerRgaNodeRecord.fromSaved(try saved.variable("placed"), "placed")
+        let value13 = try SheetPeerRgaGoneRecord.fromSaved(try saved.variable("removal"), "removal")
+        let value14 = try SavedValues.uint64(try saved.variable("lamport"), "lamport")
+        let value15 = try SavedValues.uint64(try saved.variable("newKey"), "newKey")
+        let value16 = try SavedValues.uint64(try saved.variable("noKey"), "noKey")
+        let value17 = try SavedValues.int64(try saved.variable("noNumber"), "noNumber")
+        let value18 = try SavedValues.uint32(try saved.variable("orphans"), "orphans")
+        let value19 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vNode = value0
+            self.vHub = value1
+            self.vClock = value2
+            self.vStamp = value3
+            self.vCells = value4
+            self.vRows = value5
+            self.vGone = value6
+            self.vCols = value7
+            self.vGoneCols = value8
+            self.vTrail = value9
+            self.vShown = value10
+            self.vWrite = value11
+            self.vPlaced = value12
+            self.vRemoval = value13
+            self.vLamport = value14
+            self.vNewKey = value15
+            self.vNoKey = value16
+            self.vNoNumber = value17
+            self.vOrphans = value18
+            self.vRefusals = value19
+        }
+    }
+}

@@ -143,6 +143,22 @@ public struct StaticWholePayloadViewRecord: Equatable, Sendable, SceDefault {
         self.layout = layout
         self.zoom = zoom
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "layout", value: SavedValues.of(layout)),
+            (key: "zoom", value: SavedValues.of(zoom)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticWholePayloadViewRecord {
+        StaticWholePayloadViewRecord(
+            layout: try SavedValues.enumeration(try SavedValues.field(value, what, "layout"), "\(what).layout", as: StaticWholePayloadViewModeEnum.self),
+            zoom: try SavedValues.uint8(try SavedValues.field(value, what, "zoom"), "\(what).zoom")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -631,3 +647,51 @@ extension Engine where Policy == StaticWholePayloadPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticWholePayloadPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "b012d52eed2aa7c4c21026e8b9a1e1e55411a4dccd8a7ff7e6a30934ff248236",
+            revised: "4ff99c413cce990942da692970977ab9e43384c109f943d60a83941cddf3d590",
+            format2First: "630f70df52332fd1d901f9e652918616f8b5296268086f555c35dc7c21951176",
+            format2Revised: "46e2a51975b77a21618ab3fbbddc6bd11c97ec93b0cbe15c7894469c4f57f604")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("shown", vShown.toSaved()),
+            SavedEntry("seen", SavedValues.list(vSeen) { $0.toSaved() }),
+            SavedEntry("updates", SavedValues.of(vUpdates)),
+            SavedEntry("agendas", SavedValues.of(vAgendas)),
+            SavedEntry("others", SavedValues.of(vOthers)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticWholePayloadViewRecord.fromSaved(try saved.variable("shown"), "shown")
+        let value1 = try SavedValues.list(try saved.variable("seen"), "seen", capacity: 4) { e, w in try StaticWholePayloadViewRecord.fromSaved(e, w) }
+        let value2 = try SavedValues.uint32(try saved.variable("updates"), "updates")
+        let value3 = try SavedValues.uint32(try saved.variable("agendas"), "agendas")
+        let value4 = try SavedValues.uint32(try saved.variable("others"), "others")
+        return { [self] in
+            self.vShown = value0
+            self.vSeen = value1
+            self.vUpdates = value2
+            self.vAgendas = value3
+            self.vOthers = value4
+        }
+    }
+}

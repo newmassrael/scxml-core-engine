@@ -107,6 +107,24 @@ public struct StaticOptionalRecordItemRecord: Equatable, Sendable, SceDefault {
         self.title = title
         self.count = count
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "title", value: SavedValues.of(title)),
+            (key: "count", value: SavedValues.of(count)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticOptionalRecordItemRecord {
+        StaticOptionalRecordItemRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            title: try SavedValues.string(try SavedValues.field(value, what, "title"), "\(what).title", capacity: 16),
+            count: try SavedValues.int32(try SavedValues.field(value, what, "count"), "\(what).count")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -813,3 +831,66 @@ extension Engine where Policy == StaticOptionalRecordPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticOptionalRecordPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "4392a90d18937454f42b4496c0de4f16d5994e9117645033f72fdff9375d9bbf",
+            revised: "6bfecb8074e65f88f572cb1e9ccfec46d785c2eea2908d71654fd318a64b213b",
+            format2First: "4392a90d18937454f42b4496c0de4f16d5994e9117645033f72fdff9375d9bbf",
+            format2Revised: "6bfecb8074e65f88f572cb1e9ccfec46d785c2eea2908d71654fd318a64b213b")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("pick", SavedValues.optional(vPick) { $0.toSaved() }),
+            SavedEntry("found", SavedValues.optional(vFound) { $0.toSaved() }),
+            SavedEntry("draft", vDraft.toSaved()),
+            SavedEntry("items", SavedValues.list(vItems) { $0.toSaved() }),
+            SavedEntry("title", SavedValues.of(vTitle)),
+            SavedEntry("count", SavedValues.of(vCount)),
+            SavedEntry("shown", SavedValues.of(vShown)),
+            SavedEntry("known", SavedValues.of(vKnown)),
+            SavedEntry("absent", SavedValues.of(vAbsent)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.optional(try saved.variable("pick"), "pick") { e, w in try StaticOptionalRecordItemRecord.fromSaved(e, w) }
+        let value1 = try SavedValues.optional(try saved.variable("found"), "found") { e, w in try StaticOptionalRecordItemRecord.fromSaved(e, w) }
+        let value2 = try StaticOptionalRecordItemRecord.fromSaved(try saved.variable("draft"), "draft")
+        let value3 = try SavedValues.list(try saved.variable("items"), "items", capacity: 3) { e, w in try StaticOptionalRecordItemRecord.fromSaved(e, w) }
+        let value4 = try SavedValues.string(try saved.variable("title"), "title", capacity: 16)
+        let value5 = try SavedValues.int32(try saved.variable("count"), "count")
+        let value6 = try SavedValues.int32(try saved.variable("shown"), "shown")
+        let value7 = try SavedValues.bool(try saved.variable("known"), "known")
+        let value8 = try SavedValues.bool(try saved.variable("absent"), "absent")
+        let value9 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vPick = value0
+            self.vFound = value1
+            self.vDraft = value2
+            self.vItems = value3
+            self.vTitle = value4
+            self.vCount = value5
+            self.vShown = value6
+            self.vKnown = value7
+            self.vAbsent = value8
+            self.vErrors = value9
+        }
+    }
+}

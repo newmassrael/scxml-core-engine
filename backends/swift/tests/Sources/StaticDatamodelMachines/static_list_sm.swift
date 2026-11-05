@@ -582,3 +582,45 @@ extension Engine where Policy == StaticListPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticListPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "ae704abc4c29a63e76bfe2707c4d0e0ce4717e731dba9b74c000c278e6cca9c2",
+            revised: "8aa0f9aed42bda64f1637b1852cbd2b0e2641bc6998c82f0b07ad4b7bad23b6b",
+            format2First: "ae704abc4c29a63e76bfe2707c4d0e0ce4717e731dba9b74c000c278e6cca9c2",
+            format2Revised: "8aa0f9aed42bda64f1637b1852cbd2b0e2641bc6998c82f0b07ad4b7bad23b6b")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("picked", SavedValues.list(vPicked) { SavedValues.of($0) }),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+            SavedEntry("count", SavedValues.of(vCount)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.list(try saved.variable("picked"), "picked", capacity: 3) { e, w in try SavedValues.uint8(e, w) }
+        let value1 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        let value2 = try SavedValues.uint32(try saved.variable("count"), "count")
+        return { [self] in
+            self.vPicked = value0
+            self.vRefusals = value1
+            self.vCount = value2
+        }
+    }
+}

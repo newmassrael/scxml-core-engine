@@ -148,6 +148,32 @@ public struct StaticLiftAnswerRecord: Equatable, Sendable, SceDefault {
         self.tag = tag
         self.priority = priority
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "amount", value: SavedValues.of(amount)),
+            (key: "title", value: SavedValues.of(title)),
+            (key: "kind", value: SavedValues.of(kind)),
+            (key: "note", value: SavedValues.optional(note) { SavedValues.of($0) }),
+            (key: "tag", value: SavedValues.of(tag)),
+            (key: "priority", value: SavedValues.of(priority)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticLiftAnswerRecord {
+        StaticLiftAnswerRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            amount: try SavedValues.int64(try SavedValues.field(value, what, "amount"), "\(what).amount"),
+            title: try SavedValues.string(try SavedValues.field(value, what, "title"), "\(what).title", capacity: 16),
+            kind: try SavedValues.enumeration(try SavedValues.field(value, what, "kind"), "\(what).kind", as: StaticLiftEnumLiftKindEnum.self),
+            note: try SavedValues.optional(try SavedValues.field(value, what, "note"), "\(what).note") { e, w in try SavedValues.string(e, w, capacity: 8) },
+            tag: try SavedValues.bytes(try SavedValues.field(value, what, "tag"), "\(what).tag", capacity: 4),
+            priority: try SavedValues.uint8(try SavedValues.field(value, what, "priority"), "\(what).priority")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: an `enum:refusal_code` datamodel value.
@@ -233,6 +259,24 @@ public struct StaticLiftLiftRefusalRecord: Equatable, Sendable, SceDefault {
         self.code = code
         self.path = path
         self.bound = bound
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "code", value: SavedValues.of(code)),
+            (key: "path", value: SavedValues.of(path)),
+            (key: "bound", value: SavedValues.optional(bound) { SavedValues.of($0) }),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticLiftLiftRefusalRecord {
+        StaticLiftLiftRefusalRecord(
+            code: try SavedValues.enumeration(try SavedValues.field(value, what, "code"), "\(what).code", as: StaticLiftRefusalCodeEnum.self),
+            path: try SavedValues.string(try SavedValues.field(value, what, "path"), "\(what).path", capacity: 256),
+            bound: try SavedValues.optional(try SavedValues.field(value, what, "bound"), "\(what).bound") { e, w in try SavedValues.uint32(e, w) }
+        )
     }
 }
 

@@ -123,6 +123,34 @@ public struct RecordListParentToldRecord: Equatable, Sendable, SceDefault {
         self.counter = counter
         self.nodeId = nodeId
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "count", value: SavedValues.of(count)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentToldRecord {
+        RecordListParentToldRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            count: try SavedValues.uint32(try SavedValues.field(value, what, "count"), "\(what).count"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:ToldValue` datamodel value.
@@ -147,6 +175,34 @@ public struct RecordListParentToldValueRecord: Equatable, Sendable, SceDefault {
         self.wallTime = wallTime
         self.counter = counter
         self.nodeId = nodeId
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "ordinal", value: SavedValues.of(ordinal)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentToldValueRecord {
+        RecordListParentToldValueRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            ordinal: try SavedValues.uint32(try SavedValues.field(value, what, "ordinal"), "\(what).ordinal"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
     }
 }
 
@@ -261,6 +317,26 @@ public struct RecordListParentRefusedRecord: Equatable, Sendable, SceDefault {
         self.field = field
         self.kind = kind
         self.reason = reason
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "kind", value: SavedValues.of(kind)),
+            (key: "reason", value: SavedValues.of(reason)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentRefusedRecord {
+        RecordListParentRefusedRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            kind: try SavedValues.enumeration(try SavedValues.field(value, what, "kind"), "\(what).kind", as: RecordListParentRecordCommandEnum.self),
+            reason: try SavedValues.enumeration(try SavedValues.field(value, what, "reason"), "\(what).reason", as: RecordListParentRecordRefusalEnum.self)
+        )
     }
 }
 

@@ -440,3 +440,45 @@ public final class StaticBlockEndsListPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticBlockEndsListPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "670c183cda40bb46e81808b12dca21830ecda45892b88b766b37c8ca951c6b57",
+            revised: "477ce602987924dbcd2a95efc5be11a2493e2f18abd5c65d64c942bac07b5e90",
+            format2First: "670c183cda40bb46e81808b12dca21830ecda45892b88b766b37c8ca951c6b57",
+            format2Revised: "477ce602987924dbcd2a95efc5be11a2493e2f18abd5c65d64c942bac07b5e90")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("picked", SavedValues.list(vPicked) { SavedValues.of($0) }),
+            SavedEntry("afterAppend", SavedValues.of(vAfterAppend)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.list(try saved.variable("picked"), "picked", capacity: 2) { e, w in try SavedValues.uint8(e, w) }
+        let value1 = try SavedValues.uint8(try saved.variable("afterAppend"), "afterAppend")
+        let value2 = try SavedValues.uint8(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vPicked = value0
+            self.vAfterAppend = value1
+            self.vErrors = value2
+        }
+    }
+}

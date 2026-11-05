@@ -799,3 +799,60 @@ public final class StaticForeachPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticForeachPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "9a550dcd196beac21c3a3402db563b982c37d0f7ef094afdc6f5cd8d7c71375f",
+            revised: "c5cf66a11bd05de77e01ceaa0675c38b3551d147105fbb8e9542254dd6df39d4",
+            format2First: "9a550dcd196beac21c3a3402db563b982c37d0f7ef094afdc6f5cd8d7c71375f",
+            format2Revised: "c5cf66a11bd05de77e01ceaa0675c38b3551d147105fbb8e9542254dd6df39d4")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("picked", SavedValues.list(vPicked) { SavedValues.of($0) }),
+            SavedEntry("total", SavedValues.of(vTotal)),
+            SavedEntry("weighted", SavedValues.of(vWeighted)),
+            SavedEntry("small", SavedValues.of(vSmall)),
+            SavedEntry("crossings", SavedValues.of(vCrossings)),
+            SavedEntry("visited", SavedValues.of(vVisited)),
+            SavedEntry("finished", SavedValues.of(vFinished)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.list(try saved.variable("picked"), "picked", capacity: 4) { e, w in try SavedValues.uint8(e, w) }
+        let value1 = try SavedValues.uint32(try saved.variable("total"), "total")
+        let value2 = try SavedValues.uint32(try saved.variable("weighted"), "weighted")
+        let value3 = try SavedValues.uint8(try saved.variable("small"), "small")
+        let value4 = try SavedValues.uint32(try saved.variable("crossings"), "crossings")
+        let value5 = try SavedValues.uint32(try saved.variable("visited"), "visited")
+        let value6 = try SavedValues.uint32(try saved.variable("finished"), "finished")
+        let value7 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vPicked = value0
+            self.vTotal = value1
+            self.vWeighted = value2
+            self.vSmall = value3
+            self.vCrossings = value4
+            self.vVisited = value5
+            self.vFinished = value6
+            self.vErrors = value7
+        }
+    }
+}

@@ -14154,11 +14154,80 @@ impl StaticTarget for SwiftTarget {
                 )
             })
             .collect();
+        // Its saved form (`SavedValues`) lives on the type: an object of the schema's fields keyed by
+        // their ids, in the schema's order. A field that may be absent is written as `null` or as its
+        // present value and read back absent from `null` (docs/adr/0055, section 4); a text and a byte
+        // string are read back only if they fit the bound the schema declares, as a variable's are.
+        let writes: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let member = self.record_field(&field.id);
+                let saved = match &field.sce_type {
+                    EntryType::Optional { .. } => {
+                        format!("SavedValues.optional({member}) {{ SavedValues.of($0) }}")
+                    }
+                    EntryType::Scalar(_) => format!("SavedValues.of({member})"),
+                };
+                format!(
+                    "            (key: \"{}\", value: {saved}),\n",
+                    filters::escape_swift(field.id.clone())
+                )
+            })
+            .collect();
+        let reads: Vec<String> = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let name = self.record_field(&field.id);
+                let id = filters::escape_swift(field.id.clone());
+                // A present value `saved`, named `what` in a refusal.
+                let read =
+                    |saved: &str, what: &str| match (field.sce_type.present_type(), field.max_size)
+                    {
+                        (SceType::Enum(reference), _) => format!(
+                            "try SavedValues.enumeration({saved}, {what}, as: {}.self)",
+                            enum_types[&reference.alias]
+                        ),
+                        (SceType::String, Some(bound)) => {
+                            format!("try SavedValues.string({saved}, {what}, capacity: {bound})")
+                        }
+                        (SceType::Bytes, Some(bound)) => {
+                            format!("try SavedValues.bytes({saved}, {what}, capacity: {bound})")
+                        }
+                        (other, _) => {
+                            format!("try SavedValues.{}({saved}, {what})", other.as_attr())
+                        }
+                    };
+                let saved = format!("try SavedValues.field(value, what, \"{id}\")");
+                let what = format!("\"\\(what).{id}\"");
+                match &field.sce_type {
+                    EntryType::Optional { .. } => format!(
+                        "{name}: try SavedValues.optional({saved}, {what}) {{ e, w in {} }}",
+                        read("e", "w")
+                    ),
+                    EntryType::Scalar(_) => format!("{name}: {}", read(&saved, &what)),
+                }
+            })
+            .collect();
         format!(
             "/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\n\
              public struct {ty}: Equatable, Sendable, SceDefault {{\n{fields}\n\
              \x20   public init() {{}}\n\n\
-             \x20   public init({params}) {{\n{assigns}\x20   }}\n}}",
+             \x20   public init({params}) {{\n{assigns}\x20   }}\n\n\
+             \x20   /// This value as a saved state writes it.\n\
+             \x20   public func toSaved() -> JSONValue {{\n\
+             \x20       SavedValues.record([\n{writes}\x20       ])\n\
+             \x20   }}\n\n\
+             \x20   /// The value a saved state holds, refused unless it is one.\n\
+             \x20   public static func fromSaved(_ value: JSONValue, _ what: String) throws -> {ty} {{\n\
+             \x20       {ty}(\n{read_args}\n\x20       )\n\
+             \x20   }}\n}}",
+            read_args = reads
+                .iter()
+                .map(|read| format!("            {read}"))
+                .collect::<Vec<_>>()
+                .join(",\n"),
             params = schema
                 .fields
                 .iter()

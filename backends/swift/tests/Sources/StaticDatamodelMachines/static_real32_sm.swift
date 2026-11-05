@@ -614,3 +614,54 @@ public final class StaticReal32Policy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticReal32Policy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "ce103af598245407b75ff596e5414dcff4a8677f8043802c3fdd2595e81c93cf",
+            revised: "cba9826497a91c7df2559717d11ea335b8e1d44cd76259253a3e438ad2467068",
+            format2First: "ce103af598245407b75ff596e5414dcff4a8677f8043802c3fdd2595e81c93cf",
+            format2Revised: "cba9826497a91c7df2559717d11ea335b8e1d44cd76259253a3e438ad2467068")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("level", SavedValues.of(vLevel)),
+            SavedEntry("tenth", SavedValues.of(vTenth)),
+            SavedEntry("drift", SavedValues.of(vDrift)),
+            SavedEntry("wide", SavedValues.of(vWide)),
+            SavedEntry("samples", SavedValues.list(vSamples) { SavedValues.of($0) }),
+            SavedEntry("total", SavedValues.of(vTotal)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.float32(try saved.variable("level"), "level")
+        let value1 = try SavedValues.float32(try saved.variable("tenth"), "tenth")
+        let value2 = try SavedValues.float32(try saved.variable("drift"), "drift")
+        let value3 = try SavedValues.float64(try saved.variable("wide"), "wide")
+        let value4 = try SavedValues.list(try saved.variable("samples"), "samples", capacity: 3) { e, w in try SavedValues.float32(e, w) }
+        let value5 = try SavedValues.float32(try saved.variable("total"), "total")
+        return { [self] in
+            self.vLevel = value0
+            self.vTenth = value1
+            self.vDrift = value2
+            self.vWide = value3
+            self.vSamples = value4
+            self.vTotal = value5
+        }
+    }
+}

@@ -607,3 +607,54 @@ public final class StaticListAssignPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticListAssignPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "704ea29d83b5e4780aa3cc7bc865bc34003021157288ecd831acb8e6099dc5cd",
+            revised: "ff760fa00992202918c7b80277a12dcd2910e7ab04f30611f9e7cd36d8bbd5f6",
+            format2First: "704ea29d83b5e4780aa3cc7bc865bc34003021157288ecd831acb8e6099dc5cd",
+            format2Revised: "ff760fa00992202918c7b80277a12dcd2910e7ab04f30611f9e7cd36d8bbd5f6")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("shown", SavedValues.list(vShown) { SavedValues.of($0) }),
+            SavedEntry("first", SavedValues.of(vFirst)),
+            SavedEntry("few", SavedValues.list(vFew) { SavedValues.of($0) }),
+            SavedEntry("count", SavedValues.of(vCount)),
+            SavedEntry("size", SavedValues.of(vSize)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.list(try saved.variable("shown"), "shown", capacity: 8) { e, w in try SavedValues.uint8(e, w) }
+        let value1 = try SavedValues.uint8(try saved.variable("first"), "first")
+        let value2 = try SavedValues.list(try saved.variable("few"), "few", capacity: 4) { e, w in try SavedValues.uint8(e, w) }
+        let value3 = try SavedValues.uint32(try saved.variable("count"), "count")
+        let value4 = try SavedValues.uint32(try saved.variable("size"), "size")
+        let value5 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vShown = value0
+            self.vFirst = value1
+            self.vFew = value2
+            self.vCount = value3
+            self.vSize = value4
+            self.vRefusals = value5
+        }
+    }
+}

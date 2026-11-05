@@ -107,6 +107,24 @@ public struct PresencePeerSeenRecord: Equatable, Sendable, SceDefault {
         self.last = last
         self.gen = gen
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "client", value: SavedValues.of(client)),
+            (key: "last", value: SavedValues.of(last)),
+            (key: "gen", value: SavedValues.of(gen)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> PresencePeerSeenRecord {
+        PresencePeerSeenRecord(
+            client: try SavedValues.uint32(try SavedValues.field(value, what, "client"), "\(what).client"),
+            last: try SavedValues.int64(try SavedValues.field(value, what, "last"), "\(what).last"),
+            gen: try SavedValues.uint32(try SavedValues.field(value, what, "gen"), "\(what).gen")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -1368,3 +1386,72 @@ extension Engine where Policy == PresencePeerPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension PresencePeerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3",
+            revised: "b0d96ebe733fde22663f4d265dac2287795efe126ca751ed6753da1ff2c53a4a",
+            format2First: "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3",
+            format2Revised: "b0d96ebe733fde22663f4d265dac2287795efe126ca751ed6753da1ff2c53a4a")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("node", SavedValues.of(vNode)),
+            SavedEntry("hub", SavedValues.of(vHub)),
+            SavedEntry("ttl", SavedValues.of(vTtl)),
+            SavedEntry("lease", SavedValues.of(vLease)),
+            SavedEntry("online", SavedValues.list(vOnline) { $0.toSaved() }),
+            SavedEntry("rebuilt", SavedValues.list(vRebuilt) { $0.toSaved() }),
+            SavedEntry("entry", vEntry.toSaved()),
+            SavedEntry("serial", SavedValues.of(vSerial)),
+            SavedEntry("known", SavedValues.of(vKnown)),
+            SavedEntry("fresh", SavedValues.of(vFresh)),
+            SavedEntry("lost", SavedValues.of(vLost)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(try saved.variable("node"), "node")
+        let value1 = try SavedValues.bool(try saved.variable("hub"), "hub")
+        let value2 = try SavedValues.uint32(try saved.variable("ttl"), "ttl")
+        let value3 = try SavedValues.uint32(try saved.variable("lease"), "lease")
+        let value4 = try SavedValues.list(try saved.variable("online"), "online", capacity: 128) { e, w in try PresencePeerSeenRecord.fromSaved(e, w) }
+        let value5 = try SavedValues.list(try saved.variable("rebuilt"), "rebuilt", capacity: 128) { e, w in try PresencePeerSeenRecord.fromSaved(e, w) }
+        let value6 = try PresencePeerSeenRecord.fromSaved(try saved.variable("entry"), "entry")
+        let value7 = try SavedValues.uint32(try saved.variable("serial"), "serial")
+        let value8 = try SavedValues.bool(try saved.variable("known"), "known")
+        let value9 = try SavedValues.bool(try saved.variable("fresh"), "fresh")
+        let value10 = try SavedValues.uint32(try saved.variable("lost"), "lost")
+        let value11 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vNode = value0
+            self.vHub = value1
+            self.vTtl = value2
+            self.vLease = value3
+            self.vOnline = value4
+            self.vRebuilt = value5
+            self.vEntry = value6
+            self.vSerial = value7
+            self.vKnown = value8
+            self.vFresh = value9
+            self.vLost = value10
+            self.vRefusals = value11
+        }
+    }
+}

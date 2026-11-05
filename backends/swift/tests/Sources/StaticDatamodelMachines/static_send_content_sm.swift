@@ -146,6 +146,22 @@ public struct StaticSendContentViewRecord: Equatable, Sendable, SceDefault {
         self.layout = layout
         self.zoom = zoom
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "layout", value: SavedValues.of(layout)),
+            (key: "zoom", value: SavedValues.of(zoom)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticSendContentViewRecord {
+        StaticSendContentViewRecord(
+            layout: try SavedValues.enumeration(try SavedValues.field(value, what, "layout"), "\(what).layout", as: StaticSendContentViewModeEnum.self),
+            zoom: try SavedValues.uint8(try SavedValues.field(value, what, "zoom"), "\(what).zoom")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -750,3 +766,48 @@ extension Engine where Policy == StaticSendContentPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticSendContentPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "6f33e5b00a3a440af82bab37051ecfb5a5a93fab315376e997123933d7aa034e",
+            revised: "cde129524ee5f351001fc3bfe85e45638f9602adfb1eafc0335c4aeb2f6ec51b",
+            format2First: "4bf189c4ee8d5e8b3e8fedae3e4a2c1e29e96ae199286f52d04877741cd5c027",
+            format2Revised: "fa1c69819a3e2f8e92cb2938fa14c111813365c6eea453a634f658cdb689cc01")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("shown", vShown.toSaved()),
+            SavedEntry("received", SavedValues.of(vReceived)),
+            SavedEntry("level", SavedValues.of(vLevel)),
+            SavedEntry("relays", SavedValues.of(vRelays)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticSendContentViewRecord.fromSaved(try saved.variable("shown"), "shown")
+        let value1 = try SavedValues.enumeration(try saved.variable("received"), "received", as: StaticSendContentViewModeEnum.self)
+        let value2 = try SavedValues.uint8(try saved.variable("level"), "level")
+        let value3 = try SavedValues.uint32(try saved.variable("relays"), "relays")
+        return { [self] in
+            self.vShown = value0
+            self.vReceived = value1
+            self.vLevel = value2
+            self.vRelays = value3
+        }
+    }
+}

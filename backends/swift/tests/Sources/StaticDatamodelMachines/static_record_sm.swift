@@ -102,6 +102,24 @@ public struct StaticRecordDayRecord: Equatable, Sendable, SceDefault {
         self.month = month
         self.dayOfMonth = dayOfMonth
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "year", value: SavedValues.of(year)),
+            (key: "month", value: SavedValues.of(month)),
+            (key: "dayOfMonth", value: SavedValues.of(dayOfMonth)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticRecordDayRecord {
+        StaticRecordDayRecord(
+            year: try SavedValues.uint16(try SavedValues.field(value, what, "year"), "\(what).year"),
+            month: try SavedValues.uint8(try SavedValues.field(value, what, "month"), "\(what).month"),
+            dayOfMonth: try SavedValues.uint8(try SavedValues.field(value, what, "dayOfMonth"), "\(what).dayOfMonth")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -565,3 +583,42 @@ extension Engine where Policy == StaticRecordPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticRecordPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba",
+            revised: "d6fc801793f9575ceaff9c00d28636af536443c5cca8199f8353e6fa4d99c1b9",
+            format2First: "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba",
+            format2Revised: "d6fc801793f9575ceaff9c00d28636af536443c5cca8199f8353e6fa4d99c1b9")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("shown", vShown.toSaved()),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticRecordDayRecord.fromSaved(try saved.variable("shown"), "shown")
+        let value1 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vShown = value0
+            self.vRefusals = value1
+        }
+    }
+}

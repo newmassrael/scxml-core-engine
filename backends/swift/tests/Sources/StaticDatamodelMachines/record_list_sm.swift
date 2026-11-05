@@ -128,6 +128,24 @@ public struct RecordListHlcRecord: Equatable, Sendable, SceDefault {
         self.counter = counter
         self.nodeId = nodeId
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListHlcRecord {
+        RecordListHlcRecord(
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Entry` datamodel value.
@@ -144,6 +162,26 @@ public struct RecordListEntryRecord: Equatable, Sendable, SceDefault {
         self.wallTime = wallTime
         self.counter = counter
         self.nodeId = nodeId
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "element", value: SavedValues.of(element)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListEntryRecord {
+        RecordListEntryRecord(
+            element: try SavedValues.uint64(try SavedValues.field(value, what, "element"), "\(what).element"),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
     }
 }
 
@@ -168,6 +206,32 @@ public struct RecordListValueRecord: Equatable, Sendable, SceDefault {
         self.counter = counter
         self.nodeId = nodeId
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListValueRecord {
+        RecordListValueRecord(
+            id: try SavedValues.uint64(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint64(try SavedValues.field(value, what, "field"), "\(what).field"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Node` datamodel value.
@@ -183,6 +247,24 @@ public struct RecordListNodeRecord: Equatable, Sendable, SceDefault {
         self.prefix = prefix
         self.hash = hash
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "depth", value: SavedValues.of(depth)),
+            (key: "prefix", value: SavedValues.of(prefix)),
+            (key: "hash", value: SavedValues.of(hash)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListNodeRecord {
+        RecordListNodeRecord(
+            depth: try SavedValues.uint8(try SavedValues.field(value, what, "depth"), "\(what).depth"),
+            prefix: try SavedValues.uint64(try SavedValues.field(value, what, "prefix"), "\(what).prefix"),
+            hash: try SavedValues.uint32(try SavedValues.field(value, what, "hash"), "\(what).hash")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
@@ -196,6 +278,22 @@ public struct RecordListAnswerRecord: Equatable, Sendable, SceDefault {
         self.sender = sender
         self.hash = hash
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "sender", value: SavedValues.of(sender)),
+            (key: "hash", value: SavedValues.of(hash)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListAnswerRecord {
+        RecordListAnswerRecord(
+            sender: try SavedValues.uint64(try SavedValues.field(value, what, "sender"), "\(what).sender"),
+            hash: try SavedValues.uint32(try SavedValues.field(value, what, "hash"), "\(what).hash")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Member` datamodel value.
@@ -208,6 +306,22 @@ public struct RecordListMemberRecord: Equatable, Sendable, SceDefault {
     public init(node: UInt64, role: UInt8) {
         self.node = node
         self.role = role
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "node", value: SavedValues.of(node)),
+            (key: "role", value: SavedValues.of(role)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListMemberRecord {
+        RecordListMemberRecord(
+            node: try SavedValues.uint64(try SavedValues.field(value, what, "node"), "\(what).node"),
+            role: try SavedValues.uint8(try SavedValues.field(value, what, "role"), "\(what).role")
+        )
     }
 }
 
@@ -241,6 +355,42 @@ public struct RecordListPartRecord: Equatable, Sendable, SceDefault {
         self.atWallTime = atWallTime
         self.atCounter = atCounter
         self.parts = parts
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "kind", value: SavedValues.of(kind)),
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+            (key: "by", value: SavedValues.of(by)),
+            (key: "atWallTime", value: SavedValues.of(atWallTime)),
+            (key: "atCounter", value: SavedValues.of(atCounter)),
+            (key: "parts", value: SavedValues.of(parts)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListPartRecord {
+        RecordListPartRecord(
+            kind: try SavedValues.uint8(try SavedValues.field(value, what, "kind"), "\(what).kind"),
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId"),
+            by: try SavedValues.uint64(try SavedValues.field(value, what, "by"), "\(what).by"),
+            atWallTime: try SavedValues.int64(try SavedValues.field(value, what, "atWallTime"), "\(what).atWallTime"),
+            atCounter: try SavedValues.uint32(try SavedValues.field(value, what, "atCounter"), "\(what).atCounter"),
+            parts: try SavedValues.uint32(try SavedValues.field(value, what, "parts"), "\(what).parts")
+        )
     }
 }
 
@@ -6862,3 +7012,246 @@ extension Engine where Policy == RecordListPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension RecordListPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
+            revised: "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
+            format2First: "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
+            format2Revised: "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("node", SavedValues.of(vNode)),
+            SavedEntry("hub", SavedValues.of(vHub)),
+            SavedEntry("clock", vClock.toSaved()),
+            SavedEntry("stamp", vStamp.toSaved()),
+            SavedEntry("adds", SavedValues.list(vAdds) { $0.toSaved() }),
+            SavedEntry("tombstones", SavedValues.list(vTombstones) { $0.toSaved() }),
+            SavedEntry("one", SavedValues.list(vOne) { $0.toSaved() }),
+            SavedEntry("stable", SavedValues.list(vStable) { $0.toSaved() }),
+            SavedEntry("entry", vEntry.toSaved()),
+            SavedEntry("values", SavedValues.list(vValues) { $0.toSaved() }),
+            SavedEntry("typed", SavedValues.of(vTyped)),
+            SavedEntry("held", vHeld.toSaved()),
+            SavedEntry("digest", SavedValues.list(vDigest) { $0.toSaved() }),
+            SavedEntry("mine", SavedValues.of(vMine)),
+            SavedEntry("shareId", SavedValues.of(vShareId)),
+            SavedEntry("shareField", SavedValues.of(vShareField)),
+            SavedEntry("known", SavedValues.of(vKnown)),
+            SavedEntry("wasLive", SavedValues.of(vWasLive)),
+            SavedEntry("isLive", SavedValues.of(vIsLive)),
+            SavedEntry("present", SavedValues.of(vPresent)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+            SavedEntry("floor", SavedValues.of(vFloor)),
+            SavedEntry("stale", SavedValues.of(vStale)),
+            SavedEntry("late", SavedValues.of(vLate)),
+            SavedEntry("frozenFor", SavedValues.of(vFrozenFor)),
+            SavedEntry("frozenHash", SavedValues.of(vFrozenHash)),
+            SavedEntry("pending", SavedValues.of(vPending)),
+            SavedEntry("members", SavedValues.of(vMembers)),
+            SavedEntry("agreeing", SavedValues.of(vAgreeing)),
+            SavedEntry("answers", SavedValues.list(vAnswers) { $0.toSaved() }),
+            SavedEntry("answer", vAnswer.toSaved()),
+            SavedEntry("agreed", SavedValues.of(vAgreed)),
+            SavedEntry("roomValues", SavedValues.of(vRoomValues)),
+            SavedEntry("roomHistory", SavedValues.of(vRoomHistory)),
+            SavedEntry("roomDigest", SavedValues.of(vRoomDigest)),
+            SavedEntry("full", SavedValues.of(vFull)),
+            SavedEntry("roster", SavedValues.list(vRoster) { $0.toSaved() }),
+            SavedEntry("denied", SavedValues.of(vDenied)),
+            SavedEntry("forbidden", SavedValues.of(vForbidden)),
+            SavedEntry("authorized", SavedValues.of(vAuthorized)),
+            SavedEntry("announce", SavedValues.of(vAnnounce)),
+            SavedEntry("announced", SavedValues.of(vAnnounced)),
+            SavedEntry("moved", SavedValues.list(vMoved) { SavedValues.of($0) }),
+            SavedEntry("listed", SavedValues.of(vListed)),
+            SavedEntry("live", SavedValues.list(vLive) { $0.toSaved() }),
+            SavedEntry("ordinal", SavedValues.of(vOrdinal)),
+            SavedEntry("empty", vEmpty.toSaved()),
+            SavedEntry("staged", SavedValues.list(vStaged) { $0.toSaved() }),
+            SavedEntry("holding", SavedValues.of(vHolding)),
+            SavedEntry("closingNow", SavedValues.of(vClosingNow)),
+            SavedEntry("spoiled", SavedValues.of(vSpoiled)),
+            SavedEntry("probing", SavedValues.of(vProbing)),
+            SavedEntry("gone", SavedValues.of(vGone)),
+            SavedEntry("writes", SavedValues.of(vWrites)),
+            SavedEntry("covered", SavedValues.of(vCovered)),
+            SavedEntry("probe", SavedValues.of(vProbe)),
+            SavedEntry("spoiledFor", SavedValues.of(vSpoiledFor)),
+            SavedEntry("namedId", SavedValues.of(vNamedId)),
+            SavedEntry("namedField", SavedValues.of(vNamedField)),
+            SavedEntry("namedKind", SavedValues.of(vNamedKind)),
+            SavedEntry("taking", SavedValues.list(vTaking) { $0.toSaved() }),
+            SavedEntry("took", SavedValues.of(vTook)),
+            SavedEntry("passing", SavedValues.list(vPassing) { $0.toSaved() }),
+            SavedEntry("passed", SavedValues.of(vPassed)),
+            SavedEntry("waiting", SavedValues.list(vWaiting) { $0.toSaved() }),
+            SavedEntry("kept", SavedValues.list(vKept) { $0.toSaved() }),
+            SavedEntry("part", vPart.toSaved()),
+            SavedEntry("op", vOp.toSaved()),
+            SavedEntry("already", SavedValues.of(vAlready)),
+            SavedEntry("count", SavedValues.of(vCount)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint64(try saved.variable("node"), "node")
+        let value1 = try SavedValues.bool(try saved.variable("hub"), "hub")
+        let value2 = try RecordListHlcRecord.fromSaved(try saved.variable("clock"), "clock")
+        let value3 = try RecordListHlcRecord.fromSaved(try saved.variable("stamp"), "stamp")
+        let value4 = try SavedValues.list(try saved.variable("adds"), "adds", capacity: 1024) { e, w in try RecordListEntryRecord.fromSaved(e, w) }
+        let value5 = try SavedValues.list(try saved.variable("tombstones"), "tombstones", capacity: 1024) { e, w in try RecordListEntryRecord.fromSaved(e, w) }
+        let value6 = try SavedValues.list(try saved.variable("one"), "one", capacity: 1024) { e, w in try RecordListEntryRecord.fromSaved(e, w) }
+        let value7 = try SavedValues.list(try saved.variable("stable"), "stable", capacity: 1024) { e, w in try RecordListEntryRecord.fromSaved(e, w) }
+        let value8 = try RecordListEntryRecord.fromSaved(try saved.variable("entry"), "entry")
+        let value9 = try SavedValues.list(try saved.variable("values"), "values", capacity: 512) { e, w in try RecordListValueRecord.fromSaved(e, w) }
+        let value10 = try SavedValues.string(try saved.variable("typed"), "typed", capacity: 32)
+        let value11 = try RecordListValueRecord.fromSaved(try saved.variable("held"), "held")
+        let value12 = try SavedValues.list(try saved.variable("digest"), "digest", capacity: 2048) { e, w in try RecordListNodeRecord.fromSaved(e, w) }
+        let value13 = try SavedValues.uint32(try saved.variable("mine"), "mine")
+        let value14 = try SavedValues.uint32(try saved.variable("shareId"), "shareId")
+        let value15 = try SavedValues.uint16(try saved.variable("shareField"), "shareField")
+        let value16 = try SavedValues.bool(try saved.variable("known"), "known")
+        let value17 = try SavedValues.bool(try saved.variable("wasLive"), "wasLive")
+        let value18 = try SavedValues.bool(try saved.variable("isLive"), "isLive")
+        let value19 = try SavedValues.bool(try saved.variable("present"), "present")
+        let value20 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        let value21 = try SavedValues.int64(try saved.variable("floor"), "floor")
+        let value22 = try SavedValues.bool(try saved.variable("stale"), "stale")
+        let value23 = try SavedValues.uint32(try saved.variable("late"), "late")
+        let value24 = try SavedValues.int64(try saved.variable("frozenFor"), "frozenFor")
+        let value25 = try SavedValues.uint32(try saved.variable("frozenHash"), "frozenHash")
+        let value26 = try SavedValues.int64(try saved.variable("pending"), "pending")
+        let value27 = try SavedValues.uint32(try saved.variable("members"), "members")
+        let value28 = try SavedValues.uint32(try saved.variable("agreeing"), "agreeing")
+        let value29 = try SavedValues.list(try saved.variable("answers"), "answers", capacity: 512) { e, w in try RecordListAnswerRecord.fromSaved(e, w) }
+        let value30 = try RecordListAnswerRecord.fromSaved(try saved.variable("answer"), "answer")
+        let value31 = try SavedValues.uint32(try saved.variable("agreed"), "agreed")
+        let value32 = try SavedValues.uint32(try saved.variable("roomValues"), "roomValues")
+        let value33 = try SavedValues.uint32(try saved.variable("roomHistory"), "roomHistory")
+        let value34 = try SavedValues.uint32(try saved.variable("roomDigest"), "roomDigest")
+        let value35 = try SavedValues.uint32(try saved.variable("full"), "full")
+        let value36 = try SavedValues.list(try saved.variable("roster"), "roster", capacity: 64) { e, w in try RecordListMemberRecord.fromSaved(e, w) }
+        let value37 = try SavedValues.uint32(try saved.variable("denied"), "denied")
+        let value38 = try SavedValues.bool(try saved.variable("forbidden"), "forbidden")
+        let value39 = try SavedValues.bool(try saved.variable("authorized"), "authorized")
+        let value40 = try SavedValues.bool(try saved.variable("announce"), "announce")
+        let value41 = try SavedValues.uint32(try saved.variable("announced"), "announced")
+        let value42 = try SavedValues.list(try saved.variable("moved"), "moved", capacity: 64) { e, w in try SavedValues.uint64(e, w) }
+        let value43 = try SavedValues.bool(try saved.variable("listed"), "listed")
+        let value44 = try SavedValues.list(try saved.variable("live"), "live", capacity: 512) { e, w in try RecordListValueRecord.fromSaved(e, w) }
+        let value45 = try SavedValues.uint32(try saved.variable("ordinal"), "ordinal")
+        let value46 = try RecordListValueRecord.fromSaved(try saved.variable("empty"), "empty")
+        let value47 = try SavedValues.list(try saved.variable("staged"), "staged", capacity: 32) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value48 = try SavedValues.bool(try saved.variable("holding"), "holding")
+        let value49 = try SavedValues.int64(try saved.variable("closingNow"), "closingNow")
+        let value50 = try SavedValues.bool(try saved.variable("spoiled"), "spoiled")
+        let value51 = try SavedValues.bool(try saved.variable("probing"), "probing")
+        let value52 = try SavedValues.uint32(try saved.variable("gone"), "gone")
+        let value53 = try SavedValues.uint32(try saved.variable("writes"), "writes")
+        let value54 = try SavedValues.bool(try saved.variable("covered"), "covered")
+        let value55 = try SavedValues.enumeration(try saved.variable("probe"), "probe", as: RecordListRefusalEnum.self)
+        let value56 = try SavedValues.enumeration(try saved.variable("spoiledFor"), "spoiledFor", as: RecordListRefusalEnum.self)
+        let value57 = try SavedValues.uint32(try saved.variable("namedId"), "namedId")
+        let value58 = try SavedValues.uint16(try saved.variable("namedField"), "namedField")
+        let value59 = try SavedValues.enumeration(try saved.variable("namedKind"), "namedKind", as: RecordListCommandEnum.self)
+        let value60 = try SavedValues.list(try saved.variable("taking"), "taking", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value61 = try SavedValues.uint32(try saved.variable("took"), "took")
+        let value62 = try SavedValues.list(try saved.variable("passing"), "passing", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value63 = try SavedValues.uint32(try saved.variable("passed"), "passed")
+        let value64 = try SavedValues.list(try saved.variable("waiting"), "waiting", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value65 = try SavedValues.list(try saved.variable("kept"), "kept", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value66 = try RecordListPartRecord.fromSaved(try saved.variable("part"), "part")
+        let value67 = try RecordListPartRecord.fromSaved(try saved.variable("op"), "op")
+        let value68 = try SavedValues.bool(try saved.variable("already"), "already")
+        let value69 = try SavedValues.uint32(try saved.variable("count"), "count")
+        return { [self] in
+            self.vNode = value0
+            self.vHub = value1
+            self.vClock = value2
+            self.vStamp = value3
+            self.vAdds = value4
+            self.vTombstones = value5
+            self.vOne = value6
+            self.vStable = value7
+            self.vEntry = value8
+            self.vValues = value9
+            self.vTyped = value10
+            self.vHeld = value11
+            self.vDigest = value12
+            self.vMine = value13
+            self.vShareId = value14
+            self.vShareField = value15
+            self.vKnown = value16
+            self.vWasLive = value17
+            self.vIsLive = value18
+            self.vPresent = value19
+            self.vRefusals = value20
+            self.vFloor = value21
+            self.vStale = value22
+            self.vLate = value23
+            self.vFrozenFor = value24
+            self.vFrozenHash = value25
+            self.vPending = value26
+            self.vMembers = value27
+            self.vAgreeing = value28
+            self.vAnswers = value29
+            self.vAnswer = value30
+            self.vAgreed = value31
+            self.vRoomValues = value32
+            self.vRoomHistory = value33
+            self.vRoomDigest = value34
+            self.vFull = value35
+            self.vRoster = value36
+            self.vDenied = value37
+            self.vForbidden = value38
+            self.vAuthorized = value39
+            self.vAnnounce = value40
+            self.vAnnounced = value41
+            self.vMoved = value42
+            self.vListed = value43
+            self.vLive = value44
+            self.vOrdinal = value45
+            self.vEmpty = value46
+            self.vStaged = value47
+            self.vHolding = value48
+            self.vClosingNow = value49
+            self.vSpoiled = value50
+            self.vProbing = value51
+            self.vGone = value52
+            self.vWrites = value53
+            self.vCovered = value54
+            self.vProbe = value55
+            self.vSpoiledFor = value56
+            self.vNamedId = value57
+            self.vNamedField = value58
+            self.vNamedKind = value59
+            self.vTaking = value60
+            self.vTook = value61
+            self.vPassing = value62
+            self.vPassed = value63
+            self.vWaiting = value64
+            self.vKept = value65
+            self.vPart = value66
+            self.vOp = value67
+            self.vAlready = value68
+            self.vCount = value69
+        }
+    }
+}

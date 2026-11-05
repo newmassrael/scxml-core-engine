@@ -148,6 +148,22 @@ public struct StaticDonedataRecordViewRecord: Equatable, Sendable, SceDefault {
         self.layout = layout
         self.zoom = zoom
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "layout", value: SavedValues.of(layout)),
+            (key: "zoom", value: SavedValues.of(zoom)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticDonedataRecordViewRecord {
+        StaticDonedataRecordViewRecord(
+            layout: try SavedValues.enumeration(try SavedValues.field(value, what, "layout"), "\(what).layout", as: StaticDonedataRecordViewModeEnum.self),
+            zoom: try SavedValues.uint8(try SavedValues.field(value, what, "zoom"), "\(what).zoom")
+        )
+    }
 }
 
 // ======================================================================
@@ -490,3 +506,39 @@ public final class StaticDonedataRecordPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticDonedataRecordPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "fd144745a4a7d0c2313c4f28ec7184ffb7a698b5ed3361febe933a4c30ecea2b",
+            revised: "ebd993c1f24e924115faaa5e255372a3b115e2f411bf7ecb2a7916d2d3f9d9d6",
+            format2First: "d970d9ee33befac8cf9cc4a9714612ec08f38f4a62dfb180819023d45115ddd8",
+            format2Revised: "1e9cc61e79646577eca59b39e3156b57111c0d74f7e15e1b9a14d676d63dcf21")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("shown", vShown.toSaved()),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticDonedataRecordViewRecord.fromSaved(try saved.variable("shown"), "shown")
+        return { [self] in
+            self.vShown = value0
+        }
+    }
+}

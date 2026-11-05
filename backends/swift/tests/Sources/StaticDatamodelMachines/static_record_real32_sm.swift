@@ -100,6 +100,22 @@ public struct StaticRecordReal32Reading32Record: Equatable, Sendable, SceDefault
         self.sensor = sensor
         self.value = value
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "sensor", value: SavedValues.of(sensor)),
+            (key: "value", value: SavedValues.of(value)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticRecordReal32Reading32Record {
+        StaticRecordReal32Reading32Record(
+            sensor: try SavedValues.uint8(try SavedValues.field(value, what, "sensor"), "\(what).sensor"),
+            value: try SavedValues.float32(try SavedValues.field(value, what, "value"), "\(what).value")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -568,3 +584,45 @@ extension Engine where Policy == StaticRecordReal32Policy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticRecordReal32Policy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "c893e233c9dc158798b2e4ba26c92528fbf675fb7b763ec6857c744284638233",
+            revised: "ab6931a3750df3c6618dfe4e9b369c7863961c31f997f70a686f66cd7c8eda90",
+            format2First: "c893e233c9dc158798b2e4ba26c92528fbf675fb7b763ec6857c744284638233",
+            format2Revised: "ab6931a3750df3c6618dfe4e9b369c7863961c31f997f70a686f66cd7c8eda90")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("last", vLast.toSaved()),
+            SavedEntry("sum", SavedValues.of(vSum)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticRecordReal32Reading32Record.fromSaved(try saved.variable("last"), "last")
+        let value1 = try SavedValues.float32(try saved.variable("sum"), "sum")
+        let value2 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vLast = value0
+            self.vSum = value1
+            self.vErrors = value2
+        }
+    }
+}

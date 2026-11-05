@@ -119,6 +119,24 @@ public struct TodoPeerHlcRecord: Equatable, Sendable, SceDefault {
         self.counter = counter
         self.nodeId = nodeId
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerHlcRecord {
+        TodoPeerHlcRecord(
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Entry` datamodel value.
@@ -135,6 +153,26 @@ public struct TodoPeerEntryRecord: Equatable, Sendable, SceDefault {
         self.wallTime = wallTime
         self.counter = counter
         self.nodeId = nodeId
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "element", value: SavedValues.of(element)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerEntryRecord {
+        TodoPeerEntryRecord(
+            element: try SavedValues.uint64(try SavedValues.field(value, what, "element"), "\(what).element"),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
     }
 }
 
@@ -159,6 +197,32 @@ public struct TodoPeerValueRecord: Equatable, Sendable, SceDefault {
         self.counter = counter
         self.nodeId = nodeId
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerValueRecord {
+        TodoPeerValueRecord(
+            id: try SavedValues.uint64(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint64(try SavedValues.field(value, what, "field"), "\(what).field"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Node` datamodel value.
@@ -173,6 +237,24 @@ public struct TodoPeerNodeRecord: Equatable, Sendable, SceDefault {
         self.depth = depth
         self.prefix = prefix
         self.hash = hash
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "depth", value: SavedValues.of(depth)),
+            (key: "prefix", value: SavedValues.of(prefix)),
+            (key: "hash", value: SavedValues.of(hash)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerNodeRecord {
+        TodoPeerNodeRecord(
+            depth: try SavedValues.uint8(try SavedValues.field(value, what, "depth"), "\(what).depth"),
+            prefix: try SavedValues.uint64(try SavedValues.field(value, what, "prefix"), "\(what).prefix"),
+            hash: try SavedValues.uint32(try SavedValues.field(value, what, "hash"), "\(what).hash")
+        )
     }
 }
 
@@ -192,6 +274,28 @@ public struct TodoPeerOccurrenceRecord: Equatable, Sendable, SceDefault {
         self.end = end
         self.nth = nth
         self.conflict = conflict
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "start", value: SavedValues.of(start)),
+            (key: "end", value: SavedValues.of(end)),
+            (key: "nth", value: SavedValues.of(nth)),
+            (key: "conflict", value: SavedValues.of(conflict)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerOccurrenceRecord {
+        TodoPeerOccurrenceRecord(
+            id: try SavedValues.uint64(try SavedValues.field(value, what, "id"), "\(what).id"),
+            start: try SavedValues.int64(try SavedValues.field(value, what, "start"), "\(what).start"),
+            end: try SavedValues.int64(try SavedValues.field(value, what, "end"), "\(what).end"),
+            nth: try SavedValues.uint32(try SavedValues.field(value, what, "nth"), "\(what).nth"),
+            conflict: try SavedValues.uint8(try SavedValues.field(value, what, "conflict"), "\(what).conflict")
+        )
     }
 }
 
@@ -292,6 +396,108 @@ public struct TodoPeerScheduleRecord: Equatable, Sendable, SceDefault {
         self.gone = gone
         self.flag = flag
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "zone", value: SavedValues.of(zone)),
+            (key: "start", value: SavedValues.of(start)),
+            (key: "length", value: SavedValues.of(length)),
+            (key: "freq", value: SavedValues.of(freq)),
+            (key: "interval", value: SavedValues.of(interval)),
+            (key: "days", value: SavedValues.of(days)),
+            (key: "count", value: SavedValues.of(count)),
+            (key: "until", value: SavedValues.of(until)),
+            (key: "bymonth", value: SavedValues.of(bymonth)),
+            (key: "mdPos", value: SavedValues.of(mdPos)),
+            (key: "mdNeg", value: SavedValues.of(mdNeg)),
+            (key: "invalid", value: SavedValues.of(invalid)),
+            (key: "op0", value: SavedValues.of(op0)),
+            (key: "op1", value: SavedValues.of(op1)),
+            (key: "op2", value: SavedValues.of(op2)),
+            (key: "op3", value: SavedValues.of(op3)),
+            (key: "op4", value: SavedValues.of(op4)),
+            (key: "op5", value: SavedValues.of(op5)),
+            (key: "op6", value: SavedValues.of(op6)),
+            (key: "on0", value: SavedValues.of(on0)),
+            (key: "on1", value: SavedValues.of(on1)),
+            (key: "on2", value: SavedValues.of(on2)),
+            (key: "on3", value: SavedValues.of(on3)),
+            (key: "on4", value: SavedValues.of(on4)),
+            (key: "on5", value: SavedValues.of(on5)),
+            (key: "on6", value: SavedValues.of(on6)),
+            (key: "spPos", value: SavedValues.of(spPos)),
+            (key: "spNeg", value: SavedValues.of(spNeg)),
+            (key: "wkst", value: SavedValues.of(wkst)),
+            (key: "wnPos", value: SavedValues.of(wnPos)),
+            (key: "wnNeg", value: SavedValues.of(wnNeg)),
+            (key: "yd0", value: SavedValues.of(yd0)),
+            (key: "yd1", value: SavedValues.of(yd1)),
+            (key: "yd2", value: SavedValues.of(yd2)),
+            (key: "yd3", value: SavedValues.of(yd3)),
+            (key: "yd4", value: SavedValues.of(yd4)),
+            (key: "yd5", value: SavedValues.of(yd5)),
+            (key: "ydn0", value: SavedValues.of(ydn0)),
+            (key: "ydn1", value: SavedValues.of(ydn1)),
+            (key: "ydn2", value: SavedValues.of(ydn2)),
+            (key: "ydn3", value: SavedValues.of(ydn3)),
+            (key: "ydn4", value: SavedValues.of(ydn4)),
+            (key: "ydn5", value: SavedValues.of(ydn5)),
+            (key: "gone", value: SavedValues.of(gone)),
+            (key: "flag", value: SavedValues.of(flag)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerScheduleRecord {
+        TodoPeerScheduleRecord(
+            zone: try SavedValues.int64(try SavedValues.field(value, what, "zone"), "\(what).zone"),
+            start: try SavedValues.int64(try SavedValues.field(value, what, "start"), "\(what).start"),
+            length: try SavedValues.int64(try SavedValues.field(value, what, "length"), "\(what).length"),
+            freq: try SavedValues.int64(try SavedValues.field(value, what, "freq"), "\(what).freq"),
+            interval: try SavedValues.int64(try SavedValues.field(value, what, "interval"), "\(what).interval"),
+            days: try SavedValues.int64(try SavedValues.field(value, what, "days"), "\(what).days"),
+            count: try SavedValues.int64(try SavedValues.field(value, what, "count"), "\(what).count"),
+            until: try SavedValues.int64(try SavedValues.field(value, what, "until"), "\(what).until"),
+            bymonth: try SavedValues.int64(try SavedValues.field(value, what, "bymonth"), "\(what).bymonth"),
+            mdPos: try SavedValues.int64(try SavedValues.field(value, what, "mdPos"), "\(what).mdPos"),
+            mdNeg: try SavedValues.int64(try SavedValues.field(value, what, "mdNeg"), "\(what).mdNeg"),
+            invalid: try SavedValues.int64(try SavedValues.field(value, what, "invalid"), "\(what).invalid"),
+            op0: try SavedValues.int64(try SavedValues.field(value, what, "op0"), "\(what).op0"),
+            op1: try SavedValues.int64(try SavedValues.field(value, what, "op1"), "\(what).op1"),
+            op2: try SavedValues.int64(try SavedValues.field(value, what, "op2"), "\(what).op2"),
+            op3: try SavedValues.int64(try SavedValues.field(value, what, "op3"), "\(what).op3"),
+            op4: try SavedValues.int64(try SavedValues.field(value, what, "op4"), "\(what).op4"),
+            op5: try SavedValues.int64(try SavedValues.field(value, what, "op5"), "\(what).op5"),
+            op6: try SavedValues.int64(try SavedValues.field(value, what, "op6"), "\(what).op6"),
+            on0: try SavedValues.int64(try SavedValues.field(value, what, "on0"), "\(what).on0"),
+            on1: try SavedValues.int64(try SavedValues.field(value, what, "on1"), "\(what).on1"),
+            on2: try SavedValues.int64(try SavedValues.field(value, what, "on2"), "\(what).on2"),
+            on3: try SavedValues.int64(try SavedValues.field(value, what, "on3"), "\(what).on3"),
+            on4: try SavedValues.int64(try SavedValues.field(value, what, "on4"), "\(what).on4"),
+            on5: try SavedValues.int64(try SavedValues.field(value, what, "on5"), "\(what).on5"),
+            on6: try SavedValues.int64(try SavedValues.field(value, what, "on6"), "\(what).on6"),
+            spPos: try SavedValues.int64(try SavedValues.field(value, what, "spPos"), "\(what).spPos"),
+            spNeg: try SavedValues.int64(try SavedValues.field(value, what, "spNeg"), "\(what).spNeg"),
+            wkst: try SavedValues.int64(try SavedValues.field(value, what, "wkst"), "\(what).wkst"),
+            wnPos: try SavedValues.int64(try SavedValues.field(value, what, "wnPos"), "\(what).wnPos"),
+            wnNeg: try SavedValues.int64(try SavedValues.field(value, what, "wnNeg"), "\(what).wnNeg"),
+            yd0: try SavedValues.int64(try SavedValues.field(value, what, "yd0"), "\(what).yd0"),
+            yd1: try SavedValues.int64(try SavedValues.field(value, what, "yd1"), "\(what).yd1"),
+            yd2: try SavedValues.int64(try SavedValues.field(value, what, "yd2"), "\(what).yd2"),
+            yd3: try SavedValues.int64(try SavedValues.field(value, what, "yd3"), "\(what).yd3"),
+            yd4: try SavedValues.int64(try SavedValues.field(value, what, "yd4"), "\(what).yd4"),
+            yd5: try SavedValues.int64(try SavedValues.field(value, what, "yd5"), "\(what).yd5"),
+            ydn0: try SavedValues.int64(try SavedValues.field(value, what, "ydn0"), "\(what).ydn0"),
+            ydn1: try SavedValues.int64(try SavedValues.field(value, what, "ydn1"), "\(what).ydn1"),
+            ydn2: try SavedValues.int64(try SavedValues.field(value, what, "ydn2"), "\(what).ydn2"),
+            ydn3: try SavedValues.int64(try SavedValues.field(value, what, "ydn3"), "\(what).ydn3"),
+            ydn4: try SavedValues.int64(try SavedValues.field(value, what, "ydn4"), "\(what).ydn4"),
+            ydn5: try SavedValues.int64(try SavedValues.field(value, what, "ydn5"), "\(what).ydn5"),
+            gone: try SavedValues.int64(try SavedValues.field(value, what, "gone"), "\(what).gone"),
+            flag: try SavedValues.int64(try SavedValues.field(value, what, "flag"), "\(what).flag")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
@@ -305,6 +511,22 @@ public struct TodoPeerAnswerRecord: Equatable, Sendable, SceDefault {
         self.sender = sender
         self.hash = hash
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "sender", value: SavedValues.of(sender)),
+            (key: "hash", value: SavedValues.of(hash)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerAnswerRecord {
+        TodoPeerAnswerRecord(
+            sender: try SavedValues.uint64(try SavedValues.field(value, what, "sender"), "\(what).sender"),
+            hash: try SavedValues.uint32(try SavedValues.field(value, what, "hash"), "\(what).hash")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Member` datamodel value.
@@ -317,6 +539,22 @@ public struct TodoPeerMemberRecord: Equatable, Sendable, SceDefault {
     public init(node: UInt64, role: UInt8) {
         self.node = node
         self.role = role
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "node", value: SavedValues.of(node)),
+            (key: "role", value: SavedValues.of(role)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerMemberRecord {
+        TodoPeerMemberRecord(
+            node: try SavedValues.uint64(try SavedValues.field(value, what, "node"), "\(what).node"),
+            role: try SavedValues.uint8(try SavedValues.field(value, what, "role"), "\(what).role")
+        )
     }
 }
 
@@ -5597,3 +5835,222 @@ extension Engine where Policy == TodoPeerPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension TodoPeerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "84564493f4d6537649fd21f55b4a724e9dc0e6a879081544fc16a50dfa5dc34d",
+            revised: "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17",
+            format2First: "84564493f4d6537649fd21f55b4a724e9dc0e6a879081544fc16a50dfa5dc34d",
+            format2Revised: "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("node", SavedValues.of(vNode)),
+            SavedEntry("hub", SavedValues.of(vHub)),
+            SavedEntry("clock", vClock.toSaved()),
+            SavedEntry("stamp", vStamp.toSaved()),
+            SavedEntry("adds", SavedValues.list(vAdds) { $0.toSaved() }),
+            SavedEntry("tombstones", SavedValues.list(vTombstones) { $0.toSaved() }),
+            SavedEntry("one", SavedValues.list(vOne) { $0.toSaved() }),
+            SavedEntry("stable", SavedValues.list(vStable) { $0.toSaved() }),
+            SavedEntry("entry", vEntry.toSaved()),
+            SavedEntry("values", SavedValues.list(vValues) { $0.toSaved() }),
+            SavedEntry("typed", SavedValues.of(vTyped)),
+            SavedEntry("held", vHeld.toSaved()),
+            SavedEntry("digest", SavedValues.list(vDigest) { $0.toSaved() }),
+            SavedEntry("mine", SavedValues.of(vMine)),
+            SavedEntry("shareId", SavedValues.of(vShareId)),
+            SavedEntry("shareField", SavedValues.of(vShareField)),
+            SavedEntry("known", SavedValues.of(vKnown)),
+            SavedEntry("wasLive", SavedValues.of(vWasLive)),
+            SavedEntry("isLive", SavedValues.of(vIsLive)),
+            SavedEntry("present", SavedValues.of(vPresent)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+            SavedEntry("agenda", SavedValues.list(vAgenda) { $0.toSaved() }),
+            SavedEntry("local", SavedValues.list(vLocal) { $0.toSaved() }),
+            SavedEntry("occ", vOcc.toSaved()),
+            SavedEntry("agendaNext", SavedValues.of(vAgendaNext)),
+            SavedEntry("zoneStarts1", SavedValues.list(vZoneStarts1) { SavedValues.of($0) }),
+            SavedEntry("zoneOffsets1", SavedValues.list(vZoneOffsets1) { SavedValues.of($0) }),
+            SavedEntry("zoneStarts2", SavedValues.list(vZoneStarts2) { SavedValues.of($0) }),
+            SavedEntry("zoneOffsets2", SavedValues.list(vZoneOffsets2) { SavedValues.of($0) }),
+            SavedEntry("zoneStarts3", SavedValues.list(vZoneStarts3) { SavedValues.of($0) }),
+            SavedEntry("zoneOffsets3", SavedValues.list(vZoneOffsets3) { SavedValues.of($0) }),
+            SavedEntry("zoneStarts4", SavedValues.list(vZoneStarts4) { SavedValues.of($0) }),
+            SavedEntry("zoneOffsets4", SavedValues.list(vZoneOffsets4) { SavedValues.of($0) }),
+            SavedEntry("zoneStarts", SavedValues.list(vZoneStarts) { SavedValues.of($0) }),
+            SavedEntry("zoneOffsets", SavedValues.list(vZoneOffsets) { SavedValues.of($0) }),
+            SavedEntry("zoneRows", SavedValues.of(vZoneRows)),
+            SavedEntry("split", SavedValues.of(vSplit)),
+            SavedEntry("sched", vSched.toSaved()),
+            SavedEntry("rawCount", SavedValues.of(vRawCount)),
+            SavedEntry("rawLast", SavedValues.of(vRawLast)),
+            SavedEntry("utcSec", SavedValues.of(vUtcSec)),
+            SavedEntry("floor", SavedValues.of(vFloor)),
+            SavedEntry("stale", SavedValues.of(vStale)),
+            SavedEntry("late", SavedValues.of(vLate)),
+            SavedEntry("frozenFor", SavedValues.of(vFrozenFor)),
+            SavedEntry("frozenHash", SavedValues.of(vFrozenHash)),
+            SavedEntry("pending", SavedValues.of(vPending)),
+            SavedEntry("members", SavedValues.of(vMembers)),
+            SavedEntry("agreeing", SavedValues.of(vAgreeing)),
+            SavedEntry("answers", SavedValues.list(vAnswers) { $0.toSaved() }),
+            SavedEntry("answer", vAnswer.toSaved()),
+            SavedEntry("agreed", SavedValues.of(vAgreed)),
+            SavedEntry("roomValues", SavedValues.of(vRoomValues)),
+            SavedEntry("roomHistory", SavedValues.of(vRoomHistory)),
+            SavedEntry("roomDigest", SavedValues.of(vRoomDigest)),
+            SavedEntry("full", SavedValues.of(vFull)),
+            SavedEntry("fresh", SavedValues.of(vFresh)),
+            SavedEntry("blocked", SavedValues.of(vBlocked)),
+            SavedEntry("roster", SavedValues.list(vRoster) { $0.toSaved() }),
+            SavedEntry("denied", SavedValues.of(vDenied)),
+            SavedEntry("forbidden", SavedValues.of(vForbidden)),
+            SavedEntry("authorized", SavedValues.of(vAuthorized)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint64(try saved.variable("node"), "node")
+        let value1 = try SavedValues.bool(try saved.variable("hub"), "hub")
+        let value2 = try TodoPeerHlcRecord.fromSaved(try saved.variable("clock"), "clock")
+        let value3 = try TodoPeerHlcRecord.fromSaved(try saved.variable("stamp"), "stamp")
+        let value4 = try SavedValues.list(try saved.variable("adds"), "adds", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
+        let value5 = try SavedValues.list(try saved.variable("tombstones"), "tombstones", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
+        let value6 = try SavedValues.list(try saved.variable("one"), "one", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
+        let value7 = try SavedValues.list(try saved.variable("stable"), "stable", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
+        let value8 = try TodoPeerEntryRecord.fromSaved(try saved.variable("entry"), "entry")
+        let value9 = try SavedValues.list(try saved.variable("values"), "values", capacity: 512) { e, w in try TodoPeerValueRecord.fromSaved(e, w) }
+        let value10 = try SavedValues.string(try saved.variable("typed"), "typed", capacity: 32)
+        let value11 = try TodoPeerValueRecord.fromSaved(try saved.variable("held"), "held")
+        let value12 = try SavedValues.list(try saved.variable("digest"), "digest", capacity: 2048) { e, w in try TodoPeerNodeRecord.fromSaved(e, w) }
+        let value13 = try SavedValues.uint32(try saved.variable("mine"), "mine")
+        let value14 = try SavedValues.uint32(try saved.variable("shareId"), "shareId")
+        let value15 = try SavedValues.uint16(try saved.variable("shareField"), "shareField")
+        let value16 = try SavedValues.bool(try saved.variable("known"), "known")
+        let value17 = try SavedValues.bool(try saved.variable("wasLive"), "wasLive")
+        let value18 = try SavedValues.bool(try saved.variable("isLive"), "isLive")
+        let value19 = try SavedValues.bool(try saved.variable("present"), "present")
+        let value20 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        let value21 = try SavedValues.list(try saved.variable("agenda"), "agenda", capacity: 64) { e, w in try TodoPeerOccurrenceRecord.fromSaved(e, w) }
+        let value22 = try SavedValues.list(try saved.variable("local"), "local", capacity: 64) { e, w in try TodoPeerOccurrenceRecord.fromSaved(e, w) }
+        let value23 = try TodoPeerOccurrenceRecord.fromSaved(try saved.variable("occ"), "occ")
+        let value24 = try SavedValues.uint32(try saved.variable("agendaNext"), "agendaNext")
+        let value25 = try SavedValues.list(try saved.variable("zoneStarts1"), "zoneStarts1", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value26 = try SavedValues.list(try saved.variable("zoneOffsets1"), "zoneOffsets1", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value27 = try SavedValues.list(try saved.variable("zoneStarts2"), "zoneStarts2", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value28 = try SavedValues.list(try saved.variable("zoneOffsets2"), "zoneOffsets2", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value29 = try SavedValues.list(try saved.variable("zoneStarts3"), "zoneStarts3", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value30 = try SavedValues.list(try saved.variable("zoneOffsets3"), "zoneOffsets3", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value31 = try SavedValues.list(try saved.variable("zoneStarts4"), "zoneStarts4", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value32 = try SavedValues.list(try saved.variable("zoneOffsets4"), "zoneOffsets4", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value33 = try SavedValues.list(try saved.variable("zoneStarts"), "zoneStarts", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value34 = try SavedValues.list(try saved.variable("zoneOffsets"), "zoneOffsets", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value35 = try SavedValues.uint32(try saved.variable("zoneRows"), "zoneRows")
+        let value36 = try SavedValues.bool(try saved.variable("split"), "split")
+        let value37 = try TodoPeerScheduleRecord.fromSaved(try saved.variable("sched"), "sched")
+        let value38 = try SavedValues.uint32(try saved.variable("rawCount"), "rawCount")
+        let value39 = try SavedValues.uint32(try saved.variable("rawLast"), "rawLast")
+        let value40 = try SavedValues.int64(try saved.variable("utcSec"), "utcSec")
+        let value41 = try SavedValues.int64(try saved.variable("floor"), "floor")
+        let value42 = try SavedValues.bool(try saved.variable("stale"), "stale")
+        let value43 = try SavedValues.uint32(try saved.variable("late"), "late")
+        let value44 = try SavedValues.int64(try saved.variable("frozenFor"), "frozenFor")
+        let value45 = try SavedValues.uint32(try saved.variable("frozenHash"), "frozenHash")
+        let value46 = try SavedValues.int64(try saved.variable("pending"), "pending")
+        let value47 = try SavedValues.uint32(try saved.variable("members"), "members")
+        let value48 = try SavedValues.uint32(try saved.variable("agreeing"), "agreeing")
+        let value49 = try SavedValues.list(try saved.variable("answers"), "answers", capacity: 512) { e, w in try TodoPeerAnswerRecord.fromSaved(e, w) }
+        let value50 = try TodoPeerAnswerRecord.fromSaved(try saved.variable("answer"), "answer")
+        let value51 = try SavedValues.uint32(try saved.variable("agreed"), "agreed")
+        let value52 = try SavedValues.uint32(try saved.variable("roomValues"), "roomValues")
+        let value53 = try SavedValues.uint32(try saved.variable("roomHistory"), "roomHistory")
+        let value54 = try SavedValues.uint32(try saved.variable("roomDigest"), "roomDigest")
+        let value55 = try SavedValues.uint32(try saved.variable("full"), "full")
+        let value56 = try SavedValues.bool(try saved.variable("fresh"), "fresh")
+        let value57 = try SavedValues.bool(try saved.variable("blocked"), "blocked")
+        let value58 = try SavedValues.list(try saved.variable("roster"), "roster", capacity: 64) { e, w in try TodoPeerMemberRecord.fromSaved(e, w) }
+        let value59 = try SavedValues.uint32(try saved.variable("denied"), "denied")
+        let value60 = try SavedValues.bool(try saved.variable("forbidden"), "forbidden")
+        let value61 = try SavedValues.bool(try saved.variable("authorized"), "authorized")
+        return { [self] in
+            self.vNode = value0
+            self.vHub = value1
+            self.vClock = value2
+            self.vStamp = value3
+            self.vAdds = value4
+            self.vTombstones = value5
+            self.vOne = value6
+            self.vStable = value7
+            self.vEntry = value8
+            self.vValues = value9
+            self.vTyped = value10
+            self.vHeld = value11
+            self.vDigest = value12
+            self.vMine = value13
+            self.vShareId = value14
+            self.vShareField = value15
+            self.vKnown = value16
+            self.vWasLive = value17
+            self.vIsLive = value18
+            self.vPresent = value19
+            self.vRefusals = value20
+            self.vAgenda = value21
+            self.vLocal = value22
+            self.vOcc = value23
+            self.vAgendaNext = value24
+            self.vZoneStarts1 = value25
+            self.vZoneOffsets1 = value26
+            self.vZoneStarts2 = value27
+            self.vZoneOffsets2 = value28
+            self.vZoneStarts3 = value29
+            self.vZoneOffsets3 = value30
+            self.vZoneStarts4 = value31
+            self.vZoneOffsets4 = value32
+            self.vZoneStarts = value33
+            self.vZoneOffsets = value34
+            self.vZoneRows = value35
+            self.vSplit = value36
+            self.vSched = value37
+            self.vRawCount = value38
+            self.vRawLast = value39
+            self.vUtcSec = value40
+            self.vFloor = value41
+            self.vStale = value42
+            self.vLate = value43
+            self.vFrozenFor = value44
+            self.vFrozenHash = value45
+            self.vPending = value46
+            self.vMembers = value47
+            self.vAgreeing = value48
+            self.vAnswers = value49
+            self.vAnswer = value50
+            self.vAgreed = value51
+            self.vRoomValues = value52
+            self.vRoomHistory = value53
+            self.vRoomDigest = value54
+            self.vFull = value55
+            self.vFresh = value56
+            self.vBlocked = value57
+            self.vRoster = value58
+            self.vDenied = value59
+            self.vForbidden = value60
+            self.vAuthorized = value61
+        }
+    }
+}

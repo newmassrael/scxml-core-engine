@@ -199,6 +199,26 @@ public struct StaticPayloadEnumUnimportedRefusedRecord: Equatable, Sendable, Sce
         self.kind = kind
         self.reason = reason
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "kind", value: SavedValues.of(kind)),
+            (key: "reason", value: SavedValues.of(reason)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticPayloadEnumUnimportedRefusedRecord {
+        StaticPayloadEnumUnimportedRefusedRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            kind: try SavedValues.enumeration(try SavedValues.field(value, what, "kind"), "\(what).kind", as: StaticPayloadEnumUnimportedRecordCommandEnum.self),
+            reason: try SavedValues.enumeration(try SavedValues.field(value, what, "reason"), "\(what).reason", as: StaticPayloadEnumUnimportedWhyEnum.self)
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -638,3 +658,48 @@ extension Engine where Policy == StaticPayloadEnumUnimportedPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticPayloadEnumUnimportedPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "60b1f94fa3bf7ca3236aafdd09c81831b91b1473dba7a603b712203b06b90104",
+            revised: "abcc6fca73cad31c2aec6e1e94f26d004b87084345c8e133e718fe481447e64d",
+            format2First: "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d",
+            format2Revised: "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("last", SavedValues.optional(vLast) { SavedValues.of($0) }),
+            SavedEntry("kept", SavedValues.list(vKept) { $0.toSaved() }),
+            SavedEntry("row", SavedValues.of(vRow)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.optional(try saved.variable("last"), "last") { e, w in try SavedValues.enumeration(e, w, as: StaticPayloadEnumUnimportedWhyEnum.self) }
+        let value1 = try SavedValues.list(try saved.variable("kept"), "kept", capacity: 2) { e, w in try StaticPayloadEnumUnimportedRefusedRecord.fromSaved(e, w) }
+        let value2 = try SavedValues.uint32(try saved.variable("row"), "row")
+        let value3 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vLast = value0
+            self.vKept = value1
+            self.vRow = value2
+            self.vRefusals = value3
+        }
+    }
+}

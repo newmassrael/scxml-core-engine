@@ -154,6 +154,22 @@ public struct StaticRecordEnumViewRecord: Equatable, Sendable, SceDefault {
         self.layout = layout
         self.zoom = zoom
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "layout", value: SavedValues.of(layout)),
+            (key: "zoom", value: SavedValues.of(zoom)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticRecordEnumViewRecord {
+        StaticRecordEnumViewRecord(
+            layout: try SavedValues.enumeration(try SavedValues.field(value, what, "layout"), "\(what).layout", as: StaticRecordEnumViewModeEnum.self),
+            zoom: try SavedValues.uint8(try SavedValues.field(value, what, "zoom"), "\(what).zoom")
+        )
+    }
 }
 
 // ======================================================================
@@ -840,3 +856,51 @@ public final class StaticRecordEnumPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticRecordEnumPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "5badf5f6ffa55e8a6f26846fbf63d8ca259130207872c648bab3f3409f8e1f2d",
+            revised: "eff355fd92e600e6884c26774ee3427b6462f1bc44eea6ef5815eed90de08699",
+            format2First: "53ac1c2171b6036049abade6e69f7a185458bd5da1cbdcbcb4f7d189f01e7223",
+            format2Revised: "22904e1b1af8b2718c84d1c67c153536ef878fcce7962c8e3b46bade94c12474")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("shown", vShown.toSaved()),
+            SavedEntry("seen", SavedValues.list(vSeen) { $0.toSaved() }),
+            SavedEntry("weeks", SavedValues.of(vWeeks)),
+            SavedEntry("flips", SavedValues.of(vFlips)),
+            SavedEntry("leads", SavedValues.of(vLeads)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticRecordEnumViewRecord.fromSaved(try saved.variable("shown"), "shown")
+        let value1 = try SavedValues.list(try saved.variable("seen"), "seen", capacity: 4) { e, w in try StaticRecordEnumViewRecord.fromSaved(e, w) }
+        let value2 = try SavedValues.uint32(try saved.variable("weeks"), "weeks")
+        let value3 = try SavedValues.uint32(try saved.variable("flips"), "flips")
+        let value4 = try SavedValues.uint32(try saved.variable("leads"), "leads")
+        return { [self] in
+            self.vShown = value0
+            self.vSeen = value1
+            self.vWeeks = value2
+            self.vFlips = value3
+            self.vLeads = value4
+        }
+    }
+}

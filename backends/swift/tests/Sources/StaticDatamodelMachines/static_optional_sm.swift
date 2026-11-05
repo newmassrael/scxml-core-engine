@@ -154,6 +154,26 @@ public struct StaticOptionalDueRecord: Equatable, Sendable, SceDefault {
         self.title = title
         self.status = status
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "due", value: SavedValues.optional(due) { SavedValues.of($0) }),
+            (key: "title", value: SavedValues.optional(title) { SavedValues.of($0) }),
+            (key: "status", value: SavedValues.optional(status) { SavedValues.of($0) }),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticOptionalDueRecord {
+        StaticOptionalDueRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            due: try SavedValues.optional(try SavedValues.field(value, what, "due"), "\(what).due") { e, w in try SavedValues.int64(e, w) },
+            title: try SavedValues.optional(try SavedValues.field(value, what, "title"), "\(what).title") { e, w in try SavedValues.string(e, w, capacity: 16) },
+            status: try SavedValues.optional(try SavedValues.field(value, what, "status"), "\(what).status") { e, w in try SavedValues.enumeration(e, w, as: StaticOptionalStatusEnum.self) }
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -1224,3 +1244,108 @@ extension Engine where Policy == StaticOptionalPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticOptionalPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "107ff83fbd2c38a87a0f71adfa81fcc3c27bf980240687ee0f9999ecfbc460e2",
+            revised: "446e9f68a2de213abce540de0df591de51badabf09d45a8b571910ae823c15fc",
+            format2First: "97c67c3845141fbd65d751eef23b71ca25329452523e524d81ed9621ca5b8d74",
+            format2Revised: "51b560ebab5c70ad2a607bce4b26e572a1110fc5f8cd00d8a79692205886638b")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("due", SavedValues.optional(vDue) { SavedValues.of($0) }),
+            SavedEntry("other", SavedValues.optional(vOther) { SavedValues.of($0) }),
+            SavedEntry("title", SavedValues.optional(vTitle) { SavedValues.of($0) }),
+            SavedEntry("status", SavedValues.optional(vStatus) { SavedValues.of($0) }),
+            SavedEntry("item", vItem.toSaved()),
+            SavedEntry("items", SavedValues.list(vItems) { $0.toSaved() }),
+            SavedEntry("days", SavedValues.of(vDays)),
+            SavedEntry("following", SavedValues.of(vFollowing)),
+            SavedEntry("late", SavedValues.of(vLate)),
+            SavedEntry("early", SavedValues.of(vEarly)),
+            SavedEntry("label", SavedValues.of(vLabel)),
+            SavedEntry("plain", SavedValues.of(vPlain)),
+            SavedEntry("kept", SavedValues.of(vKept)),
+            SavedEntry("listed", SavedValues.of(vListed)),
+            SavedEntry("missing", SavedValues.of(vMissing)),
+            SavedEntry("same", SavedValues.of(vSame)),
+            SavedEntry("absent", SavedValues.of(vAbsent)),
+            SavedEntry("statusDone", SavedValues.of(vStatusDone)),
+            SavedEntry("echoed", SavedValues.of(vEchoed)),
+            SavedEntry("echoTitle", SavedValues.optional(vEchoTitle) { SavedValues.of($0) }),
+            SavedEntry("echoStatus", SavedValues.optional(vEchoStatus) { SavedValues.of($0) }),
+            SavedEntry("fallbacks", SavedValues.of(vFallbacks)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+            SavedEntry("huge", SavedValues.of(vHuge)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.optional(try saved.variable("due"), "due") { e, w in try SavedValues.int64(e, w) }
+        let value1 = try SavedValues.optional(try saved.variable("other"), "other") { e, w in try SavedValues.int64(e, w) }
+        let value2 = try SavedValues.optional(try saved.variable("title"), "title") { e, w in try SavedValues.string(e, w, capacity: 16) }
+        let value3 = try SavedValues.optional(try saved.variable("status"), "status") { e, w in try SavedValues.enumeration(e, w, as: StaticOptionalStatusEnum.self) }
+        let value4 = try StaticOptionalDueRecord.fromSaved(try saved.variable("item"), "item")
+        let value5 = try SavedValues.list(try saved.variable("items"), "items", capacity: 3) { e, w in try StaticOptionalDueRecord.fromSaved(e, w) }
+        let value6 = try SavedValues.int64(try saved.variable("days"), "days")
+        let value7 = try SavedValues.int64(try saved.variable("following"), "following")
+        let value8 = try SavedValues.bool(try saved.variable("late"), "late")
+        let value9 = try SavedValues.bool(try saved.variable("early"), "early")
+        let value10 = try SavedValues.string(try saved.variable("label"), "label", capacity: 16)
+        let value11 = try SavedValues.enumeration(try saved.variable("plain"), "plain", as: StaticOptionalStatusEnum.self)
+        let value12 = try SavedValues.int64(try saved.variable("kept"), "kept")
+        let value13 = try SavedValues.int64(try saved.variable("listed"), "listed")
+        let value14 = try SavedValues.uint32(try saved.variable("missing"), "missing")
+        let value15 = try SavedValues.bool(try saved.variable("same"), "same")
+        let value16 = try SavedValues.bool(try saved.variable("absent"), "absent")
+        let value17 = try SavedValues.bool(try saved.variable("statusDone"), "statusDone")
+        let value18 = try SavedValues.int64(try saved.variable("echoed"), "echoed")
+        let value19 = try SavedValues.optional(try saved.variable("echoTitle"), "echoTitle") { e, w in try SavedValues.string(e, w, capacity: 16) }
+        let value20 = try SavedValues.optional(try saved.variable("echoStatus"), "echoStatus") { e, w in try SavedValues.enumeration(e, w, as: StaticOptionalStatusEnum.self) }
+        let value21 = try SavedValues.uint32(try saved.variable("fallbacks"), "fallbacks")
+        let value22 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        let value23 = try SavedValues.int64(try saved.variable("huge"), "huge")
+        return { [self] in
+            self.vDue = value0
+            self.vOther = value1
+            self.vTitle = value2
+            self.vStatus = value3
+            self.vItem = value4
+            self.vItems = value5
+            self.vDays = value6
+            self.vFollowing = value7
+            self.vLate = value8
+            self.vEarly = value9
+            self.vLabel = value10
+            self.vPlain = value11
+            self.vKept = value12
+            self.vListed = value13
+            self.vMissing = value14
+            self.vSame = value15
+            self.vAbsent = value16
+            self.vStatusDone = value17
+            self.vEchoed = value18
+            self.vEchoTitle = value19
+            self.vEchoStatus = value20
+            self.vFallbacks = value21
+            self.vErrors = value22
+            self.vHuge = value23
+        }
+    }
+}

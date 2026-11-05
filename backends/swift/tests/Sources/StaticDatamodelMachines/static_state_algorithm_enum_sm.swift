@@ -143,6 +143,22 @@ public struct StaticStateAlgorithmEnumItemRecord: Equatable, Sendable, SceDefaul
         self.id = id
         self.status = status
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "status", value: SavedValues.of(status)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticStateAlgorithmEnumItemRecord {
+        StaticStateAlgorithmEnumItemRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            status: try SavedValues.enumeration(try SavedValues.field(value, what, "status"), "\(what).status", as: StaticStateAlgorithmEnumStatusEnum.self)
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -777,3 +793,60 @@ extension Engine where Policy == StaticStateAlgorithmEnumPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticStateAlgorithmEnumPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "1281fa7afe0032f4ca9df6e2eab14d8e902566321a56264f5a071aa354e7b0a0",
+            revised: "bd414277a1759a184a40341a429d5f4c069357ddf31a20ac51ba23bfbeca2bd3",
+            format2First: "5addb038b50a9b6dd7ccc1d18de4809fbaed360a881124cf17816629947adb50",
+            format2Revised: "5aa2ed9946edb35a3b75bb5bd278885e9d4926e0c2409ccf94c0221fbf435c3c")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("items", SavedValues.list(vItems) { $0.toSaved() }),
+            SavedEntry("draft", vDraft.toSaved()),
+            SavedEntry("last", SavedValues.of(vLast)),
+            SavedEntry("openCount", SavedValues.of(vOpenCount)),
+            SavedEntry("startedCount", SavedValues.of(vStartedCount)),
+            SavedEntry("doneCount", SavedValues.of(vDoneCount)),
+            SavedEntry("checks", SavedValues.of(vChecks)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.list(try saved.variable("items"), "items", capacity: 4) { e, w in try StaticStateAlgorithmEnumItemRecord.fromSaved(e, w) }
+        let value1 = try StaticStateAlgorithmEnumItemRecord.fromSaved(try saved.variable("draft"), "draft")
+        let value2 = try SavedValues.enumeration(try saved.variable("last"), "last", as: StaticStateAlgorithmEnumStatusEnum.self)
+        let value3 = try SavedValues.uint32(try saved.variable("openCount"), "openCount")
+        let value4 = try SavedValues.uint32(try saved.variable("startedCount"), "startedCount")
+        let value5 = try SavedValues.uint32(try saved.variable("doneCount"), "doneCount")
+        let value6 = try SavedValues.uint32(try saved.variable("checks"), "checks")
+        let value7 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vItems = value0
+            self.vDraft = value1
+            self.vLast = value2
+            self.vOpenCount = value3
+            self.vStartedCount = value4
+            self.vDoneCount = value5
+            self.vChecks = value6
+            self.vRefusals = value7
+        }
+    }
+}

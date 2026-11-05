@@ -145,6 +145,24 @@ public struct StaticSchemaRevisionRevisedRecord: Equatable, Sendable, SceDefault
         self.layout = layout
         self.urgent = urgent
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "level", value: SavedValues.of(level)),
+            (key: "layout", value: SavedValues.of(layout)),
+            (key: "urgent", value: SavedValues.of(urgent)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticSchemaRevisionRevisedRecord {
+        StaticSchemaRevisionRevisedRecord(
+            level: try SavedValues.uint8(try SavedValues.field(value, what, "level"), "\(what).level"),
+            layout: try SavedValues.enumeration(try SavedValues.field(value, what, "layout"), "\(what).layout", as: StaticSchemaRevisionViewModeEnum.self),
+            urgent: try SavedValues.bool(try SavedValues.field(value, what, "urgent"), "\(what).urgent")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the

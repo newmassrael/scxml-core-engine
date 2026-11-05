@@ -620,3 +620,57 @@ public final class StaticRealPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticRealPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133",
+            revised: "2587ba0a8cc82b3651360f544a67d759659dde6552f8fcdf2cc117fe60bbdf1f",
+            format2First: "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133",
+            format2Revised: "2587ba0a8cc82b3651360f544a67d759659dde6552f8fcdf2cc117fe60bbdf1f")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("level", SavedValues.of(vLevel)),
+            SavedEntry("rate", SavedValues.of(vRate)),
+            SavedEntry("total", SavedValues.of(vTotal)),
+            SavedEntry("tenth", SavedValues.of(vTenth)),
+            SavedEntry("drift", SavedValues.of(vDrift)),
+            SavedEntry("samples", SavedValues.list(vSamples) { SavedValues.of($0) }),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.float64(try saved.variable("level"), "level")
+        let value1 = try SavedValues.float64(try saved.variable("rate"), "rate")
+        let value2 = try SavedValues.float64(try saved.variable("total"), "total")
+        let value3 = try SavedValues.float64(try saved.variable("tenth"), "tenth")
+        let value4 = try SavedValues.float64(try saved.variable("drift"), "drift")
+        let value5 = try SavedValues.list(try saved.variable("samples"), "samples", capacity: 3) { e, w in try SavedValues.float64(e, w) }
+        let value6 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vLevel = value0
+            self.vRate = value1
+            self.vTotal = value2
+            self.vTenth = value3
+            self.vDrift = value4
+            self.vSamples = value5
+            self.vErrors = value6
+        }
+    }
+}

@@ -143,6 +143,24 @@ public struct StaticSchemaPendingSignalRecord: Equatable, Sendable, SceDefault {
         self.count = count
         self.urgent = urgent
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "level", value: SavedValues.of(level)),
+            (key: "count", value: SavedValues.of(count)),
+            (key: "urgent", value: SavedValues.of(urgent)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticSchemaPendingSignalRecord {
+        StaticSchemaPendingSignalRecord(
+            level: try SavedValues.enumeration(try SavedValues.field(value, what, "level"), "\(what).level", as: StaticSchemaPendingSignalLevelEnum.self),
+            count: try SavedValues.uint16(try SavedValues.field(value, what, "count"), "\(what).count"),
+            urgent: try SavedValues.bool(try SavedValues.field(value, what, "urgent"), "\(what).urgent")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the

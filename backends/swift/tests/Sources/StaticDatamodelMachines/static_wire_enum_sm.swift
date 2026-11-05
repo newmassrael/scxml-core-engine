@@ -147,6 +147,22 @@ public struct StaticWireEnumViewRecord: Equatable, Sendable, SceDefault {
         self.layout = layout
         self.zoom = zoom
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "layout", value: SavedValues.of(layout)),
+            (key: "zoom", value: SavedValues.of(zoom)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticWireEnumViewRecord {
+        StaticWireEnumViewRecord(
+            layout: try SavedValues.enumeration(try SavedValues.field(value, what, "layout"), "\(what).layout", as: StaticWireEnumViewModeEnum.self),
+            zoom: try SavedValues.uint8(try SavedValues.field(value, what, "zoom"), "\(what).zoom")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -747,3 +763,48 @@ extension Engine where Policy == StaticWireEnumPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticWireEnumPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "c9a87f3c40076e0e661152c1c51fc9f5bab2cc48d50cc9aedc07d730e887d3ce",
+            revised: "fbe8dae8a62e3cd95f9b387047b050003b24228f9d4ae84bbfe22bda18c1fd98",
+            format2First: "78445a09acf694cb490c6eb144464277b5f79d54bbbc3a183fdc310a75e79492",
+            format2Revised: "c9033f9dff50f0277e04dd2a71973d9afcbd7eb9c46e79fb71d0febfc4029379")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("layout", SavedValues.of(vLayout)),
+            SavedEntry("shown", vShown.toSaved()),
+            SavedEntry("received", SavedValues.of(vReceived)),
+            SavedEntry("deliveries", SavedValues.of(vDeliveries)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.enumeration(try saved.variable("layout"), "layout", as: StaticWireEnumViewModeEnum.self)
+        let value1 = try StaticWireEnumViewRecord.fromSaved(try saved.variable("shown"), "shown")
+        let value2 = try SavedValues.enumeration(try saved.variable("received"), "received", as: StaticWireEnumViewModeEnum.self)
+        let value3 = try SavedValues.uint32(try saved.variable("deliveries"), "deliveries")
+        return { [self] in
+            self.vLayout = value0
+            self.vShown = value1
+            self.vReceived = value2
+            self.vDeliveries = value3
+        }
+    }
+}

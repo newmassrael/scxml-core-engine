@@ -5085,8 +5085,7 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
 }
 
 /// The scalar `sce:type`s the Swift runtime saves and restores a variable of (`SavedValues`): the numbers,
-/// the truth value, the bounded text and the byte string (its Latin-1 text). A list and a record are not
-/// among them yet.
+/// the truth value, the bounded text and the byte string (its Latin-1 text).
 const SWIFT_SAVED_SCALARS: &[&str] = &[
     "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64",
     "bool", "string", "bytes",
@@ -5095,8 +5094,9 @@ const SWIFT_SAVED_SCALARS: &[&str] = &[
 /// The shape a Swift machine's saved state is bound to, or `None` for a machine the Swift runtime does not save
 /// yet. The generator computes the shape of every machine whose state a saved state can hold whole
 /// ([`crate::forge::static_lowering::StaticLowering::saved_shape`]); what Swift adds is what its runtime holds
-/// of that state so far: every variable a scalar of [`SWIFT_SAVED_SCALARS`], an enum, or one of those that may
-/// be absent (see [`swift_saves_field`]), no `<invoke>` in the document,
+/// of that state so far: every variable a scalar of [`SWIFT_SAVED_SCALARS`], an enum, a record, a list, or one
+/// of those that may be absent (see [`swift_saves_field`]), every record schema in its first revision, no
+/// `<invoke>` in the document,
 /// and a machine of no product line. A machine past that is generated without the save API
 /// rather than with one that would silently drop part of its state, as the generator does for a machine whose
 /// state no backend can hold.
@@ -5107,7 +5107,10 @@ fn swift_saved_shape(
     let shape = lowering.saved_shape.as_ref()?;
     let holds_invokes = model.states.values().any(|state| !state.invokes.is_empty());
     let holds_every_field = lowering.fields.iter().all(swift_saves_field);
-    if shape.features.is_some() || holds_invokes || !holds_every_field {
+    // A record schema past its first revision is written with the revisions it names and read through
+    // the fields each added since, which this runtime does not do yet.
+    let holds_revisions = shape.records.iter().any(|record| record.revision != 1);
+    if shape.features.is_some() || holds_invokes || !holds_every_field || holds_revisions {
         return None;
     }
     Some(shape.clone())
@@ -5119,9 +5122,13 @@ fn swift_saves_field(field: &crate::forge::static_lowering::StaticField) -> bool
     match (field.saved_kind, field.saved_elem) {
         ("scalar", _) => scalar,
         ("enum", _) => true,
-        // A value that may be absent is saved as `null` or as its present value, a scalar or an enum.
+        // A list of numbers, truth values, texts or byte strings, and a record, a list of them: the record
+        // type writes and reads itself (`StaticTarget::record_def`).
+        ("list", _) => scalar,
+        ("record" | "record_list", _) => true,
+        // A value that may be absent is saved as `null` or as its present value: a scalar, an enum or a record.
         ("optional", Some("scalar")) => scalar,
-        ("optional", Some("enum")) => true,
+        ("optional", Some("enum" | "record")) => true,
         _ => false,
     }
 }

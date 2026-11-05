@@ -101,6 +101,22 @@ public struct StaticStateAlgorithmEntryRecord: Equatable, Sendable, SceDefault {
         self.id = id
         self.amount = amount
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "amount", value: SavedValues.of(amount)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticStateAlgorithmEntryRecord {
+        StaticStateAlgorithmEntryRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            amount: try SavedValues.int32(try SavedValues.field(value, what, "amount"), "\(what).amount")
+        )
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:Total` datamodel value.
@@ -113,6 +129,22 @@ public struct StaticStateAlgorithmTotalRecord: Equatable, Sendable, SceDefault {
     public init(count: UInt32, sum: Int32) {
         self.count = count
         self.sum = sum
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "count", value: SavedValues.of(count)),
+            (key: "sum", value: SavedValues.of(sum)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticStateAlgorithmTotalRecord {
+        StaticStateAlgorithmTotalRecord(
+            count: try SavedValues.uint32(try SavedValues.field(value, what, "count"), "\(what).count"),
+            sum: try SavedValues.int32(try SavedValues.field(value, what, "sum"), "\(what).sum")
+        )
     }
 }
 
@@ -687,3 +719,57 @@ extension Engine where Policy == StaticStateAlgorithmPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticStateAlgorithmPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "9974bd59dfcaa3327314694f10c51b9c6ca6182a91e88cc96fb36c167a4eb0da",
+            revised: "4fb501ba430e00423e29ccdd50010c6e3c4909d1de3df4c575ac6341cb1d2a5f",
+            format2First: "9974bd59dfcaa3327314694f10c51b9c6ca6182a91e88cc96fb36c167a4eb0da",
+            format2Revised: "4fb501ba430e00423e29ccdd50010c6e3c4909d1de3df4c575ac6341cb1d2a5f")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("entries", SavedValues.list(vEntries) { $0.toSaved() }),
+            SavedEntry("total", vTotal.toSaved()),
+            SavedEntry("last", vLast.toSaved()),
+            SavedEntry("ids", SavedValues.list(vIds) { SavedValues.of($0) }),
+            SavedEntry("idsum", SavedValues.of(vIdsum)),
+            SavedEntry("large", SavedValues.of(vLarge)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.list(try saved.variable("entries"), "entries", capacity: 8) { e, w in try StaticStateAlgorithmEntryRecord.fromSaved(e, w) }
+        let value1 = try StaticStateAlgorithmTotalRecord.fromSaved(try saved.variable("total"), "total")
+        let value2 = try StaticStateAlgorithmEntryRecord.fromSaved(try saved.variable("last"), "last")
+        let value3 = try SavedValues.list(try saved.variable("ids"), "ids", capacity: 8) { e, w in try SavedValues.uint32(e, w) }
+        let value4 = try SavedValues.uint32(try saved.variable("idsum"), "idsum")
+        let value5 = try SavedValues.uint32(try saved.variable("large"), "large")
+        let value6 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vEntries = value0
+            self.vTotal = value1
+            self.vLast = value2
+            self.vIds = value3
+            self.vIdsum = value4
+            self.vLarge = value5
+            self.vRefusals = value6
+        }
+    }
+}

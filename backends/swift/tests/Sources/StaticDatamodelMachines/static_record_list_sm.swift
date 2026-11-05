@@ -106,6 +106,24 @@ public struct StaticRecordListDayRecord: Equatable, Sendable, SceDefault {
         self.month = month
         self.dayOfMonth = dayOfMonth
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "year", value: SavedValues.of(year)),
+            (key: "month", value: SavedValues.of(month)),
+            (key: "dayOfMonth", value: SavedValues.of(dayOfMonth)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticRecordListDayRecord {
+        StaticRecordListDayRecord(
+            year: try SavedValues.uint16(try SavedValues.field(value, what, "year"), "\(what).year"),
+            month: try SavedValues.uint8(try SavedValues.field(value, what, "month"), "\(what).month"),
+            dayOfMonth: try SavedValues.uint8(try SavedValues.field(value, what, "dayOfMonth"), "\(what).dayOfMonth")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -723,3 +741,54 @@ extension Engine where Policy == StaticRecordListPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticRecordListPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "e6e67decba7328a76e16c522269b667c9df51c2beab7540118fb8a22a0ce7f0b",
+            revised: "afe024a9eb8d535a9f2b9d73afbed9506d1090ad1174fcc2e106fa6eb2ca4a66",
+            format2First: "e6e67decba7328a76e16c522269b667c9df51c2beab7540118fb8a22a0ce7f0b",
+            format2Revised: "afe024a9eb8d535a9f2b9d73afbed9506d1090ad1174fcc2e106fa6eb2ca4a66")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("draft", vDraft.toSaved()),
+            SavedEntry("last", vLast.toSaved()),
+            SavedEntry("days", SavedValues.list(vDays) { $0.toSaved() }),
+            SavedEntry("copies", SavedValues.list(vCopies) { $0.toSaved() }),
+            SavedEntry("total", SavedValues.of(vTotal)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticRecordListDayRecord.fromSaved(try saved.variable("draft"), "draft")
+        let value1 = try StaticRecordListDayRecord.fromSaved(try saved.variable("last"), "last")
+        let value2 = try SavedValues.list(try saved.variable("days"), "days", capacity: 3) { e, w in try StaticRecordListDayRecord.fromSaved(e, w) }
+        let value3 = try SavedValues.list(try saved.variable("copies"), "copies", capacity: 3) { e, w in try StaticRecordListDayRecord.fromSaved(e, w) }
+        let value4 = try SavedValues.uint32(try saved.variable("total"), "total")
+        let value5 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vDraft = value0
+            self.vLast = value1
+            self.vDays = value2
+            self.vCopies = value3
+            self.vTotal = value4
+            self.vErrors = value5
+        }
+    }
+}

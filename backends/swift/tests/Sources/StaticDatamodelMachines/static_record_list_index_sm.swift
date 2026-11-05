@@ -108,6 +108,24 @@ public struct StaticRecordListIndexDayRecord: Equatable, Sendable, SceDefault {
         self.month = month
         self.dayOfMonth = dayOfMonth
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "year", value: SavedValues.of(year)),
+            (key: "month", value: SavedValues.of(month)),
+            (key: "dayOfMonth", value: SavedValues.of(dayOfMonth)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticRecordListIndexDayRecord {
+        StaticRecordListIndexDayRecord(
+            year: try SavedValues.uint16(try SavedValues.field(value, what, "year"), "\(what).year"),
+            month: try SavedValues.uint8(try SavedValues.field(value, what, "month"), "\(what).month"),
+            dayOfMonth: try SavedValues.uint8(try SavedValues.field(value, what, "dayOfMonth"), "\(what).dayOfMonth")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -811,3 +829,63 @@ extension Engine where Policy == StaticRecordListIndexPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticRecordListIndexPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8",
+            revised: "f8bd629347138fed4eef08c8e38f31d2583238f54c1aa4deb4acb2039f0fe050",
+            format2First: "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8",
+            format2Revised: "f8bd629347138fed4eef08c8e38f31d2583238f54c1aa4deb4acb2039f0fe050")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("draft", vDraft.toSaved()),
+            SavedEntry("picked", vPicked.toSaved()),
+            SavedEntry("days", SavedValues.list(vDays) { $0.toSaved() }),
+            SavedEntry("cursor", SavedValues.of(vCursor)),
+            SavedEntry("day", SavedValues.of(vDay)),
+            SavedEntry("year", SavedValues.of(vYear)),
+            SavedEntry("sum", SavedValues.of(vSum)),
+            SavedEntry("ordered", SavedValues.of(vOrdered)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticRecordListIndexDayRecord.fromSaved(try saved.variable("draft"), "draft")
+        let value1 = try StaticRecordListIndexDayRecord.fromSaved(try saved.variable("picked"), "picked")
+        let value2 = try SavedValues.list(try saved.variable("days"), "days", capacity: 3) { e, w in try StaticRecordListIndexDayRecord.fromSaved(e, w) }
+        let value3 = try SavedValues.int32(try saved.variable("cursor"), "cursor")
+        let value4 = try SavedValues.uint8(try saved.variable("day"), "day")
+        let value5 = try SavedValues.uint16(try saved.variable("year"), "year")
+        let value6 = try SavedValues.uint32(try saved.variable("sum"), "sum")
+        let value7 = try SavedValues.bool(try saved.variable("ordered"), "ordered")
+        let value8 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        return { [self] in
+            self.vDraft = value0
+            self.vPicked = value1
+            self.vDays = value2
+            self.vCursor = value3
+            self.vDay = value4
+            self.vYear = value5
+            self.vSum = value6
+            self.vOrdered = value7
+            self.vRefusals = value8
+        }
+    }
+}

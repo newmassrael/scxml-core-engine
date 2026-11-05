@@ -104,6 +104,24 @@ public struct StaticStateAlgorithmOptionalGoalRecord: Equatable, Sendable, SceDe
         self.day = day
         self.weight = weight
     }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "id", value: SavedValues.of(id)),
+            (key: "day", value: SavedValues.optional(day) { SavedValues.of($0) }),
+            (key: "weight", value: SavedValues.of(weight)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticStateAlgorithmOptionalGoalRecord {
+        StaticStateAlgorithmOptionalGoalRecord(
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            day: try SavedValues.optional(try SavedValues.field(value, what, "day"), "\(what).day") { e, w in try SavedValues.int64(e, w) },
+            weight: try SavedValues.int32(try SavedValues.field(value, what, "weight"), "\(what).weight")
+        )
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -725,3 +743,60 @@ extension Engine where Policy == StaticStateAlgorithmOptionalPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticStateAlgorithmOptionalPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "7307b7bfcadb8bdd01e279cefed31fec3445cce0265d74b56d005a0220d09ef9",
+            revised: "2ac037b6dacd401bd691f3d511299403df4ebfeae17964fb4fc8733f14099c4c",
+            format2First: "7307b7bfcadb8bdd01e279cefed31fec3445cce0265d74b56d005a0220d09ef9",
+            format2Revised: "2ac037b6dacd401bd691f3d511299403df4ebfeae17964fb4fc8733f14099c4c")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("goals", SavedValues.list(vGoals) { $0.toSaved() }),
+            SavedEntry("draft", vDraft.toSaved()),
+            SavedEntry("today", SavedValues.of(vToday)),
+            SavedEntry("first", SavedValues.optional(vFirst) { SavedValues.of($0) }),
+            SavedEntry("left", SavedValues.optional(vLeft) { SavedValues.of($0) }),
+            SavedEntry("undated", SavedValues.of(vUndated)),
+            SavedEntry("total", SavedValues.of(vTotal)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.list(try saved.variable("goals"), "goals", capacity: 4) { e, w in try StaticStateAlgorithmOptionalGoalRecord.fromSaved(e, w) }
+        let value1 = try StaticStateAlgorithmOptionalGoalRecord.fromSaved(try saved.variable("draft"), "draft")
+        let value2 = try SavedValues.int64(try saved.variable("today"), "today")
+        let value3 = try SavedValues.optional(try saved.variable("first"), "first") { e, w in try SavedValues.int64(e, w) }
+        let value4 = try SavedValues.optional(try saved.variable("left"), "left") { e, w in try SavedValues.int64(e, w) }
+        let value5 = try SavedValues.uint32(try saved.variable("undated"), "undated")
+        let value6 = try SavedValues.int64(try saved.variable("total"), "total")
+        let value7 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vGoals = value0
+            self.vDraft = value1
+            self.vToday = value2
+            self.vFirst = value3
+            self.vLeft = value4
+            self.vUndated = value5
+            self.vTotal = value6
+            self.vErrors = value7
+        }
+    }
+}
