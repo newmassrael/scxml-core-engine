@@ -903,10 +903,14 @@ fn collect_donedata_causes(
     // `<content expr="...">` forces a script engine, and so does inline
     // text under a data model that has a value expression language: the
     // first of the ECMAScript data model appendix's readings is an
-    // evaluation, and which one applies is decided by lowering the text
-    // here. Only a Null-data-model literal body is free of it — that path
-    // emits a string constant, through the codegen literal branch and the
-    // interpreter's `DoneDataHelper::emitContentLiteral` alike.
+    // evaluation. Text that reads as a fixed value — XML, a literal, the
+    // string it spells ([`crate::filters::inline_content_reading`]) — is
+    // finished at build time by every backend's `<final>` template, and is
+    // still counted here: the C11 backend keeps a done event's data in the
+    // engine's state (`_sce_donedata`), which is where a parent lifts a
+    // child's from. Only a Null-data-model literal body is free of it — that
+    // path emits a string constant, through the codegen literal branch and
+    // the interpreter's `DoneDataHelper::emitContentLiteral` alike.
     if matches!(
         dd.content,
         DoneDataContent::Expression(_) | DoneDataContent::InlineText(_)

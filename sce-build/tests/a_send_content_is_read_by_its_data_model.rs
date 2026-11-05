@@ -174,6 +174,72 @@ fn the_reading_does_not_follow_from_an_engine_needed_elsewhere() {
     }
 }
 
+/// A `<donedata>`'s XML `<content>` is read by the same classification: the
+/// done event carries the document text for the receiver to build the DOM
+/// from, and no backend hands the markup to its engine as an expression,
+/// which raised error.execution where the document carried a document.
+#[test]
+fn a_donedata_xml_content_is_its_text_and_not_an_expression() {
+    let doc = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"
+       datamodel="ecmascript">
+  <state id="s">
+    <transition target="f"/>
+  </state>
+  <final id="f">
+    <donedata><content><books xmlns=""><book title="x"/></books></content></donedata>
+  </final>
+</scxml>
+"#;
+    // How each backend writes the done data it finished at build time, up to
+    // the markup's first element, and how it would have handed the markup to
+    // its engine.
+    for (language, carried, evaluated) in [
+        (
+            "rust",
+            "done_event_data = String::from(\"<books",
+            "evaluate_expression(&sid, \"<books",
+        ),
+        (
+            "go",
+            "doneEventData = \"<books",
+            "EvaluateExpression(p.SessionID, `<books",
+        ),
+        (
+            "kotlin",
+            "doneEventData = \"<books",
+            "engineDD.evaluateExpr(sidDD",
+        ),
+        ("swift", "doneEventData = \"<books", "evaluateJSON(\"<books"),
+        (
+            "cpp",
+            "eventData = \"<books",
+            "DoneDataHelper::evaluateContent(",
+        ),
+        (
+            "python",
+            "_done_data = \"<books",
+            "_done_data = engine._script_engine.evaluate_expression(",
+        ),
+        (
+            "c",
+            "_sce_donedata = setmetatable({ \\\"<books",
+            "_sce_donedata = (<books",
+        ),
+    ] {
+        let (ok, out, generated) = generate(language, doc);
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            generated.contains(carried),
+            "{language}: the done data is the XML as written, `{carried}` was not written"
+        );
+        assert!(
+            !generated.contains(evaluated),
+            "{language}: the XML is handed to the engine as an expression (`{evaluated}`)"
+        );
+    }
+}
+
 /// Text that is an expression of the document is evaluated when the send
 /// runs, and that is what costs the machine its engine: the analysis names
 /// the content as the cause.

@@ -627,15 +627,26 @@
                         eventData = ::SCE::EventDataHelper::scriptValueToJsonString(contentValue);
                         typedData = std::move(contentValue);
                     }
+{% elif state.donedata.content.kind == "inline_text" and (state.donedata.content.text | inline_content_reading(model.datamodel)).kind != "expression" %}
+{# W3C SCXML B.2: inline text the data model reads as a value fixed by the text
+   alone (`inline_content_reading`, the one answer every backend and the
+   script-engine analysis read): the XML as written, which the receiver builds
+   the DOM from, or a literal's JSON, finished at build time. The typed value is
+   what a JSON text parses as and none for XML, as for a `<send>`'s XML. #}
+                    // W3C SCXML 5.5: inline text is the content value, finished at build time.
+{% set done_reading = state.donedata.content.text | inline_content_reading(model.datamodel) %}
+                    eventData = {{ done_reading.wire | cpp_text_expr }};
+{% if done_reading.kind == "value" %}
+                    typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
+{% endif %}
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/> against the datamodel.
 {% set donedata_content = state.donedata.content.text | to_script_source_expr %}
 {% else %}
-                    // W3C SCXML B.2: inline text takes the ordered readings —
-                    // an expression when it is one, otherwise the string. The
-                    // reading is decided from the document, so every backend
-                    // reaches the same one for the same text.
+                    // W3C SCXML B.2: inline text that is an expression of the
+                    // document, evaluated now; the analysis counted it, so the
+                    // machine carries the engine.
 {% set donedata_content = state.donedata.content.text | to_script_source_data_content %}
 {% endif %}
                     this->ensureScriptEngine();
