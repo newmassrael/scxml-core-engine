@@ -2130,6 +2130,16 @@ pub struct InvokeSessionCommon {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_is_static: bool,
+    /// Codegen-internal: the child holds the done data of an inline
+    /// `<donedata>` `<content>` itself, having no script engine to keep it in
+    /// ([`SCXMLModel::holds_inline_done_data`]). A backend that lifts a child's
+    /// done data from the child's engine state onto `done.invoke` (§scxml-6.4)
+    /// lifts it from the child's own buffer instead — C11. Derived beside
+    /// [`Self::child_needs_script_engine`], from the same child model, and
+    /// outside the IR contract for the reason [`Param::native_seed`] gives.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_holds_done_data: bool,
     /// Codegen-internal: the child declares `<sce:action>`s, which only a host
     /// that supplies them can start. The parent obtains that host from its own
     /// ([`Self::child_host_call`]); a target that does not yet do so refuses the
@@ -5211,6 +5221,31 @@ impl SCXMLModel {
     /// Every enum [`Self::held_enum`] answers, by the name it answers it for.
     pub fn held_enums(&self) -> std::collections::BTreeMap<String, crate::forge::model::EnumModel> {
         crate::forge::event_schema_check::held_enums(&self.imported_enums, &self.schema_enums)
+    }
+
+    /// Whether the machine holds the done data of a `<final>`'s inline
+    /// `<donedata>` `<content>` itself, rather than in a script engine's state
+    /// (§scxml-5.5).
+    ///
+    /// Inline text that is no expression of the document is finished at build
+    /// time ([`crate::filters::inline_content_reading`]) and costs no engine
+    /// ([`crate::script_engine_analyzer`]), so a document whose only use of
+    /// one was such a text has none to keep it in. The C11 backend writes it
+    /// into the buffer `_done_data` reads, which a compound final's done event
+    /// is built from and a parent lifts a child's done data from. A
+    /// `sce-static` document is not asked: everything its `<donedata>` holds
+    /// is lowered to that buffer whatever it is
+    /// ([`DoneData::native_content`]), and what a parent does with it is that
+    /// data model's.
+    pub fn holds_inline_done_data(&self) -> bool {
+        self.datamodel != Datamodel::SceStatic
+            && !self.needs_script_engine
+            && self.states.values().any(|state| {
+                state
+                    .donedata
+                    .as_ref()
+                    .is_some_and(|done| matches!(done.content, DoneDataContent::InlineText(_)))
+            })
     }
 
     /// Each imported event schema, by event, as a reader that holds one entry

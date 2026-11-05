@@ -3191,14 +3191,32 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            — evaluate against the active datamodel. */
         {{ se.lua_eval_donedata_content(state.donedata.content.text | to_lua_expr) }}
         {% elif state.donedata.content.kind == "inline_text" and (state.donedata.content.text | inline_content_reading(model.datamodel)).kind != "expression" %}
+        {% set done_wire = (state.donedata.content.text | inline_content_reading(model.datamodel)).wire %}
+        {% if model.needs_script_engine %}
         /* W3C SCXML B.2: inline text the data model reads as a value fixed by
            the text alone (`inline_content_reading`, the one answer every
            backend and the script-engine analysis read): the XML as written,
            which the receiver builds the DOM from, or a literal's JSON, both
-           finished at build time. The wire text is stashed as it is
-           (`lua_stash_donedata_wire`), so the done event carries it unchanged
-           rather than the JSON of a string holding it. */
-        {{ se.lua_stash_donedata_wire((state.donedata.content.text | inline_content_reading(model.datamodel)).wire) }}
+           finished at build time. A machine that carries an engine keeps its
+           done data in the engine's state, so the wire text is stashed there
+           as it is (`lua_stash_donedata_wire`), and the done event carries it
+           unchanged rather than the JSON of a string holding it. */
+        {{ se.lua_stash_donedata_wire(done_wire) }}
+        {% else %}
+        /* W3C SCXML B.2: the same finished wire text in a machine with no
+           engine: the reading costs none (`inline_content_reading`), so the
+           analysis gave it none, and the text is copied into the buffer the
+           machine holds (`SCXMLModel::holds_inline_done_data`), which a
+           compound final's done event is built from and a parent or a host
+           reads through `_done_data`. A text too long for it is refused at
+           compile time. */
+        {
+            static const char sce_lit_[] = {{ done_wire | c_char_array_init }};
+            _Static_assert(sizeof(sce_lit_) <= sizeof(sm->done_data),
+                           "<donedata>'s inline <content> does not fit SCE_MAX_DATA_LEN");
+            memcpy(sm->done_data, sce_lit_, sizeof(sce_lit_));
+        }
+        {% endif %}
         {% elif state.donedata.content.kind == "inline_text" %}
         /* W3C SCXML B.2: <content>{{ state.donedata.content.text }}</content>
            that is an expression of the document, evaluated now; the analysis
@@ -3257,7 +3275,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                     "\"{{ state.donedata.content.text | escape_json_string | escape_c }}\"",
                     (size_t)SCE_MAX_DATA_LEN - 1u);
             _done_evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
-            {% elif static_datamodel and state.donedata and (state.donedata.params or state.donedata.native_content or state.donedata.native_content_value) %}
+            {% elif (static_datamodel and state.donedata and (state.donedata.params or state.donedata.native_content or state.donedata.native_content_value)) or (state.donedata and state.donedata.content.kind == "inline_text" and not model.needs_script_engine) %}
             /* §scxml-5.5: the pairs or the text written above ride on this
                event's data, a buffer of the size `done_data` is. */
             memcpy(_done_evt.data, sm->done_data, sizeof(_done_evt.data));

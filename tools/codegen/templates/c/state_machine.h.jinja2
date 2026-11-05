@@ -769,10 +769,11 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     char auto_send_id[SCE_AUTO_SEND_ID_BUF_LEN];
 {% endif %}
 {% if static_done_data %}
-    /* §scxml-5.5: the pairs of a final's `<donedata>`, written when the final is
-       entered as the JSON object a done event carries as its data — what a host
-       reads through `_done_data`, and a compound final's done event is built
-       from. Empty until then. */
+    /* §scxml-5.5: the data of a final's `<donedata>`, written when the final is
+       entered as the text a done event carries as its data — the JSON object of
+       its pairs, or the wire text of an inline `<content>` finished at build
+       time — what a host or a parent reads through `_done_data`, and a compound
+       final's done event is built from. Empty until then. */
     char done_data[SCE_MAX_DATA_LEN];
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
@@ -1999,8 +2000,9 @@ bool {{ csym_prefix }}{{ model.name }}_in_state(const {{ csym_prefix }}{{ model.
 bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}{{ model.name }}_t *sm);
 {% if static_done_data %}
 /* §scxml-5.5: the data the done event of the final this run ended at carries —
-   the JSON object of its `<donedata>` pairs, the ones whose value was computed —
-   or the empty string while no final with a `<donedata>` has been entered. */
+   the JSON object of its `<donedata>` pairs, the ones whose value was computed,
+   or the wire text of its inline `<content>` — or the empty string while no
+   final with a `<donedata>` has been entered. */
 const char *{{ csym_prefix }}{{ model.name }}_done_data(const {{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
 {% for field in static_published %}

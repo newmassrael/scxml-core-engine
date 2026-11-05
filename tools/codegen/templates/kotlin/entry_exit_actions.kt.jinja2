@@ -503,8 +503,12 @@
 {% endif %}
 {# `datamodel="sce-static"`: each param's value is native code
    (`DoneDataParam::native_value`), read from the machine's own fields, so no
-   script engine is asked for any of them. #}
-{% set done_native = state.donedata and ((state.donedata.params | selectattr("native_value") | list | length > 0) or state.donedata.native_content or state.donedata.native_content_value) %}
+   script engine is asked for any of them. Nor is one asked for inline text the
+   data model reads as a value fixed by the text alone (`inline_content_reading`,
+   the one answer every backend and the script-engine analysis read), which a
+   machine with no engine carries as well. #}
+{% set done_inline_fixed = state.donedata and state.donedata.content.kind == "inline_text" and (state.donedata.content.text | inline_content_reading(model.datamodel)).kind != "expression" %}
+{% set done_native = state.donedata and ((state.donedata.params | selectattr("native_value") | list | length > 0) or state.donedata.native_content or state.donedata.native_content_value or done_inline_fixed) %}
 {% if state.is_final and state.donedata and state.donedata.content.kind == "literal" and not state.donedata.params %}
                 // W3C SCXML 5.5: inline <content> text is the value itself — no script engine needed.
                 // Delegates to the SSoT helper shared with C++/Rust/Go backends.

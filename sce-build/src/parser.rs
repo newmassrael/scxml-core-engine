@@ -8807,6 +8807,9 @@ fn child_has_delayed_send(child_model: &SCXMLModel) -> bool {
 /// / `child_needs_event_scheduler` from the same walker.
 fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut InvokeSessionCommon) {
     common.child_needs_script_engine = child_model.needs_script_engine;
+    // §scxml-6.4: where the parent finds the child's done data, which follows
+    // from whether the child has an engine to keep it in.
+    common.child_holds_done_data = child_model.holds_inline_done_data();
     common.child_datamodel_vars =
         Some(child_model.variables.iter().map(|v| v.id.clone()).collect());
     // §scxml-6.4.1: a static parent types each value it hands the child

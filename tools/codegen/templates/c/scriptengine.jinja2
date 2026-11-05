@@ -1077,9 +1077,9 @@
    the same kind of boundary here — an embedder writes to it too.
 
    Caller must gate on `invoke_info.child_needs_script_engine` so the
-   child has a valid `L` to query — children without a script engine
-   never run donedata-expression evaluation, so their carry would be
-   empty anyway. #}
+   child has a valid `L` to query. A child without a script engine keeps
+   its done data in its own buffer instead, which `lift_child_done_data`
+   (`invoke_methods.jinja2`) reads through the child's `_done_data`. #}
 {% macro lua_marshal_child_donedata(child_L_var, evt_var) %}
     {
         (void)luaL_dostring({{ child_L_var }},

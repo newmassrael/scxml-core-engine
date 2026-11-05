@@ -4032,14 +4032,18 @@ fn render_c11(
     // values, are written as JSON into a buffer the machine holds, which a host
     // reads and a compound final's done event is built from. So is an inline
     // `<content>`, finished at build time as the text it spells, and a
-    // `<content expr>` that names one value, read from the fields.
-    let static_done_data = model_lowered.states.values().any(|state| {
-        state.donedata.as_ref().is_some_and(|done| {
-            !done.native_content.is_empty()
-                || !done.native_content_value.is_empty()
-                || done.params.iter().any(|p| !p.native_value.is_empty())
-        })
-    });
+    // `<content expr>` that names one value, read from the fields. Under
+    // another data model a machine with no engine holds an inline `<content>`
+    // there too, finished at build time as the text the data model reads it as
+    // (`SCXMLModel::holds_inline_done_data`).
+    let static_done_data = model_lowered.holds_inline_done_data()
+        || model_lowered.states.values().any(|state| {
+            state.donedata.as_ref().is_some_and(|done| {
+                !done.native_content.is_empty()
+                    || !done.native_content_value.is_empty()
+                    || done.params.iter().any(|p| !p.native_value.is_empty())
+            })
+        });
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
     let host_invoker = crate::forge::host_invoker_interface::render_c11(
