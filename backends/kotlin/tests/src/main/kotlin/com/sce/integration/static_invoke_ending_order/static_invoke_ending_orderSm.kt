@@ -125,6 +125,10 @@ class StaticInvokeEndingOrderStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.heard?.let { vHeard = it }
         params.stampedAt?.let { vStampedAt = it }
         params.answerAt?.let { vAnswerAt = it }
@@ -202,15 +206,17 @@ class StaticInvokeEndingOrderStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "heard" to SavedValues.of(vHeard),
-            "stamped_at" to SavedValues.of(vStampedAt),
-            "answer_at" to SavedValues.of(vAnswerAt),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "heard" to SavedValues.of(vHeard)
+        variables += "stamped_at" to SavedValues.of(vStampedAt)
+        variables += "answer_at" to SavedValues.of(vAnswerAt)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -235,13 +241,23 @@ class StaticInvokeEndingOrderStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("heard"), "heard")
         val saved2 = SavedValues.uint32(savedGrown.variable("stamped_at"), "stamped_at")
         val saved3 = SavedValues.uint32(savedGrown.variable("answer_at"), "answer_at")
-        vHeard = saved1
-        vStampedAt = saved2
-        vAnswerAt = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vHeard = saved1
+            vStampedAt = saved2
+            vAnswerAt = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -254,6 +270,10 @@ class StaticInvokeEndingOrderStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("heard"), "heard")
         SavedValues.uint32(savedGrown.variable("stamped_at"), "stamped_at")
         SavedValues.uint32(savedGrown.variable("answer_at"), "answer_at")
@@ -296,6 +316,9 @@ class StaticInvokeEndingOrderStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticInvokeEndingOrderState, HistoryId>> =
             listOf(StateTarget(StaticInvokeEndingOrderState.Working))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: working's transition 0, as the microstep reads it.
         val transitionWorkingAt0 = EnabledTransition<StaticInvokeEndingOrderState, HistoryId>(
@@ -325,21 +348,25 @@ class StaticInvokeEndingOrderStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticInvokeEndingOrderState? = when (stateId) {
         "working" -> StaticInvokeEndingOrderState.Working
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticInvokeEndingOrderState): String = when (state) {
         is StaticInvokeEndingOrderState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticInvokeEndingOrderState): Int = when (state) {
         is StaticInvokeEndingOrderState.Working -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticInvokeEndingOrderEvent? = when (name) {
@@ -352,6 +379,7 @@ class StaticInvokeEndingOrderStateMachine(
         "stamped" -> StaticInvokeEndingOrderEvent.Stamped
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticInvokeEndingOrderEvent): String? = when (event) {
@@ -368,34 +396,42 @@ class StaticInvokeEndingOrderStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticInvokeEndingOrderState,
-        event: StaticInvokeEndingOrderEvent?
-    ): EnabledTransition<StaticInvokeEndingOrderState, HistoryId>? = when (state) {
-        is StaticInvokeEndingOrderState.Working -> when {
-            event is StaticInvokeEndingOrderEvent.Ask -> transitionWorkingAt0
-            event is StaticInvokeEndingOrderEvent.Stamped -> transitionWorkingAt1
-            event is StaticInvokeEndingOrderEvent.Answer -> transitionWorkingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticInvokeEndingOrderState, event: StaticInvokeEndingOrderEvent?): EnabledTransition<StaticInvokeEndingOrderState, HistoryId>? = when (state) {
+        is StaticInvokeEndingOrderState.Working -> firstEnabledTransitionOfWorking(state, event)
     }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: StaticInvokeEndingOrderState, event: StaticInvokeEndingOrderEvent?): EnabledTransition<StaticInvokeEndingOrderState, HistoryId>? = when {
+        event is StaticInvokeEndingOrderEvent.Ask -> TransitionsPart0.transitionWorkingAt0
+        event is StaticInvokeEndingOrderEvent.Stamped -> TransitionsPart0.transitionWorkingAt1
+        event is StaticInvokeEndingOrderEvent.Answer -> TransitionsPart0.transitionWorkingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_invoke_ending_order.scxml:35 :: _machine
     override fun onEntry(state: StaticInvokeEndingOrderState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticInvokeEndingOrderState.Working -> {
+            is StaticInvokeEndingOrderState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: static_invoke_ending_order.scxml:42 :: working :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("worker", state)
-            }
-        }
+                deferStaticInvoke("worker", StaticInvokeEndingOrderState.Working)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -408,9 +444,20 @@ class StaticInvokeEndingOrderStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: StaticInvokeEndingOrderState) {
         when (invokeId) {
-            "worker" -> run {
+            "worker" -> startInvokeOfWorkingAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfWorkingAt0(state: StaticInvokeEndingOrderState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "working.${nextInvokeStart("worker")}.worker"
@@ -422,8 +469,6 @@ class StaticInvokeEndingOrderStateMachine(
                     startInvoke("worker", childSM, false, StaticInvokeEndingOrderEvent.Done.Invoke, "", generatedInvokeId, "", "static_invoke_ending_order__sce_synth_invoke__worker", "worker")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -432,8 +477,18 @@ class StaticInvokeEndingOrderStateMachine(
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
     override fun buildSavedChild(child: SavedChild): ResumedChild<StaticInvokeEndingOrderEvent> = when (child.id) {
-        "worker" -> if (child.document == "static_invoke_ending_order__sce_synth_invoke__worker") {
+        "worker" -> savedChildOfWorkingAt0(child)
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
+    }
+
+
+    private fun savedChildOfWorkingAt0(child: SavedChild): ResumedChild<StaticInvokeEndingOrderEvent> =
+        if (child.document == "static_invoke_ending_order__sce_synth_invoke__worker") {
             ResumedChild(
                 StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(),
                 false, StaticInvokeEndingOrderEvent.Done.Invoke, "", "", "worker",
@@ -441,30 +496,51 @@ class StaticInvokeEndingOrderStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_invoke_ending_order.scxml:35 :: _machine
     override fun onExit(state: StaticInvokeEndingOrderState) {
         when (state) {
-            is StaticInvokeEndingOrderState.Working -> {
-                // SCE-MAP: static_invoke_ending_order.scxml:42 :: working :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("worker")
-            }
+            is StaticInvokeEndingOrderState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: static_invoke_ending_order.scxml:42 :: working :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticInvokeEndingOrderState.Working)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("worker")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_invoke_ending_order.scxml:35 :: _machine
     override fun executeTransitionContent(source: StaticInvokeEndingOrderState, transitionIndex: Int) {
         when (source) {
-        is StaticInvokeEndingOrderState.Working -> when (transitionIndex) {
-            0 -> {
+            is StaticInvokeEndingOrderState.Working -> transitionContentOfWorking(transitionIndex)
+        }
+    }
+
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWorkingAt0()
+            1 -> transitionContentOfWorkingAt1()
+            2 -> transitionContentOfWorkingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: static_invoke_ending_order.scxml:60 :: working :: _transition_0
 
             // W3C SCXML G.7: <sce:action name="beforeQuestion">
@@ -486,8 +562,9 @@ class StaticInvokeEndingOrderStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWorkingAt1() {
                 // SCE-MAP: static_invoke_ending_order.scxml:64 :: working :: _transition_1
 
             if (try { vHeard = com.sce.forge.runtime.SceChecked.add(vHeard, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEndingOrderEvent.Error.Execution, "<assign location='heard'>: an integer operation overflowed or failed"); true }) {
@@ -495,8 +572,9 @@ class StaticInvokeEndingOrderStateMachine(
             }
 
             vStampedAt = vHeard
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfWorkingAt2() {
                 // SCE-MAP: static_invoke_ending_order.scxml:68 :: working :: _transition_2
 
             if (try { vHeard = com.sce.forge.runtime.SceChecked.add(vHeard, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEndingOrderEvent.Error.Execution, "<assign location='heard'>: an integer operation overflowed or failed"); true }) {
@@ -504,9 +582,5 @@ class StaticInvokeEndingOrderStateMachine(
             }
 
             vAnswerAt = vHeard
-            }
-            else -> {}
-        }
-        }
     }
 }

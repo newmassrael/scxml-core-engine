@@ -110,12 +110,10 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        return savedState(savedShape, variables, wallNowMs)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -248,6 +246,9 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticInvokeEndingOrderSceSynthInvokeWorkerState, HistoryId>> =
             listOf(StateTarget(StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StaticInvokeEndingOrderSceSynthInvokeWorkerState, HistoryId>(
@@ -268,21 +269,25 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticInvokeEndingOrderSceSynthInvokeWorkerState? = when (stateId) {
         "waiting" -> StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticInvokeEndingOrderSceSynthInvokeWorkerState): String = when (state) {
         is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticInvokeEndingOrderSceSynthInvokeWorkerState): Int = when (state) {
         is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticInvokeEndingOrderSceSynthInvokeWorkerEvent? = when (name) {
@@ -296,6 +301,7 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticInvokeEndingOrderSceSynthInvokeWorkerEvent): String? = when (event) {
         is StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Answer -> "answer"
@@ -306,6 +312,7 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
         is StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Question -> "question"
         is StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Stamped -> "stamped"
     }
+
 
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `completeHostInvoke`.
@@ -322,23 +329,32 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticInvokeEndingOrderSceSynthInvokeWorkerState,
-        event: StaticInvokeEndingOrderSceSynthInvokeWorkerEvent?
-    ): EnabledTransition<StaticInvokeEndingOrderSceSynthInvokeWorkerState, HistoryId>? = when (state) {
-        is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> when {
-            event is StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Done.Invoke.Clock -> transitionWaitingAt0
-            event is StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Question -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticInvokeEndingOrderSceSynthInvokeWorkerState, event: StaticInvokeEndingOrderSceSynthInvokeWorkerEvent?): EnabledTransition<StaticInvokeEndingOrderSceSynthInvokeWorkerState, HistoryId>? = when (state) {
+        is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticInvokeEndingOrderSceSynthInvokeWorkerState, event: StaticInvokeEndingOrderSceSynthInvokeWorkerEvent?): EnabledTransition<StaticInvokeEndingOrderSceSynthInvokeWorkerState, HistoryId>? = when {
+        event is StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Done.Invoke.Clock -> TransitionsPart0.transitionWaitingAt0
+        event is StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Question -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_invoke_ending_order.scxml:45 :: _machine
     override fun onEntry(state: StaticInvokeEndingOrderSceSynthInvokeWorkerState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> {
+            is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: static_invoke_ending_order.scxml:48 :: waiting :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -352,7 +368,7 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "waiting.${System.identityHashCode(this)}.clock"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -377,34 +393,54 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
                         }
                     }
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_invoke_ending_order.scxml:45 :: _machine
     override fun onExit(state: StaticInvokeEndingOrderSceSynthInvokeWorkerState) {
         when (state) {
-            is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> {
+            is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> onExitOfWaiting()
+        }
+    }
+
+
+    private fun onExitOfWaiting() {
                 // SCE-MAP: static_invoke_ending_order.scxml:48 :: waiting :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-clock-now", "clock")
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_invoke_ending_order.scxml:45 :: _machine
     override fun executeTransitionContent(source: StaticInvokeEndingOrderSceSynthInvokeWorkerState, transitionIndex: Int) {
         when (source) {
-        is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is StaticInvokeEndingOrderSceSynthInvokeWorkerState.Waiting -> transitionContentOfWaiting(transitionIndex)
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            1 -> transitionContentOfWaitingAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_invoke_ending_order.scxml:50 :: waiting :: _transition_0
 
 
@@ -425,8 +461,9 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: static_invoke_ending_order.scxml:53 :: waiting :: _transition_1
 
 
@@ -447,9 +484,5 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        }
     }
 }
