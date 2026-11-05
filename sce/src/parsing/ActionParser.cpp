@@ -416,8 +416,12 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             expr = actionElement->getAttribute("expr");
         } else {
             // W3C SCXML test 530: Use text content as expression
-            // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
-            std::string xmlContent = XmlSerializationHelper::serializeContent(actionElement);
+            // ARCHITECTURE.md Zero Duplication: the children are read by the
+            // helper every in-line value is read by — their markup when they
+            // hold elements, their character data otherwise — so the
+            // whitespace that lays them out in the document is not taken
+            // for part of the value.
+            std::string xmlContent = XmlSerializationHelper::serializeContentBody(actionElement);
             if (!xmlContent.empty()) {
                 expr = XmlSerializationHelper::escapeForJavaScript(xmlContent);
             }

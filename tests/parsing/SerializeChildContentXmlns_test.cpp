@@ -511,4 +511,33 @@ TEST(SerializeContentBody, ContentWithTextIsItsCharactersTrimmed) {
     EXPECT_EQ(SCE::XmlSerializationHelper::serializeContentBody(contentElement), std::string("a < b"));
 }
 
+// ── An element's text, now that whitespace-only runs are kept ──────
+//
+// The document keeps every run of character data, whitespace-only ones too,
+// so markup is handed on as written. A run that is only whitespace lays an
+// element's children out and is not its text: an element holding markup
+// still answers with the markup, and text keeps its own spaces.
+TEST(ElementTextContent, WhitespaceThatLaysOutMarkupIsNotText) {
+    const std::string xml = "<scxml version=\"1.0\">\n"
+                            "  <wrap>\n"
+                            "    <a/>\n"
+                            "  </wrap>\n"
+                            "  <text>  x  </text>\n"
+                            "  <blank>\n"
+                            "  </blank>\n"
+                            "</scxml>";
+
+    auto wrap = parseAndFindChild(xml, "wrap");
+    ASSERT_TRUE(wrap);
+    EXPECT_EQ(wrap->getTextContent(), std::string("<a/>"));
+
+    auto text = parseAndFindChild(xml, "text");
+    ASSERT_TRUE(text);
+    EXPECT_EQ(text->getTextContent(), std::string("  x  "));
+
+    auto blank = parseAndFindChild(xml, "blank");
+    ASSERT_TRUE(blank);
+    EXPECT_EQ(blank->getTextContent(), std::string());
+}
+
 }  // namespace

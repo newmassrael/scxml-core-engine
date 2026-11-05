@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
+#include "actions/AssignAction.h"
 #include "actions/ForeachAction.h"
 #include "actions/IfAction.h"
 #include "actions/SendAction.h"
@@ -8,6 +9,7 @@
 #include "model/DoneData.h"
 #include "model/SCXMLModel.h"
 #include "parsing/SCXMLParser.h"
+#include "parsing/XmlSerializationHelper.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -381,6 +383,55 @@ TEST_F(SCXMLParserBasicTest, AReusedParserResolvesATextDocumentsScriptAgainstNoF
 
     ASSERT_NE(fromFile, nullptr) << "the file's script sits beside it and must load";
     EXPECT_EQ(fromText, nullptr) << "the text's script was resolved against the directory of the file read before it";
+}
+
+// The markup an in-line value holds is handed on as the author wrote it,
+// whitespace inside it included, as sce-build's `content_body` and
+// `inline_data_value` hand it to the generated machines (roxmltree keeps every
+// run of character data). The whitespace that lays the value out in its
+// document is not part of it. Until 2026-11-05 the parse left out every
+// whitespace-only run, so `<a>` below was handed on as `<a><b/></a>`.
+TEST_F(SCXMLParserBasicTest, InLineMarkupKeepsTheWhitespaceWrittenInsideIt) {
+    const std::string value = "        <a>\n"
+                              "          <b/>\n"
+                              "        </a>\n";
+    const std::string scxmlContent = "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"s\">\n"
+                                     "  <datamodel>\n"
+                                     "    <data id=\"d\">\n" +
+                                     value +
+                                     "    </data>\n"
+                                     "  </datamodel>\n"
+                                     "  <state id=\"s\">\n"
+                                     "    <onentry>\n"
+                                     "      <send event=\"e\"><content>\n" +
+                                     value +
+                                     "      </content></send>\n"
+                                     "      <assign location=\"d\">\n" +
+                                     value +
+                                     "      </assign>\n"
+                                     "    </onentry>\n"
+                                     "  </state>\n"
+                                     "</scxml>\n";
+    const std::string written = "<a xmlns=\"http://www.w3.org/2005/07/scxml\">\n"
+                                "          <b/>\n"
+                                "        </a>";
+
+    auto model = parser_->parseContent(scxmlContent);
+    ASSERT_NE(model, nullptr);
+
+    const auto &items = model->getDataModelItems();
+    ASSERT_EQ(items.size(), 1u);
+    EXPECT_EQ(items[0]->getContent(), written) << "<data>";
+
+    const auto blocks = model->findStateById("s")->getEntryActionBlocks();
+    ASSERT_EQ(blocks.size(), 1u);
+    ASSERT_EQ(blocks[0].size(), 2u);
+    auto send = std::dynamic_pointer_cast<SendAction>(blocks[0][0]);
+    ASSERT_NE(send, nullptr);
+    EXPECT_EQ(send->getContent(), written) << "<send><content>";
+    auto assign = std::dynamic_pointer_cast<AssignAction>(blocks[0][1]);
+    ASSERT_NE(assign, nullptr);
+    EXPECT_EQ(assign->getExpr(), XmlSerializationHelper::escapeForJavaScript(written)) << "<assign>";
 }
 
 // Test final states

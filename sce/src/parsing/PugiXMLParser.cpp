@@ -24,6 +24,23 @@
 
 namespace SCE {
 
+namespace {
+
+// How every SCXML document is read, and every reparse of one after an
+// expansion. `parse_default` leaves a run of character data that is only
+// whitespace out of the tree; `parse_ws_pcdata` keeps it, because it is the
+// author's. The children of a `<content>` or a `<data>` are handed on as
+// written — to a host, to a peer over Mesh, to the receiver that builds their
+// DOM — and the code generator reads them with roxmltree, which keeps every
+// run: `<a>\n  <b/>\n</a>` in a `<send>`'s `<content>` was handed on as
+// `<a><b/></a>` by this engine and as written by the generated ones. A reader
+// that wants the markup alone asks for elements (`getChildren`,
+// `serializeElementChildren`), and `getTextContent` reads a whitespace-only
+// run as layout.
+constexpr unsigned int kDocumentParseOptions = pugi::parse_default | pugi::parse_ws_pcdata;
+
+}  // namespace
+
 // ============================================================================
 // PugiXMLElement implementation
 // ============================================================================
@@ -172,14 +189,22 @@ std::string PugiXMLElement::getTextContent() const {
             text += child.value();
         }
     }
-    if (!text.empty()) {
+    // Character data that is only whitespace lays the element's children out
+    // rather than saying anything: the document keeps such runs
+    // (`kDocumentParseOptions`), and one is what stands around `<a/>` in
+    // `<content>\n  <a/>\n</content>`. It reads as no text, as it did while
+    // the parse left it out, and the markup below is the answer.
+    if (text.find_first_not_of(" \t\r\n") != std::string::npos) {
         return text;
     }
 
-    // If no direct text, get inner XML (handles <cpp>...</cpp> etc.)
+    // If no direct text, get inner XML (handles <cpp>...</cpp> etc.): the
+    // element children, each as written.
     std::ostringstream ss;
     for (const auto &child : node_.children()) {
-        child.print(ss, "", pugi::format_raw);
+        if (child.type() == pugi::node_element) {
+            child.print(ss, "", pugi::format_raw);
+        }
     }
     return ss.str();
 }
@@ -466,7 +491,8 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
         // to see the expanded tree. Mirrors processSceTemplate's
         // reset+load_buffer pattern (PugiXMLParser.cpp:406-413).
         doc_->reset();
-        const auto parseResult = doc_->load_buffer(expanded.expanded_text.data(), expanded.expanded_text.size());
+        const auto parseResult =
+            doc_->load_buffer(expanded.expanded_text.data(), expanded.expanded_text.size(), kDocumentParseOptions);
         if (!parseResult) {
             throw SCE::parsing::ParseXmlFailed("Failed to reparse expanded XInclude: " +
                                                std::string(parseResult.description()));
@@ -581,7 +607,8 @@ SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(const SCE::parsing
     // deallocating the owning shared_ptr, then load_buffer populates
     // it with the expanded bytes.
     doc_->reset();
-    const auto parseResult = doc_->load_buffer(expanded.expanded_text.data(), expanded.expanded_text.size());
+    const auto parseResult =
+        doc_->load_buffer(expanded.expanded_text.data(), expanded.expanded_text.size(), kDocumentParseOptions);
     if (!parseResult) {
         throw SCE::parsing::ParseXmlFailed("Failed to reparse expanded template: " +
                                            std::string(parseResult.description()));
@@ -636,7 +663,7 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
     std::string sourceText = buffer.str();
 
     auto doc = std::make_shared<pugi::xml_document>();
-    pugi::xml_parse_result result = doc->load_buffer(sourceText.data(), sourceText.size());
+    pugi::xml_parse_result result = doc->load_buffer(sourceText.data(), sourceText.size(), kDocumentParseOptions);
 
     if (!result) {
         const std::string msg = result.description();
@@ -671,7 +698,7 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &con
 
     // Parse from string using pugixml
     auto doc = std::make_shared<pugi::xml_document>();
-    pugi::xml_parse_result result = doc->load_string(content.c_str());
+    pugi::xml_parse_result result = doc->load_string(content.c_str(), kDocumentParseOptions);
 
     if (!result) {
         const std::string msg = result.description();

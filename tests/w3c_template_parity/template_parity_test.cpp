@@ -283,10 +283,16 @@ std::string canonicalise(const std::string &xmlText) {
     return os.str();
 }
 
+// The C++ side's document after preprocessing, in the canonical form the Rust
+// side's text is put in. A reparse after an expansion keeps whitespace-only
+// runs of character data (`kDocumentParseOptions`, PugiXMLParser.cpp) and
+// `canonicalise` does not, so the saved document is read back through
+// `canonicalise` rather than compared as it stands: one function decides the
+// canonical form for both producers.
 std::string canonicaliseDocument(const pugi::xml_document &doc) {
     std::ostringstream os;
     doc.save(os, "", pugi::format_raw | pugi::format_no_declaration);
-    return os.str();
+    return canonicalise(os.str());
 }
 
 // Load a fixture into a pugi::xml_document and run the C++

@@ -42,18 +42,20 @@ public:
     static std::string serializeContent(const std::shared_ptr<IXMLElement> &element);
 
     /**
-     * @brief The body of an inline `<content>`, of a `<send>` or of an `<invoke>`
-     * @param content The `<content>` element
+     * @brief The body of an in-line value: a `<content>` of a `<send>`, an
+     *        `<invoke>` or a `<donedata>`, a `<data>`, an `<assign>`
+     * @param content The element whose children are the value
      * @return Its child markup, serialized, when it holds elements, and its
      *         character data otherwise (text and CDATA, unescaped) — trimmed
      *         either way
      *
-     * One reading for every inline `<content>`, and the one sce-build's
-     * `content_body` gives the generated machines, so both engines hand a
-     * host processor and a local delivery the same text for one element. The
-     * whitespace that lays the element out in its document is not part of
-     * its content: `<content>` written over three lines holds the text of
-     * its middle line.
+     * One reading for every in-line value, and the one sce-build's
+     * `content_body` and `inline_data_value` give the generated machines, so
+     * both engines hand a host processor and a local delivery the same text
+     * for one element. The whitespace that lays the element out in its
+     * document is not part of its content: `<content>` written over three
+     * lines holds the text of its middle line. The whitespace inside the
+     * markup is, and is kept as written: `<a>\n  <b/>\n</a>` stays that.
      */
     static std::string serializeContentBody(const std::shared_ptr<IXMLElement> &content);
 
