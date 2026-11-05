@@ -137,7 +137,8 @@ struct {{ struct_name }} {
     {{ field.cpp_type }} {{ field.id }}{% if field.cpp_default_init is defined %}{{ field.cpp_default_init }}{% else %}{}{% endif %};
 {% endfor %}
 {% endif %}
-{% if has_variant %}
+{# A variant printed from its plan holds its arm privately, in `cpp_source`. #}
+{% if has_variant and not cpp_source %}
 {% if variant.default_arm_index is defined and variant.has_feature_gated_arm %}
     // RFC variant-default-uniformity (Cpp): a freshly-constructed
     // envelope holds the arm marked `<sce:arm default="true"/>`, which
@@ -262,12 +263,17 @@ struct {{ struct_name }} {
 {% endif %}
             }
         }
+{% if cpp_source %}
+{{ cpp_source.decoded }}
+        return _decoded;
+{% else %}
         return {{ struct_name }}{
 {% for field in fields %}
             /*{{ field.id }}=*/{{ field.id }},
 {% endfor %}
             /*body=*/body,
         };
+{% endif %}
 {% elif needs_streaming %}
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every

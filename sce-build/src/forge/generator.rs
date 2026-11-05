@@ -23398,10 +23398,13 @@ fn parent_tag_match_term_cpp(d: &ParentTagDerivation, imports: &[ImportContext])
     let import = parent_tag_embed_import(d, imports);
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
+    // A variant printed from its plan holds its arm privately and presents
+    // it through `body()` (docs/adr/0081 step 4).
+    let member = if import.cpp_printed { "body()" } else { "body" };
     let body = if d.present_if.is_some() {
-        format!("(*{snake}).body")
+        format!("(*{snake}).{member}")
     } else {
-        format!("{snake}.body")
+        format!("{snake}.{member}")
     };
     let body_access = format!("{body}.index()");
     let catch_all = d.catch_all.then(|| {

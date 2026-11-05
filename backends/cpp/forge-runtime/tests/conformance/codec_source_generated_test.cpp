@@ -33,6 +33,7 @@
 #include "codec_repeat_basic.h"
 #include "codec_simple_frame.h"
 #include "codec_zenoh_decl_subscriber.h"
+#include "codec_zenoh_ext_entry.h"
 #include "codec_zenoh_locator.h"
 #include "codec_zenoh_wireexpr.h"
 
@@ -43,6 +44,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -599,6 +601,58 @@ void a_list_is_written_entry_by_entry_and_its_count_derived() {
           "a decoded value holds its entries");
 }
 
+namespace ExtEntry = ::SCE::Generated::CodecZenohExtEntry;
+using ExtUnit = ::SCE::Generated::CodecZenohExtUnit::CodecZenohExtUnit;
+using ExtZint = ::SCE::Generated::CodecZenohExtZint::CodecZenohExtZint;
+using ExtZbuf = ::SCE::Generated::CodecZenohExtZbuf::CodecZenohExtZbuf;
+
+// A zint extension of the consumer's own: a source of the zint arm's codec.
+struct OwnZint {
+    [[nodiscard]] std::uint64_t value() const noexcept {
+        return 7;
+    }
+};
+
+// An extension whose body is the consumer's own variant: alternative `i` a
+// source of the codec of arm `i`, the catch-all last.
+struct OwnExtension {
+    [[nodiscard]] std::uint8_t header() const noexcept {
+        return 0x01;
+    }
+
+    [[nodiscard]] std::variant<ExtUnit, OwnZint, ExtZbuf, ExtEntry::CodecZenohExtEntryDefault> body() const noexcept {
+        return OwnZint{};
+    }
+};
+
+static_assert(ExtEntry::is_source<OwnExtension>::value,
+              "a variant of a source of each arm's codec in turn is a body a source may present");
+
+void a_variant_derives_its_tag_from_the_arm_it_holds() {
+    // The header says no arm; the arm the value holds says the tag.
+    const ExtEntry::CodecZenohExtEntry entry{0x01,
+                                             ExtEntry::CodecZenohExtEntryVariant{std::in_place_index<1>, ExtZint{5}}};
+    CHECK(entry.encode_to_vec() == (std::vector<std::uint8_t>{0x21, 0x05}),
+          "the zint arm sets the enc bits to its tag beside the header's other bits");
+
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!ExtEntry::Wire::encode_source(OwnExtension{}, sink).has_value() &&
+              out == (std::vector<std::uint8_t>{0x21, 0x07}),
+          "a consumer's own arm is written by the arm's codec, its tag derived alike");
+
+    const ExtEntry::CodecZenohExtEntry unknown{
+        0x01, ExtEntry::CodecZenohExtEntryVariant{ExtEntry::CodecZenohExtEntryDefault{3, ExtUnit{}}}};
+    CHECK(unknown.encode_to_vec() == std::vector<std::uint8_t>{0x61},
+          "the catch-all writes the tag it holds into the enc bits");
+
+    const std::vector<std::uint8_t> frame{0x21, 0x05};
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = ExtEntry::CodecZenohExtEntry::decode(cursor);
+    CHECK(decoded.has_value() && decoded->body().index() == 1 && std::get<1>(decoded->body()).value() == 5,
+          "a decoded value holds the arm its tag names");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -620,6 +674,7 @@ int main() {
     a_body_is_encoded_over_the_source_its_holder_presents();
     an_input_the_value_says_is_read_off_the_value_and_handed_on();
     a_list_is_written_entry_by_entry_and_its_count_derived();
+    a_variant_derives_its_tag_from_the_arm_it_holds();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

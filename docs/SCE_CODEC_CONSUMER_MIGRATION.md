@@ -1219,6 +1219,19 @@ sections above apply.
 - A source of the codec may present the list as any `Bounded<L, N>` with `N` at most `MAX`, of entries that are
   sources of the entry codec: a `Bounded<std::vector<MyEntry>, 8>` of your own type is written as is.
 
+## A printed C++ variant codec derives its tag from the arm it holds (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the variant codecs
+whose tag a field or flag of their own holds and whose arms are printed (5 more codecs of the resources, 80 in all).
+The sections above apply.
+
+- The arm is `value.body()`, a `const {Codec}Variant&`, where it was the member `value.body`. The value is made by
+  its constructor, the arm last: `CodecZenohExtEntry{header, CodecZenohExtEntryVariant{std::in_place_index<1>, zint}}`.
+- The tag bits are derived from the arm: the header you pass need not name the arm, and its tag bits are ignored on
+  encode. The catch-all `{Codec}Default{tag, body}` writes the tag it holds, masked to the tag's bits.
+- A source presents its body as any `std::variant` whose alternative `i` is a source of arm `i`'s codec (the
+  catch-all alternative has `tag` and `body` members), so your own arm types encode as the generated ones do.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

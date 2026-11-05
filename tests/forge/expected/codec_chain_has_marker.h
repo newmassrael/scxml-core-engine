@@ -71,7 +71,7 @@ struct CodecChainHasMarker {
         bool _has_extensions_18 = false;
         if (extensions.has_value()) {
             for (const auto& _e : *extensions) {
-                if ((static_cast<std::uint64_t>(_e.header) & 127ULL) == 18ULL) {
+                if ((static_cast<std::uint64_t>(_e.header()) & 127ULL) == 18ULL) {
                     _has_extensions_18 = true;
                     break;
                 }
@@ -174,7 +174,7 @@ struct CodecChainHasMarker {
         bool _has_extensions_18 = false;
         if (extensions.has_value()) {
             for (const auto& _e : *extensions) {
-                if ((static_cast<std::uint64_t>(_e.header) & 127ULL) == 18ULL) {
+                if ((static_cast<std::uint64_t>(_e.header()) & 127ULL) == 18ULL) {
                     _has_extensions_18 = true;
                     break;
                 }

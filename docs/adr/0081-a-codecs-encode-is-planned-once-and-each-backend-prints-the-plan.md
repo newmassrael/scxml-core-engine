@@ -436,6 +436,16 @@ old encode, the old encode and its templates are removed in the same landing.
    codec's `Wire`. `Bounded` reads a list that is not held in a row (its `data` and indexing only where the list
    has them). A chain whose entries end on a flag it sets, are handed an input from the entry before, or are held to
    a law, and a list a gate decides, wait for their landings. The printed set is 75 codecs.
+
+   *The eighth C++ landing, 2026-11-06:* a variant whose tag a field or a flag of the codec's own holds, of arms of
+   printed codecs under no build feature. The value holds the arm in the `{Codec}Variant` the template defined (each
+   arm's value in turn, the catch-all `{Codec}Default{tag, body}` last), privately, and presents it as `body()`; a
+   value made by default holds the arm marked `default="true"`. A source presents the body as any `std::variant` of
+   a source of each arm's codec in turn (`is_body`), the catch-all holding its `tag` and its `body`; the encode derives
+   the tag from the arm the body holds, the catch-all's masked to the tag's bits, and writes the arm by its codec's
+   `Wire`. A codec the template still writes reads an embedded printed variant through `body()`. A variant whose
+   caller hands its tag, whose arm's own header holds it, or with an arm under a feature, waits. The printed set is
+   80 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

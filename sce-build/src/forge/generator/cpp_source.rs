@@ -38,8 +38,39 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     };
     let m = plan.model;
     let mut forms = Vec::new();
-    if m.variant.is_some() {
-        forms.push("a variant".to_string());
+    // A variant is presented as the arm the value holds, each arm's body a
+    // source of its codec, and written by that codec's encode; its tag is
+    // derived from the arm into a field of the codec's own. One whose caller
+    // hands the tag, whose arm's own header holds it, or one with an arm a build
+    // feature decides, is not yet.
+    if let Some(variant) = &m.variant {
+        if variant.tag_field.is_none() {
+            forms.push("a variant whose caller hands its tag".to_string());
+        }
+        if variant.peek_byte.is_some() {
+            forms.push("a variant whose arm's own header holds its tag".to_string());
+        }
+        for arm in &plan.arms {
+            if arm.feature.is_some() {
+                forms.push(format!("`{}`, an arm a build feature decides", arm.codec));
+            }
+            if !held_printed(imports, arm.codec) {
+                forms.push(format!(
+                    "`{}`, an arm of a codec the printer does not print",
+                    arm.codec
+                ));
+            }
+            if plan
+                .handed
+                .get(arm.codec)
+                .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
+            {
+                forms.push(format!(
+                    "`{}`, an arm handed an input nothing binds",
+                    arm.codec
+                ));
+            }
+        }
     }
     for element in &plan.elements {
         let id = &element.field.id;
@@ -329,6 +360,9 @@ fn derivation_unlowered(derived: &crate::forge::encode_plan::Derived<'_>) -> Opt
             && !presence.together)
             .then(|| format!("`{element}`, a flag of fields that may disagree on it")),
         (_, Derive::Number(number)) => number_unlowered(element, number),
+        // The tag of the arm the value holds, into the field or the flag that
+        // holds it.
+        (ElementId::Field(_) | ElementId::Flag { .. }, Derive::VariantTag) => None,
         (ElementId::Field(id), _) => Some(format!("`{id}`, a tag or a flag the encode derives")),
         _ => Some(format!("`{element}`, a flag the encode derives")),
     }
@@ -396,13 +430,13 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
     }
 }
 
-/// Whether the plan derives the field `id` whole as a number, which the value
-/// does not present: the encode computes it as the local `_d_<id>`, and the
-/// decode reads it and drops it.
+/// Whether the plan derives the field `id` whole, as a number or as the tag of
+/// the arm the value holds, which the value does not present: the encode
+/// computes it as the local `_d_<id>`, and the decode reads it and drops it.
 fn derived_number(plan: &EncodePlan<'_>, id: &str) -> bool {
     plan.derivations.iter().any(|derived| {
         matches!(&derived.element, ElementId::Field(element) if element == id)
-            && matches!(derived.by, Derive::Number(_))
+            && matches!(derived.by, Derive::Number(_) | Derive::VariantTag)
     })
 }
 
@@ -517,6 +551,101 @@ struct Presented<'p> {
     /// Where it is a list of entries of a codec, that codec and the list's
     /// bounds, as `Max` or `Max, Min`.
     list: Option<(HeldCodec, String)>,
+}
+
+/// The variant of a printed codec: the type the value holds the arm in (the
+/// template's `{Codec}Variant`, a `std::variant` of each arm's value in the
+/// plan's order, the catch-all `{Codec}Default` last), each arm's codec and the
+/// tag it names (`None` for the catch-all, which holds its tag), and the arm a
+/// value made by default holds.
+struct VariantPart {
+    type_name: String,
+    arms: Vec<(HeldCodec, Option<u64>)>,
+    default_index: Option<usize>,
+}
+
+impl VariantPart {
+    fn of(plan: &EncodePlan<'_>, imports: &[ImportContext], struct_name: &str) -> Option<Self> {
+        let variant = plan.model.variant.as_ref()?;
+        let arms = plan
+            .arms
+            .iter()
+            .map(|arm| {
+                let (_, namespace) = held_codec(imports, arm.codec);
+                (
+                    HeldCodec {
+                        namespace: namespace.to_string(),
+                        alias: arm.codec.to_string(),
+                    },
+                    arm.tag,
+                )
+            })
+            .collect();
+        Some(VariantPart {
+            type_name: format!("{struct_name}Variant"),
+            arms,
+            default_index: variant.arms.iter().position(|arm| arm.is_default),
+        })
+    }
+
+    /// The trait, of the codec's namespace, that says whether what a source
+    /// presents as the body is a `std::variant` of a source of each arm's codec
+    /// in turn, the catch-all one holding its `tag` and its `body`.
+    fn traits(&self) -> String {
+        let n = self.arms.len();
+        let mut out = String::new();
+        let mut each: Vec<String> = Vec::new();
+        for (index, (held, tag)) in self.arms.iter().enumerate() {
+            let alt = format!("std::variant_alternative_t<{index}, R>");
+            match tag {
+                Some(_) => each.push(format!("{}::is_source<{alt}>", held.namespace)),
+                None => {
+                    out.push_str(&format!(
+                        "/// Whether `D` is the catch-all arm of a source's body: the tag it holds,\n\
+                         /// and its body, a source of the catch-all's codec.\n\
+                         template <class D, class = void>\n\
+                         struct is_default_arm : std::false_type {{}};\n\
+                         template <class D>\n\
+                         struct is_default_arm<D, std::void_t<decltype(std::declval<const D&>().tag), decltype(std::declval<const D&>().body)>>\n\
+                         \x20   : std::conjunction<std::is_convertible<decltype(std::declval<const D&>().tag), std::uint64_t>,\n\
+                         \x20                      {}::is_source<std::decay_t<decltype(std::declval<const D&>().body)>>> {{}};\n\n",
+                        held.namespace
+                    ));
+                    each.push(format!("is_default_arm<{alt}>"));
+                }
+            }
+        }
+        out.push_str(&format!(
+            "/// Whether `R` is a body a source may present: the arm it holds, of a\n\
+             /// `std::variant` of a source of each arm's codec in turn.\n\
+             template <class R, class = void>\n\
+             struct is_body : std::false_type {{}};\n\
+             template <class R>\n\
+             struct is_body<R, std::enable_if_t<::SCE::Forge::Detail::IsVariantOf<R, {n}>::value>>\n\
+             \x20   : std::conjunction<{}> {{}};\n\n",
+            each.join(", ")
+        ));
+        out
+    }
+
+    /// Whether reading the body of a source `S`, and every read of the arm it
+    /// holds as a source of that arm's codec, throws nothing.
+    fn nothrow_requirement(&self) -> String {
+        let read = "source::body(std::declval<const S&>())";
+        let body = format!("std::decay_t<decltype({read})>");
+        let mut parts = vec![format!("noexcept({read})")];
+        for (index, (held, tag)) in self.arms.iter().enumerate() {
+            let alt = format!("std::variant_alternative_t<{index}, {body}>");
+            parts.push(match tag {
+                Some(_) => format!("{}::is_nothrow_source<{alt}>::value", held.namespace),
+                None => format!(
+                    "{}::is_nothrow_source<std::decay_t<decltype(std::declval<const {alt}&>().body)>>::value",
+                    held.namespace
+                ),
+            });
+        }
+        parts.join(" && ")
+    }
 }
 
 /// A codec a printed value holds as a body (its class is the element's view):
@@ -723,7 +852,14 @@ pub(super) fn render(
          /// namespace declares (docs/adr/0081, step 4).\n\
          namespace source {{\n"
     ));
-    for Presented { name, .. } in &elements {
+    let variant = VariantPart::of(plan, imports, struct_name);
+    // What a source presents, each read by name: every element, and the body a
+    // variant holds the arm in.
+    let mut readers: Vec<&str> = elements.iter().map(|e| e.name.as_str()).collect();
+    if variant.is_some() {
+        readers.push("body");
+    }
+    for name in &readers {
         before.push_str(&format!(
             "namespace detail_{name} {{\n\
              void {name}() = delete;\n\
@@ -750,9 +886,12 @@ pub(super) fn render(
     }
     before.push_str("}  // namespace source\n\n");
 
-    let names: Vec<&str> = elements.iter().map(|e| e.name.as_str()).collect();
+    let names: Vec<&str> = readers.clone();
     for trait_text in elements.iter().filter_map(Presented::list_trait) {
         before.push_str(&trait_text);
+    }
+    if let Some(variant) = &variant {
+        before.push_str(&variant.traits());
     }
     before.push_str(&format!(
         "/// Whether `S` presents every element of `{struct_name}`, each convertible to\n\
@@ -760,14 +899,21 @@ pub(super) fn render(
          template <class S, class = void>\n\
          struct is_source : std::false_type {{}};\n"
     ));
-    if elements.is_empty() {
+    if names.is_empty() {
         before.push_str("template <class S>\nstruct is_source<S, void> : std::true_type {};\n\n");
     } else {
         let reads: Vec<String> = names
             .iter()
             .map(|n| format!("decltype(source::{n}(std::declval<const S&>()))"))
             .collect();
-        let converts: Vec<String> = elements.iter().map(Presented::source_requirement).collect();
+        let mut converts: Vec<String> =
+            elements.iter().map(Presented::source_requirement).collect();
+        if variant.is_some() {
+            converts.push(
+                "is_body<std::decay_t<decltype(source::body(std::declval<const S&>()))>>"
+                    .to_string(),
+            );
+        }
         before.push_str(&format!(
             "template <class S>\n\
              struct is_source<S, std::void_t<{}>>\n\
@@ -782,12 +928,13 @@ pub(super) fn render(
     // generated value's accessors are `noexcept`, so its own `encode` is. A
     // type that is no source is not asked, so the encode's `static_assert` is
     // what names its missing elements.
-    let nothrow = if elements.is_empty() {
+    let nothrow = if names.is_empty() {
         "true".to_string()
     } else {
         elements
             .iter()
             .map(Presented::nothrow_requirement)
+            .chain(variant.as_ref().map(VariantPart::nothrow_requirement))
             .collect::<Vec<_>>()
             .join(" && ")
     };
@@ -818,8 +965,13 @@ pub(super) fn render(
          \x20       static_assert(is_source<S>::value, \"S presents every element of {struct_name}: {}\");\n",
         if names.is_empty() { "none".to_string() } else { names.join(", ") }
     ));
-    if elements.is_empty() {
+    if names.is_empty() {
         before.push_str("        (void)src;\n        (void)w;\n");
+    }
+    // The body a variant holds the arm in is read once, as the source of the
+    // arm's codec it presents.
+    if variant.is_some() {
+        before.push_str("        const auto& _r_body = source::body(src);\n");
     }
     // An input is read where a gate or a held codec needs it, which some
     // layouts never do.
@@ -962,6 +1114,72 @@ pub(super) fn render(
                         });
                     }
                     _ => unreachable!("`unlowered` refuses a number into what holds none"),
+                }
+            }
+            // The tag of the arm the value holds: the value the document gives
+            // a named arm, and the tag the catch-all holds.
+            (element_id, Derive::VariantTag) => {
+                let variant = variant
+                    .as_ref()
+                    .expect("a variant's tag is derived only where the codec has one");
+                let mut cases = String::new();
+                for (index, (_, tag)) in variant.arms.iter().enumerate() {
+                    cases.push_str(&match tag {
+                        Some(tag) => format!(
+                            "            case {index}: _t_body = {tag}ull; break;\n"
+                        ),
+                        None => format!(
+                            "            case {index}: _t_body = static_cast<std::uint64_t>(std::get_if<{index}>(&_r_body)->tag); break;\n"
+                        ),
+                    });
+                }
+                before.push_str(&format!(
+                    "        std::uint64_t _t_body = 0;\n\
+                     \x20       switch (_r_body.index()) {{\n\
+                     {cases}\
+                     \x20           default: break;\n\
+                     \x20       }}\n"
+                ));
+                match element_id {
+                    // The catch-all's tag is held in a whole byte, so it is
+                    // masked to the flag's bits, which leave the carrier's other
+                    // bits as they are.
+                    ElementId::Flag { field, flag } => {
+                        let width = plan
+                            .model
+                            .fields
+                            .iter()
+                            .find(|f| f.id == *field)
+                            .and_then(|carrier| carrier.flags.iter().find(|d| d.name == *flag))
+                            .map(|def| def.width)
+                            .expect("a tag is derived into a flag of a carrier of the codec");
+                        let mask = if width >= 64 {
+                            u64::MAX
+                        } else {
+                            (1u64 << width) - 1
+                        };
+                        folds.entry(field.as_str()).or_default().push(Fold {
+                            flag: flag.clone(),
+                            bits: format!("(_t_body & 0x{mask:X}ull)"),
+                            present: None,
+                        });
+                    }
+                    ElementId::Field(id) => {
+                        let field = plan
+                            .model
+                            .fields
+                            .iter()
+                            .find(|f| f.id == *id)
+                            .expect("a tag is derived into a field of the codec");
+                        let ty = l.type_name(&field.sce_type);
+                        before.push_str(&format!(
+                            "        const {ty} _d_{} = static_cast<{ty}>(_t_body);\n",
+                            l.codec_field_id(&field.id)
+                        ));
+                    }
+                    ElementId::Variant => {
+                        unreachable!("`unlowered` refuses a variant whose caller hands its tag")
+                    }
                 }
             }
             _ => unreachable!("`unlowered` refuses a derivation the printer does not lower"),
@@ -1220,8 +1438,32 @@ pub(super) fn render(
                     Guard::Gate => guarded(gate_test(field), body),
                 });
             }
+            // The arm the value holds, written by its codec's encode over the
+            // source the body presents it as; the catch-all, over its body.
             Write::Variant => {
-                unreachable!("`unlowered` refuses a plan with a variant")
+                let variant = variant
+                    .as_ref()
+                    .expect("a variant's arm is written only where the codec has one");
+                let mut cases = String::new();
+                for (index, (held, tag)) in variant.arms.iter().enumerate() {
+                    let arm = match tag {
+                        Some(_) => format!("*std::get_if<{index}>(&_r_body)"),
+                        None => format!("std::get_if<{index}>(&_r_body)->body"),
+                    };
+                    cases.push_str(&format!(
+                        "            case {index}:\n\
+                         \x20               if (auto _e = {}::Wire::encode_source({arm}, w{}); _e) return _e;\n\
+                         \x20               break;\n",
+                        held.namespace,
+                        handed(&held.alias)
+                    ));
+                }
+                before.push_str(&format!(
+                    "        switch (_r_body.index()) {{\n\
+                     {cases}\
+                     \x20           default: break;\n\
+                     \x20       }}\n"
+                ));
             }
         }
     }
@@ -1248,17 +1490,20 @@ pub(super) fn render(
     // constant expression in C++17; a value of integers alone is both.
     // A body is held by value and moved in; the codec it holds may hold bytes,
     // so a value holding a body is made as one holding bytes is.
-    let holds_bytes = elements
-        .iter()
-        .any(|e| e.bytes || e.body.is_some() || e.list.is_some());
+    // A variant's arm is a codec's value, which may hold bytes, so a value
+    // holding one is made as one holding bytes is.
+    let holds_bytes = variant.is_some()
+        || elements
+            .iter()
+            .any(|e| e.bytes || e.body.is_some() || e.list.is_some());
     let mut members = String::new();
     members.push_str(&format!("    {struct_name}() = default;\n"));
-    if !elements.is_empty() {
-        let params: Vec<String> = elements
+    if !names.is_empty() {
+        let mut params: Vec<String> = elements
             .iter()
             .map(|e| format!("{} {}", e.presented(), e.name))
             .collect();
-        let inits: Vec<String> = elements
+        let mut inits: Vec<String> = elements
             .iter()
             .map(|e| {
                 if e.body.is_some() {
@@ -1268,6 +1513,11 @@ pub(super) fn render(
                 }
             })
             .collect();
+        // The arm the value holds comes last, after the fields before it.
+        if let Some(variant) = &variant {
+            params.push(format!("{} body", variant.type_name));
+            inits.push(format!("{}(std::move(body))", member("body")));
+        }
         let (constexpr, noexcept) = if holds_bytes {
             ("", "")
         } else {
@@ -1323,6 +1573,14 @@ pub(super) fn render(
             e.presented()
         ));
     }
+    if let Some(variant) = &variant {
+        members.push_str(&format!(
+            "    /// The arm the value holds, each arm's body the value of its codec.\n\
+             \x20   [[nodiscard]] const {}& body() const noexcept {{ return {}; }}\n",
+            variant.type_name,
+            member("body")
+        ));
+    }
 
     // A default-made value holds what its declared flag values give its
     // carrier (`<sce:flag value=..>`), which is what lets a variant's marked
@@ -1330,7 +1588,7 @@ pub(super) fn render(
     // a byte string holds the fewest bytes its bound admits, and every other
     // element holds its zero.
     let mut private = String::new();
-    if !elements.is_empty() {
+    if !names.is_empty() {
         private.push_str("\nprivate:\n");
         for e in &elements {
             let init = if !e.optional && e.field.flags.iter().any(|fl| fl.value.is_some()) {
@@ -1339,6 +1597,19 @@ pub(super) fn render(
                 "{}".to_string()
             };
             private.push_str(&format!("    {} {}{init};\n", e.holds(), member(&e.name)));
+        }
+        // A value made by default holds the arm marked `default="true"`, which
+        // encodes its own tag; else the first.
+        if let Some(variant) = &variant {
+            let init = match variant.default_index {
+                Some(index) => format!("{{std::in_place_index_t<{index}>{{}}}}"),
+                None => "{}".to_string(),
+            };
+            private.push_str(&format!(
+                "    {} {}{init};\n",
+                variant.type_name,
+                member("body")
+            ));
         }
     }
 
@@ -1400,6 +1671,10 @@ pub(super) fn render(
             (false, _) => name.clone(),
         };
         decoded.push_str(&format!("            /*{name}=*/{value},\n"));
+    }
+    // The arm the decode read is moved in, last.
+    if variant.is_some() {
+        decoded.push_str("            /*body=*/std::move(body),\n");
     }
     decoded.push_str("        };\n");
 

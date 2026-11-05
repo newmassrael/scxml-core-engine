@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "ff48fce",
+  "embed_version": "19e5d45",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 528,
+  "symbol_count": 529,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3336,6 +3336,12 @@
         "LengthOutOfRange",
         "TooManyElements"
       ]
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsVariantOf<T>"
     },
     {
       "header": "sce/forge/codec.h",

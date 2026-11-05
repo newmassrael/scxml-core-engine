@@ -18,6 +18,8 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
 #include "sce/forge/bounded.h"
@@ -504,5 +506,17 @@ public:
 private:
     std::size_t count_ = 0;
 };
+
+namespace Detail {
+
+/// Whether `T` is a `std::variant` of `N` alternatives: what a source presents
+/// a variant codec's body as, its alternative `i` a source of the codec of the
+/// variant's arm `i` (docs/adr/0081 step 4).
+template <typename T, std::size_t N> struct IsVariantOf : std::false_type {};
+
+template <typename... A, std::size_t N>
+struct IsVariantOf<std::variant<A...>, N> : std::bool_constant<sizeof...(A) == N> {};
+
+}  // namespace Detail
 
 }  // namespace SCE::Forge
