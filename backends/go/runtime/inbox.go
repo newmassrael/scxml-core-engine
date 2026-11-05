@@ -64,9 +64,11 @@ func (in Inbox[E]) RaiseExternalByName(eventName, eventData string) bool {
 // ends one of that session of the tree, this machine or one below it: the post
 // is made to that session's own inbox, found in the tree's directory now, so the
 // session takes the ending ahead of anything its own owner puts on its external
-// queue afterwards, a parent's `<send>` to it included. A session the tree does
-// not hold refuses the post: one not started, one whose run has ended, or any
-// session before the run of the machine whose inbox this is has started.
+// queue afterwards, a parent's `<send>` to it included. The machine whose inbox
+// this is holds its own session from the moment it is made, so a post naming it
+// before its run is kept for that run, as any post before the run is. A session
+// the tree does not hold refuses the post: a child not started, or a session
+// whose run has ended.
 //
 // The session applies the ending with Engine.CompleteHostInvokeFrom when
 // ending.Done and with Engine.FailHostInvoke otherwise, at its own macrostep
@@ -207,8 +209,9 @@ type sessionInbox interface {
 // Threading", item 3): the inbox of each session the tree holds, by session id,
 // and the tree's one waker. Safe for concurrent use: a post reads it on the
 // posting goroutine, and the owner enters a session when its run starts, before
-// its first macrostep, and removes it when the run ends, after closing its inbox
-// (Engine.enterDirectory, Engine.leaveDirectory).
+// its first macrostep (the root already when it is made), and removes it when the
+// run ends, after closing its inbox (Engine.enterDirectory,
+// Engine.leaveDirectory).
 type sessionDirectory struct {
 	mu sync.Mutex
 	// sessions is the inbox of every session the tree holds, by its id.
@@ -260,8 +263,9 @@ func (d *sessionDirectory) wake() {
 }
 
 // enterDirectory enters this session in its tree's directory under its session
-// id, so a post naming it reaches its inbox: when its run starts, and when a
-// session whose run is going joins a tree. A session with no id is not entered.
+// id, so a post naming it reaches its inbox: when the engine is made, when its
+// run starts, and when a session whose run is going joins a tree. A session with
+// no id is not entered.
 func (e *Engine[S, E]) enterDirectory() {
 	e.leaveDirectory()
 	id := e.sessionID()

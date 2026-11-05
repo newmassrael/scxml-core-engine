@@ -108,13 +108,13 @@ func (e *Engine[S, E]) ShareHostInvokersWith(child HostInvokeTree) {
 // post to it wakes the tree's owner, and a session whose run is going (a child a
 // restore resumed) moves its entry into the tree's directory, so a post naming
 // it is posted to its inbox (ARCHITECTURE.md "Engine Threading", item 3). One not
-// running yet is entered when its run starts.
+// running yet leaves the entry its construction made in a directory of its own,
+// and is entered in the tree's when its run starts, before its first macrostep.
 func (e *Engine[S, E]) AdoptHostInvokers(invokers *TreeInvokers) {
-	entered := e.enteredAs != ""
 	e.leaveDirectory()
 	e.treeInvokers = invokers
 	e.inbox.joinDirectory(invokers.directory)
-	if entered {
+	if e.isRunning {
 		e.enterDirectory()
 	}
 	if holder, ok := any(e.policy).(HostInvokeChildren); ok {

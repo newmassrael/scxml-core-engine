@@ -126,8 +126,9 @@ type Engine[S comparable, E comparable] struct {
 	treeInvokers *TreeInvokers
 
 	// enteredAs is the session id this session is entered under in its tree's
-	// directory, empty while it is not entered: from the start of a run to its
-	// end (enterDirectory, leaveDirectory). The owner's.
+	// directory, empty while it is not entered: from its construction, and from
+	// the start of each run, to the run's end (enterDirectory, leaveDirectory).
+	// The owner's.
 	enteredAs string
 
 	// childMeshRouters is the factory of the routers of this machine's
@@ -295,10 +296,16 @@ type Engine[S comparable, E comparable] struct {
 // running -- call Initialize() to enter the initial configuration and begin
 // processing events.
 //
+// The engine is entered in its own tree's directory under the session id its
+// policy holds now, so a post naming that session made before the run is kept
+// for it, as every post before the run is (docs/adr/0084, D2). A host gives
+// the policy its id before it makes the engine (SetSessionID); a run entered
+// later is entered again under the id the policy holds then.
+//
 // Matches Rust Engine::new.
 func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, E] {
 	tree := newTreeInvokers()
-	return &Engine[S, E]{
+	engine := &Engine[S, E]{
 		policy:          policy,
 		currentState:    policy.InitialState(),
 		internalQueue:   NewEventQueueManager[EventWithMetadata[E]](),
@@ -309,6 +316,8 @@ func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, 
 		scheduler:       NewPullScheduler[E](),
 		donedataAtFinal: "",
 	}
+	engine.enterDirectory()
+	return engine
 }
 
 // ================================================================

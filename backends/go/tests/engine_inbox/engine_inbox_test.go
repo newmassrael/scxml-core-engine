@@ -813,6 +813,34 @@ func TestAPostBeforeTheRunIsTakenByItAndOneAfterTheStopIsRefused(t *testing.T) {
 	}
 }
 
+// An ending naming the machine's own session, posted before its run, is kept for
+// the run as every post before it is (docs/adr/0084, D2): the machine holds its
+// session from the moment it is made. The run starts `job` and then applies the
+// post at its first boundary. A fresh engine's first start carries token 0, the
+// token the post names.
+func TestAnEndingNamingTheRootPostedBeforeTheRunIsTakenByIt(t *testing.T) {
+	pr := newProbe()
+	inbox := pr.engine.Inbox()
+	const firstToken = 0
+	if !postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[probeEvent]) bool {
+		return in.EndHostInvoke(pr.policy.sessionID, ending(firstToken, true, "early"))
+	}) {
+		t.Fatalf("an ending naming the machine's own session (%s) was refused before its run", pr.policy.sessionID)
+	}
+	if len(pr.policy.taken) != 0 {
+		t.Fatalf("a post was applied before the run started: %v", pr.policy.taken)
+	}
+
+	pr.engine.Initialize()
+	if token := pr.latestToken(t); token != firstToken {
+		t.Fatalf("the run's first start of `job` carries token %d, not the %d the post named", token, firstToken)
+	}
+	if want := []string{"done:early"}; !slices.Equal(pr.policy.taken, want) {
+		t.Fatalf("the ending posted before the run, naming its session, was not taken by it: took %v, want %v",
+			pr.policy.taken, want)
+	}
+}
+
 func TestAPostHeldWhenTheRunEndsIsAppliedAndOneAfterIsRefused(t *testing.T) {
 	pr := newProbe()
 	inbox := pr.engine.Inbox()
