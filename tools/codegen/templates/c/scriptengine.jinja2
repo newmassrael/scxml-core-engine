@@ -163,22 +163,17 @@
 
            The SCXML processor is filed under both C.1.1's entry name and the
            `scxml` alias documents index with. Its location is `sm->scxml_location`,
-           the address derived from this session's id in `_init` — one
-           derivation, so the address and the id cannot name different
-           sessions. Both are built from the machine name and a decimal
-           ordinal, characters the C identifiers every emitted symbol uses
-           already restrict themselves to, so no percent-encoding is needed
-           here (cpp encodes because its session ids are runtime-supplied
-           from a generator with no such constraint). */
+           the address derived from this session's id in `_init` (or the id a
+           restore carries on under) by `sce_scxml_location` — the one encoder
+           that also spells the origin of every event this session sends
+           (docs/adr/0090), so the address the session publishes and the
+           address its events carry cannot differ. The id is percent-encoded
+           there as on every other runtime, which also leaves the location
+           nothing a Lua string literal would end at. */
         {
             char _sce_ioproc_chunk[SCE_MAX_URI_LEN + 256];
             (void)snprintf(_sce_ioproc_chunk, sizeof(_sce_ioproc_chunk),
-                /* W3C SCXML C.1: the location is also what this session's own
-                   `<send>`s must publish as `_event.origin`, so it is a global
-                   rather than a chunk-local — the dequeue path reads the same
-                   string instead of spelling the address a second time. */
-                "_scxml_location = '%s'\n"
-                "local _scxml_loc = _scxml_location\n"
+                "local _scxml_loc = '%s'\n"
                 "_ioprocessors = {\n"
                 "  ['http://www.w3.org/TR/scxml/#SCXMLEventProcessor'] = {location = _scxml_loc},\n"
                 "  scxml = {location = _scxml_loc},\n"

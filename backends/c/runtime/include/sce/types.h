@@ -348,17 +348,227 @@ SCE_C_UNUSED static inline void sce_copy_bounded_event_type(char *dst, const cha
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_EVENT_TYPE_LEN);
 }
 
-/* Bounded copy of an `_event.origin`. Sized as a URI, not as an id,
-   because of what the field holds: the 'location' the sending session
-   published in its `_ioprocessors` — the same kind of value
-   `basic_http_access_uri` carries, and for the same reason. Copying an
-   address through the id-sized helper truncates it, and a truncated
-   address compares unequal to the location it was cut from while still
-   looking like one, so the failure reads as a spec violation rather than
-   as a buffer that was too small. */
-SCE_C_UNUSED static inline void sce_copy_bounded_origin(char *dst, const char *src) {
-    sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_URI_LEN);
+/* ── docs/adr/0090: the reply address an event carries ─────────────── */
+
+/* The canonical type URI of the SCXML Event I/O Processor, the processor of
+   every origin a session's `<send>` writes (docs/adr/0090, section 4). */
+#define SCE_SCXML_EVENT_PROCESSOR_TYPE "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+
+/* What every SCXML location begins with; the session id follows,
+   percent-encoded (`sce_scxml_location`). */
+#define SCE_SCXML_LOCATION_PREFIX "sce://scxml/"
+
+/* The reply address an event carries (docs/adr/0090, section 1): the Event I/O
+   Processor that delivered it and the address that processor accepts as a
+   `<send>` target. The document reads the two as `_event.origintype` and
+   `_event.origin`; they are one value because the address means something only
+   relative to its processor.
+
+   The processor that delivers an event writes the pair once, where it builds
+   the event (section 2), through `sce_event_origin_set` or one of the writers
+   below, and nothing converts it later. An event that no processor stamped
+   holds none: both fields empty, which is what a zeroed event holds, so an
+   event built with `memset` carries no origin until a processor names one.
+
+   Sized as a URI and an id, the bounds this runtime holds those in: the address
+   is a location a session published (`SCE_MAX_URI_LEN`, as
+   `basic_http_access_uri`), and the processor a type URI or a host's declared
+   type (`SCE_MAX_ID_LEN`). A pair that does not fit is refused whole, never cut:
+   a truncated address still looks like one and names nobody. */
+typedef struct sce_event_origin_s {
+    char processor[SCE_MAX_ID_LEN];
+    char address[SCE_MAX_URI_LEN];
+} sce_event_origin_t;
+
+/* No origin: both fields empty. */
+SCE_C_UNUSED static inline void sce_event_origin_clear(sce_event_origin_t *origin) {
+    origin->processor[0] = '\0';
+    origin->address[0] = '\0';
 }
+
+/* Whether `origin` holds none. NULL holds none. */
+SCE_C_UNUSED static inline bool sce_event_origin_is_none(const sce_event_origin_t *origin) {
+    return origin == NULL || (origin->processor[0] == '\0' && origin->address[0] == '\0');
+}
+
+/* `_event.origin` of an event that carries `origin`: its address, or the empty
+   string when it has none. */
+SCE_C_UNUSED static inline const char *sce_event_origin_address(const sce_event_origin_t *origin) {
+    return origin != NULL ? origin->address : "";
+}
+
+/* `_event.origintype` of an event that carries `origin`: its processor, or the
+   empty string when it has none. */
+SCE_C_UNUSED static inline const char *sce_event_origin_processor(const sce_event_origin_t *origin) {
+    return origin != NULL ? origin->processor : "";
+}
+
+/* Write the pair `{processor, address}` whole. False, leaving `origin` none, when
+   either does not fit its field: a processor names a party only together with
+   its address, so neither is kept without the other. NULL reads as empty. */
+SCE_C_UNUSED static inline bool sce_event_origin_set(sce_event_origin_t *origin, const char *processor,
+                                                     const char *address) {
+    const char *p = processor != NULL ? processor : "";
+    const char *a = address != NULL ? address : "";
+    const size_t p_len = strlen(p);
+    const size_t a_len = strlen(a);
+    if (p_len >= sizeof(origin->processor) || a_len >= sizeof(origin->address)) {
+        sce_event_origin_clear(origin);
+        return false;
+    }
+    memcpy(origin->processor, p, p_len + 1u);
+    memcpy(origin->address, a, a_len + 1u);
+    return true;
+}
+
+/* A byte an SCXML location carries as it is — RFC 3986's unreserved set; every
+   other byte is percent-encoded. */
+SCE_C_UNUSED static inline bool sce_scxml_location_keeps_(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+           c == '.' || c == '~';
+}
+
+/* The value of the hex digit `c`, or -1 for a byte that is not one. */
+SCE_C_UNUSED static inline int sce_scxml_location_hex_(unsigned char c) {
+    if (c >= '0' && c <= '9') {
+        return (int)(c - '0');
+    }
+    if (c >= 'A' && c <= 'F') {
+        return (int)(c - 'A') + 10;
+    }
+    if (c >= 'a' && c <= 'f') {
+        return (int)(c - 'a') + 10;
+    }
+    return -1;
+}
+
+/* The bytes of the SCXML location of `session_id`, its terminator not counted. */
+SCE_C_UNUSED static inline size_t sce_scxml_location_len(const char *session_id) {
+    size_t n = sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u;
+    for (const unsigned char *s = (const unsigned char *)(session_id != NULL ? session_id : ""); *s != '\0'; ++s) {
+        n += sce_scxml_location_keeps_(*s) ? 1u : 3u;
+    }
+    return n;
+}
+
+/* §scxml-5.10.1: the location a session publishes in `_ioprocessors` and every
+   event it sends names as its origin — `sce://scxml/` and the session id,
+   percent-encoded as every other runtime encodes it (C++
+   `IOProcessorHelper::scxmlLocation`). The one encoder of the address: the
+   `_ioprocessors` entry and the origins a session's sends carry both come from
+   it, so the two cannot spell one session differently.
+
+   Written into `dst` of `cap` bytes. False, leaving `dst` empty, when it does
+   not fit. */
+SCE_C_UNUSED static inline bool sce_scxml_location(char *dst, size_t cap, const char *session_id) {
+    static const char hex[] = "0123456789ABCDEF";
+    const size_t prefix_len = sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u;
+    size_t at = prefix_len;
+    if (cap == 0u) {
+        return false;
+    }
+    if (sce_scxml_location_len(session_id) >= cap) {
+        dst[0] = '\0';
+        return false;
+    }
+    memcpy(dst, SCE_SCXML_LOCATION_PREFIX, prefix_len);
+    for (const unsigned char *s = (const unsigned char *)(session_id != NULL ? session_id : ""); *s != '\0'; ++s) {
+        if (sce_scxml_location_keeps_(*s)) {
+            dst[at++] = (char)*s;
+        } else {
+            dst[at++] = '%';
+            dst[at++] = hex[*s >> 4];
+            dst[at++] = hex[*s & 0x0Fu];
+        }
+    }
+    dst[at] = '\0';
+    return true;
+}
+
+/* The session id the SCXML location `uri` names — the inverse of
+   `sce_scxml_location`, kept beside it so the two spellings of one address
+   cannot drift apart (C++ `IOProcessorHelper::sessionIdFromScxmlLocation`).
+
+   False when `uri` is not an SCXML location, names no session (nothing after
+   the prefix), or names an id longer than `cap` holds; `dst` is left empty then.
+   A `%` without two hex digits behind it is kept as it is rather than dropped:
+   the input is an address, and deleting part of one turns "no such session"
+   into "a different session". */
+SCE_C_UNUSED static inline bool sce_session_id_from_scxml_location(char *dst, size_t cap, const char *uri) {
+    const size_t prefix_len = sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u;
+    const unsigned char *s;
+    size_t at = 0u;
+    if (cap == 0u) {
+        return false;
+    }
+    dst[0] = '\0';
+    if (uri == NULL || strncmp(uri, SCE_SCXML_LOCATION_PREFIX, prefix_len) != 0 || uri[prefix_len] == '\0') {
+        return false;
+    }
+    for (s = (const unsigned char *)uri + prefix_len; *s != '\0'; ++s) {
+        unsigned char c = *s;
+        if (c == '%' && sce_scxml_location_hex_(s[1]) >= 0 && sce_scxml_location_hex_(s[2]) >= 0) {
+            c = (unsigned char)((sce_scxml_location_hex_(s[1]) << 4) | sce_scxml_location_hex_(s[2]));
+            s += 2;
+        }
+        if (at + 1u >= cap) {
+            dst[0] = '\0';
+            return false;
+        }
+        dst[at++] = (char)c;
+    }
+    dst[at] = '\0';
+    return true;
+}
+
+/* docs/adr/0090, section 2: the origin the SCXML Event I/O Processor writes for
+   an event the session `sender_session_id` sends — its own type URI and the
+   location that session publishes (`sce_scxml_location`). A sender that holds
+   no session id has no address to publish, so the event carries none. False,
+   leaving `origin` none, when the location does not fit. */
+SCE_C_UNUSED static inline bool sce_event_origin_scxml(sce_event_origin_t *origin, const char *sender_session_id) {
+    if (sender_session_id == NULL || sender_session_id[0] == '\0') {
+        sce_event_origin_clear(origin);
+        return true;
+    }
+    if (!sce_scxml_location(origin->address, sizeof(origin->address), sender_session_id)) {
+        sce_event_origin_clear(origin);
+        return false;
+    }
+    memcpy(origin->processor, SCE_SCXML_EVENT_PROCESSOR_TYPE, sizeof(SCE_SCXML_EVENT_PROCESSOR_TYPE));
+    return true;
+}
+
+/* The bytes a session id is held in where an event names its sender (the
+   `sender` field beside the origin, docs/adr/0090, section 1): any session of a
+   build, whose ids every machine asserts fit `SCE_MAX_SESSION_ID_LEN`. */
+#define SCE_SENDER_LEN SCE_MAX_SESSION_ID_LEN
+
+/* docs/adr/0090, section 2: stamp an event a session sends — the SCXML pair of
+   `sender_session_id` into `origin`, the id itself into `sender` (of
+   `SCE_SENDER_LEN` bytes), which the session-keyed lookups read. False, leaving
+   both empty, when either does not fit. */
+SCE_C_UNUSED static inline bool sce_event_sent_by(sce_event_origin_t *origin, char *sender,
+                                                  const char *sender_session_id) {
+    const char *id = sender_session_id != NULL ? sender_session_id : "";
+    const size_t id_len = strlen(id);
+    if (id_len >= (size_t)SCE_SENDER_LEN || !sce_event_origin_scxml(origin, id)) {
+        sce_event_origin_clear(origin);
+        sender[0] = '\0';
+        return false;
+    }
+    memcpy(sender, id, id_len + 1u);
+    return true;
+}
+
+/* §scxml-6.4: the function a child session reaches the session that invoked it
+   through — its `<send target="#_parent">`, at once or when a delayed one comes
+   due. `parent_sm` is the parent as the parent handed itself over, `invoke_id`
+   the invocation the child was started under, `sender` the child's own session
+   id, from which the parent writes the event's origin (docs/adr/0090, section
+   2), and `event_data` the payload, NULL for none. */
+typedef void (*sce_parent_dispatch_fn)(void *parent_sm, const char *event_name, const char *invoke_id,
+                                       const char *sender, const char *event_data);
 
 /* ── §scxml-6.4: Autoforward carrier ───────────────────────────── */
 /* §scxml-6.4 requires the parent to forward an *exact copy* of every
@@ -379,11 +589,14 @@ SCE_C_UNUSED static inline void sce_copy_bounded_origin(char *dst, const char *s
 typedef struct sce_forwarded_event_s {
     char name[SCE_MAX_ID_LEN];
     char data[SCE_MAX_DATA_LEN];
-    /* An address, not an id — see `sce_copy_bounded_origin`. */
-    char origin[SCE_MAX_URI_LEN];
+    /* `_event.origin` and `_event.origintype`, the one pair the delivering
+       processor wrote (docs/adr/0090), and the sending session's id beside
+       it: empty unless an SCXML session sent the event. A host posting an
+       event by name names its origin here in its own terms, or none. */
+    sce_event_origin_t origin;
+    char sender[SCE_SENDER_LEN];
     char send_id[SCE_MAX_ID_LEN];
     char type[SCE_MAX_EVENT_TYPE_LEN];
-    char origin_type[SCE_MAX_ID_LEN];
     char invoke_id[SCE_MAX_ID_LEN];
 } sce_forwarded_event_t;
 

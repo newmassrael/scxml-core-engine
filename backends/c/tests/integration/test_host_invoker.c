@@ -371,9 +371,11 @@ static int a_failed_invocation_raises_error_invoke_once_with_its_origin(void) {
 
     int bad = 0;
     const uint64_t token = token_of(&run, "job");
+    // The pair the host names for the party, in its own terms (docs/adr/0090).
+    sce_event_origin_t named;
+    bad |= expect("fail", "the host's origin did not fit", sce_event_origin_set(&named, DECLARED_TYPE, "host://job"));
     bad |= expect("fail", "a running invocation's failure was refused",
-                  statechart_host_invoker_fail_host_invoke(&sm, DECLARED_TYPE, "job", token, "\"no\"", "host://job",
-                                                           DECLARED_TYPE));
+                  statechart_host_invoker_fail_host_invoke(&sm, DECLARED_TYPE, "job", token, "\"no\"", &named));
     statechart_host_invoker_step(&sm);
     // Counted only when the invokeid, the data and both origin fields are what
     // the host named, so this is those assertions too.
@@ -381,8 +383,7 @@ static int a_failed_invocation_raises_error_invoke_once_with_its_origin(void) {
     bad |= expect("fail", "a failed run completed afterwards",
                   !statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "job", token, "ok"));
     bad |= expect("fail", "the same run failed twice",
-                  !statechart_host_invoker_fail_host_invoke(&sm, DECLARED_TYPE, "job", token, "\"no\"", "host://job",
-                                                            DECLARED_TYPE));
+                  !statechart_host_invoker_fail_host_invoke(&sm, DECLARED_TYPE, "job", token, "\"no\"", &named));
     statechart_host_invoker_step(&sm);
     bad |= check("fail", "failed after a second report", counter(&sm, "failed"), 1);
     bad |= check("fail", "overturned", counter(&sm, "overturned"), 0);

@@ -276,7 +276,7 @@
    regular external queue, which the macrostep evaluates against every
    transition's matcher (W3C SCXML 3.13). The empty NULL-guard handles
    defensive callers — production children always pass a valid name. #}
-static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *opaque, const char *name, const char *invoke_id, const char *event_data) {
+static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *opaque, const char *name, const char *invoke_id, const char *sender, const char *event_data) {
     if (opaque == NULL || name == NULL) {
         return;
     }
@@ -292,19 +292,12 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
        location, so an origin spelled that way matches nothing the child
        published and a peer comparing the two never agrees.
 
-       The child's location is the address it published for itself at `_init`
-       (see `scriptengine.jinja2`), read here from the child instance the
-       parent embeds. The invoke id -> child slot mapping is known at codegen
-       time, so the address still needs no runtime session registry — but the
-       address itself is the child's to state, because it names that child's
-       session rather than the document it was generated from. */
-    if (invoke_id != NULL && invoke_id[0] != '\0') {
-{% for invoke_info in model.invokes | scxml %}
-        if (strcmp(invoke_id, "{{ invoke_info.invoke_id }}") == 0) {
-            sce_copy_bounded_origin(evt.origin, sm->child_{{ invoke_info.field_suffix }}.scxml_location);
-        }
-{% endfor %}
-    }
+       The SCXML processor writes the pair where it builds the event
+       (docs/adr/0090, section 2): its own type and the location of `sender`,
+       the child's session id, spelled by the one encoder the child's
+       `_ioprocessors` entry is spelled by; the id itself is the event's
+       sender, which `<finalize>` finds the child by. */
+    (void)sce_event_sent_by(&evt.origin, evt.sender, sender);
     /* W3C SCXML 6.4 (test233): copy child-supplied `<send><param>` Lua-
        source string into `event_with_meta_t.data`. The dequeue path
        loads it into the parent's L state as `_event.data` before
@@ -734,6 +727,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             {{ csym_prefix }}{{ invoke_info.child_name }}_init_with_parent(
                 &sm->child_{{ invoke_info.field_suffix }},
                 sm,
+                sm->session_id,
                 {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
                 p->invoke_id,
                 {{ child_clock_c }});
@@ -973,6 +967,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 {{ csym_prefix }}{{ candidate.stem }}_init_with_parent(
                     &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
                     sm,
+                    sm->session_id,
                     {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
                     p->invoke_id,
                     {{ child_clock_c }});

@@ -20,6 +20,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "sce/types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -55,17 +57,20 @@ static inline bool sce_send_target_names_nothing(const char *target) {
  *
  * A URI of another scheme — an http(s) URL included, which only a BasicHTTP
  * send reaches — is SCE_SEND_TARGET_UNSUPPORTED, as it is for every generated
- * machine. A published location is `sce://scxml/<session id>`; a generated C
- * machine's session ids are URL-safe, so the id is the text after the prefix.
+ * machine. A published location is `sce://scxml/<session id>`, the id
+ * percent-encoded (`sce_scxml_location`), so the id it names is decoded into
+ * `id_buf` by the inverse the encoder sits beside; a location naming an id
+ * longer than `id_buf` holds names no session of this build, and reaches no one.
  *
  * @param target The target value, NUL-terminated
  * @param own_session_id The sending session, which a session target may name
- * @param id_out Set, for SESSION and INVOCATION, to the id inside `target`
+ * @param id_buf Where the id a location names is decoded, `id_cap` bytes
+ * @param id_out Set, for SESSION and INVOCATION, to the id `target` names:
+ *        inside `target`, or in `id_buf` for a location
  */
 static inline sce_send_target_kind_t sce_classify_send_target(const char *target, const char *own_session_id,
-                                                              const char **id_out) {
+                                                              char *id_buf, size_t id_cap, const char **id_out) {
     static const char session_prefix[] = "#_scxml_";
-    static const char location_prefix[] = "sce://scxml/";
     const char *id;
     *id_out = NULL;
     if (sce_send_target_names_nothing(target)) {
@@ -82,9 +87,12 @@ static inline sce_send_target_kind_t sce_classify_send_target(const char *target
     }
     if (strncmp(target, session_prefix, sizeof(session_prefix) - 1u) == 0) {
         id = target + sizeof(session_prefix) - 1u;
-    } else if (strncmp(target, location_prefix, sizeof(location_prefix) - 1u) == 0 &&
-               target[sizeof(location_prefix) - 1u] != '\0') {
-        id = target + sizeof(location_prefix) - 1u;
+    } else if (strncmp(target, SCE_SCXML_LOCATION_PREFIX, sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u) == 0 &&
+               target[sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u] != '\0') {
+        if (!sce_session_id_from_scxml_location(id_buf, id_cap, target)) {
+            return SCE_SEND_TARGET_UNREACHABLE;
+        }
+        id = id_buf;
     } else {
         id = NULL;
     }

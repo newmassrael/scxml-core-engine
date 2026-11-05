@@ -28,6 +28,7 @@
 
 #include "sce/saved_json.h"
 #include "sce/saved_values.h"
+#include "sce/types.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -496,6 +497,53 @@ static inline bool sce_saved_event_read(sce_jv_t v, const char *what, sce_saved_
            sce_saved_member_text_(v, what, "origin", &out->origin, err) &&
            sce_saved_member_text_(v, what, "origintype", &out->origin_type, err) &&
            sce_saved_member_text_(v, what, "invokeid", &out->invoke_id, err);
+}
+
+/* docs/adr/0090, "Until step 6": the format-2 `origin` text that stores an event's origin and
+ * sender — the sending session's id for an event a session sent, the address otherwise, and
+ * empty for none, which is what every backend writes. The `origintype` beside it is the pair's
+ * processor (`sce_event_origin_processor`). */
+static inline const char *sce_saved_origin_text(const sce_event_origin_t *origin, const char *sender) {
+    return (sender != NULL && sender[0] != '\0') ? sender : sce_event_origin_address(origin);
+}
+
+/* docs/adr/0090, section 7: the origin and sender a stored `origin` and `origintype` are read as.
+ * Both empty is none. An SCXML location — the spelling this backend once stored in place of the
+ * id, unencoded — is read as the pair of the session it names, that session the sender. A value
+ * without a scheme stored with the SCXML processor's type is a session's id, read the same way.
+ * Anything else is the pair as stored, with no sender. `sender` holds `sender_cap` bytes.
+ *
+ * False, leaving both empty, when the pair or the sender does not fit the room this build holds
+ * them in, which the caller refuses rather than cuts. */
+static inline bool sce_saved_origin_read(const char *origin_text, const char *origin_type, sce_event_origin_t *origin,
+                                         char *sender, size_t sender_cap) {
+    const size_t prefix_len = sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u;
+    const char *text = origin_text != NULL ? origin_text : "";
+    const char *type = origin_type != NULL ? origin_type : "";
+    bool fits;
+    sce_event_origin_clear(origin);
+    if (sender_cap == 0u) {
+        return false;
+    }
+    sender[0] = '\0';
+    if (text[0] == '\0' && type[0] == '\0') {
+        return true;
+    }
+    if (strncmp(text, SCE_SCXML_LOCATION_PREFIX, prefix_len) == 0 && text[prefix_len] != '\0') {
+        fits = sce_session_id_from_scxml_location(sender, sender_cap, text) && sce_event_origin_scxml(origin, sender);
+    } else if (strstr(text, "://") == NULL && text[0] != '\0' && strcmp(type, SCE_SCXML_EVENT_PROCESSOR_TYPE) == 0) {
+        fits = strlen(text) < sender_cap && sce_event_origin_scxml(origin, text);
+        if (fits) {
+            memcpy(sender, text, strlen(text) + 1u);
+        }
+    } else {
+        fits = sce_event_origin_set(origin, type, text);
+    }
+    if (!fits) {
+        sce_event_origin_clear(origin);
+        sender[0] = '\0';
+    }
+    return fits;
 }
 
 /* The host-run invocation `v`. */

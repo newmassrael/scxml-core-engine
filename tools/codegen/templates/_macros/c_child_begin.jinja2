@@ -13,7 +13,8 @@
     `slot` is the embedded child, `stem` its document, `host_call` the expression of
     the table the parent's own table answers for it (empty when the child declares no
     `<sce:action>`s), `declares_duties` whether the child states a duty,
-    `sends_to_parent` whether it addresses `#_parent`, `invoke_id` the C expression of
+    `sends_to_parent` whether it addresses `#_parent` (and is then handed the parent, the
+    parent's session id and the parent's dispatch), `invoke_id` the C expression of
     the id it is started under, and `clock` the expression of the clock it follows.
     The block of a `call` is what runs when a child declaring `<sce:action>`s was given
     no complete host, so that nothing was begun.
@@ -28,8 +29,10 @@ if (!{{ prefix }}{{ stem }}_invoked_begin(
 {% endif %}
 {% if sends_to_parent %}
         sm,
+        sm->session_id,
         {{ prefix }}{{ parent }}_dispatch_external_by_name,
 {% else %}
+        NULL,
         NULL,
         NULL,
 {% endif %}
@@ -42,8 +45,10 @@ if (!{{ prefix }}{{ stem }}_invoked_begin(
     &{{ slot }},
 {% if sends_to_parent %}
     sm,
+    sm->session_id,
     {{ prefix }}{{ parent }}_dispatch_external_by_name,
 {% else %}
+    NULL,
     NULL,
     NULL,
 {% endif %}

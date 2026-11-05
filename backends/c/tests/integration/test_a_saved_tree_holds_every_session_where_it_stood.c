@@ -340,14 +340,14 @@ static void a_child_sessions_host_invocation_is_failed_by_the_session_that_start
     memset(&host, 0, sizeof(host));
     tree_working(&sm, &host);
     CHECK(!static_invoke_tree_fail_host_invoke_in(&sm, static_invoke_tree_session_id(&sm), CLOCK_TYPE, "clock", 0u,
-                                                  "{}", NULL, NULL),
+                                                  "{}", NULL),
           "the root has no such invocation");
-    CHECK(!static_invoke_tree_fail_host_invoke_in(&sm, "no.such.session", CLOCK_TYPE, "clock", 0u, "{}", NULL, NULL),
+    CHECK(!static_invoke_tree_fail_host_invoke_in(&sm, "no.such.session", CLOCK_TYPE, "clock", 0u, "{}", NULL),
           "the tree holds no such session");
-    CHECK(static_invoke_tree_fail_host_invoke_in(&sm, host.session, CLOCK_TYPE, "clock", 0u, "{}", NULL, NULL),
+    CHECK(static_invoke_tree_fail_host_invoke_in(&sm, host.session, CLOCK_TYPE, "clock", 0u, "{}", NULL),
           "the child's session takes the failure of the invocation it started: %s", host.session);
     // A run ends once, by success or failure, whichever comes first.
-    CHECK(!static_invoke_tree_fail_host_invoke_in(&sm, host.session, CLOCK_TYPE, "clock", 0u, "{}", NULL, NULL),
+    CHECK(!static_invoke_tree_fail_host_invoke_in(&sm, host.session, CLOCK_TYPE, "clock", 0u, "{}", NULL),
           "a failure is accepted once");
     CHECK(!static_invoke_tree_complete_host_invoke_in(&sm, host.session, CLOCK_TYPE, "clock", 0u, "{}"),
           "a run that failed is not completed after");

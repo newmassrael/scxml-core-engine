@@ -155,6 +155,12 @@ static inline const char *sce_host_send_param(const sce_host_send_request_t *req
 typedef struct sce_host_send_response_s {
     char event_name[SCE_MAX_ID_LEN];
     char event_data[SCE_MAX_DATA_LEN];
+    /* `_event.origin` and `_event.origintype` of the reply, in the host's own
+       terms (docs/adr/0090, section 2): the host processor's type and the
+       address a `<send>` of that type reaches the party at. None when the reply
+       names no party (`sce_host_response_push`), and then both fields read
+       empty; the engine never fills in the SCXML processor's type for a host. */
+    sce_event_origin_t origin;
 } sce_host_send_response_t;
 
 /**
@@ -211,6 +217,24 @@ static inline bool sce_host_response_push(sce_host_send_response_list_t *out, co
     strcpy(slot->event_name, event_name);
     strcpy(slot->event_data, data);
     out->count++;
+    return true;
+}
+
+/**
+ * Append one event that names its origin (docs/adr/0090, section 2): the
+ * pair the host writes for the party the reply comes from, in its own terms,
+ * or NULL for none, which is what `sce_host_response_push` appends.
+ *
+ * Refuses as `sce_host_response_push` refuses, and returns what it returns.
+ */
+static inline bool sce_host_response_push_from(sce_host_send_response_list_t *out, const char *event_name,
+                                               const char *event_data, const sce_event_origin_t *origin) {
+    if (!sce_host_response_push(out, event_name, event_data)) {
+        return false;
+    }
+    if (origin != NULL) {
+        out->entries[out->count - 1].origin = *origin;
+    }
     return true;
 }
 
@@ -792,11 +816,12 @@ typedef struct sce_host_invoke_ending_s {
     bool done;
     /** `_event.data` of the event the ending raises. */
     char data[SCE_MAX_DATA_LEN];
-    /** `_event.origin` of that event, for a host whose invocation stands for a
-        party it can name; empty for none. */
-    char origin[SCE_MAX_URI_LEN];
-    /** `_event.origintype` of that event; empty keeps the SCXML processor's. */
-    char origin_type[SCE_MAX_ID_LEN];
+    /** `_event.origin` and `_event.origintype` of that event, for a host whose
+        invocation stands for a party it can name, in the host's own terms
+        (docs/adr/0090, section 2): its declared type and the address a
+        `<send>` of that type reaches the party at. None (zeroed) for a host
+        that names no party; the engine never fills in the SCXML processor. */
+    sce_event_origin_t origin;
 } sce_host_invoke_ending_t;
 
 /**
@@ -927,11 +952,49 @@ static inline bool sce_host_invocation_take_token(sce_host_invocation_set_t *set
     machine's name (SCE_MESH.md §mesh-10.7). */
 #define SCE_MESH_ORIGIN_SCHEME "mesh://"
 
+/* The pair `{processor, mesh://<peer>}`: false, leaving `origin` none, when the
+   address does not fit. */
+static inline bool sce_event_origin_mesh_(sce_event_origin_t *origin, const char *processor, const char *peer) {
+    const size_t scheme_len = sizeof(SCE_MESH_ORIGIN_SCHEME) - 1u;
+    const size_t peer_len = strlen(peer);
+    if (scheme_len + peer_len >= sizeof(origin->address) || !sce_event_origin_set(origin, processor, "")) {
+        sce_event_origin_clear(origin);
+        return false;
+    }
+    memcpy(origin->address, SCE_MESH_ORIGIN_SCHEME, scheme_len);
+    memcpy(origin->address + scheme_len, peer, peer_len + 1u);
+    return true;
+}
+
+/** The pair the Mesh transport writes for an event a peer's envelope delivers
+    (docs/adr/0090, section 2): the SCXML Event I/O Processor, since every
+    envelope is SCE's own inter-SCXML traffic, at the address
+    `mesh://<source>` reaches the peer by (SCE_MESH.md §mesh-10.7). None for an
+    empty `source`, which names no peer. */
+static inline bool sce_event_origin_mesh_peer(sce_event_origin_t *origin, const char *source) {
+    if (source == NULL || source[0] == '\0') {
+        sce_event_origin_clear(origin);
+        return true;
+    }
+    return sce_event_origin_mesh_(origin, SCE_SCXML_EVENT_PROCESSOR_TYPE, source);
+}
+
+/** The pair the Mesh transport writes for the answer to an `<invoke
+    type="sce:mesh-rpc">`: the request's own type at `mesh://<replier>`, the peer
+    that answered (SCE_MESH.md §mesh-9.5). None for an empty `replier`: an
+    outcome the router reached itself, a deadline, names no peer. */
+static inline bool sce_event_origin_mesh_rpc_reply(sce_event_origin_t *origin, const char *replier) {
+    if (replier == NULL || replier[0] == '\0') {
+        sce_event_origin_clear(origin);
+        return true;
+    }
+    return sce_event_origin_mesh_(origin, SCE_MESH_RPC_INVOKE_TYPE, replier);
+}
+
 /** Which of a `sce_mesh_call_t`'s two shapes it is. */
 typedef enum sce_mesh_call_kind_e {
-    /* Raise `name` on the external queue with `data`, `send_id`, `origin`
-       (the sending machine's name, which the origin scheme leads) and the
-       SCXML processor as origin type. */
+    /* Raise `name` on the external queue with `data`, `send_id`, and the
+       origin `sce_event_origin_mesh_peer` writes for `source`. */
     SCE_MESH_CALL_RAISE = 0,
     /* End the start `token` of the Mesh request `invoke_id` — with
        `done.invoke`, or with `error.invoke` when `failed` — carrying `data`;

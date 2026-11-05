@@ -931,6 +931,10 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 memcpy(_reply_evt.data, _replies.entries[_i].event_data, _dn + 1u);
             }
         }
+        /* docs/adr/0090, section 2: the reply's origin is the pair the host
+           named for the party it comes from, in its own terms, or none. The
+           engine fills in no SCXML processor for a host. */
+        _reply_evt.origin = _replies.entries[_i].origin;
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_reply_evt);
     }
 {% if 'error.execution' in model.events %}
@@ -1628,9 +1632,10 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% elif route == 'parent' %}
                 /* W3C SCXML 6.4 (test191, 233, 338): to the invoking parent,
                    carrying the payload; the parent's shim names this child's
-                   invoke id on the event. */
+                   invoke id on the event, and writes its origin from this
+                   session's id (docs/adr/0090, section 2). */
                 if (sm->parent_dispatch != NULL) {
-                    sm->parent_dispatch(sm->parent_sm, {{ event_name_c }}, sm->invoke_id, {% if has_payload %}_ed{% else %}NULL{% endif %});
+                    sm->parent_dispatch(sm->parent_sm, {{ event_name_c }}, sm->invoke_id, sm->session_id, {% if has_payload %}_ed{% else %}NULL{% endif %});
                 } else if (sm->parent_sm == NULL) {
                     /* W3C SCXML C.1: started by its host through `_init`,
                        not by an `<invoke>`, so `#_parent` reaches nobody:
@@ -1672,7 +1677,20 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    invocation that is not running now is reported now. */
                 {
                     const char *_send_target_id = NULL;
-                    switch (sce_classify_send_target(_send_target_buf, sm->session_id, &_send_target_id)) {
+                    char _send_target_session[SCE_MAX_SESSION_ID_LEN];
+                    sce_send_target_kind_t _send_target_kind = sce_classify_send_target(
+                        _send_target_buf, sm->session_id, _send_target_session, sizeof(_send_target_session),
+                        &_send_target_id);
+{% if model.may_address_parent %}
+                    /* §scxml-C-1: the location the session that invoked this
+                       one publishes is a target, as `#_parent` is: the address a
+                       reply to an event the parent sent goes to (docs/adr/0090). */
+                    if (_send_target_kind == SCE_SEND_TARGET_SESSION && sm->parent_session_id != NULL &&
+                        strcmp(_send_target_id, sm->parent_session_id) == 0) {
+                        _send_target_kind = SCE_SEND_TARGET_PARENT;
+                    }
+{% endif %}
+                    switch (_send_target_kind) {
                     case SCE_SEND_TARGET_INTERNAL:
 {% if has_delay %}
 {{ send_schedule_here(action, PU ~ '_SCHED_ROUTE_INTERNAL', delay_c, send_id_c, has_payload) }}
@@ -1711,7 +1729,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                                               {{ PU }}_SCHED_ROUTE_PARENT, {{ PU }}_EVENT_NONE,
                                               {{ event_name_c }}, NULL, {{ send_id_c }}{{ scheduled_payload_arg(has_payload) }});
 {% else %}
-                        sm->parent_dispatch(sm->parent_sm, {{ event_name_c }}, sm->invoke_id, {% if has_payload %}_ed{% else %}NULL{% endif %});
+                        sm->parent_dispatch(sm->parent_sm, {{ event_name_c }}, sm->invoke_id, sm->session_id, {% if has_payload %}_ed{% else %}NULL{% endif %});
 {% endif %}
                         break;
 {% endif %}
@@ -1743,6 +1761,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% if meta_send_id %}
                             sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
 {% endif %}
+                            (void)sce_event_sent_by(&_send_fwd.origin, _send_fwd.sender, sm->session_id);
                             (void)deliver_to_invocation(sm, _send_invoke, &_send_fwd);
 {% endif %}
                             break;
@@ -1855,6 +1874,13 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% if has_payload %}
                     memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
 {% endif %}
+{% if raise_fn == csym_prefix ~ model.name ~ '_raise_external' %}
+                    /* docs/adr/0090, section 2: the SCXML processor writes the
+                       pair of this session, the sender, where it builds the
+                       event. One on the internal queue is an internal event,
+                       whose origin it leaves blank (§scxml-5.10.1). */
+                    (void)sce_event_sent_by(&_send_evt.origin, _send_evt.sender, sm->session_id);
+{% endif %}
 {% if action.eventexpr %}
                     if (_send_evt_matched) {
                         {{ raise_fn }}(sm, &_send_evt);
@@ -1883,6 +1909,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% if meta_send_id %}
                     sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
 {% endif %}
+                    /* docs/adr/0090, section 2: the child reads this session's
+                       pair as the event's origin, and its sender beside it. */
+                    (void)sce_event_sent_by(&_send_fwd.origin, _send_fwd.sender, sm->session_id);
 {% if report_missing %}
                     if (!deliver_to_invocation(sm, "{{ invoke_info.invoke_id | escape_c }}", &_send_fwd)) {
                         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
@@ -3812,10 +3841,12 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
     sce_copy_bounded_data(evt.data, fwd->data);
-    sce_copy_bounded_origin(evt.origin, fwd->origin);
+    /* docs/adr/0090: the pair and the sender as the processor that built the
+       event wrote them, unchanged. */
+    evt.origin = fwd->origin;
+    memcpy(evt.sender, fwd->sender, sizeof(evt.sender));
     sce_copy_bounded_id(evt.send_id, fwd->send_id);
     sce_copy_bounded_event_type(evt.type, fwd->type);
-    sce_copy_bounded_id(evt.origin_type, fwd->origin_type);
     sce_copy_bounded_id(evt.invoke_id, fwd->invoke_id);
     /* §scxml-5.10: the copy is exact, but what this machine is told the event is
        called is a fact about THIS machine's names — `evt.name` is the name the
@@ -4092,19 +4123,13 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
        of which queue popped them.
 
        W3C SCXML 5.10.1 (test336): `_event.origin` and
-       `_event.origintype` carry the URL plus processor type the
+       `_event.origintype` carry the address plus processor type the
        receiver can hand back to <send target=...> for bidirectional
-       communication. cpp populates them from `EventWithMetadata`
-       (StaticExecutionEngine.h:578: raiseExternal default
-       `EventWithMetadata(event, data, sessionId, "", "external",
-       SCXML_EVENT_PROCESSOR_TYPE)`); C11 mirrors via the
-       `_pending_event_origin` / `_pending_event_origintype` lua
-       globals seeded by process_event_queues' external pop, with
-       this session's own published address (`sm->scxml_location`,
-       issued alongside `_sessionid` in `_init`) as the origin
-       value. Internal-queue pops leave both nil — W3C 5.10.1 only
-       sets origin for events the SCXML processor accepted from an
-       external producer.
+       communication: the pair the processor that delivered the event
+       wrote into `evt->origin` where it built the event (docs/adr/0090),
+       read here as it is, on every queue. An event that carries none —
+       an internal or platform event, a host's event naming no party —
+       reads both as the empty string, as test330 asks of every event.
 
        W3C SCXML 5.10.1 (.invokeid): cpp `LuaEngine::setCurrentEvent`
        (LuaEngine.cpp:1138-1139) pushes `invokeId.c_str()` onto
@@ -4132,6 +4157,12 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
         lua_pushnil(L);
     }
     lua_setglobal(L, "_pending_send_id");
+    /* §scxml-5.10.1 (test336): the event's pair, or two empty strings for an
+       event that carries none (docs/adr/0090, section 1). */
+    lua_pushstring(L, sce_event_origin_address(&evt->origin));
+    lua_setglobal(L, "_pending_event_origin");
+    lua_pushstring(L, sce_event_origin_processor(&evt->origin));
+    lua_setglobal(L, "_pending_event_origintype");
     /* W3C SCXML 5.10.1 (.invokeid, test228/338): seed the lua-side
        carry from the dequeued event's `invoke_id` meta field so the
        per-enum chunk below promotes it onto `_event.invokeid`. cpp's
@@ -4395,10 +4426,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
     sce_forwarded_event_t fwd;
     memset(&fwd, 0, sizeof(fwd));
     sce_copy_bounded_data(fwd.data, evt->data);
-    sce_copy_bounded_origin(fwd.origin, evt->origin);
+    /* docs/adr/0090, section 2: autoforward copies the origin and the sender
+       of the event it forwards, unchanged. */
+    fwd.origin = evt->origin;
+    memcpy(fwd.sender, evt->sender, sizeof(fwd.sender));
     sce_copy_bounded_id(fwd.send_id, evt->send_id);
     sce_copy_bounded_event_type(fwd.type, evt->type);
-    sce_copy_bounded_id(fwd.origin_type, evt->origin_type);
     sce_copy_bounded_id(fwd.invoke_id, evt->invoke_id);
     const char *member_name = NULL;
     switch (evt->event) {
@@ -4682,53 +4715,18 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         {{ csym_prefix }}{{ model.name }}_lift_payload(sm, &evt);
         {% endif %}
         {% if model.needs_script_engine %}
-        /* W3C SCXML 5.10.1 (test331/336): seed `_event.type` /
-           `_event.origin` / `_event.origintype` carry — external
-           queue pop is the spec's 'external' category (bare <send>,
-           scheduled <send>, ECMAScript host events all enqueue
-           here); origintype is the SCXMLEventProcessor URI literal so a
-           receiver's `<send target=_event.origin
-           typeexpr=_event.origintype/>` round-trips into the same
-           external queue (test336).
+        /* W3C SCXML 5.10.1 (test331): the external queue pop is the spec's
+           'external' category (bare <send>, scheduled <send>, host events
+           all enqueue here).
 
-           W3C SCXML C.1: origin is the location the SENDING session
-           published. An event that arrived from another session carries
-           that address in `evt.origin` — overwriting it with this
-           machine's own would make every event look self-sent, which is
-           indistinguishable from correct only while the sender and the
-           receiver are the same session (test336 and test350 are both
-           that shape, which is why this held for so long). A bare
-           `<send>` with no target IS self-addressed and carries no
-           origin, so the fallback is this session's own published
-           location — the same `_scxml_location` its `_ioprocessors`
-           entry advertises, not the bare `_sessionid`, because C.1
-           requires the two to be the same string. */
-        if (evt.origin[0] != '\0') {
-            lua_pushstring(sm->L, evt.origin);
-        } else {
-            lua_pushnil(sm->L);
-        }
-        lua_setglobal(sm->L, "_pending_event_origin_carry");
-        /* The same for the processor type: an event whose producer named one
-           — a host reporting its invocation's end through
-           `_complete_host_invoke_from` or `_fail_host_invoke` (W3C SCXML
-           5.10.1) — keeps it, and every other external event carries the
-           SCXML Event I/O Processor's. */
-        if (evt.origin_type[0] != '\0') {
-            lua_pushstring(sm->L, evt.origin_type);
-        } else {
-            lua_pushnil(sm->L);
-        }
-        lua_setglobal(sm->L, "_pending_event_origintype_carry");
-        (void)luaL_dostring(sm->L,
-                            "_pending_event_type = 'external'; "
-                            "_pending_event_origin = "
-                              "_pending_event_origin_carry or _scxml_location; "
-                            "_pending_event_origin_carry = nil; "
-                            "_pending_event_origintype = "
-                              "_pending_event_origintype_carry or "
-                              "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'; "
-                            "_pending_event_origintype_carry = nil");
+           `_event.origin` and `_event.origintype` are the pair the processor
+           that delivered the event wrote where it built it, which
+           `set_current_event` reads (docs/adr/0090). No origin is invented
+           here: an event no processor stamped — a host's event naming no
+           party, a BasicHTTP reply — has none, and neither this session's
+           own location nor the SCXML processor's type stands in for it
+           (section 3). */
+        (void)luaL_dostring(sm->L, "_pending_event_type = 'external'");
         /* `_event.data` hydration from `evt.data` now happens inside
            `set_current_event`, so the internal drain gets the same rule
            this site used to hold alone. */
@@ -4755,10 +4753,13 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
            selection. The finalize body reads `_event.data.<key>` (just
            hydrated above) and writes parent variables — so the
            subsequent transition cond evaluates against post-finalize
-           state. The match is by `evt.invoke_id` against the spawn-time
-           id stamped by `execute_pending_invokes` so events arriving
-           from one invoke don't trigger a sibling's finalize (the
-           test234 parallel-finalize fixture pins this isolation). cpp
+           state. The match is by the event's sender against the running
+           child's session id (docs/adr/0090, section 1: the session-keyed
+           lookups read `sender`, never the origin's address), so events
+           arriving from one invoke don't trigger a sibling's finalize (the
+           test234 parallel-finalize fixture pins this isolation), and an
+           event a child of an earlier start sent does not run the
+           finalize of the child that replaced it. cpp
            `StateMachine::processEvent` runs finalize via the
            `InvokeExecutor::executeFinalize(invokeid)` arm at the
            equivalent point; the same content was lowered to JS by the
@@ -4768,8 +4769,8 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         {% for invoke_info in state.invokes | scxml %}
         {% if invoke_info.finalize_content %}
         if (sm->child_{{ invoke_info.field_suffix }}_active
-            && evt.invoke_id[0] != '\0'
-            && strcmp(evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id) == 0) {
+            && evt.sender[0] != '\0'
+            && strcmp(evt.sender, sm->child_{{ invoke_info.field_suffix }}.session_id) == 0) {
             (void)luaL_dostring(sm->L,
                 {{ invoke_info.finalize_content | to_lua_script | c_text_expr }});
         }
@@ -5194,7 +5195,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            (`parent_sm` NULL), and hears error.communication (C.1). */
         if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_PARENT) {
             if (sm->parent_dispatch != NULL) {
-                sm->parent_dispatch(sm->parent_sm, ready.route_event, sm->invoke_id,
+                sm->parent_dispatch(sm->parent_sm, ready.route_event, sm->invoke_id, sm->session_id,
 {%- if model.needs_script_engine or model.has_delayed_send_payload %} ready.data[0] != '\0' ? ready.data : NULL{% else %} NULL{% endif %});
             } else if (sm->parent_sm == NULL) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
@@ -5218,6 +5219,10 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             sce_copy_bounded_data(_ready_fwd.data, ready.data);
 {% endif %}
             sce_copy_bounded_id(_ready_fwd.send_id, ready.send_id);
+            /* docs/adr/0090, section 2: a waiting send is always this
+               session's, so the event built when it comes due names this
+               session as its sender. */
+            (void)sce_event_sent_by(&_ready_fwd.origin, _ready_fwd.sender, sm->session_id);
 {% if 'error.communication' in model.events %}
             if (!deliver_to_invocation(sm, ready.route_invoke, &_ready_fwd)) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
@@ -5261,10 +5266,14 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         memcpy(evt.name, ready.name, sizeof(evt.name));
 {% endif %}
         /* W3C SCXML 6.2.4 + C.1: a `#_internal` entry joins the internal
-           queue it named; every other one this session's external queue. */
+           queue it named, an internal event whose origin is left blank
+           (§scxml-5.10.1); every other one this session's external queue,
+           carrying the pair of this session, which sent it (docs/adr/0090,
+           section 2). */
         if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {
             {{ csym_prefix }}{{ model.name }}_raise(sm, &evt);
         } else {
+            (void)sce_event_sent_by(&evt.origin, evt.sender, sm->session_id);
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
         }
 
@@ -5389,10 +5398,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
     (void)snprintf(sm->session_id, sizeof(sm->session_id),
                    "{{ model.name | escape_c }}_session_%lu", _sce_session_seq);
     /* W3C SCXML C.1.1: the published address is the id, spelled as the
-       SCXML event processor's URI. Derived here, once, so the address and
-       the id cannot disagree — C.1 requires them to name one session. */
-    (void)snprintf(sm->scxml_location, sizeof(sm->scxml_location),
-                   "sce://scxml/%s", sm->session_id);
+       SCXML event processor's URI by the one encoder every origin a session's
+       send carries is spelled by (`sce_scxml_location`). Derived here, once,
+       so the address and the id cannot disagree — C.1 requires them to name
+       one session. The id is the machine's name and digits, so the location
+       always fits (asserted beside `SCE_MAX_URI_LEN` in the header). */
+    (void)sce_scxml_location(sm->scxml_location, sizeof(sm->scxml_location), sm->session_id);
 }
 
 {# The host's doors, emitted for EVERY document. W3C SCXML C.1: a machine that
@@ -6245,10 +6256,11 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_pref
    SCXML 6.4): the token check, the deadline drop, and `done.invoke.<id>` or
    `error.invoke.<id>` — the generic one when the document names no specific
    one (W3C SCXML 3.12.1) — carrying `data`, `_event.invokeid`, and the
-   origin the host named, when it named one (W3C SCXML 5.10.1). */
+   origin the host named, in its own terms, or none (W3C SCXML 5.10.1,
+   docs/adr/0090). */
 SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                       const char *invoke_id, uint64_t token, bool failed, const char *data,
-                                      const char *origin, const char *origin_type) {
+                                      const sce_event_origin_t *origin) {
     char name[SCE_MAX_ID_LEN];
     const char *prefix = failed ? SCE_ERROR_INVOKE_PREFIX : SCE_DONE_INVOKE_PREFIX;
     const size_t prefix_len = strlen(prefix);
@@ -6283,11 +6295,10 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
            `_event.invokeid` is the invocation's id — the one the event names
            and the host was handed. */
         sce_copy_bounded_id(completion.invoke_id, invoke_id);
+        /* docs/adr/0090, section 3: the pair the host named, whole; a host
+           that named none gives none, and no processor is filled in. */
         if (origin != NULL) {
-            sce_copy_bounded_origin(completion.origin, origin);
-        }
-        if (origin_type != NULL) {
-            sce_copy_bounded_id(completion.origin_type, origin_type);
+            completion.origin = *origin;
         }
         completion.has_host_invoke_token = true;
         completion.host_invoke_token = token;
@@ -6300,20 +6311,20 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_pr
                                                                       const char *processor_type,
                                                                       const char *invoke_id, uint64_t token,
                                                                       const char *done_data) {
-    return end_host_invoke(sm, processor_type, invoke_id, token, false, done_data, NULL, NULL);
+    return end_host_invoke(sm, processor_type, invoke_id, token, false, done_data, NULL);
 }
 
 /* `_complete_host_invoke`, with the `_event.origin` and `_event.origintype` the
-   completion carries (W3C SCXML 5.10.1) — for a host whose invocation stands
-   for another party it can name, as a Mesh router's `sce:mesh-rpc` stands for
-   the peer that answered (SCE_MESH.md §mesh-9.5). NULL leaves either field
-   as every host completion has carried it. */
+   completion carries (W3C SCXML 5.10.1) as one pair — for a host whose
+   invocation stands for another party it can name, as a Mesh router's
+   `sce:mesh-rpc` stands for the peer that answered (SCE_MESH.md §mesh-9.5).
+   NULL is none, as `_complete_host_invoke` gives. */
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                            const char *processor_type,
                                                                            const char *invoke_id, uint64_t token,
-                                                                           const char *done_data, const char *origin,
-                                                                           const char *origin_type) {
-    return end_host_invoke(sm, processor_type, invoke_id, token, false, done_data, origin, origin_type);
+                                                                           const char *done_data,
+                                                                           const sce_event_origin_t *origin) {
+    return end_host_invoke(sm, processor_type, invoke_id, token, false, done_data, origin);
 }
 
 /* W3C SCXML 6.4: a host-run invocation failed; raise its
@@ -6325,8 +6336,8 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from({{ cs
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_fail_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                   const char *processor_type, const char *invoke_id,
                                                                   uint64_t token, const char *error_data,
-                                                                  const char *origin, const char *origin_type) {
-    return end_host_invoke(sm, processor_type, invoke_id, token, true, error_data, origin, origin_type);
+                                                                  const sce_event_origin_t *origin) {
+    return end_host_invoke(sm, processor_type, invoke_id, token, true, error_data, origin);
 }
 
 /* W3C SCXML 6.4: how many host-run invocations' `done.invoke` events this
@@ -6620,7 +6631,8 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({
 {% if model.may_address_parent %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
-                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
+                                       const char *parent_session_id,
+                                       sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
                                        sce_clock_t clock) {
     memset(sm, 0, sizeof(*sm));
@@ -6638,7 +6650,10 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
        AFTER the entry walk and after `<param>` / `namelist` transfer,
        which silently lost any onentry-time send-to-parent. The
        `invoke_id` carry lets `_event.invokeid` read as the spawning
-       child's id at the parent's transition time (test338). */
+       child's id at the parent's transition time (test338). The parent's
+       id is read where the parent keeps it, so a reply to the location the
+       parent published reaches it (§scxml-C-1, docs/adr/0090). */
+    sm->parent_session_id = parent_session_id;
     sm->parent_sm = parent_sm;
     sm->parent_dispatch = dispatch;
     sce_copy_bounded_id(sm->invoke_id, invoke_id);
@@ -6688,7 +6703,8 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
 {% endif %}
-                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
+                                       const char *parent_session_id,
+                                       sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
                                        sce_clock_t clock) {
 {% if not model.needs_event_scheduler %}
@@ -6714,6 +6730,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}
 {% if model.may_address_parent %}
     /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry
        walk, for the reason `_init_with_parent` gives. */
+    sm->parent_session_id = parent_session_id;
     sm->parent_sm = parent_sm;
     sm->parent_dispatch = dispatch;
     sce_copy_bounded_id(sm->invoke_id, invoke_id);
@@ -6721,6 +6738,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}
     (void)parent_sm;
     (void)dispatch;
     (void)invoke_id;
+    (void)parent_session_id;
 {% endif %}
 {% if has_native_actions %}
     return true;
@@ -6792,20 +6810,20 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_install_host_invokers({{ csym_p
 SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_end_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
                                          const char *session_id, const char *processor_type,
                                          const char *invoke_id, uint64_t token, bool failed, const char *data,
-                                         const char *origin, const char *origin_type) {
+                                         const sce_event_origin_t *origin) {
     if (sm == NULL || session_id == NULL) {
         return false;
     }
 {% if model.host_invoker_types %}
     if (strcmp(session_id, sm->session_id) == 0) {
-        return failed ? {{ csym_prefix }}{{ model.name }}_fail_host_invoke(sm, processor_type, invoke_id, token, data, origin, origin_type)
-                      : {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from(sm, processor_type, invoke_id, token, data, origin, origin_type);
+        return failed ? {{ csym_prefix }}{{ model.name }}_fail_host_invoke(sm, processor_type, invoke_id, token, data, origin)
+                      : {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from(sm, processor_type, invoke_id, token, data, origin);
     }
 {% endif %}
 {% for target in tree_slots.targets %}
     if (sm->{{ target.slot }}_active &&
         (failed ? {{ csym_prefix }}{{ target.stem }}_fail_host_invoke_in(&sm->{{ target.slot }}, session_id, processor_type,
-                                                                         invoke_id, token, data, origin, origin_type)
+                                                                         invoke_id, token, data, origin)
                 : {{ csym_prefix }}{{ target.stem }}_complete_host_invoke_in(&sm->{{ target.slot }}, session_id, processor_type,
                                                                              invoke_id, token, data))) {
         return true;
@@ -6817,7 +6835,6 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_end_host_invoke_in({{ cs
     (void)failed;
     (void)data;
     (void)origin;
-    (void)origin_type;
     return false;
 }
 
@@ -6825,34 +6842,31 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_in({{ csym
                                          const char *session_id, const char *processor_type,
                                          const char *invoke_id, uint64_t token, const char *done_data) {
     return {{ csym_prefix }}{{ model.name }}_end_host_invoke_in(sm, session_id, processor_type, invoke_id, token, false,
-                                                                done_data, NULL, NULL);
+                                                                done_data, NULL);
 }
 
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_fail_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
                                          const char *session_id, const char *processor_type,
                                          const char *invoke_id, uint64_t token, const char *error_data,
-                                         const char *origin, const char *origin_type) {
+                                         const sce_event_origin_t *origin) {
     return {{ csym_prefix }}{{ model.name }}_end_host_invoke_in(sm, session_id, processor_type, invoke_id, token, true,
-                                                                error_data, origin, origin_type);
+                                                                error_data, origin);
 }
 
 /* Apply what arrived for this child on its router, in the order the router
    released it. An event the machine does not declare is dropped, as the engine
-   drops any such event; one from a peer carries `_event.origin`
-   `mesh://<source>` and the SCXML processor as origin type (SCE_MESH.md
-   §mesh-10.7). An end of a Mesh request ends it through the host-invoke door,
-   whose token check refuses one the machine no longer waits for. */
+   drops any such event; one from a peer carries the pair the transport writes
+   for it, the SCXML processor at `mesh://<source>` (SCE_MESH.md §mesh-10.7,
+   docs/adr/0090). An end of a Mesh request ends it through the host-invoke
+   door, whose token check refuses one the machine no longer waits for, and
+   carries the request's type at `mesh://<source>` of the peer that answered,
+   none for an end the router reached itself. */
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_apply_mesh_calls({{ csym_prefix }}{{ model.name }}_t *sm) {
     if (sm == NULL || !sm->has_mesh_router || sm->mesh_router.take_call == NULL) {
         return;
     }
     sce_mesh_call_t _call;
     while (sm->mesh_router.take_call(sm->mesh_router.user_data, &_call)) {
-        char _origin[SCE_MAX_URI_LEN];
-        _origin[0] = '\0';
-        if (_call.source[0] != '\0') {
-            (void)snprintf(_origin, sizeof(_origin), "%s%s", SCE_MESH_ORIGIN_SCHEME, _call.source);
-        }
         if (_call.kind == SCE_MESH_CALL_RAISE) {
             /* Zeroed: the resolver writes it only for a name it knows, and the compiler
                cannot see that a `true` answer is the only way past the `continue`
@@ -6867,23 +6881,21 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_apply_mesh_calls({{ csym_prefix
             sce_copy_bounded_data(_meta.data, _call.data);
             sce_copy_bounded_id(_meta.send_id, _call.send_id);
             sce_copy_bounded_event_type(_meta.type, "external");
-            if (_origin[0] != '\0') {
-                sce_copy_bounded_origin(_meta.origin, _origin);
-                sce_copy_bounded_id(_meta.origin_type, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
-            }
+            (void)sce_event_origin_mesh_peer(&_meta.origin, _call.source);
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_meta);
             continue;
         }
 {% if 'sce:mesh-rpc' in model.host_invoker_types %}
         {
-            const char *_origin_type = (_origin[0] != '\0') ? SCE_MESH_RPC_INVOKE_TYPE : "";
+            sce_event_origin_t _answered;
+            (void)sce_event_origin_mesh_rpc_reply(&_answered, _call.source);
             if (_call.failed) {
                 (void){{ csym_prefix }}{{ model.name }}_fail_host_invoke(sm, SCE_MESH_RPC_INVOKE_TYPE, _call.invoke_id,
-                                                                        _call.token, _call.data, _origin, _origin_type);
+                                                                        _call.token, _call.data, &_answered);
             } else {
                 (void){{ csym_prefix }}{{ model.name }}_complete_host_invoke_from(sm, SCE_MESH_RPC_INVOKE_TYPE,
                                                                                  _call.invoke_id, _call.token,
-                                                                                 _call.data, _origin, _origin_type);
+                                                                                 _call.data, &_answered);
             }
         }
 {% endif %}
@@ -6920,7 +6932,7 @@ SCE_SM_FN static void apply_host_invoke_ending({{ csym_prefix }}{{ model.name }}
     }
 {% if model.host_invoker_types %}
     (void)end_host_invoke(sm, ending->processor_type, ending->invoke_id, ending->token, !ending->done, ending->data,
-                          ending->origin, ending->origin_type);
+                          &ending->origin);
 {% endif %}
 }
 

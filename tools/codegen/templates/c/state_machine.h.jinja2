@@ -405,13 +405,18 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
        every event the document itself raises or sends. */
     char name[SCE_MAX_ID_LEN];
     char data[SCE_MAX_DATA_LEN];
-    /* §scxml-C-1: `_event.origin` is the location the sending session
-       published, so it is sized as a URI rather than as an id — see
-       `sce_copy_bounded_origin` in `sce/types.h`. */
-    char origin[SCE_MAX_URI_LEN];
+    /* §scxml-5.10.1: `_event.origin` and `_event.origintype`, the one pair the
+       delivering processor wrote where it built the event (docs/adr/0090,
+       `sce_event_origin_t` in `sce/types.h`); none, both empty, for an event
+       no processor stamped. */
+    sce_event_origin_t origin;
+    /* The id of the session that sent the event, set only by the SCXML
+       processor (`sce_event_sent_by`). Not an `_event` field: `<finalize>`
+       finds the child an event came from by it, never by the origin's
+       address. */
+    char sender[SCE_SENDER_LEN];
     char send_id[SCE_MAX_ID_LEN];
     char type[SCE_MAX_EVENT_TYPE_LEN];
-    char origin_type[SCE_MAX_ID_LEN];
     char invoke_id[SCE_MAX_ID_LEN];
     char target[SCE_MAX_ID_LEN];
 {% if event_payload_active %}
@@ -897,7 +902,10 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        bytes) or a parent derived from its own (`parent.state.N.invoke`), so a
        machine that restores holds an id of `SCE_MAX_SESSION_ID_LEN` bytes. */
     char session_id[SCE_MAX_SESSION_ID_LEN];
-    char scxml_location[sizeof("sce://scxml/") + SCE_MAX_SESSION_ID_LEN];
+    /* §scxml-C-1: the location is a URI, held in the bytes this runtime holds
+       one in, since it is also the address every event this session sends
+       carries; a restore refuses an id whose location does not fit. */
+    char scxml_location[SCE_MAX_URI_LEN];
 {% else %}
     char session_id[sizeof("{{ model.name | escape_c }}_session_") + 20u];
     char scxml_location[sizeof("sce://scxml/{{ model.name | escape_c }}_session_") + 20u];
@@ -982,8 +990,15 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        external dequeue runs `_event.data = <table>` before transition
        matching and finalize. NULL means no payload (the long-standing
        no-param `<send target="#_parent" event="X"/>` shape passes NULL
-       too — same enqueue path, just an empty data slot). */
-    void (*parent_dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data);
+       too — same enqueue path, just an empty data slot). This session's id
+       goes with it, from which the parent writes the event's origin
+       (docs/adr/0090, section 2). */
+    sce_parent_dispatch_fn parent_dispatch;
+    /* §scxml-C-1: the id of the session that invoked this one, read in the
+       parent where it is kept, so the location the parent publishes is a
+       target as `#_parent` is: the address a reply to an event the parent
+       sent goes to. NULL for a session nothing invoked. */
+    const char *parent_session_id;
     char invoke_id[SCE_MAX_ID_LEN];
     {% endif %}
     {% if model.host_processor_types %}
@@ -1225,18 +1240,21 @@ bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_prefix }}{{ 
                                   const char *invoke_id, uint64_t token, const char *done_data);
 
 /* `_complete_host_invoke`, with the completion's `_event.origin` and
-   `_event.origintype` (W3C SCXML 5.10.1); NULL leaves either as it was. */
+   `_event.origintype` (§scxml-5.10.1) as the one pair the host names for the
+   party it reports, in its own terms (docs/adr/0090, section 2); NULL, or a
+   pair that is none, for a host that names no party, and then both read empty. */
 bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                   const char *invoke_id, uint64_t token, const char *done_data,
-                                  const char *origin, const char *origin_type);
+                                  const sce_event_origin_t *origin);
 
 /* W3C SCXML 6.4: a host-run invocation failed — raise its
    `error.invoke.<invoke_id>` with `error_data`, under the same rules as a
    completion: accepted at most once, only while that start is still running,
-   and a failure ends the run. */
+   and a failure ends the run. `origin` is the pair `_complete_host_invoke_from`
+   takes, NULL for none. */
 bool {{ csym_prefix }}{{ model.name }}_fail_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                   const char *invoke_id, uint64_t token, const char *error_data,
-                                  const char *origin, const char *origin_type);
+                                  const sce_event_origin_t *origin);
 
 /* W3C SCXML 6.4: how many host invokes' `done.invoke` events were refused
    because they did not arrive through `_complete_host_invoke`. */
@@ -1425,10 +1443,13 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
    error.communication (W3C SCXML C.1). `clock` is the parent's time
    (`sce_clock_following`): an invoked session's `<send delay>`s wait on the
    clock its parent's do (§scxml-6.4), installed before the entry walk arms
-   any of them. */
+   any of them. `parent_session_id` is the parent's own id, kept where the
+   parent keeps it, so a send to the location the parent publishes reaches the
+   parent as `#_parent` does (§scxml-C-1). */
 void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
-                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
+                                       const char *parent_session_id,
+                                       sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
                                        sce_clock_t clock);
 {% endif %}
@@ -1467,7 +1488,8 @@ bool {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.n
 void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
 {% endif %}
-                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
+                                       const char *parent_session_id,
+                                       sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
                                        sce_clock_t clock);
 void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}{{ model.name }}_t *sm);
@@ -1505,7 +1527,7 @@ bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_in({{ csym_prefix }}
 bool {{ csym_prefix }}{{ model.name }}_fail_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
                                          const char *session_id, const char *processor_type,
                                          const char *invoke_id, uint64_t token, const char *error_data,
-                                         const char *origin, const char *origin_type);
+                                         const sce_event_origin_t *origin);
 
 /* Apply what arrived for this child on its router, oldest first: an event is
    raised on its external queue with the `_event` a Mesh event carries
@@ -2289,11 +2311,16 @@ bool {{ csym_prefix }}{{ model.name }}_resume({{ csym_prefix }}{{ model.name }}_
 bool {{ csym_prefix }}{{ model.name }}_bind_session_id({{ csym_prefix }}{{ model.name }}_t *sm, const char *parent_id,
                                        const char *invoke_id);
 
-SCE_STATIC_ASSERT(SCE_MAX_SESSION_ID_LEN >= (int)(sizeof("{{ model.name | escape_c }}_session_") + 20u),
-                  "SCE_MAX_SESSION_ID_LEN too small for the id this machine draws for itself");
-
 {% endif %}
 /* ── Compile-time invariants ──────────────────────────────────────── */
+/* docs/adr/0090: every event this session sends names it as its sender, held in
+   `SCE_SENDER_LEN` bytes by whichever machine of the build receives it, and
+   carries its location as an address of `SCE_MAX_URI_LEN` bytes. The id it
+   draws is its name and digits, which the location keeps as they are. */
+SCE_STATIC_ASSERT(SCE_MAX_SESSION_ID_LEN >= (int)(sizeof("{{ model.name | escape_c }}_session_") + 20u),
+                  "SCE_MAX_SESSION_ID_LEN too small for the id this machine draws for itself");
+SCE_STATIC_ASSERT(SCE_MAX_URI_LEN >= (int)(sizeof("sce://scxml/{{ model.name | escape_c }}_session_") + 20u),
+                  "SCE_MAX_URI_LEN too small for the location this machine publishes");
 SCE_STATIC_ASSERT(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
 SCE_STATIC_ASSERT(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");
 {% if model.needs_auto_send_id %}

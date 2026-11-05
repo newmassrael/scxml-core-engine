@@ -597,13 +597,27 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         if (!sce_saved_text_into(event.send_id, field, queued.send_id, sizeof(queued.send_id), err)) {
             return false;
         }
-        (void)snprintf(field, sizeof(field), "%s.origin", what);
-        if (!sce_saved_text_into(event.origin, field, queued.origin, sizeof(queued.origin), err)) {
-            return false;
-        }
-        (void)snprintf(field, sizeof(field), "%s.origintype", what);
-        if (!sce_saved_text_into(event.origin_type, field, queued.origin_type, sizeof(queued.origin_type), err)) {
-            return false;
+        {
+            /* docs/adr/0090, section 7: the stored `origin` and `origintype` are read back as
+               the pair and the sender they store — a session's id, or the location this
+               backend once stored in its place, as that session's pair. */
+            char origin_text[SCE_MAX_URI_LEN];
+            char origin_type[SCE_MAX_ID_LEN];
+            (void)snprintf(field, sizeof(field), "%s.origin", what);
+            if (!sce_saved_text_into(event.origin, field, origin_text, sizeof(origin_text), err)) {
+                return false;
+            }
+            (void)snprintf(field, sizeof(field), "%s.origintype", what);
+            if (!sce_saved_text_into(event.origin_type, field, origin_type, sizeof(origin_type), err)) {
+                return false;
+            }
+            if (!sce_saved_origin_read(origin_text, origin_type, &queued.origin, queued.sender,
+                                       sizeof(queued.sender))) {
+                return sce_saved_refuse(err,
+                                        "%s's origin '%s' of type '%s' names an address or a session id longer "
+                                        "than this build holds (SCE_MAX_URI_LEN, SCE_MAX_SESSION_ID_LEN)",
+                                        what, origin_text, origin_type);
+            }
         }
         (void)snprintf(field, sizeof(field), "%s.invokeid", what);
         if (!sce_saved_text_into(event.invoke_id, field, queued.invoke_id, sizeof(queued.invoke_id), err)) {
@@ -1299,6 +1313,21 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
         !sce_saved_text_into(s->session_id, "sessionid", NULL, (size_t)SCE_MAX_SESSION_ID_LEN, err)) {
         return false;
     }
+    if (s->format == SCE_SAVED_FORMAT_2) {
+        /* The session carries on at the location its id is published at, which every event it
+           sends names as its origin: a URI, held in `SCE_MAX_URI_LEN` bytes, and an id whose
+           location (percent-encoded) does not fit is refused rather than published cut. */
+        char id[SCE_MAX_SESSION_ID_LEN];
+        size_t located;
+        (void)sce_jv_string(s->session_id, id, sizeof(id), NULL);
+        located = sce_scxml_location_len(id);
+        if (located >= (size_t)SCE_MAX_URI_LEN) {
+            return sce_saved_refuse(err,
+                                    "'sessionid' (%s) is published at a location of %lu bytes, past the %lu a "
+                                    "URI is bounded by (SCE_MAX_URI_LEN)",
+                                    id, (unsigned long)located, (unsigned long)(SCE_MAX_URI_LEN - 1));
+        }
+    }
     if (!{{ _t }}_saved_events(s, NULL, err)) {
         return false;
     }
@@ -1420,6 +1449,8 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
             memset(&send, 0, sizeof(send));
             send.due = sce_saved_due_on(wall_now_ms, now_ms, entry->fire_time_ms);
             send.send_id = entry->send_id;
+            /* A waiting send is always this session's: its sender (docs/adr/0090, "Until step
+               6"), which the event built when it comes due names. */
             send.origin = sm->session_id;
             send.data = "";
 {% if model.needs_script_engine or model.has_delayed_send_payload %}
@@ -1637,8 +1668,11 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
                unset, and the queue it waits on is the external one. */
             event.type = queued->type[0] != '\0' ? queued->type : "external";
             event.send_id = queued->send_id;
-            event.origin = queued->origin;
-            event.origin_type = queued->origin_type;
+            /* docs/adr/0090, "Until step 6": format 2 stores the sender for an event a session
+               sent and the address otherwise, with the pair's processor as its type, which is
+               what a scheduled send's `origin` holds too. */
+            event.origin = sce_saved_origin_text(&queued->origin, queued->sender);
+            event.origin_type = sce_event_origin_processor(&queued->origin);
             event.invoke_id = queued->invoke_id;
 {% if model.host_invoker_types %}
             event.has_host_invoke_token = queued->has_host_invoke_token;
@@ -1723,8 +1757,9 @@ SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_sessi
        peer's address name (docs/adr/0045); a format-1 state holds none, so the machine keeps the
        one it drew. */
     if (session->format == SCE_SAVED_FORMAT_2) {
+        /* The judge refused an id whose location does not fit, so the location is whole. */
         (void)sce_jv_string(session->session_id, sm->session_id, sizeof(sm->session_id), NULL);
-        (void)snprintf(sm->scxml_location, sizeof(sm->scxml_location), "sce://scxml/%s", sm->session_id);
+        (void)sce_scxml_location(sm->scxml_location, sizeof(sm->scxml_location), sm->session_id);
     }
     if (!{{ _t }}_saved_read_variables(session, judged->record_at, &sm->policy, err)) {
         return false;
@@ -1790,11 +1825,19 @@ bool {{ _t }}_resume({{ _t }}_t *sm, sce_jv_t members, int64_t wall_now_ms, sce_
 bool {{ _t }}_bind_session_id({{ _t }}_t *sm, const char *parent_id, const char *invoke_id) {
     const size_t parent = strlen(parent_id);
     const size_t invoke = strlen(invoke_id);
+    char bound[SCE_MAX_SESSION_ID_LEN];
     if (sm == NULL || parent + 1u + invoke + 1u > sizeof(sm->session_id)) {
         return false;
     }
-    sce_saved_path_field(sm->session_id, sizeof(sm->session_id), parent_id, invoke_id);
-    (void)snprintf(sm->scxml_location, sizeof(sm->scxml_location), "sce://scxml/%s", sm->session_id);
+    /* The location the id is published at is held in `SCE_MAX_URI_LEN` bytes, so an id whose
+       location does not fit is refused as one that does not fit itself, and the session keeps
+       the id and the location it had. */
+    sce_saved_path_field(bound, sizeof(bound), parent_id, invoke_id);
+    if (sce_scxml_location_len(bound) >= sizeof(sm->scxml_location)) {
+        return false;
+    }
+    memcpy(sm->session_id, bound, sizeof(sm->session_id));
+    (void)sce_scxml_location(sm->scxml_location, sizeof(sm->scxml_location), sm->session_id);
     return true;
 }
 

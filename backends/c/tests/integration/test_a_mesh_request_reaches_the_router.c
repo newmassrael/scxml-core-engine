@@ -133,8 +133,11 @@ static int a_mesh_request_the_router_fails_is_error_invoke(void) {
     request_t request;
     start_with_router(&sm, &request);
     int bad = check_request(&request, "failed");
+    // The answer names the peer that answered, as the router's own end does.
+    sce_event_origin_t answered;
+    (void)sce_event_origin_mesh_rpc_reply(&answered, "motor");
     if (!a_mesh_request_reaches_the_router_fail_host_invoke(&sm, SCE_MESH_RPC_INVOKE_TYPE, "ask", request.token,
-                                                            "\"unreachable\"", "mesh://motor", NULL)) {
+                                                            "\"unreachable\"", &answered)) {
         (void)fprintf(stderr, "FAIL [failed]: the running request's failure was refused\n");
         bad = 1;
     }
