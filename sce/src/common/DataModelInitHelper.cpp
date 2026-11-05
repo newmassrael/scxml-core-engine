@@ -34,8 +34,9 @@ std::string SCE::DataModelInitHelper::resolveExecutableBasePath(const std::strin
 #ifdef __EMSCRIPTEN__
         // WASM: /proc/self/exe names the Node binary, not this program. The
         // program's own path is the one its host declared; resolved against
-        // its directory, as natively, a host that mounts its directories at
-        // their own paths (tests/w3c/wasm_polyfill.js) reads the same file.
+        // its directory, as natively, a program that sees the host's files at
+        // their own paths (NODERAWFS, which tests/CMakeLists.txt links every
+        // test program with) reads the same file.
         char *program = sce_this_program();
         const fs::path programPath(program);
         std::free(program);

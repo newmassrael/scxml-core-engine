@@ -33,7 +33,8 @@ sce_gate_requires_tool node emsdk || exit 0
 # (tests/w3c/wasm_polyfill.js) on the endpoint's port, for both programs, so a
 # listener already there makes the BasicHTTP fixtures fail against somebody
 # else's server. A port named in SCE_W3C_HTTP_PORT is the one both sides use:
-# the host binds it and hands it to the program's environment.
+# the host binds it, and the program reads it from the host's environment,
+# which NODERAWFS makes the program's own.
 sce_gate_requires_free_http_port
 
 # The configure asks the generator for its plans and refuses a stale one.
@@ -73,10 +74,8 @@ status=0
 ( cd "$RUN_DIR" && node comprehensive_interactive_test.js ) >"$log" 2>&1 || status=$?
 
 # GoogleTest's summary: `[  PASSED  ] <n> tests.`, and a `[  FAILED  ]` line
-# per failing test. Read as well as the status because the program keeps its
-# runtime alive after main() returns (EXIT_RUNTIME=0) and, unlike the W3C
-# runner, does not force its exit, so the status Node exits with need not be
-# the one main() returned.
+# per failing test. Read as well as the status, so the verdict is the suite's
+# own account of its cases and not only how Node ended.
 #
 # 928 pass today and 75 are skipped by design. The floor stands under the 928
 # so a run that loaded fewer fixtures (each one it cannot find is a skip, not a

@@ -64,8 +64,8 @@ const std::set<int> EXCLUDED_TESTS = {
 std::vector<int> discoverW3CTests() {
     std::vector<int> testIds;
 
-    // The checkout CMake names; under WASM the host (w3c/wasm_polyfill.js)
-    // mounts it at the same path.
+    // The checkout CMake names; under WASM the program is linked with
+    // NODERAWFS, so the host's path is the program's.
     std::string resourcesPath = std::string(SCE_PROJECT_ROOT) + "/resources";
 
     if (!fs::exists(resourcesPath)) {

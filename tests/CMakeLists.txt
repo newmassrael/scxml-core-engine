@@ -122,7 +122,16 @@ function(apply_sce_test_policies target_name)
     # the forge conformance harness reads too (cmake/SCETestWarnings.cmake).
     target_compile_options(${target_name} PRIVATE ${SCE_TEST_WARNING_OPTIONS})
 
-    # WASM: Apply pthread configuration to test executables
+    # WASM: the shape of every test program, in one place. A test program is a
+    # Node command-line program: ctest runs it through the toolchain's
+    # CMAKE_CROSSCOMPILING_EMULATOR, so it is linked for Node alone and with
+    # NODERAWFS, under which a path means the same file to the program as to
+    # the process around it and the working directory and the environment are
+    # the host's, as a native program's are. The fixtures are named by host
+    # paths the configure step bakes in; in Emscripten's in-memory file system
+    # none of them could be opened. emcc keeps the LAST value of a repeated
+    # `-s` setting and these options are appended where the policy is applied,
+    # so a program states only what it adds, never another value of these.
     if(EMSCRIPTEN)
         target_compile_options(${target_name} PRIVATE
             -pthread
@@ -133,7 +142,8 @@ function(apply_sce_test_policies target_name)
             -sUSE_PTHREADS=1
             -sPTHREAD_POOL_SIZE=4
             -sEXIT_RUNTIME=1  # Exit immediately after main()
-            -sENVIRONMENT=node,web
+            -sENVIRONMENT=node
+            -sNODERAWFS=1
             -sASYNCIFY
             -sASSERTIONS=2
             -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}  # Centrally managed in root CMakeLists.txt
@@ -142,6 +152,10 @@ function(apply_sce_test_policies target_name)
             --profiling-funcs
         )
     endif()
+
+    # Read at the end of this file: every program declared here has had this
+    # policy applied, or is named there with the reason it is not a test.
+    set_property(TARGET ${target_name} PROPERTY SCE_TEST_POLICIES_APPLIED TRUE)
 endfunction()
 
 # ============================================================================
@@ -156,10 +170,16 @@ set(SCE_TEST_TARGETS
     action_tests
     history_tests
     http_bridge_tests
+    session_target_routing_tests
+    scheduler_manual_mode_tests
+    scheduler_session_order_tests
+    ready_scxml_engine_tests
     core_parser_tests
     model_tests
     integration_tests
     concurrency_tests
+    qt_dispatcher_tests
+    glib_dispatcher_tests
     txml_converter_tests
     w3c_test_cli
     w3c_full_runner
@@ -232,21 +252,6 @@ target_link_libraries(js_engine_tests
         GTest::gtest_main
         pthread
 )
-
-# WASM: the program's own link shape; the fetch client's -sFETCH comes from
-# sce_runtime, which states it for every program that links it.
-if(EMSCRIPTEN)
-    target_link_options(js_engine_tests PRIVATE
-        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
-        -sENVIRONMENT=node              # Node.js environment for tests
-        -sASYNCIFY                      # Enable async/await support
-        -sASSERTIONS=2
-        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
-        -sSTACK_SIZE=33554432
-        -g1
-        --profiling-funcs
-    )
-endif()
 
 # Apply SCE test policy
 apply_sce_test_policies(js_engine_tests)
@@ -1968,20 +1973,6 @@ target_link_libraries(integration_tests
         pthread
 )
 
-# WASM: the program's own link shape; the fetch client's -sFETCH comes from
-# sce_runtime, which states it for every program that links it.
-if(EMSCRIPTEN)
-    target_link_options(integration_tests PRIVATE
-        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
-        -sENVIRONMENT=node              # Node.js environment for tests
-        -sASYNCIFY                      # Enable async/await support
-        -sASSERTIONS=2
-        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
-        -sSTACK_SIZE=33554432
-        -g1
-        --profiling-funcs
-    )
-endif()
 
 
 
@@ -2038,21 +2029,6 @@ target_link_libraries(concurrency_tests
         GTest::gmock
         pthread
 )
-
-# WASM: the program's own link shape; the fetch client's -sFETCH comes from
-# sce_runtime, which states it for every program that links it.
-if(EMSCRIPTEN)
-    target_link_options(concurrency_tests PRIVATE
-        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
-        -sENVIRONMENT=node              # Node.js environment for tests
-        -sASYNCIFY                      # Enable async/await support
-        -sASSERTIONS=2
-        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
-        -sSTACK_SIZE=33554432
-        -g1
-        --profiling-funcs
-    )
-endif()
 
 # ============================================================================
 # 8a. Qt Dispatcher Tests (Optional - requires SCE_DISPATCHER_QT)
@@ -3107,8 +3083,7 @@ if(EMSCRIPTEN)
 // The fixtures the registry runs under its `http` harness, and the largest test number.
 var SCE_W3C_HTTP_TEST_IDS = ['${_W3C_HTTP_TEST_IDS_JS}'];
 var SCE_W3C_LARGEST_TEST_NUMBER = ${W3C_LARGEST_TEST_NUMBER};
-// The checkout, mounted for the fixtures, and the Node package of the harness.
-var SCE_W3C_SOURCE_ROOT = '${CMAKE_SOURCE_DIR}';
+// The Node package of the harness.
 var SCE_W3C_HARNESS_DIR = '${CMAKE_CURRENT_SOURCE_DIR}/w3c';
 ")
 endif()
@@ -3161,31 +3136,21 @@ if(EMSCRIPTEN)
     # WASM: Use pre-js for XMLHttpRequest polyfill, NODEFS mount, and HTTP server auto-management
     set(POLYFILL_PRE_JS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/wasm_polyfill.js")
 
-    # WASM: the runner's own link options. The pthread options come from
-    # apply_sce_test_policies like every test program's, and the fetch
-    # client's -sFETCH from sce_runtime.
+    # WASM: what the runner adds to the shape apply_sce_test_policies gives
+    # every test program (Node, NODERAWFS, pthreads, ASYNCIFY, the heap and
+    # stack); the fetch client's -sFETCH comes from sce_runtime.
     target_link_options(w3c_test_cli PRIVATE
         -sALLOW_TABLE_GROWTH=1          # Allow function table to grow dynamically (required for QuickJS JS_NewCFunction)
-        -sEXIT_RUNTIME=0                # Keep runtime alive for async HTTP callbacks
-        -sENVIRONMENT=node              # Node.js environment for wrapper script
-        -sASYNCIFY                      # Enable async/await - allows future.get() to yield to event loop
         -O3                             # Optimization required for reasonable ASYNCIFY binary size
-        -sASSERTIONS=2
-        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}      # Centrally managed in root CMakeLists.txt
-        -sSTACK_SIZE=33554432
-        -g1                             # Line number info only
-        --profiling-funcs
         # Each `--pre-js` is one `SHELL:` option with its file: CMake
         # de-duplicates repeated link options, so two bare `--pre-js` flags
         # become one with both files after it, and wasm-ld reads the second
         # file as an input.
         "SHELL:--pre-js ${W3C_REGISTRY_PRE_JS}"  # The registry's BasicHTTP fixtures, read by the polyfill
-        "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # Inject XMLHttpRequest polyfill and NODEFS for Node.js
-        -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
-        # The polyfill holds main() until the fixture server is ready, and
-        # hands the program the endpoint's port in its environment, through
+        "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # The Node host: the BasicHTTP fixture server
+        # The polyfill holds main() until the fixture server is ready, through
         # runtime symbols a pre-js has to name to the link.
-        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency,ENV]"
+        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency]"
         "-sEXPORTED_FUNCTIONS=['_main','_dom_getElementsByTagName_wrapper','_dom_getAttribute_wrapper']"  # Export main + DOM wrapper functions
     )
     # A pre-js is read at link time, which does not otherwise depend on it.
@@ -3291,24 +3256,17 @@ endif()
 
 # WASM: Add Emscripten embind support for JavaScript interop
 if(EMSCRIPTEN)
-    # Reuse the same polyfill as w3c_test_cli for NODEFS mounting
+    # The same Node host as w3c_test_cli: the BasicHTTP fixture server.
     set(POLYFILL_PRE_JS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/wasm_polyfill.js")
 
+    # What the interactive suite adds to the shape apply_sce_test_policies
+    # gives every test program.
     target_link_options(comprehensive_interactive_test PRIVATE
         --bind                          # Enable Emscripten embind for val objects
-        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
-        -sENVIRONMENT=node              # Node.js environment for tests
-        -sASYNCIFY                      # Enable async/await support
-        -sASSERTIONS=2
-        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
-        -sSTACK_SIZE=33554432
-        -g1
-        --profiling-funcs
         # One `SHELL:` option per pre-js, as w3c_test_cli's above says why.
         "SHELL:--pre-js ${W3C_REGISTRY_PRE_JS}"  # The registry's BasicHTTP fixtures, read by the polyfill
-        "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # Inject XMLHttpRequest polyfill and NODEFS for Node.js
-        -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
-        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency,ENV]"
+        "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # The Node host: the BasicHTTP fixture server
+        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency]"
     )
     set_property(TARGET comprehensive_interactive_test APPEND PROPERTY
         LINK_DEPENDS "${W3C_REGISTRY_PRE_JS}" "${POLYFILL_PRE_JS}")
@@ -8680,5 +8638,31 @@ foreach(_sce_t IN LISTS _sce_dir_targets)
                 "without it the target compiles at the global standard and "
                 "verifies nothing about the C++17 contract it declares.")
         endif()
+    endif()
+endforeach()
+
+# Every program declared here is a test program and has had
+# apply_sce_test_policies, which is where a test program's shape lives: the
+# cout prohibition, the warning classes, and under emscripten how it is linked
+# to run under Node (NODERAWFS, pthreads, the heap). Four programs once missed
+# it and were linked with none of that; under Node they could not have opened
+# one file the configure step names. A program that is not a test says why
+# here.
+#
+#   visualizer: the browser module web/visualizer loads, which ctest never
+#               runs; it is linked for the web by its own options.
+set(_SCE_NOT_TEST_PROGRAMS visualizer)
+foreach(_sce_t IN LISTS _sce_dir_targets)
+    get_target_property(_sce_type ${_sce_t} TYPE)
+    if(NOT _sce_type STREQUAL "EXECUTABLE" OR _sce_t IN_LIST _SCE_NOT_TEST_PROGRAMS)
+        continue()
+    endif()
+    get_target_property(_sce_policed ${_sce_t} SCE_TEST_POLICIES_APPLIED)
+    if(NOT _sce_policed)
+        message(FATAL_ERROR
+            "${_sce_t} is a program tests/CMakeLists.txt declares without "
+            "apply_sce_test_policies. Add it to SCE_TEST_TARGETS (or call the "
+            "function on it); a program that is not a test goes in "
+            "_SCE_NOT_TEST_PROGRAMS with the reason it is not.")
     endif()
 endforeach()

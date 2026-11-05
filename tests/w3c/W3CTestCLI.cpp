@@ -166,9 +166,9 @@ int main(int argc, char *argv[]) {
         }
 #else
         // WASM: no /proc/self/exe. The program's path is `argv[0]`: under Node,
-        // Emscripten passes the script Node runs, and the host
-        // (w3c/wasm_polyfill.js) mounts the host's directories at the paths
-        // they have there, so the search below reads the same tree.
+        // Emscripten passes the script Node runs, and the program is linked
+        // with NODERAWFS, so the host's paths are its own and the search below
+        // reads the same tree.
         executablePath = argv[0];
 #endif
 
