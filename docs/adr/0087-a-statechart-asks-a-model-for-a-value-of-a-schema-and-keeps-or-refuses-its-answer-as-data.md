@@ -2,7 +2,24 @@
 
 - Status: Accepted (2026-11-04), with each open question answered as recommended ("Owner's answers"). Written for
   the owner's decision under the standing rule of 2026-10-26 and 2026-10-27: the most long-term correct structure,
-  textbook in its foundations, cost ignored. Nothing of it is implemented yet ("Landing order").
+  textbook in its foundations, cost ignored. Steps 1 to 6 of "Landing order" have landed:
+  - step 1, the refusal record in the readers: `c737b5d40f` (the record and its code in the standard library),
+    `78e916eefe` (the shared refusal table), `cd9941f679`, `6af8c1dc41`, `7fefde1eb0`, `21604ece92` and
+    `34bb5595e5` (the Rust, Go, Kotlin, Swift and Interpreter readers), `6e258f2db2`, `6a0b86c791` and `82130a816c`
+    (a repeated name and U+0000 on the Python, C++ and C11 readers);
+  - step 2, `<sce:lift>`: `6515db7b25`, `0c22e3011f`, `6031bab5b9`, `ac109eeb95`, `611dfe18ab`, `d935b4f39e`,
+    `93abe23324` and `4cdc739c73` (eight lanes), `36d30ff68f` (the depth bound's refusal), `32e5af4e69` (the trees);
+  - step 3, the payload grammar: `59ce96c984` (the two folds), `f43519e7f1` and `444e622a0a` (the schema unit and
+    the CLI, revised by the owner's answer 4), `a80c2af178` (the Kotlin text constant past one class-file
+    constant), `133eefbc72` (a schema's keys in declared order);
+  - step 4, `text-template` and `<sce:render>`: `905abf56de`, `af945c209e`, `d160cb704e`, `7363f26b18`;
+  - step 5, the date expression and `resolve_date`: `56a8e7d376`, `26232206f6`, `1777a0b919` (DateKind revision 2);
+  - step 6, `sce-host-model-generate`: `51ec444f8b` (the operation and the answer-schema table), `4a38c87f41` (the
+    model machine, its scenario and the outcome class table), `ac36708d25`, `e238bfa039`, `6f16d93285`,
+    `76f8c3791c`, `851acfe462`, `caea8f7507` and `9a70353eb7` (the seven reference hosts), `3831b713e7` (the
+    trees).
+
+  Step 7 is open; its coverage is measured by the transition observer of ADR 0089. Step 8 waits on ADR 0086 step 3.
 - Date: 2026-11-04
 - Amends:
   - ADR 0086 section 4.2: a refused delivery keeps its sentence, whose path that section calls a JSON Pointer; it is
@@ -673,7 +690,8 @@ The loop is written in the language and shipped as a reference. Its states are: 
 **generate** (the host operation, with `_sce_deadline_ms`), **lift** (the statement of section 2), **check** (the
 application's own checks of the lifted value: membership of an id in the offered set by a `<foreach>` over a list
 variable, the date resolved by section 5, cross-field rules), **repair** (render a repair prompt from the refusal and
-the previous answer, an untrusted hole, and generate again), and two final states, **accepted** and **gave up**.
+the previous answer, an untrusted hole, and generate again), **retry** (a call whose own deadline passed is asked
+again with the same prompt), and two final states, **accepted** and **gave up**.
 
 ```xml
 <state id="work" initial="compose">
@@ -697,7 +715,13 @@ the previous answer, an untrusted hole, and generate again), and two final state
       <sce:lift text="said" schema="Answer" location="answer" refusal="why"/>
     </transition>
     <transition event="done.invoke.gen" target="gave_up"/>
-    <transition event="error.invoke.gen" target="gave_up"/>
+    <!-- the call's own deadline passed: asked again, within the attempt bound -->
+    <transition event="error.invoke.gen" target="retry"/>
+  </state>
+  <state id="retry">
+    <onentry><assign location="attempts" expr="attempts + 1"/></onentry>
+    <transition cond="attempts &gt;= 3" target="gave_up"/>
+    <transition target="generate"/>
   </state>
   <state id="check">
     <transition cond="why !== null" target="repair"/>
@@ -716,10 +740,25 @@ the previous answer, an untrusted hole, and generate again), and two final state
 ```
 
 1. **Bounded.** The attempts are a counter checked against a bound the document states (a `sce:limit` name, so a
-   build moves it), and the whole run against one deadline, beside each call's own.
+   build moves it), and the whole run against one deadline, beside each call's own. A repair and a retry count
+   against the same bound. **A call whose own deadline passed is retried** within that bound (`error.invoke.gen`,
+   the end the engine gives a host-run invoke whose `_sce_deadline_ms` passed, goes to **retry**, not to **gave
+   up**). The policy is what makes the overall deadline reachable while a call is held: with a call deadline of 8 s,
+   an overall one of 20 s and three attempts, a provider that never answers ends the first call at 8 s and the
+   second at 16 s, and the overall deadline passes at 20 s during the third generation, leaving the state and
+   cancelling it. Were a passed call deadline to give up at once, every held call would end at its own deadline
+   before the overall one, and "the overall deadline passes during a generation" (section 9.1 item 8) could not
+   happen in any run.
 2. **The application's checks write their own refusal**, a record of the application's schema with a pointer and a
    code of its own enum; the repair template takes a pointer and a code's name, so one template serves the lift's
-   refusals and the checks'.
+   refusals and the checks'. For a template to take both, the application's code enum repeats the thirteen codes of
+   `sce:std/lift/refusal_code.scxml` (section 2.3) with the same numbers and adds its own after them (`notOffered`,
+   a date that does not resolve, a cross-field rule). A lift's refusal is carried over into the application's
+   record by number, `App.fromNumber(LiftRefusalCode.toNumber(why.code))`, through the two conversions every enum a
+   document imports already has (docs/adr/0047), so the repair state reads one record of one schema whichever side
+   refused. No language
+   change is needed, and the numbers are the contract: an application whose enum does not repeat them maps a lift
+   code to the wrong name, which its own test of the repair prompt's bytes (section 9.1 item 8) shows.
 3. **No example value in a prompt.** The answer's shape travels as the grammar; a template describes the fields in
    words and shows no value a model could copy.
 4. **The evaluation key.** A host that evaluates a harness against golden cases keys each stored answer by the case,
@@ -876,8 +915,14 @@ Each test fails when the rule it pins is removed; the landing checks each once a
 8. **The reference harness**: `scenarios/static_model_harness.json` replays it against the scripted provider on seven
    lanes: an answer accepted at once; an answer that fails its lift (`tooLong` on the title), repaired and accepted,
    with the repair prompt's bytes asserted; an id outside the offered set, refused by the check and repaired; three
-   refused answers, then `gave_up`; the overall deadline passing during a generation. The Interpreter's refusal of the
-   host-run invoke is asserted by name.
+   refused answers, then `gave_up`; the overall deadline passing during a generation, after held calls retried at
+   their own deadlines (section 6.1 item 1). The Interpreter's refusal of the host-run invoke is asserted by name.
+   The id outside the offered set is the class `notOffered` of `tests/host_features/model_outcome_classes.json`, a
+   record the lift reads whose `id` (99) is not one the harness offers: `static_host_model`, which has no check,
+   reads it as `read`, and the harness's check refuses it with its own code (section 6.1 item 2). The same table
+   carries a `harness` section, which names the harness machine, the event that starts it, how a held call is left
+   (the engine's clock moved past the call's deadline) and that deadline; the exhaustive run of section 9.4 reads
+   its classes and its harness section from that one table, and there is no second table.
 9. **Mutation casefiles** under `sce-build/tests/mutations`: the lift's choice of which variable to write, the depth
    comparison, the pointer's `~` escapes, the marker removal's repetition, the template bound's sum, and the GBNF
    chain's byte weights.
@@ -900,8 +945,11 @@ A feature that asks a model is tested in two layers, which answer two different 
 
 1. **The system around the model is tested exhaustively.** A model's answer reaches the machine only through the
    answer schema and the host operation, so at each call the machine sees one of a finite set of outcome classes: a
-   record read; a refusal of each of the thirteen codes of section 2.3, each with its pointer and its bound classes;
-   and each end of the host operation (an answer, a timeout, a failure, a cancel). The model is abstracted as a
+   record read; a record read whose id is not offered (`notOffered`), a class of its own because the harness's check
+   tells it apart from a record it accepts, while a machine without the check reads it as `read`; a refusal of each of
+   the thirteen codes of section 2.3, each with its pointer and its bound classes; and each end of the host operation
+   (an answer, a timeout, a failure, a cancel). The table of classes holds 24 of them, so at its bound of 2 a lane
+   runs 24 + 24^2 = 600 sequences. The model is abstracted as a
    nondeterministic environment that may return any class at any call: the environment abstraction of model checking
    (Clarke, Grumberg and Peled, "Model Checking", MIT Press 1999), and bounded exhaustive testing in the tradition of
    Korat and TestEra (Boyapati, Khurshid and Marinov, "Korat: Automated Testing Based on Java Predicates", ISSTA 2002;
@@ -909,7 +957,10 @@ A feature that asks a model is tested in two layers, which answer two different 
    scope holds here without a hypothesis, since the scope is the whole space. The harness statechart's states, its
    transitions and its repair bound are finite, so every sequence of classes up to the repair bound is enumerated and
    run, and coverage is required: every transition of the harness taken (100% transition coverage), every refusal code
-   reached, and every host outcome reached at every call site. Equivalence partitioning with boundary values (Myers,
+   reached, and every host outcome reached at every call site. Transition coverage is measured, not predicted: the
+   harness declares its transition table (section 6.1 item 4), each lane's transition observer (docs/adr/0089) is
+   told each transition the engine takes by the `from` and `index` of its row, and the rows seen across the whole
+   exhaustive run are required to be every row of the table. Equivalence partitioning with boundary values (Myers,
    "The Art of Software Testing", 1979), whose partitions and boundaries are the shared refusal table
    (`tests/json_text/payload_refusal.json`); grammar-based generation of valid answers and of answers with a single
    fault from the schema, as property-based testing generates them (Claessen and Hughes, "QuickCheck: A Lightweight
@@ -958,7 +1009,9 @@ A feature that asks a model is tested in two layers, which answer two different 
 7. **The reference harness**, its scenario and `examples/model_harness/`, with the coverage of section 9.4, item 1,
    required of it on every lane that runs it: every sequence of outcome classes up to the repair bound enumerated
    against the exhaustive provider, every transition of the harness taken, every refusal code reached, and every host
-   outcome reached at every call site.
+   outcome reached at every call site. Transition coverage is the rows of the harness's emitted transition table that
+   the transition observer of ADR 0089 is told across the run, on each of the seven lanes that run the harness; the
+   observer landed with that ADR, and the class `notOffered` and the table's `harness` section landed with it.
 8. **After ADR 0086 step 3**: the lift, the grammar and the harness over records holding lists and records, with
    `lift_answer_list.scxml`.
 
@@ -1045,3 +1098,15 @@ The owner accepted this ADR on 2026-11-04 ("accept"), with each open question an
    versions), in the consuming application and never in SCE; and the two claims are stated apart, one a proof by
    enumeration and the other a statistical statement with its interval. Landing order items 6 and 7 carry it: step 6
    adds the exhaustive provider and its shared table of classes, step 7 the coverage required of the harness.
+6. On 2026-11-05, before step 7, the owner decided four things, each as recommended:
+   - transition coverage is measured, not predicted: a read-only transition observer on every runtime, matching the
+     Python engine's, counting the rows of the harness's emitted transition table a run takes; it is a public runtime
+     surface, recorded in ADR 0089, which step 7 cites (section 9.4 item 1, Landing order item 7);
+   - the table of outcome classes gains one class, a record whose id is not offered (`notOffered`), which
+     `static_host_model` reads as `read`, and a `harness` section naming the machine, its start event, how a held
+     call is left and the call deadline; there is no second table (section 9.1 item 8, section 9.4 item 1);
+   - for one repair template to take both a lift's refusals and the application's checks, the application's code
+     enum repeats the thirteen lift codes' numbers and adds its own, mapped by
+     `App.fromNumber(LiftRefusalCode.toNumber(why.code))`, with no language change (section 6.1 item 2);
+   - a call whose own deadline passed is retried within the attempt bound, which makes the overall deadline passing
+     during a generation reachable (section 6.1 item 1 and its sample).

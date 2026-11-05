@@ -350,10 +350,13 @@ answer schema. The other failures are the `fail` directive's.
 every lane has stands for a model that may give any outcome at any call: driven
 by the test, each start takes the next outcome class of a sequence the test
 names, and answers what the class says. The classes are one table every lane
-reads, `tests/host_features/model_outcome_classes.json`: a record read, a text
-for each refusal code of `sce:std/lift/refusal_code.scxml` that a schema of
-fields reaches, an answer cut by `length`, each failure code, the refusal, a
-deadline that passes and a cancel by leaving the state. Each lane runs
+reads, `tests/host_features/model_outcome_classes.json`: a record read, a record
+read whose id is not one the reference harness offers (which only a harness's
+check tells apart from the first), a text for each refusal code of
+`sce:std/lift/refusal_code.scxml` that a schema of fields reaches, an answer cut
+by `length`, each failure code, the refusal, a deadline that passes and a cancel
+by leaving the state. The same table's `harness` section names the reference
+harness the exhaustive run of docs/adr/0087 step 7 drives. Each lane runs
 `static_host_model` against every sequence of classes up to the table's
 `bound`, and holds what the machine publishes after each call to what the class
 says it publishes. The host still judges the request first: a request it

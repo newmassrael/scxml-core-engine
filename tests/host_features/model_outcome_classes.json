@@ -24,6 +24,15 @@
     "machine is in `idle`. The texts and their refusals are those of",
     "sce-build/tests/fixtures/static_datamodel/scenarios/static_lift.json, against the same",
     "schema. `deferred` names a refusal code no schema a lift reads now reaches, and why.",
+    "",
+    "`notOffered` is a record the lift reads whose `id` (99) is not one the reference harness",
+    "offers, which holds the `read` class's id (7) alone (docs/adr/0087, section 6.1 item 2).",
+    "`machine` has no check of its own and reads it as `read`; it is a class of its own because",
+    "the harness's check tells it apart from a record it accepts. `harness` is what the exhaustive",
+    "run of the reference harness reads beside the classes (docs/adr/0087, Landing order item 7):",
+    "the harness `machine`, the event that `start`s it, how a held call is left (`then`, as a",
+    "class's: `advance` moves the engine's clock `deadline_ms` on, past the call's own deadline)",
+    "and that deadline. There is one table: the harness run reads its classes from here.",
     "Expected values are derived from the specification, not observed from a host."
   ],
   "machine": "static_host_model",
@@ -38,11 +47,21 @@
   "deferred": [
     {"code": "tooMany", "why": "a list past its bound: no schema a lift reads holds a list until ADR 0086 step 3 (docs/adr/0087, section 7.1)"}
   ],
+  "harness": {
+    "machine": "static_model_harness",
+    "start": "harness.start",
+    "then": "advance",
+    "deadline_ms": 8000
+  },
   "classes": [
     {"class": "read", "end": "answer", "finish": "stop",
      "text": "{\"amount\":-42,\"id\":7,\"kind\":\"task\",\"note\":null,\"priority\":1,\"tag\":\"ab\",\"title\":\"Plan\"}",
      "expect": {"outcome": "read", "why": null, "finish": "stop",
                 "answer": {"id": 7, "amount": "-42", "title": "Plan", "kind": "task", "note": null, "tag": "ab", "priority": 1}}},
+    {"class": "notOffered", "end": "answer", "finish": "stop",
+     "text": "{\"amount\":-42,\"id\":99,\"kind\":\"task\",\"note\":null,\"priority\":1,\"tag\":\"ab\",\"title\":\"Plan\"}",
+     "expect": {"outcome": "read", "why": null, "finish": "stop",
+                "answer": {"id": 99, "amount": "-42", "title": "Plan", "kind": "task", "note": null, "tag": "ab", "priority": 1}}},
     {"class": "notJson", "end": "answer", "finish": "stop", "text": "{",
      "expect": {"outcome": "refused", "why": {"code": "notJson", "path": "", "bound": null}, "finish": "stop"}},
     {"class": "notObject", "end": "answer", "finish": "stop", "text": "[1]",
