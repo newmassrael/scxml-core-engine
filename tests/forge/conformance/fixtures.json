@@ -3602,7 +3602,8 @@
         { "name": "relativeYears", "value": 6 },
         { "name": "comingWeekday", "value": 7 },
         { "name": "previousWeekday", "value": 8 },
-        { "name": "weekdayOfWeek", "value": 9 }
+        { "name": "weekdayOfWeek", "value": 9 },
+        { "name": "dayOfMonthOffset", "value": 10 }
       ]
     },
     {

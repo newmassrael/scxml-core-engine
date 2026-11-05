@@ -18,14 +18,19 @@
   Failures (SCE_FORGE.md §3.4.1):
   - `precondition`: a field the kind reads is absent; a month outside 1 to
     12; a day the month does not have (for `absolute` in that year, for
-    `monthDay` in any year, so 29 February is a day February has); a
-    weekday past 6;
+    `monthDay` in any year, so 29 February is a day February has, for
+    `dayOfMonthOffset` in the month it lands in); a weekday past 6;
   - `overflow`: the day leaves int64, or the year of a date the kind works
     out leaves int32. The kinds that read today's date (`monthDay`,
-    `relativeMonths`, `relativeYears`) read it first, so a `today` whose own
-    year leaves int32 fails there. A precondition is judged before anything
-    is computed, so an expression that breaks one fails `precondition`
-    whatever `today` is.
+    `relativeMonths`, `relativeYears`, `dayOfMonthOffset`) read it first, so
+    a `today` whose own year leaves int32 fails there. A precondition is
+    judged before anything is computed, so an expression that breaks one
+    fails `precondition` whatever `today` is. The one precondition that
+    depends on `today` is a `dayOfMonthOffset` day within 1 to 31 that the
+    month it lands in does not have: that month is known only once today's
+    date and the landing month are worked out, so it is judged after both,
+    and a `today` or a landing month whose year leaves int32 fails
+    `overflow` first.
 
   `relativeYears` moves the year and holds the day to the month it lands in,
   which is add_months by twelve times `count`, written as the year it is:
@@ -40,7 +45,9 @@
   relativeDays 1 → 20762 · comingWeekday 3 → 20768 (a week ahead) ·
   previousWeekday 3 → 20754 · weekdayOfWeek 1, 1 → 20766 (Monday of next
   week) · monthDay 2, 29 → 21243 (2028-02-29) · none → absent ·
-  absolute 2026, 2, 29 → precondition.
+  absolute 2026, 2, 29 → precondition · dayOfMonthOffset 5, 1 → 20792
+  (2026-12-05) · dayOfMonthOffset 1, 0 → 20758 (2026-11-01, before today) ·
+  dayOfMonthOffset 31, 0 → precondition (November has 30 days).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -141,6 +148,17 @@
       <sce:var name="previousNow" type="int64" init="weekdayOf(today)"/>
       <sce:var name="previousGap" type="int64" init="(previousNow - previousWanted + 7) % 7"/>
       <sce:return expr="today - (previousGap === 0 ? 7 : previousGap)"/>
+    </sce:if>
+    <!-- The month is moved by add_months from the 1st of today's month, which
+         every month has, so the landing month is never held to a shorter one;
+         days_from_civil then refuses a day that month does not have, where
+         add_months would have held it to the month's last day. A day past 31
+         is no month's, so it is refused before today is read. -->
+    <sce:if cond="kind === DateKind.dayOfMonthOffset">
+      <sce:require cond="day !== null &amp;&amp; count !== null &amp;&amp; day.value &gt;= 1 &amp;&amp; day.value &lt;= 31"/>
+      <sce:var name="offsetFrom" type="record:CivilDate" init="civil(today)"/>
+      <sce:var name="offsetTo" type="record:CivilDate" init="addMonths(offsetFrom.year, offsetFrom.month, 1, count.value)"/>
+      <sce:return expr="daysOf(offsetTo.year, offsetTo.month, day.value)"/>
     </sce:if>
     <!-- The last kind. A closed set has no other, and a kind a later revision
          adds fails here until this document resolves it. -->

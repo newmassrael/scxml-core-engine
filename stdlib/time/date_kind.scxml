@@ -18,7 +18,11 @@
     seven days ahead, so today's own weekday is a week ahead;
   - `previousWeekday`: the last day before today that is a `weekday`;
   - `weekdayOfWeek`: the `weekday` of the ISO 8601 week, which starts on a
-    Monday, `count` weeks from today's: 0 this week, 1 the next.
+    Monday, `count` weeks from today's: 0 this week, 1 the next;
+  - `dayOfMonthOffset` (revision 2): day `day` of the month `count` months
+    from today's, 0 this month and a negative `count` an earlier one, before
+    or after today as the month falls; a month that has no such day is
+    refused, never held to its last day.
 
   Speech says "next Friday" for the coming one and for the one of next
   week; the two are two kinds here, so the reading is chosen in the open.
@@ -26,7 +30,8 @@
   an existing kind resolves to, and the numbers below are never reused.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="enum" name="date_kind" sce:underlying-type="uint8">
+       version="1.0" sce:kind="enum" name="date_kind" sce:underlying-type="uint8"
+       sce:revision="2">
   <datamodel>
     <data id="variants">
       <sce:variant name="none" value="0"/>
@@ -39,6 +44,7 @@
       <sce:variant name="comingWeekday" value="7"/>
       <sce:variant name="previousWeekday" value="8"/>
       <sce:variant name="weekdayOfWeek" value="9"/>
+      <sce:variant name="dayOfMonthOffset" value="10" sce:since="2"/>
     </data>
   </datamodel>
 </scxml>

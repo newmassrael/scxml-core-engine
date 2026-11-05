@@ -18,6 +18,7 @@
   "in two weeks"                → relativeWeeks, count 2
   "next Friday" (the coming one) → comingWeekday, weekday 5
   "Friday next week"            → weekdayOfWeek, weekday 5, count 1
+  "the 5th of next month"       → dayOfMonthOffset, day 5, count 1
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -165,7 +165,7 @@ node, so a list is drawn with registers whose dots share one or two of the three
 names from today, is held to a calendar table before any drawn case: every kind from
 each day of five weeks (`CALENDAR_WEEKS`: across a month end, a year end and a 29
 February, and the 1900 and 2000 century rules), so each weekday is today in each, and
-then each input a kind refuses and fields a kind does not read — 1753 rows — followed
+then each input a kind refuses and fields a kind does not read — 2319 rows — followed
 by 400 drawn inputs that reach the ends of int64 and of the int32 years. A table is
 listed in `TABLES` and written whole, in its order, before the fixture's draws. The
 model is first held to a second statement of the rule written with `datetime` alone,
@@ -515,6 +515,7 @@ DATE_KINDS = (
     "comingWeekday",
     "previousWeekday",
     "weekdayOfWeek",
+    "dayOfMonthOffset",
 )
 DATE_PRECONDITION = ("fails", "precondition")
 DATE_OVERFLOW = ("fails", "overflow")
@@ -541,12 +542,14 @@ def resolve_date(today: int, kind: str, year, month, day, weekday, count):
     1970-01-01 as `today` is, or None for `none`.
 
     An absent field the kind reads, a month outside 1 to 12, a day its month
-    does not have (in that year for `absolute`, in any year for `monthDay`) or a
-    weekday past 6 fails `precondition`, before anything is computed. The answer
-    fails `overflow` where it leaves int64, and where the year of a date the kind
-    works out leaves int32: today's own date for the kinds that read it, and the
-    date it lands on. Each shift is exact, so a day fails only where the day
-    itself leaves the range."""
+    does not have (in that year for `absolute`, in any year for `monthDay`, past
+    31 for `dayOfMonthOffset`) or a weekday past 6 fails `precondition`, before
+    anything is computed. The answer fails `overflow` where it leaves int64, and
+    where the year of a date the kind works out leaves int32: today's own date
+    for the kinds that read it, and the date it lands on. Each shift is exact, so
+    a day fails only where the day itself leaves the range. A `dayOfMonthOffset`
+    day the month it lands in lacks fails `precondition` once that month is
+    known, after both years are judged."""
     if kind == "none":
         return ("ok", None)
     if kind == "absolute":
@@ -571,17 +574,24 @@ def resolve_date(today: int, kind: str, year, month, day, weekday, count):
         if count is None:
             return DATE_PRECONDITION
         return a_day(today + count * (7 if kind == "relativeWeeks" else 1))
-    if kind in ("relativeMonths", "relativeYears"):
+    if kind in ("relativeMonths", "relativeYears", "dayOfMonthOffset"):
         if count is None:
+            return DATE_PRECONDITION
+        if kind == "dayOfMonthOffset" and (day is None or not 1 <= day <= 31):
             return DATE_PRECONDITION
         start_year, start_month, start_day = date_of_days(today)
         if not fits(start_year, I32_MIN, I32_MAX):
             return DATE_OVERFLOW
-        months = count if kind == "relativeMonths" else 12 * count
+        months = 12 * count if kind == "relativeYears" else count
         landing_year, index = divmod(start_year * 12 + start_month - 1 + months, 12)
         if not fits(landing_year, I32_MIN, I32_MAX):
             return DATE_OVERFLOW
         landing_month = index + 1
+        if kind == "dayOfMonthOffset":
+            # The expression's own day, refused where the month lacks it.
+            if not exists(landing_year, landing_month, day):
+                return DATE_PRECONDITION
+            return a_day(days_of_date(landing_year, landing_month, day))
         landing_day = min(start_day, days_in_month_of(landing_year, landing_month))
         return a_day(days_of_date(landing_year, landing_month, landing_day))
     if kind in ("comingWeekday", "previousWeekday", "weekdayOfWeek"):
@@ -675,6 +685,18 @@ def resolve_date_on_datetime(today: int, kind: str, year, month, day, weekday, c
         iso_year, iso_week, _ = now.isocalendar()
         monday = datetime.date.fromisocalendar(iso_year, iso_week, 1)
         return days(monday + datetime.timedelta(weeks=count, days=(weekday + 6) % 7))
+    if kind == "dayOfMonthOffset":
+        if day is None or count is None or not 1 <= day <= 31:
+            return DATE_PRECONDITION
+        index = now.month - 1 + count
+        # The 1st of the landing month exists in every year datetime holds, so a
+        # refusal there is a year it does not hold, which is raised; a refusal of
+        # the day after it is the month lacking the day.
+        first = datetime.date(now.year + index // 12, index % 12 + 1, 1)
+        try:
+            return days(first.replace(day=day))
+        except ValueError:
+            return DATE_PRECONDITION
     raise ValueError(f"resolve_date_on_datetime: no answer for {kind!r}")
 
 
@@ -995,8 +1017,8 @@ def resolve_date_table():
     """The inputs `resolve_date` is held to whole, rather than sampled: every kind
     from each day of `CALENDAR_WEEKS` — a month day across the year's turn and a
     29 February, shifts forward and back by days, weeks, months and years, each
-    weekday coming, previous and in this, the next and the last ISO week — and
-    then each input a kind refuses, and fields a kind does not read. Every date
+    weekday coming, previous and in this, the next and the last ISO week, a day
+    of a month counted from today's — and then each input a kind refuses, and fields a kind does not read. Every date
     it touches is one datetime holds, so `validate_resolve_date` holds the whole
     table to the second formulation as well."""
     rows = []
@@ -1027,6 +1049,12 @@ def resolve_date_table():
             # The two ends of an ISO week, a week back.
             for weekday in (0, 1):
                 row(today, "weekdayOfWeek", weekday=weekday, count=-1)
+            # A day every month has, a 29 February, a day no February has and a
+            # 31st, in this month, the next, the last and one a year and a month
+            # on: across each week's month end, year end and leap day.
+            for day in (1, 29, 30, 31):
+                for count in (0, 1, -1, 13):
+                    row(today, "dayOfMonthOffset", day=day, count=count)
 
     today = days_of_date(2026, 11, 4)
     for date in (
@@ -1047,6 +1075,8 @@ def resolve_date_table():
         row(today, kind)
     row(today, "weekdayOfWeek", count=1)
     row(today, "weekdayOfWeek", weekday=1)
+    row(today, "dayOfMonthOffset", count=1)
+    row(today, "dayOfMonthOffset", day=5)
     # A month or a day no year has, and a weekday past Saturday.
     for month, day in ((2, 30), (4, 31), (1, 32), (1, 0), (0, 1), (13, 1), (255, 1), (2, 255)):
         row(today, "monthDay", month=month, day=day)
@@ -1054,6 +1084,8 @@ def resolve_date_table():
         row(today, kind, weekday=7)
         row(today, kind, weekday=255)
     row(today, "weekdayOfWeek", weekday=7, count=0)
+    for day in (0, 32, 255):
+        row(today, "dayOfMonthOffset", day=day, count=0)
     # Fields a kind does not read change nothing, whatever they hold.
     row(today, "none", 2026, 2, 30, 9, 5)
     row(today, "absolute", 2026, 3, 3, 255, I32_MIN)
@@ -1062,6 +1094,7 @@ def resolve_date_table():
     row(today, "relativeMonths", 0, 0, 0, 0, 2)
     row(today, "comingWeekday", None, 13, None, 5, I32_MAX)
     row(today, "weekdayOfWeek", 9999, 13, 0, 3, 2)
+    row(today, "dayOfMonthOffset", 9999, 13, 5, 9, 1)
     return rows
 
 
@@ -1126,6 +1159,7 @@ def resolve_date_datetime_args(rng: SplitMix64):
         "relativeMonths": 3000,
         "relativeYears": 500,
         "weekdayOfWeek": 5000,
+        "dayOfMonthOffset": 3000,
     }.get(kind, 1000)
     year = resolve_date_field(rng, lambda r: r.between(1, 9999))
     month = resolve_date_field(rng, lambda r: r.between(1, 12) if r.below(10) < 9 else r.pick([0, 13]))
