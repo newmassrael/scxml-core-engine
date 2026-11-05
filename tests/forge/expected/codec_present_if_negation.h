@@ -12,14 +12,106 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecPresentIfNegation {
 
+/// The elements a value of `CodecPresentIfNegation` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_flags {
+void flags() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.flags())) -> decltype(s.flags()) {
+    return s.flags();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(flags(s))) -> decltype(flags(s)) {
+    return flags(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_flags
+/// The `flags` element of a source.
+inline constexpr detail_flags::Read flags{};
+namespace detail_seq {
+void seq() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.seq())) -> decltype(s.seq()) {
+    return s.seq();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(seq(s))) -> decltype(seq(s)) {
+    return seq(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_seq
+/// The `seq` element of a source.
+inline constexpr detail_seq::Read seq{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecPresentIfNegation`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::flags(std::declval<const S&>())), decltype(source::seq(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::flags(std::declval<const S&>())), uint8_t>, std::is_convertible<decltype(source::seq(std::declval<const S&>())), std::optional<uint16_t>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::flags(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<std::optional<uint16_t>>(source::seq(std::declval<const S&>())))> {};
+
+/// The encode of `CodecPresentIfNegation` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecPresentIfNegation: flags, seq");
+        const auto& _r_seq = source::seq(src);
+        const std::optional<uint16_t> _e_seq = _r_seq;
+        std::uint64_t _f_flags = static_cast<std::uint64_t>(source::flags(src));
+        _f_flags = (_f_flags & ~0x1ull) | static_cast<std::uint64_t>(!_e_seq.has_value());
+        const uint8_t _c_flags = static_cast<uint8_t>(_f_flags);
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_flags)); _e) return _e;
+        if (_e_seq) {
+            if (auto _e = w.write_u16_be(static_cast<std::uint16_t>((*_e_seq))); _e) return _e;
+        }
+        return std::nullopt;
+    }
+};
+
 struct CodecPresentIfNegation {
-    uint8_t flags{};
-    std::optional<uint16_t> seq{};
+    CodecPresentIfNegation() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    constexpr CodecPresentIfNegation(uint8_t flags, std::optional<uint16_t> seq) noexcept
+        : flags_(flags), seq_(seq) {}
+    /// The `flags` element.
+    [[nodiscard]] constexpr uint8_t flags() const noexcept { return flags_; }
+    /// The `seq` element, where a gate leaves it in.
+    [[nodiscard]] constexpr std::optional<uint16_t> seq() const noexcept { return seq_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -53,10 +145,11 @@ struct CodecPresentIfNegation {
             seq = static_cast<uint16_t>(static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]));
             if (!cursor.advance(2)) return std::nullopt;
         }
-        return CodecPresentIfNegation{
+        CodecPresentIfNegation _decoded{
             /*flags=*/flags,
             /*seq=*/seq,
         };
+        return _decoded;
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors.
@@ -65,14 +158,14 @@ struct CodecPresentIfNegation {
     // mask + shift on the way in so out-of-range callers can't corrupt
     // sibling bits. Wire layout is unchanged.
     bool absent_seq() const noexcept {
-        return (this->flags & 0x01) != 0;
+        return (this->flags_ & 0x01) != 0;
     }
 
     void set_absent_seq(bool v) noexcept {
         if (v) {
-            this->flags = static_cast<uint8_t>(this->flags | 0x01);
+            this->flags_ = static_cast<uint8_t>(this->flags_ | 0x01);
         } else {
-            this->flags = static_cast<uint8_t>(this->flags & static_cast<uint8_t>(~0x01));
+            this->flags_ = static_cast<uint8_t>(this->flags_ & static_cast<uint8_t>(~0x01));
         }
     }
 
@@ -87,21 +180,8 @@ struct CodecPresentIfNegation {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_u8(flags); _e) return _e;
-        if (seq.has_value()) {
-            auto _v = *seq;
-            if (auto _e = w.write_u8(static_cast<uint8_t>((_v >> 8) & 0xFF)); _e) return _e;
-            if (auto _e = w.write_u8(static_cast<uint8_t>(_v & 0xFF)); _e) return _e;
-        }
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -116,6 +196,10 @@ struct CodecPresentIfNegation {
         (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint8_t flags_{};
+    std::optional<uint16_t> seq_{};
 };
 
 }  // namespace SCE::Generated::CodecPresentIfNegation

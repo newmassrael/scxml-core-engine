@@ -20,10 +20,15 @@
 // (msgId u8, then the length of the payload, then a payload of at most 32
 // bytes), whose headers the harness's generation writes. The last presents
 // its payload as `Bytes<32>`, which holds the bound, and derives the length,
-// which it does not present.
+// which it does not present. codec_present_if_basic.scxml (a carrier whose bit
+// 0 says whether a u16 `seq` follows) presents `seq` as an optional value and
+// derives the bit; codec_length_ref_dotted_basic.scxml (a carrier whose high
+// nibble holds the length of the payload after it) derives the nibble.
 
 #include "codec_length_ref.h"
+#include "codec_length_ref_dotted_basic.h"
 #include "codec_little_endian.h"
+#include "codec_present_if_basic.h"
 #include "codec_simple_frame.h"
 
 #include <cstdint>
@@ -217,6 +222,19 @@ struct LongMessage {
     }
 };
 
+// A reading whose sequence number is there at times: it presents it as an
+// optional value, and presents its flags with the presence bit clear, which
+// the encode derives.
+struct SequencedReading {
+    [[nodiscard]] std::uint8_t flags() const noexcept {
+        return 0;
+    }
+
+    [[nodiscard]] std::optional<std::uint16_t> seq() const noexcept {
+        return std::uint16_t{42};
+    }
+};
+
 }  // namespace consumer
 
 namespace detect {
@@ -377,6 +395,52 @@ void a_payload_past_its_bound_cannot_be_made() {
           "a length past the bound is refused as LengthOutOfRange");
 }
 
+namespace Gated = ::SCE::Generated::CodecPresentIfBasic;
+namespace Dotted = ::SCE::Generated::CodecLengthRefDottedBasic;
+
+static_assert(std::is_same<decltype(std::declval<const Gated::CodecPresentIfBasic &>().seq()),
+                           std::optional<std::uint16_t>>::value,
+              "an element a gate decides is presented as an optional value");
+static_assert(Gated::is_source<consumer::SequencedReading>::value,
+              "a type presenting the optional element is a source");
+
+void a_presence_flag_is_derived_from_the_element_it_gates() {
+    // The carrier's flag is what the element says, whatever the value passed.
+    const Gated::CodecPresentIfBasic present{0x00, std::uint16_t{0x1234}};
+    CHECK(present.encode_to_vec() == (std::vector<std::uint8_t>{0x01, 0x12, 0x34}),
+          "a present element sets its flag and is written");
+    const Gated::CodecPresentIfBasic absent{0x01, std::nullopt};
+    CHECK(absent.encode_to_vec() == std::vector<std::uint8_t>{0x00}, "an absent element clears its flag");
+    const Gated::CodecPresentIfBasic kept{0xF0, std::nullopt};
+    CHECK(kept.encode_to_vec() == std::vector<std::uint8_t>{0xF0}, "the carrier's other bits are kept");
+
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!Gated::Wire::encode_source(consumer::SequencedReading{}, sink).has_value() &&
+              out == (std::vector<std::uint8_t>{0x01, 0x00, 0x2A}),
+          "a consumer's optional element encodes as the generated value's does");
+
+    const std::vector<std::uint8_t> frame{0x01, 0x12, 0x34};
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = Gated::CodecPresentIfBasic::decode(cursor);
+    CHECK(decoded.has_value() && decoded->seq() == std::optional<std::uint16_t>(0x1234) && decoded->has_seq(),
+          "a decoded value holds the element and the carrier as read");
+}
+
+void a_length_held_in_a_flag_is_derived_from_the_bytes() {
+    using Payload = decltype(std::declval<const Dotted::CodecLengthRefDottedBasic &>().payload());
+    const std::vector<std::uint8_t> two{0xAA, 0xBB};
+    const auto payload = Payload::make(two);
+    CHECK(payload.has_value(), "two bytes lie within a bound of fifteen");
+    if (!payload) {
+        return;
+    }
+    // The carrier's length bits say none; the payload says two.
+    const Dotted::CodecLengthRefDottedBasic value{0x01, *payload};
+    CHECK(value.encode_to_vec() == (std::vector<std::uint8_t>{0x21, 0xAA, 0xBB}),
+          "the length bits hold the payload's length beside the carrier's other bits");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -392,6 +456,8 @@ int main() {
     a_consumer_type_encodes_as_the_generated_value_does();
     a_length_is_derived_from_the_payload_the_source_presents();
     a_payload_past_its_bound_cannot_be_made();
+    a_presence_flag_is_derived_from_the_element_it_gates();
+    a_length_held_in_a_flag_is_derived_from_the_bytes();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

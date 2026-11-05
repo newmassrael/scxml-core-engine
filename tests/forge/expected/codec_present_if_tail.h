@@ -12,14 +12,106 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecPresentIfTail {
 
+/// The elements a value of `CodecPresentIfTail` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_flags {
+void flags() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.flags())) -> decltype(s.flags()) {
+    return s.flags();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(flags(s))) -> decltype(flags(s)) {
+    return flags(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_flags
+/// The `flags` element of a source.
+inline constexpr detail_flags::Read flags{};
+namespace detail_payload {
+void payload() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.payload())) -> decltype(s.payload()) {
+    return s.payload();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(payload(s))) -> decltype(payload(s)) {
+    return payload(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_payload
+/// The `payload` element of a source.
+inline constexpr detail_payload::Read payload{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecPresentIfTail`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::flags(std::declval<const S&>())), decltype(source::payload(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::flags(std::declval<const S&>())), uint8_t>, std::is_convertible<decltype(source::payload(std::declval<const S&>())), std::optional<::SCE::Forge::Bytes<64>>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::flags(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Bytes<64>>>(source::payload(std::declval<const S&>())))> {};
+
+/// The encode of `CodecPresentIfTail` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecPresentIfTail: flags, payload");
+        const auto& _r_payload = source::payload(src);
+        const std::optional<::SCE::Forge::Bytes<64>> _e_payload = _r_payload;
+        std::uint64_t _f_flags = static_cast<std::uint64_t>(source::flags(src));
+        _f_flags = (_f_flags & ~0x1ull) | static_cast<std::uint64_t>(_e_payload.has_value());
+        const uint8_t _c_flags = static_cast<uint8_t>(_f_flags);
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_flags)); _e) return _e;
+        if (_e_payload) {
+            if (auto _e = w.write_bytes(_e_payload->data(), _e_payload->size()); _e) return _e;
+        }
+        return std::nullopt;
+    }
+};
+
 struct CodecPresentIfTail {
-    uint8_t flags{};
-    std::optional<std::vector<uint8_t>> payload{};
+    CodecPresentIfTail() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecPresentIfTail(uint8_t flags, std::optional<::SCE::Forge::Bytes<64>> payload)
+        : flags_(flags), payload_(payload) {}
+    /// The `flags` element.
+    [[nodiscard]] constexpr uint8_t flags() const noexcept { return flags_; }
+    /// The `payload` element, where a gate leaves it in.
+    [[nodiscard]] std::optional<::SCE::Forge::Bytes<64>> payload() const noexcept { if (!payload_) { return std::nullopt; } return ::SCE::Forge::Bytes<64>(*payload_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -57,10 +149,19 @@ struct CodecPresentIfTail {
             payload.emplace(raw, raw + _n);
             if (!cursor.advance(_n)) return std::nullopt;
         }
-        return CodecPresentIfTail{
+        std::optional<::SCE::Forge::Bytes<64>> _b_payload;
+        if (payload) {
+            _b_payload = ::SCE::Forge::Bytes<64>::make(*payload);
+            if (!_b_payload) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
+                return std::nullopt;
+            }
+        }
+        CodecPresentIfTail _decoded{
             /*flags=*/flags,
-            /*payload=*/payload,
+            /*payload=*/_b_payload,
         };
+        return _decoded;
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors.
@@ -69,14 +170,14 @@ struct CodecPresentIfTail {
     // mask + shift on the way in so out-of-range callers can't corrupt
     // sibling bits. Wire layout is unchanged.
     bool has_payload() const noexcept {
-        return (this->flags & 0x01) != 0;
+        return (this->flags_ & 0x01) != 0;
     }
 
     void set_has_payload(bool v) noexcept {
         if (v) {
-            this->flags = static_cast<uint8_t>(this->flags | 0x01);
+            this->flags_ = static_cast<uint8_t>(this->flags_ | 0x01);
         } else {
-            this->flags = static_cast<uint8_t>(this->flags & static_cast<uint8_t>(~0x01));
+            this->flags_ = static_cast<uint8_t>(this->flags_ & static_cast<uint8_t>(~0x01));
         }
     }
 
@@ -91,42 +192,26 @@ struct CodecPresentIfTail {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (payload.has_value() && ((*payload).size() > 64)) return ::SCE::Forge::CodecError::LengthOutOfRange;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_u8(flags); _e) return _e;
-        if (payload.has_value()) {
-            if (auto _e = w.write_bytes(payload->data(), payload->size()); _e) return _e;
-        }
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
-    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
-    /// refuses the value before its first byte: a gated field and the
-    /// `sce:present-if` that gates it contradict each other
-    /// (`CodecError::PresentIfMismatch`), or a byte string, text or list
-    /// lies outside its bound (`CodecError::LengthOutOfRange`,
-    /// `CodecError::TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        if (encode(_sce_sink)) {
-            return std::nullopt;
-        }
+        (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint8_t flags_{};
+    std::optional<::SCE::Forge::Bounded<std::vector<std::uint8_t>, 64>> payload_{};
 };
 
 }  // namespace SCE::Generated::CodecPresentIfTail

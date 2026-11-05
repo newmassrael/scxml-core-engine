@@ -393,6 +393,15 @@ old encode, the old encode and its templates are removed in the same landing.
    codecs of the resources, which `a_cpp_codec_is_printed_from_its_plan_once_it_lowers_every_form` pins by name.
    Text, bodies, lists, gated elements and lengths counted in encoded bytes still keep a codec on the template's
    encode.
+
+   *The third C++ landing, 2026-11-05:* an element one gate decides, and the flags the encode derives. Such an element
+   is presented as `std::optional` of its type (ADR 0055): the accessor returns it, the constructor takes it, and a
+   source's element converts to it. The encode writes it where it is present and folds into its carrier the flag that
+   says so, replacing the bits the value holds; a length held in a flag is folded the same way, keeping the value's
+   bits where a gate leaves the bytes out, and a length field gated beside its bytes is written where its gate holds.
+   The value no longer has to set a presence flag to agree with the element it gates. The printed set is 55 codecs.
+   `cpp_source::unlowered_forms` names every form that keeps each other codec, which the census test prints; text
+   waits for the C++ readers of a text element to read it through its accessor.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

@@ -1146,6 +1146,23 @@ padded tail or a streamed write (47 codecs of the resources in all). The section
   `is_source<S>` says so at compile time.
 - `decode` is unchanged in signature and in what it refuses.
 
+## A printed C++ codec presents a gated element as an optional value and derives its presence flag (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the positional codecs
+whose gated elements are each decided by one flag, and whose flags the encode derives: a presence flag, or a length
+held in a flag (8 more codecs of the resources, 55 in all). The two sections above apply to each of them too.
+
+- A gated element is `std::optional` of its type: `msg.seq()` returns `std::optional<std::uint16_t>`, and a gated
+  byte string `std::optional<Bytes<MAX>>`. The constructor takes the same: `CodecPresentIfBasic{flags, std::nullopt}`
+  or `CodecPresentIfBasic{flags, 7}`. A gated byte string is made by `Bytes<MAX>::make` where it is present.
+- The flag that says an element is present is derived from the element. Its bit in the carrier you pass is ignored
+  on encode, so `set_has_seq` before encoding is no longer needed and can no longer disagree with the element. A
+  decoded value keeps the carrier as it was read, so its getters still answer what the wire said.
+- A length held in a flag (`sce:length-field="carrier.flag"`) is derived from the bytes it measures in the same way;
+  where a gate leaves the bytes out, the carrier keeps the bits you passed.
+- `encode_to_vec` returns `std::vector<std::uint8_t>`, as for the codecs moved before. `decode` is unchanged.
+- A source of the codec presents a gated element as anything that converts to the `std::optional` of its type.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
