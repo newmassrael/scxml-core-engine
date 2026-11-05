@@ -744,6 +744,28 @@ fn verify_passes_on_real_committed_mesh_kotlin_tree() {
     );
 }
 
+#[test]
+fn verify_passes_on_real_committed_mesh_swift_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("backends")
+        .join("swift")
+        .join("mesh")
+        .join("Sources")
+        .join("SceMesh")
+        .join("Generated");
+    let input_root = workspace.join("stdlib").join("mesh");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Swift Mesh tree. A failure here \
+         means a stdlib/mesh/*.scxml or a Swift forge template changed \
+         without refreshing backends/swift/mesh/Sources/SceMesh/Generated/. \
+         Run `backends/swift/mesh/generate.sh` and commit the result. \
+         stderr:\n{stderr}"
+    );
+}
+
 // ── §synth-6.2.6 source-set coverage guard ──────────────────────────
 //
 // The `source-hash` fold is total over whatever the walk collected, so a

@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate the Swift backend's committed machines and run its four SwiftPM
+# Regenerate the Swift backend's committed machines and run its SwiftPM
 # packages: the statechart runtime (backends/swift/runtime), the forge runtime
 # (backends/swift/forge-runtime), the reference host of the standard host features
-# (backends/swift/host-features) and the generated machines with the tests that drive
-# them (backends/swift/tests). The forge runtime is run by the `forge` arm, with the numerical
-# conformance tests of the generated units, and not by the default list.
+# (backends/swift/host-features), the generated machines with the tests that drive
+# them (backends/swift/tests), and the host Mesh core (backends/swift/mesh). The forge runtime
+# is run by the `forge` arm, with the numerical conformance tests of the generated units, and
+# not by the default list.
 #
 # Like `./gradlew test` for Kotlin, it writes: the machines under
 # backends/swift/tests/Sources are rewritten from the generator before they are
@@ -17,8 +18,13 @@
 #
 # Usage (from repo root):
 #   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests,
-#                                                  # transition-outputs, feature-conformance, forge,
-#                                                  # w3c, ecma262-lowered
+#                                                  # transition-outputs, feature-conformance, mesh,
+#                                                  # forge, w3c, ecma262-lowered
+#
+# `mesh` is the package `backends/swift/mesh`, whose standard documents
+# `backends/swift/mesh/generate.sh` writes first: the router core a host puts between an engine and
+# its transports (SCE_MESH.md section 6.4), held to the Kotlin and Rust cores' tests. It is among the
+# default list.
 #
 # `feature-conformance` is the package `backends/swift/feature-conformance`, whose machines
 # `scripts/regen_swift_feature_conformance.sh` writes first: the machine for every build of
@@ -62,7 +68,7 @@ fi
 if [ "$#" -gt 0 ]; then
     PACKAGES=("$@")
 else
-    PACKAGES=(runtime host-features tests transition-outputs feature-conformance)
+    PACKAGES=(runtime host-features tests transition-outputs feature-conformance mesh)
 fi
 
 for package in "${PACKAGES[@]}"; do
@@ -126,6 +132,14 @@ for package in "${PACKAGES[@]}"; do
                 echo "error: swiftc did not refuse a build with session-unicast-accept and without session-unicast" >&2
                 exit 1
             fi
+            ;;
+        mesh)
+            # The host Mesh core (`backends/swift/mesh`, SCE_MESH.md section 6.4): the standard Mesh
+            # documents written from `stdlib/mesh` first, so what is compiled is what the templates
+            # write today, then the router core that applies them and its tests.
+            backends/swift/mesh/generate.sh
+            echo "== swift test: backends/swift/mesh"
+            (cd backends/swift/mesh && swift test)
             ;;
         transition-outputs)
             # Each name is matched exactly in both test binaries, so each binary runs the one

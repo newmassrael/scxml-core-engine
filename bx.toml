@@ -319,6 +319,7 @@ outputs = [
     "backends/kotlin/tests/src/**",
     "backends/kotlin/mesh/src/commonMain/kotlin/generated/**",
     "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/**",
+    "backends/swift/mesh/Sources/SceMesh/Generated/*",
     "backends/go/tests/**",
     "backends/go/forge-runtime/round_trip/generated/**",
     "backends/swift/tests/Sources/**",

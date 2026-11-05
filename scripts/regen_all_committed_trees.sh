@@ -281,6 +281,8 @@ stage "Mesh C++ envelope tree"
 sce/src/mesh/generate_envelope.sh
 stage "Mesh Kotlin tree"
 backends/kotlin/mesh/generate.sh
+stage "Mesh Swift tree"
+backends/swift/mesh/generate.sh
 
 # The specs folder's request machine is generated from the document that holds the
 # rules of a generation request, and it lives in the specs crate, outside
