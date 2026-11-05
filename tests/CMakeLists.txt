@@ -1817,6 +1817,7 @@ add_executable(integration_tests
     integration/DonedataLateCompletionTest.cpp
     integration/DonedataLateCompletionAotTest.cpp
     integration/DonedataChildrenTakeTheInlineReadingTest.cpp
+    integration/AssignChildrenTakeTheInlineReadingTest.cpp
     integration/AutoforwardEventFieldsTest.cpp
     integration/AutoforwardEventFieldsAotTest.cpp
     integration/AnEventKeepsTheNameItWasSentUnderTest.cpp

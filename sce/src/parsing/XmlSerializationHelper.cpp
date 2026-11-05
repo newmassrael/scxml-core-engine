@@ -32,31 +32,4 @@ std::string XmlSerializationHelper::serializeContentBody(const std::shared_ptr<I
     return ParsingCommon::trimString(body);
 }
 
-std::string XmlSerializationHelper::escapeForJavaScript(const std::string &content) {
-    std::string escaped;
-    escaped.reserve(content.length() * 2);  // Reserve space for potential escapes
-
-    for (char c : content) {
-        switch (c) {
-        case '"':
-            escaped += "\\\"";
-            break;
-        case '\\':
-            escaped += "\\\\";
-            break;
-        case '\n':
-            escaped += "\\n";
-            break;
-        case '\r':
-            escaped += "\\r";
-            break;
-        default:
-            escaped += c;
-            break;
-        }
-    }
-
-    return "\"" + escaped + "\"";
-}
-
 }  // namespace SCE

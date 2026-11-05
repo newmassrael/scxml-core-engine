@@ -112,6 +112,10 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
 }
 
 bool ActionExecutorImpl::assignVariable(const std::string &location, const std::string &expr) {
+    return assignVariable(location, ScriptSource(expr), AssignedValue::Expression);
+}
+
+bool ActionExecutorImpl::assignVariable(const std::string &location, const ScriptSource &given, AssignedValue kind) {
     // §scxml-5.4: Empty location check (shared with AOT via AssignHelper)
     // ARCHITECTURE.md: Zero Duplication - Use shared AssignHelper for cross-engine consistency
     if (!AssignHelper::isValidLocation(location)) {
@@ -148,6 +152,17 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
     }
 
     try {
+        // §scxml-5.4: in-line children specify the value 'expr' would have,
+        // read as every in-line value is read — the expression's value when
+        // they are one, their space-normalized text otherwise (the reading
+        // sce-build's `to_*_assign_content` gives the generated machines).
+        // Read once, after the location is accepted, and assigned as the
+        // literal of that value, so the assignment evaluates nothing the
+        // author wrote a second time.
+        const ScriptSource expr = kind == AssignedValue::InlineContent
+                                      ? DataModelInitHelper::inlineContentValueLiteral(scriptEngine_, sessionId_, given)
+                                      : given;
+
         // Transform numeric variable names to JavaScript-compatible identifiers
         std::string jsLocation = transformVariableName(location);
 
@@ -160,7 +175,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
                 // value, so error.execution goes on the internal queue
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution",
-                                             "Assignment failed - location: " + location + ", expr: " + expr);
+                                             "Assignment failed - location: " + location + ", expr: " + expr.source());
                 }
             });
 
@@ -168,7 +183,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
             return false;
         }
 
-        SCE_LOG_DEBUG("Variable assigned: {} = {} (JS: {})", location, expr, jsLocation);
+        SCE_LOG_DEBUG("Variable assigned: {} = {} (JS: {})", location, expr.source(), jsLocation);
         return true;
 
     } catch (const std::exception &e) {
@@ -546,6 +561,12 @@ bool ActionExecutorImpl::executeScriptAction(const ScriptAction &action) {
 
 bool ActionExecutorImpl::executeAssignAction(const AssignAction &action) {
     SCE_LOG_DEBUG("Executing assign action: {}", action.getId());
+    if (action.hasInlineContent()) {
+        // The Interpreter parses SCXML at run time, so the children are the
+        // author's own text; no build step could have lowered them.
+        return assignVariable(action.getLocation(), ScriptSource::ecmascript(action.getInlineContent()),
+                              AssignedValue::InlineContent);
+    }
     return assignVariable(action.getLocation(), action.getExpr());
 }
 

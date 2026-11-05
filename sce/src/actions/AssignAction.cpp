@@ -17,9 +17,11 @@ bool AssignAction::execute(IExecutionContext &context) {
     }
 
     // §scxml-5.4: Delegate location validation to ActionExecutor
-    // which will raise error.execution event for invalid locations
+    // which will raise error.execution event for invalid locations. The
+    // executor takes the whole action, because the value is either `expr` or
+    // in-line children it has to read first.
     try {
-        return context.getActionExecutor().assignVariable(location_, expr_);
+        return context.getActionExecutor().executeAssignAction(*this);
     } catch (const std::exception &) {
         // Exception during execution indicates failure
         return false;
@@ -32,6 +34,7 @@ std::string AssignAction::getActionType() const {
 
 std::shared_ptr<IActionNode> AssignAction::clone() const {
     auto cloned = std::make_shared<AssignAction>(location_, expr_, getId());
+    cloned->setInlineContent(inlineContent_);
     cloned->setType(type_);
     return cloned;
 }
@@ -52,6 +55,18 @@ void AssignAction::setExpr(const std::string &expr) {
     expr_ = expr;
 }
 
+const std::string &AssignAction::getInlineContent() const {
+    return inlineContent_;
+}
+
+void AssignAction::setInlineContent(const std::string &content) {
+    inlineContent_ = content;
+}
+
+bool AssignAction::hasInlineContent() const {
+    return !inlineContent_.empty();
+}
+
 const std::string &AssignAction::getType() const {
     return type_;
 }
@@ -70,8 +85,8 @@ std::vector<std::string> AssignAction::validateSpecific() const {
         errors.push_back("Invalid assignment location: " + location_);
     }
 
-    // Validate expression
-    if (isEmptyString(expr_)) {
+    // Validate expression: `expr` or in-line children give the value
+    if (isEmptyString(expr_) && !hasInlineContent()) {
         errors.push_back("Assignment expression cannot be empty");
     }
 
@@ -87,7 +102,7 @@ std::vector<std::string> AssignAction::validateSpecific() const {
 }
 
 std::string AssignAction::getSpecificDescription() const {
-    std::string desc = location_ + " = " + expr_;
+    std::string desc = location_ + " = " + (hasInlineContent() ? inlineContent_ : expr_);
     if (!type_.empty()) {
         desc += " (type: " + type_ + ")";
     }

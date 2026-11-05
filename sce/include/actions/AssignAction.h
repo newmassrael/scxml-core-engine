@@ -59,6 +59,30 @@ public:
     void setExpr(const std::string &expr);
 
     /**
+     * @brief The `<assign>`'s in-line children, when they give the value
+     *
+     * Set instead of an expression when the element has children and no
+     * `expr`. They are not an expression to evaluate as written: the executor
+     * reads them as every in-line value is read
+     * (`DataModelInitHelper::inlineContentValue`) — the value of the
+     * expression they are when they are one, and their space-normalized text
+     * otherwise — which is the reading sce-build's `to_*_assign_content`
+     * gives the generated machines.
+     */
+    const std::string &getInlineContent() const;
+
+    /**
+     * @brief Set the in-line children that give the value
+     * @param content The children as `XmlSerializationHelper::serializeContentBody` reads them
+     */
+    void setInlineContent(const std::string &content);
+
+    /**
+     * @brief Whether the value is given by in-line children rather than `expr`
+     */
+    bool hasInlineContent() const;
+
+    /**
      * @brief Get assignment type hint (optional)
      * @return Type hint string
      */
@@ -78,6 +102,7 @@ protected:
 private:
     std::string location_;
     std::string expr_;
+    std::string inlineContent_;
     std::string type_;  // Optional type hint
 
     /**

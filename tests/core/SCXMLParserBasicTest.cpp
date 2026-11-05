@@ -9,7 +9,6 @@
 #include "model/DoneData.h"
 #include "model/SCXMLModel.h"
 #include "parsing/SCXMLParser.h"
-#include "parsing/XmlSerializationHelper.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -431,7 +430,43 @@ TEST_F(SCXMLParserBasicTest, InLineMarkupKeepsTheWhitespaceWrittenInsideIt) {
     EXPECT_EQ(send->getContent(), written) << "<send><content>";
     auto assign = std::dynamic_pointer_cast<AssignAction>(blocks[0][1]);
     ASSERT_NE(assign, nullptr);
-    EXPECT_EQ(assign->getExpr(), XmlSerializationHelper::escapeForJavaScript(written)) << "<assign>";
+    EXPECT_EQ(assign->getInlineContent(), written) << "<assign>";
+    EXPECT_EQ(assign->getExpr(), std::string()) << "<assign> children are in-line content, not an expression";
+}
+
+// §scxml-5.4: an `<assign>`'s children are handed to the executor as in-line
+// content, to be read there, and an `expr` stays the expression it is.
+TEST_F(SCXMLParserBasicTest, AssignChildrenAreInLineContentAndExprIsAnExpression) {
+    std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s">
+    <datamodel>
+        <data id="v"/>
+    </datamodel>
+    <state id="s">
+        <onentry>
+            <assign location="v">
+                21
+            </assign>
+            <assign location="v" expr="21"/>
+        </onentry>
+    </state>
+</scxml>)";
+
+    auto model = parser_->parseContent(scxmlContent);
+    ASSERT_NE(model, nullptr);
+
+    const auto blocks = model->findStateById("s")->getEntryActionBlocks();
+    ASSERT_EQ(blocks.size(), 1u);
+    ASSERT_EQ(blocks[0].size(), 2u);
+    auto children = std::dynamic_pointer_cast<AssignAction>(blocks[0][0]);
+    auto expression = std::dynamic_pointer_cast<AssignAction>(blocks[0][1]);
+    ASSERT_NE(children, nullptr);
+    ASSERT_NE(expression, nullptr);
+    EXPECT_TRUE(children->hasInlineContent());
+    EXPECT_EQ(children->getInlineContent(), "21");
+    EXPECT_EQ(children->getExpr(), std::string());
+    EXPECT_FALSE(expression->hasInlineContent());
+    EXPECT_EQ(expression->getExpr(), "21");
 }
 
 // Test final states

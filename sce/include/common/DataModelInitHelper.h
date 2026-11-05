@@ -118,6 +118,27 @@ public:
                                           const ScriptSource &content);
 
     /**
+     * @brief `inlineContentValue`, as ECMAScript text that evaluates to it
+     *
+     * For an `<assign>`'s children, which specify the value its `expr` would
+     * have: the reading is made once, here, and the assignment is handed the
+     * literal of the value it gave, so nothing the author wrote is evaluated
+     * a second time. The reading is the one sce-build's `to_*_assign_content`
+     * gives the generated machines — there is no XML rung for an assignment,
+     * so children that open with `<` are no expression and become their
+     * space-normalized text, as there.
+     *
+     * The literal is the value's JSON text, which is an ECMAScript literal of
+     * it, and `undefined`, which JSON cannot write.
+     *
+     * @param jsEngine Engine the expression is evaluated by
+     * @param sessionId Session it is evaluated in
+     * @param content The children, as a `ScriptSource` (see `initializeVariable`)
+     */
+    static ScriptSource inlineContentValueLiteral(IScriptEngine &jsEngine, const std::string &sessionId,
+                                                  const ScriptSource &content);
+
+    /**
      * @brief The event data an inline `<content>` carries, as JSON text
      *
      * The one reading inline content has under a data model, which a

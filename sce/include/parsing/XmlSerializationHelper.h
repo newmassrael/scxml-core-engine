@@ -58,15 +58,6 @@ public:
      * markup is, and is kept as written: `<a>\n  <b/>\n</a>` stays that.
      */
     static std::string serializeContentBody(const std::shared_ptr<IXMLElement> &content);
-
-    /**
-     * @brief Escape string for JavaScript literal
-     * @param content Raw content string
-     * @return JavaScript-escaped string with quotes
-     *
-     * W3C SCXML test 530: Serialize XML content as string literal for assign elements
-     */
-    static std::string escapeForJavaScript(const std::string &content);
 };
 
 }  // namespace SCE

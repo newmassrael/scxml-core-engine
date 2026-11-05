@@ -177,6 +177,20 @@ private:
      */
     bool isValidLocation(const std::string &location) const;
 
+    /// What an `<assign>` hands over as its value.
+    enum class AssignedValue {
+        Expression,     ///< `expr`, evaluated as written
+        InlineContent,  ///< the element's children, read as in-line content is read
+    };
+
+    /**
+     * @brief The assignment `assignVariable` makes, for either kind of value
+     *
+     * The location is judged first; in-line children are read only once it
+     * is accepted, through `DataModelInitHelper::inlineContentValueLiteral`.
+     */
+    bool assignVariable(const std::string &location, const ScriptSource &given, AssignedValue kind);
+
     /**
      * @brief Evaluate a `cond`, reporting whether it could be evaluated
      *

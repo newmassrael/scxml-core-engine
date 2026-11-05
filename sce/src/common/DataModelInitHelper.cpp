@@ -174,6 +174,16 @@ ScriptValue SCE::DataModelInitHelper::inlineContentValue(IScriptEngine &jsEngine
     return ScriptValue(normalizeWhitespace(content.source()));
 }
 
+SCE::ScriptSource SCE::DataModelInitHelper::inlineContentValueLiteral(IScriptEngine &jsEngine,
+                                                                      const std::string &sessionId,
+                                                                      const ScriptSource &content) {
+    const ScriptValue value = inlineContentValue(jsEngine, sessionId, content);
+    if (std::holds_alternative<ScriptUndefined>(value)) {
+        return ScriptSource::ecmascript("undefined");
+    }
+    return ScriptSource::ecmascript(EventDataHelper::scriptValueToJsonString(value));
+}
+
 std::string SCE::DataModelInitHelper::inlineContentEventData(IScriptEngine &jsEngine, const std::string &sessionId,
                                                              const ScriptSource &content,
                                                              std::optional<ScriptValue> *outTypedData) {

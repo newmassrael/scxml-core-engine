@@ -410,24 +410,23 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         // specification of the value, mutually exclusive with 'expr' — so the
         // text content is read only when 'expr' is absent.
         std::string location = actionElement->getAttribute("location");
-        std::string expr;
 
         if (actionElement->hasAttribute("expr")) {
-            expr = actionElement->getAttribute("expr");
-        } else {
-            // W3C SCXML test 530: Use text content as expression
-            // ARCHITECTURE.md Zero Duplication: the children are read by the
-            // helper every in-line value is read by — their markup when they
-            // hold elements, their character data otherwise — so the
-            // whitespace that lays them out in the document is not taken
-            // for part of the value.
-            std::string xmlContent = XmlSerializationHelper::serializeContentBody(actionElement);
-            if (!xmlContent.empty()) {
-                expr = XmlSerializationHelper::escapeForJavaScript(xmlContent);
-            }
+            return std::make_shared<SCE::AssignAction>(location, actionElement->getAttribute("expr"), id);
         }
 
-        return std::make_shared<SCE::AssignAction>(location, expr, id);
+        // ARCHITECTURE.md Zero Duplication: the children are read by the
+        // helper every in-line value is read by — their markup when they hold
+        // elements, their character data otherwise — so the whitespace that
+        // lays them out in the document is not taken for part of the value.
+        // They are not an expression as written: the executor reads them as
+        // in-line content is read (`AssignAction::getInlineContent`), so
+        // `<assign location="v">21</assign>` assigns the number, and text
+        // that is no expression, an `<scxml>` document among it (W3C test
+        // 530), its space-normalized string.
+        auto assign = std::make_shared<SCE::AssignAction>(location, std::string(), id);
+        assign->setInlineContent(XmlSerializationHelper::serializeContentBody(actionElement));
+        return assign;
 
     } else if (elementName == "log") {
         // §scxml-4.7.2: both <log> attributes are optional — 'expr' is the
