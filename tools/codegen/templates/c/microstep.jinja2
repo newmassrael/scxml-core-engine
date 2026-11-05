@@ -848,6 +848,13 @@ SCE_SM_FN static void microstep({{ _t }}_t *sm, const {{ _t }}_transition_info_t
     if (count == 0u) {
         return;
     }
+#if {{ _u }}_TRANSITION_OBSERVER
+    /* docs/adr/0089: the selected set, before the first exit, each transition
+       once and in selection order, as the Python engine tells it. */
+    for (uint8_t i = 0u; i < count; ++i) {
+        {{ _t }}_observe_transition(sm, transitions[i].source, (uint32_t)transitions[i].index);
+    }
+#endif
     exit_states(sm, transitions, count);
     execute_transition_content(sm, transitions, count);
     {{ _t }}_entry_transition_t entering[{{ _u }}_MAX_SELECTED];

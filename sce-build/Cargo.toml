@@ -1584,6 +1584,14 @@ name = "a_program_that_never_names_the_transition_table_carries_none_of_it"
 path = "tests/a_program_that_never_names_the_transition_table_carries_none_of_it.rs"
 required-features = ["cli"]
 
+# A C11 machine keeps nothing of the transition observer unless its build asks
+# (docs/adr/0089): every line naming the hook lies in the region its switch keeps.
+# It spawns `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_c11_machine_keeps_no_transition_observer_unless_its_build_asks"
+path = "tests/a_c11_machine_keeps_no_transition_observer_unless_its_build_asks.rs"
+required-features = ["cli"]
+
 # A document declaring `sce:transition-function="emit"` is generated with a
 # runtime-free transition function beside its machine; this compiles the Rust
 # file alone and holds it to the producer, and runs the generated machine on the

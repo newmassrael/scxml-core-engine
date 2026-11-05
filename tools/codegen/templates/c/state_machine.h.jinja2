@@ -1084,6 +1084,32 @@ const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym_prefix }}
    the one a `<send target>` must carry to be delivered here. */
 const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm);
 
+/* ── docs/adr/0089: the transition observer, when the build asks for it ── */
+{# A per-machine switch whose default is the build's (`SCE_TRANSITION_OBSERVER`,
+   sce/types.h, 0 unless set), so a build observes every machine or one. Off,
+   the preprocessor removes the declaration below and the one call in
+   `microstep` (c/microstep.jinja2), and the machine is what it was before the
+   observer existed. On, the machine calls a function the HOST defines, rather
+   than one a pointer in the struct names: `_init` zeroes the struct and runs
+   the first macrostep in one call, so a pointer could not be set before the
+   transitions that macrostep takes, and an argument would be one more on every
+   `_init` variant. A build that turns it on and defines no hook does not link. #}
+#ifndef {{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_OBSERVER
+#define {{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_OBSERVER SCE_TRANSITION_OBSERVER
+#endif
+#if {{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_OBSERVER
+/* Defined by the host, and called by the machine for each transition it takes,
+   by the row of its emitted transition table: `source` is the row's `from` and
+   `index` its `index`, the transition's position among `source`'s own
+   transitions in document order. Called after the selection and before the
+   microstep's first exit, each transition of the optimal enabled set once and
+   in selection order, from inside the call that drove the machine (`_init`,
+   `_step`, `_tick`, `_advance_time_ms` and their siblings). It reads: `sm` is
+   const, and it must not call back into the machine. */
+void {{ csym_prefix }}{{ model.name }}_observe_transition(const {{ csym_prefix }}{{ model.name }}_t *sm,
+    {{ csym_prefix }}{{ model.name }}_state_t source, uint32_t index);
+#endif
+
 {% if model.host_processor_types %}
 /* ── §scxml-6.2.5: the host's half of a declared processor ────────── */
 /*

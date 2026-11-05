@@ -152,6 +152,18 @@
 #define SCE_MAX_EXTERNAL_EVENTS_PER_CALL 10000u
 #endif
 
+// docs/adr/0089: whether the machines of this build tell a transition observer
+// each transition they take, by the row of their emitted transition table. Off
+// by default, and then the preprocessor leaves nothing of the observer in a
+// machine: no declaration, no call, no byte of its struct. A machine's own
+// `<PREFIX><NAME>_TRANSITION_OBSERVER` takes this value unless the build sets
+// that one, so a build can observe one machine of several. A machine that
+// observes calls `<prefix><name>_observe_transition`, which the host defines;
+// the link refuses a build that turned the observer on and defined none.
+#ifndef SCE_TRANSITION_OBSERVER
+#define SCE_TRANSITION_OBSERVER 0
+#endif
+
 // Static helpers (state hierarchy queries, history filters, …) are
 // emitted unconditionally so generated code stays compilable as fixtures
 // climb the W3C category ladder. The flat / datamodel-less subset used

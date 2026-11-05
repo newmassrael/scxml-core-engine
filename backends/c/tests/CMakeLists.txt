@@ -323,6 +323,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # docs/adr/0089: the same machine, built with its transition observer on.
+    # The driver defines the hook the machine calls for each transition it takes
+    # and holds what it is told to the machine's emitted transition table. The
+    # target above builds the machine with the switch off and defines no hook,
+    # which links only because nothing of the observer is left in it.
+    add_executable(sce_c_integration_transition_observer
+        integration/test_transition_observer.c
+        ${INTEGRATION_C_TEST_a_computed_event_name_is_matched_like_any_other_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_transition_observer PRIVATE
+        SCE_TRANSITION_OBSERVER=1
+    )
+    sce_c_link_runtime(sce_c_integration_transition_observer)
+    target_include_directories(sce_c_integration_transition_observer PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_transition_observer PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_transition_observer
+        COMMAND sce_c_integration_transition_observer
+    )
+    set_tests_properties(c11_integration_transition_observer PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE Accepted Subset 2.21: a document that declares its transition function
     # (`sce:transition-function="emit"`) is generated with a header of its own
     # beside the machine, `<stem>_transition_function.h`, every symbol under a

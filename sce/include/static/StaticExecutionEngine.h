@@ -334,6 +334,30 @@ public:
     /// selection answers it.
     using TransitionInfo = SCE::Core::EnabledTransition<State, History>;
 
+    /// One transition the engine took, as its row of the emitted transition
+    /// table names it (docs/adr/0089, docs/SCE_TRANSITION_TABLE.md): `source`
+    /// is the policy's own State, the type the table's `from` holds, and
+    /// `index` the table's `index` type, so a pair compares with a row
+    /// (`row.from`, `row.index`) without a conversion.
+    struct TransitionTaken {
+        /// The state the transition is written in: the `from` of its row.
+        State source;
+        /// Its position among `source`'s own transitions in document order:
+        /// the `index` of its row.
+        std::uint32_t index;
+
+        friend bool operator==(const TransitionTaken &a, const TransitionTaken &b) {
+            return a.source == b.source && a.index == b.index;
+        }
+
+        friend bool operator!=(const TransitionTaken &a, const TransitionTaken &b) {
+            return !(a == b);
+        }
+    };
+
+    /// What `setTransitionObserver` takes.
+    using TransitionObserver = std::function<void(const TransitionTaken &)>;
+
     /// How many links an `error.*` chain may have before the engine stops
     /// feeding it — see `errorCascadeEvents()`. The number, and why it is that
     /// one, is `Core::MAX_ERROR_CASCADE_DEPTH`, shared with the Interpreter.
@@ -637,6 +661,14 @@ private:
      * @brief Appendix D's microstep: exit, run the transitions' content, enter
      */
     void microstep(const std::vector<TransitionInfo> &transitions) {
+        // docs/adr/0089: the selected set, before the first exit, each
+        // transition once and in selection order, as the Python engine tells it.
+        if (transitionObserver_) {
+            for (const TransitionInfo &transition : transitions) {
+                transitionObserver_(
+                    TransitionTaken{transition.source, static_cast<std::uint32_t>(transition.transitionIndex)});
+            }
+        }
         MicrostepHost host{*this};
         const auto entry = SCE::Core::MicrostepAlgorithms::microstep(host, transitions);
         settleCurrentState(transitions, entry.statesToEnter);
@@ -1022,6 +1054,9 @@ private:
     Core::ExternalEventBudget<Event> externalEventBudget_;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
+    // docs/adr/0089: told each transition the engine takes, by its row of the
+    // emitted transition table; empty until a host sets one.
+    TransitionObserver transitionObserver_;
     // §scxml-6.2.5: handlers for the Event I/O Processor types this host
     // declared it serves, keyed by the `type` a `<send>` names. A map rather
     // than one callback because the identifier set is open and a host may
@@ -3747,6 +3782,26 @@ public:
      */
     void setCompletionCallback(std::function<void()> callback) {
         completionCallback_ = callback;
+    }
+
+    /**
+     * @brief Tell @p observer each transition this engine takes from now on,
+     *        by the row of its emitted transition table (docs/adr/0089)
+     *
+     * The observer is told after the selection and before the microstep's
+     * first exit, each transition of the optimal enabled set once and in
+     * selection order, so a run's set of pairs is the set of rows it took: the
+     * table's coverage, measured on the engine that ran. It reads and is asked
+     * nothing, so a machine with one set takes the same transitions as one
+     * without. It runs on the thread that drives the engine, inside the
+     * macrostep, and must not call back into the engine; an exception it
+     * throws is not caught. Set it before `initialize()` to be told the
+     * transitions the first macrostep takes.
+     *
+     * @param observer Told each transition taken (an empty function to stop)
+     */
+    void setTransitionObserver(TransitionObserver observer) {
+        transitionObserver_ = std::move(observer);
     }
 
     /**
