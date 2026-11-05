@@ -2305,9 +2305,133 @@ extension Engine {
         !internalQueue.isEmpty
     }
 
-    /// Whether a delayed `<send>` is waiting to come due.
-    var holdsScheduledSends: Bool {
-        scheduler.nextReadyAtMs != nil
+    /// Every delayed `<send>` still waiting, as a saved state holds it, in the order the machine would
+    /// deliver them: each written as the wall-clock moment it comes due, `wallNowMs` plus the time left on
+    /// this machine's clock (none for one already due), so that the wait does not start again when the
+    /// process comes back.
+    ///
+    /// A send the format cannot carry refuses the save, by name: one routed to a session the tree holds, to
+    /// a child session or to an HTTP target, and the end of the time a host-run invocation was given.
+    /// Leaving it out would restore a machine that never delivers it and says nothing.
+    func savedPendingSends(wallNowMs: Int64) throws -> [SavedSend] {
+        let now = schedNowMs()
+        return try scheduler.pending().map { waiting in
+            let act = waiting.act
+            if let deadline = act.hostInvokeDeadline {
+                throw StateRefusal(
+                    "the end of the time the host-run invocation '\(deadline.invokeID)' was given is waiting, "
+                        + "which this runtime does not save yet")
+            }
+            let (due, overflowed) = wallNowMs.addingReportingOverflow(max(0, waiting.readyAtMs - now))
+            return SavedSend(due: overflowed ? Int64.max : due, act: try savedAct(act))
+        }
+    }
+
+    /// The act a waiting entry performs when it comes due, as a saved state spells it.
+    private func savedAct(_ act: ReadyAct<Event>) throws -> SavedAct {
+        // The name the event was sent under: the whole name when the member that takes it is not called that.
+        func name(_ member: Event?, _ sentAs: String) throws -> String {
+            guard let member else {
+                throw StateRefusal("the delayed send '\(act.sendID)' holds no event of this document")
+            }
+            return sentAs.isEmpty ? policy.getEventName(member) : sentAs
+        }
+        guard let route = act.route else {
+            return .raise(
+                event: try name(act.event, act.name), data: act.data, sendID: act.sendID, origin: act.origin)
+        }
+        switch route.kind {
+        case .internalQueue:
+            return .internal(
+                event: try name(act.event, route.eventName), data: act.data, sendID: act.sendID, origin: act.origin)
+        case .host:
+            guard let request = route.host else {
+                throw StateRefusal("the delayed send '\(act.sendID)' is routed to a host processor and holds no request")
+            }
+            return .host(
+                processorType: request.processorType, event: request.eventName, target: request.target,
+                content: request.content, params: request.params, sendID: request.sendID, data: request.eventData,
+                invokeID: request.invokeID)
+        case .parent, .invocation:
+            throw StateRefusal(
+                "the delayed send '\(act.sendID)' is routed to a session the tree holds, which this runtime does not save yet")
+        case .session:
+            throw StateRefusal("the delayed send '\(act.sendID)' is routed to a child session, which a saved state does not carry")
+        case .httpPost:
+            throw StateRefusal("the delayed send '\(act.sendID)' is an HTTP POST, which a saved state does not carry")
+        }
+    }
+
+    /// A delayed send read from a saved state and judged, ready to be armed: what `armSavedSends` hands the
+    /// scheduler, with the moment it comes due on the wall clock.
+    struct SavedArm {
+        let due: Int64
+        let event: Event?
+        let name: String
+        let data: String
+        let sendID: String
+        let origin: String
+        let route: ScheduledRoute?
+    }
+
+    /// Reads every delayed send `sends` holds as the entry its send site would have armed, or the refusal that
+    /// says which event this document does not name. Changes nothing.
+    func judgeSavedSends(_ sends: [SavedSend]) throws -> [SavedArm] {
+        try sends.enumerated().map { index, send in
+            func resolved(_ name: String) throws -> Event {
+                guard let event = resolveEventByName(name) else {
+                    throw StateRefusal("pending[\(index)] is '\(name)', which the document does not name")
+                }
+                return event
+            }
+            func sendID(_ id: String) throws -> String {
+                guard !id.isEmpty else {
+                    throw StateRefusal("pending[\(index)] has no send id, which <cancel> and the event's sendid name it by")
+                }
+                return id
+            }
+            switch send.act {
+            case .raise(let name, let data, let id, let origin):
+                let event = try resolved(name)
+                return SavedArm(
+                    due: send.due, event: event, name: arrivalName(of: event, name: name), data: data,
+                    sendID: try sendID(id), origin: origin, route: nil)
+            case .internal(let name, let data, let id, let origin):
+                return SavedArm(
+                    due: send.due, event: try resolved(name), name: "", data: data, sendID: try sendID(id),
+                    origin: origin, route: ScheduledRoute(kind: .internalQueue, eventName: name))
+            case .host(let type, let event, let target, let content, let params, let id, let data, let invokeID):
+                let request = HostSendRequest(
+                    processorType: type, eventName: event, target: target, content: content, params: params,
+                    sendID: try sendID(id), eventData: data, invokeID: invokeID)
+                return SavedArm(
+                    due: send.due, event: nil, name: "", data: data, sendID: request.sendID, origin: "",
+                    route: ScheduledRoute(kind: .host, eventName: event, host: request))
+            case .parent, .child:
+                throw StateRefusal(
+                    "pending[\(index)] is a send to another session of the tree, which this runtime does not restore yet")
+            }
+        }
+    }
+
+    /// Arms what `judgeSavedSends` read, against this machine's clock: each comes due `due - wallNowMs` after
+    /// now, and one already due comes due now, behind the ones due before it. Armed in the order they were
+    /// saved, which is the order they are delivered in, and entries due at the same moment keep it.
+    func armSavedSends(_ arms: [SavedArm], wallNowMs: Int64) {
+        let now = schedNowMs()
+        for arm in arms {
+            let (at, overflowed) = now.addingReportingOverflow(max(0, arm.due - wallNowMs))
+            let readyAtMs = overflowed ? Int64.max : at
+            if let route = arm.route {
+                scheduler.scheduleRouted(
+                    arm.event, readyAtMs: readyAtMs, sendID: arm.sendID, eventData: arm.data, origin: arm.origin,
+                    route: route)
+            } else if let event = arm.event {
+                scheduler.scheduleEvent(
+                    event, readyAtMs: readyAtMs, sendID: arm.sendID, eventData: arm.data, origin: arm.origin,
+                    name: arm.name)
+            }
+        }
     }
 
     /// How many ids this engine has generated for a `<send idlocation>`: the number the last one carried.

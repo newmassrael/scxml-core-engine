@@ -14,13 +14,25 @@
 // type and bound, each event) comes before the first thing it changes, so a state that is refused leaves the
 // machine as it was, which a host has no other way to tell.
 //
+// A delayed `<send>` still waiting is part of the state, and is saved as the wall-clock moment it comes due, not
+// as a wait: the host that saves and the one that restores read the same wall clock, and a timer that ran out
+// while the process was dead is due as soon as the machine is back. The wall clock is a parameter of `save` and
+// of `restore`, so a test or a replay owns it as it owns the engine's own clock.
+//
 // What this runtime does not save yet is refused by name, on the machine that holds it and not only when a
 // state that names it is read: a machine whose document has an `<invoke>`, or one of a kind of variable it does
-// not hold yet, is generated without the save API, and a machine with a delayed `<send>` waiting is refused
-// when it is saved.
+// not hold yet, is generated without the save API.
 //
 // Cross-language siblings: `com.sce.runtime.StateMachineEngine` (Kotlin) and `sce_rust_runtime::saved_state`
 // (Rust).
+
+import Foundation
+
+/// The wall clock's reading, in milliseconds since the Unix epoch: what `Engine.save` and `Engine.restore` read
+/// the moment a delayed `<send>` comes due against, unless the host gives them its own reading.
+public func unixWallClockMs() -> Int64 {
+    Int64((Date().timeIntervalSince1970 * 1000).rounded(.down))
+}
 
 /// What a machine's saved state is bound to: the digests of the document's shape. The generator computes them,
 /// and every saved state is written and judged against them.
@@ -187,8 +199,9 @@ extension Engine where Policy: SavedPolicy {
     ///
     /// Refused, by name, for a machine that is not running, one that has ended at a top-level `<final>`, one
     /// whose internal queue holds events (it is not at a macrostep boundary), and one with a delayed `<send>`
-    /// waiting, which this runtime does not save yet.
-    public func save() throws -> SavedState {
+    /// waiting that the format cannot carry. `wallNowMs` is what time it is on the wall clock, which each
+    /// waiting send is written against.
+    public func save(wallNowMs: Int64 = unixWallClockMs()) throws -> SavedState {
         // A machine that has ended is not running either, so the reason that says more is asked first.
         if terminalState != nil {
             throw StateRefusal("the machine has ended at a top-level <final>, so there is nothing to resume")
@@ -200,9 +213,7 @@ extension Engine where Policy: SavedPolicy {
             throw StateRefusal(
                 "the machine is not at a macrostep boundary: its internal queue holds events a save would lose")
         }
-        if holdsScheduledSends {
-            throw StateRefusal("a delayed <send> is waiting, which this runtime does not save yet")
-        }
+        let pending = try savedPendingSends(wallNowMs: wallNowMs)
         // Document order, which is also entry order: the same text from every run that stands in the same place.
         let active = getActiveStates().sorted { policy.getDocumentOrder($0) < policy.getDocumentOrder($1) }
         // Saved under the name the event arrived under, so a restore gives the machine the same `_event.name`:
@@ -222,7 +233,7 @@ extension Engine where Policy: SavedPolicy {
         return SavedState(
             shape: Policy.savedShape.format2First, configuration: active.map { policy.getStateName($0) },
             current: policy.getStateName(getCurrentState()), variables: policy.savedVariables(), history: history,
-            invokes: .resumed([]), sessionID: policy.sessionID, autoSendSeq: Int64(generatedSendIDCount),
+            pending: pending, invokes: .resumed([]), sessionID: policy.sessionID, autoSendSeq: Int64(generatedSendIDCount),
             external: external, features: Policy.savedShape.features)
     }
 
@@ -232,8 +243,13 @@ extension Engine where Policy: SavedPolicy {
     /// Refused, by name, for a machine that has started, a state of another document, of another product-line
     /// configuration, or one that names a state, an event or a variable this machine does not have; for a
     /// value its variable's type or bound cannot hold; and for what this runtime does not restore yet: a
-    /// running child session, a recorded history, a waiting delayed `<send>`, a host-run invocation.
-    public func restore(_ saved: SavedState) throws {
+    /// running child session, a host-run invocation, a send to another session of the tree.
+    ///
+    /// The delayed sends `saved` holds are armed against this machine's clock, which is installed before the
+    /// restore as it is before `initialize`: each comes due `due - wallNowMs` after now, `wallNowMs` being what
+    /// time it is on the wall clock the saved `due`s were written against, and one already due comes due now,
+    /// behind the ones due before it.
+    public func restore(_ saved: SavedState, wallNowMs: Int64 = unixWallClockMs()) throws {
         guard !isRunning else {
             throw StateRefusal("the machine has started: a saved state is restored into one that has not")
         }
@@ -241,9 +257,6 @@ extension Engine where Policy: SavedPolicy {
         if let child = saved.invokes.ids.first {
             throw StateRefusal(
                 "the saved state holds a running child session '\(child)', which this machine does not start")
-        }
-        if !saved.pending.isEmpty {
-            throw StateRefusal("the saved state holds a waiting delayed <send>, which this runtime does not restore yet")
         }
         if let hosted = saved.hostInvokes.first {
             throw StateRefusal(
@@ -301,6 +314,7 @@ extension Engine where Policy: SavedPolicy {
                     originType: event.originType, invokeID: event.invokeID,
                     hostInvokeToken: event.hostInvokeToken.map { UInt64(bitPattern: $0) }))
         }
+        let waiting = try judgeSavedSends(saved.pending)
         let apply = try policy.readSavedVariables(from: saved)
         guard saved.autoSendSeq >= 0 else {
             throw StateRefusal("the saved count of generated send ids is negative")
@@ -318,6 +332,7 @@ extension Engine where Policy: SavedPolicy {
         for recorded in histories {
             policy.restoreHistory(recorded.history, to: recorded.states)
         }
+        armSavedSends(waiting, wallNowMs: wallNowMs)
         restoreSavedEngineParts(external: external, generatedSendIDCount: UInt64(saved.autoSendSeq))
     }
 }

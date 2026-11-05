@@ -11,8 +11,8 @@ import Testing
 // its external queue and the session id, written as the document every backend reads and made again from it.
 //
 // `static_counter` holds three numbers and a truth value and nothing else: no history, no child, no delayed
-// send, which is what the runtime saves so far. Each state goes through its JSON text and back before it is
-// restored, as one that crossed a process boundary would.
+// send, so what is saved here is the variables, where the machine stands and its queue. Each state goes
+// through its JSON text and back before it is restored, as one that crossed a process boundary would.
 
 private let sessionID = "fixture-root"
 
@@ -178,7 +178,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
             == "the machine has ended at a top-level <final>, so there is nothing to resume")
 }
 
-@Test func aStateThatNamesAChildAHistoryOrAWaitingSendIsNotRestoredByAMachineThatHasNone() throws {
+@Test func aStateThatNamesAChildOrAHistoryIsNotRestoredByAMachineThatHasNone() throws {
     let (_, engine) = try started()
     let saved = try engine.save()
 
@@ -195,10 +195,4 @@ private func refusal(_ body: () throws -> Void) -> String? {
     #expect(
         refusal { try unstarted().1.restore(withHistory) }
             == "the saved state records the history 'h', which the document does not declare")
-
-    var withSend = saved
-    withSend.pending = [SavedSend(due: 5, act: .raise(event: "tick", data: "", sendID: "s", origin: sessionID))]
-    #expect(
-        refusal { try unstarted().1.restore(withSend) }
-            == "the saved state holds a waiting delayed <send>, which this runtime does not restore yet")
 }
