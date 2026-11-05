@@ -58,11 +58,11 @@ run_build() {
     if [ -f "$script_path" ]; then
         if "$script_path"; then
             echo ""
-            echo -e "${GREEN}✅ $build_type build completed!${NC}"
+            echo -e "${GREEN}$build_type build completed${NC}"
             return 0
         else
             echo ""
-            echo -e "${RED}❌ $build_type build failed!${NC}"
+            echo -e "${RED}$build_type build failed${NC}"
             return 1
         fi
     else

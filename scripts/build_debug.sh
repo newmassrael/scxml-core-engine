@@ -24,7 +24,7 @@ if [[ ! -f "$PROJECT_ROOT/CMakeLists.txt" ]]; then
     echo -e "${RED}Error: CMakeLists.txt not found at $PROJECT_ROOT${NC}"
     exit 1
 fi
-echo -e "${GREEN}✅ Project root: $PROJECT_ROOT${NC}"
+echo -e "${GREEN}Project root: $PROJECT_ROOT${NC}"
 echo ""
 
 # Build directory (absolute path)
