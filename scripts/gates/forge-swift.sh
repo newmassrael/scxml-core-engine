@@ -14,9 +14,15 @@
 # generated suite and of the sweep that writes the units alike. What this gate holds is that every
 # test the generator wrote ran, and that the generator still writes a population worth the name.
 #
-# WHAT IT DOES NOT HOLD: the queue and broadcast-log histories the other arms judge with
-# `check-queue-history` and `check-broadcast-history`. Swift has no queue, and its broadcast log is
-# a row of its own; when either exists its arm of this gate reads the histories the way the others do.
+# THE QUEUE HISTORIES: the queue's stress runs (SCE Protocol-Synthesis RFC section synth-5-P) write
+# their histories into the directory SCE_QUEUE_HISTORY_DIR names, under `target/` and emptied first (a
+# file left from an earlier run would be judged in place of one this run did not write), and the
+# command every backend's histories are judged by reads them. Linearizability is that command's to
+# judge, not a checker of the arm's own.
+#
+# WHAT IT DOES NOT HOLD: the broadcast-log histories the other arms judge with
+# `check-broadcast-history`. Swift's broadcast log is a row of its own, and when its recorder exists
+# its arm of this gate reads the histories the way the others do.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -24,16 +30,32 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # (`scripts/install_swift_toolchain.sh`).
 sce_gate_require_swift
 
+source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
+QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/swift"
+rm -rf "$QUEUE_HISTORIES"
+mkdir -p "$QUEUE_HISTORIES"
+
 LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$LOG'"
 
 # The status of the script, not of the `tee` it is piped to.
 set +e
-scripts/test_swift_backend.sh forge 2>&1 | tee "$LOG"
+SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" scripts/test_swift_backend.sh forge 2>&1 | tee "$LOG"
 status="${PIPESTATUS[0]}"
 set -e
 [ "$status" -eq 0 ] \
     || sce_gate_fail "scripts/test_swift_backend.sh forge exited $status (the forge runtime or a generated unit failed to build or to pass; the output above names it)"
+
+# 4 Lamport capacities recorded 3 times, 6 SCQ shapes recorded 25 times and 5 segmented shapes
+# recorded 25 times. A run that recorded fewer would pass the judgement below, so the count is held.
+shopt -s nullglob
+queue_histories=("$QUEUE_HISTORIES"/*.json)
+shopt -u nullglob
+(( ${#queue_histories[@]} >= 287 )) \
+    || sce_gate_fail "Swift queue histories: ${#queue_histories[@]} written, expected at least 287"
+"$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
+    || sce_gate_fail "Swift queue histories are not linearizable"
+sce_gate_step "${#queue_histories[@]} Swift queue histories judged, all linearizable"
 
 # The test runs the lane reported, in the order it ran them: the forge runtime, then the
 # conformance tests. A package whose tests were not discovered builds, runs nothing and exits 0,
