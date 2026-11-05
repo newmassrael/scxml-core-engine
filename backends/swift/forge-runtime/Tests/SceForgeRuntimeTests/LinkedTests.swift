@@ -15,45 +15,6 @@ import Testing
 // is one thread; the threaded run shows that with a producer and a consumer on real threads every element
 // arrives once, in order, across many segments.
 
-/// An allocator that grants `budget` segments at a time and counts what it was asked. A segment given
-/// back is a segment that may be granted again.
-private final class BudgetAllocator: SegmentAllocator {
-    let progress: QueueProgress
-    private let budget: Int
-    private let live = Atomic<Int>(0)
-    private let granted = Atomic<Int>(0)
-    private let returned = Atomic<Int>(0)
-
-    init(budget: Int, progress: QueueProgress = .waitFree) {
-        self.budget = budget
-        self.progress = progress
-    }
-
-    func allocate<Segment: AnyObject>(_ make: () -> Segment) -> Segment? {
-        while true {
-            let seen = live.load(ordering: .sequentiallyConsistent)
-            if seen >= budget {
-                return nil
-            }
-            if live.compareExchange(
-                expected: seen, desired: seen + 1, ordering: .sequentiallyConsistent
-            ).exchanged {
-                granted.add(1, ordering: .relaxed)
-                return make()
-            }
-        }
-    }
-
-    func deallocate(_ segment: AnyObject) {
-        live.subtract(1, ordering: .sequentiallyConsistent)
-        returned.add(1, ordering: .relaxed)
-    }
-
-    var liveSegments: Int { live.load(ordering: .sequentiallyConsistent) }
-    var grantedSegments: Int { granted.load(ordering: .relaxed) }
-    var returnedSegments: Int { returned.load(ordering: .relaxed) }
-}
-
 private func queue(
     segment: Int, budget: Int
 ) -> (allocator: BudgetAllocator, queue: LinkedLamport<Int>, producer: LinkedLamportProducer<Int>, consumer: LinkedLamportConsumer<Int>) {
@@ -158,19 +119,6 @@ private func queue(
     let again = queue.consumer()!
     #expect(second.tryPush(5) == .ok)
     #expect(again.tryPop() == 5)
-}
-
-/// An element that counts its own deallocations.
-private final class Tracked: Sendable {
-    let gone: Counter
-    init(_ gone: Counter) { self.gone = gone }
-    deinit { gone.increment() }
-}
-
-private final class Counter: Sendable {
-    private let value = Atomic<Int>(0)
-    func increment() { value.add(1, ordering: .relaxed) }
-    var count: Int { value.load(ordering: .relaxed) }
 }
 
 @Test func aLinkedQueueKeepsNoCopyOfAnElementThatLeftIt() {

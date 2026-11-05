@@ -50,6 +50,21 @@ func takePlace(_ alive: borrowing Atomic<Int>, limit: Int) -> Bool {
     }
 }
 
+/// Ends a list of segments that each own one retain of their successor, without recursion. A long list
+/// would end recursively, one segment's end ending the next, and a deep recursion overflows the stack. The
+/// segment that ends calls this with the link it held (taken out of it, so its own end finds none), and each
+/// successor this segment was the last owner of is unlinked before it ends in turn; one another holder
+/// still has is left to that holder.
+func endChain<Segment: AnyObject>(
+    after first: UnsafeMutableRawPointer?, linkOf link: (Segment) -> UnsafeMutableRawPointer?
+) {
+    var pending = first
+    while let pointer = pending {
+        var owned = Unmanaged<Segment>.fromOpaque(pointer).takeRetainedValue()
+        pending = isKnownUniquelyReferenced(&owned) ? link(owned) : nil
+    }
+}
+
 /// Whether a push took its element.
 public enum PushStatus: Equatable, Sendable {
     /// The element is in the queue.

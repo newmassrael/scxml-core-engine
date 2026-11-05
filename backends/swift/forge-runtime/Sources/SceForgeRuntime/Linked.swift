@@ -30,12 +30,8 @@ final class LamportSegment<Element: Sendable>: @unchecked Sendable {
     deinit {
         slots.deinitialize(count: size)
         slots.deallocate()
-        // A long list would end recursively, one segment's end ending the next, and a deep recursion
-        // overflows the stack: each segment this one is the last owner of is unlinked before it ends.
-        var pending = next.exchange(nil, ordering: .acquiring)
-        while let pointer = pending {
-            var owned = Unmanaged<LamportSegment<Element>>.fromOpaque(pointer).takeRetainedValue()
-            pending = isKnownUniquelyReferenced(&owned) ? owned.next.exchange(nil, ordering: .acquiring) : nil
+        endChain(after: next.exchange(nil, ordering: .acquiring)) { (segment: LamportSegment<Element>) in
+            segment.next.exchange(nil, ordering: .acquiring)
         }
     }
 

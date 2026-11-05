@@ -110,19 +110,6 @@ private func pair<Element: Sendable>(
     #expect([consumer.tryPop(), consumer.tryPop(), consumer.tryPop()] == [1, 2, 3])
 }
 
-/// An element that counts its own deallocations.
-private final class Tracked: Sendable {
-    let gone: Counter
-    init(_ gone: Counter) { self.gone = gone }
-    deinit { gone.increment() }
-}
-
-private final class Counter: Sendable {
-    private let value = Atomic<Int>(0)
-    func increment() { value.add(1, ordering: .relaxed) }
-    var count: Int { value.load(ordering: .relaxed) }
-}
-
 @Test func aPoppedElementIsNotKeptByTheQueue() {
     let gone = Counter()
     let queue = Spsc<Tracked>(capacity: 2)
