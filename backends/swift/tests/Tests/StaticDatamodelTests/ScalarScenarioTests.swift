@@ -341,15 +341,13 @@ private func invokeString() -> Machine {
 }
 
 private func invokeTree() -> Machine {
-    let policy = StaticInvokeTreePolicy()
-    return drive(
-        policy,
-        variables: [
+    driveSaved({ StaticInvokeTreePolicy() }) { policy in
+        [
             "answers": { integer(policy.answers) },
             "reports": { integer(policy.reports) },
             "stamps": { integer(policy.stamps) },
         ]
-    )
+    }
 }
 
 private func sendIdLocation() -> Machine {
@@ -1571,7 +1569,7 @@ private func recordBytes() -> Machine {
 // that every expected value is the one a run without the restores holds. The line comes off when
 // Swift restores a saved tree.
 @Test func aTreeOfSessionsAnswersAsItsSavedFormWouldWithoutTheRestores() {
-    replay("static_invoke_tree", invokeTree(), skipping: ["restore"])
+    replay("static_invoke_tree", invokeTree())
 }
 
 @Test func aSendHandsItsIdToTheVariableItNames() {

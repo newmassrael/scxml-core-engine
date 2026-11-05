@@ -212,10 +212,28 @@ struct RestoredHostInvoke {
     var deadline: RestoredHostDeadline
 }
 
+/// The invokers a host registered, by type, which serve every session of a machine's tree: a parent hands this very
+/// object to each child it starts or resumes, so a registration made later serves the children already running
+/// (docs/adr/0045, section 3). The set of invocable types is the processor's (§scxml-6.4.1), not a session's, and an
+/// invoker carries no identity.
+final class HostInvokerRegistry {
+    var handlers: [String: HostInvokeHandler] = [:]
+}
+
 /// What an engine holds of its host-run invocations: the handlers, the runs still going
 /// and the next token. Internal, held by `Engine.hostInvokes`.
 struct HostInvokeBook {
-    var handlers: [String: HostInvokeHandler] = [:]
+    /// The invokers of the tree this session is in, shared with its parent and its children.
+    var shared = HostInvokerRegistry()
+
+    /// The invoker Mesh requests reach (`registerMeshRpcInvoker`), this session's own and never shared: a child's is
+    /// its router's, and a parent's would send under the parent's name.
+    var meshRpc: HostInvokeHandler?
+
+    /// The invoker serving `processorType` in this session, or nil when none does.
+    func handler(for processorType: String) -> HostInvokeHandler? {
+        processorType == meshRpcInvokeType ? meshRpc : shared.handlers[processorType]
+    }
 
     /// The token of the start still running under each key.
     var started: [HostInvokeKey: UInt64] = [:]
@@ -256,12 +274,12 @@ extension Engine {
         if isReservedProcessorType(processorType) {
             throw .reservedType(call: "registerInvoker", type: processorType)
         }
-        hostInvokes.handlers[processorType] = handler
+        hostInvokes.shared.handlers[processorType] = handler
     }
 
     /// Whether an invoker is registered for `processorType`.
     public func hasInvoker(_ processorType: String) -> Bool {
-        hostInvokes.handlers[processorType] != nil
+        hostInvokes.handler(for: processorType) != nil
     }
 
     /// Starts a host-run invocation and reports whether anything ran (§scxml-6.4.1).
@@ -276,7 +294,7 @@ extension Engine {
     /// completes at once completes an invocation the engine already knows is running.
     @discardableResult
     public func performHostInvoke(_ request: HostInvokeRequest) -> Bool {
-        guard let handler = hostInvokes.handlers[request.processorType] else {
+        guard let handler = hostInvokes.handler(for: request.processorType) else {
             return false
         }
         var request = request
@@ -469,7 +487,7 @@ extension Engine {
     /// Tells the invoker of `processorType` to stop the start `token` names. Whether
     /// there was an invoker to tell.
     private func deliverHostInvokeCancel(processorType: String, invokeID: String, token: UInt64) -> Bool {
-        guard let handler = hostInvokes.handlers[processorType] else {
+        guard let handler = hostInvokes.handler(for: processorType) else {
             return false
         }
         _ = handler(
@@ -540,7 +558,7 @@ extension Engine {
             if case .at(let atMs) = invocation.deadline {
                 deadline = .at(atMs)
             }
-            guard let handler = hostInvokes.handlers[request.processorType] else {
+            guard let handler = hostInvokes.handler(for: request.processorType) else {
                 // An invoker not registered by now is the same error a document's own start gets.
                 if let errorEvent = policy.getEventFromName("error.execution") {
                     raise(

@@ -75,6 +75,10 @@ struct Machine {
 
     /// Runs what was handed to the machine to quiescence.
     var settle: () -> Void = {}
+
+    /// The machine saved, discarded and made again from the text (docs/adr/0045): what a step marked `restore`
+    /// carries on with. Nil for a machine this driver cannot save.
+    var restored: (() throws -> Machine)? = nil
 }
 
 /// The child hosts a machine's host was asked for, in the order asked, and what each child
@@ -152,7 +156,8 @@ func drive<Policy: StatePolicy>(
     variables: [String: () -> JSONValue],
     hostCalls: (() -> [JSONValue])? = nil,
     childHosts: (() -> [JSONValue])? = nil,
-    peers: PeerRecorder? = nil
+    peers: PeerRecorder? = nil,
+    start: (Engine<Policy>) -> Void = { $0.initialize() }
 ) -> Machine {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
@@ -163,7 +168,7 @@ func drive<Policy: StatePolicy>(
         engine.registerMeshRouter(peers.sends.router)
         engine.registerChildMeshRouters(peers.children.factory)
     }
-    engine.initialize()
+    start(engine)
     // `step` drains the queues and nothing else: a child session is run by the
     // parent's `tick`, so a machine that has one is driven by rounds of it.
     let settle = {
@@ -294,8 +299,8 @@ private let scenarioDirectory: String = {
 }()
 
 /// The members of a step that a driver replays only by doing something this one does
-/// not: each fails the step that carries it.
-private let unreplayedStepMembers = ["restore"]
+/// not: each fails the step that carries it. This driver replays every member a scenario writes.
+private let unreplayedStepMembers: [String] = []
 
 /// `value` with the members of every object in the order of their keys' bytes: an object a
 /// scenario writes has no order, and what a machine or a host records of what it holds has no
@@ -332,6 +337,8 @@ func replay(
     _ name: String, _ machine: Machine, skipping: [String] = [],
     sourceLocation: SourceLocation = #_sourceLocation
 ) {
+    // A step marked `restore` carries on with another machine, so what is replayed is held by this function.
+    var machine = machine
     let path = "\(scenarioDirectory)/\(name).json"
     let scenario: JSONValue
     do {
@@ -364,6 +371,19 @@ func replay(
         }
         for member in unreplayedStepMembers where step.member(member) != nil && !skipping.contains(member) {
             fail("this driver does not replay `\(member)` yet")
+        }
+        // The machine is saved, discarded and restored from the text before the step's event (docs/adr/0045).
+        if case .bool(true)? = step.member("restore"), !skipping.contains("restore") {
+            if let restored = machine.restored {
+                do {
+                    machine = try restored()
+                } catch {
+                    fail("the machine could not be restored: \(error)")
+                    return
+                }
+            } else {
+                fail("this driver cannot save this machine, so it cannot restore it")
+            }
         }
         if case .number(let ms)? = step.member("advance_ms"), let by = Int64(ms) {
             machine.advance(by)
@@ -482,4 +502,43 @@ func replay(
             }
         }
     }
+}
+
+// MARK: - A machine a step can save and restore
+
+/// The wall-clock moment a replayed machine is saved at and restored at: one reading for both, so what a send had
+/// left of its wait is what the restored machine keeps, whatever the build machine's own clock does between them.
+private let scenarioWallMs: Int64 = 1_700_000_000_000
+
+/// Starts a machine `make` makes, or restores `saved` into it, and returns it as a machine a step marked `restore`
+/// can save, discard and make again from the text. `variables` names what a scenario may state of the policy a
+/// machine runs, which each machine reads from its own.
+func driveSaved<Policy: SavedPolicy>(
+    _ make: @escaping () -> Policy,
+    restoring saved: SavedState? = nil,
+    variables: @escaping (Policy) -> [String: () -> JSONValue]
+) -> Machine {
+    let policy = make()
+    var held: Engine<Policy>?
+    var machine = drive(
+        policy, variables: variables(policy),
+        start: { engine in
+            held = engine
+            guard let saved else {
+                engine.initialize()
+                return
+            }
+            do {
+                try engine.restore(saved, wallNowMs: scenarioWallMs)
+            } catch {
+                preconditionFailure("the saved machine was refused by the restore: \(error)")
+            }
+        })
+    machine.restored = {
+        guard let held else {
+            preconditionFailure("a machine that has not started has no state to save")
+        }
+        return driveSaved(make, restoring: try held.save(wallNowMs: scenarioWallMs), variables: variables)
+    }
+    return machine
 }

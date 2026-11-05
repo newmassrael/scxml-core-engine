@@ -104,7 +104,7 @@ extension Engine {
     /// `error.execution` as any host-run invoke without an invoker does; the handler answers with
     /// `completeHostInvoke` or `failHostInvoke`, naming the peer that answered.
     public func registerMeshRpcInvoker(_ handler: @escaping HostInvokeHandler) {
-        hostInvokes.handlers[meshRpcInvokeType] = handler
+        hostInvokes.meshRpc = handler
     }
 
     /// Registers the factory of the routers of this machine's children (SCE_MESH.md, Child
@@ -125,6 +125,10 @@ extension Engine {
     /// Leaves `child` as it is when no factory is registered or it answers nil. The generated
     /// start of a child calls it before the child initializes.
     public func startChildMesh(of child: any ChildEngine, invokeID: String, document: String) {
+        // The invokers a host registered serve every session of the tree (docs/adr/0045, section 3), so the child
+        // is handed this machine's registry before its invocations can start, and a registration made later serves
+        // it too. Every start and every resume of a child passes here.
+        (child as? any SharesHostInvokers)?.shareHostInvokers(hostInvokes.shared)
         guard let router = meshRouting.childRouters?(invokeID, document) else {
             return
         }

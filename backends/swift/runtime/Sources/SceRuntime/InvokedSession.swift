@@ -96,3 +96,14 @@ public final class InvokedSession<Policy: InvocablePolicy>: ChildEngine {
         engine.installChildMeshRouter(router)
     }
 }
+
+/// A child session that takes the host invokers of the tree it is in from its parent (docs/adr/0045, section 3).
+protocol SharesHostInvokers {
+    func shareHostInvokers(_ registry: HostInvokerRegistry)
+}
+
+extension InvokedSession: SharesHostInvokers {
+    func shareHostInvokers(_ registry: HostInvokerRegistry) {
+        engine.hostInvokes.shared = registry
+    }
+}
