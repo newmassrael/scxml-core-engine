@@ -358,8 +358,8 @@ void ActionExecutorImpl::setCurrentEvent(const EventMetadata &metadata) {
     currentEventData_ = metadata.data;
     currentSendId_ = metadata.sendId;
     currentInvokeId_ = metadata.invokeId;
-    currentOriginType_ = metadata.originType;
-    currentOriginSessionId_ = metadata.originSessionId;
+    currentOrigin_ = metadata.origin;
+    currentSender_ = metadata.sender;
     currentTypedData_ = metadata.typedData;
 
     // §scxml-5.10.1: Auto-detect event type if not provided
@@ -377,7 +377,7 @@ void ActionExecutorImpl::setCurrentEvent(const EventMetadata &metadata) {
 
 EventMetadata ActionExecutorImpl::getCurrentEvent() const {
     return EventMetadata(currentEventName_, currentEventData_, currentEventType_, currentSendId_, currentInvokeId_,
-                         currentOriginType_, currentOriginSessionId_);
+                         currentOrigin_, currentSender_);
 }
 
 void ActionExecutorImpl::clearCurrentEvent() {
@@ -385,9 +385,9 @@ void ActionExecutorImpl::clearCurrentEvent() {
     currentEventData_.clear();
     currentSendId_.clear();
     currentInvokeId_.clear();
-    currentOriginType_.clear();
+    currentOrigin_.reset();
     currentEventType_.clear();
-    currentOriginSessionId_.clear();
+    currentSender_.clear();
 
     // Clear _event variable in JavaScript context by setting null event
     if (isSessionReady()) {
@@ -526,18 +526,14 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
         // ARCHITECTURE.md: Zero Duplication Principle - shared logic with AOT engine
         //
         // §scxml-C-1: `_event.origin` is the sender's published `_ioprocessors`
-        // location, not its bare session id — and this is the one place that
-        // publishes it, so this is where the id becomes a location. The
-        // conversion itself lives in `IOProcessorHelper::publishedOrigin`,
-        // which the AOT engine's own boundary calls too: both engines had to
-        // answer this, and a second spelling of the rule is how they would
-        // stop agreeing.
-        SCE::Common::EventMetadataHelper::setEventMetadata(
-            *event,
-            IOProcessorHelper::publishedOrigin(currentOriginSessionId_),  // origin (test336)
-            currentOriginType_,                                           // originType (test253, 331, 352, 372)
-            currentSendId_,                                               // sendId (test332)
-            currentInvokeId_                                              // invokeId (test338)
+        // location. The processor that delivered the event wrote it, with its
+        // type, as one pair where it built the event (docs/adr/0090), so it is
+        // bound here as it is — both fields empty for an event with none — and
+        // nothing converts a session id at this boundary.
+        SCE::Common::EventMetadataHelper::setEventMetadata(*event,
+                                                           currentOrigin_,   // origin and origintype (test253, 336)
+                                                           currentSendId_,   // sendId (test332)
+                                                           currentInvokeId_  // invokeId (test338)
         );
 
         auto result = scriptEngine_.setCurrentEvent(sessionId_, event).get();
@@ -794,6 +790,10 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             sendType = evaluateExpression(action.getTypeExpr());
             SCE_LOG_DEBUG("ActionExecutorImpl: Evaluated typeexpr '{}' to type: '{}'", action.getTypeExpr(), sendType);
         }
+        // §scxml-6.2: a processor's alias is read as its type URI where the type
+        // is resolved, so the type the event is delivered under — its
+        // `_event.origintype` — is never the author's spelling (docs/adr/0090).
+        sendType = IOProcessorHelper::canonicalProcessorType(sendType);
 
         // §scxml-C-2 (test 577): Check if this is HTTP event processor (needed for validation)
         bool isHttpEventProcessor = (sendType.find("BasicHTTPEventProcessor") != std::string::npos ||
@@ -1317,7 +1317,11 @@ bool ActionExecutorImpl::performHostServedSend(const HostSendRequest &request, s
         }
         for (const auto &reply : handler->second(sent)) {
             if (!reply.eventName.empty() && raiser) {
-                raiser->raiseExternalEvent(reply.eventName, reply.eventData);
+                // docs/adr/0090: the reply carries the pair the host named for
+                // it, or none, as on the generated engine.
+                Core::EventMetadata replied(reply.eventName, reply.eventData);
+                replied.origin = reply.origin;
+                raiser->raiseExternalEvent(replied);
             }
         }
     };

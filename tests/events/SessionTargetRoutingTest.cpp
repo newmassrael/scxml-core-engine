@@ -162,15 +162,13 @@ TEST_F(SessionTargetRouting, AnEventAddressedToAnUnknownSessionIsNotDeliveredToT
 /// at all; a mock therefore observes an empty origin no matter what the
 /// production path does. Measuring the contract requires being on it.
 ///
-/// ⚠⚠ And the queue is not that contract. `_event.origin` is what a document
-/// reads, and it is produced by `ActionExecutorImpl::setCurrentEvent`; the
-/// queue carries the SESSION ID the routing layer keys its lookups on. An
-/// earlier arrangement converted at the raiser's entrance, which made the two
-/// coincide and let this assertion stand in for the datamodel's — until the
-/// same value had to serve `<finalize>` lookups too, which key on the id, and
-/// W3C 233/234 failed while this test still passed. So the queue's spelling
-/// is asserted here as an id, and the published-location half is asserted
-/// where it is actually published, below.
+/// ⚠⚠ The queue holds both readers' values (docs/adr/0090): the origin pair
+/// the document reads, and the SESSION ID the routing layer keys its lookups
+/// on, as the event's sender. One string once served both, and W3C 233/234
+/// failed when `<finalize>` lookups met the location. A queue snapshot shows
+/// the sender's id where a session sent the event, which is asserted here,
+/// with the processor's canonical type; the published-location half is
+/// asserted where it is bound, below.
 TEST_F(SessionTargetRouting, TheQueueCarriesTheSendersSessionId) {
     auto realPeer = std::make_shared<SCE::EventRaiserImpl>();
     realPeer->setImmediateMode(false);  // keep the raise queued so it can be read back
@@ -193,6 +191,8 @@ TEST_F(SessionTargetRouting, TheQueueCarriesTheSendersSessionId) {
               SCE::IOProcessorHelper::scxmlLocation(kSender))
         << "and it maps to the sender's published location, so the two "
            "spellings name one address";
+    EXPECT_EQ(externalQueue[0].origintype, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor")
+        << "the SCXML processor writes its canonical type beside the address, whole";
 }
 
 /// The half of §C.1 that makes the origin field worth having: what the
@@ -217,18 +217,24 @@ TEST_F(SessionTargetRouting, ThePublishedLocationWorksAsASendTarget) {
 /// §scxml-6.4.3: destroying a session cancels the events it queued — and
 /// only those.
 ///
-/// This lives beside the origin tests because it reads the same field.
-/// `QueuedEvent::origin` holds the sender's published location, so a
-/// comparison written against the raw session id callers pass would match
-/// nothing and cancel nothing, silently: the count comes back zero, which is
-/// also what "that session had queued nothing" looks like. Nothing exercised
-/// this path before, so the two spellings could disagree undetected.
+/// This lives beside the origin tests because it reads the event beside the
+/// origin. `QueuedEvent::origin` holds the sender's published location and
+/// `QueuedEvent::sender` its session id (docs/adr/0090); the cancellation
+/// matches the sender, so a comparison written against the location would
+/// match nothing and cancel nothing, silently: the count comes back zero,
+/// which is also what "that session had queued nothing" looks like.
 TEST_F(SessionTargetRouting, CancellingASessionRemovesOnlyThatSessionsQueuedEvents) {
     auto raiser = std::make_shared<SCE::EventRaiserImpl>();
     raiser->setImmediateMode(false);
 
-    ASSERT_TRUE(raiser->raiseEvent("fromSender", "", kSender));
-    ASSERT_TRUE(raiser->raiseEvent("fromPeer", "", kPeer));
+    const auto sentBy = [](const std::string &name, const std::string &session) {
+        SCE::Core::EventMetadata event(name, "");
+        event.origin = SCE::IOProcessorHelper::scxmlOrigin(session);
+        event.sender = session;
+        return event;
+    };
+    ASSERT_TRUE(raiser->raiseEvent(sentBy("fromSender", kSender)));
+    ASSERT_TRUE(raiser->raiseEvent(sentBy("fromPeer", kPeer)));
 
     EXPECT_EQ(raiser->cancelEventsForSession(kSender), 1u) << "the sending session had exactly one event queued";
 
@@ -272,15 +278,14 @@ TEST_F(SessionTargetRouting, ThePublishedLocationIsWhatTheDatamodelReads) {
     // `_event.origin`, which is what makes the two halves one mapping rather
     // than two conventions.
     //
-    // Read from the datamodel, not from the queue. The queue carries the
-    // session id; the location is derived where `_event` is published, so
-    // asserting against the queue would measure the routing layer's currency
-    // and call it the document's. `setCurrentEvent` is that publishing step,
-    // the same one `StateMachine::processEvent` performs.
+    // Read from the datamodel, not from the queue. The event carries the pair
+    // the SCXML processor wrote for the sender (docs/adr/0090), and
+    // `setCurrentEvent` is the publishing step that binds it, the same one
+    // `StateMachine::processEvent` performs.
     auto dispatcher = std::shared_ptr<SCE::IEventDispatcher>();
     SCE::ActionExecutorImpl executor(kPeer, engine, dispatcher);
-    SCE::Core::EventMetadata metadata("mapped", "", "external", "", "",
-                                      "http://www.w3.org/TR/scxml/#SCXMLEventProcessor", kSender);
+    SCE::Core::EventMetadata metadata("mapped", "", "external", "", "", SCE::IOProcessorHelper::scxmlOrigin(kSender),
+                                      kSender);
     executor.setCurrentEvent(metadata);
 
     auto seen = engine.evaluateExpression(kPeer, "_event.origin").get();

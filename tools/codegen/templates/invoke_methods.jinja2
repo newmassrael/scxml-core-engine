@@ -1262,9 +1262,11 @@
     template <typename Engine>
     void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, [[maybe_unused]] Engine& engine) {
 
-        // W3C SCXML 6.5: Only execute finalize for events from child invokes
-        // origin field contains child's session ID
-        if (eventWithMeta.origin.empty()) {
+        // W3C SCXML 6.5: Only execute finalize for events from child invokes.
+        // The child is found by the event's sender, the session id the SCXML
+        // processor sets beside the origin; the origin's address is never
+        // read to find a session (docs/adr/0090).
+        if (eventWithMeta.sender.empty()) {
             return;  // Not from a child
         }
 
@@ -1275,7 +1277,7 @@
         std::string __sce_matched_finalize_script;
         {
             for (const auto& [invokeId, childSession] : activeInvokes_) {
-                if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
+                if (childSession.sessionId == eventWithMeta.sender && !childSession.finalizeScript.empty()) {
                     __sce_matched_invoke_id = invokeId;
                     __sce_matched_finalize_script = childSession.finalizeScript;
                     break;
@@ -1301,7 +1303,6 @@
                 eventWithMeta.data,
                 eventWithMeta.sendId,
                 eventWithMeta.origin,
-                eventWithMeta.originType,
                 eventWithMeta.invokeId
             );
 {% else %}
@@ -1329,7 +1330,7 @@
     // ChildEvent, before the event joins the external queue, so an event from
     // a session the parent has already left never reaches transition
     // selection. The entry is stamped by `onInvokeStarted` (wire-15) and erased
-    // by the invoking state's onexit — the same `sessionId == origin` key
+    // by the invoking state's onexit — the same `sessionId == sender` key
     // `executeFinalizeForChildEvent` matches on, so finalize and admission
     // cannot disagree about which invoke an event belongs to.
     bool hasActiveChildSession(const std::string& childSessionId) const {
@@ -1385,7 +1386,7 @@
             // W3C SCXML 6.5 + SCE_MESH.md §9.6.3: do NOT erase activeInvokes_
             // here. The entry must survive so any ChildEvent (wire-16) that
             // reached the external queue earlier in the same drain as this
-            // wire-18 still matches by `sessionId == eventWithMeta.origin` in
+            // wire-18 still matches by `sessionId == eventWithMeta.sender` in
             // `executeFinalizeForChildEvent`. Ordering in a single parent
             // macrostep: external queue contains [ping, done.invoke.X] →
             // finalize runs on ping → transition selection on ping → (next

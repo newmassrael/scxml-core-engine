@@ -1337,8 +1337,9 @@ invoker->cancel{pascal}(cancel.token);\n                    return std::nullopt;
                     ("token", "token".to_string()),
                     ("done", "true".to_string()),
                     ("data", "result.wire()".to_string()),
-                    ("origin", "\"\"".to_string()),
-                    ("originType", "\"\"".to_string()),
+                    // docs/adr/0090: a typed completion names no party, so
+                    // its origin is none rather than half of a pair.
+                    ("origin", "std::nullopt".to_string()),
                 ]);
                 let posted = crate::forge::generator::cpp_positional_init(&[
                     ("sessionId", "\"\"".to_string()),

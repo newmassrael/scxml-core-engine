@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/EventOrigin.h"
 #include "core/InvokeHelper.h"
 
 namespace SCE {
@@ -89,6 +90,12 @@ struct HostSendResponse {
     std::string eventName;
     /// Payload for `_event.data`, empty for a bare reply.
     std::string eventData;
+    /// `_event.origin` and `_event.origintype` of the reply, in the host's own
+    /// terms (docs/adr/0090, section 2): the host processor's type and the
+    /// address a `<send>` of that type reaches the party at. None when the
+    /// reply names no party, and then both fields read empty; the engine
+    /// never fills in the SCXML processor's type for a host.
+    std::optional<Core::EventOrigin> origin = std::nullopt;
 };
 
 /**
@@ -403,11 +410,11 @@ struct HostInvokeEnding {
     bool done = true;
     /// `_event.data` of the event the ending raises.
     std::string data;
-    /// `_event.origin` of that event, for a host whose invocation stands for a
-    /// party it can name; empty for none.
-    std::string origin;
-    /// `_event.origintype` of that event; empty keeps the SCXML processor's.
-    std::string originType;
+    /// `_event.origin` and `_event.origintype` of that event, for a host whose
+    /// invocation stands for a party it can name, in the host's own terms
+    /// (docs/adr/0090, section 2): its declared type and the address a `<send>`
+    /// of that type reaches the party at. None for a host that names no party.
+    std::optional<Core::EventOrigin> origin = std::nullopt;
 };
 
 /**

@@ -353,14 +353,16 @@ TEST_F(HostInvokerAotTest, AFailedInvocationRaisesErrorInvokeOnceWithItsOrigin) 
     sm.processEvent(Event::Fail);
 
     const uint64_t token = tokenOf("job");
-    EXPECT_TRUE(sm.failHostInvoke(DECLARED_TYPE, "job", token, "\"no\"", "host://job", DECLARED_TYPE))
+    EXPECT_TRUE(
+        sm.failHostInvoke(DECLARED_TYPE, "job", token, "\"no\"", SCE::Core::EventOrigin(DECLARED_TYPE, "host://job")))
         << "a running invocation's failure was refused";
     sm.step();
     // Counted only when the invokeid, the data and both origin fields are what
     // the host named, so this is those assertions too.
     EXPECT_EQ(sm.getPolicy().failed(), std::optional<int64_t>(1));
     EXPECT_FALSE(sm.completeHostInvoke(DECLARED_TYPE, "job", token, "ok")) << "a failed run completed afterwards";
-    EXPECT_FALSE(sm.failHostInvoke(DECLARED_TYPE, "job", token, "\"no\"", "host://job", DECLARED_TYPE))
+    EXPECT_FALSE(
+        sm.failHostInvoke(DECLARED_TYPE, "job", token, "\"no\"", SCE::Core::EventOrigin(DECLARED_TYPE, "host://job")))
         << "the same run failed twice";
     sm.step();
     EXPECT_EQ(sm.getPolicy().failed(), std::optional<int64_t>(1));
@@ -443,7 +445,7 @@ TEST_F(HostInvokerAotTest, ADoneInvokeRaisedTheOldWayIsRefusedAndCounted) {
 
     const auto doneEvent = sm.getPolicy().getEventFromName("done.invoke.probe");
     ASSERT_TRUE(doneEvent.has_value()) << "the fixture declares done.invoke.probe";
-    sm.raiseExternal(Machine::EventWithMetadata(*doneEvent, "x", "", "", "external", "", "probe"));
+    sm.raiseExternal(Machine::EventWithMetadata(*doneEvent, "x", std::nullopt, "", "external", "probe"));
     sm.step();
 
     EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(0))
@@ -516,7 +518,7 @@ TEST_F(HostInvokerAotTest, AGenericDoneInvokeRaisedTheOldWayIsRefused) {
 
     const auto doneEvent = sm.getPolicy().getEventFromName("done.invoke");
     ASSERT_TRUE(doneEvent.has_value()) << "a host-invoker build declares the generic done.invoke";
-    sm.raiseExternal(Machine::EventWithMetadata(*doneEvent, "x", "", "", "external", "", "done._invoke_0"));
+    sm.raiseExternal(Machine::EventWithMetadata(*doneEvent, "x", std::nullopt, "", "external", "done._invoke_0"));
     sm.step();
 
     EXPECT_EQ(sm.getPolicy().matched(), std::optional<int64_t>(0))

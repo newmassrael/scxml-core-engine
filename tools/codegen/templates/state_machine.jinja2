@@ -151,12 +151,10 @@
 // `CommunicationError::toJsonBytes()`.
 #include "mesh/CommunicationError.h"
 {% endif %}
-{% if model.needs_script_engine or model.needs_event_origin %}
-// W3C SCXML C.1: `publishedOrigin` turns the sender's session id into the
-// address it published, at the boundary where `_event.origin` becomes
-// visible to the document.
+// W3C SCXML C.1: `scxmlOriginOf` writes the pair the SCXML processor stamps
+// on an event a session sends (docs/adr/0090) — the sender's published
+// location — wherever this machine builds one.
 #include "common/IOProcessorHelper.h"
-{% endif %}
 {% if model.needs_send_helper %}
 #include "common/SendHelper.h"
 {% endif %}
@@ -688,8 +686,11 @@ struct {{ model.name }}Policy {
         }
         ::SCE::Common::ForwardedEvent addressed = forwarded;
         addressed.invokeId = invokeId_;
-        addressed.origin = childSessionId_;
-        addressed.originType = ::SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
+        // W3C SCXML C.1 + docs/adr/0090: the SCXML processor writes this
+        // session's published location as the origin, and its id as the
+        // sender the parent's `<finalize>` finds it by.
+        addressed.origin = ::SCE::IOProcessorHelper::scxmlOriginOf(childSessionId_);
+        addressed.sender = childSessionId_;
         parent_->raiseExternal(addressed);
         return true;
     }
@@ -699,6 +700,20 @@ struct {{ model.name }}Policy {
     // error.communication when the send is made, delayed or not.
     bool hasParentSession() const {
         return parent_ != nullptr;
+    }
+
+    // W3C SCXML C.1: whether `sessionId` names the session that invoked this
+    // one. The location a session publishes is a target, so a reply sent to
+    // the origin of an event the parent sent — its location — reaches the
+    // parent as `#_parent` does (docs/adr/0090). Emitted beside
+    // `deliverToParent`, so the trait that finds one finds both.
+    bool isParentSession([[maybe_unused]] const std::string& parentSessionId) const {
+        if constexpr (::SCE::Core::HasMachineSessionIdTrait<ParentStateMachine>::value) {
+            return parent_ != nullptr && !parentSessionId.empty() &&
+                   parent_->getPolicy().sessionIdText() == parentSessionId;
+        } else {
+            return false;
+        }
     }
     {% endif %}
 
@@ -744,13 +759,11 @@ struct {{ model.name }}Policy {
     // W3C SCXML 5.10.1: Event sendid storage for _event.sendid access (test332)
     mutable ::std::string pendingEventSendId_;
     {% endif %}
-    {% if model.needs_event_origin %}
-    // W3C SCXML 5.10.1: Event origin storage for _event.origin access (test336)
-    mutable ::std::string pendingEventOrigin_;
-    {% endif %}
-    {% if model.needs_event_origintype %}
-    // W3C SCXML 5.10.1: Event origintype storage for _event.origintype access
-    mutable ::std::string pendingEventOriginType_;
+    {% if model.needs_event_origin or model.needs_event_origintype %}
+    // W3C SCXML 5.10.1: Event origin storage for _event.origin and
+    // _event.origintype access (test336) — the one pair the delivering
+    // processor wrote (docs/adr/0090), none for an event it did not stamp
+    mutable ::std::optional<::SCE::Core::EventOrigin> pendingEventOrigin_;
     {% endif %}
     {% if model.needs_event_invokeid %}
     // W3C SCXML 5.10.1: Event invokeid storage for _event.invokeid access (test338)

@@ -124,8 +124,7 @@ Machine::InboxInput ending(uint64_t token, bool done, const std::string &data) {
                                                                            /*token=*/token,
                                                                            /*done=*/done,
                                                                            /*data=*/data,
-                                                                           /*origin=*/"",
-                                                                           /*originType=*/""}};
+                                                                           /*origin=*/std::nullopt}};
 }
 
 /// `ping` with `data`, as the document's own event.
@@ -237,8 +236,7 @@ struct EndingOrderHost : SCE::Generated::static_invoke_ending_order::StaticInvok
                                                                                  /*token=*/clock.token,
                                                                                  /*done=*/true,
                                                                                  /*data=*/NOW,
-                                                                                 /*origin=*/"",
-                                                                                 /*originType=*/""}};
+                                                                                 /*origin=*/std::nullopt}};
     }
 
     void beforeQuestion() override {

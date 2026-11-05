@@ -25,6 +25,7 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -54,12 +55,14 @@ struct Sink {
     int calls = 0;
     RpcStatus status = RpcStatus::Ok;
     std::vector<std::uint8_t> data;
+    std::string replier;
 
     InvokeCorrelation::DeliverCallback callback() {
-        return [this](RpcStatus s, std::vector<std::uint8_t> d) {
+        return [this](RpcStatus s, std::vector<std::uint8_t> d, const std::string &from) {
             ++calls;
             status = s;
             data = std::move(d);
+            replier = from;
         };
     }
 };
@@ -80,8 +83,25 @@ TEST(InvokeCorrelation, RegisterThenReplyOk_FiresCallbackWithPayload) {
     EXPECT_EQ(sink.calls, 1);
     EXPECT_EQ(sink.status, RpcStatus::Ok);
     EXPECT_EQ(sink.data, payload);
+    // docs/adr/0090: the delivered event's origin names the peer that answered.
+    EXPECT_EQ(sink.replier, "motor");
     EXPECT_EQ(table.size(), 0u);
     EXPECT_FALSE(table.contains(kUuidA));
+}
+
+/// SCE_MESH.md §14.6 + docs/adr/0090: with a responder set wider than the
+/// target, the callback is told which declared peer answered, not the target
+/// the request went to — the answer's origin is the address of the party that
+/// sent it.
+TEST(InvokeCorrelation, ReplyFromADeclaredBrokerNamesTheBroker) {
+    InvokeCorrelation table;
+    Sink sink;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "alpha", {"alpha", "broker"}, sink.callback()));
+
+    EXPECT_EQ(Outcome::Delivered, table.handleReply(kUuidA, "broker", RpcStatus::Ok, {}));
+
+    EXPECT_EQ(sink.calls, 1);
+    EXPECT_EQ(sink.replier, "broker");
 }
 
 TEST(InvokeCorrelation, RegisterThenReplyError_PropagatesStatus) {
@@ -107,6 +127,8 @@ TEST(InvokeCorrelation, DeadlineFires_DeliveredAsDeadlineExceeded) {
     EXPECT_EQ(sink.calls, 1);
     EXPECT_EQ(sink.status, RpcStatus::DeadlineExceeded);
     EXPECT_TRUE(sink.data.empty());
+    // No peer answered a deadline the router reached itself, so none is named.
+    EXPECT_TRUE(sink.replier.empty());
     EXPECT_EQ(table.size(), 0u);
 }
 
@@ -406,7 +428,8 @@ TEST(InvokeCorrelation, ConcurrentReplyVsCancel_AtMostOneWinsExactlyOnce) {
         uuid[0] = static_cast<std::uint8_t>(i & 0xff);
         uuid[1] = static_cast<std::uint8_t>((i >> 8) & 0xff);
 
-        ASSERT_TRUE(table.registerInvoke(uuid, "motor", {"motor"}, [&](RpcStatus, auto) { ++deliver_calls; }));
+        ASSERT_TRUE(table.registerInvoke(uuid, "motor", {"motor"},
+                                         [&](RpcStatus, auto, const std::string &) { ++deliver_calls; }));
 
         std::thread t_reply([&] {
             if (table.handleReply(uuid, "motor", RpcStatus::Ok, {}) == Outcome::Delivered) {

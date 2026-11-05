@@ -11,6 +11,7 @@
 #pragma once
 
 #include "common/Uuid.h"
+#include "core/EventOrigin.h"
 #include "mesh/MeshEnvelope.h"
 #include "mesh/MeshEnvelopeCodec.h"
 #include "mesh/PatternKind.h"
@@ -87,12 +88,13 @@ struct TestSenderEngine {
         std::string data;
         std::string invokeId;
         // Additional W3C SCXML 5.10.1 metadata fields consumed by
-        // MeshDispatch wire-16 (ChildEvent) path — kept as plain std::string
-        // so the test double accepts the same assignments the real
-        // StaticExecutionEngine::EventWithMetadata does.
+        // MeshDispatch wire-16 (ChildEvent) path — the same types the real
+        // StaticExecutionEngine::EventWithMetadata has, so the test double
+        // accepts the same assignments: the origin pair (docs/adr/0090) and
+        // the sender beside it.
         std::string type;
-        std::string originType;
-        std::string origin;
+        std::optional<SCE::Core::EventOrigin> origin;
+        std::string sender;
         std::string sendId;
     };
 

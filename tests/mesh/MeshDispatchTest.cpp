@@ -67,8 +67,8 @@ struct RecordingEngine {
         std::string invokeId;
         // Additional metadata accepted by MeshDispatch's ChildEvent path.
         std::string type;
-        std::string originType;
-        std::string origin;
+        std::optional<SCE::Core::EventOrigin> origin;
+        std::string sender;
         std::string sendId;
     };
 
@@ -83,22 +83,24 @@ struct RecordingEngine {
         std::string invokeId;
         std::string origin;
         std::string originType;
+        std::string sender;
         std::string sendId;
     };
 
     std::vector<Raised> events;
 
     void raiseExternal(Event ev) {
-        events.push_back({ev, {}, {}, {}, {}, {}});
+        events.push_back({ev, {}, {}, {}, {}, {}, {}});
     }
 
     void raiseExternal(Event ev, const std::string &data) {
-        events.push_back({ev, data, {}, {}, {}, {}});
+        events.push_back({ev, data, {}, {}, {}, {}, {}});
     }
 
     void raiseExternal(EventWithMetadata meta) {
-        events.push_back({meta.event, std::move(meta.data), std::move(meta.invokeId), std::move(meta.origin),
-                          std::move(meta.originType), std::move(meta.sendId)});
+        events.push_back({meta.event, std::move(meta.data), std::move(meta.invokeId),
+                          SCE::Core::originAddressOf(meta.origin), SCE::Core::originProcessorOf(meta.origin),
+                          std::move(meta.sender), std::move(meta.sendId)});
     }
 
     // docs/adr/0084: `dispatchEnvelope` runs on transport threads, so it hands an
@@ -519,13 +521,14 @@ TEST(MeshDispatchTest, InboundEnvelopeCarriesSubjectAsSendId) {
     EXPECT_TRUE(withoutSubject.events[0].sendId.empty());
 }
 
-TEST(MeshDispatchTest, ChildEventKeepsSessionUriOriginNotMeshUri) {
-    // §mesh-9.6.3 L1463-1466 governs the wire-16 ChildEvent arm and overrides
-    // the generic §mesh-10.7 row: the parent's `<finalize>`/autoforward match
-    // compares `activeInvokes_[id].sessionId == _event.origin`, and that
-    // sessionId is the §mesh-9.6.1 child session id. Rewriting this arm to
-    // `mesh://<source>` for table uniformity would silently stop every remote
-    // finalize from matching, so the divergence is locked in deliberately.
+TEST(MeshDispatchTest, ChildEventCarriesTheTransportsOriginAndTheChildAsSender) {
+    // docs/adr/0090, section 2: the wire-16 ChildEvent arm writes the pair the
+    // transport reaches the peer by (§mesh-10.7: `mesh://<source>` and the
+    // SCXML processor), never a wrapping of the `<source>:<invoke>` session
+    // id. The parent's `<finalize>` match compares
+    // `activeInvokes_[id].sessionId` with the event's sender, and that
+    // sessionId is the §mesh-9.6.1 child session id, so the id travels as the
+    // sender and the remote finalize still matches.
     RecordingEngine engine;
     engine.activeChildSessions.push_back("dev_a:parent:remote_inv");
     auto env = makeChildEvent("dev_a:parent:remote_inv");
@@ -533,7 +536,9 @@ TEST(MeshDispatchTest, ChildEventKeepsSessionUriOriginNotMeshUri) {
 
     EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
     ASSERT_EQ(engine.events.size(), 1u);
-    EXPECT_EQ(engine.events[0].origin, "dev_a:parent:remote_inv");
+    EXPECT_EQ(engine.events[0].origin, "mesh://child_machine");
+    EXPECT_EQ(engine.events[0].originType, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
+    EXPECT_EQ(engine.events[0].sender, "dev_a:parent:remote_inv");
 }
 
 namespace {

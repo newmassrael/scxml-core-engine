@@ -372,20 +372,21 @@ public:
      * @brief Event with metadata for §scxml-5.10 compliance
      *
      * Wraps Event enum with metadata (origin, sendid, data, type) to support
-     * _event.origin, _event.sendid, _event.data, _event.type fields.
+     * _event.origin, _event.origintype, _event.sendid, _event.data, _event.type fields.
      *
      * @example Constructor Pattern (required for nested template types)
      * @code
      * // Create event with data and sendId
-     * engine.raise(EventWithMetadata(Event::Error_execution, errorMsg, "", sendId));
+     * engine.raise(EventWithMetadata(Event::Error_execution, errorMsg, std::nullopt, sendId));
      *
-     * // Create external event with all metadata
+     * // Create external event a session sent, with the pair the SCXML
+     * // processor writes for it (docs/adr/0090)
      * externalQueue_.raise(EventWithMetadata(
-     *     Event::Foo,         // event
-     *     "data",             // data
-     *     "#_internal",       // origin
-     *     sendId,             // sendId
-     *     "external"          // type
+     *     Event::Foo,                                      // event
+     *     "data",                                          // data
+     *     IOProcessorHelper::scxmlOrigin(senderSessionId), // origin
+     *     sendId,                                          // sendId
+     *     "external"                                       // type
      * ));
      * @endcode
      */
@@ -399,10 +400,16 @@ public:
         // itself raises or sends.
         std::string name;
         std::string data;
-        std::string origin;                    // §scxml-5.10.1: _event.origin
+        // §scxml-5.10.1: `_event.origin` and `_event.origintype`, one value the
+        // delivering processor wrote (docs/adr/0090); none for an event no
+        // processor stamped, which reads both fields as the empty string.
+        std::optional<Core::EventOrigin> origin;
+        // The id of the session that sent the event, set only by the SCXML
+        // processor. Not an `_event` field: `<finalize>` and a remote child's
+        // admission find the child by it, never by the origin's address.
+        std::string sender;
         std::string sendId;                    // §scxml-5.10.1: _event.sendid
         std::string type;                      // §scxml-5.10.1: _event.type
-        std::string originType;                // §scxml-5.10.1: _event.origintype
         std::string invokeId;                  // §scxml-5.10.1: _event.invokeid
         std::string target;                    // §scxml-C-2: HTTP POST target URL
         std::optional<ScriptValue> typedData;  // §scxml-5.5: Engine-agnostic typed event data
@@ -428,11 +435,13 @@ public:
         // Default constructor for aggregate initialization
         EventWithMetadata() = default;
 
-        // Constructor with positional parameters (event, data, origin, sendId, type, originType, invokeId, target)
-        EventWithMetadata(Event e, const std::string &d = "", const std::string &o = "", const std::string &s = "",
-                          const std::string &t = "", const std::string &ot = "", const std::string &i = "",
+        // Constructor with positional parameters (event, data, origin, sendId, type, invokeId, target).
+        // The origin is a pair or none, never a string, so an argument list written for
+        // the string fields cannot bind to it.
+        EventWithMetadata(Event e, const std::string &d = "", std::optional<Core::EventOrigin> o = std::nullopt,
+                          const std::string &s = "", const std::string &t = "", const std::string &i = "",
                           const std::string &tgt = "")
-            : event(e), data(d), origin(o), sendId(s), type(t), originType(ot), invokeId(i), target(tgt) {}
+            : event(e), data(d), origin(std::move(o)), sendId(s), type(t), invokeId(i), target(tgt) {}
     };
 
     // ── What another thread may post (docs/adr/0084) ─────────────────────
@@ -1389,10 +1398,9 @@ private:
             const ::SCE::HostInvokeEnding &ending = ended->ending;
             if (ending.done) {
                 (void)completeHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data,
-                                         ending.origin, ending.originType);
+                                         ending.origin);
             } else {
-                (void)failHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin,
-                                     ending.originType);
+                (void)failHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin);
             }
             return;
         }
@@ -1512,17 +1520,21 @@ public:
      *
      * @param event Event to raise externally
      * @param eventData Optional event data as JSON string (§scxml-5.10)
+     * @param origin The reply address the processor that delivers the event
+     *        names, in its own terms (docs/adr/0090); none for a host that
+     *        names no party, and then `_event.origin` and `_event.origintype`
+     *        both read empty
      */
-    void raiseExternal(Event event, const std::string &eventData = "", const std::string &origin = "",
-                       const std::string &target = "") {
+    void raiseExternal(Event event, const std::string &eventData = "",
+                       std::optional<Core::EventOrigin> origin = std::nullopt, const std::string &target = "") {
         requireOwner("raiseExternal");
-        // §scxml-3.13: Enqueue event with metadata (origin, data, sendid, type, originType, target)
+        // §scxml-3.13: Enqueue event with metadata (origin, data, sendid, type, target)
         // Delegates to the full-metadata overload so that SCE Mesh target
         // routing and §scxml-6.4 autoforward both see the event. Prior
         // to this delegation the simple (datamodel="null") codepath dropped
         // the target attribute, which meant mesh-declared targets silently
         // hit the external queue instead of the mesh callback.
-        EventWithMetadata meta(event, eventData, origin, "", "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+        EventWithMetadata meta(event, eventData, std::move(origin), "", "external");
         meta.target = target;
         raiseExternal(meta);
     }
@@ -1538,11 +1550,14 @@ public:
      *
      * @param eventName Event name string (e.g., "childToParent")
      * @param eventData Optional event data
+     * @param origin The reply address the host names for the event, in its own
+     *        terms (docs/adr/0090); none when it names no party
      */
-    void raiseExternal(const std::string &eventName, const std::string &eventData = "") {
+    void raiseExternal(const std::string &eventName, const std::string &eventData = "",
+                       std::optional<Core::EventOrigin> origin = std::nullopt) {
         requireOwner("raiseExternal");
         if (auto event = resolveEventByName(eventName)) {
-            EventWithMetadata meta(*event, eventData, "", "", "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+            EventWithMetadata meta(*event, eventData, std::move(origin), "", "external");
             meta.name = arrivalNameOf(*event, eventName);
             raiseExternal(meta);
         } else {
@@ -1598,7 +1613,8 @@ public:
         // `target` stays default-constructed: the forwarded copy is delivered
         // to this machine, never re-routed to the original event's target.
         EventWithMetadata meta(*event, forwarded.data, forwarded.origin, forwarded.sendId, forwarded.type,
-                               forwarded.originType, forwarded.invokeId);
+                               forwarded.invokeId);
+        meta.sender = forwarded.sender;
         meta.name = arrivalNameOf(*event, forwarded.name);
         raiseExternal(meta);
     }
@@ -1659,9 +1675,9 @@ public:
                 SCE::Common::ForwardedEvent addressed{policy_.getEventName(eventWithMetadata.event),
                                                       eventWithMetadata.data,
                                                       eventWithMetadata.origin,
+                                                      eventWithMetadata.sender,
                                                       eventWithMetadata.sendId,
                                                       eventWithMetadata.type,
-                                                      eventWithMetadata.originType,
                                                       eventWithMetadata.invokeId};
                 if (policy_.deliverToChildSession(childSession, addressed)) {
                     return;  // delivered to the addressed session
@@ -1693,14 +1709,43 @@ public:
      * @param delay Delay before delivery
      * @param sendId Optional sendid for cancellation
      * @param eventData Optional event data JSON
-     * @param origin The sending session, which `_event.origin` publishes when
-     *        the event arrives (§scxml-C-1) — this session for a `<send>`
+     * @param senderSessionId The sending session — this session for a `<send>` —
+     *        whose published location `_event.origin` is when the event arrives
+     *        (§scxml-C-1); empty for a machine that holds no session id
      * @return The sendid assigned to this event
      */
     std::string scheduleEvent(Event event, std::chrono::milliseconds delay, const std::string &sendId = "",
-                              const std::string &eventData = "", const std::string &origin = "") {
+                              const std::string &eventData = "", const std::string &senderSessionId = "") {
         uint64_t fireTimeMs = schedNowMs() + static_cast<uint64_t>(delay.count());
-        return scheduler_.scheduleEventAt(event, fireTimeMs, sendId, eventData, origin);
+        return scheduler_.scheduleEventAt(event, fireTimeMs, sendId, eventData, senderSessionId);
+    }
+
+    /**
+     * @brief The event a session's `<send>` puts on an external queue
+     *
+     * The SCXML processor writes the pair of its own type and the sender's
+     * published location (`scxmlOriginOf`) where it builds the event, and sets the
+     * sender's id beside it (docs/adr/0090, section 2). A machine that holds no
+     * session id sends an event with no origin.
+     */
+    EventWithMetadata sentByASession(Event event, const std::string &eventData, const std::string &sendId,
+                                     const std::string &senderSessionId) const {
+        EventWithMetadata meta(event, eventData, ::SCE::IOProcessorHelper::scxmlOriginOf(senderSessionId), sendId,
+                               "external");
+        meta.sender = senderSessionId;
+        return meta;
+    }
+
+    /**
+     * @brief `sentByASession` for a delivery that leaves this machine by name
+     *        (a child, a session, the parent)
+     */
+    ::SCE::Common::ForwardedEvent forwardedByASession(const std::string &eventName, const std::string &eventData,
+                                                      const std::string &sendId,
+                                                      const std::string &senderSessionId) const {
+        return ::SCE::Common::ForwardedEvent{
+            eventName,  eventData, ::SCE::IOProcessorHelper::scxmlOriginOf(senderSessionId), senderSessionId, sendId,
+            "external", ""};
     }
 
     /**
@@ -1711,9 +1756,8 @@ public:
      * would leave blank: a delayed send is the same event, only later.
      */
     void raiseScheduled(Event event, const std::string &eventData, const std::string &sendId,
-                        const std::string &origin) {
-        raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
-                                        SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE));
+                        const std::string &senderSessionId) {
+        raiseExternal(sentByASession(event, eventData, sendId, senderSessionId));
     }
 
     /**
@@ -1731,10 +1775,10 @@ public:
      * @return The sendid assigned to this event
      */
     std::string scheduleRoutedEvent(Event event, std::chrono::milliseconds delay, const std::string &sendId,
-                                    const std::string &eventData, const std::string &origin,
+                                    const std::string &eventData, const std::string &senderSessionId,
                                     ::SCE::ScheduledRoute route) {
         uint64_t fireTimeMs = schedNowMs() + static_cast<uint64_t>(delay.count());
-        return scheduler_.scheduleRoutedAt(event, fireTimeMs, sendId, eventData, origin, std::move(route));
+        return scheduler_.scheduleRoutedAt(event, fireTimeMs, sendId, eventData, senderSessionId, std::move(route));
     }
 
     /**
@@ -1747,12 +1791,12 @@ public:
      * ended in the meantime is reported here, not when the send was made.
      */
     void deliverScheduled(Event event, const std::string &eventData, const std::string &sendId,
-                          const std::string &origin, const ::SCE::ScheduledRoute &route) {
-        if (!deliverRouted(event, eventData, sendId, origin, route)) {
+                          const std::string &senderSessionId, const ::SCE::ScheduledRoute &route) {
+        if (!deliverRouted(event, eventData, sendId, senderSessionId, route)) {
             if (auto communicationError = policy_.getEventFromName("error.communication")) {
                 raise(EventWithMetadata(*communicationError,
-                                        "<send> named a target that was no longer there when its delay elapsed", "",
-                                        sendId));
+                                        "<send> named a target that was no longer there when its delay elapsed",
+                                        std::nullopt, sendId));
             }
         }
     }
@@ -1766,11 +1810,13 @@ public:
      * the event; the caller reports a `false` as error.communication
      * (§scxml-C-1).
      */
-    bool deliverRouted(Event event, const std::string &eventData, const std::string &sendId, const std::string &origin,
-                       const ::SCE::ScheduledRoute &route) {
+    bool deliverRouted(Event event, const std::string &eventData, const std::string &sendId,
+                       const std::string &senderSessionId, const ::SCE::ScheduledRoute &route) {
         using Kind = ::SCE::ScheduledRoute::Kind;
         if (route.kind == Kind::InternalQueue) {
-            EventWithMetadata meta(event, eventData, origin, sendId);
+            // An event on the internal queue is an internal event, whose origin
+            // the processor leaves blank — no pair, and no sender.
+            EventWithMetadata meta(event, eventData, std::nullopt, sendId);
             meta.name = arrivalNameOf(event, route.eventName);
             raise(std::move(meta));
             return true;
@@ -1778,8 +1824,7 @@ public:
         if (route.kind == Kind::ExternalQueue) {
             // §scxml-5.10: this session's own external queue, for an event sent
             // under a name that is not its member's own (a computed one).
-            EventWithMetadata meta(event, eventData, origin, sendId, "external",
-                                   SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+            EventWithMetadata meta = sentByASession(event, eventData, sendId, senderSessionId);
             meta.name = arrivalNameOf(event, route.eventName);
             raiseExternal(std::move(meta));
             return true;
@@ -1789,13 +1834,14 @@ public:
             // makes — raiseExternal hands a peer-named event to the Mesh router
             // — with the invokeid captured when the send was made (§mesh-10.7).
             // The router reports a peer it cannot reach itself (§mesh-16.7).
-            raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
-                                            SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, route.meshInvokeId,
-                                            route.address));
+            EventWithMetadata meta = sentByASession(event, eventData, sendId, senderSessionId);
+            meta.invokeId = route.meshInvokeId;
+            meta.target = route.address;
+            raiseExternal(std::move(meta));
             return true;
         }
-        SCE::Common::ForwardedEvent forwarded{
-            route.eventName, eventData, origin, sendId, "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, ""};
+        const SCE::Common::ForwardedEvent forwarded =
+            forwardedByASession(route.eventName, eventData, sendId, senderSessionId);
         if (route.kind == Kind::Invocation) {
             if constexpr (SCE::Core::HasInvocationDeliveryTrait<StatePolicy>::value) {
                 return policy_.deliverToInvocation(route.address, forwarded);
@@ -1838,10 +1884,13 @@ public:
      * @param event This machine's spelling of the event, for its own queues
      * @param eventName The event's name, for another session to resolve
      * @param ownSessionId The sending session, which a session target may name
+     * @param senderSessionId The session the delivered event names as its sender,
+     *        whose published location is its origin (§scxml-C-1)
      */
     TargetSendOutcome sendToTarget(Event event, const std::string &eventName, const std::string &target,
                                    const std::string &ownSessionId, std::chrono::milliseconds delay,
-                                   const std::string &sendId, const std::string &eventData, const std::string &origin) {
+                                   const std::string &sendId, const std::string &eventData,
+                                   const std::string &senderSessionId) {
         using Kind = ::SCE::SendHelper::SendTarget::Kind;
         using RouteKind = ::SCE::ScheduledRoute::Kind;
         const auto resolved = ::SCE::SendHelper::classifyTarget(target, ownSessionId);
@@ -1864,14 +1913,13 @@ public:
             // sent under when the member is not called that.
             if (delayed) {
                 if (arrivalNameOf(event, eventName).empty()) {
-                    scheduleEvent(event, delay, sendId, eventData, origin);
+                    scheduleEvent(event, delay, sendId, eventData, senderSessionId);
                 } else {
-                    scheduleRoutedEvent(event, delay, sendId, eventData, origin,
+                    scheduleRoutedEvent(event, delay, sendId, eventData, senderSessionId,
                                         ::SCE::ScheduledRoute{RouteKind::ExternalQueue, eventName});
                 }
             } else {
-                EventWithMetadata meta(event, eventData, origin, sendId, "external",
-                                       SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+                EventWithMetadata meta = sentByASession(event, eventData, sendId, senderSessionId);
                 meta.name = arrivalNameOf(event, eventName);
                 raiseExternal(std::move(meta));
             }
@@ -1887,8 +1935,8 @@ public:
             // A Mesh peer: the external path hands it to the Mesh transport.
             // (Built in place — `reader_names` reads `Type name(...)` in this
             // header as a member the generated machine carries.)
-            raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
-                                            SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, "", target));
+            raiseExternal(EventWithMetadata(event, eventData, ::SCE::IOProcessorHelper::scxmlOriginOf(senderSessionId),
+                                            sendId, "external", "", target));
             return TargetSendOutcome::Sent;
         case Kind::Internal:
             route = ::SCE::ScheduledRoute{RouteKind::InternalQueue, eventName, ""};
@@ -1922,6 +1970,17 @@ public:
             route = ::SCE::ScheduledRoute{RouteKind::Invocation, eventName, resolved.id};
             break;
         case Kind::Session:
+            // §scxml-C-1: the location the session that invoked this one
+            // publishes is a target, as `#_parent` is — the address a reply to
+            // an event the parent sent goes to (docs/adr/0090). `isParentSession`
+            // is emitted beside `deliverToParent`, so the trait that finds one
+            // finds both.
+            if constexpr (SCE::Core::HasParentDeliveryTrait<StatePolicy>::value) {
+                if (policy_.isParentSession(resolved.id)) {
+                    route = ::SCE::ScheduledRoute{RouteKind::Parent, eventName, ""};
+                    break;
+                }
+            }
             // §scxml-C-1: a session that does not exist is reported when the
             // send is made, delayed or not.
             // `isChildSessionRunning` is emitted beside `deliverToChildSession`,
@@ -1937,11 +1996,11 @@ public:
             break;
         }
         if (delayed) {
-            scheduleRoutedEvent(event, delay, sendId, eventData, origin, *route);
+            scheduleRoutedEvent(event, delay, sendId, eventData, senderSessionId, *route);
             return TargetSendOutcome::Sent;
         }
-        return deliverRouted(event, eventData, sendId, origin, *route) ? TargetSendOutcome::Sent
-                                                                       : TargetSendOutcome::Unreachable;
+        return deliverRouted(event, eventData, sendId, senderSessionId, *route) ? TargetSendOutcome::Sent
+                                                                                : TargetSendOutcome::Unreachable;
     }
 
     /**
@@ -2915,10 +2974,12 @@ protected:
             forwarded.name = eventWithMeta.name.empty() ? std::string(policy_.getEventName(eventWithMeta.event))
                                                         : eventWithMeta.name;
             forwarded.data = eventWithMeta.data;
+            // docs/adr/0090, section 2: autoforward copies the origin and the
+            // sender of the event it forwards, unchanged.
             forwarded.origin = eventWithMeta.origin;
+            forwarded.sender = eventWithMeta.sender;
             forwarded.sendId = eventWithMeta.sendId;
             forwarded.type = eventWithMeta.type;
-            forwarded.originType = eventWithMeta.originType;
             forwarded.invokeId = eventWithMeta.invokeId;
             SCE_LOG_DEBUG("AOT applyExternalEventPreamble: Autoforwarding external event '{}'", forwarded.name);
             policy_.forwardToAutoforwardChildren(forwarded, *this);
@@ -3375,11 +3436,11 @@ public:
     /**
      * @brief Process an external event with metadata (§scxml-5.10)
      *
-     * External events with metadata support originSessionId for invoke finalize.
-     * Used when events come from child sessions via invoke.
+     * External events with metadata carry their sender's session id for invoke
+     * finalize. Used when events come from child sessions via invoke.
      *
      * @param event External event to process
-     * @param metadata Event metadata (originSessionId, etc.)
+     * @param metadata Event metadata (origin, sender, etc.)
      */
     void processEvent(Event event, const SCE::Core::EventMetadata &metadata) {
         driveOnThisThread("processEvent");
@@ -3407,10 +3468,10 @@ public:
         EventWithMetadata carried;
         carried.event = event;
         carried.data = metadata.data;
-        carried.origin = metadata.originSessionId;
+        carried.origin = metadata.origin;
+        carried.sender = metadata.sender;
         carried.sendId = metadata.sendId;
         carried.type = metadata.type;
-        carried.originType = metadata.originType;
         carried.invokeId = metadata.invokeId;
         carried.typedData = metadata.typedData;
         processEventImpl(carried);
@@ -3623,10 +3684,10 @@ public:
         TurnGuard turn(*this);
         std::string eventData;
         std::string sendId;
-        std::string origin;
+        std::string senderSessionId;
         Event event;
-        while (scheduler_.popReadyEvent(schedNowMs(), event, eventData, sendId, origin)) {
-            raiseScheduled(event, eventData, sendId, origin);
+        while (scheduler_.popReadyEvent(schedNowMs(), event, eventData, sendId, senderSessionId)) {
+            raiseScheduled(event, eventData, sendId, senderSessionId);
         }
     }
 
@@ -3693,7 +3754,7 @@ public:
         {
             std::string eventData;
             std::string sendId;
-            std::string origin;
+            std::string senderSessionId;
             Event event;
             std::shared_ptr<const ::SCE::HostSendRequest> hostSend;
             std::shared_ptr<const ::SCE::HostInvokeDeadline> deadline;
@@ -3733,7 +3794,8 @@ public:
                         break;
                     }
                 }
-                if (!scheduler_.popReadyAct(now, event, eventData, sendId, origin, hostSend, deadline, route)) {
+                if (!scheduler_.popReadyAct(now, event, eventData, sendId, senderSessionId, hostSend, deadline,
+                                            route)) {
                     break;
                 }
                 if (hostSend) {
@@ -3745,10 +3807,10 @@ public:
                     deadline.reset();
                 } else if (route) {
                     // §scxml-6.2: to the target the send named when it was made.
-                    deliverScheduled(event, eventData, sendId, origin, *route);
+                    deliverScheduled(event, eventData, sendId, senderSessionId, *route);
                     route.reset();
                 } else {
-                    raiseScheduled(event, eventData, sendId, origin);
+                    raiseScheduled(event, eventData, sendId, senderSessionId);
                 }
                 // The macrostep this act drives may `<cancel>` a later one,
                 // so the queue is re-consulted after it rather than before.
@@ -3924,7 +3986,9 @@ public:
         auto replies = it->second(request);
         for (const auto &reply : replies) {
             if (!reply.eventName.empty()) {
-                raiseExternal(reply.eventName, reply.eventData);
+                // docs/adr/0090, section 2: the reply carries the pair the host
+                // named for it, or none, as on the Interpreter.
+                raiseExternal(reply.eventName, reply.eventData, reply.origin);
             }
         }
         return replies;
@@ -4010,7 +4074,7 @@ public:
         requireOwner("routeHostInvokeEnd");
         if (!sessionId.empty() && sessionId == ownSessionId()) {
             return {true, endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
-                                        ending.origin, ending.originType)};
+                                        ending.origin)};
         }
         if constexpr (SCE::Core::HasHostInvokerChildrenTrait<StatePolicy, ::SCE::HostInvokeEnding>::value) {
             return policy_.routeHostInvokeEnd(sessionId, ending);
@@ -4058,8 +4122,7 @@ public:
                                                                   /*token=*/token,
                                                                   /*done=*/true,
                                                                   /*data=*/doneData,
-                                                                  /*origin=*/"",
-                                                                  /*originType=*/""});
+                                                                  /*origin=*/std::nullopt});
     }
 
     /**
@@ -4075,8 +4138,7 @@ public:
                                                                   /*token=*/token,
                                                                   /*done=*/false,
                                                                   /*data=*/errorData,
-                                                                  /*origin=*/"",
-                                                                  /*originType=*/""});
+                                                                  /*origin=*/std::nullopt});
     }
 
     /**
@@ -4131,11 +4193,13 @@ public:
      * document. One raised through the ordinary external-event API skips the
      * check above, so the engine refuses it when it is dequeued.
      *
-     * `origin` and `originType` are the completion's `_event.origin` and
-     * `_event.origintype` (§scxml-5.10.1), for a host whose invocation stands
-     * for another party it can name — as a Mesh router's `sce:mesh-rpc` stands
-     * for the peer that answered (SCE_MESH.md §mesh-9.5). Empty keeps what
-     * every host completion has carried.
+     * `origin` is the completion's `_event.origin` and `_event.origintype`
+     * (§scxml-5.10.1) as one pair, for a host whose invocation stands for
+     * another party it can name — as a Mesh router's `sce:mesh-rpc` stands for
+     * the peer that answered (SCE_MESH.md §mesh-9.5). The host names it in its
+     * own terms (docs/adr/0090): its declared type and the address a `<send>`
+     * of that type reaches the party at. None reads both fields empty; the
+     * engine never fills in the SCXML processor's type for a host.
      *
      * An owner-thread operation (ARCHITECTURE.md "Engine Threading"): a host
      * whose invocation finishes on a thread of its own posts an
@@ -4144,10 +4208,10 @@ public:
      * token is checked.
      */
     bool completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                            const std::string &doneData, const std::string &origin = "",
-                            const std::string &originType = "") {
+                            const std::string &doneData,
+                            const std::optional<Core::EventOrigin> &origin = std::nullopt) {
         requireOwner("completeHostInvoke");
-        return endHostInvoke(processorType, invokeId, token, false, doneData, origin, originType);
+        return endHostInvoke(processorType, invokeId, token, false, doneData, origin);
     }
 
     /**
@@ -4163,10 +4227,9 @@ public:
      * from another thread as `completeHostInvoke` is.
      */
     bool failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                        const std::string &errorData, const std::string &origin = "",
-                        const std::string &originType = "") {
+                        const std::string &errorData, const std::optional<Core::EventOrigin> &origin = std::nullopt) {
         requireOwner("failHostInvoke");
-        return endHostInvoke(processorType, invokeId, token, true, errorData, origin, originType);
+        return endHostInvoke(processorType, invokeId, token, true, errorData, origin);
     }
 
 private:
@@ -4214,7 +4277,7 @@ private:
             }
         } else if (const auto *completed = std::get_if<Core::HostInvokeCompletedAtOnce>(&report)) {
             (void)endHostInvoke(completed->processorType, completed->invokeId, completed->token, false,
-                                completed->doneData, "", "");
+                                completed->doneData, std::nullopt);
         } else if (const auto *timedOut = std::get_if<Core::HostInvokeTimedOut>(&report)) {
             raiseHostInvokeFailure(*timedOut);
         }
@@ -4234,7 +4297,7 @@ private:
         const std::string name = timedOut.eventName();
         const auto failure = resolveEventByName(name);
         if (failure) {
-            EventWithMetadata raised(*failure, Core::HostInvokeTimedOut::data(), "", "", "external", "",
+            EventWithMetadata raised(*failure, Core::HostInvokeTimedOut::data(), std::nullopt, "", "external",
                                      timedOut.invokeId);
             raised.name = arrivalNameOf(*failure, name);
             raiseExternal(raised);
@@ -4244,9 +4307,8 @@ private:
     /// The one body behind a host-run invocation's completion and failure: the
     /// ledger's token check and deadline drop, and the event.
     bool endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token, bool failed,
-                       const std::string &data, const std::string &origin, const std::string &originType) {
-        const auto ending =
-            hostInvokes_.endRun(processorType, invokeId, token, failed, data, origin, originType, scheduler_);
+                       const std::string &data, const std::optional<Core::EventOrigin> &origin) {
+        const auto ending = hostInvokes_.endRun(processorType, invokeId, token, failed, data, origin, scheduler_);
         if (!ending.has_value()) {
             return false;
         }
@@ -4261,10 +4323,9 @@ private:
         // document (`done.invoke.<id>`, `done.invoke`, `done`) it was matched through.
         const auto ended = resolveEventByName(name);
         if (ended) {
-            EventWithMetadata completion(*ended, ending->data, ending->origin, "", "external",
-                                         ending->originType.empty() ? SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE
-                                                                    : ending->originType,
-                                         ending->invokeId);
+            // docs/adr/0090, section 2: the pair the host named, as it named it,
+            // or none; never the SCXML processor's type by default.
+            EventWithMetadata completion(*ended, ending->data, ending->origin, "", "external", ending->invokeId);
             completion.name = arrivalNameOf(*ended, name);
             completion.hostInvokeToken = ending->token;
             raiseExternal(completion);
@@ -4877,7 +4938,7 @@ private:
             raise(EventWithMetadata(*event,
                                     "<send type='" + request.processorType +
                                         "'> names a processor the host declared but never registered",
-                                    "", request.sendId));
+                                    std::nullopt, request.sendId));
         }
     }
 };

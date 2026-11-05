@@ -64,6 +64,31 @@ pub const BASIC_HTTP_EVENT_PROCESSOR_TYPE: &str =
 pub const SUPPORTED_SEND_TYPES: &[&str] =
     &[SCXML_EVENT_PROCESSOR_TYPE, BASIC_HTTP_EVENT_PROCESSOR_TYPE];
 
+/// The short name `_ioprocessors` files the SCXML Event I/O Processor under
+/// beside its type URI.
+pub const SCXML_EVENT_PROCESSOR_ALIAS: &str = "scxml";
+
+/// The short name `_ioprocessors` files the BasicHTTP Event I/O Processor
+/// under beside its type URI.
+pub const BASIC_HTTP_EVENT_PROCESSOR_ALIAS: &str = "basichttp";
+
+/// The type URI a written `<send type="...">` names.
+///
+/// A document may write a processor's short name as well as its URI, since
+/// `_ioprocessors` publishes both. The processor an event is delivered by is
+/// named by its URI alone, so the alias is read as the URI where the type is
+/// resolved, and `_event.origintype` never carries the author's spelling
+/// (docs/adr/0090, section 4). Every other value is returned as written, so
+/// an unsupported type is still reported verbatim. The C++ runtime's spelling
+/// of the same reading is `IOProcessorHelper::canonicalProcessorType`.
+pub fn canonical_send_type(send_type: &str) -> String {
+    match send_type {
+        SCXML_EVENT_PROCESSOR_ALIAS => SCXML_EVENT_PROCESSOR_TYPE.to_string(),
+        BASIC_HTTP_EVENT_PROCESSOR_ALIAS => BASIC_HTTP_EVENT_PROCESSOR_TYPE.to_string(),
+        written => written.to_string(),
+    }
+}
+
 /// Whether `send_type` names an Event I/O Processor this build can
 /// deliver through.
 ///
@@ -1664,6 +1689,28 @@ mod tests {
         ));
         assert!(analyze(&model).is_empty());
         assert!(!needs_host_processor(&model));
+    }
+
+    /// docs/adr/0090, section 4: a written alias is read as the URI of the
+    /// processor it names, so the build delivers it and the event's
+    /// origintype is the URI; any other spelling is kept as written.
+    #[test]
+    fn a_processor_alias_is_read_as_its_type_uri() {
+        assert_eq!(canonical_send_type("scxml"), SCXML_EVENT_PROCESSOR_TYPE);
+        assert_eq!(
+            canonical_send_type("basichttp"),
+            BASIC_HTTP_EVENT_PROCESSOR_TYPE
+        );
+        assert_eq!(canonical_send_type(""), "");
+        assert_eq!(canonical_send_type("x-example-host"), "x-example-host");
+        assert_eq!(canonical_send_type("SCXML"), "SCXML");
+        let model = parse(&doc(
+            r#"<state id="s"><onentry><send type="scxml" event="e"/></onentry></state>"#,
+        ));
+        let send = &model.states["s"].on_entry_blocks[0][0];
+        assert_eq!(send.send_type, SCXML_EVENT_PROCESSOR_TYPE);
+        assert!(!send.send_type_unsupported);
+        assert!(analyze(&model).is_empty());
     }
 
     #[test]

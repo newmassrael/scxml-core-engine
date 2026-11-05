@@ -32,12 +32,11 @@
 // and autoforward routing.
 //
 // SCE_MESH.md §mesh-9.6.2 wire 16 (`ChildEvent`): parent-side receiver. Same
-// inbox post as FireForget but additionally sets
-// `_event.origin = child_session_id`, `_event.invokeid = invoke_id`, and
-// `_event.origintype` to the W3C SCXML processor URI (§mesh-9.6.3 L1463-1466).
-// The parent engine's `<finalize>` matching (invoke_methods.jinja2)
-// compares `activeInvokes_[id].sessionId == meta.origin`, inherited
-// unchanged from the local-invoke path.
+// inbox post as FireForget, with the same origin pair the transport writes
+// for any peer (`mesh://<source>` and the W3C SCXML processor URI), the child
+// session id as the event's sender, and `_event.invokeid = invoke_id`. The
+// parent engine's `<finalize>` matching (invoke_methods.jinja2) compares
+// `activeInvokes_[id].sessionId == meta.sender`, as on the local-invoke path.
 //
 // SCE_MESH.md §mesh-9.6.2 wire 18 (`InvokeDone`): parent-side receiver. The
 // envelope carries `invoke_id` and donedata in `data`. Dispatch invokes
@@ -76,6 +75,8 @@
 #include "common/SCXMLConstants.h"
 #include "common/Uuid.h"
 #include "core/EventNameResolver.h"
+#include "core/EventOrigin.h"
+#include "core/HostProcessor.h"
 #include "mesh/MeshEnvelope.h"
 
 #include <string>
@@ -102,6 +103,21 @@ inline std::string meshOriginUri(const std::string &source) {
     // (`_event.origin == 'mesh://chassis'`) compares against a document
     // identity an author can write down, which a per-session UUID is not.
     return std::string(kMeshOriginScheme) + source;
+}
+
+/// The pair the Mesh transport writes for an event a peer's envelope delivers
+/// (docs/adr/0090, section 2): the SCXML Event I/O Processor, since every
+/// envelope is SCE's own inter-SCXML traffic (SCE_MESH.md, `_event` field
+/// wiring for distributed events), at the address [meshOriginUri] gives the peer.
+inline ::SCE::Core::EventOrigin meshPeerOrigin(const std::string &source) {
+    return ::SCE::Core::EventOrigin(SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, meshOriginUri(source));
+}
+
+/// The pair the Mesh transport writes for the answer to an `<invoke type="sce:mesh-rpc">`
+/// (SCE_MESH.md, the runtime mapping of a request's reply to `_event`): the request's own
+/// type at the address [meshOriginUri] gives the peer that answered.
+inline ::SCE::Core::EventOrigin meshRpcReplyOrigin(const std::string &replier) {
+    return ::SCE::Core::EventOrigin(std::string(::SCE::MESH_RPC_INVOKE_TYPE), meshOriginUri(replier));
 }
 
 namespace detail {
@@ -318,12 +334,12 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         } else {
             meta.data = std::string(env.data.begin(), env.data.end());
         }
-        meta.origin = meshOriginUri(env.source);
         // Every envelope reaching this helper is SCE's own CBOR MeshEnvelope
         // (§mesh-7.5), so the traffic is inter-SCXML by construction and takes
         // the W3C processor URI. The section's "transport-specific URIs for
         // bridged traffic" case does not arrive as a MeshEnvelope at all.
-        meta.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
+        // The transport writes the pair whole (docs/adr/0090, section 2).
+        meta.origin = meshPeerOrigin(env.source);
         // "envelope `subject` (or unset if not `<send>`-originated)" — left
         // empty when absent rather than synthesized, so `<cancel sendid=…>`
         // can never match an id no author issued.
@@ -340,13 +356,14 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
     // via §scxml-5.10 auto-raise. Event name is `env.type`; metadata fields
     // are wired per §mesh-9.6.3 L1463-1466:
     //   _event.type        = "external"
-    //   _event.origin      = child's session URI (env.child_session_id)
+    //   _event.origin      = the address the transport reaches the child's peer at
     //   _event.origintype  = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
     //   _event.invokeid    = env.invoke_id (same UUID the parent stored)
     //   _event.sendid      = env.subject (child's sendid, transparent)
     //   _event.data        = env.data payload
-    // This wiring keeps the parent's existing local-invoke finalize/autoforward
-    // code paths (`childSession.sessionId == meta.origin` match) unchanged.
+    // The child's session id (env.child_session_id) travels as the event's
+    // sender, which the parent's local-invoke finalize code path matches on
+    // (`childSession.sessionId == meta.sender`), so it is never an address.
     case PatternKind::ChildEvent: {
         // SCE_MESH.md §mesh-9.6.4 steps 1-2 and its closing rule. Step 4 —
         // identifying the `<invoke>` the event belongs to — is resolved before
@@ -378,14 +395,14 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
             detail::recordArrivalName<Policy>(meta, *ev, env.type);
             meta.data = std::string(env.data.begin(), env.data.end());
             meta.type = "external";
-            meta.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
-            // §mesh-9.6.3 L1463-1466 overrides the generic §mesh-10.7 origin row
-            // for this arm: the parent matches `<finalize>` and autoforward by
-            // comparing `activeInvokes_[id].sessionId == _event.origin`, and that
-            // sessionId is the §mesh-9.6.1 child session id wire-15 delivered.
-            // Rewriting this to `mesh://<source>` for table uniformity would stop
-            // every remote finalize from matching, so the divergence is intended.
-            meta.origin = *env.child_session_id;
+            // docs/adr/0090, section 2: the transport writes the pair it reaches
+            // the child's peer by, the §mesh-10.7 row every peer event takes, and
+            // never a wrapping of the `<source>:<invoke>` session id. The parent
+            // matches `<finalize>` by comparing `activeInvokes_[id].sessionId`
+            // with the event's sender, and that sessionId is the §mesh-9.6.1
+            // child session id wire-15 delivered, so the id is the sender.
+            meta.origin = meshPeerOrigin(env.source);
+            meta.sender = *env.child_session_id;
             if (env.subject) {
                 meta.sendId = *env.subject;
             }

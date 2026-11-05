@@ -116,8 +116,8 @@ struct MockEngine {
         std::string data;
         std::string invokeId;
         std::string type;
-        std::string originType;
-        std::string origin;
+        std::optional<SCE::Core::EventOrigin> origin;
+        std::string sender;
         std::string sendId;
     };
 

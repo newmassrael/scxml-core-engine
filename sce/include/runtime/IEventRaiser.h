@@ -59,20 +59,6 @@ public:
     virtual bool raiseEvent(const std::string &eventName, const std::string &eventData) = 0;
 
     /**
-     * @brief Raise an event with origin tracking for W3C SCXML finalize support
-     *
-     * Events are queued for asynchronous processing with origin session information.
-     * This enables proper finalize handler execution as specified by §scxml-6.4.
-     *
-     * @param eventName Name of the event to raise
-     * @param eventData Data associated with the event
-     * @param originSessionId Session ID that originated this event (for finalize)
-     * @return true if the event was successfully queued, false if the raiser is not ready
-     */
-    virtual bool raiseEvent(const std::string &eventName, const std::string &eventData,
-                            const std::string &originSessionId) = 0;
-
-    /**
      * @brief Raise an error event with sendid for §scxml-5.10 compliance
      *
      * When send actions fail, error events must include the sendid of the failed send element.
@@ -84,44 +70,27 @@ public:
      * @param unused Discriminator parameter for overload resolution (unused, always pass false)
      * @return true if the event was successfully queued, false if the raiser is not ready
      *
-     * @note The bool parameter exists solely for C++ overload resolution to distinguish
-     *       this variant from raiseEvent(name, data, originSessionId). Both take three
-     *       string parameters, requiring a discriminator to avoid ambiguity.
+     * @note The bool parameter is kept so the call reads as the error raise it is,
+     *       beside the two-string form.
      */
     virtual bool raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &sendId,
                             bool unused) = 0;
 
     /**
-     * @brief Raise an event with origin and invoke tracking for §scxml-5.10 test 338
+     * @brief Raise an event another session delivered, with every field the SCXML
+     *        processor wrote for it (§scxml-5.10, tests 253, 338)
      *
-     * Events from invoked children are queued with both origin and invoke ID information.
-     * This enables proper event.invokeid field setting as specified by §scxml-5.10.
+     * `event.origin` is the pair of the processor's type and the sender's published
+     * location, and `event.sender` the sender's session id (docs/adr/0090). The queue
+     * is chosen by the sender: an event another session sent goes on the external
+     * queue, and one with no sender on the internal queue. The origin's address is
+     * never read to choose it, and `<finalize>` and a cancelled invocation's filter
+     * find the child by the sender too. `event.type` is not read: `_event.type` is
+     * decided by the queue the event is taken from.
      *
-     * @param eventName Name of the event to raise
-     * @param eventData Data associated with the event
-     * @param originSessionId Session ID that originated this event (for finalize)
-     * @param invokeId Invoke ID that created the child session (for event.invokeid)
      * @return true if the event was successfully queued, false if the raiser is not ready
      */
-    virtual bool raiseEvent(const std::string &eventName, const std::string &eventData,
-                            const std::string &originSessionId, const std::string &invokeId) = 0;
-
-    /**
-     * @brief Raise an event with origin, invoke, and origintype for §scxml-5.10 compliance
-     *
-     * Events are queued with origin, invoke ID, and origintype information for full W3C compliance.
-     * This enables proper event metadata (test 253, 331, 352, 372: origintype field).
-     *
-     * @param eventName Name of the event to raise
-     * @param eventData Data associated with the event
-     * @param originSessionId Session ID that originated this event (for finalize)
-     * @param invokeId Invoke ID that created the child session (for event.invokeid)
-     * @param originType Origin event processor type (for event.origintype)
-     * @return true if the event was successfully queued, false if the raiser is not ready
-     */
-    virtual bool raiseEvent(const std::string &eventName, const std::string &eventData,
-                            const std::string &originSessionId, const std::string &invokeId,
-                            const std::string &originType) = 0;
+    virtual bool raiseEvent(const Core::EventMetadata &event) = 0;
 
     virtual bool isReady() const = 0;
 
@@ -288,6 +257,18 @@ public:
     virtual bool raiseExternalEvent(const std::string &eventName, const std::string &eventData) = 0;
 
     /**
+     * @brief Raise an external event with every field the processor that delivered
+     *        it wrote (§scxml-5.10)
+     *
+     * For a host's reply or a host-posted event: the origin is the pair the host
+     * names in its own terms, or none (docs/adr/0090). The event goes on the external
+     * queue whatever it names.
+     *
+     * @return true if the event was successfully queued, false if the raiser is not ready
+     */
+    virtual bool raiseExternalEvent(const Core::EventMetadata &event) = 0;
+
+    /**
      * @brief Get EventScheduler for scheduler mode access
      *
      * Enable parent-child scheduler mode inheritance for interactive debugging.
@@ -307,10 +288,11 @@ public:
      * This method removes all queued events that originated from the specified session.
      * Used when cancelling invokes to prevent processing events from cancelled child sessions.
      *
-     * @param originSessionId Session ID whose events should be cancelled
+     * @param senderSessionId Session ID whose events should be cancelled, matched
+     *        against each queued event's sender
      * @return Number of events that were cancelled
      */
-    virtual size_t cancelEventsForSession(const std::string &originSessionId) = 0;
+    virtual size_t cancelEventsForSession(const std::string &senderSessionId) = 0;
 
     /**
      * @brief §scxml-3.12.2: `error.*` events refused because an error handler kept raising them

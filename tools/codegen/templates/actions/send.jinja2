@@ -39,7 +39,7 @@
    processed — it ends the block (W3C SCXML 4.9). #}
 {% macro send_arg_error(message, block_end, indent) %}
 {{ indent }}SCE_LOG_ERROR("{{ message | escape_cpp_format }}");
-{{ indent }}engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "{{ message | escape_cpp }}", "", sendId));
+{{ indent }}engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "{{ message | escape_cpp }}", std::nullopt, sendId));
 {{ indent }}{{ block_end or 'return;' }}  // W3C SCXML 4.9: the error ends the block
 {% endmacro %}
 {# W3C SCXML 5.10 / B.2: what `_event.data` is for this <send>, computed in ONE
@@ -75,7 +75,7 @@ std::string contentText;  // the `<content expr>` value as the text a host takes
         [&engine, &sendId](const std::string& msg) {
             SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
             engine.raise(typename Engine::EventWithMetadata(
-                Event::Error_execution, "<send> namelist: " + msg, "", sendId));
+                Event::Error_execution, "<send> namelist: " + msg, std::nullopt, sendId));
         },
         &typedParams
     );
@@ -267,10 +267,18 @@ typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
     engine.raise(std::move(meta));
 }
 {% endmacro %}
-{% macro send_raise_external(action, model, event_cpp, target_cpp, carries_typed) %}
+{# W3C SCXML C.1 + docs/adr/0090: the event a session sends carries the pair
+   the SCXML processor writes for it — its canonical type and the sender's
+   published location — and the sender's id. Every send that reaches this
+   delivery is the SCXML processor's: a host-served or BasicHTTP type took its
+   own arm above, so the type is never the author's spelling. A machine that
+   holds no session id has no location to publish, and its send names none. #}
+{% macro send_raise_external(action, model, event_cpp, target_cpp, carries_typed, holds_session_id) %}
 {% if model.needs_script_engine or model.needs_event_origin %}
 {
-    auto meta = typename Engine::EventWithMetadata({{ event_cpp }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, engine.currentEventInvokeId(), {{ target_cpp }});
+    auto meta = engine.sentByASession({{ event_cpp }}, eventData, sendId, sessionId_.value_or(""));
+    meta.invokeId = engine.currentEventInvokeId();
+    meta.target = {{ target_cpp }};
 {% if event_cpp == '*sendEvent' %}
     meta.name = engine.arrivalNameOf(*sendEvent, eventName);
 {% endif %}
@@ -279,8 +287,17 @@ typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
 {% endif %}
     engine.raiseExternal(std::move(meta));
 }
+{% elif holds_session_id %}
+{
+    // No `_event` is bound without a script engine, so the send id and the
+    // invokeid stay out of the event as they always have; the origin is still
+    // the processor's, since a saved state writes it.
+    auto meta = engine.sentByASession({{ event_cpp }}, eventData, "", sessionIdText());
+    meta.target = {{ target_cpp }};
+    engine.raiseExternal(std::move(meta));
+}
 {% else %}
-engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
+engine.raiseExternal({{ event_cpp }}, eventData, std::nullopt, {{ target_cpp }});
 {% endif %}
 {% endmacro %}
 {# W3C SCXML 6.2 / C.1: deliver the event on the internal queue for
@@ -293,7 +310,7 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
    `#<peer>` send needs no arm of its own in the delivery chain: an arm there
    that only stated the target had been validated at build time claimed the
    send and delivered nothing, and every reply a server sent was lost. #}
-{% macro send_dispatch_local(action, model, event_cpp) %}
+{% macro send_dispatch_local(action, model, event_cpp, holds_session_id) %}
 {# A `targetexpr` never reaches here: its send is routed by `engine.sendToTarget`. #}
 {% set target_cpp = '"' ~ action.target ~ '"' %}
 {# A static target is decided here, at build time, so only the branch it takes
@@ -304,10 +321,16 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
 {% if action.target == '#_internal' %}
 {{ send_raise_internal(event_cpp, carries_typed) }}
 {% else %}
-{{ send_raise_external(action, model, event_cpp, target_cpp, carries_typed) }}
+{{ send_raise_external(action, model, event_cpp, target_cpp, carries_typed, holds_session_id) }}
 {% endif %}
 {% endmacro %}
 {% set has_script = model.needs_script_engine or model.needs_event_origin %}
+{# docs/adr/0045: whether this machine holds the id of its session — the
+   condition `holds_session_id` in `state_machine.jinja2`, spelled again here
+   because an included template does not see that file's names. A machine that
+   holds one sends with its published location as the origin even when no
+   script engine binds `_event` (docs/adr/0090). #}
+{% set holds_session_id = model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or static_saved_shape or model.host_invoker_types %}
 {% set dyn_event = action.eventexpr and not action.event %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
 {% set event_name_cpp = 'eventName' if dyn_event else '"' ~ action.event ~ '"' %}
@@ -395,7 +418,9 @@ std::string dynamicType;
     if (!::SCE::ScriptResultUtils::isSuccess(typeResult)) {
 {{ send_arg_error("<send> typeexpr could not be evaluated", block_end, '        ') }}
     }
-    dynamicType = ::SCE::ScriptResultUtils::resultToString(typeResult, &scriptEngine, sessionId_.value(), {{ action.typeexpr | to_script_source_expr }});
+    // docs/adr/0090, section 4: a processor's alias is read as its type URI
+    // where the type is resolved, as a written `type` is by the build.
+    dynamicType = ::SCE::IOProcessorHelper::canonicalProcessorType(::SCE::ScriptResultUtils::resultToString(typeResult, &scriptEngine, sessionId_.value(), {{ action.typeexpr | to_script_source_expr }}));
 }
 if (!::SCE::SendHelper::isSupportedSendType(dynamicType)) {
 {{ send_arg_error("<send> typeexpr names a processor this platform does not support", block_end, '    ') }}
@@ -488,12 +513,10 @@ std::string dynamicTarget;
 }
 {% elif action.targetexpr == '_event.origin' %}
 // W3C SCXML C.1: without a script engine this reads the pending field
-// directly, so it has to apply the same boundary conversion
-// `setCurrentEventInScriptEngine` applies — otherwise the same document
-// resolves `_event.origin` to an address on one machine and to a bare
-// session id on another, depending only on whether some other part of it
-// needed a datamodel.
-dynamicTarget = ::SCE::IOProcessorHelper::publishedOrigin(pendingEventOrigin_);
+// directly — the address of the pair the delivering processor wrote
+// (docs/adr/0090), the same value `setCurrentEventInScriptEngine` binds,
+// and empty for an event that has none.
+dynamicTarget = ::SCE::Core::originAddressOf(pendingEventOrigin_);
 {% else %}
 #error "SCE codegen drift: `<send targetexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
@@ -508,7 +531,7 @@ if (::SCE::SendHelper::isInvalidTarget(dynamicTarget)) {
 if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     SCE_LOG_ERROR("Send target evaluation resulted in invalid target: '{}'", dynamicTarget);
     engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send> targetexpr resolved to a target that cannot be reached{% if action.native_target %}, or to a route the send does not declare{% endif %}", "", sendId));
+        Event::Error_communication, "<send> targetexpr resolved to a target that cannot be reached{% if action.native_target %}, or to a route the send does not declare{% endif %}", std::nullopt, sendId));
     {{ block_end or 'return;' }}
 }
 {% endif %}
@@ -566,7 +589,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
     engine.raise(typename Engine::EventWithMetadata(
         Event::Error_communication,
-        "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "", sendId));
+        "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", std::nullopt, sendId));
     {{ block_end or 'return;' }}
 }
 {% endif %}
@@ -596,7 +619,7 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
 {% elif is_http and not action.target and not action.targetexpr %}
 // W3C SCXML C.2 (test 577): BasicHTTP names no target to post to.
 engine.raise(typename Engine::EventWithMetadata(
-    Event::Error_communication, "<send> over BasicHTTPEventProcessor has no target to post to", "", sendId));
+    Event::Error_communication, "<send> over BasicHTTPEventProcessor has no target to post to", std::nullopt, sendId));
 {{ block_end or 'return;' }}  // W3C SCXML 4.9: the error ends the block
 {% set block_flow.ended = true %}
 {% else %}
@@ -613,7 +636,7 @@ if (sessionId_.value_or("") != "{{ action.target | slice_from(8) | escape_cpp }}
 {
 {% endif %}
     engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names a session this processor cannot reach", "", sendId));
+        Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names a session this processor cannot reach", std::nullopt, sendId));
     {{ block_end or 'return;' }}
 }
 {# With no script engine there is no session id to compare, so the block
@@ -666,15 +689,15 @@ engine.scheduleRoutedEvent(Event{}, delayMs, sendId, eventData, "",
 {% else %}
 // W3C SCXML 6.2: immediate send to the parent. It takes the delayed send's
 // delivery, by event NAME — the one identity two machines share — and that
-// delivery stamps this invocation's id (test338) and this session as the
-// origin (test233). One path, so the two cannot drift in what they carry.
+// delivery stamps this invocation's id (test338) and this session's origin
+// and sender (test233). One path, so the two cannot drift in what they carry.
 if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
-        {{ event_name_cpp }}, eventData, "", sendId, "external", ::SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, ""})) {
+        {{ event_name_cpp }}, eventData, std::nullopt, "", sendId, "external", ""})) {
     // W3C SCXML C.1: this session was started by its host, not by an
     // `<invoke>`, so `#_parent` reaches nobody — error.communication, nothing
     // delivered, the block ended (4.9).
     engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send target='#_parent'> has no parent session to reach", "", sendId));
+        Event::Error_communication, "<send target='#_parent'> has no parent session to reach", std::nullopt, sendId));
     {{ block_end or 'return;' }}
 }
 {% endif %}
@@ -716,7 +739,9 @@ if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
         Event{}, delayMs, sendId, eventData, sessionId_.value_or(""),
         ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::Invocation, {{ event_name_cpp }}, "{{ child_ns.invoke.invoke_id | escape_cpp }}"});
 {% else %}
-    {{ slot }}->raiseExternal({{ event_name_cpp }}, eventData);
+    // W3C SCXML C.1 + docs/adr/0090: the SCXML processor writes this
+    // session's published location as the origin, and its id as the sender.
+    {{ slot }}->raiseExternal(engine.forwardedByASession({{ event_name_cpp }}, eventData, "", sessionIdText()));
     // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
     {{ slot }}->step();
 {% endif %}
@@ -725,7 +750,7 @@ if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
     // W3C SCXML C.1: the invocation is not running, so the session the target
     // names is not there to reach.
     engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names an invocation that is not running", "", sendId));
+        Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names an invocation that is not running", std::nullopt, sendId));
     {{ block_end or 'return;' }}
 }
 {% else %}
@@ -733,7 +758,7 @@ if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
 // "{{ action.target | slice_from(2) }}", so the target reaches
 // nobody: error.communication, nothing delivered, the block ended.
 engine.raise(typename Engine::EventWithMetadata(
-    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", "", sendId));
+    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", std::nullopt, sendId));
 {{ block_end or 'return;' }}
 {% set block_flow.ended = true %}
 {% endif %}
@@ -785,7 +810,7 @@ engine.raise(typename Engine::EventWithMetadata(
     if (!hostServed.has_value() && !engine.hasEventProcessor("{{ action.send_type | escape_cpp }}")) {
         engine.raise(typename Engine::EventWithMetadata(
             Event::Error_execution,
-            "<send type='{{ action.send_type }}'> names a processor the host declared but never registered", "", sendId));
+            "<send type='{{ action.send_type }}'> names a processor the host declared but never registered", std::nullopt, sendId));
     }
 {% endif %}
 }
@@ -818,7 +843,7 @@ if (sendEvent) {
     }
     if (routed == Engine::TargetSendOutcome::Unreachable) {
         engine.raise(typename Engine::EventWithMetadata(
-            Event::Error_communication, "<send> targetexpr names a session this processor cannot reach", "", sendId));
+            Event::Error_communication, "<send> targetexpr names a session this processor cannot reach", std::nullopt, sendId));
         {{ block_end or 'return;' }}
     }
 }
@@ -832,7 +857,9 @@ if (sendEvent) {
 {% if has_delay %}
 {# W3C SCXML 6.2: the delay postpones the send, not where it goes — the queue
    an immediate send would reach is the one this is delivered to. #}
-{% set delayed_origin_cpp = 'sessionId_.value_or("")' if (model.needs_script_engine or model.needs_event_origin) else '""' %}
+{# The sending session's id, from which the delivery writes the SCXML
+   processor's origin (docs/adr/0090); a saved waiting send names it too. #}
+{% set delayed_origin_cpp = 'sessionId_.value_or("")' if (model.needs_script_engine or model.needs_event_origin) else ('sessionIdText()' if holds_session_id else '""') %}
 {% if not action.targetexpr and action.target == '#_internal' %}
 // W3C SCXML 6.2 + C.1: delayed to this session's internal queue.
 engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
@@ -861,7 +888,7 @@ engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ 
 {% endif %}
 {% else %}
 // W3C SCXML 6.2: Immediate send — the payload computed once, then one dispatch.
-{{ send_dispatch_local(action, model, event_enum_cpp) }}
+{{ send_dispatch_local(action, model, event_enum_cpp, holds_session_id) }}
 {% endif %}
 {% if dyn_event %}
 }

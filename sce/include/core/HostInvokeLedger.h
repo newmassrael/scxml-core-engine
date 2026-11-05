@@ -122,10 +122,9 @@ struct HostInvokeEnded {
     bool failed = false;
     /// `_event.data`.
     std::string data;
-    /// `_event.origin`, empty for none.
-    std::string origin;
-    /// `_event.origintype`, empty for the SCXML processor's.
-    std::string originType;
+    /// `_event.origin` and `_event.origintype`: the pair the host named for the
+    /// party it reports, none when it named none (docs/adr/0090).
+    std::optional<EventOrigin> origin;
 
     /// The specific name of the event: `done.invoke.<id>` or `error.invoke.<id>`.
     std::string eventName() const {
@@ -267,8 +266,8 @@ public:
      */
     template <typename Deadlines>
     std::optional<HostInvokeEnded> endRun(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                                          bool failed, const std::string &data, const std::string &origin,
-                                          const std::string &originType, Deadlines &deadlines) {
+                                          bool failed, const std::string &data,
+                                          const std::optional<EventOrigin> &origin, Deadlines &deadlines) {
         static_assert(HostInvokeDeadlineSchedulerTrait<Deadlines>::value,
                       "a host-invoke ledger's scheduler arms, drops and answers a deadline by token");
         const auto running = started_.find(std::make_pair(processorType, invokeId));
@@ -277,7 +276,7 @@ public:
         }
         started_.erase(running);
         deadlines.dropHostInvokeDeadline(token);
-        return HostInvokeEnded{invokeId, token, failed, data, origin, originType};
+        return HostInvokeEnded{invokeId, token, failed, data, origin};
     }
 
     /**

@@ -104,7 +104,7 @@ TEST_F(HostProcessorAotTest, ARegisteredHandlerReceivesTheSendAndItsReplyArrives
         // The request/reply shape: the reply becomes an event the document was
         // already waiting for, which is what lets a state DECLARE an act
         // instead of a host-side table performing it.
-        return std::vector<SCE::HostSendResponse>{{"turn.done", ""}};
+        return std::vector<SCE::HostSendResponse>{{"turn.done", "", std::nullopt}};
     });
     boot(sm);
 
@@ -207,7 +207,7 @@ TEST_F(HostProcessorAotTest, ADeclaredTypeWithNoHandlerStillRaisesErrorExecution
 TEST_F(HostProcessorAotTest, AHandlerRegisteredForAnotherTypeDoesNotServeThisOne) {
     Machine sm;
     sm.registerEventProcessor("x-some-other-host", [](const SCE::HostSendRequest &) {
-        return std::vector<SCE::HostSendResponse>{{"turn.done", ""}};
+        return std::vector<SCE::HostSendResponse>{{"turn.done", "", std::nullopt}};
     });
     boot(sm);
 

@@ -3,6 +3,7 @@
 
 #include "events/InvokeEventTarget.h"
 #include "common/EventDataHelper.h"
+#include "common/IOProcessorHelper.h"
 #include "common/LogToLogger.h"
 #include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
@@ -71,26 +72,28 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
         // `<param>` reaches an invoked child as it reaches this session.
         std::string eventData = event.payload();
 
-        // §scxml-5.10: Raise event with origin tracking and origintype (test 253)
-        // Origin is parent session, origintype is SCXML processor
-        std::string originType = Constants::SCXML_EVENT_PROCESSOR_TYPE;
-        SCE_LOG_DEBUG("InvokeEventTarget::send() - Calling eventRaiser->raiseEvent('{}', '{}', origin: '{}', invokeId: "
-                      "'{}', originType: '{}')",
-                      eventName, eventData, parentSessionId_, invokeId_, originType);
+        // §scxml-5.10 (test 253): the SCXML processor writes the pair of its
+        // type and the parent's published location as the origin, and the
+        // parent's id as the sender (docs/adr/0090).
+        Core::EventMetadata delivered(eventName, eventData);
+        delivered.invokeId = invokeId_;
+        delivered.origin = IOProcessorHelper::scxmlOriginOf(parentSessionId_);
+        delivered.sender = parentSessionId_;
+        SCE_LOG_DEBUG("InvokeEventTarget::send() - Calling eventRaiser->raiseEvent('{}', '{}', sender: '{}', invokeId: "
+                      "'{}')",
+                      eventName, eventData, parentSessionId_, invokeId_);
         // Build typed event data from typedParams if available (engine-agnostic pipeline)
-        std::optional<ScriptValue> typedData;
         if (!event.typedParams.empty()) {
-            typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
+            delivered.typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
         }
 
         bool raiseResult = false;
         auto *eventRaiserImpl = dynamic_cast<EventRaiserImpl *>(eventRaiser.get());
-        if (eventRaiserImpl && typedData.has_value()) {
-            raiseResult = eventRaiserImpl->raiseEventWithPriority(
-                eventName, eventData, EventRaiserImpl::EventPriority::EXTERNAL, parentSessionId_, "", invokeId_,
-                originType, 0, std::move(typedData));
+        if (eventRaiserImpl && delivered.typedData.has_value()) {
+            raiseResult =
+                eventRaiserImpl->raiseEventWithPriority(std::move(delivered), EventRaiserImpl::EventPriority::EXTERNAL);
         } else {
-            raiseResult = eventRaiser->raiseEvent(eventName, eventData, parentSessionId_, invokeId_, originType);
+            raiseResult = eventRaiser->raiseEvent(delivered);
         }
         SCE_LOG_DEBUG("InvokeEventTarget::send() - eventRaiser->raiseEvent() returned: {}", raiseResult);
 

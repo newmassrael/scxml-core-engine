@@ -228,7 +228,7 @@ public:
     // and nothing anywhere could say so — see `SCE::PayloadReading`.
     ::SCE::PayloadReading setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
                                 [[maybe_unused]] const std::string& eventType = "", [[maybe_unused]] const std::string& sendId = "",
-                                [[maybe_unused]] const std::string& origin = "", [[maybe_unused]] const std::string& originType = "",
+                                [[maybe_unused]] const std::optional<::SCE::Core::EventOrigin>& origin = std::nullopt,
                                 [[maybe_unused]] const std::string& invokeId = "",
                                 [[maybe_unused]] const std::optional<ScriptValue>& typedData = std::nullopt) {
 {% if model.needs_script_engine and (model.needs_event_name or model.needs_event_data) %}
@@ -240,23 +240,23 @@ public:
         // left to say.
         std::string actualType =
             eventType.empty() ? ::SCE::EventTypeHelper::classifyEventType(eventName, false) : eventType;
-        // W3C SCXML C.1: `_event.origin` is the address the sending session
-        // published, not its bare session id. The queue carries the id
-        // because `executeFinalizeForChildEvent` keys on it
-        // (`childSession.sessionId == eventWithMeta.origin`), so this
-        // boundary — where the value becomes visible to the document — is
-        // where it becomes an address. Same helper the Interpreter's
-        // boundary calls, so the two engines cannot answer differently.
-        const std::string publishedOrigin = ::SCE::IOProcessorHelper::publishedOrigin(origin);
+        // W3C SCXML 5.10.1 + C.1: `_event.origin` and `_event.origintype` are
+        // the one pair the processor that delivered the event wrote when it
+        // built it (docs/adr/0090) — the sender's published location for a
+        // session's send — read here as they are, and both empty for none.
+        // Nothing converts at this boundary, so the Interpreter cannot answer
+        // differently.
+        const std::string originAddress = ::SCE::Core::originAddressOf(origin);
+        const std::string originProcessor = ::SCE::Core::originProcessorOf(origin);
         AOT_DEBUG("AOT setCurrentEventInScriptEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
-                  eventName, eventData, actualType, sendId, origin, originType, invokeId);
+                  eventName, eventData, actualType, sendId, originAddress, originProcessor, invokeId);
         // W3C SCXML 5.5: Use Event object when typed data available (engine-agnostic ScriptValue pipeline)
         if (typedData.has_value()) {
             auto event = std::make_shared<::SCE::Event>(eventName, actualType);
             event->setData(eventData);
             event->setSendId(sendId);
-            event->setOrigin(publishedOrigin);
-            event->setOriginType(originType);
+            event->setOrigin(originAddress);
+            event->setOriginType(originProcessor);
             event->setInvokeId(invokeId);
             event->setTypedData(typedData.value());
             return getScriptEngine().setCurrentEvent(sessionId_.value(), event).get().reading;
@@ -264,8 +264,8 @@ public:
             // W3C SCXML 5.10: String-based path (standard)
             return getScriptEngine()
                 .setCurrentEvent(sessionId_.value(),
-                                 ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, publishedOrigin,
-                                                            originType, invokeId})
+                                 ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, originAddress,
+                                                            originProcessor, invokeId})
                 .get()
                 .reading;
         }

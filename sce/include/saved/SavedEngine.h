@@ -41,8 +41,10 @@
 
 #pragma once
 
+#include "common/IOProcessorHelper.h"
 #include "core/ConfigurationHelper.h"
 #include "core/EventNameResolver.h"
+#include "core/EventOrigin.h"
 #include "core/HostInvokeLedger.h"
 #include "core/HostProcessor.h"
 #include "saved/SavedState.h"
@@ -317,8 +319,9 @@ struct EngineAccess {
             // An event nothing stamped a type on was taken off this queue, which is external.
             event.type = queued.type.empty() ? "external" : queued.type;
             event.sendId = queued.sendId;
-            event.origin = queued.origin;
-            event.originType = queued.originType;
+            // docs/adr/0090, "Until step 6": format 2 as every backend writes it.
+            event.origin = IOProcessorHelper::storedOriginText(queued.origin, queued.sender);
+            event.originType = Core::originProcessorOf(queued.origin);
             event.invokeId = queued.invokeId;
             if (queued.hostInvokeToken.has_value()) {
                 event.hostInvokeToken = static_cast<std::int64_t>(*queued.hostInvokeToken);
@@ -549,8 +552,11 @@ private:
                 throw StateRefusal("external[" + std::to_string(at) + "] has the type '" + event.type +
                                    "', which is not an event type");
             }
-            typename Engine::EventWithMetadata queued(*resolved, event.data, event.origin, event.sendId, event.type,
-                                                      event.originType, event.invokeId);
+            // docs/adr/0090, section 7: the pair a format-2 origin is read as.
+            StoredOrigin read = IOProcessorHelper::readStoredOrigin(event.origin, event.originType);
+            typename Engine::EventWithMetadata queued(*resolved, event.data, std::move(read.origin), event.sendId,
+                                                      event.type, event.invokeId);
+            queued.sender = std::move(read.sender);
             queued.name = event.name == Policy::getEventName(*resolved) ? std::string() : event.name;
             if (event.hostInvokeToken.has_value()) {
                 queued.hostInvokeToken = static_cast<std::uint64_t>(*event.hostInvokeToken);
@@ -719,16 +725,18 @@ private:
             switch (act.kind) {
             case SavedActKind::Raise: {
                 const std::string arrival = engine.arrivalNameOf(*read.event, act.event);
+                const std::string sender = IOProcessorHelper::readStoredSender(act.origin);
                 if (arrival.empty()) {
-                    engine.scheduler_.scheduleEventAt(*read.event, fireAt, act.sendId, act.data, act.origin);
+                    engine.scheduler_.scheduleEventAt(*read.event, fireAt, act.sendId, act.data, sender);
                 } else {
-                    engine.scheduler_.scheduleRoutedAt(*read.event, fireAt, act.sendId, act.data, act.origin,
+                    engine.scheduler_.scheduleRoutedAt(*read.event, fireAt, act.sendId, act.data, sender,
                                                        ::SCE::ScheduledRoute{Kind::ExternalQueue, act.event});
                 }
                 break;
             }
             case SavedActKind::Internal:
-                engine.scheduler_.scheduleRoutedAt(*read.event, fireAt, act.sendId, act.data, act.origin,
+                engine.scheduler_.scheduleRoutedAt(*read.event, fireAt, act.sendId, act.data,
+                                                   IOProcessorHelper::readStoredSender(act.origin),
                                                    ::SCE::ScheduledRoute{Kind::InternalQueue, act.event});
                 break;
             case SavedActKind::Host: {
@@ -750,7 +758,8 @@ private:
                                                    ::SCE::ScheduledRoute{Kind::Parent, act.event});
                 break;
             case SavedActKind::Child:
-                engine.scheduler_.scheduleRoutedAt(Event{}, fireAt, act.sendId, act.data, act.origin,
+                engine.scheduler_.scheduleRoutedAt(Event{}, fireAt, act.sendId, act.data,
+                                                   IOProcessorHelper::readStoredSender(act.origin),
                                                    ::SCE::ScheduledRoute{Kind::Invocation, act.event, act.invokeId});
                 break;
             }

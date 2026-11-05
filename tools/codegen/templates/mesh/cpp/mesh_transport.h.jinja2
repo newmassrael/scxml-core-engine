@@ -6172,19 +6172,28 @@ struct TransportRouter {
         // took the event; one it refused (closed because the run ended, or
         // the heap refused it) is counted by the engine
         // (`refusedInboxPosts`), since no caller is left here to tell.
+        //
+        // SCE_MESH.md §9.5 + docs/adr/0090, section 2: the answer's origin is
+        // the pair the transport writes for the peer that answered — the
+        // request's type at `mesh://<replier>` — written whole. An outcome the
+        // router reached itself (a deadline, a dropped query) has no peer to
+        // name and carries no origin.
         SenderEngine* sender_ptr = sessions_[0];
         std::string captured_invoke_id = invokeId;
         invoke_correlation_.registerInvoke(invoke_uuid, target, respondersFor(target),
             [sender_ptr, captured_invoke_id](
                 SCE::Mesh::RpcStatus status,
-                std::vector<std::uint8_t> payload) {
+                std::vector<std::uint8_t> payload,
+                const std::string& replier) {
                 typename SenderEngine::EventWithMetadata evt;
                 evt.event = (status == SCE::Mesh::RpcStatus::Ok)
                     ? SenderEngine::Event::Done_invoke
                     : SenderEngine::Event::Error_invoke;
                 evt.data.assign(payload.begin(), payload.end());
                 evt.invokeId = captured_invoke_id;
-                evt.originType = "sce:mesh-rpc";
+                if (!replier.empty()) {
+                    evt.origin = ::SCE::Mesh::meshRpcReplyOrigin(replier);
+                }
                 (void)sender_ptr->inbox().post(typename SenderEngine::InboxExternalEvent{std::move(evt)});
             });
 

@@ -17,6 +17,8 @@
 
 #include "common/SCXMLConstants.h"
 #include "common/UrlEncodingHelper.h"
+#include "core/EventOrigin.h"
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,6 +34,17 @@ namespace SCE {
 struct IOProcessorDescriptor {
     std::string name;
     std::string location;
+};
+
+/**
+ * @brief An event's origin and sender as one text pair spells them back
+ *
+ * What `IOProcessorHelper::readStoredOrigin` answers for an `origin` and
+ * `origintype` stored as text (saved state format 2, a queue snapshot).
+ */
+struct StoredOrigin {
+    std::optional<Core::EventOrigin> origin;
+    std::string sender;
 };
 
 /**
@@ -100,29 +113,119 @@ public:
     }
 
     /**
-     * @brief The `_event.origin` a receiver should see for an event sent by
-     *        `originSessionId`
+     * @brief The origin the SCXML Event I/O Processor writes for an event a
+     *        session sends (docs/adr/0090, section 2)
      *
-     * The specification requires the origin of a delivered event to match the
-     * 'location' the sending session published, which is what makes it an
-     * address the receiver can answer. Both engines carry the sender's BARE
-     * session id internally — the interpreter in `currentOriginSessionId_`,
-     * the AOT engine in `EventWithMetadata::origin` — because their
-     * session-keyed lookups (`<finalize>` dispatch, cancelled-invoke
-     * filtering) match on the id. Converting earlier, where the event is
-     * raised, makes one value serve two consumers that need different
-     * spellings, and it silently broke those lookups once already (W3C
-     * 233/234). So the conversion belongs at the boundary where the value
-     * becomes visible to the document, and this is that conversion.
+     * The origin of an event raised in the receiving session must match the
+     * location the sending session publishes (`scxmlLocation`), so the pair is the
+     * processor's canonical type and `scxmlLocation` of the sender — the one
+     * function that also writes the session's `_ioprocessors` entry. The
+     * sender's id itself travels beside the pair, as the event's `sender`,
+     * for the lookups that find a session by it.
      *
-     * A remote invoke is the case that makes this more than a rename: its
-     * child session is stamped with a URI rather than an id, and wrapping a
-     * URI in `scxmlLocation` would produce an address naming nothing. An
-     * argument that already carries a scheme is therefore passed through —
-     * it is already an address.
+     * @param senderSessionId The sending session's id
+     */
+    static Core::EventOrigin scxmlOrigin(const std::string &senderSessionId) {
+        return Core::EventOrigin(Constants::SCXML_EVENT_PROCESSOR_TYPE, scxmlLocation(senderSessionId));
+    }
+
+    /**
+     * @brief `scxmlOrigin` of a sender that may be absent
      *
-     * @param originSessionId Sender's session id, or an address for a remote
-     *                        session; empty when the event has no origin
+     * A machine that holds no session id has no address to publish, so an
+     * event it sends carries no origin rather than the location of an empty
+     * id.
+     *
+     * @param senderSessionId The sending session's id, empty for none
+     * @return The SCXML processor's pair, or std::nullopt for no sender
+     */
+    static std::optional<Core::EventOrigin> scxmlOriginOf(const std::string &senderSessionId) {
+        if (senderSessionId.empty()) {
+            return std::nullopt;
+        }
+        return scxmlOrigin(senderSessionId);
+    }
+
+    /**
+     * @brief The `origin` text that stores an event's origin and sender
+     *
+     * docs/adr/0090, "Until step 6": the sending session's id for an event a
+     * session sent, the address otherwise, and empty for none — what every
+     * backend writes as a saved state's format-2 `origin`. The `origintype`
+     * beside it is the pair's processor.
+     */
+    static std::string storedOriginText(const std::optional<Core::EventOrigin> &origin, const std::string &sender) {
+        return sender.empty() ? Core::originAddressOf(origin) : sender;
+    }
+
+    /**
+     * @brief The origin and sender a stored `origin` and `origintype` are read as
+     *
+     * docs/adr/0090, section 7. Empty both is none. A value without a scheme
+     * stored with the SCXML processor's type is a session's id, read as that
+     * session's pair with the id as its sender; an SCXML location (which one
+     * backend stored in place of the id) is read the same way by the id it
+     * names. Anything else is the pair as stored, with no sender.
+     */
+    static StoredOrigin readStoredOrigin(const std::string &origin, const std::string &originType) {
+        if (origin.empty() && originType.empty()) {
+            return {};
+        }
+        const std::string located = sessionIdFromScxmlLocation(origin);
+        if (!located.empty()) {
+            return {scxmlOrigin(located), located};
+        }
+        const bool bareId = !origin.empty() && origin.find("://") == std::string::npos;
+        if (bareId && originType == Constants::SCXML_EVENT_PROCESSOR_TYPE) {
+            return {scxmlOrigin(origin), origin};
+        }
+        return {Core::EventOrigin(originType, origin), std::string()};
+    }
+
+    /**
+     * @brief The sender a stored waiting send's `origin` names
+     *
+     * docs/adr/0090, section 7: a waiting send is always a session's, so a
+     * bare id is that id and an SCXML location names it.
+     */
+    static std::string readStoredSender(const std::string &origin) {
+        const std::string located = sessionIdFromScxmlLocation(origin);
+        return located.empty() ? origin : located;
+    }
+
+    /**
+     * @brief The canonical type URI a `<send type>` spelling names
+     *
+     * `_ioprocessors` files each processor under its type URI and under its
+     * short alias, and a document may write either as a `<send>` type. The
+     * processor an event is delivered by is named by its URI alone, so the
+     * alias is read as the URI where the type is resolved and `origintype`
+     * never carries the author's spelling (docs/adr/0090, section 4). Any
+     * other value is returned as written.
+     *
+     * @param sendType The `type` a `<send>` wrote or its `typeexpr` produced
+     */
+    static std::string canonicalProcessorType(const std::string &sendType) {
+        if (sendType == SCXML_ALIAS) {
+            return Constants::SCXML_EVENT_PROCESSOR_TYPE;
+        }
+        if (sendType == BASIC_HTTP_ALIAS) {
+            return Constants::BASIC_HTTP_EVENT_PROCESSOR_URI;
+        }
+        return sendType;
+    }
+
+    /**
+     * @brief The `_event.origin` an engine that carries the sender's bare
+     *        session id publishes for it
+     *
+     * Neither C++ engine calls this: each now carries the pair the delivering
+     * processor wrote (`scxmlOrigin`), so nothing converts at the read. It is
+     * the C++ statement of the rule the other runtimes' `publishedOrigin` and
+     * `published_origin` ports still apply, which docs/adr/0090 removes from
+     * every runtime at once.
+     *
+     * @param originSessionId Sender's session id, or an address; empty for none
      * @return Address to publish as `_event.origin`, empty for empty input
      */
     static std::string publishedOrigin(const std::string &originSessionId) {

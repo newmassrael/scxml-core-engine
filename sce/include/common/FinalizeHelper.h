@@ -15,8 +15,10 @@
 
 #pragma once
 
+#include "core/EventOrigin.h"
 #include "core/LogMacros.h"
 #include "scripting/IScriptEngine.h"
+#include <optional>
 #include <string>
 
 namespace SCE {
@@ -58,15 +60,15 @@ public:
      * @param eventName Event name for _event.name
      * @param eventData Event data for _event.data (JSON string)
      * @param sendId Event sendid for _event.sendid
-     * @param origin Event origin for _event.origin
-     * @param originType Event origin type for _event.origintype
+     * @param origin The event's reply address, read as _event.origin and
+     *        _event.origintype; none reads both empty (docs/adr/0090)
      * @param invokeId Event invokeid for _event.invokeid
      * @return true if successful, false on error
      */
     static bool executeFinalizeWithEvent(IScriptEngine &jsEngine, const std::string &sessionId,
                                          const ScriptSource &finalizeScript, const std::string &eventName,
                                          const std::string &eventData, const std::string &sendId = "",
-                                         const std::string &origin = "", const std::string &originType = "",
+                                         const std::optional<Core::EventOrigin> &origin = std::nullopt,
                                          const std::string &invokeId = "") {
         SCE_LOG_DEBUG("FinalizeHelper: Executing finalize for event '{}' with data: '{}'", eventName, eventData);
 
@@ -76,10 +78,12 @@ public:
         // Checked rather than discarded: if the binding fails the finalize
         // script still runs, against a stale or absent `_event`, and reports
         // success. That is the same failure the sibling call below refuses.
-        auto eventResult = jsEngine
-                               .setCurrentEvent(sessionId, SetCurrentEventArgs{eventName, eventData, "external", sendId,
-                                                                               origin, originType, invokeId})
-                               .get();
+        auto eventResult =
+            jsEngine
+                .setCurrentEvent(sessionId, SetCurrentEventArgs{eventName, eventData, "external", sendId,
+                                                                Core::originAddressOf(origin),
+                                                                Core::originProcessorOf(origin), invokeId})
+                .get();
         if (!eventResult.status.isSuccess()) {
             SCE_LOG_ERROR("FinalizeHelper: Failed to bind _event before finalize: {}",
                           eventResult.status.getErrorMessage());

@@ -160,9 +160,9 @@ TEST(DeadlinePreemptsRetryTest, DeadlineLambdaCancelsPendingRetry) {
     // so the only peer allowed to retire the entry is the invoke's own
     // target. The deadline path below does not consult it — a locally
     // observed failure has no replier.
-    correlation.registerInvoke(
-        kInvokeUuid, "#motor", {"motor"},
-        [&deliver](RpcStatus status, std::vector<std::uint8_t> data) { deliver(status, std::move(data)); });
+    correlation.registerInvoke(kInvokeUuid, "#motor", {"motor"},
+                               [&deliver](RpcStatus status, std::vector<std::uint8_t> data,
+                                          const std::string & /*replier*/) { deliver(status, std::move(data)); });
 
     // Arm the deadline BEFORE send_with_retry — same order the
     // codegen-emitted invokeMeshRpc uses (registerDeadline before

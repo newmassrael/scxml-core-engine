@@ -4600,7 +4600,12 @@ impl SCXMLParser {
         action.eventexpr = elem.attribute("eventexpr").unwrap_or("").to_string();
         action.target = elem.attribute("target").unwrap_or("").to_string();
         action.targetexpr = elem.attribute("targetexpr").unwrap_or("").to_string();
-        action.send_type = elem.attribute("type").unwrap_or("").to_string();
+        // docs/adr/0090, section 4: a processor's alias is read as its type
+        // URI where the type is resolved, so every backend delivers it and
+        // `_event.origintype` carries the URI rather than the spelling.
+        action.send_type = crate::host_processor_analyzer::canonical_send_type(
+            elem.attribute("type").unwrap_or(""),
+        );
         action.typeexpr = elem.attribute("typeexpr").unwrap_or("").to_string();
         action.targets = collect_send_targets(elem, action, source_name)?;
         action.types = collect_send_types(elem, action, source_name)?;

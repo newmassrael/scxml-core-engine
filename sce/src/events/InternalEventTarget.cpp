@@ -3,6 +3,7 @@
 
 #include "events/InternalEventTarget.h"
 #include "common/EventDataHelper.h"
+#include "common/IOProcessorHelper.h"
 #include "common/LogToLogger.h"
 #include "common/SCXMLConstants.h"
 #include "runtime/EventRaiserImpl.h"
@@ -55,8 +56,19 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         bool queueSuccess = false;
 
-        // §scxml-5.10: Pass origintype from EventDescriptor (test 253, 331, 352, 372)
-        std::string originType = event.type.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : event.type;
+        // §scxml-5.10 (test 253, 331, 336, 352, 372): an event this session
+        // sends to an external queue — its own, or the session a session
+        // target names — carries the pair the SCXML processor writes: its
+        // canonical type and the sender's published location, with the
+        // sender's id beside it (docs/adr/0090). A `#_internal` send puts an
+        // internal event on the internal queue, whose origin the processor
+        // leaves blank.
+        Core::EventMetadata delivered(eventName, eventData);
+        delivered.sendId = event.sendId;
+        if (isExternal_) {
+            delivered.origin = IOProcessorHelper::scxmlOriginOf(sessionId_);
+            delivered.sender = sessionId_;
+        }
 
         if (eventRaiserImpl) {
             // Use priority-aware method with sendid and origintype for W3C SCXML compliance (test 351)
@@ -70,23 +82,20 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
             }
 
             SCE_LOG_DEBUG("InternalEventTarget::send() - Calling raiseEventWithPriority('{}', '{}', {}, "
-                          "originSessionId='{}', sendid='{}', origintype='{}', logicalTime={}ms, timestampNs={})",
-                          eventName, eventData, (isExternal_ ? "EXTERNAL" : "INTERNAL"), sessionId_, event.sendId,
-                          originType, event.logicalExecuteTime.count(), timestampNs);
+                          "sender='{}', sendid='{}', logicalTime={}ms, timestampNs={})",
+                          eventName, eventData, (isExternal_ ? "EXTERNAL" : "INTERNAL"), delivered.sender, event.sendId,
+                          event.logicalExecuteTime.count(), timestampNs);
             // Build typed event data from typedParams if available (engine-agnostic pipeline)
-            std::optional<ScriptValue> typedData;
             if (!event.typedParams.empty()) {
-                typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
+                delivered.typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
             }
-            queueSuccess =
-                eventRaiserImpl->raiseEventWithPriority(eventName, eventData, priority, sessionId_, event.sendId, "",
-                                                        originType, timestampNs, std::move(typedData));
+            queueSuccess = eventRaiserImpl->raiseEventWithPriority(std::move(delivered), priority, timestampNs);
         } else {
-            // Fallback: Use new 5-parameter raiseEvent with origintype
+            // Fallback: a raiser of another kind queues the event by its sender
             SCE_LOG_DEBUG("InternalEventTarget::send() - Calling eventRaiser_->raiseEvent('{}', '{}', sendid='{}', "
-                          "origintype='{}')",
-                          eventName, eventData, event.sendId, originType);
-            queueSuccess = eventRaiser_->raiseEvent(eventName, eventData, event.sendId, false);
+                          "sender='{}')",
+                          eventName, eventData, event.sendId, delivered.sender);
+            queueSuccess = eventRaiser_->raiseEvent(delivered);
         }
 
         SCE_LOG_DEBUG("InternalEventTarget::send() - raiseEvent result: {}", queueSuccess);

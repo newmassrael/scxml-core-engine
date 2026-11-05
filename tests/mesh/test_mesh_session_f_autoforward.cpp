@@ -72,7 +72,7 @@ int main() {
     // sends the parent to `fail` rather than letting the run time out.
     parent.raiseExternal(ParentEngine::EventWithMetadata(ParentEvent::Trigger,
                                                          /*data*/ R"({"value":42})",
-                                                         /*origin*/ std::string(),
+                                                         /*origin*/ std::nullopt,
                                                          /*sendId*/ "trigger_send_1",
                                                          /*type*/ "external"));
 

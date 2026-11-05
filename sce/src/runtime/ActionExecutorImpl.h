@@ -145,12 +145,12 @@ private:
     std::string sessionId_;
     std::string currentEventName_;
     std::string currentEventData_;
-    std::string currentEventType_;                 // §scxml-5.10.1: _event.type ("internal", "platform", "external")
-    std::string currentSendId_;                    // §scxml-5.10.1: _event.sendid from send element
-    std::string currentInvokeId_;                  // §scxml-5.10.1: _event.invokeid from invoked child process
-    std::string currentOriginType_;                // §scxml-5.10.1: _event.origintype from event processor
-    std::string currentOriginSessionId_;           // §scxml-5.10.1: _event.origin session ID
-    std::optional<ScriptValue> currentTypedData_;  // §scxml-5.10: Typed event data (engine-agnostic)
+    std::string currentEventType_;                    // §scxml-5.10.1: _event.type ("internal", "platform", "external")
+    std::string currentSendId_;                       // §scxml-5.10.1: _event.sendid from send element
+    std::string currentInvokeId_;                     // §scxml-5.10.1: _event.invokeid from invoked child process
+    std::optional<Core::EventOrigin> currentOrigin_;  // _event.origin and _event.origintype, one pair
+    std::string currentSender_;                       // the sending session's id, empty for none
+    std::optional<ScriptValue> currentTypedData_;     // §scxml-5.10: Typed event data (engine-agnostic)
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
     std::shared_ptr<INativeActionHost> nativeActionHost_;

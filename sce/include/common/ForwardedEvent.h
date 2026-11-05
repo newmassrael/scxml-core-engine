@@ -15,6 +15,9 @@
 
 #pragma once
 
+#include "core/EventOrigin.h"
+
+#include <optional>
 #include <string>
 
 namespace SCE::Common {
@@ -46,13 +49,15 @@ namespace SCE::Common {
  * the mesh wire-16 inbound path does.
  */
 struct ForwardedEvent {
-    // §scxml-5.10.1 `_event` fields, in the spec's own order.
+    // §scxml-5.10.1 `_event` fields, in the spec's own order, with `origin` and
+    // `origintype` held as the one pair the delivering processor wrote
+    // (docs/adr/0090) and the sending session's id beside it.
     std::string name;
     std::string data;  // serialized payload
-    std::string origin;
+    std::optional<Core::EventOrigin> origin;
+    std::string sender;  // the sending session's id; empty unless an SCXML session sent it
     std::string sendId;
     std::string type;
-    std::string originType;
     std::string invokeId;
 };
 

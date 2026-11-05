@@ -3,6 +3,7 @@
 
 #include "events/ParentEventTarget.h"
 #include "common/EventDataHelper.h"
+#include "common/IOProcessorHelper.h"
 #include "common/LogToLogger.h"
 #include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
@@ -91,30 +92,31 @@ std::future<SendResult> ParentEventTarget::send(const EventDescriptor &event) {
         std::string invokeId = SessionRegistry::instance().getInvokeIdForChildSession(actualChildSessionId);
 
         // Raise event in parent session using parent's EventRaiser with origin and invoke tracking
-        // §scxml-5.10: Pass child session ID as originSessionId for finalize support
+        // §scxml-5.10: the child session ID is the sender, for finalize support
         // §scxml-5.10: Pass invoke ID for event.invokeid field (test 338)
-        // §scxml-5.10: Pass origintype as SCXML processor type (test 253, 331, 352, 372)
-        // ARCHITECTURE.md: Use SCXMLConstants for Single Source of Truth
-        std::string originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
-        SCE_LOG_DEBUG("ParentEventTarget::send() -Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
-                      "'{}', invokeId: '{}', originType: '{}')",
-                      eventName, eventData, actualChildSessionId, invokeId, originType);
+        // §scxml-5.10: the origin is the pair the SCXML processor writes — its
+        // canonical type and the child's published location (test 253, 331,
+        // 352, 372; docs/adr/0090), one value so the two fields cannot disagree
+        Core::EventMetadata delivered(eventName, eventData);
+        delivered.invokeId = invokeId;
+        delivered.origin = IOProcessorHelper::scxmlOriginOf(actualChildSessionId);
+        delivered.sender = actualChildSessionId;
+        SCE_LOG_DEBUG("ParentEventTarget::send() -Calling parent EventRaiser->raiseEvent('{}', '{}', sender: "
+                      "'{}', invokeId: '{}')",
+                      eventName, eventData, actualChildSessionId, invokeId);
         // Build typed event data from typedParams if available (engine-agnostic pipeline)
-        std::optional<ScriptValue> typedData;
         if (!event.typedParams.empty()) {
-            typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
+            delivered.typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
         }
 
         bool raiseResult = false;
         // Try to use raiseEventWithPriority for typed data support
         auto *eventRaiserImpl = dynamic_cast<EventRaiserImpl *>(parentEventRaiser.get());
-        if (eventRaiserImpl && typedData.has_value()) {
-            raiseResult = eventRaiserImpl->raiseEventWithPriority(
-                eventName, eventData, EventRaiserImpl::EventPriority::EXTERNAL, actualChildSessionId, "", invokeId,
-                originType, 0, std::move(typedData));
-        } else {
+        if (eventRaiserImpl && delivered.typedData.has_value()) {
             raiseResult =
-                parentEventRaiser->raiseEvent(eventName, eventData, actualChildSessionId, invokeId, originType);
+                eventRaiserImpl->raiseEventWithPriority(std::move(delivered), EventRaiserImpl::EventPriority::EXTERNAL);
+        } else {
+            raiseResult = parentEventRaiser->raiseEvent(delivered);
         }
         SCE_LOG_DEBUG("ParentEventTarget::send() -parent EventRaiser->raiseEvent() returned: {}", raiseResult);
 

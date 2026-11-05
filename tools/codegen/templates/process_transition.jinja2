@@ -84,14 +84,14 @@ public:
         }
 {%- endif %}
 {%- if model.needs_script_engine and (model.needs_event_name or model.needs_event_data or model.needs_event_origin) %}
-        if (event != Event() && (!pendingEventName_.empty() || !pendingEventData_.empty() || !pendingEventOrigin_.empty())) {
+        if (event != Event() && (!pendingEventName_.empty() || !pendingEventData_.empty() || pendingEventOrigin_.has_value())) {
             // §scxml-B-2-8-1: the rung the payload got, handed to the engine
             // rather than dropped. This is the only frame that has both the
             // reading and the event it belongs to.
 {% if model.needs_event_data %}
-            const ::SCE::PayloadReading payloadReading = setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_, pendingEventTypedData_);
+            const ::SCE::PayloadReading payloadReading = setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventInvokeId_, pendingEventTypedData_);
 {% else %}
-            const ::SCE::PayloadReading payloadReading = setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_);
+            const ::SCE::PayloadReading payloadReading = setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventInvokeId_);
 {% endif %}
             engine.notePayloadReading(event, payloadReading);
         }

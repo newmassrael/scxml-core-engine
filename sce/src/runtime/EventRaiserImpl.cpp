@@ -59,9 +59,9 @@ std::shared_ptr<IEventScheduler> EventRaiserImpl::getScheduler() const {
     return scheduler_;
 }
 
-size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionId) {
-    if (originSessionId.empty()) {
-        SCE_LOG_WARN("EventRaiserImpl: Cannot cancel events for empty originSessionId");
+size_t EventRaiserImpl::cancelEventsForSession(const std::string &senderSessionId) {
+    if (senderSessionId.empty()) {
+        SCE_LOG_WARN("EventRaiserImpl: Cannot cancel events for an empty sender session id");
         return 0;
     }
 
@@ -77,14 +77,14 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
         QueuedEvent event = synchronousQueue_.top();
         synchronousQueue_.pop();
 
-        // Check if this event originated from the cancelled session. Both
-        // sides are session ids: the queue carries what callers hand in, and
-        // the §scxml-C-1 location is derived only where `_event.origin` is
-        // published, so there is one spelling to compare here.
-        if (event.origin == originSessionId) {
+        // Check if this event was sent by the cancelled session. Both sides
+        // are session ids: the SCXML processor sets the sender beside the
+        // §scxml-C-1 location it writes as the origin (docs/adr/0090), and
+        // the location is never read to find a session.
+        if (event.sender == senderSessionId) {
             cancelledCount++;
             SCE_LOG_DEBUG("EventRaiserImpl: Cancelled queued event '{}' from session: {}", event.eventName,
-                          originSessionId);
+                          senderSessionId);
         } else {
             // Keep events from other sessions
             remaining.push_back(event);
@@ -97,7 +97,7 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
     }
 
     if (cancelledCount > 0) {
-        SCE_LOG_INFO("EventRaiserImpl: Cancelled {} queued event(s) from session: {}", cancelledCount, originSessionId);
+        SCE_LOG_INFO("EventRaiserImpl: Cancelled {} queued event(s) from session: {}", cancelledCount, senderSessionId);
     }
 
     return cancelledCount;
@@ -164,11 +164,7 @@ void EventRaiserImpl::clearForeignEntry() {
     foreignEntry_.reset();
 }
 
-std::optional<bool> EventRaiserImpl::postFromAnotherThread(const std::string &eventName, const std::string &eventData,
-                                                           EventPriority priority, const std::string &originSessionId,
-                                                           const std::string &sendId, const std::string &invokeId,
-                                                           const std::string &originType,
-                                                           const std::optional<ScriptValue> &typedData) {
+std::optional<bool> EventRaiserImpl::postFromAnotherThread(const Core::EventMetadata &raised, EventPriority priority) {
     std::shared_ptr<const ForeignEntry> entry;
     {
         std::lock_guard<std::mutex> lock(callbackMutex_);
@@ -179,11 +175,11 @@ std::optional<bool> EventRaiserImpl::postFromAnotherThread(const std::string &ev
     }
     // The event as the machine's queue would have held it; its `_event.type` is
     // read off the queue it is taken from, as for any queued event.
-    Core::EventMetadata event(eventName, eventData, "", sendId, invokeId, originType, originSessionId);
-    event.typedData = typedData;
+    Core::EventMetadata event = raised;
+    event.type.clear();
     const EventQueue queue = priority == EventPriority::INTERNAL ? EventQueue::Internal : EventQueue::External;
     SCE_LOG_DEBUG("EventRaiserImpl: '{}' raised from another thread while its machine runs; posted to its inbox",
-                  eventName);
+                  event.name);
     return entry->post(std::move(event), queue);
 }
 
@@ -200,14 +196,14 @@ void EventRaiserImpl::applyHeldBeforeExternalEnqueue() {
 
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData) {
     // Default to INTERNAL priority for backward compatibility (raise actions and #_internal targets)
-    return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, "", "", "");
+    return raiseEventWithPriority(Core::EventMetadata(eventName, eventData), EventPriority::INTERNAL);
 }
 
 bool EventRaiserImpl::raiseInternalEvent(const std::string &eventName, const std::string &eventData) {
     // §scxml-3.13: Internal events have higher priority than external events
     // §scxml-4.2.2: enqueueing appends at the rear, so events raised by <raise> keep
     // their arrival order behind whatever is already queued.
-    return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, "", "", "");
+    return raiseEventWithPriority(Core::EventMetadata(eventName, eventData), EventPriority::INTERNAL);
 }
 
 bool EventRaiserImpl::raiseExternalEvent(const std::string &eventName, const std::string &eventData) {
@@ -215,49 +211,46 @@ bool EventRaiserImpl::raiseExternalEvent(const std::string &eventName, const std
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser receiving EXTERNAL event '{}' with data '{}'", eventName, eventData);
 
     // §scxml-5.10: External events have lower priority than internal events (test 510)
-    return raiseEventWithPriority(eventName, eventData, EventPriority::EXTERNAL, "", "", "");
+    return raiseEventWithPriority(Core::EventMetadata(eventName, eventData), EventPriority::EXTERNAL);
 }
 
-bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string &originSessionId) {
-    // §scxml-5.10: Raise event with origin tracking for finalize support
-    return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, originSessionId, "", "");
+bool EventRaiserImpl::raiseExternalEvent(const Core::EventMetadata &event) {
+    SCE_LOG_INFO("[EVENT ROUTING] EventRaiser receiving EXTERNAL event '{}' with origin '{}'", event.name,
+                 Core::originAddressOf(event.origin));
+    // §scxml-5.10: an event from outside the session, with the origin its
+    // processor wrote (docs/adr/0090), on the external queue whatever it names.
+    return raiseEventWithPriority(event, EventPriority::EXTERNAL);
 }
 
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &sendId,
                                  bool) {
     // §scxml-5.10: Raise error event with sendid from failed send element
-    return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, "", sendId, "");
+    Core::EventMetadata event(eventName, eventData);
+    event.sendId = sendId;
+    return raiseEventWithPriority(std::move(event), EventPriority::INTERNAL);
 }
 
-bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string &originSessionId, const std::string &invokeId) {
-    // §scxml-5.10 test 338: Raise event with both origin and invoke ID tracking
-    return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, originSessionId, "", invokeId, "");
-}
+bool EventRaiserImpl::raiseEvent(const Core::EventMetadata &event) {
+    // [EVENT ROUTING] Entry point logging - track calls from the session targets
+    SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() ENTRY - event='{}', sender='{}', invokeId='{}', "
+                 "origin='{}', EventRaiser instance={}",
+                 event.name, event.sender, event.invokeId, Core::originAddressOf(event.origin), (void *)this);
 
-bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string &originSessionId, const std::string &invokeId,
-                                 const std::string &originType) {
-    // [EVENT ROUTING] Entry point logging - track calls from InvokeEventTarget
-    SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() ENTRY - event='{}', origin='{}', invokeId='{}', "
-                 "originType='{}', EventRaiser instance={}",
-                 eventName, originSessionId, invokeId, originType, (void *)this);
-
-    // §scxml-5.10: Raise event with full metadata (origin, invoke ID, and origintype)
+    // §scxml-5.10: Raise event with full metadata (the origin pair, its sender and invoke ID)
     //
     // Queue membership answers one question only — which of the two queues
     // Appendix D's mainEventLoop drains this event from — and it is decided by
-    // where the event came from, never by how it is named. An event carrying
-    // another session's id is external (§scxml-5.10.1, W3C Test 252:
-    // child->parent). Everything the processor raises for itself is internal:
+    // where the event came from, never by how it is named. An event another
+    // session sent is external (§scxml-5.10.1, W3C Test 252: child->parent),
+    // and the SCXML processor says so by naming its sender; the origin's
+    // address is never read to decide it. Everything the processor raises for itself is internal:
     // §scxml-3.12.2 signals an error with an `error.*` event placed on the
     // queue and processed like any other — never delivered inline, and simply
     // dropped when no transition matches it — and 3.7 puts `done.state.<id>`
     // there too. `done.invoke.<id>` is external and stays so without a name
     // test, because 6.4.2 has it returned by the invoked service —
-    // `InvokeExecutor` raises it with the child's session id as origin, which
-    // is exactly the branch below.
+    // `InvokeExecutor` raises it with the child's session id as its sender,
+    // which is exactly the branch below.
     //
     // Naming the done/error families here once forced them external for an
     // unrelated reason: to stop them being delivered inline (W3C Test 230 —
@@ -269,7 +262,7 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
     // dequeues to every `autoforward` child — events the spec never forwards,
     // reaching children that must not see them.
     EventPriority priority = EventPriority::INTERNAL;
-    if (!originSessionId.empty()) {
+    if (!event.sender.empty()) {
         // §scxml-5.10.1: Events from other SCXML sessions are EXTERNAL
         // This ensures correct event priority ordering (FIFO within same priority)
         priority = EventPriority::EXTERNAL;
@@ -278,34 +271,26 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() calling raiseEventWithPriority() - priority={}",
                  (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
 
-    return raiseEventWithPriority(eventName, eventData, priority, originSessionId, "", invokeId, originType);
+    return raiseEventWithPriority(event, priority);
 }
 
-bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const std::string &eventData,
-                                             EventPriority priority, const std::string &originSessionId,
-                                             const std::string &sendId, const std::string &invokeId,
-                                             const std::string &originType, int64_t timestampNs,
-                                             std::optional<ScriptValue> typedData) {
+bool EventRaiserImpl::raiseEventWithPriority(Core::EventMetadata event, EventPriority priority, int64_t timestampNs) {
+    const std::string &eventName = event.name;
+    const std::string &eventData = event.data;
     // §scxml-B-2: Parse JSON eventData to ScriptValue at pipeline level (engine-agnostic)
     // Covers all entry points: EventTargets, HTTP callbacks, AOT, DoneData
-    if (!typedData.has_value() && !eventData.empty()) {
-        typedData = EventDataHelper::jsonStringToScriptValue(eventData);
+    if (!event.typedData.has_value() && !eventData.empty()) {
+        event.typedData = EventDataHelper::jsonStringToScriptValue(eventData);
     }
 
     // §scxml-C-1 requires `_event.origin` to be the SENDER's published
-    // `_ioprocessors` location rather than its bare session id, and this used
-    // to convert here, on the way in. It cannot: the value this carries has
-    // two consumers that need different spellings. `_event.origin` wants the
-    // location; `getFinalizeScriptForChildSession` and
-    // `shouldFilterCancelledInvokeEvent` look sessions up by the id they were
-    // registered under. Converting at the entrance served the first and broke
-    // the second silently — a `<finalize>` handler stopped running because
-    // `sce://scxml/<id>` is not a key any registry holds (W3C 233/234).
-    //
-    // So the pipeline carries the SESSION ID, which is what callers hand in
-    // and what every lookup keys on, and the location is derived at the one
-    // place it is published (`ActionExecutorImpl::setCurrentEvent`). One
-    // spelling per consumer, each produced where it is used.
+    // `_ioprocessors` location. The event carries that location as the pair
+    // the delivering processor wrote when it built the event, and the sender's
+    // session id beside it (docs/adr/0090): `_event.origin` reads the pair,
+    // while `getFinalizeScriptForChildSession` and
+    // `shouldFilterCancelledInvokeEvent` look sessions up by the sender, the id
+    // they were registered under. One value for each reader, so nothing here
+    // converts one spelling into the other (W3C 233/234).
 
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
                  "immediateMode={}, EventRaiser instance={}",
@@ -404,12 +389,12 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                 try {
                     // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
                     EventContext ctx;
-                    ctx.originSessionId = originSessionId;
-                    ctx.sendId = sendId;
-                    ctx.invokeId = invokeId;
-                    ctx.originType = originType;
+                    ctx.origin = event.origin;
+                    ctx.sender = event.sender;
+                    ctx.sendId = event.sendId;
+                    ctx.invokeId = event.invokeId;
                     ctx.eventType = EventTypeHelper::classifyEventType(eventName, !isInternal);
-                    ctx.typedData = typedData;
+                    ctx.typedData = event.typedData;
                     ctx.isExternalQueue = !isInternal;
                     EventContextGuard guard(ctx);
 
@@ -438,8 +423,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     // machine's macrostep. A raise made on another thread while one runs is posted
     // to the machine's inbox and applied at the macrostep's boundary, rather than
     // put on a queue the running macrostep is reading.
-    if (const std::optional<bool> posted = postFromAnotherThread(eventName, eventData, priority, originSessionId,
-                                                                 sendId, invokeId, originType, typedData)) {
+    if (const std::optional<bool> posted = postFromAnotherThread(event, priority)) {
         return *posted;
     }
 
@@ -470,8 +454,8 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
             timestamp = std::chrono::steady_clock::time_point();  // Will be set to now() in constructor
         }
 
-        synchronousQueue_.emplace(eventName, eventData, priority, originSessionId, sendId, invokeId, originType,
-                                  timestamp, std::move(typedData));
+        synchronousQueue_.emplace(eventName, eventData, priority, event.origin, event.sender, event.sendId,
+                                  event.invokeId, timestamp, event.typedData);
 
         // Enhanced logging: explain why event was queued instead of processed immediately
         std::string reason = "immediateMode disabled";
@@ -586,10 +570,10 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
         // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
         bool isExternal = (event.priority == EventPriority::EXTERNAL);
         EventContext ctx;
-        ctx.originSessionId = event.origin;
+        ctx.origin = event.origin;
+        ctx.sender = event.sender;
         ctx.sendId = event.sendId;
         ctx.invokeId = event.invokeId;
-        ctx.originType = event.originType;
         ctx.eventType = EventTypeHelper::classifyEventType(event.eventName, isExternal);
         ctx.typedData = event.typedData;
         ctx.isExternalQueue = isExternal;
@@ -741,16 +725,16 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
     }
 
     try {
-        SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data '{}' from origin '{}'", event.eventName,
-                      event.eventData, event.origin);
+        SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data '{}' from sender '{}'", event.eventName,
+                      event.eventData, event.sender);
 
         // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
         bool isExternal = (event.priority == EventPriority::EXTERNAL);
         EventContext ctx;
-        ctx.originSessionId = event.origin;
+        ctx.origin = event.origin;
+        ctx.sender = event.sender;
         ctx.sendId = event.sendId;
         ctx.invokeId = event.invokeId;
-        ctx.originType = event.originType;
         ctx.eventType = EventTypeHelper::classifyEventType(event.eventName, isExternal);
         ctx.typedData = event.typedData;
         ctx.isExternalQueue = isExternal;
@@ -834,7 +818,7 @@ std::optional<Core::EventMetadata> EventRaiserImpl::takeQueuedEvent(EventQueue q
             const QueuedEvent &head = synchronousQueue.top();
             taken = Core::EventMetadata(head.eventName, head.eventData,
                                         EventTypeHelper::classifyEventType(head.eventName, isExternal), head.sendId,
-                                        head.invokeId, head.originType, head.origin);
+                                        head.invokeId, head.origin, head.sender);
             taken->typedData = head.typedData;
             // No `lastProcessedEvent` record, unlike a dispatch. Taking is not
             // processing — a machine that has reached its final state empties its
@@ -871,8 +855,8 @@ bool EventRaiserImpl::enqueue(const Core::EventMetadata &event, EventQueue queue
     // — a host handing an event over is not an error handler failing again.
     const EventPriority priority = queue == EventQueue::Internal ? EventPriority::INTERNAL : EventPriority::EXTERNAL;
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
-    synchronousQueue_.emplace(event.name, event.data, priority, event.originSessionId, event.sendId, event.invokeId,
-                              event.originType, std::chrono::steady_clock::time_point(), event.typedData);
+    synchronousQueue_.emplace(event.name, event.data, priority, event.origin, event.sender, event.sendId,
+                              event.invokeId, std::chrono::steady_clock::time_point(), event.typedData);
     return true;
 }
 
@@ -907,7 +891,10 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
         int64_t timestampNs =
             std::chrono::duration_cast<std::chrono::nanoseconds>(event.timestamp.time_since_epoch()).count();
 
-        EventSnapshot snapshot(event.eventName, event.eventData, event.sendId, event.originType, event.origin,
+        // The snapshot's origin field holds the sender's session id where a
+        // session sent the event, and the origin's address otherwise.
+        EventSnapshot snapshot(event.eventName, event.eventData, event.sendId, Core::originProcessorOf(event.origin),
+                               event.sender.empty() ? Core::originAddressOf(event.origin) : event.sender,
                                event.invokeId, timestampNs);
 
         if (event.priority == EventPriority::INTERNAL) {

@@ -15,7 +15,14 @@
             <param name="_mesh_deadline_ms" expr="50"/>
         </invoke>
         <transition event="abort" target="aborted"/>
-        <transition event="done.invoke" target="ok"/>
+        <!-- docs/adr/0090, test 4: the answer's origin is the pair the
+             transport writes for the peer that answered — the request's type
+             at `mesh://<peer>` — so a reply that names any other origin is
+             one the transport did not stamp. -->
+        <transition event="done.invoke"
+                    cond="_event.origin === 'mesh://motor_invoke' &amp;&amp; _event.origintype === 'sce:mesh-rpc'"
+                    target="ok"/>
+        <transition event="done.invoke" target="misattributed"/>
         <transition event="error.invoke" target="failed"/>
         <!-- SCE Mesh 16.7 row 14: a reply from outside the binding's
              responder set is rejected loudly, not dropped. Observing it
@@ -26,4 +33,5 @@
     <final id="failed"/>
     <final id="aborted"/>
     <final id="rejected"/>
+    <final id="misattributed"/>
 </scxml>

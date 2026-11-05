@@ -347,7 +347,8 @@ TEST_F(HostDoorTest, AServedSendHandsTheHostItsRequestAndItsRepliesArriveInOrder
   <final id="done"/>
 </scxml>)scxml");
     sm->registerEventProcessor(DECLARED_TYPE, recordingProcessor([](const HostSendRequest &) {
-                                   return std::vector<HostSendResponse>{{"reply.one", ""}, {"reply.two", ""}};
+                                   return std::vector<HostSendResponse>{{"reply.one", "", std::nullopt},
+                                                                        {"reply.two", "", std::nullopt}};
                                }));
     ASSERT_TRUE(sm->start());
 
@@ -383,7 +384,8 @@ TEST_F(HostDoorTest, ADelayedHostSendIsPerformedWhenDueAndACancelReachesIt) {
 </scxml>)scxml");
     sm->registerEventProcessor(DECLARED_TYPE, recordingProcessor([](const HostSendRequest &request) {
                                    // `host.<x>` is answered with `reply.<x>`.
-                                   return std::vector<HostSendResponse>{{"reply." + request.eventName.substr(5), ""}};
+                                   return std::vector<HostSendResponse>{
+                                       {"reply." + request.eventName.substr(5), "", std::nullopt}};
                                }));
     const auto startedAt = std::chrono::steady_clock::now();
     ASSERT_TRUE(sm->start());
@@ -453,7 +455,8 @@ TEST_F(HostDoorTest, AFailureRaisesErrorInvokeNamingTheOriginTheHostGave) {
     const auto request = invoker_.latest("job");
     ASSERT_TRUE(request.has_value());
 
-    EXPECT_TRUE(sm->failHostInvoke(DECLARED_TYPE, "job", request->token, R"("no")", "host://job", DECLARED_TYPE));
+    EXPECT_TRUE(sm->failHostInvoke(DECLARED_TYPE, "job", request->token, R"("no")",
+                                   Core::EventOrigin(DECLARED_TYPE, "host://job")));
     EXPECT_EQ(sm->terminalState().value_or(""), "failed") << "error.invoke.job never reached the document";
     EXPECT_EQ(read("ended"), "no|host://job|x-sce-host");
     EXPECT_FALSE(sm->completeHostInvoke(DECLARED_TYPE, "job", request->token, "{}"))
@@ -651,7 +654,7 @@ TEST_F(HostDoorTest, AMeshRequestReachesTheRouterAndWithoutOneRaisesErrorExecuti
         EXPECT_TRUE(sm->isStateActive("asking"));
 
         EXPECT_TRUE(sm->completeHostInvoke(std::string(MESH_RPC_INVOKE_TYPE), "ask", request->token, "{}",
-                                           "mesh://motor", std::string(MESH_RPC_INVOKE_TYPE)));
+                                           Core::EventOrigin(std::string(MESH_RPC_INVOKE_TYPE), "mesh://motor")));
         EXPECT_EQ(sm->terminalState().value_or(""), "answered");
     }
     {

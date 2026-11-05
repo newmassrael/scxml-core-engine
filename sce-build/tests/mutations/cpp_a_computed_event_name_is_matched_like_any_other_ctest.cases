@@ -39,8 +39,8 @@ PY
 
 mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     "engine.currentEventInvokeId(), {{ target_cpp }});\n{% if event_cpp == '*sendEvent' %}\n    meta.name = engine.arrivalNameOf(*sendEvent, eventName);\n{% endif %}",
-     "engine.currentEventInvokeId(), {{ target_cpp }});")
+     "    meta.target = {{ target_cpp }};\n{% if event_cpp == '*sendEvent' %}\n    meta.name = engine.arrivalNameOf(*sendEvent, eventName);\n{% endif %}",
+     "    meta.target = {{ target_cpp }};")
 PY
 
 mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'

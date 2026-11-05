@@ -4,8 +4,10 @@
 #pragma once
 
 #include "SCXMLTypes.h"
+#include "core/EventOrigin.h"
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace SCE::Core {
 
@@ -17,16 +19,22 @@ namespace SCE::Core {
  * - AOT engine (StaticExecutionEngine)
  *
  * Consolidates all event-related metadata into a single structure to simplify
- * API and reduce parameter coupling. All fields are optional (empty string = not set).
+ * API and reduce parameter coupling. The text fields are empty when not set.
  *
  * §scxml-5.10 Event Object Fields:
  * - name: Event name (required)
  * - type: Event type ("internal", "platform", "external")
  * - sendid: Send ID from <send> element
- * - origin: Session ID that sent the event
- * - origintype: Event processor type that sent the event
+ * - origin, origintype: the reply address the delivering processor wrote, as
+ *   one value (docs/adr/0090); none for an event no processor stamped
  * - invokeid: Invoke ID from <invoke> element that generated this event
  * - data: Event payload data
+ *
+ * `sender` is not an `_event` field. It is the id of the session that sent the
+ * event, set only by the SCXML Event I/O Processor, and it is what the
+ * session-keyed lookups read (`<finalize>`, a cancelled invocation's events,
+ * the Interpreter's queue choice). Nothing reads the origin's address to find
+ * a session.
  */
 struct EventMetadata {
     std::string name;                      ///< Event name (required)
@@ -34,8 +42,8 @@ struct EventMetadata {
     std::string type;                      ///< Event type ("internal", "platform", "external")
     std::string sendId;                    ///< Send ID from <send> element
     std::string invokeId;                  ///< Invoke ID from <invoke> element
-    std::string originType;                ///< Origin event processor type
-    std::string originSessionId;           ///< Origin session ID for _event.origin
+    std::optional<EventOrigin> origin;     ///< `_event.origin` and `_event.origintype`, none when unstamped
+    std::string sender;                    ///< Sending session's id, empty unless an SCXML session sent it
     std::optional<ScriptValue> typedData;  ///< Typed event data (engine-agnostic, avoids JSON round-trip)
 
     /**
@@ -48,10 +56,10 @@ struct EventMetadata {
      * @brief Construct full event metadata with all fields
      */
     EventMetadata(const std::string &eventName, const std::string &eventData, const std::string &eventType,
-                  const std::string &sendId = "", const std::string &invokeId = "", const std::string &originType = "",
-                  const std::string &originSessionId = "")
-        : name(eventName), data(eventData), type(eventType), sendId(sendId), invokeId(invokeId), originType(originType),
-          originSessionId(originSessionId) {}
+                  const std::string &sendId = "", const std::string &invokeId = "",
+                  std::optional<EventOrigin> eventOrigin = std::nullopt, std::string senderSessionId = "")
+        : name(eventName), data(eventData), type(eventType), sendId(sendId), invokeId(invokeId),
+          origin(std::move(eventOrigin)), sender(std::move(senderSessionId)) {}
 };
 
 }  // namespace SCE::Core

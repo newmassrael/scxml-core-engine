@@ -31,31 +31,21 @@ bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string
 }
 
 bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string &originSessionId) {
-    // W3C SCXML 6.4: Delegate to the 2-parameter version, carrying the origin
-    pendingOrigin_ = originSessionId;
-    return raiseEvent(eventName, eventData);
-}
-
-bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string &eventData,
                                  const std::string & /*sendId*/, bool /*unused*/) {
     // W3C SCXML 5.10: Delegate to 2-parameter version (mock doesn't care about sendId)
     return raiseEvent(eventName, eventData);
 }
 
-bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string &originSessionId, const std::string & /*invokeId*/) {
-    // W3C SCXML 5.10 test 338: Delegate to the 2-parameter version, carrying the origin
-    pendingOrigin_ = originSessionId;
-    return raiseEvent(eventName, eventData);
+bool MockEventRaiser::raiseEvent(const Core::EventMetadata &event) {
+    // W3C SCXML 5.10: Delegate to the 2-parameter version, carrying the origin's address
+    pendingOrigin_ = Core::originAddressOf(event.origin);
+    return raiseEvent(event.name, event.data);
 }
 
-bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string &originSessionId, const std::string & /*invokeId*/,
-                                 const std::string & /*originType*/) {
-    // W3C SCXML 5.10: Delegate to the 2-parameter version, carrying the origin
-    pendingOrigin_ = originSessionId;
-    return raiseEvent(eventName, eventData);
+bool MockEventRaiser::raiseExternalEvent(const Core::EventMetadata &event) {
+    // W3C SCXML 5.10: Delegate to the 2-parameter version, carrying the origin's address
+    pendingOrigin_ = Core::originAddressOf(event.origin);
+    return raiseEvent(event.name, event.data);
 }
 
 bool MockEventRaiser::raiseInternalEvent(const std::string &eventName, const std::string &eventData) {
@@ -167,7 +157,7 @@ std::shared_ptr<class IEventScheduler> MockEventRaiser::getScheduler() const {
     return nullptr;
 }
 
-size_t MockEventRaiser::cancelEventsForSession(const std::string & /*originSessionId*/) {
+size_t MockEventRaiser::cancelEventsForSession(const std::string & /*senderSessionId*/) {
     // Mock implementation - no actual queue to cancel events from
     // Return 0 to indicate no events were cancelled
     return 0;

@@ -77,11 +77,17 @@ public:
     /// * on [`handleDeadline`] — `status = RpcStatus::DeadlineExceeded`,
     ///   `data` is empty.
     ///
+    /// The third argument is the peer that answered (the reply envelope's
+    /// `source`), whose address the delivered event names as its origin
+    /// (docs/adr/0090, section 2). It is empty for an outcome this router
+    /// reached itself ([`failLocally`], [`handleDeadline`]): no peer
+    /// answered, so the event names none.
+    ///
     /// **Not** invoked on [`handleCancel`]: W3C SCXML `<cancel>` does
     /// not raise `done`/`error` on the cancelled invoke, so the
     /// correlation table simply erases the entry and drops the
     /// callback without firing it.
-    using DeliverCallback = std::function<void(RpcStatus, std::vector<std::uint8_t>)>;
+    using DeliverCallback = std::function<void(RpcStatus, std::vector<std::uint8_t>, const std::string &replier)>;
 
     /// Outcome of [`handleReply`]. Three cases rather than a bool
     /// because the caller must distinguish "not ours" from "not
@@ -165,7 +171,7 @@ public:
             pending_.erase(it);
         }
         if (cb) {
-            cb(status, std::move(data));
+            cb(status, std::move(data), replier);
         }
         return ReplyOutcome::Delivered;
     }
@@ -203,7 +209,7 @@ public:
             pending_.erase(it);
         }
         if (cb) {
-            cb(status, {});
+            cb(status, {}, std::string());
         }
         return true;
     }

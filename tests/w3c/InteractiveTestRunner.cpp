@@ -3,6 +3,7 @@
 
 #include "InteractiveTestRunner.h"
 
+#include "common/IOProcessorHelper.h"
 #include "common/Logger.h"
 #include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
@@ -1055,17 +1056,25 @@ void InteractiveTestRunner::restoreEventQueues(const std::vector<EventSnapshot> 
 
     // Restore internal queue (higher priority)
     // W3C SCXML 3.13: Preserve original timestamps for FIFO ordering
+    // A snapshot stores the origin as text, read back as a saved state's is (docs/adr/0090).
+    const auto restoredEvent = [](const EventSnapshot &event) {
+        Core::EventMetadata restored(event.name, event.data);
+        restored.sendId = event.sendid;
+        restored.invokeId = event.invokeid;
+        StoredOrigin stored = IOProcessorHelper::readStoredOrigin(event.origin, event.origintype);
+        restored.origin = std::move(stored.origin);
+        restored.sender = std::move(stored.sender);
+        return restored;
+    };
     for (const auto &event : internal) {
-        eventRaiserImpl->raiseEventWithPriority(event.name, event.data, EventRaiserImpl::EventPriority::INTERNAL,
-                                                event.origin, event.sendid, event.invokeid, event.origintype,
+        eventRaiserImpl->raiseEventWithPriority(restoredEvent(event), EventRaiserImpl::EventPriority::INTERNAL,
                                                 event.timestampNs);
     }
 
     // Restore external queue (lower priority)
     // W3C SCXML 3.13: Preserve original timestamps for FIFO ordering
     for (const auto &event : external) {
-        eventRaiserImpl->raiseEventWithPriority(event.name, event.data, EventRaiserImpl::EventPriority::EXTERNAL,
-                                                event.origin, event.sendid, event.invokeid, event.origintype,
+        eventRaiserImpl->raiseEventWithPriority(restoredEvent(event), EventRaiserImpl::EventPriority::EXTERNAL,
                                                 event.timestampNs);
     }
 

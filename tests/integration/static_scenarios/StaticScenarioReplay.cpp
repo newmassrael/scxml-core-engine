@@ -141,7 +141,7 @@ bool ChildRouters::deliver(const std::string &path, const std::string &event, co
     if (running == book_->running.end()) {
         return false;
     }
-    running->second->push_back(::SCE::Common::ForwardedEvent{event, data, "", "", "external", "", ""});
+    running->second->push_back(::SCE::Common::ForwardedEvent{event, data, std::nullopt, "", "", "external", ""});
     return true;
 }
 

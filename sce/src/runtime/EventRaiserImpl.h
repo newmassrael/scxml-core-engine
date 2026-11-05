@@ -78,12 +78,12 @@ public:
      * StateMachine reads this during processEvent() to populate _event fields.
      */
     struct EventContext {
-        std::string originSessionId;           // §scxml-5.10: _event.origin
-        std::string sendId;                    // §scxml-5.10: _event.sendid
-        std::string invokeId;                  // §scxml-5.10: _event.invokeid
-        std::string originType;                // §scxml-5.10: _event.origintype
-        std::string eventType;                 // §scxml-5.10: "internal"/"platform"/"external"
-        std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
+        std::optional<Core::EventOrigin> origin;  // _event.origin and _event.origintype, one pair
+        std::string sender;                       // the sending session's id, set by the SCXML processor only
+        std::string sendId;                       // §scxml-5.10: _event.sendid
+        std::string invokeId;                     // §scxml-5.10: _event.invokeid
+        std::string eventType;                    // §scxml-5.10: "internal"/"platform"/"external"
+        std::optional<ScriptValue> typedData;     // Engine-agnostic typed data (avoids JSON round-trip)
         // W3C SCXML Appendix D mainEventLoop: which of the two queues this
         // event was dequeued from. Distinct from `eventType`, which is the
         // 5.10.1 `_event.type` string and reads "platform" for the done and
@@ -93,10 +93,10 @@ public:
         bool isExternalQueue = false;
 
         void clear() {
-            originSessionId.clear();
+            origin.reset();
+            sender.clear();
             sendId.clear();
             invokeId.clear();
-            originType.clear();
             eventType.clear();
             typedData.reset();
             isExternalQueue = false;
@@ -126,10 +126,10 @@ public:
     struct QueuedEvent {
         std::string eventName;
         std::string eventData;
-        std::string origin;      // §scxml-5.10.1: _event.origin - Session that originated this event
-        std::string sendId;      // §scxml-5.10.1: _event.sendid - sendid from send element
-        std::string invokeId;    // §scxml-5.10.1: _event.invokeid - invokeid from invoked child process
-        std::string originType;  // §scxml-5.10.1: _event.origintype - event processor type
+        std::optional<Core::EventOrigin> origin;  // §scxml-5.10.1: _event.origin and _event.origintype
+        std::string sender;                       // the sending session's id (docs/adr/0090), empty for none
+        std::string sendId;                       // §scxml-5.10.1: _event.sendid - sendid from send element
+        std::string invokeId;  // §scxml-5.10.1: _event.invokeid - invokeid from invoked child process
         std::chrono::steady_clock::time_point timestamp;
         EventPriority priority;
         std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
@@ -144,11 +144,12 @@ public:
         std::uint64_t sequence;
 
         QueuedEvent(const std::string &name, const std::string &data, EventPriority prio = EventPriority::INTERNAL,
-                    const std::string &originSessionId = "", const std::string &sid = "", const std::string &iid = "",
-                    const std::string &otype = "",
+                    std::optional<Core::EventOrigin> eventOrigin = std::nullopt, std::string senderSessionId = "",
+                    const std::string &sid = "", const std::string &iid = "",
                     std::chrono::steady_clock::time_point ts = std::chrono::steady_clock::time_point(),
                     std::optional<ScriptValue> typed = std::nullopt)
-            : eventName(name), eventData(data), origin(originSessionId), sendId(sid), invokeId(iid), originType(otype),
+            : eventName(name), eventData(data), origin(std::move(eventOrigin)), sender(std::move(senderSessionId)),
+              sendId(sid), invokeId(iid),
               timestamp(ts.time_since_epoch().count() > 0 ? ts : std::chrono::steady_clock::now()), priority(prio),
               typedData(std::move(typed)), sequence(nextSequence()) {}
 
@@ -270,10 +271,11 @@ public:
      * Removes all events in the synchronous queue that originated from the specified session.
      * This is required when cancelling invokes to prevent processing events from cancelled children.
      *
-     * @param originSessionId Session ID whose events should be cancelled
+     * @param senderSessionId Session ID whose events should be cancelled, matched
+     *        against each queued event's sender (never its origin's address)
      * @return Number of events that were cancelled
      */
-    size_t cancelEventsForSession(const std::string &originSessionId) override;
+    size_t cancelEventsForSession(const std::string &senderSessionId) override;
 
     /**
      * @brief §scxml-3.12.2: `error.*` events refused because an error handler kept raising them
@@ -298,16 +300,12 @@ public:
 
     // IEventRaiser interface
     bool raiseEvent(const std::string &eventName, const std::string &eventData) override;
-    bool raiseEvent(const std::string &eventName, const std::string &eventData,
-                    const std::string &originSessionId) override;
     bool raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &sendId,
                     bool) override;
-    bool raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &originSessionId,
-                    const std::string &invokeId) override;
-    bool raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &originSessionId,
-                    const std::string &invokeId, const std::string &originType) override;
+    bool raiseEvent(const Core::EventMetadata &event) override;
     bool raiseInternalEvent(const std::string &eventName, const std::string &eventData) override;
     bool raiseExternalEvent(const std::string &eventName, const std::string &eventData) override;
+    bool raiseExternalEvent(const Core::EventMetadata &event) override;
     bool isReady() const override;
     void setImmediateMode(bool immediate) override;
 
@@ -403,18 +401,14 @@ public:
 
     /**
      * @brief Internal method to raise event with specific priority (for W3C SCXML compliance)
-     * @param eventName Name of the event to raise
-     * @param eventData Data associated with the event
+     * @param event The event with every field its processor wrote: name, data, sendid,
+     *        invokeid, the origin pair and the sender (docs/adr/0090), and typed data.
+     *        Its `type` is not read: `_event.type` is decided by the queue it is taken from.
      * @param priority Event priority (INTERNAL or EXTERNAL)
-     * @param originSessionId Session ID that originated this event (for finalize)
-     * @param sendId Send ID from failed send element (for error events)
-     * @param invokeId Invoke ID from invoked child process (test 338)
+     * @param timestampNs The instant a restored or delayed event was due, 0 for now
      * @return true if the event was successfully queued, false if the raiser is not ready
      */
-    bool raiseEventWithPriority(const std::string &eventName, const std::string &eventData, EventPriority priority,
-                                const std::string &originSessionId = "", const std::string &sendId = "",
-                                const std::string &invokeId = "", const std::string &originType = "",
-                                int64_t timestampNs = 0, std::optional<ScriptValue> typedData = std::nullopt);
+    bool raiseEventWithPriority(Core::EventMetadata event, EventPriority priority, int64_t timestampNs = 0);
 
 private:
     /**
@@ -460,11 +454,7 @@ private:
      * @return The inbox's answer when the raise was posted, or std::nullopt when it
      *         is to be queued here
      */
-    std::optional<bool> postFromAnotherThread(const std::string &eventName, const std::string &eventData,
-                                              EventPriority priority, const std::string &originSessionId,
-                                              const std::string &sendId, const std::string &invokeId,
-                                              const std::string &originType,
-                                              const std::optional<ScriptValue> &typedData);
+    std::optional<bool> postFromAnotherThread(const Core::EventMetadata &event, EventPriority priority);
 
     /**
      * @brief Have the machine apply what its inbox holds before this raiser puts
@@ -494,8 +484,12 @@ public:
     }
 
     // Convenience accessors (delegate to EventContext)
-    static const std::string &getCurrentOriginSessionId() {
-        return currentEventContext_.originSessionId;
+    static const std::optional<Core::EventOrigin> &getCurrentOrigin() {
+        return currentEventContext_.origin;
+    }
+
+    static const std::string &getCurrentSender() {
+        return currentEventContext_.sender;
     }
 
     static const std::string &getCurrentSendId() {
@@ -504,10 +498,6 @@ public:
 
     static const std::string &getCurrentInvokeId() {
         return currentEventContext_.invokeId;
-    }
-
-    static const std::string &getCurrentOriginType() {
-        return currentEventContext_.originType;
     }
 
     static const std::string &getCurrentEventType() {

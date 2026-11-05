@@ -530,13 +530,14 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 eventData = childSM->donedataAtFinal();
             }
 
-            bool success =
-                parentEventRaiser->raiseEvent(doneEvent,       // event name (done.invoke.*)
-                                              eventData,       // event data
-                                              childSessionId,  // origin session
-                                              invokeid,        // invoke ID
-                                              "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"  // origin type
-                );
+            // §scxml-6.4.3: done.invoke is a platform event, so it carries no
+            // origin (docs/adr/0090). The child's session id is its sender:
+            // the parent's queue choice, `<finalize>` and a cancelled
+            // invocation's filter find the child by it.
+            Core::EventMetadata done(doneEvent, eventData);
+            done.invokeId = invokeid;
+            done.sender = childSessionId;
+            bool success = parentEventRaiser->raiseEvent(done);
 
             if (success) {
                 SCE_LOG_INFO("SCXMLInvokeHandler: {} sent directly to parent's external queue (session: {}, matches "

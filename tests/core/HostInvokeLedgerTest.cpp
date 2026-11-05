@@ -106,7 +106,7 @@ TEST(HostInvokeLedger, AStartIsRecordedBeforeItsHandlerIsAsked) {
     std::optional<HostInvokeEnded> endedInside;
     invokers.handlers["svc"] = [&](const ::SCE::HostInvokeEvent &event) -> std::optional<::SCE::HostInvokeResponse> {
         if (event.start.has_value()) {
-            endedInside = ledger.endRun("svc", "job", event.start->token, false, "{}", "", "", deadlines);
+            endedInside = ledger.endRun("svc", "job", event.start->token, false, "{}", std::nullopt, deadlines);
         }
         return std::nullopt;
     };
@@ -147,12 +147,13 @@ TEST(HostInvokeLedger, AnImmediateCompletionEndsTheRunThroughTheOneDoor) {
     EXPECT_EQ(handed.starts[0].sessionId, "root.child") << "the request does not name the session that started it";
 
     const auto ended = ledger.endRun(completed->processorType, completed->invokeId, completed->token, false,
-                                     completed->doneData, "", "", deadlines);
+                                     completed->doneData, std::nullopt, deadlines);
     ASSERT_TRUE(ended.has_value()) << "the run the host completed at once was not running for its door";
     EXPECT_FALSE(ended->failed);
     EXPECT_EQ(ended->data, "{\"ok\":true}");
     EXPECT_EQ(ended->eventName(), "done.invoke.job");
-    EXPECT_FALSE(ledger.endRun("svc", "job", 0, false, "{}", "", "", deadlines).has_value()) << "a start ended twice";
+    EXPECT_FALSE(ledger.endRun("svc", "job", 0, false, "{}", std::nullopt, deadlines).has_value())
+        << "a start ended twice";
     EXPECT_FALSE(ledger.cancel(invokers, "svc", "job", deadlines)) << "an ended start was cancelled";
     EXPECT_TRUE(handed.cancels.empty());
 }
@@ -180,7 +181,7 @@ TEST(HostInvokeLedger, ARefusedStartNeverRan) {
     ASSERT_NE(notStarted, nullptr) << "a refusal was not reported as a start that did not happen";
     EXPECT_EQ(notStarted->reason, "not served here");
     EXPECT_TRUE(deadlines.armed.empty()) << "a refused start kept its deadline";
-    EXPECT_FALSE(ledger.endRun("svc", "job", 0, false, "{}", "", "", deadlines).has_value());
+    EXPECT_FALSE(ledger.endRun("svc", "job", 0, false, "{}", std::nullopt, deadlines).has_value());
     EXPECT_FALSE(ledger.cancel(invokers, "svc", "job", deadlines));
     EXPECT_TRUE(handed.cancels.empty()) << "a refused start was told to stop";
 }
@@ -223,7 +224,7 @@ TEST(HostInvokeLedger, ADeadlineIsArmedFromItsParamAndEndsTheRunWhenItComesDue) 
     EXPECT_EQ(HostInvokeTimedOut::data(), "\"deadline\"");
     ASSERT_EQ(handed.cancels.size(), 1u) << "the host was not told to stop a run whose deadline passed";
     EXPECT_EQ(handed.cancels[0].token, 0u);
-    EXPECT_FALSE(ledger.endRun("svc", "job", 0, false, "{}", "", "", deadlines).has_value())
+    EXPECT_FALSE(ledger.endRun("svc", "job", 0, false, "{}", std::nullopt, deadlines).has_value())
         << "a completion after the deadline was taken";
 }
 
@@ -271,14 +272,17 @@ TEST(HostInvokeLedger, ARestartMakesTheFirstRunsEndingStale) {
     ASSERT_EQ(handed.starts.size(), 2u);
     EXPECT_EQ(handed.starts[0].token, 0u);
     EXPECT_EQ(handed.starts[1].token, 1u);
-    EXPECT_FALSE(ledger.endRun("svc", "job", 0, true, "late", "", "", deadlines).has_value())
+    EXPECT_FALSE(ledger.endRun("svc", "job", 0, true, "late", std::nullopt, deadlines).has_value())
         << "the first run's ending was taken for the second";
-    const auto ended = ledger.endRun("svc", "job", 1, true, "\"no\"", "peer", "type", deadlines);
+    const auto ended =
+        ledger.endRun("svc", "job", 1, true, "\"no\"", ::SCE::Core::EventOrigin("type", "peer"), deadlines);
     ASSERT_TRUE(ended.has_value());
     EXPECT_TRUE(ended->failed);
     EXPECT_EQ(ended->eventName(), "error.invoke.job");
-    EXPECT_EQ(ended->origin, "peer");
-    EXPECT_EQ(ended->originType, "type");
+    // docs/adr/0090: the pair the host named reaches the event whole.
+    ASSERT_TRUE(ended->origin.has_value());
+    EXPECT_EQ(ended->origin->address, "peer");
+    EXPECT_EQ(ended->origin->processor, "type");
 }
 
 // What a restore re-armed starts at the next macrostep: one whose deadline passed

@@ -289,8 +289,7 @@ TEST(ASavedTreeHoldsEverySessionWhereItStood, AChildsEndingPostedFromAnotherThre
                                                                                   /*token=*/request.token,
                                                                                   /*done=*/done,
                                                                                   /*data=*/data,
-                                                                                  /*origin=*/"",
-                                                                                  /*originType=*/""}});
+                                                                                  /*origin=*/std::nullopt}});
         });
         host.join();
         return taken;

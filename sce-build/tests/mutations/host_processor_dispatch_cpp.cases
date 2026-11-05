@@ -57,10 +57,12 @@ PY
 mutation_case "the handler's reply never becomes an event" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
      """            if (!reply.eventName.empty()) {
-                raiseExternal(reply.eventName, reply.eventData);
+                // docs/adr/0090, section 2: the reply carries the pair the host
+                // named for it, or none, as on the Interpreter.
+                raiseExternal(reply.eventName, reply.eventData, reply.origin);
             }""",
      """            if (false && !reply.eventName.empty()) {
-                raiseExternal(reply.eventName, reply.eventData);
+                raiseExternal(reply.eventName, reply.eventData, reply.origin);
             }""")
 PY
 

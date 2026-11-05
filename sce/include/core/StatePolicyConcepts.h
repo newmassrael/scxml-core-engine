@@ -191,6 +191,16 @@ template <typename P, typename = void> struct HasSessionIdTextTrait : std::false
 template <typename P>
 struct HasSessionIdTextTrait<P, std::void_t<decltype(std::declval<const P &>().sessionIdText())>> : std::true_type {};
 
+/// The machine `M` — a parent a child session holds a pointer to — answers the id of its
+/// session through its policy. A host-started machine's placeholder parent
+/// (`Common::NoParent`) has no session, and a parent that holds no session id has none to
+/// give; for both a child cannot be addressed back by its parent's location.
+template <typename M, typename = void> struct HasMachineSessionIdTrait : std::false_type {};
+
+template <typename M>
+struct HasMachineSessionIdTrait<M, std::void_t<decltype(std::declval<M &>().getPolicy().sessionIdText())>>
+    : std::true_type {};
+
 /// The policy runs child sessions that a host's invokers serve (docs/adr/0045): it
 /// hands the tree to each (`joinTreeInChildren`), and finds the session a direct
 /// owner-thread ending of a host-run invocation is for among them. `Ending` is

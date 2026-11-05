@@ -270,15 +270,17 @@ public:
         /// the queue can index it without the complete type.
         uint64_t hostInvokeDeadlineToken = 0;
         /**
-         * @brief §scxml-C-1: the sending session, which `_event.origin`
-         *        publishes when the event arrives
+         * @brief The id of the sending session, whose published location is
+         *        `_event.origin` when the event arrives
          *
          * A delayed send is the same event as an immediate one, only later, so
-         * waiting must not cost it the address a reply goes back to. Empty for
-         * an engine that carries origin some other way (the Interpreter's
-         * target object) and for entries that are not an event.
+         * waiting must not cost it the address a reply goes back to. The engine
+         * writes the SCXML processor's pair from it when it delivers the event
+         * (docs/adr/0090). Empty for an engine that carries origin some other
+         * way (the Interpreter's target object) and for entries that are not an
+         * event.
          */
-        std::string origin;
+        std::string sender;
         /**
          * @brief §scxml-6.2: the target a delayed send resolved when it was
          *        made, or null for this session's own external queue
@@ -321,14 +323,14 @@ public:
      * @param sendId Unique identifier for cancellation
      * @param eventData Additional event data
      * @param hostSend The host-served send this entry performs, or null
-     * @param origin The sending session (§scxml-C-1), or empty
+     * @param senderSessionId The sending session's id (§scxml-C-1), or empty
      * @param route Where the event goes when due (§scxml-6.2), or null for
      *              this session's own external queue
      * @return The sendId assigned
      */
     std::string schedule(EventType event, TimePoint fireTime, const std::string &sendId,
                          EventDataType eventData = EventDataType{},
-                         std::shared_ptr<const HostSendRequest> hostSend = nullptr, std::string origin = {},
+                         std::shared_ptr<const HostSendRequest> hostSend = nullptr, std::string senderSessionId = {},
                          std::shared_ptr<const ScheduledRoute> route = nullptr) {
         std::string actualSendId = sendId.empty() ? generateUniqueSendId() : sendId;
         // An id the parser numbered (`__send_<n>`, docs/adr/0045) names an element, not a
@@ -345,7 +347,7 @@ public:
         uint64_t seqNum = sequenceCounter_++;
         auto entry = std::make_shared<ScheduledEntry>(std::move(event), fireTime, actualSendId, std::move(eventData),
                                                       seqNum, std::move(hostSend));
-        entry->origin = std::move(origin);
+        entry->sender = std::move(senderSessionId);
         entry->route = std::move(route);
 
         OrderKey key{fireTime, seqNum};
@@ -462,8 +464,8 @@ public:
      *        (§scxml-C-1) it was scheduled with
      */
     bool popReadyEvent(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
-                       std::string &outOrigin) {
-        return popReadyEventImpl(now, outEvent, outEventData, outSendId, nullptr, nullptr, &outOrigin);
+                       std::string &outSender) {
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId, nullptr, nullptr, &outSender);
     }
 
     /**
@@ -498,9 +500,9 @@ public:
      *        scheduled with
      */
     bool popReadyAct(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
-                     std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::string &outSender, std::shared_ptr<const HostSendRequest> &outHostSend,
                      std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
-        return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline, &outOrigin);
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline, &outSender);
     }
 
     /**
@@ -508,10 +510,10 @@ public:
      *        made (§scxml-6.2) — null for this session's own external queue
      */
     bool popReadyAct(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
-                     std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::string &outSender, std::shared_ptr<const HostSendRequest> &outHostSend,
                      std::shared_ptr<const HostInvokeDeadline> &outDeadline,
                      std::shared_ptr<const ScheduledRoute> &outRoute) {
-        return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline, &outOrigin,
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline, &outSender,
                                  &outRoute);
     }
 
@@ -607,7 +609,7 @@ private:
     bool popReadyEventImpl(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
                            std::shared_ptr<const HostSendRequest> *outHostSend = nullptr,
                            std::shared_ptr<const HostInvokeDeadline> *outDeadline = nullptr,
-                           std::string *outOrigin = nullptr,
+                           std::string *outSender = nullptr,
                            std::shared_ptr<const ScheduledRoute> *outRoute = nullptr) {
         if (queue_.empty() || queue_.begin()->first.fireTime > now) {
             return false;
@@ -617,8 +619,8 @@ private:
         outEvent = std::move(it->second->event);
         outEventData = std::move(it->second->eventData);
         outSendId = it->second->sendId;
-        if (outOrigin != nullptr) {
-            *outOrigin = std::move(it->second->origin);
+        if (outSender != nullptr) {
+            *outSender = std::move(it->second->sender);
         }
         if (outRoute != nullptr) {
             *outRoute = std::move(it->second->route);
@@ -670,8 +672,8 @@ public:
      * statement's.
      */
     std::string scheduleEventAt(EventType event, uint64_t fireTimeMs, const std::string &sendId = "",
-                                const std::string &eventData = "", const std::string &origin = "") {
-        return core_.schedule(std::move(event), fireTimeMs, sendId, eventData, nullptr, origin);
+                                const std::string &eventData = "", const std::string &senderSessionId = "") {
+        return core_.schedule(std::move(event), fireTimeMs, sendId, eventData, nullptr, senderSessionId);
     }
 
     /**
@@ -684,8 +686,9 @@ public:
      * is this session's internal queue.
      */
     std::string scheduleRoutedAt(EventType event, uint64_t fireTimeMs, const std::string &sendId,
-                                 const std::string &eventData, const std::string &origin, ScheduledRoute route) {
-        return core_.schedule(std::move(event), fireTimeMs, sendId, eventData, nullptr, origin,
+                                 const std::string &eventData, const std::string &senderSessionId,
+                                 ScheduledRoute route) {
+        return core_.schedule(std::move(event), fireTimeMs, sendId, eventData, nullptr, senderSessionId,
                               std::make_shared<const ScheduledRoute>(std::move(route)));
     }
 
@@ -742,8 +745,8 @@ public:
      *        its sendid (§scxml-5.10.1) and its origin (§scxml-C-1)
      */
     bool popReadyEvent(uint64_t nowMs, EventType &outEvent, std::string &outEventData, std::string &outSendId,
-                       std::string &outOrigin) {
-        return core_.popReadyEvent(nowMs, outEvent, outEventData, outSendId, outOrigin);
+                       std::string &outSender) {
+        return core_.popReadyEvent(nowMs, outEvent, outEventData, outSendId, outSender);
     }
 
     /**
@@ -770,9 +773,9 @@ public:
      *        with — its sendid (§scxml-5.10.1) and its origin (§scxml-C-1)
      */
     bool popReadyAct(uint64_t nowMs, EventType &outEvent, std::string &outEventData, std::string &outSendId,
-                     std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::string &outSender, std::shared_ptr<const HostSendRequest> &outHostSend,
                      std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
-        return core_.popReadyAct(nowMs, outEvent, outEventData, outSendId, outOrigin, outHostSend, outDeadline);
+        return core_.popReadyAct(nowMs, outEvent, outEventData, outSendId, outSender, outHostSend, outDeadline);
     }
 
     /**
@@ -780,10 +783,10 @@ public:
      *        (§scxml-6.2) — null for this session's own external queue
      */
     bool popReadyAct(uint64_t nowMs, EventType &outEvent, std::string &outEventData, std::string &outSendId,
-                     std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::string &outSender, std::shared_ptr<const HostSendRequest> &outHostSend,
                      std::shared_ptr<const HostInvokeDeadline> &outDeadline,
                      std::shared_ptr<const ScheduledRoute> &outRoute) {
-        return core_.popReadyAct(nowMs, outEvent, outEventData, outSendId, outOrigin, outHostSend, outDeadline,
+        return core_.popReadyAct(nowMs, outEvent, outEventData, outSendId, outSender, outHostSend, outDeadline,
                                  outRoute);
     }
 

@@ -166,7 +166,7 @@
                 // answers with wire-15 `InvokeStarted` (→ onInvokeStarted
                 // stashes the session URI), events during the child's life
                 // arrive as wire-16 `ChildEvent` (→ raiseExternal with
-                // `_event.origin = child_session_id` per §9.6.3), and final
+                // the child_session_id as the event's sender), and final
                 // completion returns via wire-18 `InvokeDone` (→ onInvokeDone
                 // raises `done.invoke.<id>`). Transport-absent deployments
                 // (no matching peer binding in deploy.yaml) fall through to

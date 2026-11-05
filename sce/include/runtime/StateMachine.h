@@ -305,14 +305,16 @@ public:
      *
      * @param eventName Name of the event to process
      * @param eventData Optional event data (JSON string)
-     * @param originSessionId Session ID that originated this event (for finalize)
+     * @param origin `_event.origin` and `_event.origintype` as the one pair the
+     *        delivering processor wrote, or none (docs/adr/0090)
+     * @param sender Session ID that sent this event (for finalize), empty for none
      * @param sendId Send ID from failed send element (for error events)
      * @param invokeId Invoke ID from invoked child process (test 338)
      * @return Transition result
      */
     TransitionResult processEvent(const std::string &eventName, const std::string &eventData,
-                                  const std::string &originSessionId, const std::string &sendId = "",
-                                  const std::string &invokeId = "", const std::string &originType = "");
+                                  const std::optional<Core::EventOrigin> &origin, const std::string &sender,
+                                  const std::string &sendId = "", const std::string &invokeId = "");
 
     /**
      * @brief Get current state ID
@@ -785,20 +787,22 @@ public:
      * the machine's inbox, where the token is checked when the thread running the
      * machine applies it.
      *
+     * @p origin is the event's `_event.origin` and `_event.origintype` as one pair
+     * the host names in its own terms (its declared type and the address a
+     * `<send>` of that type reaches the party at), or none (docs/adr/0090).
+     *
      * @return false, raising nothing, for a stale token or an invocation that is
      *         over; posted, whether the inbox took the ending
      */
     bool completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                            const std::string &doneData, const std::string &origin = "",
-                            const std::string &originType = "");
+                            const std::string &doneData, const std::optional<Core::EventOrigin> &origin = std::nullopt);
 
     /**
      * @brief As `completeHostInvoke`, for a failure: `error.invoke.<invokeId>` with
      *        @p errorData
      */
     bool failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                        const std::string &errorData, const std::string &origin = "",
-                        const std::string &originType = "");
+                        const std::string &errorData, const std::optional<Core::EventOrigin> &origin = std::nullopt);
 
     /**
      * @brief End a host-run invocation of the session @p sessionId names, this one
@@ -868,7 +872,7 @@ public:
      *        `donedataAtFinal()`. Skipping the JSON round-trip when the
      *        parent is in-process would require an impl-specific
      *        `raiseEventWithPriority` path; the public `IEventRaiser`
-     *        5-arg `raiseEvent` used by `SCXMLInvokeHandler` re-hydrates
+     *        `raiseEvent(EventMetadata)` used by `SCXMLInvokeHandler` re-hydrates
      *        via `EventDataHelper::jsonStringToScriptValue` inside
      *        `EventRaiserImpl::raiseEventWithPriority`, so callers that
      *        use the interface can rely on `donedataAtFinal()` alone;
@@ -914,9 +918,13 @@ public:
      *
      * @param eventName Name of the event
      * @param eventData Optional event data (JSON string)
+     * @param origin `_event.origin` and `_event.origintype` as the one pair the
+     *        host names in its own terms, or none, which reads both fields
+     *        empty (docs/adr/0090)
      * @return true if event was queued successfully, false if no EventRaiser available
      */
-    bool raiseExternalEvent(const std::string &eventName, const std::string &eventData);
+    bool raiseExternalEvent(const std::string &eventName, const std::string &eventData,
+                            const std::optional<Core::EventOrigin> &origin = std::nullopt);
 
     /**
      * @brief How many inputs this machine's inbox refused: posted from another
@@ -1199,7 +1207,6 @@ private:
     std::string basicHttpAccessUri_;  // Inbound BasicHTTP endpoint, empty when none is deployed
     std::string lastLoadError_;       // Parser error detail from loadSCXMLFromString
     std::string currentEventData_;
-    std::string currentOriginSessionId_;  // W3C SCXML Test 252: Track origin for cancelled invoke filtering
     bool jsEnvironmentReady_ = false;
     /// A run has used the script session and it has not been released yet:
     /// it outlives the run's end so its datamodel stays readable, and goes
@@ -1289,14 +1296,14 @@ private:
     /// The one body behind every ending of a host-run invocation: the ledger's
     /// token check, and the `done.invoke` or `error.invoke` on the external queue.
     bool endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token, bool failed,
-                       const std::string &data, const std::string &origin, const std::string &originType);
+                       const std::string &data, const std::optional<Core::EventOrigin> &origin);
     /// Do what a start or a deadline of the ledger left this engine to do.
     void raiseHostInvokeReport(const Core::HostInvokeReport &report);
     /// The deadline of a start came due on the scheduler.
     void expireHostInvoke(const HostInvokeDeadline &deadline);
     /// Put one event of a host-run invocation on the external queue.
     void raiseHostInvokeEvent(const std::string &name, const std::string &data, const std::string &invokeId,
-                              const std::string &origin, const std::string &originType);
+                              const std::optional<Core::EventOrigin> &origin);
 
     // W3C SCXML: Thread safety for StateHierarchyManager access from JSEngine worker thread
     mutable std::mutex hierarchyManagerMutex_;  // Protects hierarchyManager_ read access
@@ -1334,7 +1341,7 @@ private:
     bool takeNextExternalEvent();
     TransitionResult processTakenEvent(const Core::EventMetadata &event, bool fromExternalQueue);
     void bindCurrentEvent(const Core::EventMetadata &event);
-    void applyFinalize(const std::string &originSessionId, const std::string &eventName);
+    void applyFinalize(const std::string &senderSessionId, const std::string &eventName);
     void autoforward(const Core::EventMetadata &event);
     void finishAtTopLevelFinal();
     TransitionResult refuseUnseen(const std::string &eventName);

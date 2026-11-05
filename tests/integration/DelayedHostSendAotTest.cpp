@@ -71,7 +71,7 @@ protected:
     void registerAnsweringHandler(Machine &sm) {
         sm.registerEventProcessor(DECLARED_TYPE, [this](const SCE::HostSendRequest &) {
             calls.push_back(clock->elapsedMs());
-            return std::vector<SCE::HostSendResponse>{{"turn.done", ""}};
+            return std::vector<SCE::HostSendResponse>{{"turn.done", "", std::nullopt}};
         });
     }
 

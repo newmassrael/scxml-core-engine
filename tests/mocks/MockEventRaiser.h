@@ -34,16 +34,12 @@ public:
 
     // IEventRaiser interface
     bool raiseEvent(const std::string &eventName, const std::string &eventData = "") override;
-    bool raiseEvent(const std::string &eventName, const std::string &eventData,
-                    const std::string &originSessionId) override;
     bool raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &sendId,
                     bool unused) override;
-    bool raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &originSessionId,
-                    const std::string &invokeId) override;
-    bool raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &originSessionId,
-                    const std::string &invokeId, const std::string &originType) override;
+    bool raiseEvent(const Core::EventMetadata &event) override;
     bool raiseInternalEvent(const std::string &eventName, const std::string &eventData) override;
     bool raiseExternalEvent(const std::string &eventName, const std::string &eventData) override;
+    bool raiseExternalEvent(const Core::EventMetadata &event) override;
     bool isReady() const override;
     void setImmediateMode(bool immediate) override;
     bool isImmediateModeEnabled() const override;
@@ -60,14 +56,14 @@ public:
 
     std::shared_ptr<class IEventScheduler> getScheduler() const override;
 
-    size_t cancelEventsForSession(const std::string &originSessionId) override;
+    size_t cancelEventsForSession(const std::string &senderSessionId) override;
 
     // Test inspection methods
     const std::vector<std::pair<std::string, std::string>> &getRaisedEvents() const;
 
-    /// Origin recorded for each raised event, index-aligned with
-    /// getRaisedEvents(). Empty string for the overloads that carry no
-    /// origin. Recorded because `_event.origin` is a W3C-specified VALUE
+    /// `_event.origin` recorded for each raised event — the address of the
+    /// pair it carries — index-aligned with getRaisedEvents(). Empty string
+    /// for an event with no origin. Recorded because `_event.origin` is a W3C-specified VALUE
     /// (§scxml-C-1 fixes it to the sender's `_ioprocessors` location), not
     /// merely routing bookkeeping — a mock that discards it can only assert
     /// which queue an event reached, never what the receiver would read.

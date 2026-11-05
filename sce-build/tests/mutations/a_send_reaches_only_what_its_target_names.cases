@@ -50,17 +50,17 @@ PY
 
 mutation_case "the C++ AOT sends an invoked child no payload" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     "    {{ slot }}->raiseExternal({{ event_name_cpp }}, eventData);",
-     "    {{ slot }}->raiseExternal({{ event_name_cpp }}, std::string());")
+     "    {{ slot }}->raiseExternal(engine.forwardedByASession({{ event_name_cpp }}, eventData, \"\", sessionIdText()));",
+     "    {{ slot }}->raiseExternal(engine.forwardedByASession({{ event_name_cpp }}, std::string(), \"\", sessionIdText()));")
 PY
 
 # ── C++ AOT: a target naming no invocation does not end the block ──
 
 mutation_case "the C++ AOT runs the rest of the block after a target naming no invocation" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", "", sendId));
+     """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", std::nullopt, sendId));
 {{ block_end or 'return;' }}""",
-     """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", "", sendId));""")
+     """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", std::nullopt, sendId));""")
 PY
 
 # ── C++ AOT: any session id reads as this one ──────────────────────

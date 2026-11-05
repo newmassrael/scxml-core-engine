@@ -17,6 +17,7 @@
 
 #include "SCXMLTypes.h"
 #include "common/EventDataHelper.h"
+#include "core/EventOrigin.h"
 #include "core/InvokeHelper.h"
 #include "core/StatePolicyConcepts.h"
 #include <any>
@@ -59,12 +60,6 @@ template <typename P, typename = void> struct has_pendingEventType : std::false_
 
 template <typename P>
 struct has_pendingEventType<P, std::void_t<decltype(std::declval<P>().pendingEventType_)>> : std::true_type {};
-
-template <typename P, typename = void> struct has_pendingEventOriginType : std::false_type {};
-
-template <typename P>
-struct has_pendingEventOriginType<P, std::void_t<decltype(std::declval<P>().pendingEventOriginType_)>>
-    : std::true_type {};
 
 template <typename P, typename = void> struct has_pendingEventInvokeId : std::false_type {};
 
@@ -129,18 +124,18 @@ struct has_populateTypedPayload<
  * auto event = std::make_shared<Event>("foo", "external");
  * EventMetadataHelper::setEventMetadata(
  *     *event,
- *     "sm_session_123",           // origin
- *     "http://www.w3.org/...",    // originType
- *     "send_456",                  // sendId
- *     "invoke_789"                 // invokeId
+ *     IOProcessorHelper::scxmlOrigin("sm_session_123"),  // origin and origintype
+ *     "send_456",                                        // sendId
+ *     "invoke_789"                                       // invokeId
  * );
  * @endcode
  *
  * @example AOT Engine Usage
  * @code
- * EventWithMetadata eventWrapper(Event::Foo, "data", "origin_session", "send_id", "external");
+ * EventWithMetadata eventWrapper(Event::Foo, "data", IOProcessorHelper::scxmlOrigin("origin_session"),
+ *                                "send_id", "external");
  * EventMetadataHelper::populatePolicyFromMetadata(policy_, eventWrapper);
- * // Now policy_.pendingEventOrigin_ = "origin_session", etc.
+ * // Now policy_.pendingEventOrigin_ holds that pair, etc.
  * @endcode
  */
 class EventMetadataHelper {
@@ -152,25 +147,21 @@ public:
      * Follows §scxml-5.10.1 specification for event metadata structure.
      *
      * @param event Event object to populate (must be valid reference)
-     * @param origin §scxml-5.10.1: URL for bidirectional communication (test336)
-     * @param originType §scxml-5.10.1: Event processor type (e.g.,
-     * "http://www.w3.org/TR/scxml/#SCXMLEventProcessor")
+     * @param origin §scxml-5.10.1: the reply address the delivering processor
+     *        wrote (test336) — `_event.origin` and `_event.origintype` as one
+     *        pair (docs/adr/0090), or none, which leaves both fields empty
      * @param sendId §scxml-5.10.1: Send action identifier (test332)
      * @param invokeId §scxml-5.10.1: Invoke element identifier
      *
      * @note Empty strings are allowed for optional fields
      * @note This is a Single Source of Truth for metadata setting across engines
      */
-    static void setEventMetadata(Event &event, const std::string &origin = "", const std::string &originType = "",
+    static void setEventMetadata(Event &event, const std::optional<Core::EventOrigin> &origin = std::nullopt,
                                  const std::string &sendId = "", const std::string &invokeId = "") {
-        // §scxml-5.10.1: Set origin if provided (test336)
-        if (!origin.empty()) {
-            event.setOrigin(origin);
-        }
-
-        // §scxml-5.10.1: Set originType if provided
-        if (!originType.empty()) {
-            event.setOriginType(originType);
+        // §scxml-5.10.1: both fields from the one pair, so they cannot disagree
+        if (origin.has_value()) {
+            event.setOrigin(origin->address);
+            event.setOriginType(origin->processor);
         }
 
         // §scxml-5.10.1: Set sendId if provided (test332)
@@ -223,7 +214,8 @@ public:
             policy.pendingEventData_ = metadata.data;
         }
 
-        // §scxml-5.10.1: Set pending event origin for _event.origin access (test336)
+        // §scxml-5.10.1: Set pending event origin for _event.origin and
+        // _event.origintype access (test336), the one pair the event carries
         if constexpr (detail::has_pendingEventOrigin<Policy>::value) {
             policy.pendingEventOrigin_ = metadata.origin;
         }
@@ -236,11 +228,6 @@ public:
         // §scxml-5.10.1: Set pending event type for _event.type access (test331)
         if constexpr (detail::has_pendingEventType<Policy>::value) {
             policy.pendingEventType_ = metadata.type;
-        }
-
-        // §scxml-5.10.1: Set pending event originType for _event.origintype access
-        if constexpr (detail::has_pendingEventOriginType<Policy>::value) {
-            policy.pendingEventOriginType_ = metadata.originType;
         }
 
         // §scxml-5.10.1: Set pending event invokeId for _event.invokeid access
@@ -307,14 +294,9 @@ public:
             policy.pendingEventSendId_.clear();
         }
 
-        // §scxml-5.10.1: Clear event origin for next cycle (test336)
+        // §scxml-5.10.1: Clear event origin and origintype for next cycle (test336)
         if constexpr (detail::has_pendingEventOrigin<Policy>::value) {
-            policy.pendingEventOrigin_.clear();
-        }
-
-        // §scxml-5.10.1: Clear event originType for next cycle
-        if constexpr (detail::has_pendingEventOriginType<Policy>::value) {
-            policy.pendingEventOriginType_.clear();
+            policy.pendingEventOrigin_.reset();
         }
 
         // §scxml-5.10.1: Clear event invokeId for next cycle
@@ -375,20 +357,19 @@ public:
      * @code
      * // In InvokeExecutor.cpp - Interpreter engine
      * auto event = std::make_shared<Event>("done.invoke.foo", "platform");
-     * EventMetadataHelper::setEventMetadata(*event, "", "", "", "foo");
+     * EventMetadataHelper::setEventMetadata(*event, std::nullopt, "", "foo");
      * raiseExternal(event);
      * @endcode
      */
     template <typename EventEnum, typename MetadataType>
     static MetadataType createDoneInvokeEvent(EventEnum event, const std::string &invokeId) {
-        MetadataType metadata(event,     // event - §scxml-6.4.3: done.invoke or done.invoke.id
-                              "",        // data - empty (no donedata from child)
-                              "",        // origin - empty (child completion doesn't specify origin)
-                              "",        // sendId - empty (not a send event)
-                              "",        // type - empty (internal event, not external)
-                              "",        // originType - empty (not external event)
-                              invokeId,  // invokeId - §scxml-5.10.1: _event.invokeid field
-                              ""         // target - empty (not a send event)
+        MetadataType metadata(event,         // event - §scxml-6.4.3: done.invoke or done.invoke.id
+                              "",            // data - empty (no donedata from child)
+                              std::nullopt,  // origin - none: a platform event (§scxml-5.10.1)
+                              "",            // sendId - empty (not a send event)
+                              "",            // type - empty (internal event, not external)
+                              invokeId,      // invokeId - §scxml-5.10.1: _event.invokeid field
+                              ""             // target - empty (not a send event)
         );
         // §scxml-5.10: `_event.name` is the specific `done.invoke.<id>`, whichever
         // descriptor of the document (`done.invoke.<id>`, `done.invoke`, `done`) the
@@ -424,14 +405,13 @@ public:
     template <typename EventEnum, typename MetadataType>
     static MetadataType createDoneInvokeEvent(EventEnum event, const std::string &invokeId, const std::string &data,
                                               std::optional<ScriptValue> typedData = std::nullopt) {
-        MetadataType metadata(event,     // event - §scxml-6.4.3
-                              data,      // data - §scxml-5.5 donedata payload
-                              "",        // origin
-                              "",        // sendId
-                              "",        // type
-                              "",        // originType
-                              invokeId,  // invokeId - §scxml-5.10.1
-                              ""         // target
+        MetadataType metadata(event,         // event - §scxml-6.4.3
+                              data,          // data - §scxml-5.5 donedata payload
+                              std::nullopt,  // origin - none: a platform event
+                              "",            // sendId
+                              "",            // type
+                              invokeId,      // invokeId - §scxml-5.10.1
+                              ""             // target
         );
         metadata.typedData = std::move(typedData);
         // §scxml-5.10: the specific name, as in the overload above.

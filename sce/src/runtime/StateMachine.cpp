@@ -363,7 +363,7 @@ void StateMachine::applyInboxInput(InboxInput &&input) {
     if (const auto *ended = std::get_if<InboxHostInvokeEnding>(&input)) {
         const HostInvokeEnding &ending = ended->ending;
         (void)endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
-                            ending.origin, ending.originType);
+                            ending.origin);
         return;
     }
     if (const auto *due = std::get_if<InboxHostInvokeDeadline>(&input)) {
@@ -846,8 +846,11 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
 StateMachine::TransitionResult StateMachine::processDispatchedEvent(const std::string &eventName,
                                                                     const std::string &eventData) {
-    // §scxml-5.10: Check if there's an origin session ID from EventRaiser thread-local storage
-    std::string originSessionId = EventRaiserImpl::getCurrentOriginSessionId();
+    // §scxml-5.10: the origin pair and the sender from EventRaiser thread-local
+    // storage (test 253, 331, 336, 352, 372) — the sender is empty for an event
+    // no session sent
+    const std::optional<Core::EventOrigin> origin = EventRaiserImpl::getCurrentOrigin();
+    const std::string sender = EventRaiserImpl::getCurrentSender();
 
     // §scxml-5.10: Check if there's a send ID from EventRaiser thread-local storage (for error events)
     std::string sendId = EventRaiserImpl::getCurrentSendId();
@@ -855,21 +858,18 @@ StateMachine::TransitionResult StateMachine::processDispatchedEvent(const std::s
     // §scxml-5.10: Check if there's an invoke ID from EventRaiser thread-local storage (test 338)
     std::string invokeId = EventRaiserImpl::getCurrentInvokeId();
 
-    // §scxml-5.10: Check if there's an origin type from EventRaiser thread-local storage (test 253, 331, 352, 372)
-    std::string originType = EventRaiserImpl::getCurrentOriginType();
-
-    // Delegate to overload with originSessionId (may be empty for non-invoke events)
-    return processEvent(eventName, eventData, originSessionId, sendId, invokeId, originType);
+    return processEvent(eventName, eventData, origin, sender, sendId, invokeId);
 }
 
 StateMachine::TransitionResult StateMachine::processEvent(const std::string &eventName, const std::string &eventData,
-                                                          const std::string &originSessionId, const std::string &sendId,
-                                                          const std::string &invokeId, const std::string &originType) {
+                                                          const std::optional<Core::EventOrigin> &origin,
+                                                          const std::string &sender, const std::string &sendId,
+                                                          const std::string &invokeId) {
     // §scxml-5.10: Get event type from EventRaiser thread-local storage (test 331)
     const std::string eventType = EventRaiserImpl::getCurrentEventType();
     const bool fromExternalQueue = EventRaiserImpl::isCurrentEventFromExternalQueue();
 
-    EventMetadata event(eventName, eventData, eventType, sendId, invokeId, originType, originSessionId);
+    EventMetadata event(eventName, eventData, eventType, sendId, invokeId, origin, sender);
     // §scxml-5.10: Carry typed event data from EventRaiser thread-local (avoids JSON round-trip)
     event.typedData = EventRaiserImpl::getCurrentTypedData();
 
@@ -941,8 +941,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         lastEnabledTransitions_.clear();
         lastOptimalTransitions_.clear();
 
-        SCE_LOG_DEBUG("StateMachine: Processing event: '{}' with data: '{}' in session: '{}', originSessionId: '{}'",
-                      eventName, eventData, sessionId_, originSessionId);
+        SCE_LOG_DEBUG("StateMachine: Processing event: '{}' with data: '{}' in session: '{}', sender: '{}'", eventName,
+                      eventData, sessionId_, sender);
 
         // docs/adr/0084: what other threads posted before this call, and the
         // machine's last drive left for this one, is applied first, in the order the
@@ -1018,14 +1018,13 @@ StateMachine::TransitionResult StateMachine::holdDelivery(const EventMetadata &e
 
 StateMachine::TransitionResult StateMachine::processTakenEvent(const EventMetadata &event, bool fromExternalQueue) {
     stats_.totalEvents++;
-    currentOriginSessionId_ = event.originSessionId;
 
     // W3C SCXML Test 252: an invoked session that was cancelled generates no
-    // more events for its parent
-    if (invokeExecutor_ && !event.originSessionId.empty() &&
-        invokeExecutor_->shouldFilterCancelledInvokeEvent(event.originSessionId)) {
+    // more events for its parent. The child is found by the event's sender,
+    // never by its origin's address (docs/adr/0090).
+    if (invokeExecutor_ && !event.sender.empty() && invokeExecutor_->shouldFilterCancelledInvokeEvent(event.sender)) {
         SCE_LOG_DEBUG("StateMachine: Filtering event '{}' from cancelled invoke child session: {}", event.name,
-                      event.originSessionId);
+                      event.sender);
         return TransitionResult(false, getCurrentState(), getCurrentState(), event.name);
     }
 
@@ -1036,8 +1035,8 @@ StateMachine::TransitionResult StateMachine::processTakenEvent(const EventMetada
     // §scxml-D-mainEventLoop: an external event's preliminary step — the
     // `<finalize>` of the invoke it came from, then the autoforward copy —
     // runs before transitions are selected for it.
-    if (!event.originSessionId.empty()) {
-        applyFinalize(event.originSessionId, event.name);
+    if (!event.sender.empty()) {
+        applyFinalize(event.sender, event.name);
     }
     if (fromExternalQueue) {
         autoforward(event);
@@ -1083,7 +1082,7 @@ void StateMachine::bindCurrentEvent(const EventMetadata &event) {
     }
 }
 
-void StateMachine::applyFinalize(const std::string &originSessionId, const std::string &eventName) {
+void StateMachine::applyFinalize(const std::string &senderSessionId, const std::string &eventName) {
     // W3C SCXML 1.0 Section 6.4: Execute finalize handler before processing events from invoked children
     // According to W3C SCXML: "finalize markup runs BEFORE the event is processed"
     // The finalize handler is executed when an event arrives from an invoked child
@@ -1092,8 +1091,8 @@ void StateMachine::applyFinalize(const std::string &originSessionId, const std::
         return;
     }
 
-    // W3C SCXML compliance: Use originSessionId to find the exact child that sent this event
-    std::string finalizeScript = invokeExecutor_->getFinalizeScriptForChildSession(originSessionId);
+    // W3C SCXML compliance: the event's sender is the exact child that sent it
+    std::string finalizeScript = invokeExecutor_->getFinalizeScriptForChildSession(senderSessionId);
     if (finalizeScript.empty()) {
         return;
     }
@@ -1182,11 +1181,13 @@ void StateMachine::autoforward(const EventMetadata &event) {
     // The copy a child receives is an external event of its own, with this
     // event's metadata — the context a raiser would have established had it
     // delivered the copy.
+    // docs/adr/0090: the copy carries the origin and the sender of the event it
+    // forwards, unchanged.
     EventRaiserImpl::EventContext forwarded;
-    forwarded.originSessionId = event.originSessionId;
+    forwarded.origin = event.origin;
+    forwarded.sender = event.sender;
     forwarded.sendId = event.sendId;
     forwarded.invokeId = event.invokeId;
-    forwarded.originType = event.originType;
     forwarded.eventType = event.type;
     forwarded.typedData = event.typedData;
     forwarded.isExternalQueue = true;
@@ -1195,8 +1196,8 @@ void StateMachine::autoforward(const EventMetadata &event) {
     for (const auto &childStateMachine : autoForwardSessions) {
         if (childStateMachine && childStateMachine->isRunning()) {
             SCE_LOG_DEBUG("W3C SCXML 6.4: Auto-forwarding event '{}' to child session", event.name);
-            childStateMachine->processEvent(event.name, event.data, event.originSessionId, event.sendId, event.invokeId,
-                                            event.originType);
+            childStateMachine->processEvent(event.name, event.data, event.origin, event.sender, event.sendId,
+                                            event.invokeId);
         }
     }
 }
@@ -1578,8 +1579,9 @@ void StateMachine::raiseInternal(const std::string &eventName, const std::string
     // §scxml-5.5: typed data rides the engine-agnostic ScriptValue pipeline
     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
     if (eventRaiserImpl && typedData.has_value()) {
-        eventRaiserImpl->raiseEventWithPriority(eventName, eventData, EventRaiserImpl::EventPriority::INTERNAL, "", "",
-                                                "", "", 0, std::move(typedData));
+        Core::EventMetadata event(eventName, eventData);
+        event.typedData = std::move(typedData);
+        eventRaiserImpl->raiseEventWithPriority(std::move(event), EventRaiserImpl::EventPriority::INTERNAL);
     } else {
         eventRaiser_->raiseEvent(eventName, eventData);
     }
@@ -2553,34 +2555,30 @@ bool StateMachine::cancelHostInvoke(const std::string &processorType, const std:
 }
 
 bool StateMachine::completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                                      const std::string &doneData, const std::string &origin,
-                                      const std::string &originType) {
+                                      const std::string &doneData, const std::optional<Core::EventOrigin> &origin) {
     return endHostInvokeHere(HostInvokeEnding{/*processorType=*/processorType,
                                               /*invokeId=*/invokeId,
                                               /*token=*/token,
                                               /*done=*/true,
                                               /*data=*/doneData,
-                                              /*origin=*/origin,
-                                              /*originType=*/originType});
+                                              /*origin=*/origin});
 }
 
 bool StateMachine::failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                                  const std::string &errorData, const std::string &origin,
-                                  const std::string &originType) {
+                                  const std::string &errorData, const std::optional<Core::EventOrigin> &origin) {
     return endHostInvokeHere(HostInvokeEnding{/*processorType=*/processorType,
                                               /*invokeId=*/invokeId,
                                               /*token=*/token,
                                               /*done=*/false,
                                               /*data=*/errorData,
-                                              /*origin=*/origin,
-                                              /*originType=*/originType});
+                                              /*origin=*/origin});
 }
 
 bool StateMachine::endHostInvokeHere(const HostInvokeEnding &ending) {
     return applyAsOwner(
         [&] {
             return endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
-                                 ending.origin, ending.originType);
+                                 ending.origin);
         },
         InboxHostInvokeEnding{ending});
 }
@@ -2601,8 +2599,7 @@ HostInvokeEndOutcome StateMachine::completeHostInvokeIn(const std::string &sessi
                                                        /*token=*/token,
                                                        /*done=*/true,
                                                        /*data=*/doneData,
-                                                       /*origin=*/"",
-                                                       /*originType=*/""});
+                                                       /*origin=*/std::nullopt});
 }
 
 HostInvokeEndOutcome StateMachine::failHostInvokeIn(const std::string &sessionId, const std::string &processorType,
@@ -2613,8 +2610,7 @@ HostInvokeEndOutcome StateMachine::failHostInvokeIn(const std::string &sessionId
                                                        /*token=*/token,
                                                        /*done=*/false,
                                                        /*data=*/errorData,
-                                                       /*origin=*/"",
-                                                       /*originType=*/""});
+                                                       /*origin=*/std::nullopt});
 }
 
 bool StateMachine::applyAsOwner(const std::function<bool()> &apply, InboxInput posted) {
@@ -2663,14 +2659,12 @@ bool StateMachine::applyAsOwner(const std::function<bool()> &apply, InboxInput p
 }
 
 bool StateMachine::endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                                 bool failed, const std::string &data, const std::string &origin,
-                                 const std::string &originType) {
-    const auto ended =
-        hostInvokes_.endRun(processorType, invokeId, token, failed, data, origin, originType, *hostInvokeDeadlines_);
+                                 bool failed, const std::string &data, const std::optional<Core::EventOrigin> &origin) {
+    const auto ended = hostInvokes_.endRun(processorType, invokeId, token, failed, data, origin, *hostInvokeDeadlines_);
     if (!ended.has_value()) {
         return false;
     }
-    raiseHostInvokeEvent(ended->eventName(), ended->data, ended->invokeId, ended->origin, ended->originType);
+    raiseHostInvokeEvent(ended->eventName(), ended->data, ended->invokeId, ended->origin);
     return true;
 }
 
@@ -2683,9 +2677,9 @@ void StateMachine::raiseHostInvokeReport(const Core::HostInvokeReport &report) {
     } else if (const auto *completed = std::get_if<Core::HostInvokeCompletedAtOnce>(&report)) {
         // A completion the host returned with the start takes the door a later one takes.
         (void)endHostInvoke(completed->processorType, completed->invokeId, completed->token, false, completed->doneData,
-                            "", "");
+                            std::nullopt);
     } else if (const auto *timedOut = std::get_if<Core::HostInvokeTimedOut>(&report)) {
-        raiseHostInvokeEvent(timedOut->eventName(), Core::HostInvokeTimedOut::data(), timedOut->invokeId, "", "");
+        raiseHostInvokeEvent(timedOut->eventName(), Core::HostInvokeTimedOut::data(), timedOut->invokeId, std::nullopt);
     }
 }
 
@@ -2702,12 +2696,12 @@ void StateMachine::expireHostInvoke(const HostInvokeDeadline &deadline) {
 }
 
 void StateMachine::raiseHostInvokeEvent(const std::string &name, const std::string &data, const std::string &invokeId,
-                                        const std::string &origin, const std::string &originType) {
+                                        const std::optional<Core::EventOrigin> &origin) {
     // An event of the invocation, from outside the machine: the external queue,
-    // carrying the invocation's id, and the origin the host named for it, if any.
-    Core::EventMetadata event(name, data, "external", "", invokeId,
-                              originType.empty() ? std::string(Constants::SCXML_EVENT_PROCESSOR_TYPE) : originType,
-                              origin);
+    // carrying the invocation's id, and the origin the host named for it in its
+    // own terms, or none — never the SCXML processor's type by default
+    // (docs/adr/0090), so the generated engine and this one agree.
+    Core::EventMetadata event(name, data, "external", "", invokeId, origin);
     // Read as the raiser reads the data of every event it is handed.
     if (!data.empty()) {
         event.typedData = EventDataHelper::jsonStringToScriptValue(data);
@@ -2830,12 +2824,15 @@ void StateMachine::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
     // Note: If ActionExecutor doesn't exist yet, it will be set during loadSCXMLFromString
 }
 
-bool StateMachine::raiseExternalEvent(const std::string &eventName, const std::string &eventData) {
+bool StateMachine::raiseExternalEvent(const std::string &eventName, const std::string &eventData,
+                                      const std::optional<Core::EventOrigin> &origin) {
     if (!eventRaiser_) {
         SCE_LOG_WARN("StateMachine: Cannot raise external event - no EventRaiser");
         return false;
     }
-    return eventRaiser_->raiseExternalEvent(eventName, eventData);
+    Core::EventMetadata event(eventName, eventData);
+    event.origin = origin;
+    return eventRaiser_->raiseExternalEvent(event);
 }
 
 std::shared_ptr<IEventDispatcher> StateMachine::getEventDispatcher() const {
