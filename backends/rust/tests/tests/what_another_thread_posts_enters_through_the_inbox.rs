@@ -464,11 +464,11 @@ fn a_posted_ending_naming_a_session_of_the_tree_is_applied_in_that_session() {
 
     let inbox = machine.engine.inbox();
     let elsewhere = ending_of(Some("no-such-session"), token, true, &quoted("elsewhere"));
-    let answer = std::thread::spawn(move || inbox.post(elsewhere))
+    let answer = std::thread::spawn(move || inbox.post(elsewhere).err())
         .join()
         .expect("the posting thread");
     assert!(
-        matches!(answer, Err(InboxRefusal::UnknownSession(_))),
+        matches!(answer, Some(InboxRefusal::UnknownSession(_))),
         "a post naming a session the tree does not hold was answered {answer:?}"
     );
     machine.engine.step();
