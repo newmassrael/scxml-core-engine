@@ -150,7 +150,13 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # has no delayed send, so its `tick` drains nothing and links no queue code;
 # the second keeps its queue, whose pop and query are out of line and counted
 # with the core (see CORE_BYTES). Images of 193863 and 194825.
-MACHINE_BYTES=962
+#
+# 962 -> 1108 (2026-11-05): 1066 of it had come by 7819ffe478 (images of 193979 and
+# 195045), measured at that commit, with no re-pin. The other 42 bytes are the drain an
+# external enqueue makes first (docs/adr/0084, D2 as amended at step 9): `enqueue_external`
+# applies what the inbox holds before a machine's own event joins the queue, so the queue
+# keeps arrival order (W3C test 201). Images of 193973 and 195081.
+MACHINE_BYTES=1108
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -194,7 +200,11 @@ MACHINE_BYTES=962
 #
 # 1468 -> 954 (2026-10-31): the delayed-send queue and donedata slot by
 # document (docs/adr/0075), images of 193685 and 194639, as above.
-MACHINE_BYTES_NO_DIAGNOSTICS=954
+#
+# 954 -> 1102 (2026-11-05): 1060 by 7819ffe478 (images of 193801 and 194861), and
+# 42 for the drain before an external enqueue (docs/adr/0084, step 9), as above.
+# Images of 193795 and 194897.
+MACHINE_BYTES_NO_DIAGNOSTICS=1102
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -317,7 +327,11 @@ CORE_BYTES_NO_DIAGNOSTICS=7762
 #
 # 1290 -> 1008 (2026-10-31): the delayed-send queue and donedata slot by
 # document (docs/adr/0075); images of 190772 and 191780, the core unchanged.
-MACHINE_BYTES_PLAIN=1008
+#
+# 1008 -> 1160 (2026-11-05): 1118 by 7819ffe478 (images of 190892 and 192010), and
+# 42 for the drain before an external enqueue (docs/adr/0084, step 9), as above.
+# Images of 190948 and 192108.
+MACHINE_BYTES_PLAIN=1160
 CORE_BYTES_PLAIN=5496
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
@@ -434,7 +448,15 @@ STACK_DYN+=" ^${P}(exit_states|compute_states_to_exit|exit_interpreter|execute_t
 STACK_DYN+=" ^${P}is_in_final_state\$=^${P}parallel_in_final_state\$"
 STACK_DYN+=" ^(${P}microstep\$|<sce_rust_runtime::engine::Turn>)=(${HOOKS}|${ALL_FEATURES})"
 STACK_DYN+=" \sas\s${P}Behaviour>::=^${P}parallel_in_final_state\$"
-STACK_DYN+=" ^<sce_rust_runtime::engine::Engine<|\sas\ssce_rust_runtime::engine::MainLoop>::=${ALL_FEATURES}"
+# The inbox's drain (docs/adr/0084, D2 as amended at step 9) is the one part of a machine's
+# `Engine` code that does not drive the main loop: it reads the attached inbox through
+# `&dyn InboxSource` and applies what it takes by pushing onto a queue, so its pointer calls
+# reach the inbox's `take` and `per_boundary` and nothing else. It runs before every external
+# enqueue, which a `<send>` makes from inside `enter_state`, so charging it the whole main loop
+# would put a second main loop under the first, a path that cannot run.
+DRAIN='>>::(enqueue_external|drain_inbox|apply_held_inputs)$'
+STACK_DYN+=" ^<sce_rust_runtime::engine::Engine<(?!.*${DRAIN})|\sas\ssce_rust_runtime::engine::MainLoop>::=${ALL_FEATURES}"
+STACK_DYN+=" ${DRAIN}=\sas\ssce_rust_runtime::inbox::InboxSource<"
 STACK_DYN_COMPLETE='^<?sce_rust_runtime::(helpers::microstep::|engine::Turn[>:])'
 STACK_MIN_FUNCTIONS=200
 #
