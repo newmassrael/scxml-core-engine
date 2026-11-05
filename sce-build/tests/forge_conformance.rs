@@ -978,6 +978,67 @@ fn the_list_is_written_where_the_caller_holds_it() {
         .expect("a list of 512 KiB is written by a call on a stack of 128 KiB");
 }
 
+/// A Rust algorithm reserves its destination's bound right after it empties
+/// it, for a list as for bytes (whose golden is `algorithm_cobs_encode.rs`),
+/// as the C++ and Go buffers reserve theirs: on the heap tier the destination
+/// then takes the whole list in one allocation, where pushing one element at a
+/// time grew it by doublings, and a destination the caller keeps allocates
+/// once. On the inline tier the reservation does nothing.
+#[test]
+fn a_rust_list_destination_is_reserved_for_its_bound_once_it_is_emptied() {
+    const DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="short_run"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="count" type="uint32"/>
+    <sce:return type="list&lt;uint64&gt;" returns-max-size="12" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;uint64&gt;" capacity="12"/>
+    <sce:var name="i" type="uint64" init="0"/>
+    <sce:while cond="i &lt; count" max-iter="12">
+      <sce:append target="out" expr="i"/>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+    let dir = std::env::temp_dir().join(format!(
+        "sce_short_run_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).expect("a directory for the document");
+    std::fs::write(dir.join("short_run.scxml"), DOCUMENT).expect("the document is written");
+    let files = generate_files_for_codec_set(
+        &dir,
+        &["short_run.scxml"],
+        sce_build::generator::Language::Rust,
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    let files = files.expect("the algorithm generates for Rust");
+    let body = files
+        .iter()
+        .map(|(_, text)| text.as_str())
+        .find(|text| text.contains("pub fn short_run("))
+        .expect("a file defines the algorithm");
+    assert!(
+        body.contains("out: &mut SceOwnedList<u64, 12>"),
+        "the destination is a parameter of the list's bound:\n{body}"
+    );
+    assert!(
+        body.contains("    out.clear();\n    out.reserve(12);\n"),
+        "the destination is emptied, then reserved for its bound:\n{body}"
+    );
+}
+
 /// Per-backend RUN gates for the COBS byte-buffer-build fixture: each emit is
 /// built and executed against the shared `COBS_VECTORS` table.
 ///

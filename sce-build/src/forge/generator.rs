@@ -36913,8 +36913,11 @@ impl<'a> ListSpelling<'a> {
         let t = &self.elem_name;
         match self.lang {
             // The buffer is the caller's destination, a parameter of its name
-            // (docs/adr/0082): it is emptied where the body declares it.
-            Language::Rust => format!("{pad}{local}.clear();\n"),
+            // (docs/adr/0082): it is emptied where the body declares it, and its
+            // bound reserved, as the C++ and Go buffers reserve it: one
+            // allocation on the heap tier where pushing would grow it by
+            // doublings, none on the inline tier or into a kept destination.
+            Language::Rust => format!("{pad}{local}.clear();\n{pad}{local}.reserve({cap});\n"),
             Language::C11 => format!("{pad}{}.len = 0u;\n", c11_destination(local)),
             Language::Cpp => {
                 format!("{pad}std::vector<{t}> {local};\n{pad}{local}.reserve({cap});\n")
@@ -37435,8 +37438,9 @@ fn lower_algorithm_stmt(
             //
             // `capacity` is the author's declared upper bound, so every backend
             // that can consume it does: the bounded ones (Rust, C11) as the
-            // container's fixed size, the growable ones (C++, Go, Kotlin) as the
-            // initial allocation. Dropping it on the growable backends left the
+            // container's fixed size, and Rust's heap tier also as the one
+            // reservation it makes in the caller's destination, the growable ones
+            // (C++, Go, Kotlin) as the initial allocation. Dropping it on the growable backends left the
             // buffer reallocating its way up from empty on every call while the
             // exact final size was known at build time; the codec kind already
             // pre-sizes for this reason (`codec.h.jinja2` reserves
@@ -37463,8 +37467,11 @@ fn lower_algorithm_stmt(
                 }
                 let line = match lang {
                     // The caller's destination, emptied where it is declared
-                    // (docs/adr/0082), as a list buffer is.
-                    Language::Rust => format!("{pad}{local}.clear();\n"),
+                    // (docs/adr/0082) and its bound reserved, as a list buffer
+                    // is.
+                    Language::Rust => {
+                        format!("{pad}{local}.clear();\n{pad}{local}.reserve({cap});\n")
+                    }
                     Language::Cpp => {
                         format!(
                             "{pad}std::vector<std::uint8_t> {local};\n\

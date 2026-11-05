@@ -2029,7 +2029,7 @@ Some transforms are runtime, data-dependent `bytes -> bytes` functions whose out
 
 | Backend | Output buffer | Append overflow | Return shape |
 |---------|---------------|-----------------|--------------|
-| Rust | the caller's `&mut SceBytes<N>`, the last parameter, named as the buffer is (no-alloc `heapless::Vec<u8, N>`; `alloc` = `Vec<u8>`; `N` a hard bound on both, docs/adr/0082 and docs/adr/0086 section 7.4) | `?` on `push` / `extend_from_slice` → `CapacityExceeded` | `Result<(), CapacityExceeded>` |
+| Rust | the caller's `&mut SceBytes<N>`, the last parameter, named as the buffer is (no-alloc `heapless::Vec<u8, N>`; `alloc` = `Vec<u8>`; `N` a hard bound on both, docs/adr/0082 and docs/adr/0086 section 7.4), `clear()` then `reserve(N)` | `?` on `push` / `extend_from_slice` → `CapacityExceeded` | `Result<(), CapacityExceeded>` |
 | C11 | the caller's `<symbol>_bytes_t { uint8_t bytes[N]; size_t len; } *`, after the declared parameters and named as the buffer is (no malloc; docs/adr/0082) | bounds-check returns `false` past `N`, recording the capacity failure in the caller's record when the algorithm `may-fail` | `bool`, whether it was written; a `may-fail` algorithm also takes the caller's `sce_forge_algorithm_failure_t *`, last |
 | C++ | `std::vector<std::uint8_t>`, `reserve(N)` | grows | `std::vector<std::uint8_t>` |
 | Go | `make([]byte, 0, N)` | grows | `[]byte` |
@@ -2037,7 +2037,7 @@ Some transforms are runtime, data-dependent `bytes -> bytes` functions whose out
 | Kotlin | `SceByteBuf(N)` (`ByteArray`-backed, `sce_forge_runtime`) | grows | `ByteArray` |
 | Swift | `var out: [UInt8] = []`, `reserveCapacity(N)` | grows | `[UInt8]` |
 
-**`capacity` reaches every backend**, as the container's fixed size on the bounded ones and as the initial allocation on the growable ones. The author declared a byte count; spending it is what keeps a buffer whose contents stay within the declared bound to a single allocation, and the codec kind pre-sizes for the same reason. Pre-sizing is an allocation hint only — a growable backend still grows past `capacity` rather than failing, exactly as the table says.
+**`capacity` reaches every backend**, as the container's fixed size on the bounded ones and as the initial allocation on the growable ones, and on Rust's `alloc` tier, where the destination's storage is a `Vec`, as the one reservation the algorithm makes in it (`reserve(N)`, a no-op on the inline tier and in a destination that already has the room). The author declared a byte count; spending it is what keeps a buffer whose contents stay within the declared bound to a single allocation, and the codec kind pre-sizes for the same reason. Pre-sizing is an allocation hint only — a growable backend still grows past `capacity` rather than failing, exactly as the table says.
 
 The C11 append **returns at** the overflow rather than flagging and running on. The buffer is v1's single one and is the declared return, written into the caller's destination, and what the caller may read of it after a failure is not specified; what the early return removes is the scan that continues after a bound that can no longer pass. Rust reaches the same place through `?`.
 
@@ -2072,7 +2072,7 @@ Some algorithms produce a data-dependent number of *numbers* rather than bytes �
 
 | Backend | Buffer | Append overflow | Return shape |
 |---------|--------|-----------------|--------------|
-| Rust | the caller's `&mut SceOwnedList<T, N>`, the last parameter, named as the buffer is (`backends/rust/portable-bytes`; no-alloc `heapless::Vec<T, N>`, `alloc` = `Vec<T>`; docs/adr/0082) | `?` → `CapacityExceeded` | `Result<(), CapacityExceeded>` |
+| Rust | the caller's `&mut SceOwnedList<T, N>`, the last parameter, named as the buffer is (`backends/rust/portable-bytes`; no-alloc `heapless::Vec<T, N>`, `alloc` = `Vec<T>`; docs/adr/0082), `clear()` then `reserve(N)` | `?` → `CapacityExceeded` | `Result<(), CapacityExceeded>` |
 | C11 | the caller's `<symbol>_list_t { T items[N]; size_t len; } *`, after the declared parameters and named as the buffer is (docs/adr/0082) | returns `false`, recording the capacity failure in the caller's record when the algorithm `may-fail` | `bool`, whether it was written; a `may-fail` algorithm also takes the caller's `sce_forge_algorithm_failure_t *`, last |
 | C++ | `std::vector<T>`, `reserve(N)` | grows | `std::vector<T>` |
 | Go | `make([]T, 0, N)` | grows | `[]T` |
