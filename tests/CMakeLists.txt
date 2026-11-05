@@ -8067,6 +8067,25 @@ else()
     add_test(NAME W3CFullComplianceTests COMMAND w3c_test_cli)
 endif()
 
+# A run whose BasicHTTP listener cannot bind must say so: the test is an ERROR
+# on both engines and the run exits 1. One run reported 380 of 404 tests, all
+# passing, and exited 0 while another account held the port, because the
+# runner logged the listener's exception and made no report. The wrapper holds
+# a kernel-assigned port and points SCE_W3C_HTTP_PORT at it, so it collides
+# with nothing else on the host. The fixture it runs is the first the registry
+# runs under its `http` harness (W3C_HTTP_TEST_IDS). Not under
+# ThreadSanitizer, where the HTTP tests are skipped as passes
+# (SCE::Test::Utils::isThreadSanitizerBuild).
+if(Python3_FOUND AND NOT EMSCRIPTEN AND NOT ENABLE_TSAN AND W3C_HTTP_TEST_IDS)
+    list(GET W3C_HTTP_TEST_IDS 0 _W3C_UNBINDABLE_LISTENER_FIXTURE)
+    add_test(NAME W3CUnbindableListenerReportsErrors
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/w3c/expect_unbindable_listener_errors.py"
+                "$<TARGET_FILE:w3c_test_cli>" "${_W3C_UNBINDABLE_LISTENER_FIXTURE}"
+    )
+    set_tests_properties(W3CUnbindableListenerReportsErrors PROPERTIES TIMEOUT 300)
+endif()
+
 # ============================================================================
 # CTest execution order control: Set priority using COST property
 # CTest executes tests with higher COST values first,

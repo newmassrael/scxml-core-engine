@@ -14,7 +14,10 @@
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
+#include <optional>
+#include <string>
 #include <thread>
+#include <vector>
 
 /**
  * @brief Check if HTTP server is needed for the requested tests
@@ -77,6 +80,30 @@
     }
 
     return false;
+}
+
+/**
+ * @brief The reports of a requested test the CLI could not run at all
+ *
+ * The runner reports every test it starts, on each engine, and an ERROR for
+ * one that throws (W3CTestRunner::errorReport). What is left to throw here is
+ * the work around a run (finding the test's variants, the cleanup after it),
+ * and a test lost to it is still counted: one ERROR report for each engine it
+ * was to run on, so the summary and the exit status carry it.
+ */
+static std::vector<SCE::W3C::TestReport> unrunReports(const std::string &testId, bool onInterpreter, bool onAot,
+                                                      const std::string &reason, SCE::W3C::W3CTestRunner &runner) {
+    std::vector<SCE::W3C::TestReport> reports;
+    if (onInterpreter) {
+        reports.push_back(SCE::W3C::W3CTestRunner::errorReport(testId, "interpreter", reason));
+    }
+    if (onAot) {
+        reports.push_back(SCE::W3C::W3CTestRunner::errorReport(testId, "aot", reason));
+    }
+    for (const auto &report : reports) {
+        runner.getReporter()->reportTestResult(report);
+    }
+    return reports;
 }
 
 #ifdef __EMSCRIPTEN__
@@ -463,62 +490,64 @@ int main(int argc, char *argv[]) {
                     if (shouldStop) {
                         break;
                     }
+                    std::vector<SCE::W3C::TestReport> testReports;
                     try {
                         SCE_LOG_INFO("W3C CLI: Running test {} (including variants if any)", testId);
-                        std::vector<SCE::W3C::TestReport> testReports = runner.runAllMatchingTests(testId);
-                        reports.insert(reports.end(), testReports.begin(), testReports.end());
-                        allReports.insert(allReports.end(), testReports.begin(), testReports.end());
+                        testReports = runner.runAllMatchingTests(testId);
+                    } catch (const std::exception &e) {
+                        // runAllMatchingTests runs both engines
+                        SCE_LOG_ERROR("W3C CLI: Error running test {}: {}", testId, e.what());
+                        testReports = unrunReports(std::to_string(testId), true, true, e.what(), runner);
+                    }
 
-                        // Show results for all variants
-                        for (const auto &report : testReports) {
-                            std::string status;
-                            switch (report.validationResult.finalResult) {
-                            case SCE::W3C::TestResult::PASS:
-                                status = "PASS";
-                                break;
-                            case SCE::W3C::TestResult::FAIL:
-                                status = "FAIL";
-                                break;
-                            case SCE::W3C::TestResult::ERROR:
-                                status = "ERROR";
-                                break;
-                            case SCE::W3C::TestResult::TIMEOUT:
-                                status = "TIMEOUT";
-                                break;
-                            }
+                    // No report means no test has this ID: the numbering is sparse
+                    if (testReports.empty()) {
+                        SCE_LOG_DEBUG("W3C CLI: No test has ID {} (skipped)", testId);
+                        continue;
+                    }
 
-                            SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum,
-                                         status, report.executionContext.executionTime.count());
-                            if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
-                                SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
+                    reports.insert(reports.end(), testReports.begin(), testReports.end());
+                    allReports.insert(allReports.end(), testReports.begin(), testReports.end());
 
-                                // Check if we should stop on failure
-                                if (stopOnFailure) {
-                                    SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
-                                    printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
-                                    shouldStop = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // Break out if we should stop
-                        if (shouldStop) {
+                    // Show results for all variants
+                    for (const auto &report : testReports) {
+                        std::string status;
+                        switch (report.validationResult.finalResult) {
+                        case SCE::W3C::TestResult::PASS:
+                            status = "PASS";
+                            break;
+                        case SCE::W3C::TestResult::FAIL:
+                            status = "FAIL";
+                            break;
+                        case SCE::W3C::TestResult::ERROR:
+                            status = "ERROR";
+                            break;
+                        case SCE::W3C::TestResult::TIMEOUT:
+                            status = "TIMEOUT";
                             break;
                         }
 
-                        // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
+                        SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
+                                     report.executionContext.executionTime.count());
+                        if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
+                            SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
 
-                    } catch (const std::exception &e) {
-                        std::string errorMsg = e.what();
-                        // Test not found is normal for sparse test IDs - log as debug instead of error
-                        if (errorMsg.find("not found") != std::string::npos) {
-                            SCE_LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
-                        } else {
-                            SCE_LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
+                            // Check if we should stop on failure
+                            if (stopOnFailure) {
+                                SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
+                                shouldStop = true;
+                                break;
+                            }
                         }
-                        // Continue with other tests instead of returning
                     }
+
+                    // Break out if we should stop
+                    if (shouldStop) {
+                        break;
+                    }
+
+                    // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
                 }
             }  // End iteration loop
 
@@ -555,6 +584,7 @@ int main(int argc, char *argv[]) {
                     if (shouldStop) {
                         break;
                     }
+                    std::vector<SCE::W3C::TestReport> testReports;
                     try {
                         // Check if testId is purely numeric or has variant suffix (e.g., "403a")
                         bool isNumeric = true;
@@ -564,8 +594,6 @@ int main(int argc, char *argv[]) {
                                 break;
                             }
                         }
-
-                        std::vector<SCE::W3C::TestReport> testReports;
 
                         if (isNumeric) {
                             // Numeric test ID - run all variants (e.g., "403" runs 403a, 403b, 403c)
@@ -610,107 +638,87 @@ int main(int argc, char *argv[]) {
                                     }
                                 }
 
-                                // Run AOT for each discovered variant
+                                // Run AOT for each discovered variant (runAotTest
+                                // reports a throw as an ERROR)
                                 for (const auto &variantId : variantIds) {
-                                    try {
-                                        SCE::W3C::TestReport aotReport = runner.runAotTest(variantId);
-                                        aotReport.testId = variantId;
-                                        testReports.push_back(aotReport);
-                                    } catch (const std::exception &e) {
-                                        SCE_LOG_ERROR("W3C CLI: AOT test {} failed: {}", variantId, e.what());
-                                        SCE::W3C::TestReport errorReport;
-                                        errorReport.testId = variantId;
-                                        errorReport.engineType = "aot";
-                                        errorReport.validationResult.finalResult = SCE::W3C::TestResult::ERROR;
-                                        errorReport.validationResult.reason =
-                                            std::string("AOT engine error: ") + e.what();
-                                        errorReport.executionContext.executionTime = std::chrono::milliseconds(0);
-                                        testReports.push_back(errorReport);
-                                    }
+                                    SCE::W3C::TestReport aotReport = runner.runAotTest(variantId);
+                                    aotReport.testId = variantId;
+                                    testReports.push_back(aotReport);
                                 }
                             }
                         } else {
                             // Test ID with variant suffix - run exact match only (e.g., "403a" runs only
                             // test403a.scxml)
                             SCE_LOG_INFO("W3C CLI: Running exact test {}", testId);
+                            bool testExists = true;
                             if (runInterpreter) {
-                                SCE::W3C::TestReport report = runner.runTest(testId);
-                                testReports.push_back(report);
-                            }
-
-                            // Run AOT for specific variant
-                            if (runAot) {
-                                try {
-                                    SCE::W3C::TestReport aotReport = runner.runAotTest(testId);
-                                    aotReport.testId = testId;
-                                    testReports.push_back(aotReport);
-                                } catch (const std::exception &e) {
-                                    SCE_LOG_ERROR("W3C CLI: AOT test {} failed: {}", testId, e.what());
-                                    // Create error report for failed AOT test
-                                    SCE::W3C::TestReport errorReport;
-                                    errorReport.testId = testId;
-                                    errorReport.engineType = "aot";
-                                    errorReport.validationResult.finalResult = SCE::W3C::TestResult::ERROR;
-                                    errorReport.validationResult.reason = std::string("AOT engine error: ") + e.what();
-                                    errorReport.executionContext.executionTime = std::chrono::milliseconds(0);
-                                    testReports.push_back(errorReport);
+                                std::optional<SCE::W3C::TestReport> report = runner.runTest(testId);
+                                testExists = report.has_value();
+                                if (report) {
+                                    testReports.push_back(*report);
                                 }
                             }
-                        }
 
-                        reports.insert(reports.end(), testReports.begin(), testReports.end());
-                        allReports.insert(allReports.end(), testReports.begin(), testReports.end());
-
-                        // Show results for all variants
-                        for (const auto &report : testReports) {
-                            std::string status;
-                            switch (report.validationResult.finalResult) {
-                            case SCE::W3C::TestResult::PASS:
-                                status = "PASS";
-                                break;
-                            case SCE::W3C::TestResult::FAIL:
-                                status = "FAIL";
-                                break;
-                            case SCE::W3C::TestResult::ERROR:
-                                status = "ERROR";
-                                break;
-                            case SCE::W3C::TestResult::TIMEOUT:
-                                status = "TIMEOUT";
-                                break;
-                            }
-
-                            SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum,
-                                         status, report.executionContext.executionTime.count());
-                            if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
-                                SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
-
-                                // Check if we should stop on failure
-                                if (stopOnFailure) {
-                                    SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
-                                    printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
-                                    shouldStop = true;
-                                    break;
-                                }
+                            // Run AOT for specific variant (runAotTest reports a throw as an ERROR)
+                            if (runAot && testExists) {
+                                SCE::W3C::TestReport aotReport = runner.runAotTest(testId);
+                                aotReport.testId = testId;
+                                testReports.push_back(aotReport);
                             }
                         }
+                    } catch (const std::exception &e) {
+                        SCE_LOG_ERROR("W3C CLI: Error running test {}: {}", testId, e.what());
+                        testReports = unrunReports(testId, runInterpreter, runAot, e.what(), runner);
+                    }
 
-                        // Break out if we should stop
-                        if (shouldStop) {
+                    // No report means no test has this ID: the numbering is sparse
+                    if (testReports.empty()) {
+                        SCE_LOG_DEBUG("W3C CLI: No test has ID {} (skipped)", testId);
+                        continue;
+                    }
+
+                    reports.insert(reports.end(), testReports.begin(), testReports.end());
+                    allReports.insert(allReports.end(), testReports.begin(), testReports.end());
+
+                    // Show results for all variants
+                    for (const auto &report : testReports) {
+                        std::string status;
+                        switch (report.validationResult.finalResult) {
+                        case SCE::W3C::TestResult::PASS:
+                            status = "PASS";
+                            break;
+                        case SCE::W3C::TestResult::FAIL:
+                            status = "FAIL";
+                            break;
+                        case SCE::W3C::TestResult::ERROR:
+                            status = "ERROR";
+                            break;
+                        case SCE::W3C::TestResult::TIMEOUT:
+                            status = "TIMEOUT";
                             break;
                         }
 
-                        // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
+                        SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
+                                     report.executionContext.executionTime.count());
+                        if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
+                            SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
 
-                    } catch (const std::exception &e) {
-                        std::string errorMsg = e.what();
-                        // Test not found is normal for sparse test IDs - log as debug instead of error
-                        if (errorMsg.find("not found") != std::string::npos) {
-                            SCE_LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
-                        } else {
-                            SCE_LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
+                            // Check if we should stop on failure
+                            if (stopOnFailure) {
+                                SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
+                                shouldStop = true;
+                                break;
+                            }
                         }
-                        // Continue with other tests instead of returning
                     }
+
+                    // Break out if we should stop
+                    if (shouldStop) {
+                        break;
+                    }
+
+                    // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
                 }
             }  // End iteration loop
 
@@ -792,60 +800,40 @@ int main(int argc, char *argv[]) {
                         if (shouldStop) {
                             break;
                         }
-                        try {
-                            // Use string version of runAotTest to preserve variant suffix (e.g., "403a", "403b")
-                            SCE::W3C::TestReport aotReport = runner.runAotTest(testIdStr);
-                            // Preserve the original testId (with variant suffix if present)
-                            aotReport.testId = testIdStr;
-                            allReports.push_back(aotReport);
-                            runner.getReporter()->reportTestResult(aotReport);
+                        // Use string version of runAotTest to preserve variant suffix (e.g., "403a", "403b");
+                        // it reports a throw as an ERROR
+                        SCE::W3C::TestReport aotReport = runner.runAotTest(testIdStr);
+                        // Preserve the original testId (with variant suffix if present)
+                        aotReport.testId = testIdStr;
+                        allReports.push_back(aotReport);
+                        runner.getReporter()->reportTestResult(aotReport);
 
-                            // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
-                            // Zero Duplication: Centralized summary update
-                            summary.totalTests++;
-                            SCE::Common::TestSummaryHelper::updateSummary(summary, aotReport);
+                        // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
+                        // Zero Duplication: Centralized summary update
+                        summary.totalTests++;
+                        SCE::Common::TestSummaryHelper::updateSummary(summary, aotReport);
 
-                            // Check for stop-on-failure (after summary update)
-                            if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::FAIL) {
-                                if (stopOnFailure) {
-                                    SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
-                                    printf("❌ Stopping on failure: AOT Test %s failed\n", aotReport.testId.c_str());
-                                    shouldStop = true;
-                                }
-                            } else if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::ERROR ||
-                                       aotReport.validationResult.finalResult == SCE::W3C::TestResult::TIMEOUT) {
-                                if (stopOnFailure) {
-                                    SCE_LOG_INFO("W3C CLI: Stopping execution due to test error (--stop-on-fail)");
-                                    printf("❌ Stopping on error: AOT Test %s errored\n", aotReport.testId.c_str());
-                                    shouldStop = true;
-                                }
+                        // Check for stop-on-failure (after summary update)
+                        if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::FAIL) {
+                            if (stopOnFailure) {
+                                SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                printf("❌ Stopping on failure: AOT Test %s failed\n", aotReport.testId.c_str());
+                                shouldStop = true;
                             }
-
-                            if (shouldStop) {
-                                break;
+                        } else if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::ERROR ||
+                                   aotReport.validationResult.finalResult == SCE::W3C::TestResult::TIMEOUT) {
+                            if (stopOnFailure) {
+                                SCE_LOG_INFO("W3C CLI: Stopping execution due to test error (--stop-on-fail)");
+                                printf("❌ Stopping on error: AOT Test %s errored\n", aotReport.testId.c_str());
+                                shouldStop = true;
                             }
-
-                            // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
-
-                        } catch (const std::exception &e) {
-                            SCE_LOG_ERROR("W3C CLI: AOT engine test {} failed: {}", testIdStr, e.what());
-
-                            // Create error report for failed AOT test
-                            SCE::W3C::TestReport errorReport;
-                            errorReport.testId = testIdStr;
-                            errorReport.engineType = "aot";
-                            errorReport.validationResult.finalResult = SCE::W3C::TestResult::ERROR;
-                            errorReport.validationResult.reason = std::string("AOT engine error: ") + e.what();
-                            errorReport.executionContext.executionTime = std::chrono::milliseconds(0);
-
-                            allReports.push_back(errorReport);
-                            runner.getReporter()->reportTestResult(errorReport);
-
-                            // Update summary
-                            summary.totalTests++;
-                            summary.errorTests++;
-                            summary.errorTestIds.push_back(testIdStr);
                         }
+
+                        if (shouldStop) {
+                            break;
+                        }
+
+                        // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
                     }  // End for loop (AOT tests)
                 }  // End if (runAot)
             }  // End iteration loop

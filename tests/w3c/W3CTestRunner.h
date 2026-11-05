@@ -4,6 +4,7 @@
 #pragma once
 
 #include "common/TestUtils.h"
+#include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "interfaces/ITestConverter.h"
@@ -15,9 +16,12 @@
 #include "runtime/EventRaiserImpl.h"
 #include "scripting/JSEngine.h"
 #include <chrono>
+#include <exception>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace SCE::W3C {
@@ -216,6 +220,14 @@ private:
      */
     TestReport runManualTest178(const std::string &testDirectory, TestReport &report);
 
+    /**
+     * @brief Run a single test with AOT engine; throws what the run throws
+     *
+     * The body of runAotTest, which turns a throw into the test's ERROR report.
+     */
+    TestReport runAotTestOrThrow(int testId);
+    TestReport runAotTestOrThrow(const std::string &testId);
+
 public:
     /**
      * @brief Constructor with dependency injection
@@ -227,6 +239,38 @@ public:
     ~W3CTestRunner() = default;
 
     /**
+     * @brief The report of a test that was started and did not finish
+     *
+     * Every test the runner starts, on each engine, leaves exactly one report.
+     * A test that throws while its listener starts, while it runs, or while
+     * its AOT counterpart runs is reported with TestResult::ERROR rather than
+     * left out: a run that drops it reports a smaller total with nothing
+     * wrong in it, and exits 0 (TestSummaryHelper::exitStatus counts errors,
+     * not absences).
+     *
+     * @param testId The test's full ID, variant suffix included (e.g., "403a")
+     * @param engineType "interpreter" or "aot"
+     * @param reason What stopped it (the exception text)
+     */
+    static TestReport errorReport(const std::string &testId, const std::string &engineType, const std::string &reason);
+
+    /**
+     * @brief Run one test on one engine; a throw becomes its ERROR report
+     *
+     * The one place a started test's exception is turned into a report
+     * (errorReport), so no caller keeps its own copy of the conversion.
+     */
+    template <typename Run>
+    static TestReport reportingErrors(const std::string &testId, const std::string &engineType, Run &&run) {
+        try {
+            return std::forward<Run>(run)();
+        } catch (const std::exception &e) {
+            SCE_LOG_ERROR("W3C Test {} ({}): the run threw: {}", testId, engineType, e.what());
+            return errorReport(testId, engineType, e.what());
+        }
+    }
+
+    /**
      * @brief Run all W3C tests
      * @param skipReporting If true, skip generateSummary() and endTestRun() calls
      * @return Test run summary
@@ -236,28 +280,30 @@ public:
     /**
      * @brief Run specific test by ID
      * @param testId W3C test ID (e.g., 144)
-     * @return Test report
+     * @return The test's report, or std::nullopt when no test has this ID
+     *         (the W3C numbering is sparse)
      */
-    TestReport runSpecificTest(int testId);
+    std::optional<TestReport> runSpecificTest(int testId);
 
     /**
      * @brief Run a specific test by exact test ID string (e.g., "403a" runs only test403a.scxml)
      * @param testId Exact test ID string (e.g., "403a", "192", "215")
-     * @return Test report for the exact test
+     * @return The test's report, or std::nullopt when no test has this ID
      */
-    TestReport runTest(const std::string &testId);
+    std::optional<TestReport> runTest(const std::string &testId);
 
     /**
      * @brief Run all tests matching the given test ID (includes variants)
      * @param testId W3C test ID (e.g., 403 will run 403a, 403b, 403c if they exist)
-     * @return Vector of test reports for all matching tests
+     * @return The reports of every matching test on both engines; empty when
+     *         no test has this ID (the W3C numbering is sparse)
      */
     std::vector<TestReport> runAllMatchingTests(int testId);
 
     /**
      * @brief Run a single test with AOT engine (static generated code)
      * @param testId Test ID number (e.g., 144, 147)
-     * @return TestReport with engineType="aot"
+     * @return TestReport with engineType="aot"; ERROR when the run threw
      */
     TestReport runAotTest(int testId);
 
@@ -267,7 +313,7 @@ public:
      * Supports variant test IDs like "403a", "403b", "403c"
      *
      * @param testId Test ID string (e.g., "144", "403a", "403b")
-     * @return TestReport with engineType="aot"
+     * @return TestReport with engineType="aot"; ERROR when the run threw
      */
     TestReport runAotTest(const std::string &testId);
 

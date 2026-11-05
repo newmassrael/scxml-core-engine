@@ -9,6 +9,7 @@
 #include <chrono>
 #include <httplib.h>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 
 namespace SCE {
@@ -87,6 +88,14 @@ bool W3CHttpTestServer::start() {
 
     SCE_LOG_INFO("W3CHttpTestServer: [{}] HTTP server ready on localhost:{}{}", instanceId_, port_, path_);
     return true;
+}
+
+void W3CHttpTestServer::startOrThrow() {
+    if (!start()) {
+        throw std::runtime_error(
+            "the W3C BasicHTTP fixture listener could not start on localhost:" + std::to_string(port_) + path_ +
+            " (another process may hold the port; " SCE_W3C_HTTP_PORT_ENV " moves it)");
+    }
 }
 
 void W3CHttpTestServer::stop() {

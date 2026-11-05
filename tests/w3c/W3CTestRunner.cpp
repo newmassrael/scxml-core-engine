@@ -933,6 +933,32 @@ static void saveFailedTestLog(const std::string &logDir, const std::string &test
     }
 }
 
+/**
+ * @brief The fixture ID a test directory names: `.../201` is "201", and
+ *        `.../403:a` (a variant) is "403a"
+ */
+static std::string fixtureIdOf(const std::string &testDirectory) {
+    std::string fixtureId = std::filesystem::path(testDirectory).filename().string();
+    fixtureId.erase(std::remove(fixtureId.begin(), fixtureId.end(), ':'), fixtureId.end());
+    return fixtureId;
+}
+
+TestReport W3CTestRunner::errorReport(const std::string &testId, const std::string &engineType,
+                                      const std::string &reason) {
+    TestReport report;
+    report.timestamp = std::chrono::system_clock::now();
+    report.testId = testId;
+    report.engineType = engineType;
+    report.executionContext.finalState = "error";
+    report.executionContext.errorMessage = reason;
+    report.executionContext.executionTime = std::chrono::milliseconds(0);
+    // The reporters print the ID and the reason but not the engine, so the
+    // reason names it.
+    report.validationResult =
+        ValidationResult(false, TestResult::ERROR, "the " + engineType + " run did not complete: " + reason);
+    return report;
+}
+
 W3CTestRunner::W3CTestRunner(std::unique_ptr<ITestConverter> converter,
                              std::unique_ptr<ITestMetadataParser> metadataParser,
                              std::unique_ptr<ITestExecutor> executor, std::unique_ptr<ITestResultValidator> validator,
@@ -959,65 +985,63 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
 #endif
 
     for (const auto &testDir : testDirectories) {
+        SCE_LOG_DEBUG("W3C Test Execution: Running test {}", testDir);
+
+#ifdef __EMSCRIPTEN__
+        // WASM memory leak investigation: Log heap size BEFORE each test
+        size_t heapBefore = emscripten_get_heap_size();
+        SCE_LOG_DEBUG("WASM heap tracking: test {}/{} BEFORE - {} MB", testIndex, testDirectories.size(),
+                      heapBefore / (1024 * 1024));
+#endif
+
+        // Extract test ID from directory name
+        std::filesystem::path path(testDir);
+        std::string dirName = path.filename().string();
+        int testId = 0;
         try {
-            SCE_LOG_DEBUG("W3C Test Execution: Running test {}", testDir);
-
-#ifdef __EMSCRIPTEN__
-            // WASM memory leak investigation: Log heap size BEFORE each test
-            size_t heapBefore = emscripten_get_heap_size();
-            SCE_LOG_DEBUG("WASM heap tracking: test {}/{} BEFORE - {} MB", testIndex, testDirectories.size(),
-                          heapBefore / (1024 * 1024));
-#endif
-
-            // Extract test ID from directory name
-            std::filesystem::path path(testDir);
-            std::string dirName = path.filename().string();
-            int testId = 0;
-            try {
-                testId = std::stoi(dirName);
-            } catch (...) {
-                testId = 0;
-            }
-
-            // Check if HTTP test should be skipped under ThreadSanitizer
-            if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
-                reports.push_back(*skipReport);
-                reporter_->reportTestResult(*skipReport);
-                continue;
-            }
-
-            TestReport report = runInterpreterFixture(testDir);
-
-            reports.push_back(report);
-            reporter_->reportTestResult(report);
-
-#ifdef __EMSCRIPTEN__
-            // WASM memory leak investigation: Log heap size AFTER test but BEFORE cleanup
-            size_t heapAfterTest = emscripten_get_heap_size();
-            size_t testDelta = heapAfterTest - heapBefore;
-            SCE_LOG_DEBUG("WASM heap tracking: test {}/{} AFTER test - {} MB (delta: +{} MB)", testIndex,
-                          testDirectories.size(), heapAfterTest / (1024 * 1024), testDelta / (1024 * 1024));
-#endif
-
-            // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
-            cleanupBetweenTests();
-
-#ifdef __EMSCRIPTEN__
-            // WASM memory leak investigation: Log heap size AFTER cleanup with cumulative tracking
-            size_t heapAfterCleanup = emscripten_get_heap_size();
-            size_t cleanupDelta = heapAfterTest - heapAfterCleanup;
-            size_t cumulativeDelta = heapAfterCleanup - heapInitial;
-            SCE_LOG_DEBUG(
-                "WASM heap tracking: test {}/{} AFTER cleanup - {} MB (freed: {} MB, net: +{} MB, cumulative: +{} MB)",
-                testIndex, testDirectories.size(), heapAfterCleanup / (1024 * 1024), cleanupDelta / (1024 * 1024),
-                (heapAfterCleanup - heapBefore) / (1024 * 1024), cumulativeDelta / (1024 * 1024));
-#endif
-
-            SCE_LOG_DEBUG("W3C Test Execution: Test {} completed (Registry cleared → Engine reset)", testDir);
-        } catch (const std::exception &e) {
-            SCE_LOG_ERROR("W3C Test Execution: Failed to run test in {}: {}", testDir, e.what());
-            SCE_LOG_ERROR("Failed to run test in {}: {}", testDir, e.what());
+            testId = std::stoi(dirName);
+        } catch (...) {
+            testId = 0;
         }
+
+        // Check if HTTP test should be skipped under ThreadSanitizer
+        if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
+            reports.push_back(*skipReport);
+            reporter_->reportTestResult(*skipReport);
+            continue;
+        }
+
+        // A test that throws is reported as an ERROR and counted, never left
+        // out of the run (errorReport says why).
+        TestReport report = reportingErrors(fixtureIdOf(testDir), "interpreter",
+                                            [this, &testDir] { return runInterpreterFixture(testDir); });
+
+        reports.push_back(report);
+        reporter_->reportTestResult(report);
+
+#ifdef __EMSCRIPTEN__
+        // WASM memory leak investigation: Log heap size AFTER test but BEFORE cleanup
+        size_t heapAfterTest = emscripten_get_heap_size();
+        size_t testDelta = heapAfterTest - heapBefore;
+        SCE_LOG_DEBUG("WASM heap tracking: test {}/{} AFTER test - {} MB (delta: +{} MB)", testIndex,
+                      testDirectories.size(), heapAfterTest / (1024 * 1024), testDelta / (1024 * 1024));
+#endif
+
+        // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
+        cleanupBetweenTests();
+
+#ifdef __EMSCRIPTEN__
+        // WASM memory leak investigation: Log heap size AFTER cleanup with cumulative tracking
+        size_t heapAfterCleanup = emscripten_get_heap_size();
+        size_t cleanupDelta = heapAfterTest - heapAfterCleanup;
+        size_t cumulativeDelta = heapAfterCleanup - heapInitial;
+        SCE_LOG_DEBUG(
+            "WASM heap tracking: test {}/{} AFTER cleanup - {} MB (freed: {} MB, net: +{} MB, cumulative: +{} MB)",
+            testIndex, testDirectories.size(), heapAfterCleanup / (1024 * 1024), cleanupDelta / (1024 * 1024),
+            (heapAfterCleanup - heapBefore) / (1024 * 1024), cumulativeDelta / (1024 * 1024));
+#endif
+
+        SCE_LOG_DEBUG("W3C Test Execution: Test {} completed (Registry cleared → Engine reset)", testDir);
 
         // Memory profiling: Increment test counter
         testIndex++;
@@ -1228,7 +1252,7 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
             saveFailedTestLog(failedLogDir_, report.testId, "interpreter", report, SCE::Logger::getCapturedLogs());
         }
 
-        throw;  // Re-throw to be caught by runAllTests
+        throw;  // The caller reports it as an ERROR (reportingErrors)
     }
 }
 
@@ -1254,9 +1278,7 @@ bool W3CTestRunner::requiresHttpServer(const std::string &testDirectory) const {
     // posts nothing.
     //
     // A directory names its fixture: `.../201`, or `.../403:a` for a variant.
-    std::string fixtureId = std::filesystem::path(testDirectory).filename().string();
-    fixtureId.erase(std::remove(fixtureId.begin(), fixtureId.end(), ':'), fixtureId.end());
-    return W3CTestRegistry::needsHttpEndpoint(fixtureId);
+    return W3CTestRegistry::needsHttpEndpoint(fixtureIdOf(testDirectory));
 }
 
 TestReport W3CTestRunner::runInterpreterFixture(const std::string &testDir) {
@@ -1265,12 +1287,10 @@ TestReport W3CTestRunner::runInterpreterFixture(const std::string &testDir) {
     }
 #ifndef __EMSCRIPTEN__
     // The listener, in process: started for the fixture and stopped after it,
-    // whether the run returns or throws.
+    // whether the run returns or throws. A listener that cannot start throws,
+    // and the caller reports the fixture as an ERROR (errorReport).
     W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
-    if (!httpServer.start()) {
-        SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testDir, basicHttpTestPort());
-        throw std::runtime_error("Failed to start HTTP server for test " + testDir);
-    }
+    httpServer.startOrThrow();
     SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testDir, basicHttpTestAccessUri());
 
     struct StopOnExit {
@@ -1332,7 +1352,7 @@ TestRunSummary W3CTestRunner::calculateSummary(const std::vector<TestReport> &re
     return Common::TestSummaryHelper::calculateSummary(reports);
 }
 
-TestReport W3CTestRunner::runSpecificTest(int testId) {
+std::optional<TestReport> W3CTestRunner::runSpecificTest(int testId) {
     auto testDirectories = testSuite_->discoverTests();
 
     for (const auto &testDir : testDirectories) {
@@ -1358,17 +1378,19 @@ TestReport W3CTestRunner::runSpecificTest(int testId) {
         if (currentTestId == testId) {
             // Check if HTTP test should be skipped under ThreadSanitizer
             if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
-                return *skipReport;
+                return skipReport;
             }
 
-            return runInterpreterFixture(testDir);
+            return reportingErrors(fixtureIdOf(testDir), "interpreter",
+                                   [this, &testDir] { return runInterpreterFixture(testDir); });
         }
     }
 
-    throw std::runtime_error("Test " + std::to_string(testId) + " not found");
+    // No test has this ID: the W3C numbering is sparse.
+    return std::nullopt;
 }
 
-TestReport W3CTestRunner::runTest(const std::string &testId) {
+std::optional<TestReport> W3CTestRunner::runTest(const std::string &testId) {
     auto testDirectories = testSuite_->discoverTests();
 
     // Exact match on test ID string
@@ -1414,16 +1436,18 @@ TestReport W3CTestRunner::runTest(const std::string &testId) {
 
             // Check if HTTP test should be skipped under ThreadSanitizer
             if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
-                return *skipReport;
+                return skipReport;
             }
 
-            TestReport report = runInterpreterFixture(testDir);
+            TestReport report =
+                reportingErrors(testId, "interpreter", [this, &testDir] { return runInterpreterFixture(testDir); });
             reporter_->reportTestResult(report);
             return report;
         }
     }
 
-    throw std::runtime_error("Test " + testId + " not found");
+    // No test has this ID: the W3C numbering is sparse.
+    return std::nullopt;
 }
 
 std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
@@ -1455,67 +1479,52 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
         }
 
         if (currentTestId == testId) {
-            try {
-                // Check if HTTP test should be skipped under ThreadSanitizer (Interpreter only)
-                // AOT tests will handle TSAN skip logic in HttpAotTest::run()
-                if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
-                    matchingReports.push_back(*skipReport);
-                    reporter_->reportTestResult(*skipReport);
-                    // Don't continue - still run AOT test below
-                } else {
-                    TestReport report = runInterpreterFixture(testDir);
-                    matchingReports.push_back(report);
-                    reporter_->reportTestResult(report);
-                }
-
-                // Run AOT engine test (runAotTest will use Interpreter fallback if needed)
-                try {
-                    // Extract variant suffix from testDir (e.g., "path/403:a" -> "a")
-                    std::string variantSuffix;
-                    size_t colonPos = testDir.find(':');
-                    if (colonPos != std::string::npos) {
-                        variantSuffix = testDir.substr(colonPos + 1);
-                    }
-
-                    // Construct full test ID with variant suffix (e.g., "403" + "a" -> "403a")
-                    std::string fullTestId = std::to_string(testId) + variantSuffix;
-
-                    SCE_LOG_INFO("W3C Test {}: Running AOT engine test for variant", fullTestId);
-                    TestReport aotReport = runAotTest(fullTestId);
-                    // testId should already be set correctly by runAotTest, but preserve if needed
-                    if (aotReport.testId.empty() && !matchingReports.empty()) {
-                        aotReport.testId = matchingReports.back().testId;
-                    }
-                    matchingReports.push_back(aotReport);
-                    reporter_->reportTestResult(aotReport);
-                    SCE_LOG_INFO("W3C Test {}: AOT engine test completed for variant", fullTestId);
-                } catch (const std::exception &e) {
-                    SCE_LOG_ERROR("W3C Test {}: AOT engine test failed for variant: {}", testId, e.what());
-                    // Don't throw - continue with other variants
-                }
-
-                // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
-                cleanupBetweenTests();
-            } catch (const std::exception &e) {
-                SCE_LOG_ERROR("W3C Test Execution: Failed to run test in {}: {}", testDir, e.what());
-                // Continue with other variants even if one fails
+            // Extract variant suffix from testDir (e.g., "path/403:a" -> "a")
+            std::string variantSuffix;
+            size_t variantPos = testDir.find(':');
+            if (variantPos != std::string::npos) {
+                variantSuffix = testDir.substr(variantPos + 1);
             }
+
+            // Construct full test ID with variant suffix (e.g., "403" + "a" -> "403a")
+            const std::string fullTestId = std::to_string(testId) + variantSuffix;
+
+            // Each engine leaves one report for the variant, an ERROR when its
+            // run throws (errorReport): an Interpreter throw neither drops the
+            // Interpreter report nor skips the AOT run.
+            //
+            // Check if HTTP test should be skipped under ThreadSanitizer (Interpreter only)
+            // AOT tests will handle TSAN skip logic in HttpAotTest::run()
+            if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
+                matchingReports.push_back(*skipReport);
+                reporter_->reportTestResult(*skipReport);
+                // Don't continue - still run AOT test below
+            } else {
+                TestReport report = reportingErrors(fullTestId, "interpreter",
+                                                    [this, &testDir] { return runInterpreterFixture(testDir); });
+                matchingReports.push_back(report);
+                reporter_->reportTestResult(report);
+            }
+
+            // Run AOT engine test (runAotTest reports a throw as an ERROR)
+            SCE_LOG_INFO("W3C Test {}: Running AOT engine test for variant", fullTestId);
+            TestReport aotReport = runAotTest(fullTestId);
+            // testId should already be set correctly by runAotTest, but preserve if needed
+            if (aotReport.testId.empty() && !matchingReports.empty()) {
+                aotReport.testId = matchingReports.back().testId;
+            }
+            matchingReports.push_back(aotReport);
+            reporter_->reportTestResult(aotReport);
+            SCE_LOG_INFO("W3C Test {}: AOT engine test completed for variant", fullTestId);
+
+            // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
+            cleanupBetweenTests();
         }
     }
 
-    if (matchingReports.empty()) {
-#ifdef __EMSCRIPTEN__
-        // WASM: ASYNCIFY + exception handling incompatibility
-        // Return empty vector instead of throwing to allow CLI try-catch to work
-        // CLI will log "Test not found (skipped)" and continue with other tests
-        SCE_LOG_DEBUG("W3CTestRunner: Test {} not found, returning empty result for WASM compatibility", testId);
-        return matchingReports;  // Return empty vector
-#else
-        // Native: Throw exception (caught by try-catch in W3CTestCLI.cpp)
-        throw std::runtime_error("Test " + std::to_string(testId) + " not found");
-#endif
-    }
-
+    // Empty when no test has this ID: the W3C numbering is sparse, and the
+    // caller tells that apart from a test that ran by the empty result, not
+    // by an exception's text.
     return matchingReports;
 }
 
@@ -1711,11 +1720,19 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         return report;
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("W3C Single Test (HTTP): Exception in test {}: {}", testDirectory, e.what());
-        throw;  // Re-throw to be caught by runSpecificTest
+        throw;  // The caller reports it as an ERROR (reportingErrors)
     }
 }
 
 TestReport W3CTestRunner::runAotTest(int testId) {
+    return reportingErrors(std::to_string(testId), "aot", [this, testId] { return runAotTestOrThrow(testId); });
+}
+
+TestReport W3CTestRunner::runAotTest(const std::string &testId) {
+    return reportingErrors(testId, "aot", [this, &testId] { return runAotTestOrThrow(testId); });
+}
+
+TestReport W3CTestRunner::runAotTestOrThrow(int testId) {
     // Check W3CTestRegistry to determine if test should use Interpreter fallback
     if (W3CTestRegistry::isInterpreterTest(testId)) {
         SCE_LOG_INFO("AOT Test {}: Using Interpreter fallback (Interpreter-only per W3CTestRegistry)", testId);
@@ -1809,8 +1826,9 @@ TestReport W3CTestRunner::runAotTest(int testId) {
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
             SCE_LOG_ERROR("AOT Test {} failed with exception: {}", testId, e.what());
-            report.validationResult = ValidationResult(false, TestResult::ERROR, e.what());
-            report.executionContext.finalState = "error";
+            const std::string testType = report.testType;
+            report = errorReport(report.testId, report.engineType, e.what());
+            report.testType = testType;
             report.executionContext.executionTime = duration;
 
             // Save captured logs on exception
@@ -1840,7 +1858,7 @@ TestReport W3CTestRunner::runAotTest(int testId) {
     return report;
 }
 
-TestReport W3CTestRunner::runAotTest(const std::string &testId) {
+TestReport W3CTestRunner::runAotTestOrThrow(const std::string &testId) {
     // Check W3CTestRegistry to determine if test should use Interpreter fallback
     if (W3CTestRegistry::isInterpreterTest(testId)) {
         SCE_LOG_INFO("AOT Test {}: Using Interpreter fallback (Interpreter-only per W3CTestRegistry)", testId);
@@ -1939,8 +1957,9 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
             SCE_LOG_ERROR("AOT Test {} failed with exception: {}", testId, e.what());
-            report.validationResult = ValidationResult(false, TestResult::ERROR, e.what());
-            report.executionContext.finalState = "error";
+            const std::string testType = report.testType;
+            report = errorReport(report.testId, report.engineType, e.what());
+            report.testType = testType;
             report.executionContext.executionTime = duration;
 
             // Save captured logs on exception

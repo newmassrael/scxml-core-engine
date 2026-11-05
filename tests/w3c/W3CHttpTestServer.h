@@ -33,6 +33,15 @@ public:
     bool start();
     void stop();
 
+    /**
+     * @brief start(), and a std::runtime_error naming the address when it fails
+     *
+     * For a W3C run, where a listener that cannot start makes the test it
+     * serves an ERROR (W3CTestRunner::errorReport) rather than a FAIL: the
+     * machine was never given the chance to pass.
+     */
+    void startOrThrow();
+
     void setEventCallback(const EventCallback &callback) {
         std::lock_guard<std::mutex> lock(callbackMutex_);
         eventCallback_ = callback;

@@ -105,12 +105,12 @@ public:
 
 #ifndef __EMSCRIPTEN__
         // The listener, in process: it answers on a thread of its own and
-        // hands each event over before the POST that made it returns.
+        // hands each event over before the POST that made it returns. One
+        // that cannot start throws, and the runner reports the test as an
+        // ERROR (W3CTestRunner::errorReport): the machine never ran, so it
+        // did not fail.
         W3C::W3CHttpTestServer httpServer(W3C::basicHttpTestPort(), W3C::basicHttpTestPath());
-        if (!httpServer.start()) {
-            SCE_LOG_ERROR("HttpAotTest {}: Failed to start HTTP server on port {}", TestNum, W3C::basicHttpTestPort());
-            return false;
-        }
+        httpServer.startOrThrow();
         httpServer.setEventCallback(deliver);
         using HttpClientType = SCE::CppHttplibClient;
 #else
