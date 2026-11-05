@@ -38,6 +38,10 @@ struct TestReport {
     TestExecutionContext executionContext;
     ValidationResult validationResult;
     std::chrono::system_clock::time_point timestamp;
+    // Which repetition of the run made this report, from 1 (`--repeat N`
+    // runs each test N times; W3CTestRunner::setIteration stamps it). The
+    // test's identity stays testId; the iteration tells repeated runs apart.
+    int iteration{1};
 };
 
 /**

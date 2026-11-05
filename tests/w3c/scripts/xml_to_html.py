@@ -25,8 +25,12 @@ def xml_to_html(xml_path, html_path, backend_results=None):
     total = int(root.get('tests', 0))
     failures = int(root.get('failures', 0))
     errors = int(root.get('errors', 0))
-    passed = total - failures - errors
-    pass_rate = (passed / total * 100) if total > 0 else 0
+    # A skipped case was not run: it is neither a pass nor a failure, and the
+    # pass rate is over the cases that ran.
+    skipped = int(root.get('skipped', 0))
+    passed = total - failures - errors - skipped
+    ran = total - skipped
+    pass_rate = (passed / ran * 100) if ran > 0 else 0
 
     html = f'''<!DOCTYPE html>
 <html>
@@ -54,12 +58,15 @@ body{{background:#f6f8fa;padding:24px}}
 .counter.fail .counter-value{{color:#cf222e}}
 .counter.error{{border-left:3px solid #fb8500}}
 .counter.error .counter-value{{color:#fb8500}}
+.counter.skipped{{border-left:3px solid #57606a}}
+.counter.skipped .counter-value{{color:#57606a}}
 .pass-rate{{font-size:20px;font-weight:600;color:#1a7f37;margin-bottom:16px}}
 .octicon{{display:inline-block;vertical-align:text-bottom;fill:currentColor}}
 .State{{display:inline-block;padding:4px 12px;font-size:12px;font-weight:500;line-height:20px;border-radius:2em}}
 .State--success{{color:#1a7f37;background-color:#dafbe1;border:1px solid #1a7f37}}
 .State--failure{{color:#cf222e;background-color:#ffebe9;border:1px solid #cf222e}}
 .State--error{{color:#9a6700;background-color:#fff8c5;border:1px solid #d4a72c}}
+.State--skipped{{color:#57606a;background-color:#f6f8fa;border:1px solid #d0d7de}}
 .Label{{display:inline-block;padding:2px 7px;font-size:12px;font-weight:500;line-height:18px;border-radius:2em}}
 .Label--primary{{color:#0969da;background-color:#ddf4ff;border:1px solid #0969da}}
 .Label--success{{color:#1a7f37;background-color:#dafbe1;border:1px solid #1a7f37}}
@@ -113,6 +120,10 @@ W3C SCXML Compliance Test Results
 <div class="counter-label">C++ Errors</div>
 <div class="counter-value">{errors}</div>
 </div>
+<div class="counter skipped">
+<div class="counter-label">C++ Skipped</div>
+<div class="counter-value">{skipped}</div>
+</div>
 </div>
 <div class="pass-rate">
 <svg class="octicon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
@@ -131,17 +142,22 @@ C++ Pass Rate: {pass_rate:.1f}%
         html += '<h4 style="margin-bottom:12px;color:#24292f">All Backend Results</h4>\n'
         html += '<div class="backend-grid">\n'
 
-        # Extract C++ results: merge all testsuites, deduplicate by test name
-        # Each testsuite (Interpreter, AOT) runs the same tests — count unique names once.
+        # Extract C++ results: merge all testsuites, deduplicate by test ID
+        # Each testsuite (Interpreter, AOT) runs the same tests — count unique IDs once.
+        # A run repeated with --repeat lists a test once per iteration under one
+        # `id`, and a skipped case was not run, so it counts neither way.
         backends = []
         all_cpp_tests = set()
         all_cpp_passed = set()
         for testsuite in root.findall('testsuite'):
             for tc in testsuite.findall('testcase'):
-                name = tc.get('name', '')
-                all_cpp_tests.add(name)
-                if tc.get('result', 'PASS') == 'PASS':
-                    all_cpp_passed.add(name)
+                test_id = tc.get('id', tc.get('name', ''))
+                result = tc.get('result', 'PASS')
+                if result == 'SKIPPED':
+                    continue
+                all_cpp_tests.add(test_id)
+                if result == 'PASS':
+                    all_cpp_passed.add(test_id)
         backends.append(('C++', len(all_cpp_passed), len(all_cpp_tests)))
 
         for name, key in [('Rust', 'rust'), ('Kotlin', 'kotlin'), ('Python', 'python'),
@@ -192,6 +208,8 @@ C++ Pass Rate: {pass_rate:.1f}%
 
         for testcase in testsuite.findall('testcase'):
             test_name = testcase.get('name', '')
+            # The test's own ID: the name carries "@<iteration>" in a repeated run
+            test_id = testcase.get('id', test_name.replace('Test_', ''))
             time_val = testcase.get('time', '0')
             test_type = testcase.get('type', '')
             result = testcase.get('result', 'PASS')
@@ -209,6 +227,10 @@ C++ Pass Rate: {pass_rate:.1f}%
 <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
 </svg>'''
                 state_class = 'State--failure'
+            elif result == 'SKIPPED':
+                # Not run: neither a pass nor a failure, so no check or cross
+                icon = ''
+                state_class = 'State--skipped'
             else:
                 icon = '''<svg class="octicon" style="color:#9a6700" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
 <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path>
@@ -245,7 +267,7 @@ C++ Pass Rate: {pass_rate:.1f}%
 <td><span class="time-value">{time_val}s</span></td>
 <td>{verified_badge if verified else '-'}</td>
 <td>
-<a href="../visualizer/visualizer.html#test={test_name.replace('Test_', '')}" class="btn btn-sm btn-outline" target="_blank" style="text-decoration:none">
+<a href="../visualizer/visualizer.html#test={test_id}" class="btn btn-sm btn-outline" target="_blank" style="text-decoration:none">
 <svg class="octicon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" style="margin-right:4px">
 <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path>
 <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path>

@@ -20,6 +20,7 @@
 #include "common/TestSummaryHelper.h"
 #include "w3c/interfaces/ITestReporter.h"
 #include <gtest/gtest.h>
+#include <string>
 
 using SCE::Common::TestSummaryHelper;
 using SCE::W3C::TestRunSummary;
@@ -67,6 +68,63 @@ TEST(TestSummaryExitStatus, SkippedTestsAreNotFailures) {
 
 TEST(TestSummaryExitStatus, AFailureAmongSkipsStillFails) {
     EXPECT_EQ(1, TestSummaryHelper::exitStatus(summaryOf(404, 399, 1, 0, 4)));
+}
+
+SCE::W3C::TestReport reportOf(const std::string &testId, const SCE::W3C::ValidationResult &result) {
+    SCE::W3C::TestReport report;
+    report.testId = testId;
+    report.engineType = "interpreter";
+    report.validationResult = result;
+    return report;
+}
+
+// The tally, from the reports a run made. A BasicHTTP fixture under
+// ThreadSanitizer and a manual fixture are not run, and were once reported as
+// PASS with a reason that said "Skipped": the summary, the XML report and the
+// console all counted them as passes, so a build that ran none of the HTTP
+// fixtures reported them passing.
+TEST(TestSummaryTally, ASkipIsCountedAsASkipNeverAsAPass) {
+    using SCE::W3C::TestResult;
+    using SCE::W3C::ValidationResult;
+    const auto summary = TestSummaryHelper::calculateSummary({
+        reportOf("201", ValidationResult(true, TestResult::PASS, "ran")),
+        reportOf("513", ValidationResult::skip("Skipped: HTTP test under ThreadSanitizer")),
+        reportOf("250", ValidationResult::skip("Skipped: manual test")),
+    });
+
+    EXPECT_EQ(3u, summary.totalTests);
+    EXPECT_EQ(1u, summary.passedTests);
+    EXPECT_EQ(2u, summary.skippedTests);
+    EXPECT_EQ(0u, summary.failedTests);
+    EXPECT_EQ(0u, summary.errorTests);
+    EXPECT_TRUE(summary.failedTestIds.empty());
+    EXPECT_TRUE(summary.errorTestIds.empty());
+    // The pass rate is over the tests that ran
+    EXPECT_DOUBLE_EQ(100.0, summary.passRate);
+    EXPECT_EQ(0, TestSummaryHelper::exitStatus(summary));
+}
+
+TEST(TestSummaryTally, ASkipIsNeverAFailure) {
+    using SCE::W3C::TestResult;
+    EXPECT_FALSE(SCE::W3C::failsTheRun(TestResult::SKIPPED));
+    EXPECT_FALSE(SCE::W3C::failsTheRun(TestResult::PASS));
+    EXPECT_TRUE(SCE::W3C::failsTheRun(TestResult::FAIL));
+    EXPECT_TRUE(SCE::W3C::failsTheRun(TestResult::ERROR));
+    EXPECT_TRUE(SCE::W3C::failsTheRun(TestResult::TIMEOUT));
+}
+
+TEST(TestSummaryTally, AFailureBesideASkipIsStillAFailure) {
+    using SCE::W3C::TestResult;
+    using SCE::W3C::ValidationResult;
+    const auto summary = TestSummaryHelper::calculateSummary({
+        reportOf("513", ValidationResult::skip("Skipped: HTTP test under ThreadSanitizer")),
+        reportOf("233", ValidationResult(false, TestResult::FAIL, "reached fail")),
+    });
+
+    EXPECT_EQ(1u, summary.skippedTests);
+    EXPECT_EQ(1u, summary.failedTests);
+    EXPECT_EQ(0u, summary.passedTests);
+    EXPECT_EQ(1, TestSummaryHelper::exitStatus(summary));
 }
 
 }  // namespace

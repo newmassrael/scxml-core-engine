@@ -100,10 +100,37 @@ static std::vector<SCE::W3C::TestReport> unrunReports(const std::string &testId,
     if (onAot) {
         reports.push_back(SCE::W3C::W3CTestRunner::errorReport(testId, "aot", reason));
     }
-    for (const auto &report : reports) {
-        runner.getReporter()->reportTestResult(report);
+    for (auto &report : reports) {
+        report = runner.reported(report);
     }
     return reports;
+}
+
+/**
+ * @brief Log each report, and say whether the run must stop there
+ *
+ * A skip is logged with its reason and never stops the run: only a result
+ * that fails the run (SCE::W3C::failsTheRun) does, under --stop-on-fail.
+ *
+ * @return true when --stop-on-fail and one of the reports failed the run
+ */
+static bool showResults(const std::vector<SCE::W3C::TestReport> &reports, bool stopOnFailure) {
+    for (const auto &report : reports) {
+        const SCE::W3C::TestResult result = report.validationResult.finalResult;
+        SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum,
+                     SCE::W3C::testResultToString(result), report.executionContext.executionTime.count());
+        if (result == SCE::W3C::TestResult::SKIPPED) {
+            SCE_LOG_INFO("W3C CLI: Skip reason: {}", report.validationResult.reason);
+        } else if (SCE::W3C::failsTheRun(result)) {
+            SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
+            if (stopOnFailure) {
+                SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                printf("Stopping on failure: Test %s failed\n", report.testId.c_str());
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 #ifdef __EMSCRIPTEN__
@@ -481,6 +508,7 @@ int main(int argc, char *argv[]) {
             bool shouldStop = false;
 
             for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
+                runner.setIteration(iteration);
                 if (repeatCount > 1) {
                     SCE_LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
                     printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
@@ -509,39 +537,7 @@ int main(int argc, char *argv[]) {
                     allReports.insert(allReports.end(), testReports.begin(), testReports.end());
 
                     // Show results for all variants
-                    for (const auto &report : testReports) {
-                        std::string status;
-                        switch (report.validationResult.finalResult) {
-                        case SCE::W3C::TestResult::PASS:
-                            status = "PASS";
-                            break;
-                        case SCE::W3C::TestResult::FAIL:
-                            status = "FAIL";
-                            break;
-                        case SCE::W3C::TestResult::ERROR:
-                            status = "ERROR";
-                            break;
-                        case SCE::W3C::TestResult::TIMEOUT:
-                            status = "TIMEOUT";
-                            break;
-                        }
-
-                        SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
-                                     report.executionContext.executionTime.count());
-                        if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
-                            SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
-
-                            // Check if we should stop on failure
-                            if (stopOnFailure) {
-                                SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
-                                printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
-                                shouldStop = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Break out if we should stop
+                    shouldStop = showResults(testReports, stopOnFailure);
                     if (shouldStop) {
                         break;
                     }
@@ -574,6 +570,7 @@ int main(int argc, char *argv[]) {
             bool shouldStop = false;
 
             for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
+                runner.setIteration(iteration);
                 if (repeatCount > 1) {
                     SCE_LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
                     printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
@@ -634,39 +631,7 @@ int main(int argc, char *argv[]) {
                     allReports.insert(allReports.end(), testReports.begin(), testReports.end());
 
                     // Show results for all variants
-                    for (const auto &report : testReports) {
-                        std::string status;
-                        switch (report.validationResult.finalResult) {
-                        case SCE::W3C::TestResult::PASS:
-                            status = "PASS";
-                            break;
-                        case SCE::W3C::TestResult::FAIL:
-                            status = "FAIL";
-                            break;
-                        case SCE::W3C::TestResult::ERROR:
-                            status = "ERROR";
-                            break;
-                        case SCE::W3C::TestResult::TIMEOUT:
-                            status = "TIMEOUT";
-                            break;
-                        }
-
-                        SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
-                                     report.executionContext.executionTime.count());
-                        if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
-                            SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
-
-                            // Check if we should stop on failure
-                            if (stopOnFailure) {
-                                SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
-                                printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
-                                shouldStop = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Break out if we should stop
+                    shouldStop = showResults(testReports, stopOnFailure);
                     if (shouldStop) {
                         break;
                     }
@@ -678,11 +643,6 @@ int main(int argc, char *argv[]) {
             // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
             // Zero Duplication: Centralized summary calculation
             summary = SCE::Common::TestSummaryHelper::calculateSummary(reports);
-
-            // Get all reports from reporter (includes interpreter and AOT) if not already populated
-            if (allReports.empty()) {
-                allReports = runner.getReporter()->getAllReports();
-            }
 
             // Complete test run reporting
             runner.getReporter()->generateSummary(summary);
@@ -701,68 +661,42 @@ int main(int argc, char *argv[]) {
 
             bool shouldStop = false;
 
+            // One invocation is one test run for the reporter: begun above,
+            // ended below, and every iteration's reports kept in it, each
+            // stamped with its iteration (W3CTestRunner::setIteration).
             for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
+                runner.setIteration(iteration);
                 if (repeatCount > 1) {
                     SCE_LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
                     printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
                 }
 
-                // Run tests with interpreter engine (skip reporting to avoid duplicate XML write)
-                std::vector<std::string> allTestIds;
+                // Run every fixture on the Interpreter; each report is handed
+                // to the reporter as it is made
                 if (runInterpreter) {
-                    summary = runner.runAllTests(/* skipReporting = */ true);
-
-                    // Get all interpreter engine reports from reporter
-                    allReports = runner.getReporter()->getAllReports();
-
-                    // Extract all test IDs (including variants) from interpreter engine reports
-                    for (const auto &report : allReports) {
-                        if (report.engineType == "interpreter") {
-                            allTestIds.push_back(report.testId);
-                        }
-                    }
-                } else {
-                    // If interpreter not running, the runner names every fixture by
-                    // the full ID its reports carry (e.g., "403a")
-                    allTestIds = runner.discoverFixtureIds();
+                    const std::vector<SCE::W3C::TestReport> interpreterReports = runner.runAllTests();
+                    allReports.insert(allReports.end(), interpreterReports.begin(), interpreterReports.end());
                 }
 
-                // Run AOT engine tests for all test IDs (including variants)
+                // Run AOT engine tests for every fixture, by the full ID its
+                // reports carry (e.g., "403a")
                 if (runAot) {
+                    const std::vector<std::string> fixtureIds = runner.discoverFixtureIds();
                     SCE_LOG_INFO("W3C CLI: Running AOT engine tests for all {} tests (including variants)",
-                                 allTestIds.size());
-                    for (const std::string &testIdStr : allTestIds) {
-                        if (shouldStop) {
-                            break;
-                        }
-                        // runAotTest names the report by the full ID it was given (e.g.,
-                        // "403a"), reports a throw as an ERROR, and hands the report to
-                        // the reporter the Interpreter's reports went through
-                        SCE::W3C::TestReport aotReport = runner.runAotTest(testIdStr);
+                                 fixtureIds.size());
+                    for (const std::string &fixtureId : fixtureIds) {
+                        // runAotTest reports a throw as an ERROR, and hands the
+                        // report to the reporter the Interpreter's reports went
+                        // through
+                        const SCE::W3C::TestReport aotReport = runner.runAotTest(fixtureId);
                         allReports.push_back(aotReport);
 
-                        // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
-                        // Zero Duplication: Centralized summary update
-                        summary.totalTests++;
-                        SCE::Common::TestSummaryHelper::updateSummary(summary, aotReport);
-
-                        // Check for stop-on-failure (after summary update)
-                        if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::FAIL) {
-                            if (stopOnFailure) {
-                                SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
-                                printf("❌ Stopping on failure: AOT Test %s failed\n", aotReport.testId.c_str());
-                                shouldStop = true;
-                            }
-                        } else if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::ERROR ||
-                                   aotReport.validationResult.finalResult == SCE::W3C::TestResult::TIMEOUT) {
-                            if (stopOnFailure) {
-                                SCE_LOG_INFO("W3C CLI: Stopping execution due to test error (--stop-on-fail)");
-                                printf("❌ Stopping on error: AOT Test %s errored\n", aotReport.testId.c_str());
-                                shouldStop = true;
-                            }
-                        }
-
-                        if (shouldStop) {
+                        // A skip never stops the run; a failure, error or
+                        // timeout does under --stop-on-fail
+                        if (stopOnFailure && SCE::W3C::failsTheRun(aotReport.validationResult.finalResult)) {
+                            SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                            printf("Stopping on failure: AOT Test %s failed\n", aotReport.testId.c_str());
+                            shouldStop = true;
                             break;
                         }
 
@@ -771,10 +705,9 @@ int main(int argc, char *argv[]) {
                 }  // End if (runAot)
             }  // End iteration loop
 
-            // Recalculate pass rate
-            if (summary.totalTests > 0) {
-                summary.passRate = (static_cast<double>(summary.passedTests) / summary.totalTests) * 100.0;
-            }
+            // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth),
+            // over the reports of every iteration and both engines
+            summary = SCE::Common::TestSummaryHelper::calculateSummary(allReports);
 
             // Generate final report with both interpreter and AOT results
             runner.getReporter()->generateSummary(summary);
@@ -789,21 +722,13 @@ int main(int argc, char *argv[]) {
             allReports = runner.getReporter()->getAllReports();
         }
 
-        // Calculate engine-specific statistics from collected reports
-        struct EngineStats {
-            size_t total = 0;
-            size_t passed = 0;
-            size_t failed = 0;
-            size_t errors = 0;
-            size_t skipped = 0;
-            std::vector<std::string> failedTestIds;
-            std::vector<std::string> errorTestIds;
-        };
-
-        EngineStats interpreterStats, aotStats;
+        // Engine-specific statistics from the collected reports, tallied by
+        // the one rule every reader uses (TestSummaryHelper): a skip is a
+        // skip, never a pass or a failure
+        SCE::W3C::TestRunSummary interpreterStats, aotStats;
 
         for (const auto &report : allReports) {
-            EngineStats *engineStats = nullptr;
+            SCE::W3C::TestRunSummary *engineStats = nullptr;
             if (report.engineType == "interpreter") {
                 engineStats = &interpreterStats;
             } else if (report.engineType == "aot") {
@@ -811,29 +736,8 @@ int main(int argc, char *argv[]) {
             }
 
             if (engineStats) {
-                // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
-                // Zero Duplication: Centralized statistics update
-                // Note: EngineStats has same structure as TestRunSummary, can reuse logic
-                engineStats->total++;
-
-                if (report.validationResult.skipped) {
-                    engineStats->skipped++;
-                } else {
-                    switch (report.validationResult.finalResult) {
-                    case SCE::W3C::TestResult::PASS:
-                        engineStats->passed++;
-                        break;
-                    case SCE::W3C::TestResult::FAIL:
-                        engineStats->failed++;
-                        engineStats->failedTestIds.push_back(report.testId);
-                        break;
-                    case SCE::W3C::TestResult::ERROR:
-                    case SCE::W3C::TestResult::TIMEOUT:
-                        engineStats->errors++;
-                        engineStats->errorTestIds.push_back(report.testId);
-                        break;
-                    }
-                }
+                engineStats->totalTests++;
+                SCE::Common::TestSummaryHelper::updateSummary(*engineStats, report);
             }
         }
 
@@ -851,14 +755,14 @@ int main(int argc, char *argv[]) {
             printf("┌──────────────┬─────────┬────────┬────────┬────────┬─────────┐\n");
             printf("│ Engine       │ Total   │ Passed │ Failed │ Errors │ Skipped │\n");
             printf("├──────────────┼─────────┼────────┼────────┼────────┼─────────┤\n");
-            if (interpreterStats.total > 0) {
-                printf("│ Interpreter  │ %-7zu │ %-6zu │ %-6zu │ %-6zu │ %-7zu │\n", interpreterStats.total,
-                       interpreterStats.passed, interpreterStats.failed, interpreterStats.errors,
-                       interpreterStats.skipped);
+            if (interpreterStats.totalTests > 0) {
+                printf("│ Interpreter  │ %-7zu │ %-6zu │ %-6zu │ %-6zu │ %-7zu │\n", interpreterStats.totalTests,
+                       interpreterStats.passedTests, interpreterStats.failedTests, interpreterStats.errorTests,
+                       interpreterStats.skippedTests);
             }
-            if (aotStats.total > 0) {
-                printf("│ AOT          │ %-7zu │ %-6zu │ %-6zu │ %-6zu │ %-7zu │\n", aotStats.total, aotStats.passed,
-                       aotStats.failed, aotStats.errors, aotStats.skipped);
+            if (aotStats.totalTests > 0) {
+                printf("│ AOT          │ %-7zu │ %-6zu │ %-6zu │ %-6zu │ %-7zu │\n", aotStats.totalTests,
+                       aotStats.passedTests, aotStats.failedTests, aotStats.errorTests, aotStats.skippedTests);
             }
             printf("├──────────────┼─────────┼────────┼────────┼────────┼─────────┤\n");
             printf("│ Total        │ %-7zu │ %-6zu │ %-6zu │ %-6zu │ %-7zu │\n", summary.totalTests,

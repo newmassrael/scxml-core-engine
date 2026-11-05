@@ -55,4 +55,4 @@ status=0
 sce_gate_judge_w3c_report "$REPORT/w3c_test_results.xml" \
     "$REPORT/w3c_test_output.log" "$status" 400
 
-sce_gate_step "$SCE_GATE_W3C_CASES W3C case(s) passed"
+sce_gate_step "$SCE_GATE_W3C_CASES W3C case(s) passed, $SCE_GATE_W3C_SKIPPED skipped"

@@ -45,34 +45,31 @@ public:
     /**
      * @brief Update summary statistics from a single test report
      *
-     * W3C SCXML test infrastructure: Handles skipped tests appropriately
-     * - Skipped tests increment skippedTests counter
-     * - Skipped tests NOT counted in passedTests (avoid false positives)
-     * - Only non-skipped tests contribute to pass/fail/error counts
+     * W3C SCXML test infrastructure: each report lands in exactly one bucket
+     * - TestResult::SKIPPED increments skippedTests, and nothing else: a test
+     *   that was not run is neither a pass nor a failure
+     * - PASS, FAIL and ERROR/TIMEOUT increment their own counters
      *
      * @param summary TestRunSummary to update (modified in-place)
      * @param report TestReport containing test execution results
      */
     static void updateSummary(W3C::TestRunSummary &summary, const W3C::TestReport &report) {
-        if (report.validationResult.skipped) {
+        switch (report.validationResult.finalResult) {
+        case W3C::TestResult::SKIPPED:
             summary.skippedTests++;
-            // Skipped tests are not counted as passed
-        } else {
-            // Only count non-skipped tests in passed/failed/error
-            switch (report.validationResult.finalResult) {
-            case W3C::TestResult::PASS:
-                summary.passedTests++;
-                break;
-            case W3C::TestResult::FAIL:
-                summary.failedTests++;
-                summary.failedTestIds.push_back(report.testId);
-                break;
-            case W3C::TestResult::ERROR:
-            case W3C::TestResult::TIMEOUT:
-                summary.errorTests++;
-                summary.errorTestIds.push_back(report.testId);
-                break;
-            }
+            break;
+        case W3C::TestResult::PASS:
+            summary.passedTests++;
+            break;
+        case W3C::TestResult::FAIL:
+            summary.failedTests++;
+            summary.failedTestIds.push_back(report.testId);
+            break;
+        case W3C::TestResult::ERROR:
+        case W3C::TestResult::TIMEOUT:
+            summary.errorTests++;
+            summary.errorTestIds.push_back(report.testId);
+            break;
         }
 
         summary.totalExecutionTime += report.executionContext.executionTime;

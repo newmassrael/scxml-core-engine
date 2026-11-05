@@ -459,10 +459,17 @@ sce_main_build_dir() {
 # registration that stops matching leaves the suite green on a fraction of
 # itself.
 #
+# A case the runner did not run (a manual fixture, or a BasicHTTP one under
+# ThreadSanitizer) is marked `<skipped/>` and counted in the header's
+# `skipped`, apart from both the passes and the failures: the floor is on the
+# cases the report holds, since it guards the registration, and the cases
+# said to have passed are the held ones less the skipped.
+#
 # Usage: sce_gate_judge_w3c_report <report.xml> <run log> <exit status> <floor>
 # Fails the gate on any finding; on a pass it sets SCE_GATE_W3C_CASES to the
-# number of cases the report holds.
+# number of cases that passed and SCE_GATE_W3C_SKIPPED to the number skipped.
 SCE_GATE_W3C_CASES=0
+SCE_GATE_W3C_SKIPPED=0
 sce_gate_judge_w3c_report() {
     local xml="$1" log="$2" status="$3" floor="$4"
 
@@ -474,11 +481,12 @@ sce_gate_judge_w3c_report() {
     # One `<testsuites>` header carries the totals; the per-engine `<testsuite>`
     # elements repeat the attribute, so only the first line that has it is
     # read, and `sed` stops there rather than handing the rest to a pipe.
-    local total failures errors bad
+    local total failures errors skipped bad
     total="$(_sce_gate_w3c_report_attr "$xml" tests)"
     failures="$(_sce_gate_w3c_report_attr "$xml" failures)"
     errors="$(_sce_gate_w3c_report_attr "$xml" errors)"
-    total="${total:-0}"; failures="${failures:-0}"; errors="${errors:-0}"
+    skipped="$(_sce_gate_w3c_report_attr "$xml" skipped)"
+    total="${total:-0}"; failures="${failures:-0}"; errors="${errors:-0}"; skipped="${skipped:-0}"
     bad=$(( failures + errors ))
 
     if (( total < floor )); then
@@ -498,7 +506,8 @@ sce_gate_judge_w3c_report() {
         sce_gate_fail "the suite exited $status while its report showed no failure — the two verdicts disagree"
     fi
 
-    SCE_GATE_W3C_CASES="$total"
+    SCE_GATE_W3C_CASES=$(( total - skipped ))
+    SCE_GATE_W3C_SKIPPED="$skipped"
 }
 
 _sce_gate_w3c_report_attr() {

@@ -49,73 +49,6 @@ namespace SCE::W3C {
 class TestResultValidator;
 class W3CTestSuite;
 
-// W3C SCXML: Helper function to convert TestResult enum to string for XML output
-static const char *testResultToString(TestResult result) {
-    switch (result) {
-    case TestResult::PASS:
-        return "PASS";
-    case TestResult::FAIL:
-        return "FAIL";
-    case TestResult::ERROR:
-        return "ERROR";
-    case TestResult::TIMEOUT:
-        return "TIMEOUT";
-    default:
-        return "UNKNOWN";
-    }
-}
-
-class ConsoleTestReporter : public ITestReporter {
-private:
-    size_t testCount_ = 0;
-
-public:
-    void beginTestRun(const std::string &testSuiteName) override {
-        SCE_LOG_INFO("=== {} ===", testSuiteName);
-        testCount_ = 0;
-    }
-
-    void reportTestResult(const TestReport &report) override {
-        ++testCount_;
-
-        std::string status;
-        switch (report.validationResult.finalResult) {
-        case TestResult::PASS:
-            status = "PASS";
-            break;
-        case TestResult::FAIL:
-            status = "FAIL";
-            break;
-        case TestResult::ERROR:
-            status = "ERROR";
-            break;
-        case TestResult::TIMEOUT:
-            status = "TIMEOUT";
-            break;
-        }
-
-        SCE_LOG_INFO("[{}] Test {} ({}): {}", testCount_, report.testId, report.metadata.specnum, status);
-
-        if (report.validationResult.finalResult != TestResult::PASS) {
-            SCE_LOG_INFO(" - {}", report.validationResult.reason);
-        }
-
-        SCE_LOG_INFO(" ({}ms)", report.executionContext.executionTime.count());
-    }
-
-    void generateSummary([[maybe_unused]] const TestRunSummary &summary) override {
-        // Do not output summary in console reporter - let main runner handle it
-    }
-
-    void endTestRun() override {
-        // Do not output end message in console reporter - let main runner handle it
-    }
-
-    std::string getOutputDestination() const override {
-        return "Console";
-    }
-};
-
 // Factory implementations
 std::unique_ptr<ITestConverter> TestComponentFactory::createConverter() {
     return std::make_unique<TXMLConverter>();
@@ -339,7 +272,7 @@ std::unique_ptr<ITestResultValidator> TestComponentFactory::createValidator() {
     public:
         ValidationResult validateResult(const TestExecutionContext &context) override {
             if (context.metadata.manual) {
-                return ValidationResult(true, TestResult::PASS, "Manual test skipped");
+                return ValidationResult::skip("Skipped: manual test");
             }
 
             if (!context.errorMessage.empty()) {
@@ -530,23 +463,8 @@ std::unique_ptr<ITestReporter> TestComponentFactory::createConsoleReporter() {
         void reportTestResult(const TestReport &report) override {
             ++testCount_;
 
-            std::string status;
-            switch (report.validationResult.finalResult) {
-            case TestResult::PASS:
-                status = "PASS";
-                break;
-            case TestResult::FAIL:
-                status = "FAIL";
-                break;
-            case TestResult::ERROR:
-                status = "ERROR";
-                break;
-            case TestResult::TIMEOUT:
-                status = "TIMEOUT";
-                break;
-            }
-
-            SCE_LOG_INFO("[{}] Test {} ({}): {}", testCount_, report.testId, report.metadata.specnum, status);
+            SCE_LOG_INFO("[{}] Test {} ({}): {}", testCount_, report.testId, report.metadata.specnum,
+                         testResultToString(report.validationResult.finalResult));
 
             if (report.validationResult.finalResult != TestResult::PASS) {
                 SCE_LOG_INFO(" - {}", report.validationResult.reason);
@@ -601,7 +519,10 @@ std::unique_ptr<ITestReporter> TestComponentFactory::createXMLReporter(const std
             // XMLReporter only stores data - no console output
         }
 
-        void generateSummary(const TestRunSummary &summary) override {
+        // The counts written are tallied from the reports this reporter heard,
+        // not taken from the caller's summary, so the file's header always
+        // agrees with the testcases it lists.
+        void generateSummary([[maybe_unused]] const TestRunSummary &summary) override {
             // Write XML report file with separate testsuites for each engine
             std::ofstream xmlFile(outputPath_);
             if (xmlFile) {
@@ -646,17 +567,40 @@ std::unique_ptr<ITestReporter> TestComponentFactory::createXMLReporter(const std
                     return escaped;
                 };
 
+                // A run repeated with --repeat reports each test once per
+                // iteration. Its testcases are named "Test_<id>@<iteration>"
+                // (1-based) so every one stays distinct, and a run of one
+                // iteration keeps the plain "Test_<id>". The test's own ID
+                // and the iteration are attributes as well, for a reader that
+                // wants them apart.
+                const bool repeated = std::any_of(allReports_.begin(), allReports_.end(),
+                                                  [](const TestReport &report) { return report.iteration > 1; });
+
                 // Helper function to write XML testcase element (Zero Duplication Principle)
-                auto writeTestCase = [&escapeXml](std::ofstream &xmlFile, const TestReport &report,
-                                                  const std::string &classname) {
+                auto writeTestCase = [&escapeXml, repeated](std::ofstream &xmlFile, const TestReport &report,
+                                                            const std::string &classname) {
+                    const TestResult result = report.validationResult.finalResult;
+                    std::string name = "Test_" + report.testId;
+                    if (repeated) {
+                        name += "@" + std::to_string(report.iteration);
+                    }
                     xmlFile << "    <testcase classname=\"" << classname << "\" "
-                            << "name=\"Test_" << report.testId << "\" "
+                            << "name=\"" << escapeXml(name) << "\" "
+                            << "id=\"" << escapeXml(report.testId) << "\" "
+                            << "iteration=\"" << report.iteration << "\" "
                             << "time=\"" << (report.executionContext.executionTime.count() / 1000.0) << "\" "
                             << "type=\"" << report.testType << "\" "
-                            << "result=\"" << testResultToString(report.validationResult.finalResult) << "\" "
+                            << "result=\"" << testResultToString(result) << "\" "
                             << "description=\"" << escapeXml(report.validationResult.reason) << "\"";
 
-                    if (report.validationResult.finalResult != TestResult::PASS) {
+                    if (result == TestResult::SKIPPED) {
+                        // JUnit's own mark for a test that was not run, so
+                        // no reader counts it as a pass or a failure
+                        xmlFile << ">" << std::endl;
+                        xmlFile << "      <skipped message=\"" << escapeXml(report.validationResult.reason) << "\"/>"
+                                << std::endl;
+                        xmlFile << "    </testcase>" << std::endl;
+                    } else if (failsTheRun(result)) {
                         xmlFile << ">" << std::endl;
                         xmlFile << "      <failure message=\"" << escapeXml(report.validationResult.reason) << "\"/>"
                                 << std::endl;
@@ -666,62 +610,39 @@ std::unique_ptr<ITestReporter> TestComponentFactory::createXMLReporter(const std
                     }
                 };
 
-                // Calculate statistics per engine
-                auto calculateEngineStats = [](const std::vector<TestReport> &reports) {
-                    size_t failures = 0, errors = 0;
-                    double totalTime = 0.0;
-                    for (const auto &r : reports) {
-                        if (r.validationResult.finalResult == TestResult::FAIL) {
-                            failures++;
-                        }
-                        if (r.validationResult.finalResult == TestResult::ERROR ||
-                            r.validationResult.finalResult == TestResult::TIMEOUT) {
-                            errors++;
-                        }
-                        totalTime += r.executionContext.executionTime.count() / 1000.0;
-                    }
-                    return std::make_tuple(failures, errors, totalTime);
+                // The counts are the tally every other reader uses
+                // (TestSummaryHelper), over the reports this file lists, so
+                // the header and the testcases cannot disagree.
+                auto writeTotals = [](std::ofstream &xmlFile, const TestRunSummary &tally) {
+                    xmlFile << "tests=\"" << tally.totalTests << "\" "
+                            << "failures=\"" << tally.failedTests << "\" "
+                            << "errors=\"" << tally.errorTests << "\" "
+                            << "skipped=\"" << tally.skippedTests << "\" "
+                            << "time=\"" << (tally.totalExecutionTime.count() / 1000.0) << "\"";
                 };
 
-                auto [interpFailures, interpErrors, interpTime] = calculateEngineStats(interpreterReports);
-                auto [aotFailures, aotErrors, aotTime] = calculateEngineStats(aotReports);
+                auto writeSuite = [&](const std::vector<TestReport> &reports, const char *suiteName,
+                                      const std::string &classname) {
+                    if (reports.empty()) {
+                        return;
+                    }
+                    xmlFile << "  <testsuite name=\"" << suiteName << "\" ";
+                    writeTotals(xmlFile, Common::TestSummaryHelper::calculateSummary(reports));
+                    xmlFile << ">" << std::endl;
+                    for (const auto &report : reports) {
+                        writeTestCase(xmlFile, report, classname);
+                    }
+                    xmlFile << "  </testsuite>" << std::endl;
+                };
 
                 // Write XML with separate testsuites
                 xmlFile << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" << std::endl;
-                xmlFile << "<testsuites tests=\"" << summary.totalTests << "\" "
-                        << "failures=\"" << summary.failedTests << "\" "
-                        << "errors=\"" << summary.errorTests << "\" "
-                        << "time=\"" << (summary.totalExecutionTime.count() / 1000.0) << "\">" << std::endl;
+                xmlFile << "<testsuites ";
+                writeTotals(xmlFile, Common::TestSummaryHelper::calculateSummary(allReports_));
+                xmlFile << ">" << std::endl;
 
-                // Interpreter engine testsuite
-                if (!interpreterReports.empty()) {
-                    xmlFile << "  <testsuite name=\"W3C_SCXML_Interpreter\" "
-                            << "tests=\"" << interpreterReports.size() << "\" "
-                            << "failures=\"" << interpFailures << "\" "
-                            << "errors=\"" << interpErrors << "\" "
-                            << "time=\"" << interpTime << "\">" << std::endl;
-
-                    for (const auto &report : interpreterReports) {
-                        writeTestCase(xmlFile, report, "W3C_Interpreter");
-                    }
-
-                    xmlFile << "  </testsuite>" << std::endl;
-                }
-
-                // AOT engine testsuite
-                if (!aotReports.empty()) {
-                    xmlFile << "  <testsuite name=\"W3C_SCXML_AOT\" "
-                            << "tests=\"" << aotReports.size() << "\" "
-                            << "failures=\"" << aotFailures << "\" "
-                            << "errors=\"" << aotErrors << "\" "
-                            << "time=\"" << aotTime << "\">" << std::endl;
-
-                    for (const auto &report : aotReports) {
-                        writeTestCase(xmlFile, report, "W3C_AOT");
-                    }
-
-                    xmlFile << "  </testsuite>" << std::endl;
-                }
+                writeSuite(interpreterReports, "W3C_SCXML_Interpreter", "W3C_Interpreter");
+                writeSuite(aotReports, "W3C_SCXML_AOT", "W3C_AOT");
 
                 xmlFile << "</testsuites>" << std::endl;
                 xmlFile.close();
@@ -966,10 +887,11 @@ W3CTestRunner::W3CTestRunner(std::unique_ptr<ITestConverter> converter,
     : converter_(std::move(converter)), metadataParser_(std::move(metadataParser)), executor_(std::move(executor)),
       validator_(std::move(validator)), testSuite_(std::move(testSuite)), reporter_(std::move(reporter)) {}
 
-TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
-    auto testSuiteInfo = testSuite_->getInfo();
-    reporter_->beginTestRun(testSuiteInfo.name);
-
+std::vector<TestReport> W3CTestRunner::runAllTests() {
+    // The test run (beginTestRun ... endTestRun) is the caller's: one CLI
+    // invocation is one run for the reporter however many times it repeats
+    // this, so starting one here would clear the reports of the iterations
+    // before it.
     std::vector<TestReport> reports;
     auto testDirectories = testSuite_->discoverTests();
 
@@ -1037,14 +959,7 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
                   totalAccumulation / (1024 * 1024), reports.size());
 #endif
 
-    TestRunSummary summary = calculateSummary(reports);
-
-    if (!skipReporting) {
-        reporter_->generateSummary(summary);
-        reporter_->endTestRun();
-    }
-
-    return summary;
+    return reports;
 }
 
 TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
@@ -1078,7 +993,7 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
         // Skip other manual tests
         if (validator_->shouldSkipTest(report.metadata)) {
             SCE_LOG_DEBUG("W3C Single Test: Skipping test {} (manual test)", report.testId);
-            report.validationResult = ValidationResult(true, TestResult::PASS, "Test skipped");
+            report.validationResult = ValidationResult::skip("Skipped: manual test");
             SCE::Logger::stopCapture();
             SCE::Logger::getCapturedLogs();  // Discard
             return report;
@@ -1295,12 +1210,13 @@ std::optional<TestReport> W3CTestRunner::tsanSkipReport(const std::string &fixtu
     report.timestamp = std::chrono::system_clock::now();
     report.testId = fixtureId;
     report.engineType = engineType;
-    report.validationResult = ValidationResult(true, TestResult::PASS, "Skipped: HTTP test under ThreadSanitizer");
+    report.validationResult = ValidationResult::skip("Skipped: HTTP test under ThreadSanitizer");
 
     return report;
 }
 
 TestReport W3CTestRunner::reported(TestReport report) {
+    report.iteration = iteration_;
     reporter_->reportTestResult(report);
     return report;
 }
@@ -1320,12 +1236,6 @@ std::vector<std::string> W3CTestRunner::discoverFixtureIds() {
         fixtureIds.push_back(fixtureIdOf(testDir));
     }
     return fixtureIds;
-}
-
-TestRunSummary W3CTestRunner::calculateSummary(const std::vector<TestReport> &reports) {
-    // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
-    // Zero Duplication: Centralized summary calculation shared with W3CTestCLI
-    return Common::TestSummaryHelper::calculateSummary(reports);
 }
 
 std::optional<TestReport> W3CTestRunner::runTest(const std::string &testId) {
@@ -1414,7 +1324,7 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         // Skip if necessary
         if (validator_->shouldSkipTest(report.metadata)) {
             SCE_LOG_DEBUG("W3C Single Test (HTTP): Skipping test {} (manual test)", report.testId);
-            report.validationResult = ValidationResult(true, TestResult::PASS, "Test skipped");
+            report.validationResult = ValidationResult::skip("Skipped: manual test");
             return report;
         }
 

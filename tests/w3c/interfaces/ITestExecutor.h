@@ -15,11 +15,52 @@ namespace SCE::W3C {
  * @brief Test execution result
  */
 enum class TestResult {
-    PASS,    // Test completed successfully, reached expected target
-    FAIL,    // Test completed but reached wrong target
-    ERROR,   // Test execution failed (parse error, runtime exception, etc.)
-    TIMEOUT  // Test execution timed out
+    PASS,     // Test completed successfully, reached expected target
+    FAIL,     // Test completed but reached wrong target
+    ERROR,    // Test execution failed (parse error, runtime exception, etc.)
+    TIMEOUT,  // Test execution timed out
+    SKIPPED   // Test was not run (a manual fixture, or a BasicHTTP one under ThreadSanitizer)
 };
+
+/**
+ * @brief The result's name, as the console, the XML report and its readers spell it
+ */
+inline const char *testResultToString(TestResult result) {
+    switch (result) {
+    case TestResult::PASS:
+        return "PASS";
+    case TestResult::FAIL:
+        return "FAIL";
+    case TestResult::ERROR:
+        return "ERROR";
+    case TestResult::TIMEOUT:
+        return "TIMEOUT";
+    case TestResult::SKIPPED:
+        return "SKIPPED";
+    }
+    return "UNKNOWN";
+}
+
+/**
+ * @brief Whether a result fails the run that reported it
+ *
+ * FAIL, ERROR and TIMEOUT do. PASS does not, and neither does SKIPPED: a
+ * test that was not run neither passed nor failed, so every tally counts it
+ * apart from both (TestSummaryHelper::updateSummary), and the JUnit report
+ * marks it `<skipped/>`.
+ */
+inline bool failsTheRun(TestResult result) {
+    switch (result) {
+    case TestResult::PASS:
+    case TestResult::SKIPPED:
+        return false;
+    case TestResult::FAIL:
+    case TestResult::ERROR:
+    case TestResult::TIMEOUT:
+        return true;
+    }
+    return true;
+}
 
 /**
  * @brief Test execution context - contains all execution details

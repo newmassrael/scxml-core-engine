@@ -135,6 +135,9 @@ private:
     // Failed test log directory (empty = disabled)
     std::string failedLogDir_;
 
+    // The repetition of the run the reports made now belong to (setIteration)
+    int iteration_{1};
+
     /**
      * @brief Run a single test
      */
@@ -169,11 +172,6 @@ private:
     TestReport runInterpreterFixture(const std::string &testDir);
 
     /**
-     * @brief Calculate test run statistics
-     */
-    TestRunSummary calculateSummary(const std::vector<TestReport> &reports);
-
-    /**
      * @brief Whether a fixture needs the BasicHTTP listener: the conformance
      *        registry runs it under its `http` harness (W3CTestRegistry)
      *
@@ -197,15 +195,6 @@ private:
      * @return The skip report, or std::nullopt when the fixture runs
      */
     static std::optional<TestReport> tsanSkipReport(const std::string &fixtureId, const std::string &engineType);
-
-    /**
-     * @brief Hand a report to the run's reporter and return it
-     *
-     * Every report a run method returns, on either engine, passes here once,
-     * so the console and the XML reporter see the same reports the caller
-     * gets back.
-     */
-    TestReport reported(TestReport report);
 
     /**
      * @brief Run one fixture on the Interpreter and report it
@@ -281,11 +270,34 @@ public:
     }
 
     /**
-     * @brief Run all W3C tests
-     * @param skipReporting If true, skip generateSummary() and endTestRun() calls
-     * @return Test run summary
+     * @brief Run every W3C fixture on the Interpreter, reporting each
+     *
+     * Does not begin or end a test run: the caller does, once per
+     * invocation, so a run repeated with --repeat keeps the reports of every
+     * iteration (setIteration tells them apart).
+     *
+     * @return The report of every fixture, in discovery order
      */
-    TestRunSummary runAllTests(bool skipReporting = false);
+    std::vector<TestReport> runAllTests();
+
+    /**
+     * @brief Hand a report to the run's reporter and return it
+     *
+     * Every report a run method returns, on either engine, passes here once,
+     * stamped with the current iteration, so the console and the XML reporter
+     * see the same reports the caller gets back. A caller that makes a report
+     * of its own (a test it could not start) hands it here too.
+     */
+    TestReport reported(TestReport report);
+
+    /**
+     * @brief Name the repetition of the run the next reports belong to
+     *
+     * @param iteration From 1; the CLI's `--repeat N` runs iterations 1..N
+     */
+    void setIteration(int iteration) {
+        iteration_ = iteration;
+    }
 
     /**
      * @brief The full ID of every fixture the suite holds, in discovery order

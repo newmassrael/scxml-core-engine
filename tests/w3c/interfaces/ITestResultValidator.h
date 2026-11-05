@@ -13,15 +13,21 @@ namespace SCE::W3C {
  */
 struct ValidationResult {
     bool isValid{false};
+    // TestResult::SKIPPED when the test was not run: the one place a skip is
+    // recorded, read by every tally (failsTheRun, TestSummaryHelper)
     TestResult finalResult{TestResult::ERROR};
-    std::string reason;   // Explanation of validation logic
-    bool skipped{false};  // True if test was skipped (e.g., HTTP test in WASM)
+    std::string reason;  // Explanation of validation logic
 
     // Default constructor
     ValidationResult() = default;
 
     ValidationResult(bool valid, TestResult result, const std::string &explanation)
         : isValid(valid), finalResult(result), reason(explanation) {}
+
+    /// The result of a test that was not run, and why it was not
+    static ValidationResult skip(const std::string &reason) {
+        return ValidationResult(true, TestResult::SKIPPED, reason);
+    }
 };
 
 /**

@@ -8085,7 +8085,7 @@ endif()
 # a kernel-assigned port and points SCE_W3C_HTTP_PORT at it, so it collides
 # with nothing else on the host. The fixture it runs is the first the registry
 # runs under its `http` harness (W3C_HTTP_TEST_IDS). Not under
-# ThreadSanitizer, where the HTTP tests are skipped as passes on both engines
+# ThreadSanitizer, where the HTTP tests are skipped on both engines
 # (W3CTestRunner::tsanSkipReport).
 if(Python3_FOUND AND NOT EMSCRIPTEN AND NOT ENABLE_TSAN AND W3C_HTTP_TEST_IDS)
     list(GET W3C_HTTP_TEST_IDS 0 _W3C_UNBINDABLE_LISTENER_FIXTURE)
@@ -8124,6 +8124,24 @@ if(Python3_FOUND AND NOT EMSCRIPTEN AND _W3C_VARIANT_IDS)
                 "$<TARGET_FILE:w3c_test_cli>" "${_W3C_VARIANT_NUMBER}" ${_W3C_VARIANT_IDS}
     )
     set_tests_properties(W3COneReporterForBothEngines PROPERTIES TIMEOUT 300)
+endif()
+
+# A test that was not run is reported as a skip, and a repeated run keeps every
+# iteration. A manual fixture run alone on the Interpreter must be SKIPPED in
+# the XML report (<skipped/>, the header's `skipped`), in the console's Total
+# row, and not fail the exit status; both were once a PASS. `--repeat 2` must
+# list each test once per iteration, named "Test_<id>@<iteration>": the run
+# of every fixture once began a new test run per iteration and dropped the
+# ones before it. The fixtures are every one the registry runs
+# (W3C_AOT_TESTS), the variant number the one found above.
+if(Python3_FOUND AND NOT EMSCRIPTEN AND _W3C_VARIANT_NUMBER)
+    add_test(NAME W3CSkipsAndRepeatsReported
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/w3c/expect_skips_and_repeats_reported.py"
+                "$<TARGET_FILE:w3c_test_cli>" "${CMAKE_SOURCE_DIR}/resources" "${_W3C_VARIANT_NUMBER}"
+                ${W3C_AOT_TESTS}
+    )
+    set_tests_properties(W3CSkipsAndRepeatsReported PROPERTIES TIMEOUT 900)
 endif()
 
 # ============================================================================

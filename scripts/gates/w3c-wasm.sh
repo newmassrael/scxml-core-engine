@@ -86,7 +86,7 @@ w3c_wasm_run_tree() {
     # set from the same registry, 404 cases today.
     sce_gate_judge_w3c_report "$run_dir/w3c_test_results.xml" \
         "$run_dir/w3c_wasm_output.log" "$status" 400
-    sce_gate_step "$SCE_GATE_W3C_CASES W3C case(s) passed under Node, $engine engine"
+    sce_gate_step "$SCE_GATE_W3C_CASES W3C case(s) passed, $SCE_GATE_W3C_SKIPPED skipped, under Node, $engine engine"
 
     sce_gate_step "running the interactive suite under Node, $engine engine"
     local log="$run_dir/comprehensive_interactive_wasm_output.log"
