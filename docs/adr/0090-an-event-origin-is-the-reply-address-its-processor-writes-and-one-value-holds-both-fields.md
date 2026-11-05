@@ -150,10 +150,15 @@ A reader of format 3 also reads formats 1 and 2. A format-2 `origin` becomes a p
 
 | Format-2 `origin` | Saved `origintype` | Read as |
 |---|---|---|
-| empty | empty | none |
-| a bare id (no scheme) | SCXML type, or empty for a scheduled act | the SCXML pair of that id, `sender` = the id |
+| empty | any | none |
+| a bare id (no scheme) | SCXML type, or empty | the SCXML pair of that id, `sender` = the id |
 | a value starting `sce://scxml/` (written by C11) | any | the SCXML pair, `sender` = the decoded id |
-| anything else | its saved type | the pair as saved, `sender` none |
+| anything else | its saved type, or the SCXML type when it is empty | the pair as saved, `sender` none |
+
+Two rows close the gap a half pair would fall into. An empty `origin` is none whatever type was saved beside it:
+several format-2 writers saved the SCXML type beside an event no processor stamped, and an empty address answers
+nothing. An empty `origintype` beside an address is the SCXML processor's, which is what format 2 meant by it
+(`HostInvokeEnding.originType`: "empty keeps the SCXML processor's").
 
 Each backend's writer moves to format 3 in the saved-state step. The shared instances in
 `sce-build/tests/fixtures/static_datamodel/saved/` move with it, and a format-2 instance written by C11 and one

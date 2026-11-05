@@ -161,25 +161,31 @@ public:
     /**
      * @brief The origin and sender a stored `origin` and `origintype` are read as
      *
-     * docs/adr/0090, section 7. Empty both is none. A value without a scheme
-     * stored with the SCXML processor's type is a session's id, read as that
-     * session's pair with the id as its sender; an SCXML location (which one
-     * backend stored in place of the id) is read the same way by the id it
-     * names. Anything else is the pair as stored, with no sender.
+     * docs/adr/0090, section 7. An empty `origin` is none whatever type was
+     * stored beside it: an empty address answers nothing, and format 2 wrote
+     * the SCXML type beside it for events no processor stamped. An empty
+     * `origintype` beside an address is the SCXML processor's, which is what
+     * format 2 meant by it. A value without a scheme read with the SCXML type
+     * is a session's id, read as that session's pair with the id as its
+     * sender; an SCXML location (which one backend stored in place of the id)
+     * is read the same way by the id it names. Anything else is the pair as
+     * stored, with no sender.
      */
     static StoredOrigin readStoredOrigin(const std::string &origin, const std::string &originType) {
-        if (origin.empty() && originType.empty()) {
+        if (origin.empty()) {
             return {};
         }
         const std::string located = sessionIdFromScxmlLocation(origin);
         if (!located.empty()) {
             return {scxmlOrigin(located), located};
         }
-        const bool bareId = !origin.empty() && origin.find("://") == std::string::npos;
-        if (bareId && originType == Constants::SCXML_EVENT_PROCESSOR_TYPE) {
+        const std::string processor =
+            originType.empty() ? std::string(Constants::SCXML_EVENT_PROCESSOR_TYPE) : originType;
+        const bool bareId = origin.find("://") == std::string::npos;
+        if (bareId && processor == Constants::SCXML_EVENT_PROCESSOR_TYPE) {
             return {scxmlOrigin(origin), origin};
         }
-        return {Core::EventOrigin(originType, origin), std::string()};
+        return {Core::EventOrigin(processor, origin), std::string()};
     }
 
     /**

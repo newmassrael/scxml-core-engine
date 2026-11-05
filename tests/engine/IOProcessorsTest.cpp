@@ -147,6 +147,18 @@ TEST(StoredOrigin, AFormat2OriginIsReadAsThePairItStoodFor) {
     const auto mesh = IOProcessorHelper::readStoredOrigin("mesh://motor", SCXML_ENTRY);
     EXPECT_EQ(mesh.origin, std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin(SCXML_ENTRY, "mesh://motor")));
     EXPECT_EQ(mesh.sender, "");
+    // An empty origin is none whatever type was stored beside it: format 2
+    // wrote the SCXML type beside an event no processor stamped, and an empty
+    // address is no reply address. Never half a pair.
+    const auto typeOnly = IOProcessorHelper::readStoredOrigin("", SCXML_ENTRY);
+    EXPECT_FALSE(typeOnly.origin.has_value());
+    EXPECT_EQ(typeOnly.sender, "");
+    // An address with an empty type is the SCXML processor's, what format 2
+    // meant by an empty type.
+    const auto untyped = IOProcessorHelper::readStoredOrigin("mesh://motor", "");
+    EXPECT_EQ(untyped.origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin(SCXML_ENTRY, "mesh://motor")));
+    EXPECT_EQ(untyped.sender, "");
     // A waiting send's origin names its sender, bare or located.
     EXPECT_EQ(IOProcessorHelper::readStoredSender("fixture-root"), "fixture-root");
     EXPECT_EQ(IOProcessorHelper::readStoredSender("sce://scxml/a%20b"), "a b");
