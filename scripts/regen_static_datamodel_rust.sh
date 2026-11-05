@@ -100,6 +100,9 @@ SCHEMAS+=(schema_item_pick)
 # The text template static_render renders (docs/adr/0087, section 3), whose unit
 # the machine calls as `super::text_notice::render`.
 SCHEMAS+=(text_notice)
+# ... and the two templates the reference harness static_model_harness renders, the
+# prompt it asks with and the one it repairs with (docs/adr/0087, section 6.1).
+SCHEMAS+=(harness_ask harness_repair)
 # The schedule todo_peer reads from the fields a to-do holds: the occurrence and schedule
 # records, the rules that order two writes, read a field, tell a conflict, select a day
 # and expand a repetition. Each is named by its file, which a machine's import names as

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  One id the application offers the reference harness `static_model_harness.scxml`
+  (docs/adr/0087, section 6.1): the set of offered ids arrives one id an event,
+  and the harness appends each to its list, since an event carries no list until
+  ADR 0086 step 3 lowers a composed payload on every lane.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="harness_offer"
+       sce:event-name="harness.offer">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

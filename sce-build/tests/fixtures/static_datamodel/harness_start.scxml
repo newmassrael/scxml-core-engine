@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  What starts the reference harness `static_model_harness.scxml` (docs/adr/0087,
+  section 6.1): the text a person wrote, which the ask template puts between its
+  fence's markers as untrusted data.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="harness_start"
+       sce:event-name="harness.start">
+  <datamodel>
+    <data id="request" sce:type="string[512]" sce:direction="in"/>
+  </datamodel>
+</scxml>

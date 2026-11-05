@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  Why the reference harness `static_model_harness.scxml` refused an answer
+  (docs/adr/0087, section 6.1 item 2): the application's own numbered code enum.
+
+  It repeats the thirteen codes of sce:std/lift/refusal_code.scxml with the same
+  names and the same numbers, and adds its own after them, so that a lift's
+  refusal is carried into the application's record by its number
+  (`HarnessCode.fromNumber(LiftRefusalCode.toNumber(why.value.code))`) and one
+  repair template takes the lift's refusals and the application's checks alike.
+  The numbers are the contract: an enum that did not repeat them would map a lift
+  code to the wrong name, which the repair prompt's bytes in
+  tests/host_features/scenarios/static_model_harness.json show.
+
+  - `notOffered`: the record names an `id` the harness was not offered.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="harness_code" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="notJson" value="1"/>
+      <sce:variant name="notObject" value="2"/>
+      <sce:variant name="tooDeep" value="3"/>
+      <sce:variant name="missing" value="4"/>
+      <sce:variant name="nullNotOptional" value="5"/>
+      <sce:variant name="wrongKind" value="6"/>
+      <sce:variant name="badNumber" value="7"/>
+      <sce:variant name="outOfRange" value="8"/>
+      <sce:variant name="tooLong" value="9"/>
+      <sce:variant name="tooMany" value="10"/>
+      <sce:variant name="unknownVariant" value="11"/>
+      <sce:variant name="notByteText" value="12"/>
+      <sce:variant name="nulInText" value="13"/>
+      <sce:variant name="notOffered" value="14"/>
+    </data>
+  </datamodel>
+</scxml>

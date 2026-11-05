@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/adr/0087, section 6): the reference harness, the
+  loop around a model written as a statechart. It asks its host's model for one
+  record of the answer schema `lift_answer.scxml`, reads the answer with
+  `<sce:lift>`, checks it, and asks again with a repair prompt until it holds a
+  record it accepts or gives up. An application copies it and owns its checks,
+  prompts and bounds.
+
+    waiting   collects the offered ids, one `harness.offer` each, appended to
+              `offered`: an event carries no list until ADR 0086 step 3 lowers a
+              composed payload on every lane, and the set arrives one id an
+              event until then. `harness.start` carries the text a person wrote.
+    work      the run, under one overall deadline of 20 s (`overall`); its
+              passing gives up from whatever state the run is in, a held
+              generation included, which leaving the state cancels.
+    compose   renders the ask template into `prompt`.
+    generate  asks the host (`sce-host-model-generate`) under the build's answer
+              schema (`sce:answer`) with a deadline of its own, 8 s. A
+              completion is lifted; a failure, and a request the host refuses
+              (`error.execution`), give up; a call whose own deadline passed is
+              asked again (`retry`).
+    check     the application's checks of the lifted value: the refusal of a
+              lift, carried into the application's record by its number, and an
+              id that is not one of `offered`, found by a `<foreach>`, each go to
+              `repair` with the refusal written first.
+    repair    keeps the refusal in `refusals`, renders the repair template from
+              it and the answer refused, and asks again.
+    retry     asks again with the same prompt.
+    accepted  the record is held in `answer`.
+    gave_up   `outcome` says why.
+
+  A repair and a retry count against one bound, `attempts`, read by its name,
+  `_x.limits.harness_attempts`: the capacity of `refusals`, so a build that moves
+  the bound (`--limit harness_attempts=N`) moves the list that keeps a refusal of
+  each attempt with it. With a call deadline of 8 s, an overall one of 20 s and
+  three attempts, a provider that never answers ends the first call at 8 s and
+  the second at 16 s, and the overall deadline passes during the third
+  (section 6.1 item 1).
+
+    outcome   `accepted`; or why the run gave up: `exhausted` (the attempt bound
+              was spent), `timeout` (the overall deadline passed), the failure
+              code of the host's answer, `invalid_argument` (the host declined
+              to start the call)
+    attempts  the repairs and retries asked for
+    answer    the last record a lift read, absent before any
+    why       the refusal of the last answer's lift, absent after one it read
+    refusals  every refusal of an answer, in order, as the repair template
+              took it
+    offered   the ids offered
+
+  The finals are children of `harness`, so the run's last configuration is kept
+  where a host reads it. The document declares its transition table: a host that
+  evaluates the harness keys each stored answer by the table's source hash
+  (section 6.1 item 4), and the exhaustive run of section 9.4 requires every row
+  of it taken, as the transition observer of docs/adr/0089 tells it.
+
+  Expected values are derived from the specification, not observed from a host:
+  tests/host_features/scenarios/static_model_harness_*.json replay the scripted
+  provider, one case each, and every sequence of the outcome classes of
+  tests/host_features/model_outcome_classes.json up to the harness's bound is
+  replayed against the exhaustive provider, on every lane that runs it. The
+  Interpreter refuses the model's generation by name (section 7.1).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="harness" datamodel="sce-static" name="static_model_harness"
+       sce:transition-table="emit">
+  <sce:import kind="event-schema" src="sce:std/host/model_generate_request.scxml" as="GenerateRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/model_generate_result.scxml" as="GenerateResult"/>
+  <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
+  <sce:import kind="enum" src="sce:std/lift/refusal_code.scxml" as="LiftRefusalCode"/>
+  <sce:import kind="event-schema" src="lift_answer.scxml" as="Answer"/>
+  <sce:import kind="event-schema" src="harness_refusal.scxml" as="Refusal"/>
+  <sce:import kind="enum" src="enum_harness_code.scxml" as="HarnessCode"/>
+  <sce:import kind="event-schema" src="harness_offer.scxml" as="Offer"/>
+  <sce:import kind="event-schema" src="harness_start.scxml" as="Start"/>
+  <sce:import kind="text-template" src="harness_ask.scxml" as="Ask"/>
+  <sce:import kind="text-template" src="harness_repair.scxml" as="Repair"/>
+  <datamodel>
+    <data id="offered" sce:type="list&lt;uint32&gt;[8]" sce:direction="out"/>
+    <data id="request" sce:type="string[512]" expr="''"/>
+    <data id="prompt" sce:type="string[8192]" expr="''"/>
+    <data id="said" sce:type="string[4096]" expr="''"/>
+    <data id="offered_ok" sce:type="bool" expr="false"/>
+    <data id="refused" sce:type="record:Refusal">
+      <sce:set name="code" expr="HarnessCode.notJson"/>
+      <sce:set name="path" expr="''"/>
+    </data>
+    <data id="refusals" sce:type="list&lt;record:Refusal&gt;[harness_attempts=3]" sce:direction="out"/>
+    <data id="attempts" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
+    <data id="answer" sce:type="optional&lt;record:Answer&gt;" expr="null" sce:direction="out"/>
+    <data id="why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
+  </datamodel>
+
+  <state id="harness" initial="waiting">
+    <state id="waiting">
+      <transition event="harness.offer" type="internal">
+        <sce:append target="offered" expr="_event.data.id"/>
+      </transition>
+      <transition event="harness.start" target="work">
+        <assign location="request" expr="_event.data.request"/>
+      </transition>
+    </state>
+
+    <state id="work" initial="compose">
+      <onentry>
+        <send event="harness.timeout" id="overall" delay="20s"/>
+      </onentry>
+      <onexit>
+        <cancel sendid="overall"/>
+      </onexit>
+      <transition event="harness.timeout" target="gave_up">
+        <assign location="outcome" expr="'timeout'"/>
+      </transition>
+
+      <state id="compose">
+        <onentry>
+          <sce:render template="Ask" location="prompt">
+            <sce:set name="request" expr="request"/>
+          </sce:render>
+        </onentry>
+        <transition target="generate"/>
+      </state>
+
+      <state id="generate">
+        <invoke type="sce-host-model-generate" id="gen" sce:answer="Answer"
+                sce:request="GenerateRequest" sce:result="GenerateResult">
+          <param name="prompt" expr="prompt"/>
+          <param name="max_tokens" expr="256"/>
+          <param name="temperature_milli" expr="0"/>
+          <param name="_sce_deadline_ms" expr="8000"/>
+        </invoke>
+        <transition event="done.invoke.gen" cond="_event.data.error === ''" target="check">
+          <assign location="said" expr="_event.data.text"/>
+          <sce:lift text="said" schema="Answer" location="answer" refusal="why"/>
+        </transition>
+        <transition event="done.invoke.gen" target="gave_up">
+          <assign location="outcome" expr="_event.data.error"/>
+        </transition>
+        <!-- The call's own deadline passed: asked again, within the attempt bound. -->
+        <transition event="error.invoke.gen" target="retry"/>
+        <!-- The host declined to start the call: the same request would be declined again. -->
+        <transition event="error.execution" target="gave_up">
+          <assign location="outcome" expr="'invalid_argument'"/>
+        </transition>
+      </state>
+
+      <state id="retry">
+        <onentry>
+          <assign location="attempts" expr="attempts + 1"/>
+        </onentry>
+        <transition cond="attempts &gt;= _x.limits.harness_attempts" target="gave_up">
+          <assign location="outcome" expr="'exhausted'"/>
+        </transition>
+        <transition target="generate"/>
+      </state>
+
+      <state id="check">
+        <onentry>
+          <assign location="offered_ok" expr="false"/>
+          <if cond="answer !== null">
+            <foreach array="offered" item="offer">
+              <if cond="offer === answer.value.id">
+                <assign location="offered_ok" expr="true"/>
+              </if>
+            </foreach>
+          </if>
+        </onentry>
+        <!-- The lift refused the answer: its refusal is carried into the application's
+             record by its number. A transition's cond proves no variable present in its
+             content, so the test is made again where `why` is read. -->
+        <transition cond="why !== null" target="repair">
+          <if cond="why !== null">
+            <assign location="refused.code" expr="HarnessCode.fromNumber(LiftRefusalCode.toNumber(why.value.code))"/>
+            <assign location="refused.path" expr="why.value.path"/>
+          </if>
+        </transition>
+        <!-- The application's check: the record names an id it was not offered. -->
+        <transition cond="!offered_ok" target="repair">
+          <assign location="refused.code" expr="HarnessCode.notOffered"/>
+          <assign location="refused.path" expr="'/id'"/>
+        </transition>
+        <transition target="accepted">
+          <assign location="outcome" expr="'accepted'"/>
+        </transition>
+      </state>
+
+      <state id="repair">
+        <onentry>
+          <assign location="attempts" expr="attempts + 1"/>
+          <sce:append target="refusals" expr="refused"/>
+          <sce:render template="Repair" location="prompt">
+            <sce:set name="code" expr="refused.code"/>
+            <sce:set name="path" expr="refused.path"/>
+            <sce:set name="said" expr="said"/>
+          </sce:render>
+        </onentry>
+        <transition cond="attempts &gt;= _x.limits.harness_attempts" target="gave_up">
+          <assign location="outcome" expr="'exhausted'"/>
+        </transition>
+        <transition target="generate"/>
+      </state>
+    </state>
+
+    <final id="accepted"/>
+    <final id="gave_up"/>
+  </state>
+</scxml>

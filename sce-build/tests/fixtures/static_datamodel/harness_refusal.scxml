@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  Why the reference harness `static_model_harness.scxml` refused an answer, as
+  the application keeps it (docs/adr/0087, section 6.1 item 2): an event schema
+  used as a record type, which no machine sends.
+
+  - `code`: the application's code (enum_harness_code.scxml), a lift's own
+    carried over by its number, or one of the application's checks;
+  - `path`: the place, as the strict RFC 6901 pointer a lift's refusal carries,
+    or the one the check that refused names (`/id` for an id not offered). The
+    bound is the 256 bytes of the lift refusal's `path`, so a lift's pointer is
+    carried over whole.
+
+  The repair template takes the two fields, so one template serves the lift's
+  refusals and the application's checks.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="harness_refusal"
+       sce:event-name="harness.refusal">
+  <sce:import kind="enum" src="enum_harness_code.scxml" as="HarnessCode"/>
+  <datamodel>
+    <data id="code" sce:type="enum:HarnessCode" sce:direction="in"/>
+    <data id="path" sce:type="string[256]" sce:direction="in"/>
+  </datamodel>
+</scxml>
