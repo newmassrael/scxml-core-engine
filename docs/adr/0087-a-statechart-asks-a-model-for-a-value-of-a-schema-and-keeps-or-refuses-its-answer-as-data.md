@@ -242,6 +242,7 @@ where `examples/ai_loop/ai_loop.scxml` already stands:
    | `optional<T>` | `{"anyOf":[S(T),{"type":"null"}]}`; the key stays in `required` | `"null" \| G(T)` |
    | `record:R` | `{"$ref":"#/$defs/<R's document name>"}`, defined once in `$defs` as `{"type":"object","properties":{...},"required":[every key],"additionalProperties":false}` | one rule per record document: `"{"` each key in the order the record's document declares them `":"` its value, separated by `","`, `"}"` |
    | `list<T>[B]` | `{"type":"array","items":S(T),"maxItems":B}` | `"[" ( G(T) ( "," G(T) ){0,B-1} )? "]"` |
+   | `list<T>[M..B]`, `M >= 1` (ADR 0086 section 15) | `{"type":"array","items":S(T),"minItems":M,"maxItems":B}` | `"[" G(T) ( "," G(T) ){M-1,B-1} "]"`, written as two chains (ADR 0086 section 15.10) |
 
    An open enum (`sce:strict-variants="false"`) has no fold: a statechart holds a closed enum only
    (docs/SCE_ACCEPTED_SUBSET.md:4500-4502), and a schema whose grammar is asked for and holds one is refused by name.
@@ -418,6 +419,7 @@ are refusals no reader makes today, each with a sentence of its own.
 | `unknownVariant` | 11 | a name the enum does not declare | the value |
 | `notByteText` | 12 | a byte string's text holding a character above U+00FF | the value |
 | `nulInText` | 13 | a text holding U+0000 (new: no C11 text can hold it, section "Context") | the value |
+| `tooFew` | 14 | a list short of its lower count (added by ADR 0086's amendment of 2026-11-06, section 15.11) | the list |
 
 A repeated name is refused as `notJson` on every reader, the rule Rust and Kotlin keep (`json.rs:277-287`); the
 readers whose library keeps the last value (Python's `json.loads`, `event_payload.py:444`) are held to it by the
@@ -432,7 +434,7 @@ byte string may hold the byte zero, since every runtime holds a byte string with
 |---|---|---|
 | `code` | `enum:LiftRefusalCode` | the class of the refusal (section 2.3) |
 | `path` | `string[lift_path=256]` | the place, as a strict RFC 6901 pointer: `""` for the whole text, otherwise `/` before each reference token, `~` written `~0` and `/` written `~1` (`/items/2/tags/0`) |
-| `bound` | `optional<uint32>` | the bound the value broke, for `tooLong` (bytes), `tooMany` (elements) and `tooDeep` (levels); absent for every other code |
+| `bound` | `optional<uint32>` | the bound the value broke, for `tooLong` (bytes), `tooMany` and `tooFew` (elements) and `tooDeep` (levels); absent for every other code |
 
 The ids of the committed schemas hold neither `/` nor `~`, so for each of them the pointer is the sentence's path with
 `/` in front; the readers escape all the same, so the rule does not rest on that. Every path of a refusal other than
@@ -778,7 +780,7 @@ again with the same prompt), and two final states, **accepted** and **gave up**.
    `lift_answer.scxml`, the schema the texts of the outcome class table are written against, so a class refuses at
    the same place in the harness as in `static_host_model`; the templates are `harness_ask.scxml` and
    `harness_repair.scxml`, the refusal record `harness_refusal.scxml` and its code enum `enum_harness_code.scxml`
-   (`notOffered` after the thirteen); the offered ids arrive by `harness_offer.scxml`, one id an event appended to a
+   (`notOffered` after the thirteen, and after `tooFew` since ADR 0086's amendment of 2026-11-06); the offered ids arrive by `harness_offer.scxml`, one id an event appended to a
    list, until ADR 0086 step 3 lowers an event that carries a list, and the request by `harness_start.scxml`. The
    attempt bound is the named limit `harness_attempts` (3), the capacity of `refusals`, which keeps each refusal the
    harness answered, read by its name in the guards (`_x.limits.harness_attempts`). The finals are children of a root

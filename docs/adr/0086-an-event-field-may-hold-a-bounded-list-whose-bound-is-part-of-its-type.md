@@ -7,9 +7,14 @@
   sized by the build and signed values in deterministic CBOR; on a second review, the same day, with every text and
   byte string bounded without exception and one notation for every bound, written in the type. The owner accepted
   the result the same day ("Owner's answers"). Amended after acceptance on 2026-11-04, at the owner's order: every
-  place of a Rust machine holds its bound in its Rust type (section 7.4, answer G, landing step 4).
-- Date: 2026-11-03; amended 2026-11-04
+  place of a Rust machine holds its bound in its Rust type (section 7.4, answer G, landing step 4). Amended again
+  on 2026-11-06, at the owner's order: a list states its lower count in its type, beside its bound, so "every
+  bound, written in the type" covers the fewest elements too (section 15, answer H, landing step 9).
+- Date: 2026-11-03; amended 2026-11-04 and 2026-11-06
 - Amends:
+  - ADR 0087 section 1.1: the JSON Schema of a list that states a lower count carries `minItems`, and its GBNF
+    grammar leaves the shorter lists out (section 15.9, 15.10); section 2.3: a fourteenth refusal code, `tooFew`
+    (section 15.11);
   - ADR 0042 section 2: its sentence "an event cannot carry a list" stops being true (section 12);
   - ADR 0077 section 7: a bound "absent where the protocol states none" stays a reading of a codec's frame, which
     describes a protocol SCE does not own; a value type of the language (an event schema's field, a variable, an
@@ -180,9 +185,13 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
        | string[B] | bytes[B]
        | optional<T>
        | record:<alias>
-       | list<T>[B]
+       | list<T>[B] | list<T>[M..B]
    B ::= <positive integer> | <limit name>=<positive integer>
+   M ::= <whole number of zero or more, at most the number of B>
    ```
+
+   The lower count `M..` of a list was added by the amendment of 2026-11-06 (section 15); `list<T>[B]` is
+   `list<T>[0..B]`.
 
    A record is the struct an imported event schema declares, whatever its fields are. A schema that holds a list, an
    optional, a byte string or another record is a record type like any other.
@@ -703,6 +712,130 @@ Each test fails when the rule it pins is removed; the landing checks each once a
 6. **Mutation casefiles** under `sce-build/tests/mutations`: each lift's count comparison, the inner text bound, the
    "fits" comparison of bounds, the slot computation, and the CBOR key order and head length.
 
+### 15. A list states its lower count (amended 2026-11-06, answer H)
+
+1. **Why.** Every bound is written in the type (section 1.2), and until this amendment a list's bound was its most
+   elements only. The answer schema a build writes from `list<T>[n]` (ADR 0087 section 1.1) carries `maxItems` and
+   no `minItems`, so a grammar-constrained decoder may write `[]` for a list the application needs filled. Measured
+   on 2026-11-06, a Gemma 4 model under constrained decoding answered an empty list in 32 of 45 cases of a list that
+   must hold at least 3, and in 36 of 55 cases of one that must hold at least 1. Constrained decoding distorts a
+   model's distribution toward the grammar's shortest path (Park, Wang, Berg-Kirkpatrick, Polikarpova and
+   D'Antoni, "Grammar-Aligned Decoding", 2024); the textbook remedy is to take that path out of the grammar, and the
+   grammar is folded from the type, so the path is taken out of the type, the single source. ASN.1 writes the same
+   fact in the same place: `SEQUENCE (SIZE (1..N)) OF T` (ITU-T X.680, its size-constraint clause), and CDDL as the
+   occurrence `m*n` (RFC 8610 section 3.2).
+2. **The notation.** `list<T>[M..B]` is a list of at least `M` and at most `B` elements, `0 <= M <= B`, the lower
+   count written before `..` in the one bracket the bound already stands in. `list<T>[B]` stays and means
+   `list<T>[0..B]`; a lower count of zero is not printed, so `list<T>[0..8]` and `list<T>[8]` are one type and one
+   text, `list<T>[8]`. A named bound pairs with a lower count as `[M..name=N]`: the name moves the upper bound only
+   (ADR 0050), and the lower count is a literal of the type, which no build moves. A build whose `--limit name=N`
+   puts `N` below `M` would give the type no value, and is refused where the type is read, as `M` past a written
+   bound is. Refused:
+   - `M` past the bound (`list<uint8>[4..3]`, or `[3..name=8]` under `--limit name=2`):
+     `validation/lower-count-past-bound`;
+   - a lower count that is not a whole number of zero or more (`[-1..3]`, `[..3]`, `[3..]`): the malformed-bound
+     class of section 11, `validation/attribute-rule-violated`;
+   - a lower count on a type that is not a list, and on a list where nothing reads the count (item 7, item 8):
+     `validation/lower-count-misplaced`.
+
+   **Texts and byte strings take none.** Their bracket counts bytes, and a lower bound in bytes is not trivially
+   symmetric with the upper one: JSON Schema's `minLength` counts characters, so a text of at least `M` bytes is no
+   `minLength` the schema could state (a character takes one to four bytes); its GBNF grammar would need a chain
+   that counts from below; and the lift would need a code of its own for a text too short. None of the grounds above
+   measured a text. `string[1..8]` and `bytes[0..4]` are refused, and the legacy attribute `sce:max-count`, which
+   states no lower count, stays a synonym of the upper bound alone: a list with a lower count is written in the
+   bracket.
+3. **The model.** `Bound` gains `min`, the fewest elements, 0 where none is stated (and on every text and byte
+   string). Two types are equal only when their lower counts are, and the forge-AST export writes `"min"` beside
+   `"max"` in a list's object when it is past zero and leaves it out otherwise, so every export written before this
+   amendment is unchanged.
+4. **The size calculus is unchanged.** The largest value of `list<T>[M..B]` is a full list, so `J` and `C` read `B`
+   alone, and so do C11's layout and Rust's `BoundedList<T, N>`.
+5. **Where a delivery is read (section 4).** A list with fewer than `M` elements is refused where it is read, at
+   any depth, the delivery whole and `error.execution` raised once, as a list past its bound is: the elements are
+   counted before any is decoded, the count judged after the upper bound, and the reason names the path:
+   `'items' holds 0 elements, fewer than the 3 its type declares`. Each runtime's list reader takes the lower count
+   beside the bound: Rust `PayloadValue::list_within`, Go `ReadListWithin`, Kotlin `Value.listWithin`, Python
+   `ListOf(..., least=M)`, C++ `readListWithin`, Swift `list(least:bound:)`, C11 `sce_payload_list_open_within`,
+   and the Interpreter's descriptor `{list: T, max: B, min: M}`; each reader of a list that states none reads it as
+   it did.
+6. **Where a value is written (section 5).** "Fits" gains the lower count: `list<S>[a..b]` fits `list<T>[c..d]`
+   when `S` fits `T`, `b <= d` and `a >= c`. A copy, an assignment or a forward takes only a value that fits, so
+   none of them checks a count at run time. A send is the one place a value may be written whose lower count the
+   build does not prove: a variable filled by appends fits a field but for its lower count (item 7). Its send checks
+   the count at run time before it encodes, and refuses the event with `error.execution` naming the path, the
+   sentence of item 5. That is hybrid type checking: what the build can decide it decides, and what it cannot is
+   checked where the value crosses (Flanagan, "Hybrid Type Checking", POPL 2006). A host's injected value is checked
+   where it is made, beside its upper bound (section 5.4): Kotlin `ValueBounds.listWithin` in `init`, Python
+   `check_value` in `__post_init__`, the generated check of Go (`CheckListWithin`), C++
+   (`EventPayloadBounds::listWithin`) and Swift (`checkList(least:bound:)`), and Rust's `check_count`. The lower count
+   is not held in a Rust type, against the grain of section 7.4: a type with a lower count has no empty value, and
+   every list a machine builds passes through counts below it, one append at a time, so the type that holds a list
+   while it is built cannot be the type that states the count. Section 7.4's reason holds for the upper bound, which
+   no append may pass; the lower count is held at the two crossings, where a value is read and where it is written
+   whole, on Rust as on every other lane.
+7. **A variable and an algorithm's slot state no lower count.** Each starts empty and is filled an element at a
+   time (docs/adr/0076, `<sce:append>`), so a lower count in its own type, at any depth, would be broken by every
+   value it holds before it is full, and is refused (`validation/lower-count-misplaced`). A record's schema may
+   state one in its fields: a value of a record enters a place whole (a lift, a copy of a payload's record, a
+   forward), never built. A copy of a list that states a lower count into a variable that states none fits.
+8. **A list a later revision adds states none.** A delivery that lacks it reads the empty list (section 10.2), which
+   a lower count would refuse, so such a list is refused with one (`validation/lower-count-misplaced`). An
+   `optional<list<T>[M..B]>` a later revision adds reads absent, and may state one.
+9. **JSON Schema.** `S(list<T>[M..B])` writes `"minItems": M` when `M` is past zero, between `items` and `maxItems`
+   in the one keyword order (ADR 0087 section 1.1, item 2): `{"type":"array","items":S(T),"minItems":3,
+   "maxItems":8}`. `schemas/sce-payload-schema.v1.schema.json` admits it, an integer of at least 1, beside
+   `maxItems`, and states the keyword order with it.
+10. **GBNF.** A list that states a lower count writes its required elements as a chain, as every bound of the
+    grammar is written (ADR 0087's `GbnfRules`: llama.cpp makes a repetition past 2000 unbounded, so no bound is a
+    repetition `{m,n}`). With `X` the rule of an element, `G(list<T>[M..B])` for `M >= 1` is
+    `"[" X X-least-(M-1) X-tail-(B-M) "]"`, where `X-least-k ::= "," X X-least-(k-1)` and `X-least-1 ::= "," X`,
+    and a term whose index is zero is left out: exactly the language of `"[" X ( "," X ){M-1,B-1} "]"`. For `M = 0`
+    the rule is unchanged. The empty list is then no sentence of the grammar of a list that needs one element, and
+    the shortest path of the grammar holds `M` elements.
+11. **The lift (ADR 0087 section 2.3).** A fourteenth refusal code, `tooFew`, number 14: a list short of its lower
+    count. Its pointer is the list, and its `bound` is the lower count `M` in elements, as `tooMany`'s is the upper
+    bound. `sce:std/lift/refusal_code.scxml` gains the variant; every runtime's code carries it, and its reader
+    raises it where item 5 refuses. The reference harness's own code enum repeats the lift's codes by number
+    (`enum_harness_code.scxml`), so it repeats `tooFew` at 14 and moves its own `notOffered` from 14 to 15. The
+    outcome class table (`tests/host_features/model_outcome_classes.json`) names `tooFew` deferred beside `tooMany`
+    until a schema a lift reads holds a list (ADR 0087, "Landing order", item 8).
+12. **Revisions (section 10, ADR 0044).** Lowering a list's lower count is a widening, as `T` to `optional<T>` is
+    (ADR 0055 section 6): every value of `[a..n]` is a value of `[c..n]` when `c <= a`, so a delivery an older
+    sender wrote reads in a newer receiver. Two schemas of one event are revisions of one when, beside the rule of
+    section 10, each list both declare has one element type and one bound, and the later revision's lower count is
+    at most the earlier's; two schemas of one revision state one lower count. A newer sender's shorter list reaching
+    a receiver built before the lowering is refused there (`tooFew`, `error.execution`), as a newer sender's `null`
+    is, and a deployment that lowers a count upgrades the receivers first. Raising a lower count is not a revision:
+    a value an older sender wrote may then be refused, so the two schemas part at the field, as at any other change
+    of its type (section 10.4). No marker such as `sce:optional-since` is needed: the revisions' own numbers order
+    the two, and nothing reads a value as of an earlier revision's count (a saved state names a list by its element
+    and upper bound). The rule is `schema_revision::list_count_revises`; deploy judges no two revisions of a schema
+    that holds a list yet, and refuses such a pair at the field (`composed_parting`) until a build sends its event
+    between machines (section 5.2).
+13. **Diagnostics (section 11).** Two codes, stage `validation`, each anchored to this section:
+    - **`validation/lower-count-past-bound`**: the lower count is past the bound, as written or after `--limit`,
+      so the type has no value. No fix: swapping the two numbers changes what the type says, and which of them to
+      lower is the author's choice.
+    - **`validation/lower-count-misplaced`**: a lower count where nothing reads it: on a string or bytes, in a
+      variable's or an algorithm slot's type, on a list a later revision adds. Fix `replace_with`, the type with
+      every lower count removed: the one type that keeps everything else the declaration says, and the edit is no
+      choice.
+    The codes stand in docs/SCE_ACCEPTED_SUBSET.md's appendix (`acceptance_doc_covers_every_code`), in the generated
+    catalog of SCE_ERROR_CONTRACT.md section 5 and in `schemas/sce-diagnostic.v1.schema.json`.
+14. **Wire surfaces (section 13).** No status flips, and every change is additive. Authoring grammar
+    (`pre-release`): `[M..B]` was refused as a malformed bound and is read now; the XSD's type alphabet already holds
+    `.`, and its comment states the grammar. Forge AST (`pre-release`): the optional `min`. Diagnostics
+    (`pre-release`): two codes, one existing fix kind. Payload schema (`pre-release`): the optional `minItems`.
+15. **Tests.** `value_type.rs`: the notation read, printed and refused (each refusal of item 2, the limit that
+    passes the lower count), the export of `min`, "fits" with a lower count against the set of values each type
+    holds, the JSON Schema's `minItems` and the GBNF chain, each against the recognizer; `payload_schema.rs`: the
+    fixture `sce-build/tests/fixtures/payload_schema/answer_counted.scxml`, whose smallest value holds each lower
+    count and whose value one short of a count both forms refuse; `schema_revision.rs`: lowering is a revision,
+    raising and a changed bound are not; each runtime's reader refuses one short with `tooFew`, its pointer and
+    bound, on the shared table `tests/json_text/payload_refusal.json`, which gains `min` in its type descriptor;
+    each writer's check refuses one short; the parser refuses each misplaced count; the goldens of the two codes.
+
 ## Landing order
 
 1. **The type grammar and the model**: `ValueType`, the bracket bounds and the legacy attributes read as their
@@ -730,6 +863,14 @@ Each test fails when the rule it pins is removed; the landing checks each once a
 7. **The deterministic CBOR encoder** with its vectors; unused for signing until ADR 0085 landing 5.
 8. **The next revision of the authoring grammar**, after this ADR's landings: the legacy attributes are refused,
    with the same code and fix.
+9. **The lower count of a list** (section 15, added 2026-11-06), in five changes: the notation in the model, the
+   parser, the XSD's comment and the AST export, with its refusals and the revision rule; the JSON Schema's
+   `minItems` and the GBNF chain, with the payload-schema fixture; the code `tooFew` in the standard library's
+   refusal code, the reference harness's enum and every runtime's code; the count in every runtime's list reader
+   and writer's check, and in the Rust composed lift; the two diagnostic codes. A send that lowers a composed value
+   (step 3) calls the writer's count check where the build does not prove the count (section 15.6). No committed
+   document states a lower count, so a tree changes only where the standard library's refusal code and the
+   harness's enum are generated.
 
 ADR 0085 landing 4 is the first user of steps 1 to 5, and its landing 5 of step 7. (Steps 5 to 8 were numbered 4
 to 7 before the amendment of 2026-11-04 inserted step 4.)
@@ -748,6 +889,9 @@ to 7 before the amendment of 2026-11-04 inserted step 4.)
 - Signatures move to a standard encoding any CBOR library checks, at the one domain bump ADR 0085 already makes.
 - More generated code per composition, and more cases in each runtime's reader and writer.
 - No later revision raises a bound.
+- A list states its fewest elements in its type (section 15), so an answer schema and its grammar leave out the
+  lists an application cannot use, and every reader refuses them with `tooFew`; a later revision may lower a lower
+  count and not raise it.
 
 ## Alternatives rejected
 
@@ -840,3 +984,19 @@ The owner reviewed the first landing of step 3 on 2026-11-04 and answered:
   container templates in its runtime, in a later landing; Kotlin, Go, Python and Swift keep checked constructors and
   bounds kept by the machine, having no constant parameter for a bound. The change of the generated public types is
   a consumer's migration, recorded with the landing (landing step 4).
+
+The owner decided on 2026-11-06, from a measurement of the answer schemas under constrained decoding:
+
+- **H. A list states its lower bound in its type, beside its upper bound**: "every bound, written in the type"
+  covers the fewest elements. The grounds are section 15.1's: an answer schema from `list<T>[n]` carries
+  `maxItems` and no `minItems`, so grammar-constrained decoding admits `[]`; a Gemma 4 model so constrained answered
+  an empty list in 32 of 45 cases of a list that must hold at least 3 and in 36 of 55 of one that must hold at
+  least 1; and the textbook remedy for a decoder drawn to the grammar's shortest path is to take that path out of
+  the grammar, which is folded from the type. Raising a lower count is not additive, since an old value may then be
+  refused; lowering one is. Decided while writing, within that answer, and open to the owner's review: the spelling
+  `[M..B]` and `[M..name=N]`, a name moving the upper bound only (section 15.2); texts and byte strings left out
+  (section 15.2); the lower count held at the two crossings rather than in a Rust type, and a send's run-time count
+  check where the build does not prove it (section 15.6); a variable, an algorithm's slot and a list a later
+  revision adds stating none (sections 15.7, 15.8); the GBNF chain in place of a repetition (section 15.10); the
+  number 14 for `tooFew` and 15 for the harness's `notOffered` (section 15.11); and the two codes, the second with
+  `replace_with` (section 15.13).
