@@ -109,8 +109,9 @@ TEST_F(HostRequestAotTest, TheGeneratedEngineHandsTheHostTheRequestsTheTableGive
     expectTheRowsOf("statechart_host_request.scxml", 5u, sends, starts);
 }
 
-// The null data model has no expressions: an inline <content> is the event's
-// value as it is written, on this engine as on the Interpreter.
+// The null data model has no expressions: an inline <content> is handed to the
+// host as it is written, and its event data is the space-normalized string, on
+// this engine as on the Interpreter.
 TEST_F(HostRequestAotTest, UnderTheNullDataModelTheGeneratedEngineHandsTheHostTheContentAsWritten) {
     std::vector<SCE::HostSendRequest> sends;
 

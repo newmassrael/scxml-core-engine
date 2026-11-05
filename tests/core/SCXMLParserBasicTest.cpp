@@ -310,8 +310,8 @@ TEST_F(SCXMLParserBasicTest, DataCharacterDataIsReadAsItsCharacters) {
 // The data model is the document's own. One parser reads a `datamodel="null"`
 // document and then the same document naming no data model: the second is
 // read under the default (ECMAScript), so its `<donedata>` and `<send>`
-// children are in-line content to be read, not the literal values the Null
-// data model makes them. The sub-parsers were told the data model only when
+// children are in-line content read with the default's expressions, not under
+// the Null data model, which has none. The sub-parsers were told the data model only when
 // the attribute was present, and kept the first document's.
 TEST_F(SCXMLParserBasicTest, AReusedParserReadsEachDocumentUnderItsOwnDatamodel) {
     const auto document = [](const std::string &datamodelAttribute) {
@@ -331,25 +331,25 @@ TEST_F(SCXMLParserBasicTest, AReusedParserReadsEachDocumentUnderItsOwnDatamodel)
     const auto doneDataKind = [](const std::shared_ptr<SCXMLModel> &model) {
         return model->findStateById("f")->getDoneData().getContentKind();
     };
-    const auto sendIsLiteral = [](const std::shared_ptr<SCXMLModel> &model) {
+    const auto sendIsUnderNull = [](const std::shared_ptr<SCXMLModel> &model) {
         const auto blocks = model->findStateById("s")->getEntryActionBlocks();
         EXPECT_EQ(blocks.size(), 1u);
         EXPECT_EQ(blocks.at(0).size(), 1u);
         auto send = std::dynamic_pointer_cast<SendAction>(blocks.at(0).at(0));
         EXPECT_NE(send, nullptr);
-        return send && send->isContentLiteral();
+        return send && send->isContentUnderNullDatamodel();
     };
 
     auto nullModel = parser_->parseContent(document(R"(datamodel="null")"));
     ASSERT_NE(nullModel, nullptr);
     EXPECT_EQ(doneDataKind(nullModel), DoneData::ContentKind::Literal);
-    EXPECT_TRUE(sendIsLiteral(nullModel));
+    EXPECT_TRUE(sendIsUnderNull(nullModel));
 
     auto defaultModel = parser_->parseContent(document(""));
     ASSERT_NE(defaultModel, nullptr);
     EXPECT_EQ(doneDataKind(defaultModel), DoneData::ContentKind::InlineText)
         << "a document naming no data model was read under the previous document's";
-    EXPECT_FALSE(sendIsLiteral(defaultModel))
+    EXPECT_FALSE(sendIsUnderNull(defaultModel))
         << "a document naming no data model was read under the previous document's";
 }
 

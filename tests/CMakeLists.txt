@@ -1818,6 +1818,7 @@ add_executable(integration_tests
     integration/DonedataLateCompletionAotTest.cpp
     integration/DonedataChildrenTakeTheInlineReadingTest.cpp
     integration/AssignChildrenTakeTheInlineReadingTest.cpp
+    integration/NullDataModelContentTakesTheInlineReadingTest.cpp
     integration/AutoforwardEventFieldsTest.cpp
     integration/AutoforwardEventFieldsAotTest.cpp
     integration/AnEventKeepsTheNameItWasSentUnderTest.cpp
@@ -2800,7 +2801,7 @@ sce_add_state_machine(
 )
 
 # The same table's request under the null data model, whose inline <content> is
-# its value as written; the document makes a send and nothing else.
+# its space-normalized string; the document makes a send and nothing else.
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_request_null.scxml

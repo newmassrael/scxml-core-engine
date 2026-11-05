@@ -253,18 +253,20 @@ public:
     const std::string &getContent() const;
 
     /**
-     * @brief Say whether the inline content is the event's value as it is written
-     * @param literal true under the `null` datamodel, which has no expressions,
-     *        so the children are the value; false under any other, where the
-     *        children are read as the data model reads inline content
+     * @brief Say which data model reads the inline content
+     * @param underNull true under the `null` datamodel, which has no
+     *        expressions, so no text of the children is read as one; false
+     *        under any other. Either way the children take the one reading
+     *        inline content has (`DataModelInitHelper::inlineContentEventData`),
+     *        with the expression step answered by that data model.
      */
-    void setContentIsLiteral(bool literal);
+    void setContentUnderNullDatamodel(bool underNull);
 
     /**
-     * @brief Whether the inline content is the event's value as it is written
-     * @return See setContentIsLiteral()
+     * @brief Whether the inline content is read under the `null` datamodel
+     * @return See setContentUnderNullDatamodel()
      */
-    bool isContentLiteral() const;
+    bool isContentUnderNullDatamodel() const;
 
     /**
      * @brief Set the content expression for dynamic content evaluation (W3C SCXML expr attribute)
@@ -307,7 +309,7 @@ private:
     std::string namelist_;                   // Space-separated list of variables for event data (§scxml-C-1)
     std::vector<SendParam> paramsWithExpr_;  // W3C SCXML compliant params with expr
     std::string content_;                    // Content to send as HTTP body (§scxml-C-2)
-    bool contentIsLiteral_ = false;          // The children are the value (no datamodel)
+    bool contentUnderNull_ = false;          // Read under the null datamodel (no expressions)
     std::string contentExpr_;                // Content expression for dynamic evaluation (W3C SCXML expr attribute)
 };
 

@@ -157,17 +157,36 @@ bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const
     return true;
 }
 
+SCE::DataModelInitHelper::ExpressionReading
+SCE::DataModelInitHelper::engineExpressionReading(IScriptEngine &jsEngine, const std::string &sessionId) {
+    return [&jsEngine, sessionId](const ScriptSource &content) -> std::optional<ScriptValue> {
+        // The LOWERED half goes to the engine; under the ECMAScript target the
+        // two halves are the same string, so this is the author's text.
+        auto evalResult = jsEngine.evaluateExpression(sessionId, content);
+        evalResult.wait();
+        auto evalJsResult = evalResult.get();
+        if (!evalJsResult.isSuccess()) {
+            return std::nullopt;
+        }
+        return evalJsResult.getInternalValue();
+    };
+}
+
+SCE::DataModelInitHelper::ExpressionReading SCE::DataModelInitHelper::nullDataModelExpressionReading() {
+    return [](const ScriptSource &) -> std::optional<ScriptValue> { return std::nullopt; };
+}
+
 ScriptValue SCE::DataModelInitHelper::inlineContentValue(IScriptEngine &jsEngine, const std::string &sessionId,
                                                          const ScriptSource &content) {
-    // Try evaluating the children as an expression first. The LOWERED half
-    // goes to the engine; under the ECMAScript target the two halves are the
-    // same string, so this is the author's text.
-    auto evalResult = jsEngine.evaluateExpression(sessionId, content);
-    evalResult.wait();
-    auto evalJsResult = evalResult.get();
+    return inlineContentValue(engineExpressionReading(jsEngine, sessionId), content);
+}
 
-    if (evalJsResult.isSuccess()) {
-        return evalJsResult.getInternalValue();
+ScriptValue SCE::DataModelInitHelper::inlineContentValue(const ExpressionReading &readExpression,
+                                                         const ScriptSource &content) {
+    // The children are first the expression they are, when the data model
+    // reads them as one.
+    if (std::optional<ScriptValue> value = readExpression(content)) {
+        return std::move(*value);
     }
 
     // No expression: the author's text, whitespace-normalized, is a string.
@@ -187,6 +206,12 @@ SCE::ScriptSource SCE::DataModelInitHelper::inlineContentValueLiteral(IScriptEng
 std::string SCE::DataModelInitHelper::inlineContentEventData(IScriptEngine &jsEngine, const std::string &sessionId,
                                                              const ScriptSource &content,
                                                              std::optional<ScriptValue> *outTypedData) {
+    return inlineContentEventData(engineExpressionReading(jsEngine, sessionId), content, outTypedData);
+}
+
+std::string SCE::DataModelInitHelper::inlineContentEventData(const ExpressionReading &readExpression,
+                                                             const ScriptSource &content,
+                                                             std::optional<ScriptValue> *outTypedData) {
     // Whether the children are an XML document is asked of the author's text,
     // as `initializeVariable` asks it; such children travel as written, and
     // carry no typed value: the DOM node is built where `_event.data` is bound.
@@ -196,7 +221,7 @@ std::string SCE::DataModelInitHelper::inlineContentEventData(IScriptEngine &jsEn
         }
         return content.source();
     }
-    ScriptValue value = inlineContentValue(jsEngine, sessionId, content);
+    ScriptValue value = inlineContentValue(readExpression, content);
     std::string eventData = EventDataHelper::scriptValueToJsonString(value);
     if (outTypedData) {
         *outTypedData = std::move(value);

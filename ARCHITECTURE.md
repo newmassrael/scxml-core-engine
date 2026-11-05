@@ -1369,8 +1369,11 @@ elements, the characters otherwise, without the whitespace that lays it out.
 A `<send>`'s event data is that text as the data model reads inline content
 (`DataModelInitHelper::inlineContentEventData` on the Interpreter, the build's
 `to_author_data_content` for a generated machine): an XML document as
-written, otherwise the expression's value or the space-normalized string, and
-under the null data model the text itself.
+written, otherwise the expression's value or the space-normalized string. The
+null data model is not a second reading: it answers the expression step with
+none for every text (`DataModelInitHelper::nullDataModelExpressionReading`,
+the build's `inline_content_reading` under `Datamodel::Null`), so its text is
+the space-normalized string.
 
 A `datamodel="sce-static"` document reaches the Interpreter through `sce-codegen
 lower` (`docs/SCE_ACCEPTED_SUBSET.md` §2.15), which keeps a host-run `<invoke>`

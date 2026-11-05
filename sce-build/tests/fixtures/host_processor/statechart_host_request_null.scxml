@@ -7,10 +7,12 @@
   statechart_host_request.scxml is, by both engines.
 
   With no data model there are no expressions, so the children of an inline
-  <content> are the event's value as they are written: the request made as
-  `asking` is entered carries the text `1 + 1`, without the whitespace that
-  lays it out, as its content, and the same text as a string as its event
-  data (statechart_host_request.scxml's `told` is the ECMAScript reading).
+  <content> take the reading that follows the expression one, as they would
+  under any data model that read no expression in them: the request made as
+  `asking` is entered carries the text `1  +   1`, without the whitespace that
+  lays it out, as its content, and the space-normalized string `1 + 1` as its
+  event data (statechart_host_request.scxml's `told` is the ECMAScript
+  reading, where the same text is an expression).
 
     said   - a <send> to the host's processor with an inline <content>.
 
@@ -24,7 +26,7 @@
     <onentry>
       <send id="said" type="x-sce-host" event="host.said" target="pane://said">
         <content>
-          1 + 1
+          1  +   1
         </content>
       </send>
     </onentry>

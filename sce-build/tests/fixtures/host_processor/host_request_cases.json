@@ -53,14 +53,14 @@
       }
     },
     {
-      "name": "a send whose inline content is its value as written, under the null data model",
+      "name": "a send whose inline content is its space-normalized string, under the null data model",
       "document": "statechart_host_request_null.scxml",
       "kind": "send",
       "request": {
         "processorType": "x-sce-host",
         "eventName": "host.said",
         "target": "pane://said",
-        "content": "1 + 1",
+        "content": "1  +   1",
         "params": {},
         "sendId": "said",
         "eventData": "\"1 + 1\"",

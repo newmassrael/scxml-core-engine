@@ -90,12 +90,12 @@ public:
     /**
      * @brief Set the datamodel of the document whose actions are parsed next
      *
-     * The children of a `<send>`'s inline `<content>` are the value itself
-     * under the `null` datamodel and are read as the data model reads inline
-     * content under any other (`SendAction::isContentLiteral`): the split
-     * `DoneDataParser::setDatamodelType` makes for `<donedata>`, set by
-     * `SCXMLParser` for every document from the same root attribute, or the
-     * default when the document names none.
+     * The children of a `<send>`'s inline `<content>` are read as the
+     * document's data model reads inline content, and the `null` one has no
+     * expressions to read them as (`SendAction::isContentUnderNullDatamodel`).
+     * Set by `SCXMLParser` for every document from the root attribute that
+     * `DoneDataParser::setDatamodelType` is set from, or the default when the
+     * document names none.
      */
     void setDatamodelType(const std::string &datamodel) {
         datamodelType_ = datamodel;

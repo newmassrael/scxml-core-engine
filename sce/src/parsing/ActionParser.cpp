@@ -590,11 +590,10 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
                 if (!contentText.empty()) {
                     sendAction->setContent(contentText);
-                    // §scxml-5.6.1: with no data model the children are the
-                    // value itself; with one they are read as the data model
-                    // reads inline content (ActionExecutorImpl's send). The
-                    // split DoneDataParser makes for <donedata>'s <content>.
-                    sendAction->setContentIsLiteral(datamodelType_ == "null");
+                    // §scxml-5.6.1: the children are read as the document's
+                    // data model reads inline content (ActionExecutorImpl's
+                    // send); the null one has no expressions to read them as.
+                    sendAction->setContentUnderNullDatamodel(datamodelType_ == "null");
                     SCE_LOG_DEBUG("ActionParser: Parsed send content literal: '{}'", contentText);
                 }
             }

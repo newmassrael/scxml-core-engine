@@ -37,7 +37,6 @@
 #include "events/IEventDispatcher.h"
 #include "events/InvokeEventTarget.h"
 #include "events/ParentEventTarget.h"
-#include "runtime/DataContentHelpers.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/INativeActionHost.h"
 #include "scripting/ScriptResultUtils.h"
@@ -1052,15 +1051,15 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // reading every generated machine's send gives them where it is
             // built, so `<content>'v'</content>` arrives as `v` from either
             // engine. An XML document travels as written, and the DOM node
-            // is built where `_event.data` is bound. With no data model there
-            // are no expressions, and the text is the value itself, as
-            // `<donedata>`'s is (`DoneDataParser`).
-            if (action.isContentLiteral() && !isXMLContent(action.getContent())) {
-                DoneDataHelper::emitContentLiteral(action.getContent(), contentData);
-            } else {
-                contentData = DataModelInitHelper::inlineContentEventData(
-                    scriptEngine_, sessionId_, ScriptSource::ecmascript(action.getContent()));
-            }
+            // is built where `_event.data` is bound. The null data model has
+            // no expressions, so it reads none in the text, which is then the
+            // space-normalized string: the same reading, not a second one.
+            const DataModelInitHelper::ExpressionReading readExpression =
+                action.isContentUnderNullDatamodel()
+                    ? DataModelInitHelper::nullDataModelExpressionReading()
+                    : DataModelInitHelper::engineExpressionReading(scriptEngine_, sessionId_);
+            contentData = DataModelInitHelper::inlineContentEventData(readExpression,
+                                                                      ScriptSource::ecmascript(action.getContent()));
         }
         // §scxml-C-2: a BasicHTTP message's body is the <content> as written,
         // the text the generated engine posts too; its data reading above is

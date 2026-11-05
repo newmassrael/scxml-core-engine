@@ -103,6 +103,37 @@ public:
                                    const ScriptSource &content, std::function<void(const std::string &)> errorCallback);
 
     /**
+     * @brief A data model's answer to the expression step of the inline reading
+     *
+     * Asked of inline children that are not an XML document: the value they
+     * have as an expression of the data model, or none when they are no
+     * expression of it. The readings around this step are the document's and
+     * not the data model's, so they are made once, by the helpers below,
+     * whichever data model answers it.
+     */
+    using ExpressionReading = std::function<std::optional<ScriptValue>(const ScriptSource &)>;
+
+    /**
+     * @brief The expression step of a data model whose expressions an engine evaluates
+     *
+     * The children evaluated by `jsEngine` in `sessionId`; none when the
+     * evaluation fails, which is what makes the text no expression.
+     *
+     * @param jsEngine Engine the expression is evaluated by; must outlive the reading
+     * @param sessionId Session it is evaluated in; copied into the reading
+     */
+    static ExpressionReading engineExpressionReading(IScriptEngine &jsEngine, const std::string &sessionId);
+
+    /**
+     * @brief The expression step of the null data model
+     *
+     * The null data model has no expressions, so it answers none for every
+     * text, and its children take the readings that follow: the XML as
+     * written, or the space-normalized string. No engine is asked.
+     */
+    static ExpressionReading nullDataModelExpressionReading();
+
+    /**
      * @brief The value inline children that are not an XML document hold
      *
      * The reading `initializeVariable` gives the children of a `<data>`: the
@@ -116,6 +147,15 @@ public:
      */
     static ScriptValue inlineContentValue(IScriptEngine &jsEngine, const std::string &sessionId,
                                           const ScriptSource &content);
+
+    /**
+     * @brief `inlineContentValue`, with the expression step answered by `readExpression`
+     *
+     * @param readExpression The data model's expression step
+     *        (`engineExpressionReading`, `nullDataModelExpressionReading`)
+     * @param content The children, as a `ScriptSource` (see `initializeVariable`)
+     */
+    static ScriptValue inlineContentValue(const ExpressionReading &readExpression, const ScriptSource &content);
 
     /**
      * @brief `inlineContentValue`, as ECMAScript text that evaluates to it
@@ -163,6 +203,22 @@ public:
      */
     static std::string inlineContentEventData(IScriptEngine &jsEngine, const std::string &sessionId,
                                               const ScriptSource &content,
+                                              std::optional<ScriptValue> *outTypedData = nullptr);
+
+    /**
+     * @brief `inlineContentEventData`, with the expression step answered by `readExpression`
+     *
+     * The one reading for every data model: under the null data model
+     * (`nullDataModelExpressionReading`) `<content>a  b</content>` is the
+     * string `a b` and `<content>21</content>` the string `21`, as every
+     * generated machine's send carries them (`inline_content_reading`,
+     * sce-build), and XML travels as written under it as under any other.
+     *
+     * @param readExpression The data model's expression step
+     * @param content The children, as a `ScriptSource` (see `initializeVariable`)
+     * @param outTypedData See the overload above
+     */
+    static std::string inlineContentEventData(const ExpressionReading &readExpression, const ScriptSource &content,
                                               std::optional<ScriptValue> *outTypedData = nullptr);
 
     /**

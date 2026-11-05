@@ -6,7 +6,7 @@
 //
 // Sibling of `InlineContentIsReadByItsDataModelAotTest.cpp`. The Interpreter
 // reads a `<send>`'s text by the document's data model
-// (`SendAction::isContentLiteral`) and carries a `<donedata>`'s XML as the
+// (`SendAction::isContentUnderNullDatamodel`) and carries a `<donedata>`'s XML as the
 // document text, so this pins the verdict every generated engine is held to.
 //
 // Fixture:
