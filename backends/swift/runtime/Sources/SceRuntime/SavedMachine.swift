@@ -15,9 +15,9 @@
 // machine as it was, which a host has no other way to tell.
 //
 // What this runtime does not save yet is refused by name, on the machine that holds it and not only when a
-// state that names it is read: a machine whose document has a `<history>` or an `<invoke>`, or one of a kind of
-// variable it does not hold yet, is generated without the save API, and a machine with a delayed `<send>`
-// waiting is refused when it is saved.
+// state that names it is read: a machine whose document has an `<invoke>`, or one of a kind of variable it does
+// not hold yet, is generated without the save API, and a machine with a delayed `<send>` waiting is refused
+// when it is saved.
 //
 // Cross-language siblings: `com.sce.runtime.StateMachineEngine` (Kotlin) and `sce_rust_runtime::saved_state`
 // (Rust).
@@ -57,11 +57,38 @@ public struct SavedShape: Sendable, Equatable {
     }
 }
 
+/// A `<history>` of a document, as a saved state names it: by the id the document gives it, which the state
+/// keys what the history recorded by.
+public struct SavedHistory: Sendable, Equatable {
+    /// The id the document gives the `<history>`.
+    public let id: String
+
+    /// The number the policy issued for it.
+    public let history: HistoryID
+
+    /// Whether it is a deep history, which records the atomic descendants and not the children.
+    public let deep: Bool
+
+    public init(id: String, history: HistoryID, deep: Bool) {
+        self.id = id
+        self.history = history
+        self.deep = deep
+    }
+}
+
 /// A policy whose machine can be saved and restored. The generator writes the conformance for a machine whose
 /// state the runtime holds whole.
 public protocol SavedPolicy: InvocablePolicy {
     /// What a saved state of this machine is bound to.
     static var savedShape: SavedShape { get }
+
+    /// The document's `<history>`s, ordered by id: the order a saved state keys them in. None for a document
+    /// that declares none.
+    static var savedHistories: [SavedHistory] { get }
+
+    /// Gives a `<history>` the states a saved run recorded for it, which the engine has judged could have been
+    /// recorded. Called only for a history `savedHistories` names.
+    func restoreHistory(_ history: HistoryID, to states: [State])
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it.
     func savedVariables() -> [SavedEntry<JSONValue>]
@@ -70,6 +97,15 @@ public protocol SavedPolicy: InvocablePolicy {
     /// text or a list. What it returns writes the values it read into the machine and cannot fail, so the
     /// restore applies it only once every other judgment has passed.
     func readSavedVariables(from saved: SavedState) throws -> () -> Void
+}
+
+extension SavedPolicy {
+    /// A document that declares no `<history>` has none to name.
+    public static var savedHistories: [SavedHistory] { [] }
+
+    public func restoreHistory(_ history: HistoryID, to states: [State]) {
+        preconditionFailure("this document declares no <history>, so a saved state has none to restore")
+    }
 }
 
 extension SavedState {
@@ -169,12 +205,23 @@ extension Engine where Policy: SavedPolicy {
         }
         // Document order, which is also entry order: the same text from every run that stands in the same place.
         let active = getActiveStates().sorted { policy.getDocumentOrder($0) < policy.getDocumentOrder($1) }
+        // Saved under the name the event arrived under, so a restore gives the machine the same `_event.name`:
+        // the document's own event for it, or the one it extends.
         let external = savedExternalEvents().map { queued in
-            savedEvent(queued, name: policy.getEventName(queued.event))
+            let arrived = queued.metadata.name
+            return savedEvent(queued, name: arrived.isEmpty ? policy.getEventName(queued.event) : arrived)
+        }
+        // State ids in document order, keyed by the history's id and ordered by it, so the text one machine
+        // writes is every backend's. A history that has recorded nothing is absent: a resumed machine takes its
+        // default transition, as the saved one would have.
+        let history = Policy.savedHistories.compactMap { declared -> SavedEntry<[String]>? in
+            guard let recorded = policy.historyValue(declared.history) else { return nil }
+            let ordered = recorded.sorted { policy.getDocumentOrder($0) < policy.getDocumentOrder($1) }
+            return SavedEntry(declared.id, ordered.map { policy.getStateName($0) })
         }
         return SavedState(
             shape: Policy.savedShape.format2First, configuration: active.map { policy.getStateName($0) },
-            current: policy.getStateName(getCurrentState()), variables: policy.savedVariables(),
+            current: policy.getStateName(getCurrentState()), variables: policy.savedVariables(), history: history,
             invokes: .resumed([]), sessionID: policy.sessionID, autoSendSeq: Int64(generatedSendIDCount),
             external: external, features: Policy.savedShape.features)
     }
@@ -195,10 +242,6 @@ extension Engine where Policy: SavedPolicy {
             throw StateRefusal(
                 "the saved state holds a running child session '\(child)', which this machine does not start")
         }
-        if let recorded = saved.history.first {
-            throw StateRefusal(
-                "the saved state records the history '\(recorded.key)', which this machine does not have")
-        }
         if !saved.pending.isEmpty {
             throw StateRefusal("the saved state holds a waiting delayed <send>, which this runtime does not restore yet")
         }
@@ -214,8 +257,33 @@ extension Engine where Policy: SavedPolicy {
         }
         let configuration = try saved.configuration.map { try state($0, "configuration") }
         let current = try state(saved.current, "current state")
+        // What each `<history>` recorded, read as states of this document: a history the document does not
+        // declare, and a value it could not have recorded (a state outside its parent, a compound state with two
+        // active children) are refused, since a resumed machine entered through a history must land in a
+        // configuration its document could have been in.
+        var histories: [(history: HistoryID, states: [Policy.State])] = []
+        for entry in saved.history {
+            guard let declared = Policy.savedHistories.first(where: { $0.id == entry.key }) else {
+                throw StateRefusal(
+                    "the saved state records the history '\(entry.key)', which the document does not declare")
+            }
+            let states = try entry.value.map { name -> Policy.State in
+                guard let found = policy.getStateFromName(name) else {
+                    throw StateRefusal("the history '\(entry.key)' records '\(name)', which the document does not name")
+                }
+                return found
+            }
+            let verdict = validateHistory(
+                policy: policy, parent: policy.getHistoryParent(declared.history), deep: declared.deep,
+                recorded: states)
+            guard verdict.kind == .accepted else {
+                throw StateRefusal(
+                    "the history '\(entry.key)' records states it could not have: \(historyReason(verdict, policy))")
+            }
+            histories.append((history: declared.history, states: states))
+        }
         let external = try saved.external.map { event -> EventWithMetadata<Policy.Event> in
-            guard let resolved = policy.getEventFromName(event.name) else {
+            guard let resolved = resolveEventByName(event.name) else {
                 throw StateRefusal("the saved external queue names '\(event.name)', which is no event of this document")
             }
             let kind: EventType
@@ -247,6 +315,24 @@ extension Engine where Policy: SavedPolicy {
             policy.sessionID = bound
         }
         apply()
+        for recorded in histories {
+            policy.restoreHistory(recorded.history, to: recorded.states)
+        }
         restoreSavedEngineParts(external: external, generatedSendIDCount: UInt64(saved.autoSendSeq))
+    }
+}
+
+/// Why a history could not have recorded the states a saved state gives it, in words a refusal can carry.
+private func historyReason<Policy: StatePolicy>(_ verdict: HistoryRejection<Policy.State>, _ policy: Policy) -> String {
+    func name(_ state: Policy.State?) -> String { state.map { policy.getStateName($0) } ?? "a state" }
+    switch verdict.kind {
+    case .accepted: return "none"
+    case .empty: return "it records no state"
+    case .duplicate: return "it records \(name(verdict.state)) twice"
+    case .notBelow: return "\(name(verdict.state)) is not below the history's parent \(name(verdict.parent))"
+    case .notAChild:
+        return "\(name(verdict.state)) is not a child of \(name(verdict.parent)), which a shallow history records"
+    case .notAtomic: return "\(name(verdict.state)) is not atomic, which a deep history records"
+    case .arity: return "they are not a configuration of the parent's subtree (\(verdict.arity))"
     }
 }

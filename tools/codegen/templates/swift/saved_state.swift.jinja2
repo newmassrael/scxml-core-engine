@@ -14,7 +14,8 @@
 
     Written only for a machine whose state the Swift runtime holds whole
     (`swift_saved_shape` of the generator): every variable a number, a truth value or a bounded
-    text, and no `<history>`, `<invoke>` or product line in the document.
+    text, and no `<invoke>` or product line in the document. What each `<history>` recorded is saved
+    and restored through the ids the document gives them.
 #}
 // ======================================================================
 // Saved state (docs/adr/0045)
@@ -33,6 +34,32 @@ extension {{ machine_name }}Policy: SavedPolicy {
             format2Revised: "{{ static_saved_shape.format2_revised }}")
     }
 
+{% if model.history_states %}
+    /// The document's `<history>`s, ordered by id: the order a saved state keys what each recorded in.
+    public static var savedHistories: [SavedHistory] {
+        [
+{% for history_id in model.history_states | sort %}
+            SavedHistory(
+                id: "{{ history_id | escape_swift }}", history: {{ machine_name }}History.{{ history_id | to_state_variant }},
+                deep: {{ 'true' if model.history_states[history_id]['type'] == 'deep' else 'false' }}),
+{% endfor %}
+        ]
+    }
+
+    /// Gives a `<history>` the states a saved run recorded for it, which the engine judged the
+    /// history could have recorded.
+    public func restoreHistory(_ history: HistoryID, to states: [{{ machine_name }}State]) {
+        switch history {
+{% for history_id in model.history_states | sort %}
+        case {{ machine_name }}History.{{ history_id | to_state_variant }}:
+            history{{ history_id | to_pascal_case }} = states
+{% endfor %}
+        default:
+            break
+        }
+    }
+
+{% endif %}
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the
     /// machine's own included, and not only the ones it publishes.
     public func savedVariables() -> [SavedEntry<JSONValue>] {

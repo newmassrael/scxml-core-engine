@@ -5095,8 +5095,8 @@ const SWIFT_SAVED_SCALARS: &[&str] = &[
 /// The shape a Swift machine's saved state is bound to, or `None` for a machine the Swift runtime does not save
 /// yet. The generator computes the shape of every machine whose state a saved state can hold whole
 /// ([`crate::forge::static_lowering::StaticLowering::saved_shape`]); what Swift adds is what its runtime holds
-/// of that state so far: every variable a scalar of [`SWIFT_SAVED_SCALARS`], no `<history>` and no `<invoke>`
-/// in the document, and a machine of no product line. A machine past that is generated without the save API
+/// of that state so far: every variable a scalar of [`SWIFT_SAVED_SCALARS`], no `<invoke>` in the document,
+/// and a machine of no product line. A machine past that is generated without the save API
 /// rather than with one that would silently drop part of its state, as the generator does for a machine whose
 /// state no backend can hold.
 fn swift_saved_shape(
@@ -5106,11 +5106,7 @@ fn swift_saved_shape(
     let shape = lowering.saved_shape.as_ref()?;
     let holds_invokes = model.states.values().any(|state| !state.invokes.is_empty());
     let holds_every_field = lowering.fields.iter().all(swift_saves_field);
-    if shape.features.is_some()
-        || !model.history_states.is_empty()
-        || holds_invokes
-        || !holds_every_field
-    {
+    if shape.features.is_some() || holds_invokes || !holds_every_field {
         return None;
     }
     Some(shape.clone())

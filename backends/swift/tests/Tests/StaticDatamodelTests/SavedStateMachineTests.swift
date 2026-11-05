@@ -194,7 +194,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
     withHistory.history = [SavedEntry("h", ["counting"])]
     #expect(
         refusal { try unstarted().1.restore(withHistory) }
-            == "the saved state records the history 'h', which this machine does not have")
+            == "the saved state records the history 'h', which the document does not declare")
 
     var withSend = saved
     withSend.pending = [SavedSend(due: 5, act: .raise(event: "tick", data: "", sendID: "s", origin: sessionID))]

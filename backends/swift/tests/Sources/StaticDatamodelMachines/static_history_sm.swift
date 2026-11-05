@@ -809,3 +809,70 @@ public final class StaticHistoryPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticHistoryPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "a694bcc2c6fbd3a4168fa70c9081522dc8979d50a9c363686a4968d6ea77308d",
+            revised: "c389dbae2c171ae0448bcc1888d41b21d85b54e0c576fba7a5c56fe11f31580b",
+            format2First: "a694bcc2c6fbd3a4168fa70c9081522dc8979d50a9c363686a4968d6ea77308d",
+            format2Revised: "c389dbae2c171ae0448bcc1888d41b21d85b54e0c576fba7a5c56fe11f31580b")
+    }
+
+    /// The document's `<history>`s, ordered by id: the order a saved state keys what each recorded in.
+    public static var savedHistories: [SavedHistory] {
+        [
+            SavedHistory(
+                id: "crew_all", history: StaticHistoryHistory.crewAll,
+                deep: true),
+            SavedHistory(
+                id: "deepest", history: StaticHistoryHistory.deepest,
+                deep: true),
+            SavedHistory(
+                id: "last", history: StaticHistoryHistory.last,
+                deep: false),
+        ]
+    }
+
+    /// Gives a `<history>` the states a saved run recorded for it, which the engine judged the
+    /// history could have recorded.
+    public func restoreHistory(_ history: HistoryID, to states: [StaticHistoryState]) {
+        switch history {
+        case StaticHistoryHistory.crewAll:
+            historyCrewAll = states
+        case StaticHistoryHistory.deepest:
+            historyDeepest = states
+        case StaticHistoryHistory.last:
+            historyLast = states
+        default:
+            break
+        }
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("resumed", SavedValues.of(vResumed)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint8(
+            try saved.variable("resumed"), "resumed")
+        return { [self] in
+            self.vResumed = value0
+        }
+    }
+}
