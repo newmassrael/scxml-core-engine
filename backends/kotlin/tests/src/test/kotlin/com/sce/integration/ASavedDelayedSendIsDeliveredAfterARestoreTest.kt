@@ -89,8 +89,8 @@ private class WaitingMachine : StateMachineEngine<WaitingState, WaitEvent>() {
     }
 
     // What a generated machine's send sites call, reached from the test.
-    fun armExternal(sendId: String, delayMs: Long, data: String, origin: String) =
-        scheduleSend(sendId, delayMs, WaitEvent.Probe, EventMetadata.external(sendId = sendId, origin = origin, data = data))
+    fun armExternal(sendId: String, delayMs: Long, data: String, sender: String) =
+        scheduleSend(sendId, delayMs, WaitEvent.Probe, EventMetadata.sentBy(sender, sendId = sendId, data = data))
 
     fun armInternal(sendId: String, delayMs: Long, data: String) =
         scheduleInternalSend(sendId, delayMs, WaitEvent.Beat, EventMetadata.internal(data))
@@ -146,17 +146,16 @@ class ASavedDelayedSendIsDeliveredAfterARestoreTest {
      * A machine on host-owned time with a send of each kind armed: external
      * 100 ms, internal 150 ms, host-served 250 ms.
      *
-     * [origin] is the session the external send names as its sender. A machine
-     * with no script engine has no session, so what it delivers carries none —
-     * and an event that names one is taken as a child's (§scxml-6.5), which
-     * needs the script engine this machine does not have. A case that only
-     * saves can name one; a case that delivers does not.
+     * [sender] is the session the external send names as its sender, which a
+     * saved state writes as the act's `origin` (docs/adr/0090, "Until step 6").
+     * A case that only saves names one; a case that delivers names none, as a
+     * machine with no session of its own sends.
      */
-    private fun armed(origin: String = ""): WaitingMachine {
+    private fun armed(sender: String = ""): WaitingMachine {
         val sm = WaitingMachine()
         sm.clock = ManualClock(0)
         sm.initialize()
-        sm.armExternal("p", 100, "d", origin)
+        sm.armExternal("p", 100, "d", sender)
         sm.armInternal("i", 150, "x")
         sm.armHost(250, richRequest())
         return sm
@@ -189,7 +188,7 @@ class ASavedDelayedSendIsDeliveredAfterARestoreTest {
 
     @Test
     fun aWaitingSendOfEachKindIsSavedAsTheMomentItComesDue() {
-        val sm = armed(origin = "o")
+        val sm = armed(sender = "o")
         try {
             assertEquals(
                 listOf(

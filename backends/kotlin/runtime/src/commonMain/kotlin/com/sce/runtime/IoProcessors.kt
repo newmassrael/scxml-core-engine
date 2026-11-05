@@ -10,6 +10,13 @@ package com.sce.runtime
 data class IoProcessorDescriptor(val name: String, val location: String)
 
 /**
+ * An event's origin and sender as a stored `origin` and `origintype` spell them
+ * back: what [IoProcessors.readStoredOrigin] answers for a saved state's
+ * format-2 text (docs/adr/0090, section 7).
+ */
+data class StoredOrigin(val origin: EventOrigin?, val sender: String?)
+
+/**
  * `_ioprocessors` entry set (§scxml-C-1-1, §scxml-C-2-3).
  *
  * Port of the C++ `IOProcessorHelper` (`sce/include/common/IOProcessorHelper.h`).
@@ -57,26 +64,75 @@ object IoProcessors {
     }
 
     /**
-     * The `_event.origin` a receiver should see for an event sent by
-     * [originSessionId].
+     * The origin the SCXML Event I/O Processor writes for an event the session
+     * [senderSessionId] sends (docs/adr/0090, section 2).
      *
-     * §scxml-C-1 requires the origin of a delivered event to match the
-     * 'location' the sending session published, which is what makes it an
-     * address the receiver can answer. The engine carries the sender's BARE
-     * session id internally — [EventMetadata.origin] — because its
-     * session-keyed lookups (`<finalize>` dispatch, cancelled-invoke
-     * filtering) match on the id. Converting where the event is raised would
-     * make one value serve two consumers that need different spellings. So the
-     * conversion belongs at the boundary where the value becomes visible to the
-     * document, and this is that conversion — the same rule, and the same
-     * shape, as the C++ `IOProcessorHelper::publishedOrigin` both engines
-     * already share.
+     * The origin of an event raised in the receiving session matches the
+     * location the sending session publishes, so the pair is this
+     * processor's type and [scxmlLocation] of the sender — the one function that
+     * also writes the session's `_ioprocessors` entry ([build]). The sender's id
+     * itself travels beside the pair, as [EventMetadata.sender], for the lookups
+     * that find a session by it.
+     */
+    fun scxmlOrigin(senderSessionId: String): EventOrigin =
+        EventOrigin(SCXML_PROCESSOR, scxmlLocation(senderSessionId))
+
+    /**
+     * [scxmlOrigin] of a sender that may be absent: a machine that holds no
+     * session id has no address to publish, so an event it sends carries no
+     * origin rather than the location of an empty id.
+     */
+    fun scxmlOriginOf(senderSessionId: String?): EventOrigin? =
+        if (senderSessionId.isNullOrEmpty()) null else scxmlOrigin(senderSessionId)
+
+    /**
+     * The `origin` text a saved state writes for an event's [origin] and
+     * [sender] (docs/adr/0090, "Until step 6"): the sending session's id for an
+     * event a session sent, the address otherwise, and empty for none — what
+     * every backend writes as a format-2 `origin`. The `origintype` beside it is
+     * the pair's processor.
+     */
+    fun storedOriginText(origin: EventOrigin?, sender: String?): String =
+        if (sender.isNullOrEmpty()) origin?.address ?: "" else sender
+
+    /**
+     * The origin and sender a stored [origin] and [originType] are read as
+     * (docs/adr/0090, section 7).
      *
-     * A remote invoke is the case that makes this more than a rename: its child
-     * session is stamped with a URI rather than an id, and wrapping a URI in
-     * [scxmlLocation] would produce an address naming nothing. An argument that
-     * already carries a scheme is therefore passed through — it is already an
-     * address.
+     * Empty both is none. An SCXML location (which one backend stored in place
+     * of the id) is that session's pair, with the id it names as the sender; a
+     * value without a scheme stored with this processor's type is a session's
+     * id, read the same way. Anything else is the pair as stored, with no
+     * sender.
+     */
+    fun readStoredOrigin(origin: String, originType: String): StoredOrigin {
+        if (origin.isEmpty() && originType.isEmpty()) return StoredOrigin(null, null)
+        val located = sessionIdFromScxmlLocation(origin)
+        if (located.isNotEmpty()) return StoredOrigin(scxmlOrigin(located), located)
+        val bareId = origin.isNotEmpty() && !origin.contains("://")
+        if (bareId && originType == SCXML_PROCESSOR) return StoredOrigin(scxmlOrigin(origin), origin)
+        return StoredOrigin(EventOrigin(originType, origin), null)
+    }
+
+    /**
+     * The sender a stored waiting send's [origin] names (docs/adr/0090,
+     * section 7): a waiting send is always a session's, so a bare id is that id
+     * and an SCXML location names it. `null` for an empty text.
+     */
+    fun readStoredSender(origin: String): String? {
+        val located = sessionIdFromScxmlLocation(origin)
+        return located.ifEmpty { origin }.ifEmpty { null }
+    }
+
+    /**
+     * The `_event.origin` an engine that carried the sender's bare session id
+     * published for it.
+     *
+     * Nothing in this runtime calls it: every event now carries the pair the
+     * delivering processor wrote ([scxmlOrigin]), so nothing converts at the
+     * read. It is the Kotlin statement of the rule the C++
+     * `IOProcessorHelper::publishedOrigin` and the other runtimes' ports still
+     * state, which docs/adr/0090 removes from every runtime at once.
      */
     fun publishedOrigin(originSessionId: String): String = when {
         originSessionId.isEmpty() -> ""

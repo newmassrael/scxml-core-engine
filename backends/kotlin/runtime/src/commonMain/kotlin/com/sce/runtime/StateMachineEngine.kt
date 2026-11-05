@@ -168,8 +168,16 @@ data class EventMetadata(
     val data: String = "",
     val type: String = "external",
     val sendId: String = "",
-    val origin: String = "",
-    val originType: String = "",
+    // `_event.origin` and `_event.origintype`, the reply address the processor
+    // that delivered the event wrote, as one value (docs/adr/0090). `null` for
+    // an event no processor stamped, which reads both fields as the empty
+    // string.
+    val origin: EventOrigin? = null,
+    // The id of the session that sent the event, set only by the SCXML Event
+    // I/O Processor. Not an `_event` field: `<finalize>` finds the invocation an
+    // event came from by it ([executeFinalizeForChildEvent]), and nothing reads
+    // the origin's address to find a session.
+    val sender: String? = null,
     val invokeId: String = "",
     // §scxml-6.4: the token of the host-run invocation this event completes,
     // set only by `completeHostInvoke` after it confirmed the invocation was
@@ -209,18 +217,41 @@ data class EventMetadata(
         fun internal(data: String) = EventMetadata(type = "internal", data = data)
         fun platform() = EventMetadata(type = "platform")
         fun platform(data: String) = EventMetadata(type = "platform", data = data)
+
+        /**
+         * An external event, with the [origin] the processor that delivers it
+         * names in its own terms, or none (docs/adr/0090, section 3): nothing is
+         * filled in for an event whose deliverer names no party, neither an
+         * address nor the SCXML processor's type.
+         */
         fun external(
             sendId: String = "",
-            origin: String = "",
-            originType: String = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+            origin: EventOrigin? = null,
             data: String = ""
         ) = EventMetadata(
             type = "external",
             sendId = sendId,
             origin = origin,
-            originType = originType,
             data = data
         )
+
+        /**
+         * The external event the session [sender] sends, with the
+         * pair the SCXML Event I/O Processor writes for it — its type and the
+         * location the sender publishes ([IoProcessors.scxmlOrigin]) — and the
+         * sender's id beside it (docs/adr/0090, section 2). A machine that holds
+         * no session id ([sender] empty or `null`) sends an event with no origin.
+         */
+        fun sentBy(sender: String?, sendId: String = "", data: String = ""): EventMetadata {
+            val id = sender?.ifEmpty { null }
+            return EventMetadata(
+                type = "external",
+                sendId = sendId,
+                origin = IoProcessors.scxmlOriginOf(id),
+                sender = id,
+                data = data,
+            )
+        }
     }
 }
 
@@ -385,8 +416,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var assignedSessionId: String? = null
 
     /**
-     * This session's id as the events it sends carry it (`_event.origin`) and
-     * as a parent tells its children apart by it: the script engine's session
+     * This session's id as the events it sends carry it ([EventMetadata.sender],
+     * and its location as their origin) and as a parent tells its children apart
+     * by it: the script engine's session
      * when there is one, which a child's own id names, else the id its parent
      * gave it, else the empty text (a machine a host started that runs no
      * script engine, as a `sce-static` one).
@@ -1000,13 +1032,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun applyHostInvokeEnding(ending: InboxInput.HostInvokeEnding) {
         if (ending.done) {
-            completeHostInvoke(
-                ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin, ending.originType,
-            )
+            completeHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin)
         } else {
-            failHostInvoke(
-                ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin, ending.originType,
-            )
+            failHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin)
         }
     }
 
@@ -1177,10 +1205,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * from outside the machine belongs (§scxml-C-1). A name the generated
      * machine does not declare is dropped, matching what the engine does with
      * any such event.
+     *
+     * [origin] is the reply's `_event.origin` and `_event.origintype`, in the
+     * host's own terms (docs/adr/0090, section 2): the host processor's type and
+     * the address a `<send>` of that type reaches the party at. `null` when the
+     * reply names no party, and then both fields read empty; the engine never
+     * fills in the SCXML processor's type for a host.
      */
     data class HostSendResponse(
         val eventName: String,
-        val eventData: String = ""
+        val eventData: String = "",
+        val origin: EventOrigin? = null,
     )
 
     /**
@@ -1342,9 +1377,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * with the `_event` the endpoint built, or end a Mesh request. An event name
      * the machine does not declare is dropped, as the engine drops any such
      * event; an end the engine no longer waits for is refused by the token
-     * check. An answer carries `_event.origin` `mesh://<source>` and origin type
-     * `sce:mesh-rpc` (SCE_MESH.md §mesh-9.5); a deadline the requester reached
-     * itself has no peer to name, and carries neither. The one body a host
+     * check. An answer carries the pair the Mesh transport writes for the peer
+     * that answered (docs/adr/0090, section 2): `_event.origin` `mesh://<source>`
+     * and origin type `sce:mesh-rpc` (SCE_MESH.md §mesh-9.5); a deadline the
+     * requester reached itself has no peer to name, and carries none. The one body a host
      * core's top-level machine and a child session are told through. An
      * owner-thread operation, posted from another thread as an
      * [InboxInput.MeshDelivery].
@@ -1363,12 +1399,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         when (call) {
             is MeshCall.Raise -> raiseExternalByName(call.name, call.metadata, onOwner)
             is MeshCall.EndInvoke -> {
-                val origin = call.source?.let { MESH_ORIGIN_SCHEME + it } ?: ""
-                val originType = if (call.source != null) MESH_RPC_INVOKE_TYPE else ""
+                val origin = call.source?.let(::meshRpcReplyOrigin)
                 if (call.failed) {
-                    failHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin, originType)
+                    failHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin)
                 } else {
-                    completeHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin, originType)
+                    completeHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin)
                 }
             }
         }
@@ -1835,11 +1870,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * document. One raised through the ordinary external-event API skips the
      * check above, so the engine refuses it when it is dequeued.
      *
-     * [origin] and [originType] are the completion's `_event.origin` and
-     * `_event.origintype` (§scxml-5.10.1), for a host whose invocation stands
-     * for another party it can name — as a Mesh router's `sce:mesh-rpc`
-     * stands for the peer that answered (`mesh://<peer>`, SCE_MESH.md
-     * §mesh-9.5). Empty keeps what every host completion has carried.
+     * [origin] is the completion's `_event.origin` and `_event.origintype`
+     * (§scxml-5.10.1), for a host whose invocation stands for another party it
+     * can name, in the host's own terms (docs/adr/0090, section 2): its
+     * declared type and the address a `<send>` of that type reaches the party
+     * at — as a Mesh router's `sce:mesh-rpc` stands for the peer that answered
+     * (`mesh://<peer>`, SCE_MESH.md §mesh-9.5). `null` for a host that names no
+     * party, and then both fields read empty: the engine never fills in the
+     * SCXML processor's type for a host.
      *
      * An owner-thread operation: a host whose invocation finishes on a thread
      * of its own posts an [InboxInput.HostInvokeEnding] to [inbox] instead, and
@@ -1850,11 +1888,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         invokeId: String,
         token: Long,
         doneData: String,
-        origin: String = "",
-        originType: String = "",
+        origin: EventOrigin? = null,
     ): Boolean {
         requireOwner("completeHostInvoke")
-        return endHostInvoke(processorType, invokeId, token, failed = false, doneData, origin, originType)
+        return endHostInvoke(processorType, invokeId, token, failed = false, doneData, origin)
     }
 
     /**
@@ -1874,11 +1911,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         invokeId: String,
         token: Long,
         errorData: String,
-        origin: String = "",
-        originType: String = "",
+        origin: EventOrigin? = null,
     ): Boolean {
         requireOwner("failHostInvoke")
-        return endHostInvoke(processorType, invokeId, token, failed = true, errorData, origin, originType)
+        return endHostInvoke(processorType, invokeId, token, failed = true, errorData, origin)
     }
 
     /**
@@ -1905,8 +1941,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         invokeId: String,
         token: Long,
         doneData: String,
-        origin: String = "",
-        originType: String = "",
+        origin: EventOrigin? = null,
     ): Boolean {
         requireOwner("completeHostInvokeIn")
         return endHostInvokeIn(
@@ -1918,7 +1953,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 done = true,
                 data = doneData,
                 origin = origin,
-                originType = originType,
             ),
             sessionId,
         )
@@ -1931,8 +1965,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         invokeId: String,
         token: Long,
         errorData: String,
-        origin: String = "",
-        originType: String = "",
+        origin: EventOrigin? = null,
     ): Boolean {
         requireOwner("failHostInvokeIn")
         return endHostInvokeIn(
@@ -1944,7 +1977,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 done = false,
                 data = errorData,
                 origin = origin,
-                originType = originType,
             ),
             sessionId,
         )
@@ -1967,7 +1999,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
             failed = !ending.done,
             ending.data,
             ending.origin,
-            ending.originType,
         )
     }
 
@@ -2006,8 +2037,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         token: Long,
         failed: Boolean,
         data: String,
-        origin: String,
-        originType: String,
+        origin: EventOrigin?,
     ): Boolean {
         val key = processorType to invokeId
         if (startedHostInvokes[key]?.token != token) return false
@@ -2026,8 +2056,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 EventMetadata(
                     type = "external",
                     data = data,
+                    // docs/adr/0090, section 2: the pair the host named, or none,
+                    // and no sender: the host is no session of this tree.
                     origin = origin,
-                    originType = originType,
                     invokeId = invokeId,
                     hostInvokeToken = token,
                     // §scxml-5.10: the specific name, whichever descriptor of the
@@ -2107,7 +2138,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val replies = handler(request)
         for (reply in replies) {
             if (reply.eventName.isEmpty()) continue
-            sendByNameWithData(reply.eventName, reply.eventData)
+            // docs/adr/0090, section 2: the reply carries the pair the host named
+            // for it, or none, and no sender.
+            sendByNameWithData(reply.eventName, reply.eventData, reply.origin, sender = null)
         }
         return replies
     }
@@ -3241,8 +3274,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     data = queued.metadata.data,
                     type = queued.metadata.type,
                     sendId = queued.metadata.sendId,
-                    origin = queued.metadata.origin,
-                    originType = queued.metadata.originType,
+                    // docs/adr/0090, "Until step 6": format 2 as every backend
+                    // writes it, the sender's id for a session's event and the
+                    // address otherwise, beside the pair's processor.
+                    origin = IoProcessors.storedOriginText(queued.metadata.origin, queued.metadata.sender),
+                    originType = queued.metadata.origin?.processor ?: "",
                     invokeId = queued.metadata.invokeId,
                     hostInvokeToken = queued.metadata.hostInvokeToken,
                 )
@@ -3335,13 +3371,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     event = pendingEventName(entry),
                     data = entry.metadata.data,
                     sendId = entry.sendId,
-                    origin = entry.metadata.origin,
+                    origin = IoProcessors.storedOriginText(entry.metadata.origin, entry.metadata.sender),
                 )
                 route == ScheduledRoute.InternalQueue -> SavedAct.Internal(
                     event = pendingEventName(entry),
                     data = entry.metadata.data,
                     sendId = entry.sendId,
-                    origin = entry.metadata.origin,
+                    origin = IoProcessors.storedOriginText(entry.metadata.origin, entry.metadata.sender),
                 )
                 // The session that started this one, and a running child of it: both
                 // are sessions the tree holds (docs/adr/0045).
@@ -3814,19 +3850,30 @@ abstract class StateMachineEngine<S : State, E : Event>(
                         route = ScheduledRoute.Invocation(act.invokeId, act.event, act.data, noOneTookIt()),
                     )
                 }
+                // docs/adr/0090, section 7: a waiting send is a session's, so its
+                // stored origin names the sender, whose pair the SCXML processor
+                // writes again; an internal event carries no pair.
                 is SavedAct.Raise -> ScheduledSendEntry(
                     fireTimeMs = 0L,
                     sequenceNum = 0L,
                     sendId = act.sendId,
                     event = event(act.event),
-                    metadata = EventMetadata.external(sendId = act.sendId, origin = act.origin, data = act.data),
+                    metadata = EventMetadata.sentBy(
+                        IoProcessors.readStoredSender(act.origin),
+                        sendId = act.sendId,
+                        data = act.data,
+                    ),
                 )
                 is SavedAct.Internal -> ScheduledSendEntry(
                     fireTimeMs = 0L,
                     sequenceNum = 0L,
                     sendId = act.sendId,
                     event = event(act.event),
-                    metadata = EventMetadata(type = "internal", data = act.data, origin = act.origin),
+                    metadata = EventMetadata(
+                        type = "internal",
+                        data = act.data,
+                        sender = IoProcessors.readStoredSender(act.origin),
+                    ),
                     route = ScheduledRoute.InternalQueue,
                 )
                 is SavedAct.Host -> ScheduledSendEntry(
@@ -3901,6 +3948,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (e.type !in setOf("internal", "external", "platform")) {
                 throw StateRefusal("external[$i] has the type '${e.type}', which is not an event type")
             }
+            // docs/adr/0090, section 7: the pair and the sender a format-2
+            // origin is read as.
+            val stored = IoProcessors.readStoredOrigin(e.origin, e.originType)
             QueuedEvent(
                 event,
                 EventMetadata(
@@ -3908,8 +3958,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     data = e.data,
                     type = e.type,
                     sendId = e.sendId,
-                    origin = e.origin,
-                    originType = e.originType,
+                    origin = stored.origin,
+                    sender = stored.sender,
                     invokeId = e.invokeId,
                     hostInvokeToken = e.hostInvokeToken,
                 ),
@@ -4505,7 +4555,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // unreachable event, so the casts back to E are type-safe by construction.
         @Suppress("UNCHECKED_CAST")
         when (route) {
-            ScheduledRoute.InternalQueue -> raiseInternal(entry.event as E, entry.metadata)
+            // An event on the internal queue is an internal event, whose origin
+            // the processor leaves blank (docs/adr/0090). The entry kept its sender
+            // only for a saved state to name ([scheduleInternalSend]).
+            ScheduledRoute.InternalQueue -> raiseInternal(entry.event as E, entry.metadata.copy(sender = null))
             is ScheduledRoute.Parent -> deliverToParent(route, entry.sendId)
             is ScheduledRoute.Invocation ->
                 if (!sendToChild(route.invokeId, route.eventName, route.eventData)) {
@@ -4549,9 +4602,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         sendId: String,
         communicationError: E,
     ): TargetSendOutcome {
-        val origin = sessionIdentity
+        val own = sessionIdentity
         val delayed = delayMs > 0
-        val route: ScheduledRoute = when (val resolved = SendHelper.classifyTarget(target, origin)) {
+        val route: ScheduledRoute = when (val resolved = SendHelper.classifyTarget(target, own)) {
             SendHelper.SendTarget.Unsupported, SendHelper.SendTarget.Mesh -> return TargetSendOutcome.UNSUPPORTED
             SendHelper.SendTarget.Unreachable -> return TargetSendOutcome.UNREACHABLE
             SendHelper.SendTarget.SelfExternal -> {
@@ -4559,7 +4612,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     // §scxml-5.10: [event] is the member the sender's name resolved
                     // to in THIS machine's document, so its own queues are told the
                     // name it was sent under when the member is not called that.
-                    val metadata = EventMetadata.external(sendId = sendId, origin = origin, data = eventData)
+                    // §scxml-C-1: the SCXML processor writes this session's pair.
+                    val metadata = EventMetadata.sentBy(own, sendId = sendId, data = eventData)
                         .copy(name = arrivalNameOf(event, eventName))
                     if (delayed) scheduleSend(sendId, delayMs, event, metadata) else send(event, metadata)
                 }
@@ -4580,9 +4634,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 if (!isInvocationRunning(resolved.invokeId)) return TargetSendOutcome.UNREACHABLE
                 ScheduledRoute.Invocation(resolved.invokeId, eventName, eventData, communicationError)
             }
-            is SendHelper.SendTarget.Session -> {
-                if (!isChildSessionRunning(resolved.sessionId)) return TargetSendOutcome.UNREACHABLE
-                ScheduledRoute.Session(resolved.sessionId, eventName, eventData, communicationError)
+            is SendHelper.SendTarget.Session -> when {
+                // §scxml-C-1: the location the session that invoked this one
+                // publishes is a target, as `#_parent` is — the address a reply
+                // to an event the parent sent goes to (docs/adr/0090).
+                isParentSession(resolved.sessionId) -> ScheduledRoute.Parent(eventName, eventData, communicationError)
+                isChildSessionRunning(resolved.sessionId) ->
+                    ScheduledRoute.Session(resolved.sessionId, eventName, eventData, communicationError)
+                else -> return TargetSendOutcome.UNREACHABLE
             }
         }
         if (delayed) {
@@ -4616,6 +4675,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun isChildSessionRunning(childSessionId: String): Boolean =
         childSessionId.isNotEmpty() &&
             activeInvokes.values.any { it.child.sessionIdentity == childSessionId && !it.child.isInFinalState }
+
+    /**
+     * Whether [sessionId] names the session that invoked this one
+     * and still reaches it — the parent the location an event it sent this
+     * session names ([EventMetadata.origin]) belongs to. A session its host
+     * started, and one its parent cut off ([cancelInvoke]), has none.
+     */
+    private fun isParentSession(sessionId: String): Boolean =
+        onSendToParent != null && sessionId.isNotEmpty() && sessionId == parentSessionId
 
     /**
      * Queue a waiting send in [scheduledSends], replacing any send of the same
@@ -5105,12 +5173,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * delay would — the delay does not turn it into an external event.
      */
     protected fun scheduleInternalSend(sendId: String, delayMs: Long, event: E, metadata: EventMetadata) {
-        // An event a `sce-static` session sends itself names that session as its
-        // origin, as the saved state of every backend writes it (docs/adr/0045); a
-        // machine with no id of its own (every machine that is not `sce-static`)
-        // leaves it as it was.
-        val origin = boundSessionIdentity()?.let { metadata.origin.ifEmpty { it } } ?: metadata.origin
-        queueScheduledSend(sendId, delayMs, event, metadata.copy(origin = origin), ScheduledRoute.InternalQueue)
+        // A waiting send a `sce-static` session makes names that session as its
+        // sender, which the saved state of every backend writes as the act's
+        // origin (docs/adr/0045, docs/adr/0090 "Until step 6"); a machine with no
+        // id of its own (every machine that is not `sce-static`) names none. The
+        // event it delivers is an internal one and carries no origin
+        // ([deliverRouted]).
+        val sender = metadata.sender ?: boundSessionIdentity()
+        queueScheduledSend(sendId, delayMs, event, metadata.copy(sender = sender), ScheduledRoute.InternalQueue)
     }
 
     /**
@@ -5152,6 +5222,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
     @Volatile
     var onSendToParent: ((String, String) -> Unit)? = null
         internal set
+
+    /**
+     * The id of the session that invoked this one, given by the parent where it
+     * wires this child ([wireChild]) beside [onSendToParent]; `null` for a session
+     * a host started. What a `<send>` to the parent's published location is
+     * recognised by ([isParentSession]).
+     */
+    @Volatile
+    private var parentSessionId: String? = null
 
     /** Active invoked child sessions, keyed by invoke ID. */
     private data class InvokeEntry(
@@ -5393,15 +5472,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // one waker, handed on the same way, before the child's own children are
         // started or resumed, so they enter the same directory.
         child.tree = tree
+        // The location this session publishes is a target the child reaches it
+        // by, as `#_parent` is — the origin of what this session sends the child
+        // (docs/adr/0090).
+        child.parentSessionId = sessionIdentity
         // §scxml-6.4: Set up child->parent event routing with metadata
         child.onSendToParent = { eventName, eventData ->
             resolveArrivingEvent(eventName)?.let {
-                send(it, EventMetadata(
-                    type = "external",
+                // The SCXML processor writes the child's pair, and the child's
+                // id beside it as the sender `<finalize>` finds the
+                // invocation by (docs/adr/0090, section 2).
+                val sent = EventMetadata.sentBy(child.sessionIdentity, data = eventData)
+                send(it, sent.copy(
                     invokeId = eventInvokeId,
-                    origin = child.sessionIdentity,
-                    originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
-                    data = eventData,
                     // §scxml-3.12.1 + §scxml-5.10: the child names the event, and
                     // its names are not this machine's, so one this document does
                     // not write reaches it as the event of the longest prefix it
@@ -5493,22 +5576,25 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val entry = activeInvokes[invokeId] ?: return false
         val child = entry.child
         if (child.isInFinalState) return false
-        if (eventData.isEmpty()) child.sendByName(eventName) else child.sendByNameWithData(eventName, eventData)
+        handToChild(child, eventName, eventData)
         settleDeliveredChild(entry)
         return true
     }
 
     /**
-     * §scxml-6.4: Send event by name (string-based, for cross-SM routing).
-     * Internal: only used by parent SM's [sendToChild] for type-erased communication.
+     * Hand [child] what a `<send>` of this session addressed to it,
+     * by name — the one identity two machines share — with the pair the SCXML
+     * Event I/O Processor writes for this session and this session's id as the
+     * sender (docs/adr/0090, section 2), so a reply the child sends to
+     * `_event.origin` reaches this session ([isParentSession]).
      *
-     * A send without a payload is [sendByNameWithData] with empty data, not a
-     * second door: one place resolves the name and records the name the event
-     * arrived under ([EventMetadata.name]), so the two deliveries cannot drift
-     * apart.
+     * A send with no payload goes through the same door with empty data: one
+     * place resolves the name and records the name the event arrived under
+     * ([EventMetadata.name]), so the two deliveries cannot drift apart.
      */
-    internal fun sendByName(name: String) {
-        sendByNameWithData(name, "")
+    private fun handToChild(child: StateMachineEngine<*, *>, eventName: String, eventData: String) {
+        val own = sessionIdentity.ifEmpty { null }
+        child.sendByNameWithData(eventName, eventData, IoProcessors.scxmlOriginOf(own), own)
     }
 
     /**
@@ -5530,7 +5616,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (!isChildSessionRunning(childSessionId)) return false
         for ((_, entry) in activeInvokes) {
             if (entry.child.sessionIdentity == childSessionId) {
-                entry.child.sendByNameWithData(eventName, eventData)
+                handToChild(entry.child, eventName, eventData)
                 settleDeliveredChild(entry)
                 return true
             }
@@ -5539,13 +5625,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * §scxml-6.4 / C.1: type-erased injection carrying the send's payload.
-     * [sendByName] is this door with no payload; an addressed `<send>` may carry
-     * one, and losing it would make the delivery arrive stripped.
+     * §scxml-6.4 / C.1: type-erased injection carrying the send's payload, the
+     * one by-name door of what another session of the tree ([handToChild]) or a
+     * host-served act's reply ([performHostSend]) delivers. An addressed `<send>`
+     * may carry a payload, and losing it would make the delivery arrive
+     * stripped. [origin] and [sender] are what the delivering processor wrote
+     * (docs/adr/0090, section 2).
      */
-    internal fun sendByNameWithData(name: String, data: String) {
+    internal fun sendByNameWithData(name: String, data: String, origin: EventOrigin?, sender: String?) {
         resolveArrivingEvent(name)?.let {
-            send(it, EventMetadata(type = "external", data = data, name = arrivalNameOf(it, name)))
+            send(it, EventMetadata(type = "external", data = data, origin = origin, sender = sender, name = arrivalNameOf(it, name)))
         }
     }
 
@@ -5556,10 +5645,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * back into the SM by string name. Resolves name to typed Event via
      * [resolveArrivingEvent] and dispatches with metadata.
      *
-     * A host that names an event and nothing more raises an external event of the
-     * SCXML Event I/O Processor, as the Rust door (`raise_external_by_name`) raises
-     * one, so a queue saved after it reads the same on both backends and a child
-     * the event is forwarded to is handed an exact copy of it.
+     * A host that names an event and nothing more raises an external event with
+     * no origin (docs/adr/0090, section 3): no processor stamped it, so neither an
+     * address nor the SCXML processor's type is filled in. A host that names the
+     * party in its own terms passes [EventMetadata.origin]. A child the event is
+     * forwarded to is handed an exact copy of it.
      *
      * An owner-thread operation as [send] is, and off the coroutine mode's loop
      * a post to [inbox] as [send] is.
@@ -5764,14 +5854,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun executeFinalizeForChildEvent(event: E) {
         val metadata = currentEventMetadata
-        if (metadata.origin.isEmpty()) return
+        // The invocation an event came from is found by the session that sent it,
+        // which only the SCXML Event I/O Processor names (docs/adr/0090, section
+        // 1): an event a host or a Mesh peer delivered has an origin and no
+        // sender, and never runs a `<finalize>`.
+        val sender = metadata.sender ?: return
         // A `<finalize>` is script text, so a run of it needs an engine and nothing
-        // else does. An invocation the host serves reports its completion or its
-        // failure naming where it came from (a Mesh router names the peer that
-        // answered, SCE_MESH.md §9.5), and a machine of `datamodel="sce-static"`
-        // has no engine and no `<finalize>` (SCE Accepted Subset §2.15): such an
-        // event names an origin and has nothing to run, which is not a broken
-        // codegen invariant.
+        // else does. A machine of `datamodel="sce-static"` has no engine and no
+        // `<finalize>` (SCE Accepted Subset §2.15), and its invoked children's
+        // events name their sender all the same: such an event has nothing to
+        // run, which is not a broken codegen invariant.
         if (activeInvokes.values.none { it.finalizeScript.isNotEmpty() }) return
 
         val engine = scriptEngine ?: error("scriptEngine is required for executeFinalizeForChildEvent (codegen invariant: state machine has active invokes ⇒ needs_script_engine == true)")
@@ -5779,7 +5871,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
         for ((_, entry) in activeInvokes) {
             if (entry.finalizeScript.isNotEmpty() &&
-                entry.child.sessionIdentity == metadata.origin) {
+                entry.child.sessionIdentity == sender) {
                 // §scxml-6.5: Set _event before finalize execution
                 // §scxml-5.10: under the name the child sent it.
                 val eventName = metadata.name.ifEmpty { eventNameOf(event) ?: "" }
@@ -5790,8 +5882,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
                         data = metadata.data,
                         type = metadata.type,
                         sendId = metadata.sendId,
-                        origin = metadata.origin,
-                        originType = metadata.originType,
+                        // The pair the processor wrote, as the document reads
+                        // it everywhere else (docs/adr/0090).
+                        origin = metadata.origin?.address ?: "",
+                        originType = metadata.origin?.processor ?: "",
                         invokeId = metadata.invokeId
                     )
                 )

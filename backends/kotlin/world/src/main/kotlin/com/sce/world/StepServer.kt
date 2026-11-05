@@ -29,6 +29,7 @@
 package com.sce.world
 
 import com.sce.runtime.EventMetadata
+import com.sce.runtime.EventOrigin
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import com.sce.runtime.StateMachineEngine
@@ -171,8 +172,7 @@ class StepServer(
                     EventMetadata(
                         data = text(request, "data"),
                         sendId = text(request, "send_id"),
-                        origin = text(request, "origin"),
-                        originType = text(request, "origin_type"),
+                        origin = origin(request),
                         invokeId = text(request, "invoke_id"),
                     ),
                 )
@@ -282,6 +282,22 @@ internal fun text(request: JsonObject, name: String): String {
     val value = field(request, name).jsonPrimitive
     if (!value.isString) throw ProtocolError("`$name` is not a string")
     return value.content
+}
+
+/**
+ * The reply address a `raise` names, read from its `origin` and `origin_type`: the
+ * pair those two spell (docs/adr/0090), or none when both are empty. They are one
+ * value, so a request that sets one and leaves the other empty names half an address
+ * and is refused rather than read as a pair with a blank field.
+ */
+internal fun origin(request: JsonObject): EventOrigin? {
+    val address = text(request, "origin")
+    val processor = text(request, "origin_type")
+    if (address.isEmpty() && processor.isEmpty()) return null
+    if (address.isEmpty() || processor.isEmpty()) {
+        throw ProtocolError("`origin` and `origin_type` name one reply address: give both or neither")
+    }
+    return EventOrigin(processor, address)
 }
 
 internal fun number(request: JsonObject, name: String): Long =

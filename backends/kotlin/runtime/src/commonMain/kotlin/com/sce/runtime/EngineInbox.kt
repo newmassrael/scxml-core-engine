@@ -39,8 +39,10 @@ sealed class InboxInput<out E : Event> {
     /**
      * The end of start [token] of the host-run invocation [invokeId] of type
      * [processorType]: a completion (`done.invoke`) when [done], a failure
-     * (`error.invoke`) otherwise, with [data] as `_event.data` and [origin] /
-     * [originType] as `_event.origin` / `_event.origintype`.
+     * (`error.invoke`) otherwise, with [data] as `_event.data` and [origin] as
+     * `_event.origin` and `_event.origintype`: the pair the host names the party
+     * its invocation stands for by, in its own terms, or `null` for a host that
+     * names none (docs/adr/0090, section 2).
      *
      * [sessionId] `null` ends an invocation of the machine whose inbox this is.
      * A session id names a session of the machine's tree, and the post goes to
@@ -59,8 +61,7 @@ sealed class InboxInput<out E : Event> {
         val token: Long,
         val done: Boolean,
         val data: String,
-        val origin: String = "",
-        val originType: String = "",
+        val origin: EventOrigin? = null,
     ) : InboxInput<Nothing>()
 
     /**

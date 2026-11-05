@@ -28,6 +28,7 @@ import com.sce.mesh.applyTo
 import com.sce.mesh.register
 import com.sce.runtime.MESH_RPC_INVOKE_TYPE
 import com.sce.runtime.StateMachineEngine
+import com.sce.runtime.meshRpcReplyOrigin
 import com.sce.w3c.W3CTestBase
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -114,7 +115,7 @@ class AMeshRequestReachesTheRouterTest {
         try {
             val request = theRequest(requests)
             assertTrue(
-                sm.failHostInvoke(MESH_RPC_INVOKE_TYPE, "ask", request.token, "\"unreachable\"", "mesh://motor"),
+                sm.failHostInvoke(MESH_RPC_INVOKE_TYPE, "ask", request.token, "\"unreachable\"", meshRpcReplyOrigin("motor")),
             )
             sm.tick()
             assertEnded(sm, answered = 0, failed = 1, refused = 0)

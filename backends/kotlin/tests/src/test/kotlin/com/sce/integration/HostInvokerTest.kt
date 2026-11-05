@@ -32,6 +32,7 @@ import com.sce.integration.statechart_host_invoker.StatechartHostInvokerState
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerStateMachine
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerXSceHostInvoker
 import com.sce.runtime.EventMetadata
+import com.sce.runtime.EventOrigin
 import com.sce.runtime.EventPayload
 import com.sce.runtime.TypedRequest
 import com.sce.runtime.HOST_INVOKE_DEADLINE_PARAM
@@ -323,7 +324,7 @@ class HostInvokerTest {
             deliver(sm, StatechartHostInvokerEvent.Fail)
             val token = tokenOf(starts, "job")
             assertTrue(
-                sm.failHostInvoke(declaredType, "job", token, "\"no\"", "host://job", declaredType),
+                sm.failHostInvoke(declaredType, "job", token, "\"no\"", EventOrigin(declaredType, "host://job")),
                 "a running invocation's failure was refused",
             )
             sm.tick()
@@ -332,7 +333,7 @@ class HostInvokerTest {
             assertEquals(1L, counter(sm, "failed"))
             assertFalse(sm.completeHostInvoke(declaredType, "job", token, "ok"), "a failed run completed afterwards")
             assertFalse(
-                sm.failHostInvoke(declaredType, "job", token, "\"no\"", "host://job", declaredType),
+                sm.failHostInvoke(declaredType, "job", token, "\"no\"", EventOrigin(declaredType, "host://job")),
                 "the same run failed twice",
             )
             sm.tick()

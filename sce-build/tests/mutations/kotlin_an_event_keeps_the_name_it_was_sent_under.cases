@@ -10,9 +10,8 @@
 # travel beside it: `arrivalNameOf` decides what it is, every by-name door records
 # it in `EventMetadata.name`, and the generated `_event` binding reads it before
 # the member's name. A parent's `<send>` to its child reaches the child through
-# `sendByNameWithData`, the one by-name door of the type-erased path;
-# `sendByName`, taken when the send carries no payload, is that door with empty
-# data rather than a copy of it.
+# `sendByNameWithData`, the one by-name door of the type-erased path, which
+# `handToChild` calls for a send with a payload and for one without alike.
 # `integration_resources/an_event_keeps_the_name_it_was_sent_under/` is the
 # document: the parent writes `request.new`, the child only `request`, and the
 # child reports `arrivedShortened` unless it is told the whole name.
@@ -29,8 +28,10 @@
 # payload. While `sendByName` was a second copy of the door, the door case below
 # mutated `sendByNameWithData`, which that send never entered, and SURVIVED
 # (scheduled round 40125467304): the mutant was unobservable, not unguarded by
-# a weak test. With one door the case runs on the fixture's path, and the
-# fourth case keeps the payload-less send on it.
+# a weak test. With one door the case runs on the fixture's path. The copy is
+# gone (docs/adr/0090 gave the door the origin and the sender to carry, and a
+# second door would have had to carry them too), so the third case asks the
+# door itself to drop the name of a payload-less send, which is the fixture's.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -47,14 +48,14 @@ PY
 
 mutation_case "a by-name door delivers the event without its arrival name" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "send(it, EventMetadata(type = \"external\", data = data, name = arrivalNameOf(it, name)))",
-     "send(it, EventMetadata(type = \"external\", data = data))")
+     "origin = origin, sender = sender, name = arrivalNameOf(it, name)))",
+     "origin = origin, sender = sender))")
 PY
 
-mutation_case "a payload-less send goes round the door and drops its arrival name" <<'PY'
+mutation_case "a payload-less send drops its arrival name at the door" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "        sendByNameWithData(name, \"\")\n",
-     "        resolveArrivingEvent(name)?.let { send(it, EventMetadata()) }\n")
+     "origin = origin, sender = sender, name = arrivalNameOf(it, name)))",
+     "origin = origin, sender = sender, name = if (data.isEmpty()) \"\" else arrivalNameOf(it, name)))")
 PY
 
 mutation_case "the generated binding reads the member's name before the arrival name" <<'PY'

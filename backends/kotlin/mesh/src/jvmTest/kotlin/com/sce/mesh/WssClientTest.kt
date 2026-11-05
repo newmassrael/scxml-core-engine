@@ -163,7 +163,7 @@ class WssClientTest {
 
         val event = endpoint.takeEvents().single()
         assertEquals("done", event.name)
-        assertEquals("mesh://server", event.metadata.origin)
+        assertEquals("mesh://server", event.metadata.origin?.address)
         assertTrue(endpoint.takeHostErrors().isEmpty())
         link.close()
     }

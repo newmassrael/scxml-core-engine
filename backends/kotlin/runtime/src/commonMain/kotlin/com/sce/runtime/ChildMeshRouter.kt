@@ -14,9 +14,30 @@ package com.sce.runtime
 const val MESH_ORIGIN_SCHEME = "mesh://"
 
 /**
+ * The pair the Mesh transport writes for an event a peer's envelope delivers
+ * (docs/adr/0090, section 2): the SCXML Event I/O Processor, since every
+ * envelope is SCE's own inter-SCXML traffic (SCE_MESH.md §mesh-10.7), at the
+ * address `mesh://<source>` the transport reaches the peer [source] by. The
+ * Kotlin twin of the C++ `SCE::Mesh::meshPeerOrigin`.
+ */
+fun meshPeerOrigin(source: String): EventOrigin =
+    EventOrigin(IoProcessors.SCXML_PROCESSOR, MESH_ORIGIN_SCHEME + source)
+
+/**
+ * The pair the Mesh transport writes for the answer to an `<invoke
+ * type="sce:mesh-rpc">` (SCE_MESH.md, the runtime mapping of a request's reply
+ * to `_event`): the request's own type at the address `mesh://<replier>` of the
+ * peer that answered. The Kotlin twin of the C++ `SCE::Mesh::meshRpcReplyOrigin`.
+ */
+fun meshRpcReplyOrigin(replier: String): EventOrigin =
+    EventOrigin(MESH_RPC_INVOKE_TYPE, MESH_ORIGIN_SCHEME + replier)
+
+/**
  * The `_event` of an event that arrived over Mesh from [source], as SCE_MESH.md
- * §mesh-10.7 tabulates it: external, origin `mesh://<source>`, the SCXML
- * processor as origin type, and the send id the envelope carried.
+ * §mesh-10.7 tabulates it: external, the transport's pair for the peer
+ * ([meshPeerOrigin]: origin `mesh://<source>`, the SCXML processor as origin
+ * type), and the send id the envelope carried. No sender: the peer is no
+ * session of this tree.
  *
  * The one place it is built: a host core's endpoint builds what it hands a
  * top-level machine with it, and what it hands a child session, so a child
@@ -27,8 +48,7 @@ fun meshEventMetadata(data: String, source: String, sendId: String): EventMetada
         data = data,
         type = "external",
         sendId = sendId,
-        origin = MESH_ORIGIN_SCHEME + source,
-        originType = IoProcessors.SCXML_PROCESSOR,
+        origin = meshPeerOrigin(source),
     )
 
 /**

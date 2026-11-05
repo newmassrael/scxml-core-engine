@@ -38,6 +38,7 @@ import com.sce.mesh.applyTo
 import com.sce.mesh.register
 import com.sce.runtime.MESH_RPC_INVOKE_TYPE
 import com.sce.runtime.StateMachineEngine
+import com.sce.runtime.meshRpcReplyOrigin
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -135,7 +136,7 @@ class AStaticMeshRequestReachesTheRouterTest {
             drive(sm, StatechartStaticMeshRequestEvent.Bump, StatechartStaticMeshRequestEvent.Go)
             val request = theRequest(requests)
             assertTrue(
-                sm.failHostInvoke(MESH_RPC_INVOKE_TYPE, "ask", request.token, "\"unreachable\"", "mesh://motor"),
+                sm.failHostInvoke(MESH_RPC_INVOKE_TYPE, "ask", request.token, "\"unreachable\"", meshRpcReplyOrigin("motor")),
             )
             sm.tick()
             assertEnded(sm, answered = 0u, failed = 1u, refused = 0u)

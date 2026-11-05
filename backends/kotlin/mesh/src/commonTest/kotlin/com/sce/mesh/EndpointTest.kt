@@ -5,6 +5,7 @@
 
 package com.sce.mesh
 
+import com.sce.runtime.EventOrigin
 import com.sce.runtime.IoProcessors
 import com.sce.runtime.StateMachineEngine
 import kotlin.test.Test
@@ -94,8 +95,10 @@ class EndpointTest {
         assertEquals("go", event.name)
         assertEquals("""{"a":1}""", event.metadata.data)
         assertEquals("external", event.metadata.type)
-        assertEquals("mesh://ecu", event.metadata.origin)
-        assertEquals(IoProcessors.SCXML_PROCESSOR, event.metadata.originType)
+        // The pair the transport writes for the peer (docs/adr/0090), and no
+        // sender: the peer is no session of this tree.
+        assertEquals(EventOrigin(IoProcessors.SCXML_PROCESSOR, "mesh://ecu"), event.metadata.origin)
+        assertEquals(null, event.metadata.sender)
         assertEquals("s-7", event.metadata.sendId)
     }
 
@@ -188,7 +191,7 @@ class EndpointTest {
             event.metadata.data,
         )
         // Raised as the C++ core raises it: an envelope from its own machine.
-        assertEquals("mesh://ecu", event.metadata.origin)
+        assertEquals("mesh://ecu", event.metadata.origin?.address)
         assertEquals("", event.metadata.sendId)
     }
 

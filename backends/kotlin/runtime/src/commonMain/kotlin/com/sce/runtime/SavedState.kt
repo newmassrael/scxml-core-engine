@@ -941,7 +941,14 @@ data class SavedEvent(
     val data: String = "",
     val type: String = "external",
     val sendId: String = "",
+    /**
+     * The format-2 text of the event's origin and sender (docs/adr/0090, "Until
+     * step 6"): the sending session's id for an event a session sent, the
+     * address otherwise, empty for none ([IoProcessors.storedOriginText]); read
+     * back by [IoProcessors.readStoredOrigin].
+     */
     val origin: String = "",
+    /** The processor of the event's origin, empty for none. */
     val originType: String = "",
     val invokeId: String = "",
     /**
@@ -1228,7 +1235,7 @@ sealed interface SavedAct {
         val data: String,
         /** The `<send>`'s id, which a `<cancel>` names. */
         val sendId: String,
-        /** `_event.origin`: this session's id. */
+        /** The sender: this session's id, whose location is the event's origin. */
         val origin: String,
     ) : SavedAct
 
@@ -1242,7 +1249,7 @@ sealed interface SavedAct {
         val data: String,
         /** The `<send>`'s id, which a `<cancel>` names. */
         val sendId: String,
-        /** `_event.origin`: this session's id. */
+        /** The sender: this session's id, whose location is the event's origin. */
         val origin: String,
     ) : SavedAct
 
@@ -1254,7 +1261,10 @@ sealed interface SavedAct {
         val data: String,
         /** The `<send>`'s id, which `_event.sendid` carries and a `<cancel>` names. */
         val sendId: String,
-        /** `_event.origin`: the session that sent it. */
+        /**
+         * The sender: the id of the session that sent it, whose location is the
+         * event's origin (docs/adr/0090, section 7), empty for none.
+         */
         val origin: String,
     ) : SavedAct
 
@@ -1266,7 +1276,11 @@ sealed interface SavedAct {
         val data: String,
         /** The `<send>`'s id, which a `<cancel>` names. */
         val sendId: String,
-        /** `_event.origin`; empty on a backend whose internal events carry none. */
+        /**
+         * The sender, empty on a backend whose internal sends name none. The
+         * event delivered is an internal one and carries no origin
+         * (§scxml-5.10.1).
+         */
         val origin: String,
     ) : SavedAct
 

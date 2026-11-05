@@ -106,7 +106,7 @@ class CrossLanguageLoopbackTest {
             assertEquals("pong", pong.name)
             assertEquals(data, pong.metadata.data)
             assertEquals("reply-1", pong.metadata.sendId)
-            assertEquals("mesh://server", pong.metadata.origin)
+            assertEquals("mesh://server", pong.metadata.origin?.address)
 
             // §mesh-9.5, §mesh-10.7: a request and its reply. The Kotlin core
             // writes the RpcRequest; the Rust core delivers it with its wire

@@ -504,7 +504,16 @@
 {% else %}
 {% set delay_kt = (action.delay_ms | default(0, true)) ~ 'L' %}
 {% endif %}
-{# ── The delivery ── #}
+{# ── The delivery ──
+   W3C SCXML C.1 + docs/adr/0090: an event this session puts on its own
+   external queue carries the pair the SCXML processor writes for it — its
+   canonical type and this session's published location — and this session's
+   id as the sender (`EventMetadata.sentBy`). Every send that reaches such a
+   delivery is the SCXML processor's: a host-served or BasicHTTP type took its
+   own arm, so the type is never the author's spelling. A machine that holds no
+   session id has no location to publish, and its send names none. A send to
+   another session of the tree is stamped by the runtime where it is handed
+   over (`handToChild`, the parent's `onSendToParent`). #}
 {# SCE_MESH.md §mesh-19: a `targetexpr` may name a Mesh peer only once it is
    evaluated, so the build could not lower it. The same act the lowering
    arranges for a literal `#peer` is chosen here, on the one evaluated target,
@@ -581,14 +590,14 @@
 {% if has_delay %}
             // W3C SCXML 6.2.4: this session's own external queue, when due.
 {% if dyn_event %}
-            if (sendEvent != null) scheduleSend({{ send_id_kt }}, {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = {{ send_id_kt }}, origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) scheduleSend({{ send_id_kt }}, {{ delay_kt }}, sendEvent, EventMetadata.sentBy(sessionId, sendId = {{ send_id_kt }}, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            scheduleSend({{ send_id_kt }}, {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = {{ send_id_kt }}, origin = sessionId, data = sendData))
+            scheduleSend({{ send_id_kt }}, {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.sentBy(sessionId, sendId = {{ send_id_kt }}, data = sendData))
 {% endif %}
 {% elif dyn_event %}
-            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = {{ send_id_kt }}, origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) send(sendEvent, EventMetadata.sentBy(sessionId, sendId = {{ send_id_kt }}, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = {{ send_id_kt }}, origin = sessionId, data = sendData))
+            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.sentBy(sessionId, sendId = {{ send_id_kt }}, data = sendData))
 {% endif %}
 {% elif static_target.startswith('#_') and has_delay %}
             // W3C SCXML 6.2.4 + 6.4: a delayed send to an invoked child. Whether
@@ -630,16 +639,16 @@
 {% elif has_delay %}
             // W3C SCXML 6.2: Delayed send
 {% if dyn_event %}
-            if (sendEvent != null) scheduleSend({{ send_id_kt }}, {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = {{ send_id_kt }}, origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) scheduleSend({{ send_id_kt }}, {{ delay_kt }}, sendEvent, EventMetadata.sentBy(sessionId, sendId = {{ send_id_kt }}, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            scheduleSend({{ send_id_kt }}, {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = {{ send_id_kt }}, origin = sessionId, data = sendData))
+            scheduleSend({{ send_id_kt }}, {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.sentBy(sessionId, sendId = {{ send_id_kt }}, data = sendData))
 {% endif %}
 {% else %}
             // W3C SCXML 6.2: send to this session's external queue
 {% if dyn_event %}
-            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = {{ send_id_kt }}, origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) send(sendEvent, EventMetadata.sentBy(sessionId, sendId = {{ send_id_kt }}, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = {{ send_id_kt }}, origin = sessionId, data = sendData))
+            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.sentBy(sessionId, sendId = {{ send_id_kt }}, data = sendData))
 {% endif %}
 {% endif %}
 {% if dynamic_mesh %}
