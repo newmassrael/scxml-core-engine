@@ -194,6 +194,24 @@ struct HostInvokeKey: Hashable {
     var invokeID: String
 }
 
+/// The deadline a restored host-run invocation kept (docs/adr/0045).
+enum RestoredHostDeadline: Equatable {
+    /// The invocation had none.
+    case none
+
+    /// It comes due at this reading of the engine's own clock, in milliseconds.
+    case at(Int64)
+
+    /// It came due while the machine was away.
+    case passed
+}
+
+/// A host-run invocation a saved state listed, waiting for the first macrostep the host drives to start it again.
+struct RestoredHostInvoke {
+    var request: HostInvokeRequest
+    var deadline: RestoredHostDeadline
+}
+
 /// What an engine holds of its host-run invocations: the handlers, the runs still going
 /// and the next token. Internal, held by `Engine.hostInvokes`.
 struct HostInvokeBook {
@@ -201,6 +219,21 @@ struct HostInvokeBook {
 
     /// The token of the start still running under each key.
     var started: [HostInvokeKey: UInt64] = [:]
+
+    /// The request each start still running was made with, by key: what a save holds of it, since the process
+    /// that ran it is gone with the process that saved it.
+    var requests: [HostInvokeKey: HostInvokeRequest] = [:]
+
+    /// The invocations a restore re-armed and the engine has not started again, in the order a saved state listed
+    /// them. Not started by the restore itself: a host registers its invokers after restoring, so they start
+    /// where an invocation the document entered would, at the top of the first macrostep the host drives.
+    var restored: [RestoredHostInvoke] = []
+
+    /// A run that ended, was cancelled or was refused is no longer running, and has no request to keep.
+    mutating func finish(_ key: HostInvokeKey) {
+        started[key] = nil
+        requests[key] = nil
+    }
 
     var nextToken: UInt64 = 1
 
@@ -268,16 +301,34 @@ extension Engine {
             }
             deadlineMs = ms
         }
+        return startHostInvoke(request, handler: handler, deadline: deadlineMs.map { .after($0) } ?? .none)
+    }
+
+    /// The deadline a start arms: none, a wait from now, or the reading of the engine's own clock a restore
+    /// carried over.
+    enum HostStartDeadline {
+        case none
+        case after(Int64)
+        case at(Int64)
+    }
+
+    /// Starts `request` under `handler`: the token is assigned and recorded, with the request, before the handler
+    /// runs. The one body behind a start the document's `<invoke>` makes and one a restore makes again.
+    func startHostInvoke(
+        _ request: HostInvokeRequest, handler: HostInvokeHandler, deadline: HostStartDeadline
+    ) -> Bool {
+        var request = request
         let token = hostInvokes.nextToken
         hostInvokes.nextToken += 1
         request.token = token
         let key = HostInvokeKey(processorType: request.processorType, invokeID: request.invokeID)
         hostInvokes.started[key] = token
-        if let deadlineMs {
-            armHostInvokeDeadline(
-                HostInvokeDeadline(processorType: request.processorType, invokeID: request.invokeID, token: token),
-                afterMs: deadlineMs
-            )
+        hostInvokes.requests[key] = request
+        let armed = HostInvokeDeadline(processorType: request.processorType, invokeID: request.invokeID, token: token)
+        switch deadline {
+        case .none: break
+        case .after(let ms): armHostInvokeDeadline(armed, afterMs: ms)
+        case .at(let atMs): armHostInvokeDeadline(armed, atMs: atMs)
         }
 
         let response = handler(.start(request))
@@ -285,7 +336,7 @@ extension Engine {
             // §scxml-6.4.1: the host could not start it, so it never started: taken back
             // out of the running set with its deadline dropped, and the element's error
             // raised with what the host said.
-            hostInvokes.started[key] = nil
+            hostInvokes.finish(key)
             dropHostInvokeDeadline(token: token)
             if let errorEvent = policy.getEventFromName("error.execution") {
                 raise(.platformError(errorEvent, message: refusal))
@@ -374,7 +425,7 @@ extension Engine {
         guard hostInvokes.started[key] == token else {
             return false
         }
-        hostInvokes.started[key] = nil
+        hostInvokes.finish(key)
         dropHostInvokeDeadline(token: token)
         // The id is the DOCUMENT's, because `done.invoke.<id>` and `error.invoke.<id>`
         // are the names the author wrote a transition for.
@@ -402,10 +453,15 @@ extension Engine {
     @discardableResult
     public func cancelHostInvoke(processorType: String, invokeID: String) -> Bool {
         let key = HostInvokeKey(processorType: processorType, invokeID: invokeID)
+        // One a restore re-armed and has not started again was never started by this engine, so there is nothing
+        // to tell the host to stop.
+        hostInvokes.restored.removeAll {
+            $0.request.processorType == processorType && $0.request.invokeID == invokeID
+        }
         guard let token = hostInvokes.started[key] else {
             return false
         }
-        hostInvokes.started[key] = nil
+        hostInvokes.finish(key)
         dropHostInvokeDeadline(token: token)
         return deliverHostInvokeCancel(processorType: processorType, invokeID: invokeID, token: token)
     }
@@ -432,7 +488,7 @@ extension Engine {
         guard hostInvokes.started[key] == deadline.token else {
             return
         }
-        hostInvokes.started[key] = nil
+        hostInvokes.finish(key)
         guard
             deliverHostInvokeCancel(
                 processorType: deadline.processorType,
@@ -442,11 +498,58 @@ extension Engine {
         else {
             return
         }
+        raiseHostInvokeFailure(invokeID: deadline.invokeID, reason: "deadline")
+    }
+
+    /// Tells the document an invocation did not finish: `error.invoke.<id>`, or the generic `error.invoke` when it
+    /// names no specific one, with `_event.invokeid` set and `_event.data` the string `reason`: "deadline" when its
+    /// deadline passed, "interrupted" when a restore found a call it must not send again.
+    func raiseHostInvokeFailure(invokeID: String, reason: String) {
         var metadata = EventMetadata.external(sendID: "", origin: "")
-        metadata.data = "\"deadline\""
-        metadata.invokeID = deadline.invokeID
-        if let arriving = arrivingEvent(name: errorInvokePrefix + deadline.invokeID, metadata: metadata) {
+        metadata.data = "\"\(reason)\""
+        metadata.invokeID = invokeID
+        if let arriving = arrivingEvent(name: errorInvokePrefix + invokeID, metadata: metadata) {
             raiseExternalWithMeta(arriving)
+        }
+    }
+
+    /// Starts the invocations a restore re-armed, as the macrostep's start would start ones the document had just
+    /// entered (§scxml-6.4). A deadline that came due while the machine was away ends the invocation without a
+    /// start: the host is not asked to begin what it would be told to stop at once. A request SCE sends on the
+    /// document's behalf (a Mesh request) may already have reached its peer, which would act on it twice if it
+    /// were sent again, and the router that carried it is gone with the process that saved it: it is not started,
+    /// and the document is told the call was interrupted.
+    func startRestoredHostInvokes() {
+        guard !hostInvokes.restored.isEmpty else { return }
+        let restored = hostInvokes.restored
+        hostInvokes.restored = []
+        for invocation in restored {
+            let request = invocation.request
+            switch invocation.deadline {
+            case .passed:
+                raiseHostInvokeFailure(invokeID: request.invokeID, reason: "deadline")
+                continue
+            case .none, .at:
+                break
+            }
+            if isReservedProcessorType(request.processorType) {
+                raiseHostInvokeFailure(invokeID: request.invokeID, reason: "interrupted")
+                continue
+            }
+            var deadline = HostStartDeadline.none
+            if case .at(let atMs) = invocation.deadline {
+                deadline = .at(atMs)
+            }
+            guard let handler = hostInvokes.handlers[request.processorType] else {
+                // An invoker not registered by now is the same error a document's own start gets.
+                if let errorEvent = policy.getEventFromName("error.execution") {
+                    raise(
+                        .platformError(
+                            errorEvent, message: "<invoke> names an invoker the host declared but never registered"))
+                }
+                continue
+            }
+            _ = startHostInvoke(request, handler: handler, deadline: deadline)
         }
     }
 

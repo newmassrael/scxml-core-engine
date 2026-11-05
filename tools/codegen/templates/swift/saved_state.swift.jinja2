@@ -99,7 +99,7 @@ try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.
 {%- endmacro %}
 {#- The `<invoke type="scxml">`s of the document, static and hybrid, in document order, each with the state that holds
    it: the order a saved state lists its running children in. The states are walked by document order, not by id. #}
-{%- set ns_order = namespace(max=0, all=[]) -%}
+{%- set ns_order = namespace(max=0, all=[], hosts=[]) -%}
 {%- for state_id, state in model.states | dictsort -%}
 {%- if state.document_order > ns_order.max -%}{%- set ns_order.max = state.document_order -%}{%- endif -%}
 {%- endfor -%}
@@ -109,10 +109,14 @@ try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.
 {%- for invoke_info in (state.invokes | scxml) + (state.invokes | hybrid) -%}
 {%- set ns_order.all = ns_order.all + [{'info': invoke_info, 'state': state_id}] -%}
 {%- endfor -%}
+{%- for invoke_info in state.invokes | host_invoker -%}
+{%- set ns_order.hosts = ns_order.hosts + [{'info': invoke_info, 'state': state_id}] -%}
+{%- endfor -%}
 {%- endif -%}
 {%- endfor -%}
 {%- endfor -%}
 {%- set saved_invokes = ns_order.all %}
+{%- set saved_host_invokes = ns_order.hosts %}
 // ======================================================================
 // Saved state (docs/adr/0045)
 // ======================================================================
@@ -389,5 +393,17 @@ extension {{ machine_name }}Policy: SavedPolicy {
 {% endif %}
     }
 {% endfor %}
+{% endif %}
+{% if saved_host_invokes %}
+
+    /// The `<invoke>`s of the document a declared host invoker runs, each by its type and id with the state that
+    /// holds it: what a saved state's host-run invocations are held to (docs/adr/0045).
+    public var savedHostInvokeSlots: [SavedHostInvokeSlot] {
+        [
+{% for entry in saved_host_invokes %}
+            SavedHostInvokeSlot(processorType: "{{ entry.info.invoke_type | escape_swift }}", invokeID: "{{ entry.info.invoke_id | escape_swift }}", state: "{{ entry.state | escape_swift }}"),
+{% endfor %}
+        ]
+    }
 {% endif %}
 }

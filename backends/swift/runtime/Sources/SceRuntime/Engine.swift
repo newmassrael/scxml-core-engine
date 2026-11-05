@@ -1366,6 +1366,12 @@ public final class Engine<Policy: StatePolicy> {
         )
     }
 
+    /// Arms the deadline of a start to come due at `atMs` of this engine's clock: the moment a restore carried over
+    /// from a saved state, which is already a reading of this clock and not a wait.
+    func armHostInvokeDeadline(_ deadline: HostInvokeDeadline, atMs: Int64) {
+        scheduler.scheduleHostInvokeDeadline(deadline, readyAtMs: atMs)
+    }
+
     /// Takes back the deadline of the start `token` names, if it is still armed.
     func dropHostInvokeDeadline(token: UInt64) {
         scheduler.dropHostInvokeDeadline(token: token)
@@ -1396,6 +1402,12 @@ public final class Engine<Policy: StatePolicy> {
     /// armed, or, for a parent that arms nothing itself, be told there was nothing to
     /// wait for at all.
     public func timeUntilNextScheduled() -> Duration? {
+        // A restore that re-armed a host-run invocation owes the machine a tick before any clock does: the
+        // invocation starts at the top of the first macrostep and the deadline it keeps is armed there, so until
+        // that tick nothing is waiting and a host asleep on the answer would never drive the machine at all.
+        if !hostInvokes.restored.isEmpty {
+            return .zero
+        }
         var soonest: Duration?
         if let nextMs = scheduler.nextReadyAtMs {
             soonest = .milliseconds(max(0, nextMs - schedNowMs()))
@@ -1837,6 +1849,9 @@ public final class Engine<Policy: StatePolicy> {
             if policy.hasInvokeSupport {
                 policy.executePendingInvokes(engine: self)
             }
+            // The host-run invocations a restore re-armed start here too: where an invocation the document
+            // entered would have started, before the external queue is touched (docs/adr/0045).
+            startRestoredHostInvokes()
 
             // W3C SCXML Appendix D: invoking may have raised internal error events (and
             // a child that completed synchronously may already have raised
@@ -2335,17 +2350,22 @@ extension Engine {
     /// this machine's clock (none for one already due), so that the wait does not start again when the
     /// process comes back.
     ///
-    /// A send the format cannot carry refuses the save, by name: one routed to a session the tree holds, to
-    /// a child session or to an HTTP target, and the end of the time a host-run invocation was given.
-    /// Leaving it out would restore a machine that never delivers it and says nothing.
+    /// A send the format cannot carry refuses the save, by name: one routed to a child session or to an HTTP
+    /// target. Leaving it out would restore a machine that never delivers it and says nothing. The end of the time
+    /// a running host-run invocation was given is no send: it is saved with the invocation, as its `due`
+    /// (`savedHostInvokes`), and left out here.
     func savedPendingSends(wallNowMs: Int64) throws -> [SavedSend] {
         let now = schedNowMs()
-        return try scheduler.pending().map { waiting in
+        return try scheduler.pending().compactMap { waiting -> SavedSend? in
             let act = waiting.act
             if let deadline = act.hostInvokeDeadline {
+                let key = HostInvokeKey(processorType: deadline.processorType, invokeID: deadline.invokeID)
+                if hostInvokes.started[key] == deadline.token {
+                    return nil
+                }
                 throw StateRefusal(
-                    "the end of the time the host-run invocation '\(deadline.invokeID)' was given is waiting, "
-                        + "which this runtime does not save yet")
+                    "the end of the time the invocation '\(deadline.invokeID)' was given belongs to no "
+                        + "invocation this machine is running")
             }
             let (due, overflowed) = wallNowMs.addingReportingOverflow(max(0, waiting.readyAtMs - now))
             return SavedSend(due: overflowed ? Int64.max : due, act: try savedAct(act))
@@ -2390,6 +2410,39 @@ extension Engine {
         case .httpPost:
             throw StateRefusal("the delayed send '\(act.sendID)' is an HTTP POST, which a saved state does not carry")
         }
+    }
+
+    /// Every host-run invocation that is running, as a saved state holds it: the request it was started with and
+    /// the wall-clock moment its deadline comes due, `wallNowMs` plus the time left on this machine's clock, none
+    /// for one without. One a restore re-armed and has not started again is saved as it was read. Ordered by type
+    /// and then id, which is the order every backend writes them in.
+    func savedHostInvokes(wallNowMs: Int64) -> [SavedHostInvoke] {
+        let now = schedNowMs()
+        func due(at ms: Int64) -> Int64 {
+            let (sum, overflowed) = wallNowMs.addingReportingOverflow(max(0, ms - now))
+            return overflowed ? Int64.max : sum
+        }
+        let waiting = scheduler.pending()
+        var running: [(request: HostInvokeRequest, due: Int64?)] = []
+        for request in hostInvokes.requests.values {
+            let deadlineAt = waiting.first { $0.act.hostInvokeDeadline?.token == request.token }?.readyAtMs
+            running.append((request, deadlineAt.map(due(at:))))
+        }
+        for restored in hostInvokes.restored {
+            switch restored.deadline {
+            case .none: running.append((restored.request, nil))
+            case .at(let ms): running.append((restored.request, due(at: ms)))
+            case .passed: running.append((restored.request, due(at: now)))
+            }
+        }
+        return running
+            .sorted { ($0.request.processorType, $0.request.invokeID) < ($1.request.processorType, $1.request.invokeID) }
+            .map { run in
+                SavedHostInvoke(
+                    processorType: run.request.processorType, invokeID: run.request.invokeID, src: run.request.src,
+                    params: run.request.params, data: run.request.eventData, content: run.request.content,
+                    due: run.due)
+            }
     }
 
     /// A delayed send read from a saved state and judged, ready to be armed: what `armSavedSends` hands the

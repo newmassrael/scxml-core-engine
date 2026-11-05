@@ -99,6 +99,25 @@ public struct SavedHistory: Sendable, Equatable {
     }
 }
 
+/// An `<invoke>` of a document that a declared host invoker runs, as a saved state names it: by the `type` it
+/// names and its id, with the state that holds it.
+public struct SavedHostInvokeSlot: Sendable, Equatable {
+    /// The `type` the `<invoke>` names, which the host's invoker is registered under.
+    public let processorType: String
+
+    /// The invoke's id, which `done.invoke.<id>` names.
+    public let invokeID: String
+
+    /// The name of the state that holds it, which a saved configuration stands in while it runs.
+    public let state: String
+
+    public init(processorType: String, invokeID: String, state: String) {
+        self.processorType = processorType
+        self.invokeID = invokeID
+        self.state = state
+    }
+}
+
 /// A policy whose machine can be saved and restored. The generator writes the conformance for a machine whose
 /// state the runtime holds whole.
 public protocol SavedPolicy: InvocablePolicy {
@@ -125,6 +144,10 @@ public protocol SavedPolicy: InvocablePolicy {
     /// a running child, a count of starts and a send waiting for a child by. None for a document that invokes none.
     var savedInvokeIDs: [String] { get }
 
+    /// The `<invoke>`s of the document a declared host invoker runs, each by its type and id with the state that
+    /// holds it: what a saved state's host-run invocations are held to. None for a document that hands none to a host.
+    var savedHostInvokeSlots: [SavedHostInvokeSlot] { get }
+
     /// Every `<invoke>` whose child session is running, in document order, each with the child's whole state
     /// (docs/adr/0045). A child that has ended is not running, though its entry may stay until its state exits.
     func savedChildren(wallNowMs: Int64) throws -> [SavedChild]
@@ -149,6 +172,8 @@ extension SavedPolicy {
     }
 
     public var savedInvokeIDs: [String] { [] }
+
+    public var savedHostInvokeSlots: [SavedHostInvokeSlot] { [] }
 
     public func savedChildren(wallNowMs: Int64) throws -> [SavedChild] { [] }
 
@@ -267,7 +292,10 @@ extension Engine where Policy: SavedPolicy {
             configuration: active.map { policy.getStateName($0) },
             current: policy.getStateName(getCurrentState()), variables: policy.savedVariables(), history: history,
             pending: pending, invokes: .resumed(children), sessionID: policy.sessionID,
-            invokeStarts: policy.savedInvokeStarts(), autoSendSeq: Int64(generatedSendIDCount),
+            invokeStarts: policy.savedInvokeStarts(), hostInvokes: savedHostInvokes(wallNowMs: wallNowMs),
+            // The count of starts so far: the token the next start receives, which this runtime numbers from 1 and
+            // every backend's text counts from 0.
+            hostInvokeToken: Int64(hostInvokes.nextToken - 1), autoSendSeq: Int64(generatedSendIDCount),
             external: external, revisions: revisions, features: shape.features)
     }
 
@@ -298,9 +326,39 @@ extension Engine where Policy: SavedPolicy {
         // The state as one of this machine: each record saved at an earlier revision of its schema holds the
         // defaults of the fields added since.
         let saved = try SavedState.upgrade(saved, against: Policy.savedShape)
-        if let hosted = saved.hostInvokes.first {
-            throw StateRefusal(
-                "the saved state holds the host-run invocation '\(hosted.invokeID)', which this machine does not start")
+        guard saved.hostInvokeToken >= 0 else {
+            throw StateRefusal("the saved count of host-run starts is negative")
+        }
+        // The host-run invocations: each is one the document hands to a host, whose state the saved configuration
+        // stands in, and none is listed twice. Each is started again from the request it was saved with, never
+        // evaluating the element a second time.
+        var hostSeen: Set<String> = []
+        var hostRestarts: [(request: HostInvokeRequest, due: Int64?)] = []
+        for (index, host) in saved.hostInvokes.enumerated() {
+            guard
+                let slot = policy.savedHostInvokeSlots.first(where: {
+                    $0.processorType == host.processorType && $0.invokeID == host.invokeID
+                })
+            else {
+                throw StateRefusal(
+                    "hostinvokes[\(index)] is '\(host.invokeID)' of type '\(host.processorType)', which the "
+                        + "document does not have a host invoker run")
+            }
+            guard saved.configuration.contains(slot.state) else {
+                throw StateRefusal(
+                    "hostinvokes[\(index)] is '\(host.invokeID)', whose state the saved configuration does not "
+                        + "stand in")
+            }
+            guard hostSeen.insert("\(host.processorType)\u{0}\(host.invokeID)").inserted else {
+                throw StateRefusal("hostinvokes[\(index)] is '\(host.invokeID)', which an earlier entry already names")
+            }
+            hostRestarts.append(
+                (
+                    HostInvokeRequest(
+                        processorType: host.processorType, invokeID: host.invokeID, src: host.src,
+                        params: host.params, eventData: host.data, content: host.content, restarted: true),
+                    host.due
+                ))
         }
         func state(_ name: String, _ what: String) throws -> Policy.State {
             guard let found = policy.getStateFromName(name) else {
@@ -379,6 +437,27 @@ extension Engine where Policy: SavedPolicy {
             }
             armSavedSends(waiting, wallNowMs: wallNowMs)
             restoreSavedEngineParts(external: external, generatedSendIDCount: UInt64(saved.autoSendSeq))
+            // Re-armed, not started: a host registers its invokers after restoring, so each starts at the top of the
+            // first macrostep the host drives. A deadline comes due `due - wallNowMs` after now on this machine's
+            // own clock, and one already due ends the invocation without a start.
+            let now = nowMs()
+            hostInvokes.nextToken = UInt64(saved.hostInvokeToken) + 1
+            hostInvokes.restored = hostRestarts.map { restart in
+                var request = restart.request
+                request.sessionID = policy.sessionID
+                let deadline: RestoredHostDeadline
+                if let due = restart.due {
+                    if due <= wallNowMs {
+                        deadline = .passed
+                    } else {
+                        let (at, overflowed) = now.addingReportingOverflow(due - wallNowMs)
+                        deadline = .at(overflowed ? Int64.max : at)
+                    }
+                } else {
+                    deadline = .none
+                }
+                return RestoredHostInvoke(request: request, deadline: deadline)
+            }
             resumeChildren()
         }
     }

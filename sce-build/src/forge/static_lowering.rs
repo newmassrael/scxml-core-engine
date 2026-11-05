@@ -7039,10 +7039,14 @@ pub(crate) fn a_swift_tree_can_hold(model: &SCXMLModel) -> bool {
             .all(|invoke| match invoke {
                 crate::model::Invoke::Scxml(info) => info.common.child_swift_saves,
                 // A type SCE does not implement is served by a host's invoker, which keeps running and which a
-                // saved state holds as a host-run invocation, or by none, which raises one error. The Swift
-                // runtime saves neither yet, and a child's answer is read before the host declares what it
-                // serves, so the two cannot be told apart here.
-                crate::model::Invoke::Unsupported(_) => false,
+                // saved state holds as a host-run invocation (the Swift runtime saves those), or by none, which
+                // raises one error and keeps nothing. A child's answer is read before the host declares what it
+                // serves, so a type is held to be served when the build's own standard library serves it, and
+                // any other type of a child is not saved.
+                crate::model::Invoke::Unsupported(info) => {
+                    info.host_served
+                        || crate::forge::standard_host::lookup(&info.invoke_type).is_some()
+                }
                 crate::model::Invoke::Hybrid(info) => {
                     !info.candidates.is_empty()
                         && info.candidates.iter().all(|c| c.child_swift_saves)

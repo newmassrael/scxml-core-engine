@@ -1883,3 +1883,80 @@ public func registerStaticHostKvSceHostKvPutInvoker(on engine: Engine<StaticHost
 public func completeStaticHostKvPut(on engine: Engine<StaticHostKvPolicy>, token: UInt64, result: StaticHostKvPutResult) -> Bool {
     engine.completeHostInvoke(processorType: "sce-host-kv-put", invokeID: "put", token: token, doneData: result.wire)
 }
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticHostKvPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
+            revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
+            format2First: "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
+            format2Revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("key", SavedValues.of(vKey)),
+            SavedEntry("value", SavedValues.of(vValue)),
+            SavedEntry("after", SavedValues.of(vAfter)),
+            SavedEntry("prefix", SavedValues.of(vPrefix)),
+            SavedEntry("outcome", SavedValues.of(vOutcome)),
+            SavedEntry("found", SavedValues.of(vFound)),
+            SavedEntry("got", SavedValues.of(vGot)),
+            SavedEntry("replaced", SavedValues.of(vReplaced)),
+            SavedEntry("existed", SavedValues.of(vExisted)),
+            SavedEntry("next_found", SavedValues.of(vNextFound)),
+            SavedEntry("next", SavedValues.of(vNext)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(try saved.variable("key"), "key", capacity: 256)
+        let value1 = try SavedValues.string(try saved.variable("value"), "value", capacity: 4096)
+        let value2 = try SavedValues.string(try saved.variable("after"), "after", capacity: 256)
+        let value3 = try SavedValues.string(try saved.variable("prefix"), "prefix", capacity: 256)
+        let value4 = try SavedValues.string(try saved.variable("outcome"), "outcome", capacity: 24)
+        let value5 = try SavedValues.bool(try saved.variable("found"), "found")
+        let value6 = try SavedValues.string(try saved.variable("got"), "got", capacity: 4096)
+        let value7 = try SavedValues.bool(try saved.variable("replaced"), "replaced")
+        let value8 = try SavedValues.bool(try saved.variable("existed"), "existed")
+        let value9 = try SavedValues.bool(try saved.variable("next_found"), "next_found")
+        let value10 = try SavedValues.string(try saved.variable("next"), "next", capacity: 256)
+        return { [self] in
+            self.vKey = value0
+            self.vValue = value1
+            self.vAfter = value2
+            self.vPrefix = value3
+            self.vOutcome = value4
+            self.vFound = value5
+            self.vGot = value6
+            self.vReplaced = value7
+            self.vExisted = value8
+            self.vNextFound = value9
+            self.vNext = value10
+        }
+    }
+
+    /// The `<invoke>`s of the document a declared host invoker runs, each by its type and id with the state that
+    /// holds it: what a saved state's host-run invocations are held to (docs/adr/0045).
+    public var savedHostInvokeSlots: [SavedHostInvokeSlot] {
+        [
+            SavedHostInvokeSlot(processorType: "sce-host-kv-get", invokeID: "get", state: "getting"),
+            SavedHostInvokeSlot(processorType: "sce-host-kv-put", invokeID: "put", state: "putting"),
+            SavedHostInvokeSlot(processorType: "sce-host-kv-delete", invokeID: "del", state: "deleting"),
+            SavedHostInvokeSlot(processorType: "sce-host-kv-next-key", invokeID: "walk", state: "walking"),
+        ]
+    }
+}

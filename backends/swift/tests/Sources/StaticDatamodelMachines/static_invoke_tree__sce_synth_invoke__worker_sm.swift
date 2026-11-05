@@ -1056,3 +1056,268 @@ public func registerStaticInvokeTreeSceSynthInvokeWorkerSceHostClockNowInvoker(o
 public func completeStaticInvokeTreeSceSynthInvokeWorkerClock(on engine: Engine<StaticInvokeTreeSceSynthInvokeWorkerPolicy>, token: UInt64, result: StaticInvokeTreeSceSynthInvokeWorkerClockResult) -> Bool {
     engine.completeHostInvoke(processorType: "sce-host-clock-now", invokeID: "clock", token: token, doneData: result.wire)
 }
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeTreeSceSynthInvokeWorkerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "850830555bb055d5c90bde694afb8be5eb62c215679dc890c5119668be6599fd",
+            revised: "20db9275db41c57b3b1ac7f4cd55f3dd13d2d342523321fb4a47097cb59547cd",
+            format2First: "850830555bb055d5c90bde694afb8be5eb62c215679dc890c5119668be6599fd",
+            format2Revised: "20db9275db41c57b3b1ac7f4cd55f3dd13d2d342523321fb4a47097cb59547cd",
+            records: [
+                SavedRecordLineage(
+                    event: "reading.revised", revision: 3,
+                    revisions: ["d9ba6a71207a3f219929c8fda298d7a35c76cb7950cc287ae2fa8a8b8ff45ad7", "e511eddacf1d4e220c85f78c95988fe26a2a1319cf119cb085f1a84f4f197f8d"],
+                    added: [
+                        SavedAddedField(id: "layout", since: 2, defaultJSON: "\"week\""),
+                        SavedAddedField(id: "urgent", since: 3, defaultJSON: "true"),
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "last", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_view_mode.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "last", field: "layout", list: false),
+                    ]),
+            ])
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("last", vLast.toSaved()),
+            SavedEntry("pick", SavedValues.of(vPick)),
+            SavedEntry("base", SavedValues.of(vBase)),
+            SavedEntry("steps", SavedValues.of(vSteps)),
+            SavedEntry("helper_id", SavedValues.of(vHelperId)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord.fromSaved(try saved.variable("last"), "last")
+        let value1 = try SavedValues.string(try saved.variable("pick"), "pick", capacity: 48)
+        let value2 = try SavedValues.uint32(try saved.variable("base"), "base")
+        let value3 = try SavedValues.uint32(try saved.variable("steps"), "steps")
+        let value4 = try SavedValues.string(try saved.variable("helper_id"), "helper_id", capacity: 64)
+        return { [self] in
+            self.vLast = value0
+            self.vPick = value1
+            self.vBase = value2
+            self.vSteps = value3
+            self.vHelperId = value4
+        }
+    }
+
+    /// The id the document gives each of its `<invoke type="scxml">`s, in document order.
+    public var savedInvokeIDs: [String] {
+        ["_invoke_0"]
+    }
+
+    /// How many times each `<invoke>` has started, which numbers the next start's id.
+    public func savedInvokeStarts() -> [SavedEntry<Int64>] {
+        var counted: [SavedEntry<Int64>] = []
+        if sceInvokeStartsInvoke0 > 0 {
+            counted.append(SavedEntry("_invoke_0", Int64(sceInvokeStartsInvoke0)))
+        }
+        return counted
+    }
+
+    /// Every `<invoke>` whose child session is running, each with the child's whole state
+    /// (docs/adr/0045). A child that has ended is not running, though its entry stays until its state exits.
+    public func savedChildren(wallNowMs: Int64) throws -> [SavedChild] {
+        var running: [SavedChild] = []
+        if let child = sceInvokeChildInvoke0, !sceInvokeDoneInvoke0,
+            let slot = activeInvokes["_invoke_0"]
+        {
+            // The slot holds whichever candidate the `srcexpr` named, by what a parent drives it through.
+            guard let saving = child as? any SavedChildEngine else {
+                throw StateRefusal("the session of '_invoke_0' is one this runtime cannot save")
+            }
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "_invoke_0", start: Int64(sceInvokeStartsInvoke0),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: sceInvokeStemInvoke0,
+                    session: try saving.saveSession(wallNowMs: wallNowMs)))
+        }
+        return running
+    }
+
+    /// The state that holds the `<invoke>` `id`, which a saved state's children and restarts are held to.
+    private func savedInvokeOwner(_ id: String) -> StaticInvokeTreeSceSynthInvokeWorkerState? {
+        switch id {
+        case "_invoke_0": return .second
+        default: return nil
+        }
+    }
+
+    /// Judges the children and the counts of starts `saved` holds and changes nothing; what it returns puts the
+    /// children back once this machine stands where it was saved (docs/adr/0045, section 3).
+    public func readSavedChildren(from saved: SavedState, engine: Engine<StaticInvokeTreeSceSynthInvokeWorkerPolicy>, wallNowMs: Int64) throws -> () -> Void {
+        for counted in saved.invokeStarts where savedInvokeOwner(counted.key) == nil {
+            throw StateRefusal("invokestarts counts '\(counted.key)', which the document does not invoke")
+        }
+        func counted(_ id: String) -> Int64 { saved.invokeStarts.first { $0.key == id }?.value ?? 0 }
+        // The state that holds an `<invoke>` is one the saved configuration stands in, and no `<invoke>` is listed twice.
+        func holder(_ id: String, _ what: String, _ seen: inout Set<String>) throws -> StaticInvokeTreeSceSynthInvokeWorkerState {
+            guard let owner = savedInvokeOwner(id) else {
+                throw StateRefusal("the saved state holds a running child session '\(id)', which this machine does not start")
+            }
+            guard saved.configuration.contains(getStateName(owner)) else {
+                throw StateRefusal("\(what) is '\(id)', whose state the saved configuration does not stand in")
+            }
+            guard seen.insert(id).inserted else {
+                throw StateRefusal("\(what) is '\(id)', which an earlier entry already names")
+            }
+            return owner
+        }
+        var seen: Set<String> = []
+        var resume: [() -> Void] = []
+        var restart: [String] = []
+        switch saved.invokes {
+        case .resumed(let children):
+            for (index, child) in children.enumerated() {
+                _ = try holder(child.id, "invokes[\(index)]", &seen)
+                if child.start != counted(child.id) {
+                    throw StateRefusal(
+                        "invokes[\(index)] is start \(child.start) of '\(child.id)', and the session counts \(counted(child.id)) "
+                            + "starts of it: a state re-entered cancels the earlier child before it starts the next one")
+                }
+                // The id the child would be given where it is built, derived from this session's own, which the
+                // restore is about to bind.
+                let derived = "\(saved.boundSessionID ?? sessionID).\(child.invokeID)"
+                if child.session.sessionID != derived {
+                    throw StateRefusal(
+                        "invokes[\(index)].session's id is '\(child.session.sessionID)', and a child of "
+                            + "'\(saved.boundSessionID ?? sessionID)' started under '\(child.invokeID)' is '\(derived)'")
+                }
+                switch child.id {
+                case "_invoke_0":
+                    resume.append(try sceJudgeSavedChildInvoke0(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                default:
+                    break
+                }
+            }
+        case .restarted(let ids):
+            for (index, id) in ids.enumerated() {
+                _ = try holder(id, "invokes[\(index)]", &seen)
+                restart.append(id)
+            }
+        }
+        return { [self] in
+            sceInvokeStartsInvoke0 = Int(counted("_invoke_0"))
+            for put in resume { put() }
+            // A format-1 state holds a child by its id alone, so each is started again from its beginning, as
+            // entering its state starts it, and last, so what a child sends as it starts stands behind what was
+            // already waiting.
+            for id in restart {
+                switch id {
+                case "_invoke_0":
+                    sceInvokeStartsInvoke0 += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "second.\(sceInvokeStartsInvoke0)._invoke_0",
+                        state: .second,
+                        documentID: "_invoke_0"))
+                default:
+                    break
+                }
+            }
+            if !restart.isEmpty {
+                executePendingInvokes(engine: engine)
+            }
+        }
+    }
+
+    /// Builds the session `<invoke>` `_invoke_0` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildInvoke0(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeTreeSceSynthInvokeWorkerPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
+        switch child.document {
+        case "static_hybrid_watcher":
+            let childPolicy = StaticHybridWatcherPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "_invoke_0", document: "static_hybrid_watcher")
+                resumeChild()
+                activeInvokes["_invoke_0"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "_invoke_0",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildInvoke0 = session
+                sceInvokeStemInvoke0 = "static_hybrid_watcher"
+                sceInvokeDoneInvoke0 = false
+            }
+        case "static_hybrid_holder":
+            let childPolicy = StaticHybridHolderPolicy()
+            let session = InvokedSession(
+                policy: childPolicy,
+                sessionID: childSessionID,
+                queue: ParentEventQueue()
+            )
+            let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
+            return { [self] in
+                // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+                // before it is restored, since restoring arms them.
+                session.engine.setClock(engine.clock())
+                engine.startChildMesh(of: session, invokeID: "_invoke_0", document: "static_hybrid_holder")
+                resumeChild()
+                activeInvokes["_invoke_0"] = ChildSession(
+                    sessionID: childSessionID,
+                    invokeID: "_invoke_0",
+                    parentSessionID: sessionID,
+                    autoforward: false,
+                    finalizeScript: ""
+                )
+                sceInvokeChildInvoke0 = session
+                sceInvokeStemInvoke0 = "static_hybrid_holder"
+                sceInvokeDoneInvoke0 = false
+            }
+        default:
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which '_invoke_0' does not start")
+        }
+    }
+
+    /// The `<invoke>`s of the document a declared host invoker runs, each by its type and id with the state that
+    /// holds it: what a saved state's host-run invocations are held to (docs/adr/0045).
+    public var savedHostInvokeSlots: [SavedHostInvokeSlot] {
+        [
+            SavedHostInvokeSlot(processorType: "sce-host-clock-now", invokeID: "clock", state: "second"),
+        ]
+    }
+}
