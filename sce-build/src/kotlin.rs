@@ -17,6 +17,124 @@
 use crate::model::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+/// The bytes of code one JVM method holds: `code_length` is less than 65,536
+/// (JVM Specification, section 4.7.3), and kotlinc refuses a method past it
+/// with `MethodTooLargeException`.
+pub const JVM_METHOD_CODE_BYTES: usize = 65_535;
+
+/// The most items of a fixed shape one generated Kotlin method holds.
+///
+/// An item is one arm of a dispatch
+/// (`tools/codegen/templates/kotlin/dispatch.kt.jinja2`): an `is` test or a
+/// constant and one call or one constant; one entry of a table built at class
+/// initialisation, weighed as
+/// one plus the elements of the list it holds; or one statement of a
+/// per-variable sequence (a variable's initialisation, its save, its restore).
+/// What a document has more of than this is split into parts of at most this
+/// many, each a method of its own, and the method that asks the parts makes at
+/// most this many calls: every item names a class-file constant no other item
+/// of the same method names, and a class holds at most 65,535 of them (JVM
+/// Specification, section 4.1), so 65,535 / 256 = 256 parts at most.
+///
+/// Measured 2026-11-05, before the split: a large `sce-static` statechart's
+/// machine did not compile, its `executeTransitionContent` past
+/// [`JVM_METHOD_CODE_BYTES`].
+pub const METHOD_ITEMS: usize = 256;
+
+/// The bytes of JVM code one item compiles to at most.
+///
+/// An arm of a `when` over strings is its `lookupswitch` entry (8 bytes), the
+/// subject loaded, the constant loaded and compared (`aload`, `ldc_w`,
+/// `invokevirtual`, `ifeq`: 10), a call of the machine's own with at most
+/// three arguments (`aload_0`, three loads of at most 2 bytes, `invokevirtual`:
+/// 10) and the jump out (`goto_w`: 5) — 33 bytes. A table entry is the key
+/// loaded, the value built, `invokeinterface put` and `pop`, under 40 bytes for
+/// its own weight of one, each element of the list it holds weighed one item
+/// more. The widest is a variable's initialisation: the engine's evaluation,
+/// its write and the error its failure raises, about 60 bytes. 128 leaves room
+/// above every one of them.
+pub const ITEM_CODE_BYTES: usize = 128;
+
+// One method's items take at most half of the limit, so the method's own
+// prologue and the code kotlinc adds around a `when` fit in the rest.
+const _: () = assert!(METHOD_ITEMS * ITEM_CODE_BYTES * 2 <= JVM_METHOD_CODE_BYTES + 1);
+
+/// Items of the given weights, in order, packed into consecutive parts whose
+/// weights sum to at most `budget`: each part is the positions of its items.
+///
+/// An item heavier than `budget` alone is a part of its own: the weight of one
+/// item is what its own element writes, which no split of the dispatch makes
+/// smaller. No item is left out, and the parts keep the items' order, so the
+/// methods built from them run what one method would have run, in the same
+/// order.
+pub fn pack_parts(weights: &[usize], budget: usize) -> Vec<Vec<usize>> {
+    let mut parts: Vec<Vec<usize>> = Vec::new();
+    let mut current: Vec<usize> = Vec::new();
+    let mut current_weight = 0usize;
+    for (position, &weight) in weights.iter().enumerate() {
+        if !current.is_empty() && current_weight + weight > budget {
+            parts.push(std::mem::take(&mut current));
+            current_weight = 0;
+        }
+        current.push(position);
+        current_weight += weight;
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
+/// Where the Kotlin machine declares the constant of each transition the
+/// microstep reads (`EnabledTransition`): in holder objects
+/// (`TransitionsPart<n>`), each initialised by its own class initialiser.
+///
+/// They used to be in the machine's companion object, whose one class
+/// initialiser grew with every transition of the document. A transition
+/// weighs one item and one more for each target it names, which is what its
+/// constant builds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransitionParts {
+    /// Each holder: the state that owns each transition it declares, and the
+    /// transition's position among that state's transitions.
+    pub holders: Vec<Vec<(String, usize)>>,
+    /// The holder of each transition, by its owning state, in the order of the
+    /// state's transitions.
+    pub holder_of: BTreeMap<String, Vec<usize>>,
+}
+
+/// [`TransitionParts`] for `model`: its transitions in the order of their
+/// states' ids, each state's in document order, packed into holders of at most
+/// [`METHOD_ITEMS`].
+pub fn transition_parts(model: &SCXMLModel) -> TransitionParts {
+    let mut keys: Vec<(String, usize)> = Vec::new();
+    let mut weights: Vec<usize> = Vec::new();
+    for (state_id, state) in &model.states {
+        for (position, transition) in state.transitions.iter().enumerate() {
+            keys.push((state_id.clone(), position));
+            weights.push(1 + transition.targets.len());
+        }
+    }
+    let mut holders: Vec<Vec<(String, usize)>> = Vec::new();
+    let mut holder_of: BTreeMap<String, Vec<usize>> = model
+        .states
+        .iter()
+        .map(|(id, state)| (id.clone(), vec![0; state.transitions.len()]))
+        .collect();
+    for (holder, part) in pack_parts(&weights, METHOD_ITEMS).into_iter().enumerate() {
+        let mut members = Vec::with_capacity(part.len());
+        for position in part {
+            let (state_id, index) = &keys[position];
+            if let Some(slots) = holder_of.get_mut(state_id) {
+                slots[*index] = holder;
+            }
+            members.push((state_id.clone(), *index));
+        }
+        holders.push(members);
+    }
+    TransitionParts { holders, holder_of }
+}
+
 /// §scxml-3.12.1: Build hierarchical event tree from flat dot-separated event names.
 ///
 /// Each node is a JSON object where keys are event name parts and `_leaf` is a boolean
@@ -406,4 +524,82 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
     }
 
     invoke_entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every position lands in exactly one part, in order, and no part but one
+    /// holding a single heavy item weighs more than the budget.
+    #[test]
+    fn parts_keep_every_item_in_order_within_the_budget() {
+        let weights = [1, 1, 3, 2, 1, 5, 1, 1];
+        let parts = pack_parts(&weights, 4);
+        assert_eq!(
+            parts,
+            [vec![0, 1], vec![2], vec![3, 4], vec![5], vec![6, 7]]
+        );
+        let flat: Vec<usize> = parts.iter().flatten().copied().collect();
+        assert_eq!(flat, (0..weights.len()).collect::<Vec<_>>());
+        for part in &parts {
+            let weight: usize = part.iter().map(|&i| weights[i]).sum();
+            assert!(weight <= 4 || part.len() == 1, "{part:?} weighs {weight}");
+        }
+    }
+
+    /// No items, no parts: a table with no entry declares no part to call.
+    #[test]
+    fn no_items_make_no_parts() {
+        assert!(pack_parts(&[], METHOD_ITEMS).is_empty());
+    }
+
+    /// One more item than a method holds opens a second part, and the first
+    /// holds exactly [`METHOD_ITEMS`].
+    #[test]
+    fn one_item_past_the_budget_opens_a_second_part() {
+        let parts = pack_parts(&[1; METHOD_ITEMS + 1], METHOD_ITEMS);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].len(), METHOD_ITEMS);
+        assert_eq!(parts[1], [METHOD_ITEMS]);
+    }
+
+    /// A transition weighs one and one more per target, and each one's holder
+    /// is recorded where its state's transitions are.
+    #[test]
+    fn transition_holders_are_found_where_their_state_is() {
+        let mut model = SCXMLModel::default();
+        let transition = |targets: usize| Transition {
+            targets: (0..targets).map(|t| format!("t{t}")).collect(),
+            ..Transition::default()
+        };
+        model.states.insert(
+            "a".to_string(),
+            State {
+                id: "a".to_string(),
+                transitions: (0..METHOD_ITEMS / 2).map(|_| transition(0)).collect(),
+                ..State::default()
+            },
+        );
+        model.states.insert(
+            "b".to_string(),
+            State {
+                id: "b".to_string(),
+                // Each weighs two, so the holder `a` began fills before these end.
+                transitions: (0..METHOD_ITEMS / 2).map(|_| transition(1)).collect(),
+                ..State::default()
+            },
+        );
+        let parts = transition_parts(&model);
+        assert_eq!(parts.holders.len(), 2);
+        assert_eq!(parts.holder_of["a"], [0; METHOD_ITEMS / 2]);
+        let b = &parts.holder_of["b"];
+        assert_eq!(b[0], 0);
+        assert_eq!(b[b.len() - 1], 1);
+        for (holder, members) in parts.holders.iter().enumerate() {
+            for (state, position) in members {
+                assert_eq!(parts.holder_of[state][*position], holder);
+            }
+        }
+    }
 }

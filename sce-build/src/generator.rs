@@ -4340,6 +4340,20 @@ fn render_kotlin(
     let event_members =
         kotlin::render_event_tree(&event_tree, &format!("{machine_name}Event"), "    ");
 
+    // What bounds every generated method by construction, below the 65,535
+    // bytes of code one JVM method holds
+    // (`tools/codegen/templates/kotlin/dispatch.kt.jinja2`): how many items one
+    // method holds, the packing of weighed items into parts of at most that
+    // many, and the holder each transition's constant is declared in.
+    env.add_global(
+        "kotlin_method_items",
+        minijinja::Value::from(kotlin::METHOD_ITEMS),
+    );
+    env.add_function("kotlin_parts", |weights: Vec<usize>| {
+        kotlin::pack_parts(&weights, kotlin::METHOD_ITEMS)
+    });
+    let transition_parts = kotlin::transition_parts(model);
+
     let tmpl = env
         .get_template("state_machine.kt.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -4354,6 +4368,8 @@ fn render_kotlin(
         kotlin_package_prefix => package_prefix.unwrap_or(KOTLIN_DEFAULT_PACKAGE_PREFIX),
         parent_map => minijinja::Value::from_serialize(&parent_map),
         invoke_entries => minijinja::Value::from_serialize(&invoke_entries),
+        transition_parts => minijinja::Value::from_serialize(&transition_parts.holders),
+        transition_part_of => minijinja::Value::from_serialize(&transition_parts.holder_of),
         event_payload_active => payload.active,
         event_payload_defs => &payload.defs,
         event_payload_policy_fields => &payload.policy_fields,

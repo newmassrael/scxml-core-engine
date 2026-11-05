@@ -478,20 +478,31 @@ fn inherited_transition_marker_names_the_owning_state() {
         .collect();
     assert!(!sources.is_empty(), "kotlin backend emitted no .kt file");
 
-    // Which state's arm each line sits in: an `is <State> ->` line opens
-    // one, and the next opens another.
+    // Which state's code each line sits in: an `is <State> ->` arm opens
+    // one, and so does the method a dispatch calls for that state or for one
+    // of its transitions (`onEntryOf<State>`, `onExitOf<State>`,
+    // `transitionContentOf<State>At<n>`, ...), which is where a state's markers are
+    // written; the next of either opens another.
+    let region_of = |line: &str| -> Option<&'static str> {
+        let is_method = line.trim_start().starts_with("private fun ");
+        [("inner", "Inner"), ("outer", "Outer"), ("done", "Done")]
+            .into_iter()
+            .find(|(_, class)| {
+                line.contains(&format!("is InheritedProbeState.{class} ->"))
+                    || (is_method
+                        && (line.contains(&format!("Of{class}("))
+                            || line.contains(&format!("Of{class}At"))))
+            })
+            .map(|(name, _)| name)
+    };
     let mut arm: Option<&str> = None;
     let mut outer_markers_under_inner = 0usize;
     let mut outer_transition_markers_under_outer = 0usize;
     for path in &sources {
         let text = std::fs::read_to_string(path).expect("source readable");
         for line in text.lines() {
-            if line.contains("is InheritedProbeState.Inner ->") {
-                arm = Some("inner");
-            } else if line.contains("is InheritedProbeState.Outer ->") {
-                arm = Some("outer");
-            } else if line.contains("is InheritedProbeState.Done ->") {
-                arm = Some("done");
+            if let Some(region) = region_of(line) {
+                arm = Some(region);
             }
             if !line.contains("SCE-MAP:") || !line.contains(":: outer :: ") {
                 continue;

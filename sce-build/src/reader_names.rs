@@ -827,7 +827,27 @@ fn scan_template(language: Language, template: &str, into: &mut Reserved) {
                 into.machine_suffixes.insert(caps[1].to_string());
             }
         }
-        Language::Rust | Language::Kotlin | Language::Go | Language::Python | Language::Swift => {
+        Language::Kotlin => {
+            scan_code(language, &code, into);
+            // A dispatch or a table the Kotlin templates write through
+            // `kotlin/dispatch.kt.jinja2` is split into parts named
+            // `<name>Part<n>`, so a call names members its own text does not
+            // spell: a literal name reserves `<name>Part`, and a name the call
+            // builds from the document (`"<name>" ~ …`) its fixed half, as a
+            // function spelled through a template tag does.
+            static BOUNDED_CALL: LazyLock<Regex> = LazyLock::new(|| {
+                regex(r#"\bbounded_(?:when|map)\(\s*"([A-Za-z_][A-Za-z0-9_]*)"(\s*~)?"#)
+            });
+            for caps in BOUNDED_CALL.captures_iter(&code) {
+                let name = &caps[1];
+                if caps.get(2).is_some() {
+                    into.prefixes.insert(name.to_string());
+                } else {
+                    into.prefixes.insert(format!("{name}Part"));
+                }
+            }
+        }
+        Language::Rust | Language::Go | Language::Python | Language::Swift => {
             scan_code(language, &code, into)
         }
     }
@@ -1196,6 +1216,30 @@ mod tests {
         assert!(reserved(Language::Cpp).covers("machinePolicy", m));
         assert!(!reserved(Language::Rust).covers("slot", m));
         assert!(!reserved(Language::Go).covers("AiLoopStateRun", m));
+    }
+
+    /// A Kotlin dispatch or table split into parts (`kotlin/dispatch.kt.jinja2`)
+    /// reserves its parts by the name its call gives: `<name>Part` for a
+    /// literal name, the fixed half for one built from the document. And a
+    /// state's or a transition's own method, spelled through a template tag,
+    /// by its fixed half.
+    #[test]
+    fn a_kotlin_dispatch_split_into_parts_reserves_its_parts() {
+        let m = "machine";
+        let kotlin = reserved(Language::Kotlin);
+        assert!(kotlin.covers("onEntryPart0", m));
+        assert!(kotlin.covers("stateIdOfPart3", m));
+        assert!(kotlin.covers("childStatesPart0", m));
+        assert!(kotlin.covers("firstEnabledTransitionOfIdle", m));
+        assert!(kotlin.covers("firstEnabledTransitionOfIdlePart1", m));
+        assert!(kotlin.covers("transitionContentOfIdle", m));
+        assert!(kotlin.covers("transitionContentOfIdleAt2", m));
+        assert!(kotlin.covers("onEntryOfIdle", m));
+        assert!(kotlin.covers("onExitOfIdle", m));
+        assert!(kotlin.covers("saveVariablesPart0", m));
+        // A name the dispatch does not build stays free.
+        assert!(!kotlin.covers("startOfDay", m));
+        assert!(!kotlin.covers("entered", m));
     }
 
     /// The count of an invoke's starts is a member per invoke, named from its

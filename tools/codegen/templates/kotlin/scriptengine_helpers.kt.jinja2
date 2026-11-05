@@ -42,7 +42,64 @@
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-{% for var in model.variables %}
+{# The document's <data>, its states' early-bound <data> and its top-level
+   <script>s are run by parts of at most `kotlin_method_items` items, each a
+   method of its own (`declareVariablesPart<n>`, `declareStateVariablesPart<n>`,
+   `runDocumentScriptsPart<n>`), in document order: one statement each in
+   this one method grew with the document past what one JVM method holds
+   (dispatch.kt.jinja2). #}
+{% set declared_parts = model.variables | batch(kotlin_method_items) | list %}
+{% set early_items = namespace(list=[]) %}
+{% if model.binding == 'early' %}
+{% for state_id, state in model.states | dictsort %}
+{% for dm_var in state.datamodel %}
+{% set early_items.list = early_items.list + [[state_id, dm_var]] %}
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% set early_parts = early_items.list | batch(kotlin_method_items) | list %}
+{% set script_parts = model.global_scripts | batch(kotlin_method_items) | list %}
+{% for part in declared_parts %}
+        declareVariablesPart{{ loop.index0 }}(engine, sid)
+{% endfor %}
+
+{% if early_parts %}
+        // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
+{% for part in early_parts %}
+        declareStateVariablesPart{{ loop.index0 }}(engine, sid)
+{% endfor %}
+{% endif %}
+
+{% if script_parts %}
+        // W3C SCXML 5.8: Execute global scripts at document load time
+{% for part in script_parts %}
+        runDocumentScriptsPart{{ loop.index0 }}(engine, sid)
+{% endfor %}
+{% endif %}
+
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register In() predicate callback
+        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
+{% endif %}
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+{% for part in declared_parts %}
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart{{ loop.index0 }}(engine: ScxmlScriptEngine, sid: String) {
+{% for var in part %}
 {% if var.expr %}
         // W3C SCXML 5.3: Initialize variable '{{ var.id }}' with expr
         try {
@@ -78,13 +135,14 @@
         } catch (_: Exception) {}
 {% endif %}
 {% endfor %}
+    }
+{% endfor %}
+{% for part in early_parts %}
 
-{% if model.states.values() | selectattr('datamodel') | list %}
-{% if model.binding == 'early' %}
-        // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
-{% for state_id, state in model.states | dictsort %}
-{% if state.datamodel %}
-{% for dm_var in state.datamodel %}
+    private fun declareStateVariablesPart{{ loop.index0 }}(engine: ScxmlScriptEngine, sid: String) {
+{% for item in part %}
+{% set state_id = item[0] %}
+{% set dm_var = item[1] %}
 {% if dm_var.expr %}
         // State '{{ state_id }}' variable '{{ dm_var.id }}'
         try {
@@ -105,40 +163,20 @@
         engine.setVariable(sid, "{{ dm_var.id }}", null)
 {% endif %}
 {% endfor %}
-{% endif %}
+    }
 {% endfor %}
-{% endif %}
-{% endif %}
+{% for part in script_parts %}
 
-{% if model.global_scripts %}
-        // W3C SCXML 5.8: Execute global scripts at document load time
-{% for script in model.global_scripts %}
+    private fun runDocumentScriptsPart{{ loop.index0 }}(engine: ScxmlScriptEngine, sid: String) {
+{% for script in part %}
         try {
             engine.executeScript(sid, {{ script.content | to_script_source_script }})
         } catch (e: Exception) {
             raisePlatformError({{ machine_name }}Event.Error.Execution, "a top-level <script> failed to execute")
         }
 {% endfor %}
-{% endif %}
-
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 5.9.2: Register In() predicate callback
-        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
-{% endif %}
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
+{% endfor %}
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
     //

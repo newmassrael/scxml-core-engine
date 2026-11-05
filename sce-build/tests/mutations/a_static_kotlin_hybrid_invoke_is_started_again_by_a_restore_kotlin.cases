@@ -51,6 +51,6 @@ PY
 
 mutation_case "entering the state does not start a hybrid child" <<'PY'
 edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
-     "                // cannot start it differently.\n                deferStaticInvoke(\"{{ inv.invoke_id | escape_kotlin }}\", state)",
+     "                // cannot start it differently.\n                deferStaticInvoke(\"{{ inv.invoke_id | escape_kotlin }}\", {{ state_ref }})",
      "                // cannot start it differently.\n                Unit")
 PY

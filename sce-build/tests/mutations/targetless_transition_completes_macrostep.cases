@@ -95,6 +95,6 @@ PY
 
 mutation_case "the selection carries an else even when every state has a transition" <<'PY'
 edit("tools/codegen/templates/kotlin/process_event.kt.jinja2",
-     """{% if ns_selecting.states < model.states | length %}""",
-     """{% if ns_selecting.states <= model.states | length %}""")
+     """selection_result, "null", (selection_dispatch.arms | length) == (model.states | length)) }}""",
+     """selection_result, "null", false) }}""")
 PY

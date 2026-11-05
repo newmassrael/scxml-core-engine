@@ -48,24 +48,22 @@ fn kotlin_of(content: &str, label: &str) -> String {
     generate_kotlin(&model, Path::new(&template_dir()), None).expect("Kotlin codegen succeeds")
 }
 
-/// The text of one `is <State> -> …` arm of the `when (state)` inside
-/// `function`, or a panic naming what was searched.
-fn arm_of<'a>(code: &'a str, function: &str, state_arm: &str) -> &'a str {
+/// The text of the member function `name` of the machine, from its `fun` to
+/// the brace that closes it, or a panic naming what was searched.
+///
+/// A state's own selection is `firstEnabledTransitionOf<State>`, the content of
+/// its transitions is dispatched by `transitionContentOf<State>`, and each
+/// transition's content is `transitionContentOf<State>At<index>`: the machine's
+/// dispatches call one method a state or a transition, so that no method grows
+/// with the document past what one JVM method holds.
+fn method_of<'a>(code: &'a str, name: &str) -> &'a str {
+    let head = format!("fun {name}(");
     let start = code
-        .find(function)
-        .unwrap_or_else(|| panic!("`{function}` is not emitted at all.\n{code}"));
+        .find(&head)
+        .unwrap_or_else(|| panic!("`{name}` is not emitted at all.\n{code}"));
     let body = &code[start..];
-    let arm_start = body
-        .find(state_arm)
-        .unwrap_or_else(|| panic!("`{function}` has no arm `{state_arm}`.\n{body}"));
-    let arm = &body[arm_start..];
-    // The arm ends where the next state's arm, or the function, begins.
-    let end = arm[state_arm.len()..]
-        .find("\n        is ")
-        .or_else(|| arm[state_arm.len()..].find("\n    }"))
-        .map(|i| i + state_arm.len())
-        .unwrap_or(arm.len());
-    &arm[..end]
+    let end = body.find("\n    }").unwrap_or(body.len());
+    &body[..end]
 }
 
 /// The emitted line of `arm` that guards on the author's @p expr, or a panic.
@@ -98,11 +96,13 @@ fn guard_line<'a>(arm: &'a str, expr: &str) -> &'a str {
         })
 }
 
-/// The name of the transition object a selection line answers with.
+/// The name of the transition object a selection line answers with, read past
+/// the holder object it is declared in (`TransitionsPart<n>.`).
 fn answered_transition(line: &str) -> &str {
     line.rsplit("-> ")
         .next()
         .map(str::trim)
+        .and_then(|answer| answer.rsplit('.').next())
         .filter(|name| name.starts_with("transition"))
         .unwrap_or_else(|| panic!("the selection answers with no transition object:\n{line}"))
 }
@@ -164,6 +164,20 @@ const INHERITED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 const SELECTION: &str = "override fun firstEnabledTransition(";
 
+/// The selection `state` answers: `firstEnabledTransition` dispatches it to
+/// `firstEnabledTransitionOf<State>`, whose arms are the state's own transitions
+/// in document order. A panic when either half is missing.
+fn selection_of<'a>(code: &'a str, machine: &str, state: &str) -> &'a str {
+    let dispatch = method_of(code, "firstEnabledTransition");
+    let arm = format!("is {machine}State.{state} -> firstEnabledTransitionOf{state}(state, event)");
+    assert!(
+        dispatch.contains(&arm),
+        "`firstEnabledTransition` does not hand `{state}` to its own selection \
+         (`{arm}`).\n{dispatch}"
+    );
+    method_of(code, &format!("firstEnabledTransitionOf{state}"))
+}
+
 /// The axis: the targetless eventless transition is offered by the selection
 /// surface, not only carried by the action surface — to the eventless
 /// selection, and as a transition that moves nothing.
@@ -171,7 +185,7 @@ const SELECTION: &str = "override fun firstEnabledTransition(";
 fn a_targetless_eventless_transition_reaches_the_selection_surface() {
     let code = kotlin_of(BOTH_KINDS, "both_kinds.scxml");
 
-    let arm = arm_of(&code, SELECTION, "is BothKindsScxmlState.Settled -> when {");
+    let arm = selection_of(&code, "BothKindsScxml", "Settled");
     let line = guard_line(arm, "polished == 0");
     assert!(
         line.trim_start().starts_with("event == null &&"),
@@ -200,7 +214,7 @@ fn a_targetless_eventless_transition_reaches_the_selection_surface() {
 fn the_action_surface_carried_it_all_along() {
     let code = kotlin_of(BOTH_KINDS, "both_kinds.scxml");
 
-    let arm = arm_of(&code, SELECTION, "is BothKindsScxmlState.Settled -> when {");
+    let arm = selection_of(&code, "BothKindsScxml", "Settled");
     let offered =
         transition_declaration(&code, answered_transition(guard_line(arm, "polished == 0")));
     let index = offered
@@ -210,17 +224,21 @@ fn the_action_surface_carried_it_all_along() {
         .find(|value| !value.is_empty() && value.chars().all(|c| c.is_ascii_digit()))
         .unwrap_or_else(|| panic!("the offered transition carries no index:\n{offered}"));
 
-    let content = arm_of(
-        &code,
-        "override fun executeTransitionContent(",
-        "is BothKindsScxmlState.Settled -> when (transitionIndex) {",
-    );
+    let source_dispatch = method_of(&code, "executeTransitionContent");
     assert!(
-        content.contains(&format!("{index} -> {{")),
+        source_dispatch.contains(
+            "is BothKindsScxmlState.Settled -> transitionContentOfSettled(transitionIndex)"
+        ),
+        "the content of `settled`'s transitions is dispatched under `settled`.\n{source_dispatch}"
+    );
+    let index_dispatch = method_of(&code, "transitionContentOfSettled");
+    assert!(
+        index_dispatch.contains(&format!("{index} -> transitionContentOfSettledAt{index}()")),
         "the transition's content is emitted under the index the selection \
          answers with ({index}), which is what made the missing selection \
-         silent rather than a compile error.\n{content}"
+         silent rather than a compile error.\n{index_dispatch}"
     );
+    let content = method_of(&code, &format!("transitionContentOfSettledAt{index}"));
     assert!(
         content.contains("\"polished\"") && content.contains("\"polished + 1\""),
         "and the content under that index is the assign the document spells — \
@@ -238,7 +256,7 @@ fn the_action_surface_carried_it_all_along() {
 fn a_targeted_eventless_transition_still_selects_as_a_state_change() {
     let code = kotlin_of(BOTH_KINDS, "both_kinds.scxml");
 
-    let arm = arm_of(&code, SELECTION, "is BothKindsScxmlState.Idle -> when {");
+    let arm = selection_of(&code, "BothKindsScxml", "Idle");
     let offered = transition_declaration(&code, answered_transition(guard_line(arm, "armed == 1")));
     assert!(
         offered.contains("listOf(StateTarget(BothKindsScxmlState.Settled))"),
@@ -258,7 +276,7 @@ fn a_targeted_eventless_transition_still_selects_as_a_state_change() {
 fn an_ancestors_targetless_eventless_transition_is_offered_under_the_ancestor() {
     let code = kotlin_of(INHERITED, "inherited.scxml");
 
-    let outer = arm_of(&code, SELECTION, "is InheritedScxmlState.Outer -> when {");
+    let outer = selection_of(&code, "InheritedScxml", "Outer");
     let offered = transition_declaration(
         &code,
         answered_transition(guard_line(outer, "polished == 0")),
@@ -268,7 +286,7 @@ fn an_ancestors_targetless_eventless_transition_is_offered_under_the_ancestor() 
         "the ancestor offers its own transition, sourced at itself and moving \
          nothing.\n{offered}"
     );
-    let inner = arm_of(&code, SELECTION, "is InheritedScxmlState.Inner -> when {");
+    let inner = selection_of(&code, "InheritedScxml", "Inner");
     assert!(
         !inner.contains("\"polished == 0\""),
         "and the leaf does not offer it a second time: the runtime walks from the \

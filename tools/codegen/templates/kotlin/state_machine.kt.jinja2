@@ -16,6 +16,7 @@
 // Generator: SCE Kotlin Code Generator v1.0
 {% import '_macros/sce_map_marker.jinja2' as sce_map %}
 {% import '_macros/kotlin_entry_target.jinja2' as et %}
+{% import 'dispatch.kt.jinja2' as dispatch %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated Kotlin file to the `<scxml>` root element's source. #}
 {{ sce_map.source_marker(model.source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.machine) }}
@@ -268,14 +269,23 @@ class {{ machine_name }}StateMachine(
 {% endfor %}
     }
 
+{# By parts of at most `kotlin_method_items` variables, for the reason a save
+   is (dispatch.kt.jinja2). #}
+{% set seeded_parts = static_fields | selectattr('seeded') | list | batch(kotlin_method_items) | list %}
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-{% for field in static_fields %}
-{% if field.seeded %}
-        params.{{ field.id | to_camel_case }}?.let { {{ field.name }} = it }
-{% endif %}
+{% for part in seeded_parts %}
+        acceptParamsPart{{ loop.index0 }}(params)
 {% endfor %}
     }
+{% for part in seeded_parts %}
+
+    private fun acceptParamsPart{{ loop.index0 }}(params: InvokeParams) {
+{% for field in part %}
+        params.{{ field.id | to_camel_case }}?.let { {{ field.name }} = it }
+{% endfor %}
+    }
+{% endfor %}
 {% endif %}
 {% if static_published %}
 
@@ -452,15 +462,27 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-{% for field in static_fields %}
-            "{{ field.id }}" to {{ saved_write(field.saved_kind, field.saved_type, field.name, field.saved_elem) }},
+{# Every variable is saved, read back and judged by parts of at most
+   `kotlin_method_items` variables, each a method of its own, because one
+   statement per variable in one method grew with the document past what one
+   JVM method holds (dispatch.kt.jinja2). The order is the declaration order;
+   a restore still reads every value before it writes any. #}
+{% set saved_parts = static_fields | batch(kotlin_method_items) | list %}
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+{% for part in saved_parts %}
+        saveVariablesPart{{ loop.index0 }}(variables)
 {% endfor %}
-        ),
-        wallNowMs,
-    )
+        return savedState(savedShape, variables, wallNowMs)
+    }
+{% for part in saved_parts %}
+
+    private fun saveVariablesPart{{ loop.index0 }}(variables: MutableMap<String, Any?>) {
+{% for field in part %}
+        variables += "{{ field.id }}" to {{ saved_write(field.saved_kind, field.saved_type, field.name, field.saved_elem) }}
+{% endfor %}
+    }
+{% endfor %}
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -485,14 +507,30 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-{% for field in static_fields %}
-        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'savedGrown.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound, field.saved_elem) }}
+{% for part in saved_parts %}
+        val writeVariablesPart{{ loop.index0 }} = restoreVariablesPart{{ loop.index0 }}(savedGrown)
 {% endfor %}
-{% for field in static_fields %}
-        {{ field.name }} = saved{{ loop.index }}
+{% for part in saved_parts %}
+        writeVariablesPart{{ loop.index0 }}()
 {% endfor %}
         enterSaved(savedGrown, wallNowMs)
     }
+{% for part in saved_parts %}
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart{{ loop.index0 }}(savedGrown: SavedState): () -> Unit {
+{% for field in part %}
+        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'savedGrown.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound, field.saved_elem) }}
+{% endfor %}
+        return {
+{% for field in part %}
+            {{ field.name }} = saved{{ loop.index }}
+{% endfor %}
+        }
+    }
+{% endfor %}
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
@@ -504,10 +542,18 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
-{% for field in static_fields %}
+{% for part in saved_parts %}
+        judgeVariablesPart{{ loop.index0 }}(savedGrown)
+{% endfor %}
+    }
+{% for part in saved_parts %}
+
+    private fun judgeVariablesPart{{ loop.index0 }}(savedGrown: SavedState) {
+{% for field in part %}
         {{ saved_read(field.saved_kind, field.saved_type, 'savedGrown.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound, field.saved_elem) }}
 {% endfor %}
     }
+{% endfor %}
 
     override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 {% if model.invokes | scxml_family %}
@@ -632,12 +678,11 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 {% if parent_map %}
 
     // W3C SCXML 3.3: State hierarchy parent mapping
-    override fun parentOf(state: {{ machine_name }}State): {{ machine_name }}State? = when (state) {
+{% set parent_dispatch = namespace(arms=[]) %}
 {% for child_id, parent_id in parent_map | dictsort %}
-        is {{ machine_name }}State.{{ child_id | to_state_class_name }} -> {{ machine_name }}State.{{ parent_id | to_state_class_name }}
+{% set parent_dispatch.arms = parent_dispatch.arms + [["is " ~ machine_name ~ "State." ~ (child_id | to_state_class_name), machine_name ~ "State." ~ (parent_id | to_state_class_name)]] %}
 {% endfor %}
-        else -> null
-    }
+{{ dispatch.bounded_when("parentOf", "override fun parentOf(state: " ~ machine_name ~ "State): " ~ machine_name ~ "State?", "state: " ~ machine_name ~ "State", "state", "state", parent_dispatch.arms, machine_name ~ "State?", "null", false) }}
 {% endif %}
 {% set ns_doc = namespace(compound=[], parallel=[], final=[], parents=[]) %}
 {% for state_id, state in model.states | dictsort %}
@@ -650,32 +695,33 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
-    override fun isCompoundState(state: {{ machine_name }}State): Boolean = when (state) {
-        {%+ for state_id in ns_doc.compound %}is {{ machine_name }}State.{{ state_id | to_state_class_name }}{{ ", " if not loop.last }}{% endfor %} -> true
-        else -> false
-    }
+{% set compound_dispatch = namespace(arms=[]) %}
+{% for state_id in ns_doc.compound %}
+{% set compound_dispatch.arms = compound_dispatch.arms + [["is " ~ machine_name ~ "State." ~ (state_id | to_state_class_name), "true"]] %}
+{% endfor %}
+{{ dispatch.bounded_when("isCompoundState", "override fun isCompoundState(state: " ~ machine_name ~ "State): Boolean", "state: " ~ machine_name ~ "State", "state", "state", compound_dispatch.arms, "Boolean", "false", false) }}
 {% endif %}
 {% if ns_doc.parallel %}
 
     // W3C SCXML 3.4: Check if state is a parallel state
-    override fun isParallelState(state: {{ machine_name }}State): Boolean = when (state) {
-        {%+ for state_id in ns_doc.parallel %}is {{ machine_name }}State.{{ state_id | to_state_class_name }}{{ ", " if not loop.last }}{% endfor %} -> true
-        else -> false
-    }
+{% set parallel_dispatch = namespace(arms=[]) %}
+{% for state_id in ns_doc.parallel %}
+{% set parallel_dispatch.arms = parallel_dispatch.arms + [["is " ~ machine_name ~ "State." ~ (state_id | to_state_class_name), "true"]] %}
+{% endfor %}
+{{ dispatch.bounded_when("isParallelState", "override fun isParallelState(state: " ~ machine_name ~ "State): Boolean", "state: " ~ machine_name ~ "State", "state", "state", parallel_dispatch.arms, "Boolean", "false", false) }}
 {% endif %}
 {% if ns_doc.final %}
 
     // W3C SCXML 3.7: Check if state is a <final> element
-    override fun isFinalState(state: {{ machine_name }}State): Boolean = when (state) {
-        {%+ for state_id in ns_doc.final %}is {{ machine_name }}State.{{ state_id | to_state_class_name }}{{ ", " if not loop.last }}{% endfor %} -> true
 {# A document whose every state is a <final> (an invoked child that only
    finishes) leaves the `when` exhaustive, and Kotlin rejects the redundant
    `else` under -Werror. A compound or <parallel> state always has a child that
    is neither, so the two predicates above always need theirs. #}
-{% if ns_doc.final | length < model.states | length %}
-        else -> false
-{% endif %}
-    }
+{% set final_dispatch = namespace(arms=[]) %}
+{% for state_id in ns_doc.final %}
+{% set final_dispatch.arms = final_dispatch.arms + [["is " ~ machine_name ~ "State." ~ (state_id | to_state_class_name), "true"]] %}
+{% endfor %}
+{{ dispatch.bounded_when("isFinalState", "override fun isFinalState(state: " ~ machine_name ~ "State): Boolean", "state: " ~ machine_name ~ "State", "state", "state", final_dispatch.arms, "Boolean", "false", (ns_doc.final | length) == (model.states | length)) }}
 {% endif %}
 {% if ns_doc.parents %}
 
@@ -712,78 +758,91 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 
     // SCE Accepted Subset §2.15: the id a saved state keys a <history> by, and
     // the history an id names.
-    override fun historyIdOf(history: HistoryId): String = when (history) {
+{% set history_id_dispatch = namespace(of=[], named=[]) %}
 {% for history_id, info in model.history_states | dictsort %}
-        history{{ history_id | to_state_class_name }} -> "{{ history_id }}"
+{% set history_id_dispatch.of = history_id_dispatch.of + [["history" ~ (history_id | to_state_class_name), '"' ~ history_id ~ '"']] %}
+{% set history_id_dispatch.named = history_id_dispatch.named + [['"' ~ history_id ~ '"', "history" ~ (history_id | to_state_class_name)]] %}
 {% endfor %}
-        else -> error("no <history> of this document is $history")
-    }
+{{ dispatch.bounded_when("historyIdOf", "override fun historyIdOf(history: HistoryId): String", "history: HistoryId", "history", "history", history_id_dispatch.of, "String", 'error("no <history> of this document is $history")', false) }}
 
-    override fun resolveHistory(historyId: String): HistoryId? = when (historyId) {
-{% for history_id, info in model.history_states | dictsort %}
-        "{{ history_id }}" -> history{{ history_id | to_state_class_name }}
-{% endfor %}
-        else -> null
-    }
+{{ dispatch.bounded_when("resolveHistory", "override fun resolveHistory(historyId: String): HistoryId?", "historyId: String", "historyId", "historyId", history_id_dispatch.named, "HistoryId?", "null", false) }}
 {% endif %}
 {% endif %}
 
+{# The structure tables used to be arguments of `mapOf(...)` and properties of
+   this companion object, all initialised by its one class initialiser, which
+   grew with every state, history and transition of the document past the
+   65,535 bytes one JVM method holds. Each table is now put by parts
+   (`dispatch.bounded_map`); a <history>'s id is a getter, with nothing to
+   initialise; and each transition's constant is declared in a holder object
+   of its own below, initialised by that holder's own class initialiser. #}
     private companion object {
 {% for history_id, info in model.history_states | dictsort %}
         /** W3C SCXML 3.10: the `{{ history_id }}` <history> ({{ info.type }}). */
-        val history{{ history_id | to_state_class_name }} = HistoryId({{ loop.index0 }})
+        val history{{ history_id | to_state_class_name }}: HistoryId get() = HistoryId({{ loop.index0 }})
 
 {% endfor %}
 {% if ns_doc.parents %}
-        val childStates: Map<{{ machine_name }}State, List<{{ machine_name }}State>> = mapOf(
+{% set child_table = namespace(entries=[]) %}
 {% for state_id, state in model.states | dictsort %}
 {% if state.children %}
-            {{ machine_name }}State.{{ state_id | to_state_class_name }} to listOf({% for child in state.children %}{{ machine_name }}State.{{ child | to_state_class_name }}{{ ", " if not loop.last }}{% endfor %}),
+{% set child_list = namespace(items=[]) %}
+{% for child in state.children %}
+{% set child_list.items = child_list.items + [machine_name ~ "State." ~ (child | to_state_class_name)] %}
+{% endfor %}
+{% set child_table.entries = child_table.entries + [[machine_name ~ "State." ~ (state_id | to_state_class_name), "listOf(" ~ (child_list.items | join(", ")) ~ ")", 1 + (state.children | length)]] %}
 {% endif %}
 {% endfor %}
-        )
+{{ dispatch.bounded_map("childStates", machine_name ~ "State", "List<" ~ machine_name ~ "State>", child_table.entries) }}
 
 {% endif %}
 {% if ns_doc.compound %}
-        val initialTargets: Map<{{ machine_name }}State, List<EntryTarget<{{ machine_name }}State, HistoryId>>> = mapOf(
+{% set initial_table = namespace(entries=[]) %}
 {% for state_id, state in model.states | dictsort %}
 {% if state.initial_targets %}
-            {{ machine_name }}State.{{ state_id | to_state_class_name }} to {{ et.entry_targets(state.initial_targets, model.history_states, machine_name) }},
+{% set initial_table.entries = initial_table.entries + [[machine_name ~ "State." ~ (state_id | to_state_class_name), et.entry_targets(state.initial_targets, model.history_states, machine_name), 1 + (state.initial_targets | length)]] %}
 {% endif %}
 {% endfor %}
-        )
+{{ dispatch.bounded_map("initialTargets", machine_name ~ "State", "List<EntryTarget<" ~ machine_name ~ "State, HistoryId>>", initial_table.entries) }}
 
 {% endif %}
         val documentInitialTargetList: List<EntryTarget<{{ machine_name }}State, HistoryId>> =
             {{ et.entry_targets(model.initial_targets, model.history_states, machine_name) }}
 {% if model.history_states %}
-
-        val historyParents: Map<HistoryId, {{ machine_name }}State> = mapOf(
+{% set history_tables = namespace(parents=[], defaults=[], by_parent=[]) %}
 {% for history_id, info in model.history_states | dictsort %}
-            history{{ history_id | to_state_class_name }} to {{ machine_name }}State.{{ info.parent | to_state_class_name }},
+{% set history_tables.parents = history_tables.parents + [["history" ~ (history_id | to_state_class_name), machine_name ~ "State." ~ (info.parent | to_state_class_name), 1]] %}
+{% set history_tables.defaults = history_tables.defaults + [["history" ~ (history_id | to_state_class_name), et.entry_targets(info.default_targets, model.history_states, machine_name), 1 + (info.default_targets | length)]] %}
 {% endfor %}
-        )
-
-        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<{{ machine_name }}State, HistoryId>>> = mapOf(
-{% for history_id, info in model.history_states | dictsort %}
-            history{{ history_id | to_state_class_name }} to {{ et.entry_targets(info.default_targets, model.history_states, machine_name) }},
-{% endfor %}
-        )
-
-        val historiesByParent: Map<{{ machine_name }}State, List<Pair<HistoryId, Boolean>>> = mapOf(
 {% for state_id, state in model.states | dictsort %}
 {% set ns_hist = namespace(entries=[]) %}
 {% for history_id, info in model.history_states | dictsort %}
 {% if info.parent == state_id %}{% set ns_hist.entries = ns_hist.entries + ["history" ~ (history_id | to_state_class_name) ~ " to " ~ ('true' if info.type == 'deep' else 'false')] %}{% endif %}
 {% endfor %}
 {% if ns_hist.entries %}
-            {{ machine_name }}State.{{ state_id | to_state_class_name }} to listOf({{ ns_hist.entries | join(", ") }}),
+{% set history_tables.by_parent = history_tables.by_parent + [[machine_name ~ "State." ~ (state_id | to_state_class_name), "listOf(" ~ (ns_hist.entries | join(", ")) ~ ")", 1 + (ns_hist.entries | length)]] %}
 {% endif %}
 {% endfor %}
-        )
+
+{{ dispatch.bounded_map("historyParents", "HistoryId", machine_name ~ "State", history_tables.parents) }}
+
+{{ dispatch.bounded_map("historyDefaultTargets", "HistoryId", "List<EntryTarget<" ~ machine_name ~ "State, HistoryId>>", history_tables.defaults) }}
+
+{{ dispatch.bounded_map("historiesByParent", machine_name ~ "State", "List<Pair<HistoryId, Boolean>>", history_tables.by_parent) }}
 {% endif %}
-{% for state_id, state in model.states | dictsort %}
-{% for trans in state.transitions %}
+    }
+{# The constant of each transition, as the microstep reads it, in the holder
+   `sce_build::kotlin::transition_parts` packed it into: at most
+   `kotlin_method_items` items a holder, a transition weighing one and one more
+   per target. `firstEnabledTransition` answers with these
+   (process_event.kt.jinja2 reads the same `transition_part_of`). A holder is
+   initialised the first time one of its transitions is selected. #}
+{% for part in transition_parts %}
+
+    private object TransitionsPart{{ loop.index0 }} {
+{% for entry in part %}
+{% set state_id = entry[0] %}
+{% set trans = model.states[state_id].transitions[entry[1]] %}
 
         // W3C SCXML 3.13: {{ state_id }}'s transition {{ trans.transition_index }}, as the microstep reads it.
         val transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }} = EnabledTransition<{{ machine_name }}State, HistoryId>(
@@ -794,30 +853,24 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
             isInternal = {{ 'true' if trans.type == 'internal' else 'false' }},
         )
 {% endfor %}
-{% endfor %}
     }
+{% endfor %}
+
+{% set state_tables = namespace(resolve=[], ids=[], orders=[]) %}
+{% for state_id in model.states | sort %}
+{% set state_tables.resolve = state_tables.resolve + [['"' ~ state_id ~ '"', machine_name ~ "State." ~ (state_id | to_state_class_name)]] %}
+{% set state_tables.ids = state_tables.ids + [["is " ~ machine_name ~ "State." ~ (state_id | to_state_class_name), '"' ~ state_id ~ '"']] %}
+{% set state_tables.orders = state_tables.orders + [["is " ~ machine_name ~ "State." ~ (state_id | to_state_class_name), model.states[state_id].document_order | string]] %}
+{% endfor %}
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): {{ machine_name }}State? = when (stateId) {
-{% for state_id in model.states | sort %}
-        "{{ state_id }}" -> {{ machine_name }}State.{{ state_id | to_state_class_name }}
-{% endfor %}
-        else -> null
-    }
+{{ dispatch.bounded_when("resolveState", "override fun resolveState(stateId: String): " ~ machine_name ~ "State?", "stateId: String", "stateId", "stateId", state_tables.resolve, machine_name ~ "State?", "null", false) }}
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: {{ machine_name }}State): String = when (state) {
-{% for state_id in model.states | sort %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> "{{ state_id }}"
-{% endfor %}
-    }
+{{ dispatch.bounded_when("stateIdOf", "override fun stateIdOf(state: " ~ machine_name ~ "State): String", "state: " ~ machine_name ~ "State", "state", "state", state_tables.ids, "String", 'error("no state of this document is $state")', true) }}
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
-    override fun documentOrderOf(state: {{ machine_name }}State): Int = when (state) {
-{% for state_id in model.states | sort %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {{ model.states[state_id].document_order }}
-{% endfor %}
-    }
+{{ dispatch.bounded_when("documentOrderOf", "override fun documentOrderOf(state: " ~ machine_name ~ "State): Int", "state: " ~ machine_name ~ "State", "state", "state", state_tables.orders, "Int", 'error("no state of this document is $state")', true) }}
 
 {# Every machine resolves the names that cross into it, because a name crossing
    in is not a property of what the document does: a child's autoforward, a
@@ -832,20 +885,16 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
    2026-10-04). A list of reasons is a list that is one short; the map is the
    document's own event table and costs a `when`. #}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
+{% set event_tables = namespace(by_name=[], names=[]) %}
 {% for event_name in leaf_events | sort %}
-        "{{ event_name | event_wire_name }}" -> {{ machine_name }}Event.{{ event_name | to_event_ref }}
+{% set event_tables.by_name = event_tables.by_name + [['"' ~ (event_name | event_wire_name) ~ '"', machine_name ~ "Event." ~ (event_name | to_event_ref)]] %}
+{% set event_tables.names = event_tables.names + [["is " ~ machine_name ~ "Event." ~ (event_name | to_event_ref), '"' ~ (event_name | event_wire_name) ~ '"']] %}
 {% endfor %}
-        else -> null
-    }
+{{ dispatch.bounded_when("resolveEventByName", "override fun resolveEventByName(name: String): " ~ machine_name ~ "Event?", "name: String", "name", "name", event_tables.by_name, machine_name ~ "Event?", "null", false) }}
 
     // W3C SCXML 6.4: Resolve Event object to event name string
 {% if leaf_events %}
-    override fun eventNameOf(event: {{ machine_name }}Event): String? = when (event) {
-{% for event_name in leaf_events | sort %}
-        is {{ machine_name }}Event.{{ event_name | to_event_ref }} -> "{{ event_name | event_wire_name }}"
-{% endfor %}
-    }
+{{ dispatch.bounded_when("eventNameOf", "override fun eventNameOf(event: " ~ machine_name ~ "Event): String?", "event: " ~ machine_name ~ "Event", "event", "event", event_tables.names, "String?", "null", true) }}
 {% else %}
     // A child SM that inherits the has_parent_communication override while
     // declaring no events of its own leaves the sealed hierarchy with zero

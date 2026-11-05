@@ -20,6 +20,7 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 {%- import 'param_macros.kt.jinja2' as param_macros %}
+{%- import 'dispatch.kt.jinja2' as dispatch %}
 {#
     §scxml-6.4.1 + §scxml-6.4.3: an <invoke>'s arguments, evaluated in the
     invoking session into `invokeParams` for `setInvokeParams`.
@@ -235,15 +236,30 @@
                 }
 {%- endmacro %}
 
+{#
+    One method per state for its entry and one for its exit (`onEntryOf<State>`,
+    `onExitOf<State>`), and `onEntry` / `onExit` dispatch to them with one call
+    an arm. The content of every state used to sit in the arms of the two
+    overrides, so each grew with the document until it passed the 65,535
+    bytes of one JVM method (dispatch.kt.jinja2 says why the dispatch now
+    cannot). A state's method holds what its own element writes, in the order
+    the arm held it, and names the state as the constant it is: within its
+    arm `state` could only be that one state.
+#}
+{% set entry_dispatch = namespace(arms=[]) %}
+{% for state_id in model.states | sort %}
+{% set entry_dispatch.arms = entry_dispatch.arms + [["is " ~ machine_name ~ "State." ~ (state_id | to_state_class_name), "onEntryOf" ~ (state_id | to_state_class_name) ~ ("(isDefaultEntry)" if model.states[state_id].initial_transition_actions else "()")]] %}
+{% endfor %}
+
     // Entry Actions (W3C SCXML 3.8)
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above the `onEntry` / `onExit` overrides. Kotlin's macro form is
        a plain `// SCE-MAP:` comment — non-syntactic, no compile cost. #}
     {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
-    override fun onEntry(state: {{ machine_name }}State, isDefaultEntry: Boolean) {
-        when (state) {
+{{ dispatch.bounded_when("onEntry", "override fun onEntry(state: " ~ machine_name ~ "State, isDefaultEntry: Boolean)", "state: " ~ machine_name ~ "State, isDefaultEntry: Boolean", "state, isDefaultEntry", "state", entry_dispatch.arms, "", "{}", true) }}
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
+{% set state_ref = machine_name ~ "State." ~ (state_id | to_state_class_name) %}
 {% set has_done_event = state.is_final and state.parent %}
 {% set is_top_final = state.is_final and not state.parent %}
 {% set has_invokes = state_id in invoke_entries %}
@@ -257,7 +273,8 @@
 {% set parallel_grandparent_id = parent_state.parent %}
 {% endif %}
 {% endif %}
-            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
+
+    private fun onEntryOf{{ state_id | to_state_class_name }}({% if state.initial_transition_actions %}isDefaultEntry: Boolean{% endif %}) {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
 {% if state.source_location %}
                 {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
@@ -266,7 +283,7 @@
                 // on its FIRST entry only (s.isFirstEntry), before its <onentry>.
                 // The engine owns the first-entry rule; this is only what binding
                 // means for this state.
-                if (claimLateBindingFirstEntry(state)) {
+                if (claimLateBindingFirstEntry({{ state_ref }})) {
                     ensureScriptEngine()
                     val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -337,7 +354,7 @@
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke({{ state_ref }}, generatedInvokeId) {
 {% set host_evaluates = inv.srcexpr or inv.namelist or inv.contentexpr or inv.idlocation or (inv.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
 {% if host_evaluates and model.needs_script_engine %}
                         // W3C SCXML 6.4.1: what the request says is evaluated
@@ -469,7 +486,7 @@
                 // pending entry `cancelPendingInvokesForState` already drops.
                 run {
                     val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke({{ state_ref }}, generatedInvokeId) {
                         raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke type='{{ inv.invoke_type | escape_kotlin }}'> names an external service this platform does not support")
                     }
                 }
@@ -477,10 +494,10 @@
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("{{ inv.invoke_id | escape_kotlin }}", state)
+                deferStaticInvoke("{{ inv.invoke_id | escape_kotlin }}", {{ state_ref }})
 {% elif inv.child_class %}
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("{{ inv.invoke_id | escape_kotlin }}", state)
+                deferStaticInvoke("{{ inv.invoke_id | escape_kotlin }}", {{ state_ref }})
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -653,10 +670,8 @@
                     }
                 }
 {% endif %}
-            }
-{% endfor %}
-        }
     }
+{% endfor %}
 {% if model.invokes | scxml or model.invokes | hybrid %}
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -669,13 +684,28 @@
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
-    private fun deferStaticInvoke(invokeId: String, state: {{ machine_name }}State) {
-        when (invokeId) {
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
+{% set start_dispatch = namespace(arms=[]) %}
+{% for state_id in model.states | sort %}
+{% if state_id in invoke_entries %}
+{% for inv in invoke_entries[state_id] %}
+{% if (inv.child_class and not (inv.is_unsupported is defined and inv.is_unsupported)) or (inv.is_hybrid is defined and inv.is_hybrid) %}
+{% set start_dispatch.arms = start_dispatch.arms + [['"' ~ (inv.invoke_id | escape_kotlin) ~ '"', "startInvokeOf" ~ (state_id | to_state_class_name) ~ "At" ~ loop.index0 ~ "(state)"]] %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{{ dispatch.bounded_when("deferStaticInvoke", "private fun deferStaticInvoke(invokeId: String, state: " ~ machine_name ~ "State)", "invokeId: String, state: " ~ machine_name ~ "State", "invokeId, state", "invokeId", start_dispatch.arms, "", 'error("the document has no child session \'$invokeId\' (codegen invariant)")', false) }}
 {% for state_id in model.states | sort %}
 {% if state_id in invoke_entries %}
 {% for inv in invoke_entries[state_id] %}
 {% if inv.child_class and not (inv.is_unsupported is defined and inv.is_unsupported) and not (inv.is_hybrid is defined and inv.is_hybrid) %}
-            "{{ inv.invoke_id | escape_kotlin }}" -> run {
+
+    private fun startInvokeOf{{ state_id | to_state_class_name }}At{{ loop.index0 }}(state: {{ machine_name }}State) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "{{ inv.state_id }}.${nextInvokeStart("{{ inv.invoke_id | escape_kotlin }}")}.{{ inv.invoke_id }}"
@@ -720,17 +750,16 @@
                     startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, {% if inv.finalize_content %}"{{ inv.finalize_content | escape_kotlin }}"{% else %}""{% endif %}, generatedInvokeId, "{{ inv.child_document | escape_kotlin }}", "{{ inv.child_name | escape_kotlin }}", {% if inv.idlocation %}generatedInvokeId{% else %}"{{ inv.invoke_id | escape_kotlin }}"{% endif %})
                 }
             }
-{% elif inv.is_hybrid is defined and inv.is_hybrid %}
-            "{{ inv.invoke_id | escape_kotlin }}" -> {
-{{ hybrid_invoke_start(inv, model, machine_name) }}
-            }
-{% endif %}
-{% endfor %}
-{% endif %}
-{% endfor %}
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
+{% elif inv.is_hybrid is defined and inv.is_hybrid %}
+
+    private fun startInvokeOf{{ state_id | to_state_class_name }}At{{ loop.index0 }}(state: {{ machine_name }}State) {
+{{ hybrid_invoke_start(inv, model, machine_name) }}
+    }
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
 {% if static_saved_shape %}
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -739,7 +768,21 @@
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
-    override fun buildSavedChild(child: SavedChild): ResumedChild<{{ machine_name }}Event> = when (child.id) {
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
+{% set saved_child_dispatch = namespace(arms=[]) %}
+{% for state_id in model.states | sort %}
+{% if state_id in invoke_entries %}
+{% for inv in invoke_entries[state_id] %}
+{% if inv.child_class and not (inv.is_unsupported is defined and inv.is_unsupported) %}
+{% set saved_child_dispatch.arms = saved_child_dispatch.arms + [['"' ~ (inv.invoke_id | escape_kotlin) ~ '"', "savedChildOf" ~ (state_id | to_state_class_name) ~ "At" ~ loop.index0 ~ "(child)"]] %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{{ dispatch.bounded_when("buildSavedChild", "override fun buildSavedChild(child: SavedChild): ResumedChild<" ~ machine_name ~ "Event>", "child: SavedChild", "child", "child.id", saved_child_dispatch.arms, "ResumedChild<" ~ machine_name ~ "Event>", 'throw StateRefusal("the document has no child session \'${child.id}\'")', false) }}
 {% for state_id in model.states | sort %}
 {% if state_id in invoke_entries %}
 {% for inv in invoke_entries[state_id] %}
@@ -749,8 +792,10 @@
    start was made under for an invoke that keeps it in an `idlocation`, the
    document's own id otherwise (W3C tests 338 and 228), as `startInvoke` is given it. #}
 {% set event_invoke_id %}{% if inv.idlocation %}null{% else %}"{{ inv.invoke_id | escape_kotlin }}"{% endif %}{% endset %}
+
+    private fun savedChildOf{{ state_id | to_state_class_name }}At{{ loop.index0 }}(child: SavedChild): ResumedChild<{{ machine_name }}Event> =
 {% if inv.is_hybrid is defined and inv.is_hybrid %}
-        "{{ inv.invoke_id | escape_kotlin }}" -> when (child.document) {
+        when (child.document) {
 {% if inv.candidates %}
 {% for candidate in inv.candidates %}
             "{{ candidate.stem | escape_kotlin }}" -> ResumedChild(
@@ -767,7 +812,7 @@
             else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
 {% else %}
-        "{{ inv.invoke_id | escape_kotlin }}" -> if (child.document == "{{ inv.child_name | escape_kotlin }}") {
+        if (child.document == "{{ inv.child_name | escape_kotlin }}") {
             ResumedChild(
 {% if inv.child_needs_script_engine %}
                 {{ inv.child_class }}StateMachine({% if inv.child_host_call %}{{ inv.child_host_call }}, {% endif %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% if inv.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %}),
@@ -784,8 +829,6 @@
 {% endfor %}
 {% endif %}
 {% endfor %}
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 {% endif %}
 {% endif %}
 {% set ns_history_content = namespace(any=false) %}
@@ -799,13 +842,21 @@
     // W3C SCXML 3.10.2: a <history>'s default transition content, run after its
     // parent's onentry (and the parent's own <initial> content) when the
     // history was taken with nothing recorded. A history that restored what it
-    // recorded runs nothing.
-    {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
-    override fun executeHistoryDefaultContent(history: HistoryId) {
-        when (history) {
+    // recorded runs nothing. Each history's content is a method of its own
+    // (`historyContentOf<History>`), one function call running exactly one
+    // block, and this dispatches to it with one call an arm.
+{% set history_dispatch = namespace(arms=[]) %}
 {% for history_id, history_info in model.history_states | dictsort %}
 {% if history_info.default_actions %}
-            history{{ history_id | to_state_class_name }} -> {
+{% set history_dispatch.arms = history_dispatch.arms + [["history" ~ (history_id | to_state_class_name), "historyContentOf" ~ (history_id | to_state_class_name) ~ "()"]] %}
+{% endif %}
+{% endfor %}
+    {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
+{{ dispatch.bounded_when("executeHistoryDefaultContent", "override fun executeHistoryDefaultContent(history: HistoryId)", "history: HistoryId", "history", "history", history_dispatch.arms, "", "{}", true) }}
+{% for history_id, history_info in model.history_states | dictsort %}
+{% if history_info.default_actions %}
+
+    private fun historyContentOf{{ history_id | to_state_class_name }}() {
 {% set in_run_block = false %}
 {% with block_flow = namespace(ended=false) %}
 {% for action in history_info.default_actions %}
@@ -814,21 +865,27 @@
 {% endif %}
 {% endfor %}
 {% endwith %}
-            }
-{% endif %}
-{% endfor %}
-        }
     }
 {% endif %}
+{% endfor %}
+{% endif %}
+{#
+    `onExit` dispatches to one method per state (`onExitOf<State>`), for the
+    reason `onEntry` does; within it the state is the constant it is.
+#}
+{% set exit_dispatch = namespace(arms=[]) %}
+{% for state_id in model.states | sort %}
+{% set exit_dispatch.arms = exit_dispatch.arms + [["is " ~ machine_name ~ "State." ~ (state_id | to_state_class_name), "onExitOf" ~ (state_id | to_state_class_name) ~ "()"]] %}
+{% endfor %}
 
     // Exit Actions (W3C SCXML 3.9)
     {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
-    override fun onExit(state: {{ machine_name }}State) {
-        when (state) {
+{{ dispatch.bounded_when("onExit", "override fun onExit(state: " ~ machine_name ~ "State)", "state: " ~ machine_name ~ "State", "state", "state", exit_dispatch.arms, "", "{}", true) }}
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
 {% set exit_has_invokes = state_id in invoke_entries %}
-            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
+
+    private fun onExitOf{{ state_id | to_state_class_name }}() {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
 {% if state.source_location %}
                 {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
@@ -856,7 +913,7 @@
 {% endfor %}
 {% if exit_has_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState({{ machine_name }}State.{{ state_id | to_state_class_name }})
 {% for inv in invoke_entries[state_id] %}
 {% if inv.is_unsupported is defined and inv.is_unsupported and inv.host_served is defined and inv.host_served %}
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -870,7 +927,5 @@
 {% endif %}
 {% endfor %}
 {% endif %}
-            }
-{% endfor %}
-        }
     }
+{% endfor %}

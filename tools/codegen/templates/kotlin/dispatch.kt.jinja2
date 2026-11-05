@@ -1,0 +1,171 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Kotlin Bounded Dispatch Template
+
+    The code of one JVM method is at most 65,535 bytes (JVM Specification,
+    section 4.7.3, `code_length`), and kotlinc refuses a method past it
+    (`MethodTooLargeException`). A `when` the machine dispatches through —
+    over its states, its transitions, its histories, its invokes, its event
+    names — has one arm per item of the document, so written as one method it
+    grows with the document until the class does not compile. Measured
+    2026-11-05: a large `sce-static` statechart's `executeTransitionContent`,
+    which then held every transition's content inline, did not compile.
+
+    So each dispatch is written here, and only here, in a shape whose size is
+    bounded by construction:
+
+    - Every arm is one pattern and one expression of a fixed shape: an `is`
+      test, a constant or a call of the machine's own, never the content of
+      an element (that is the method the arm calls).
+    - One method holds at most `kotlin_method_items` arms
+      (`sce_build::kotlin::METHOD_ITEMS`). kotlinc writes one such arm in at
+      most `sce_build::kotlin::ITEM_CODE_BYTES`, so one method's arms take a
+      fixed fraction of the limit whatever the document holds; the constants
+      state the arithmetic and a compile-time assertion holds it.
+    - A dispatch with more arms is split into parts of at most that many arms,
+      each a private method that answers `null` (`false` for a dispatch with
+      no value) when none of its arms matches, and the dispatch asks the parts
+      in turn. Every arm names a constant-pool entry no other arm of the same
+      dispatch names (its state's class, its constant string, the method or
+      field it reaches), and a class holds at most 65,535 constant-pool
+      entries (JVM Specification, section 4.1), so no dispatch has more than
+      65,535 arms and none is split into more than 65,535 / 256 = 256 parts:
+      the chain of parts is itself at most `kotlin_method_items` calls.
+
+    The arms are matched in the order they are given, part by part, so a
+    split dispatch answers what the one `when` would have answered.
+
+    `name`        the dispatch's own name; a part is `<name>Part<n>`.
+    `head`        the dispatch's declaration up to its body
+                  (`override fun onExit(state: XState)`).
+    `params`      the parameters of a part, as declared
+                  (`state: XState`).
+    `args`        the same parameters, passed on (`state`).
+    `subject`     the `when` subject (`state`), or "" for a `when` of
+                  conditions.
+    `arms`        a list of `[pattern, expression]`; a pattern `else` may only
+                  be the last arm, and makes the `when` exhaustive.
+    `result`      the Kotlin type the dispatch answers, or "" for none.
+    `miss`        what the dispatch does or answers when no arm matches: an
+                  expression of `result`, or a statement for a dispatch with
+                  no result (`{}` for nothing).
+    `exhaustive`  whether the `when` takes no `else`: its arms cover every
+                  value of the subject, as kotlinc proves it for a sealed
+                  hierarchy (and rejects a redundant `else` under -Werror), or
+                  it is a statement over a subject kotlinc does not ask to be
+                  covered and nothing is to be done for the rest.
+
+    A part declares every parameter of the dispatch, and one of its arms may
+    not read them all, hence `@Suppress("UNUSED_PARAMETER")` on each part.
+#}
+{% macro bounded_when(name, head, params, args, subject, arms, result, miss, exhaustive) %}
+{% set closed = arms and (arms | last)[0] == 'else' %}
+{% if arms | length <= kotlin_method_items %}
+{% if result %}
+    {{ head }} = when{% if subject %} ({{ subject }}){% endif %} {
+{% for arm in arms %}
+        {{ arm[0] }} -> {{ arm[1] }}
+{% endfor %}
+{% if not exhaustive and not closed %}
+        else -> {{ miss }}
+{% endif %}
+    }
+{% else %}
+    {{ head }} {
+        when{% if subject %} ({{ subject }}){% endif %} {
+{% for arm in arms %}
+            {{ arm[0] }} -> {{ arm[1] }}
+{% endfor %}
+{% if not exhaustive and not closed %}
+            else -> {{ miss }}
+{% endif %}
+        }
+    }
+{% endif %}
+{% else %}
+{% set parts = arms | batch(kotlin_method_items) %}
+{% if result %}
+{% set part_result = result if result.endswith('?') else result ~ '?' %}
+    {{ head }} =
+{% for part in parts %}
+        {{ name }}Part{{ loop.index0 }}({{ args }}){% if not loop.last %} ?:{% elif not result.endswith('?') %} ?: {{ miss }}{% endif %}
+
+{% endfor %}
+{% for part in parts %}
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun {{ name }}Part{{ loop.index0 }}({{ params }}): {{ part_result }} = when{% if subject %} ({{ subject }}){% endif %} {
+{% for arm in part %}
+        {{ arm[0] }} -> {{ arm[1] }}
+{% endfor %}
+{% if (part | last)[0] != 'else' %}
+        else -> null
+{% endif %}
+    }
+{% endfor %}
+{% else %}
+    {{ head }} {
+{% for part in parts %}
+        if ({{ name }}Part{{ loop.index0 }}({{ args }})) return
+{% endfor %}
+{% if miss != '{}' %}
+        {{ miss }}
+{% endif %}
+    }
+{% for part in parts %}
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun {{ name }}Part{{ loop.index0 }}({{ params }}): Boolean {
+        when{% if subject %} ({{ subject }}){% endif %} {
+{% for arm in part %}
+            {{ arm[0] }} -> {{ arm[1] }}
+{% endfor %}
+            else -> return false
+        }
+        return true
+    }
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endmacro %}
+
+{#
+    A table of the document's structure the machine looks a state or a
+    history up in, built once in its companion object. Its entries used to be
+    the arguments of one `mapOf(...)` in the companion's class initialiser,
+    which grew with the document; they are now put by parts of at most
+    `kotlin_method_items` items (an entry weighs one, and one more for each
+    element of the list it holds: `entries[i][2]`), and the initialiser calls
+    each part once. A `LinkedHashMap`, as `mapOf` builds, so the table is the
+    same map in the same order.
+
+    `name`        the table's property; a part is `<name>Part<n>`.
+    `key_type`, `value_type`
+                  the map's types.
+    `entries`     a list of `[key, value, weight]`, the key and the value as
+                  Kotlin expressions.
+
+    Written at the indent of a member of the companion object.
+#}
+{% macro bounded_map(name, key_type, value_type, entries) %}
+{% set weighed = namespace(list=[]) %}
+{% for entry in entries %}
+{% set weighed.list = weighed.list + [entry[2]] %}
+{% endfor %}
+{% set parts = kotlin_parts(weighed.list) %}
+        val {{ name }}: Map<{{ key_type }}, {{ value_type }}> = LinkedHashMap<{{ key_type }}, {{ value_type }}>().also {
+{% for part in parts %}
+            {{ name }}Part{{ loop.index0 }}(it)
+{% endfor %}
+        }
+{% for part in parts %}
+
+        private fun {{ name }}Part{{ loop.index0 }}(table: MutableMap<{{ key_type }}, {{ value_type }}>) {
+{% for i in part %}
+            table[{{ entries[i][0] }}] = {{ entries[i][1] }}
+{% endfor %}
+        }
+{% endfor %}
+{% endmacro %}

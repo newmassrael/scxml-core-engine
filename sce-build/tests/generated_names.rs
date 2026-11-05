@@ -326,7 +326,11 @@ fn rendered(language: Language, label: &str, files: &[(String, String)]) -> BTre
             enumerators(block(&format!("enum class {label} : uint8_t {{"), "}"), "")
         }
         (Language::Kotlin, "State") => capture(&all, r"data object (\w+) : NamesState\b"),
-        (Language::Kotlin, "History") => capture(&all, r"val history(\w+) = HistoryId\("),
+        // A getter with nothing to initialise, so the companion object's class
+        // initialiser does not grow with the document's histories.
+        (Language::Kotlin, "History") => {
+            capture(&all, r"val history(\w+): HistoryId get\(\) = HistoryId\(")
+        }
         (Language::Go, "State") => capture(&all, r"(?m)^\s+NamesState(\w+) NamesState = \d+"),
         (Language::Go, "History") => {
             capture(&all, r"(?m)^\s+NamesHistory(\w+) sce\.HistoryID = \d+")

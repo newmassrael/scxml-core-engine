@@ -63,12 +63,24 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {%- else -%}event is {{ machine_name }}Event.{{ trans.prefix_matching_events[0] | to_event_class_name }}
 {%- endif -%}
 {%- endmacro %}
-{% set ns_selecting = namespace(states=0) %}
+{# One method per state that owns a transition (`firstEnabledTransitionOf<State>`), and
+   `firstEnabledTransition` dispatches on the state to it with one call an arm
+   (dispatch.kt.jinja2): written as one `when`, the selection held every guard
+   of the document and grew with it past what one JVM method holds. A state's
+   method keeps the parameters `state` and `event` the one `when` had in scope,
+   because a native condition (`kt:`) is the author's Kotlin and may read
+   either; it is why the method suppresses UNUSED_PARAMETER. The `when (state)`
+   is exhaustive over the sealed state hierarchy exactly when every state owns
+   a transition, and Kotlin rejects a redundant `else` under -Werror. #}
+{%- import 'dispatch.kt.jinja2' as dispatch %}
+{% set selection_dispatch = namespace(arms=[]) %}
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
-{% set ns_selecting.states = ns_selecting.states + 1 %}
+{% set selection_dispatch.arms = selection_dispatch.arms + [["is " ~ machine_name ~ "State." ~ (state_id | to_state_class_name), "firstEnabledTransitionOf" ~ (state_id | to_state_class_name) ~ "(state, event)"]] %}
 {% endif %}
 {% endfor %}
+{% set selection_result = "EnabledTransition<" ~ machine_name ~ "State, HistoryId>?" %}
+{% set selection_params = "state: " ~ machine_name ~ "State, event: " ~ machine_name ~ "Event?" %}
 {% if model.needs_script_engine %}
 
     // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
@@ -108,17 +120,22 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
      never enabled and has no arm.
 
    The old per-state handlers kept the same rule as "first unconditional
-   transition wins". #}
-    override fun firstEnabledTransition(
-        state: {{ machine_name }}State,
-        event: {{ machine_name }}Event?
-    ): EnabledTransition<{{ machine_name }}State, HistoryId>? = when (state) {
+   transition wins".
+
+   The arms of one state are gathered first and written by
+   `dispatch.bounded_when`, a `when` of conditions answering `null` when none
+   holds; a state with more arms than one method holds is asked part by part
+   in document order, and a part is reached only when every arm before it
+   failed, so what `arm.known` carries holds there too. Each arm answers with
+   the transition's constant in the holder state_machine.kt.jinja2 declared
+   it in (`transition_part_of`). #}
+{{ dispatch.bounded_when("firstEnabledTransition", "override fun firstEnabledTransition(" ~ selection_params ~ "): " ~ selection_result, selection_params, "state, event", "state", selection_dispatch.arms, selection_result, "null", (selection_dispatch.arms | length) == (model.states | length)) }}
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when {
-{% set arm = namespace(known='', closed=false, kind='', guard='', decided='') %}
+{% set arm = namespace(known='', closed=false, kind='', guard='', decided='', list=[], target='') %}
 {% for trans in state.transitions %}
 {% if not arm.closed %}
+{% set arm.target = "TransitionsPart" ~ transition_part_of[state_id][loop.index0] ~ ".transition" ~ (state_id | to_state_class_name) ~ "At" ~ trans.transition_index %}
 {% set arm.kind = 'eventless' if not trans.event else ('any' if trans.matches_any_event else 'named') %}
 {% if not trans.cond %}
 {% set arm.guard = 'none' %}
@@ -138,33 +155,24 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {% endif %}
 {% if arm.decided == 'false' or arm.guard == 'never' %}
 {% elif arm.decided == 'true' and arm.guard == 'none' %}
-            else -> transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }}
+{% set arm.list = arm.list + [["else", arm.target]] %}
 {% set arm.closed = true %}
 {% elif arm.decided == 'true' %}
-            {{ render_cond(trans) }} -> transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }}
+{% set arm.list = arm.list + [[render_cond(trans), arm.target]] %}
 {% elif arm.guard == 'none' %}
-            {{ event_match(trans) }} -> transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }}
+{% set arm.list = arm.list + [[event_match(trans), arm.target]] %}
 {% if arm.kind == 'eventless' %}
 {% set arm.known = 'present' %}
 {% elif arm.kind == 'any' %}
 {% set arm.known = 'absent' %}
 {% endif %}
 {% else %}
-            {{ event_match(trans) }} && {{ render_cond(trans) }} -> transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }}
+{% set arm.list = arm.list + [[event_match(trans) ~ " && " ~ render_cond(trans), arm.target]] %}
 {% endif %}
 {% endif %}
 {% endfor %}
-{% if not arm.closed %}
-            else -> null
-{% endif %}
-        }
+
+    // {{ state_id }}'s own transitions, in document order.
+{{ dispatch.bounded_when("firstEnabledTransitionOf" ~ (state_id | to_state_class_name), "@Suppress(\"UNUSED_PARAMETER\") private fun firstEnabledTransitionOf" ~ (state_id | to_state_class_name) ~ "(" ~ selection_params ~ "): " ~ selection_result, selection_params, "state, event", "", arm.list, selection_result, "null", false) }}
 {% endif %}
 {% endfor %}
-{# The `else` arm exists for the states the loop above emitted no branch for —
-   the ones with no transition of their own. A document where every state has
-   one leaves the `when` exhaustive over the sealed state hierarchy, and Kotlin
-   rejects a redundant `else` under -Werror. #}
-{% if ns_selecting.states < model.states | length %}
-        else -> null
-{% endif %}
-    }

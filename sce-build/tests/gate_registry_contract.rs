@@ -976,8 +976,12 @@ fn the_kotlin_action_dispatch_switches_on_the_selection_it_was_given() {
     }
     code.push_str(rest);
 
+    // The dispatch over a state's content is written by `dispatch.bounded_when`
+    // (one method holds a bounded number of arms), whose subject argument comes
+    // right before its arms: the subject of the content dispatch is
+    // `transitionIndex`.
     assert!(
-        code.contains("when (transitionIndex)"),
+        code.contains("\"transitionIndex\", \"transitionIndex\", index_dispatch.arms"),
         "⚠ the Kotlin action dispatch no longer switches on the transition the \
          SELECTION chose. Whatever it switches on instead has to be re-derived \
          at dispatch time, and the only thing there is to re-derive it from is \

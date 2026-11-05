@@ -1110,6 +1110,14 @@ name = "a_host_run_result_may_hold_a_field_that_may_be_absent"
 path = "tests/a_host_run_result_may_hold_a_field_that_may_be_absent.rs"
 required-features = ["cli"]
 
+# No method of a generated Kotlin machine grows with its document, so none passes
+# the 65,535 bytes of code one JVM method holds. It runs `sce-codegen generate`, so it
+# carries the `cli` gate.
+[[test]]
+name = "no_generated_kotlin_method_grows_with_the_document"
+path = "tests/no_generated_kotlin_method_grows_with_the_document.rs"
+required-features = ["cli"]
+
 # The Kotlin backend's spelling of an optional record (docs/adr/0055, step 9): the
 # text it generates for a statechart's variable, a call of an algorithm and an
 # algorithm's slot. It runs `sce-codegen generate`, so it carries the `cli` gate.
