@@ -103,7 +103,7 @@ native-prefix-documents 2
 datamodel-variable-init 473
 transition-guard 256
 assign-action 410
-child-invoke-needs-script-engine 57
+child-invoke-needs-script-engine 58
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 96
@@ -441,9 +441,13 @@ telling the truth, not the tree getting worse.
   whether something else needs an engine (`filters::inline_content_reading`).
   One tracked document carries one: `told` in
   `sce-build/tests/fixtures/host_processor/statechart_host_request.scxml`
-  (`n + 1`), which needed an engine already. The figure was derived by
-  reading the corpus, not from this test's output; where the two disagree the
-  test's block is the one to carry.
+  (`n + 1`), which needed an engine already. The block was then checked
+  against this test's output, which agrees on it. The same change's fixture
+  `inline_content_is_read_by_its_data_model.scxml` raised
+  `child-invoke-needs-script-engine` by one (57 to 58): its `reporter` child
+  ends with an inline donedata `<content>`, which still costs the child an
+  engine, since a generated parent lifts a child's done data from the child's
+  engine state.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
