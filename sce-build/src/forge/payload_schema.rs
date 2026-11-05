@@ -23,14 +23,18 @@
 //! Both texts are ASCII: a character past it is escaped.
 //!
 //! Both describe the answer to write; the reader of a payload decides what is
-//! accepted, and accepts every text of their languages and more.
+//! accepted, and accepts every text of their languages and more. Both state a
+//! record's keys in the order its document declares them, since a decoder
+//! held to either writes them in the order it states
+//! ([`crate::forge::value_type::SchemaObject`]); the reader takes them in any
+//! order.
 
 use std::path::Path;
 
 use crate::forge::model::{EventSchemaModel, ForgeImport};
 use crate::forge::value_type::{
-    ascii_json, gbnf_object, json_schema_object, GbnfRules, GrammarError, SchemaDefs, TypeEnv,
-    ValueType,
+    gbnf_object, json_schema_object, GbnfRules, GrammarError, Keyword, SchemaDefs, SchemaNode,
+    TypeEnv, ValueType,
 };
 
 /// The stability status of `schemas/sce-payload-schema.v1.schema.json`, held to
@@ -65,7 +69,8 @@ pub enum PayloadFormat {
 pub struct PayloadSchema {
     /// `urn:sce:schema:<document name>:<revision>` ([`schema_id`]).
     pub id: String,
-    /// The JSON Schema, compact, its keys in ascending order.
+    /// The JSON Schema, compact: each object's keywords in the order of
+    /// [`Keyword`], a record's keys in the order its document declares them.
     pub json_schema: String,
     /// The GBNF grammar, one rule a line, `root` first.
     pub gbnf: String,
@@ -86,16 +91,16 @@ pub fn json_schema(
 ) -> Result<String, GrammarError> {
     let mut defs = SchemaDefs::default();
     let mut root = json_schema_object(fields, env, &mut defs)?;
-    root.insert("$schema".to_string(), DIALECT.into());
-    root.insert("$id".to_string(), schema_id(name, revision).into());
+    root.insert(Keyword::Schema, SchemaNode::value(DIALECT));
+    root.insert(Keyword::Id, SchemaNode::value(schema_id(name, revision)));
     if let Some(hash) = source_hash {
-        root.insert("x-sce-source-hash".to_string(), hash.into());
+        root.insert(Keyword::SourceHash, SchemaNode::value(hash));
     }
-    root.insert("description".to_string(), BOUND_NOTE.into());
-    if let Some(defs) = defs.into_object() {
-        root.insert("$defs".to_string(), defs.into());
+    root.insert(Keyword::Description, SchemaNode::value(BOUND_NOTE));
+    if let Some(defs) = defs.into_node() {
+        root.insert(Keyword::Defs, defs);
     }
-    Ok(ascii_json(&serde_json::Value::Object(root)))
+    Ok(root.text())
 }
 
 /// The GBNF grammar of the payload, a record of `fields` read in `env`: a
@@ -183,8 +188,10 @@ impl PayloadSchema {
 mod tests {
     use super::*;
     use crate::forge::model::{ForgeDocument, SceType};
-    use crate::forge::value_type::{ScopedEnum, ScopedVariant, TypeScope, WrittenType};
-    use sce_rust_runtime::json::{number_text, write, Value};
+    use crate::forge::value_type::{
+        ScopedEnum, ScopedRecord, ScopedVariant, TypeScope, WrittenType,
+    };
+    use sce_rust_runtime::json::{number_text, parse, write, Value};
     use std::path::PathBuf;
 
     const SCHEMA: &str = include_str!("../../../schemas/sce-payload-schema.v1.schema.json");
@@ -285,27 +292,28 @@ mod tests {
         assert_eq!(
             schema.json_schema,
             format!(
-                "{{\"$id\":\"urn:sce:schema:answer_slot:1\",\
-                 \"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\
-                 \"additionalProperties\":false,\
+                "{{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\
+                 \"$id\":\"urn:sce:schema:answer_slot:1\",\
+                 \"x-sce-source-hash\":\"{HASH}\",\
                  \"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts \
                  characters\",\
-                 \"properties\":{{\"kind\":{{\"enum\":[\"meeting\",\"task\"]}},\
-                 \"note\":{{\"anyOf\":[{{\"maxLength\":8,\"type\":\"string\",\"x-sce-max-bytes\":8}},\
-                 {{\"type\":\"null\"}}]}},\
-                 \"slot\":{{\"maximum\":65535,\"minimum\":0,\"type\":\"integer\"}},\
-                 \"title\":{{\"maxLength\":16,\"type\":\"string\",\"x-sce-max-bytes\":16}}}},\
-                 \"required\":[\"kind\",\"note\",\"slot\",\"title\"],\"type\":\"object\",\
-                 \"x-sce-source-hash\":\"{HASH}\"}}"
+                 \"type\":\"object\",\
+                 \"properties\":{{\"title\":{{\"type\":\"string\",\"maxLength\":16,\"x-sce-max-bytes\":16}},\
+                 \"slot\":{{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\
+                 \"kind\":{{\"enum\":[\"meeting\",\"task\"]}},\
+                 \"note\":{{\"anyOf\":[{{\"type\":\"string\",\"maxLength\":8,\"x-sce-max-bytes\":8}},\
+                 {{\"type\":\"null\"}}]}}}},\
+                 \"required\":[\"title\",\"slot\",\"kind\",\"note\"],\
+                 \"additionalProperties\":false}}"
             )
         );
         let lines: Vec<&str> = schema.gbnf.lines().collect();
         assert_eq!(
             lines[..2],
             [
-                "root ::= \"{\\\"kind\\\":\" ( \"\\\"meeting\\\"\" | \"\\\"task\\\"\" ) \
-                 \",\\\"note\\\":\" ( \"null\" | \"\\\"\" t8 \"\\\"\" ) \",\\\"slot\\\":\" uint16 \
-                 \",\\\"title\\\":\" \"\\\"\" t16 \"\\\"\" \"}\"",
+                "root ::= \"{\\\"title\\\":\" \"\\\"\" t16 \"\\\"\" \",\\\"slot\\\":\" uint16 \
+                 \",\\\"kind\\\":\" ( \"\\\"meeting\\\"\" | \"\\\"task\\\"\" ) \
+                 \",\\\"note\\\":\" ( \"null\" | \"\\\"\" t8 \"\\\"\" ) \"}\"",
                 "uint16 ::= \"0\" | [1-9] [0-9]{0,3} | [1-5] [0-9]{4} | \"6\" [0-4] [0-9]{3} | \
                  \"65\" [0-4] [0-9]{2} | \"655\" [0-2] [0-9] | \"6553\" [0-5]",
             ]
@@ -362,6 +370,74 @@ mod tests {
         let with = PayloadSchema::of("probe", 3, &fields, &TypeScope::default(), Some(HASH))
             .expect("a grammar");
         assert_eq!(with.gbnf, without.gbnf, "the grammar carries no hash");
+    }
+
+    /// A record's keys are stated in the order its document declares them, in
+    /// both spellings, at the root and in a record of `$defs`: a decoder held
+    /// to a schema writes an object's keys in the order the schema states
+    /// them, and the declared order is the author's. Neither is ascending.
+    #[test]
+    fn a_record_states_its_keys_in_the_order_its_document_declares_them() {
+        let mut scope = TypeScope::default();
+        scope.records.insert(
+            "When".into(),
+            ScopedRecord {
+                identity: "when.scxml".into(),
+                name: "when".into(),
+                fields: vec![
+                    ("year".into(), ty("uint16")),
+                    ("month".into(), ty("uint8")),
+                    ("day".into(), ty("uint8")),
+                ],
+                scope: TypeScope::default(),
+            },
+        );
+        let fields = [
+            ("title".to_string(), ty("string[4]")),
+            ("when".to_string(), ty("record:When")),
+            ("milestone".to_string(), ty("bool")),
+        ];
+        let schema = PayloadSchema::of("event", 1, &fields, &scope, None).expect("a grammar");
+        assert_eq!(
+            schema.json_schema,
+            "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\
+             \"$id\":\"urn:sce:schema:event:1\",\
+             \"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts \
+             characters\",\
+             \"type\":\"object\",\
+             \"properties\":{\"title\":{\"type\":\"string\",\"maxLength\":4,\"x-sce-max-bytes\":4},\
+             \"when\":{\"$ref\":\"#/$defs/when\"},\"milestone\":{\"type\":\"boolean\"}},\
+             \"required\":[\"title\",\"when\",\"milestone\"],\
+             \"additionalProperties\":false,\
+             \"$defs\":{\"when\":{\"type\":\"object\",\
+             \"properties\":{\"year\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\
+             \"month\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\
+             \"day\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}},\
+             \"required\":[\"year\",\"month\",\"day\"],\"additionalProperties\":false}}}"
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&schema.json_schema).unwrap();
+        assert_eq!(wire_violations(&parsed), Vec::<String>::new());
+        let lines: Vec<&str> = schema.gbnf.lines().collect();
+        assert_eq!(
+            lines[..2],
+            [
+                "root ::= \"{\\\"title\\\":\" \"\\\"\" t4 \"\\\"\" \",\\\"when\\\":\" record-1 \
+                 \",\\\"milestone\\\":\" ( \"true\" | \"false\" ) \"}\"",
+                "record-1 ::= \"{\\\"year\\\":\" uint16 \",\\\"month\\\":\" uint8 \
+                 \",\\\"day\\\":\" uint8 \"}\"",
+            ]
+        );
+        // The grammar admits the declared order alone; the JSON Schema, for
+        // which an object's order is insignificant, admits both.
+        let declared =
+            "{\"title\":\"a\",\"when\":{\"year\":2026,\"month\":10,\"day\":21},\"milestone\":false}";
+        let ascending =
+            "{\"milestone\":false,\"title\":\"a\",\"when\":{\"day\":21,\"month\":10,\"year\":2026}}";
+        let grammar = gbnf::Grammar::read(&schema.gbnf);
+        assert!(grammar.admits(declared), "{declared}");
+        assert!(!grammar.admits(ascending), "{ascending}");
+        let json = compiled(&schema.json_schema);
+        assert!(json_admits(&json, declared) && json_admits(&json, ascending));
     }
 
     #[test]
@@ -431,12 +507,111 @@ mod tests {
             assert_eq!(wire_violations(&parsed), Vec::<String>::new(), "{name}");
             // And against the official 2020-12 meta-schema, by compiling it.
             compiled(&schema.json_schema);
-            // Compact, its keys in ascending order at every depth, ASCII.
-            assert_eq!(schema.json_schema, ascii_json(&parsed), "{name}");
+            // Compact and ASCII: the text a writer that keeps each object's
+            // members in order writes back, every character past ASCII escaped.
+            let read = parse(&schema.json_schema).expect("a payload schema is JSON");
+            assert_eq!(schema.json_schema, ascii(&write(&read)), "{name}");
             assert!(
                 schema.json_schema.is_ascii() && schema.gbnf.is_ascii(),
                 "{name}"
             );
+            // Its keywords in the one order at every depth, each record's
+            // `properties` in the order of its `required`.
+            keywords_in_order(&read, name);
+        }
+    }
+
+    /// The keywords a payload schema is written in, in the one order every
+    /// schema object writes them in (docs/adr/0087, section 1.1, item 4).
+    const KEYWORD_ORDER: [&str; 19] = [
+        "$schema",
+        "$id",
+        "x-sce-source-hash",
+        "description",
+        "$ref",
+        "type",
+        "enum",
+        "anyOf",
+        "minimum",
+        "maximum",
+        "maxLength",
+        "x-sce-max-bytes",
+        "pattern",
+        "items",
+        "maxItems",
+        "properties",
+        "required",
+        "additionalProperties",
+        "$defs",
+    ];
+
+    /// `text` with every character past ASCII written as JSON's `\u` escape,
+    /// a UTF-16 pair past U+FFFF, its hex in lowercase.
+    fn ascii(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        for c in text.chars() {
+            if c.is_ascii() {
+                out.push(c);
+            } else {
+                let mut units = [0u16; 2];
+                for unit in c.encode_utf16(&mut units).iter() {
+                    out.push_str(&format!("\\u{unit:04x}"));
+                }
+            }
+        }
+        out
+    }
+
+    /// Asserts that `schema`, a schema object read with its members in the
+    /// order they are written, writes its keywords in [`KEYWORD_ORDER`] at
+    /// every depth, and the members of each `properties` in the order of the
+    /// `required` beside it. `at` names the place, for the message.
+    fn keywords_in_order(schema: &Value, at: &str) {
+        let Value::Object(members) = schema else {
+            panic!("{at} is a schema object: {schema:?}");
+        };
+        let ranks: Vec<usize> = members
+            .iter()
+            .map(|(keyword, _)| {
+                KEYWORD_ORDER
+                    .iter()
+                    .position(|k| k == keyword)
+                    .unwrap_or_else(|| panic!("{at}: `{keyword}` is a keyword of the subset"))
+            })
+            .collect();
+        assert!(
+            ranks.windows(2).all(|pair| pair[0] < pair[1]),
+            "{at}: the keywords stand in the one order: {members:?}"
+        );
+        for (keyword, value) in members {
+            let inner = format!("{at}/{keyword}");
+            match (keyword.as_str(), value) {
+                ("properties" | "$defs", Value::Object(named)) => {
+                    for (name, schema) in named {
+                        keywords_in_order(schema, &format!("{inner}/{name}"));
+                    }
+                }
+                ("items", schema) => keywords_in_order(schema, &inner),
+                ("anyOf", Value::Array(schemas)) => {
+                    for schema in schemas {
+                        keywords_in_order(schema, &inner);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let (Some(Value::Object(properties)), Some(Value::Array(required))) =
+            (schema.member("properties"), schema.member("required"))
+        {
+            let keys: Vec<&str> = properties.iter().map(|(key, _)| key.as_str()).collect();
+            let named: Vec<&str> = required
+                .iter()
+                .map(|key| match key {
+                    Value::Text(key) => key.as_str(),
+                    other => panic!("{at}: a required key is a text, not {other:?}"),
+                })
+                .collect();
+            assert_eq!(keys, named, "{at}: properties in the order of required");
         }
     }
 
@@ -532,14 +707,14 @@ mod tests {
         }
     }
 
-    /// The fields of the record `alias` names, in the order the writer writes
-    /// its keys (ascending by UTF-8 bytes), and the scope they are read in.
+    /// The fields of the record `alias` names, in the order its document
+    /// declares them, the order both spellings state its keys in, and the
+    /// scope they are read in.
     fn record_of<'e>(
         alias: &str,
         env: &'e dyn TypeEnv,
     ) -> (Vec<(String, ValueType)>, &'e dyn TypeEnv) {
-        let mut fields = env.record_fields(alias).expect("a record of the fixture");
-        fields.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+        let fields = env.record_fields(alias).expect("a record of the fixture");
         (fields, env.record_scope(alias).unwrap_or(env))
     }
 
@@ -718,9 +893,11 @@ mod tests {
     }
 
     /// Every fixture schema admits, in both forms, its largest values and its
-    /// smallest, as the runtime's writer writes them; its GBNF grammar refuses
-    /// each value one past a bound, and its JSON Schema each but a text past
-    /// its bound in bytes within its bound in characters.
+    /// smallest, as the runtime's writer spells them, each record's keys in
+    /// the order its document declares them; its GBNF grammar refuses each
+    /// value one past a bound, and its JSON Schema each but a text past its
+    /// bound in bytes within its bound in characters. Its JSON Schema requires
+    /// the payload's keys in the order the document declares them.
     #[test]
     fn a_fixture_schema_holds_the_values_its_type_holds_and_no_other() {
         let (written, _) = fixture_schemas();
@@ -752,6 +929,17 @@ mod tests {
                 fields: model.typed_fields(),
                 scope: &scope,
             };
+            let declared: Vec<Value> = payload
+                .fields
+                .iter()
+                .map(|(id, _)| Value::Text(id.clone()))
+                .collect();
+            let read = parse(&schema.json_schema).expect("a payload schema is JSON");
+            assert_eq!(
+                read.member("required"),
+                Some(&Value::Array(declared)),
+                "{name}: the keys in the order the document declares them"
+            );
             let root = ValueType::Record {
                 alias: String::new(),
             };

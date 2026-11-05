@@ -167,19 +167,25 @@ fn every_unit_declares_the_json_schema_payload_schema_prints() {
         json_schema,
         "the JSON Schema is the default"
     );
-    assert!(
-        json_schema.starts_with("{\"$id\":\"urn:sce:schema:answer_slot:1\","),
-        "{json_schema}"
-    );
     assert!(json_schema.is_ascii(), "{json_schema}");
-    // The hash `generate` stamps on the files of the same document.
+    // The hash `generate` stamps on the files of the same document, beside
+    // the id, and the record's keys in the order the document declares them.
     let rust = generated(&document, "rust");
     let header = rust
         .lines()
         .find_map(|line| line.strip_prefix("// source-hash: "))
         .expect("a drift header");
     assert!(
-        json_schema.ends_with(&format!(",\"x-sce-source-hash\":\"{header}\"}}")),
+        json_schema.starts_with(&format!(
+            "{{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\
+             \"$id\":\"urn:sce:schema:answer_slot:1\",\"x-sce-source-hash\":\"{header}\","
+        )),
+        "{json_schema}"
+    );
+    assert!(
+        json_schema.ends_with(
+            ",\"required\":[\"title\",\"slot\",\"kind\",\"note\"],\"additionalProperties\":false}"
+        ),
         "{json_schema}"
     );
 
@@ -254,7 +260,9 @@ fn payload_schema_prints_the_grammar_no_unit_declares() {
     let document = answer_slot();
     let gbnf = printed(&[], &document, &["--format", "gbnf"]);
     assert!(
-        gbnf.starts_with("root ::= \"{\\\"kind\\\":\" ( \"\\\"meeting\\\"\" | \"\\\"task\\\"\" ) "),
+        gbnf.starts_with(
+            "root ::= \"{\\\"title\\\":\" \"\\\"\" t16 \"\\\"\" \",\\\"slot\\\":\" uint16 "
+        ),
         "{gbnf}"
     );
     assert!(gbnf.contains("\nuint16 ::= \"0\" | "), "{gbnf}");

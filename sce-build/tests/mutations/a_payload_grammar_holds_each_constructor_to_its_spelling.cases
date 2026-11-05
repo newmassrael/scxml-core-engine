@@ -15,7 +15,10 @@
 #   GBNF: a character's weight in bytes in the chain, the characters of more
 #   than one byte, a byte string's one byte a character, a list's bound, an
 #   optional value's `null`, the comma between two keys, a 64-bit integer's
-#   quotes, a text's bound, and the last digit of a range up to its end.
+#   quotes, a text's bound, and the last digit of a range up to its end;
+#   and the order each form writes: a record's keys in the GBNF grammar in
+#   the order its document declares them, a JSON Schema's keywords in their
+#   one order.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -26,50 +29,62 @@ mutation_oracles sce-build/src/forge/value_type.rs
 
 mutation_case "a text's byte bound is stated one past" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "            \"x-sce-max-bytes\": max.max\n",
-     "            \"x-sce-max-bytes\": max.max + 1\n")
+     ".with(Keyword::MaxBytes, SchemaNode::value(max.max)),",
+     ".with(Keyword::MaxBytes, SchemaNode::value(max.max + 1)),")
 PY
 
 mutation_case "a byte string's characters are any character" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "            \"pattern\": latin1_pattern()\n",
-     "            \"pattern\": \"^.*$\"\n")
+     ".with(Keyword::Pattern, SchemaNode::value(latin1_pattern())),",
+     ".with(Keyword::Pattern, SchemaNode::value(\"^.*$\")),")
 PY
 
 mutation_case "an optional value is never null in the JSON Schema" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "            \"anyOf\": [json_schema(elem, env, defs, on_path)?, {\"type\": \"null\"}]\n",
-     "            \"anyOf\": [json_schema(elem, env, defs, on_path)?]\n")
+     "SchemaNode::Schemas(vec![element, null])",
+     "SchemaNode::Schemas(vec![element, null][..1].to_vec())")
 PY
 
 mutation_case "a list holds one past its bound in the JSON Schema" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "            \"maxItems\": max.max\n",
-     "            \"maxItems\": max.max + 1\n")
+     ".with(Keyword::MaxItems, SchemaNode::value(max.max))",
+     ".with(Keyword::MaxItems, SchemaNode::value(max.max + 1))")
 PY
 
 mutation_case "a record admits a key it does not declare" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "    object.insert(\"additionalProperties\".to_string(), false.into());",
-     "    object.insert(\"additionalProperties\".to_string(), true.into());")
+     ".with(Keyword::AdditionalProperties, SchemaNode::value(false)))",
+     ".with(Keyword::AdditionalProperties, SchemaNode::value(true)))")
 PY
 
 mutation_case "an integer's upper end is one past its type's" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "\"minimum\": narrow(lo), \"maximum\": narrow(hi)})",
-     "\"minimum\": narrow(lo), \"maximum\": narrow(hi) + 1})")
+     ".with(Keyword::Maximum, SchemaNode::value(narrow(hi)))",
+     ".with(Keyword::Maximum, SchemaNode::value(narrow(hi) + 1))")
 PY
 
 mutation_case "a 64-bit integer is a JSON number" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "            json!({\"type\": \"string\", \"pattern\": regex_range(lo, hi)})",
-     "            json!({\"type\": \"integer\", \"pattern\": regex_range(lo, hi)})")
+     "            SchemaObject::typed(\"string\")\n                .with(Keyword::Pattern, SchemaNode::value(regex_range(lo, hi)))",
+     "            SchemaObject::typed(\"integer\")\n                .with(Keyword::Pattern, SchemaNode::value(regex_range(lo, hi)))")
 PY
 
 mutation_case "a single's range is twice its largest value" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "            json!({\"type\": \"number\", \"minimum\": -most, \"maximum\": most})",
-     "            json!({\"type\": \"number\", \"minimum\": -most, \"maximum\": most * 2.0})")
+     ".with(Keyword::Maximum, SchemaNode::value(most))",
+     ".with(Keyword::Maximum, SchemaNode::value(most * 2.0))")
+PY
+
+mutation_case "a record states its keys in ascending order" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "    for (at, (id, field)) in fields.iter().enumerate() {",
+     "    let mut fields = fields.to_vec();\n    fields.sort_by(|a, b| a.0.cmp(&b.0));\n    for (at, (id, field)) in fields.iter().enumerate() {")
+PY
+
+mutation_case "a schema's keywords stand in ascending order" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "        for (at, (keyword, node)) in self.keywords.iter().enumerate() {",
+     "        let mut sorted: Vec<_> = self.keywords.iter().collect();\n        sorted.sort_by_key(|(keyword, _)| keyword.name());\n        for (at, (keyword, node)) in sorted.into_iter().enumerate() {")
 PY
 
 mutation_case "an open enum is spelled by its names" <<'PY'

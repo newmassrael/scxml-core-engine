@@ -1654,11 +1654,13 @@ pub fn longest_pointer(ty: &ValueType, env: &dyn TypeEnv) -> Result<(String, u64
 // `grammars/README.md` of ggml-org/llama.cpp and its parser
 // `src/llama-grammar.cpp`, read at commit acecd56032dd of 2026-09-12). Each is
 // one exhaustive match with an arm per constructor. Both state one spelling of
-// each value, the one SCE's writers write: a record with every key and no
-// other, in the grammar in the canonical key order (ARCHITECTURE.md, "JSON
-// Object Key Order"), a 64-bit integer as the quoted text of its digits, no
-// whitespace outside a text. A reader accepts more; a text in the language of
-// either is one it accepts.
+// each value: a record with every key and no other, its keys in the order the
+// record's document declares them (a decoder held to either form writes them
+// in the order it states, docs/adr/0087 section 1.1 item 2, where SCE's
+// writers order them ascending, ARCHITECTURE.md "JSON Object Key Order"), a
+// 64-bit integer as the quoted text of its digits, no whitespace outside a
+// text. A reader accepts more, keys in any order among it; a text in the
+// language of either is one it accepts.
 
 /// Why a type has no grammar the build can write.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1928,29 +1930,191 @@ fn regex_range(lo: i128, hi: i128) -> String {
     format!("^({})$", alternatives.join("|"))
 }
 
-/// A JSON object, as a JSON Schema's keywords are held.
-pub type JsonObject = serde_json::Map<String, serde_json::Value>;
+/// A keyword of the subset of JSON Schema 2020-12 a payload schema is written
+/// in (`schemas/sce-payload-schema.v1.schema.json`), declared in the one order
+/// every schema object writes its keywords in, whatever order a fold puts them
+/// in: what names the schema (`$schema`, `$id`, the source hash), what it says
+/// of itself, the form of a value (`$ref`, `type`, `enum`, `anyOf`), its
+/// bounds, each annotation beside the keyword it qualifies, then a record's
+/// keys and the definitions the schema gathered. It is the order of the
+/// example of docs/adr/0087, section 1.1, item 4, and it makes the text of a
+/// schema one text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Keyword {
+    Schema,
+    Id,
+    SourceHash,
+    Description,
+    Ref,
+    Type,
+    Enum,
+    AnyOf,
+    Minimum,
+    Maximum,
+    MaxLength,
+    MaxBytes,
+    Pattern,
+    Items,
+    MaxItems,
+    Properties,
+    Required,
+    AdditionalProperties,
+    Defs,
+}
+
+impl Keyword {
+    /// The keyword as a schema spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Keyword::Schema => "$schema",
+            Keyword::Id => "$id",
+            Keyword::SourceHash => "x-sce-source-hash",
+            Keyword::Description => "description",
+            Keyword::Ref => "$ref",
+            Keyword::Type => "type",
+            Keyword::Enum => "enum",
+            Keyword::AnyOf => "anyOf",
+            Keyword::Minimum => "minimum",
+            Keyword::Maximum => "maximum",
+            Keyword::MaxLength => "maxLength",
+            Keyword::MaxBytes => "x-sce-max-bytes",
+            Keyword::Pattern => "pattern",
+            Keyword::Items => "items",
+            Keyword::MaxItems => "maxItems",
+            Keyword::Properties => "properties",
+            Keyword::Required => "required",
+            Keyword::AdditionalProperties => "additionalProperties",
+            Keyword::Defs => "$defs",
+        }
+    }
+}
+
+/// What a payload schema holds under a keyword.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SchemaNode {
+    /// A value that holds no schema: a text, a number, a truth value, or a
+    /// list of texts (`enum`, `required`).
+    Value(serde_json::Value),
+    /// One schema (`items`).
+    Schema(SchemaObject),
+    /// Schemas in order (`anyOf`).
+    Schemas(Vec<SchemaObject>),
+    /// Schemas by name (`properties`, `$defs`), written in the order they
+    /// were put in: a record's keys in the order its document declares them.
+    Named(Vec<(String, SchemaObject)>),
+}
+
+impl SchemaNode {
+    /// `value`, a value that holds no schema.
+    pub fn value(value: impl Into<serde_json::Value>) -> Self {
+        Self::Value(value.into())
+    }
+
+    fn write(&self, out: &mut String) {
+        match self {
+            Self::Value(value) => out.push_str(&value.to_string()),
+            Self::Schema(schema) => schema.write(out),
+            Self::Schemas(schemas) => {
+                out.push('[');
+                for (at, schema) in schemas.iter().enumerate() {
+                    if at > 0 {
+                        out.push(',');
+                    }
+                    schema.write(out);
+                }
+                out.push(']');
+            }
+            Self::Named(members) => {
+                out.push('{');
+                for (at, (name, schema)) in members.iter().enumerate() {
+                    if at > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&json_quoted(name));
+                    out.push(':');
+                    schema.write(out);
+                }
+                out.push('}');
+            }
+        }
+    }
+}
+
+/// A JSON Schema of the subset a payload schema is written in: an object of
+/// keywords, held and written in the order of [`Keyword`].
+///
+/// JSON Schema calls the order of an object's members insignificant, and a
+/// validator reads it so; a decoder held to a schema does not. llguidance,
+/// XGrammar and Outlines write an object's properties in the order the schema
+/// states them, so the order a schema is written in is the order a model held
+/// to it answers in, and a record's keys are stated in the order its document
+/// declares them (docs/adr/0087, section 1.1, item 2).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SchemaObject {
+    keywords: std::collections::BTreeMap<Keyword, SchemaNode>,
+}
+
+impl SchemaObject {
+    /// The schema whose `type` is `name`.
+    pub fn typed(name: &str) -> Self {
+        Self::default().with(Keyword::Type, SchemaNode::value(name))
+    }
+
+    /// This schema with `node` under `keyword`, in place of what it held there.
+    pub fn with(mut self, keyword: Keyword, node: SchemaNode) -> Self {
+        self.insert(keyword, node);
+        self
+    }
+
+    /// Put `node` under `keyword`, in place of what the schema held there.
+    pub fn insert(&mut self, keyword: Keyword, node: SchemaNode) {
+        self.keywords.insert(keyword, node);
+    }
+
+    /// The schema as compact JSON text, ASCII (every other character
+    /// escaped): its keywords in the order of [`Keyword`] at every depth, the
+    /// members of `properties` and `$defs` in the order they were put in.
+    pub fn text(&self) -> String {
+        let mut out = String::new();
+        self.write(&mut out);
+        ascii_only(&out, EscapeForm::Json)
+    }
+
+    fn write(&self, out: &mut String) {
+        out.push('{');
+        for (at, (keyword, node)) in self.keywords.iter().enumerate() {
+            if at > 0 {
+                out.push(',');
+            }
+            out.push_str(&json_quoted(keyword.name()));
+            out.push(':');
+            node.write(out);
+        }
+        out.push('}');
+    }
+}
 
 /// The definitions a JSON Schema of a type gathers as its fold walks it: each
 /// record the type holds, once, under its document's name.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SchemaDefs {
     /// Each definition by its name, with the key of the record it defines.
-    defs: std::collections::BTreeMap<String, (String, serde_json::Value)>,
+    defs: std::collections::BTreeMap<String, (String, SchemaObject)>,
 }
 
 impl SchemaDefs {
-    /// The `$defs` object, or `None` when the type holds no record.
-    pub fn into_object(self) -> Option<JsonObject> {
+    /// What the schema holds under `$defs`, each definition by its name in
+    /// ascending order, or `None` when the type holds no record.
+    pub fn into_node(self) -> Option<SchemaNode> {
         if self.defs.is_empty() {
             return None;
         }
-        Some(
+        Some(SchemaNode::Named(
             self.defs
                 .into_iter()
                 .map(|(name, (_, schema))| (name, schema))
                 .collect(),
-        )
+        ))
     }
 }
 
@@ -2007,12 +2171,6 @@ fn latin1_pattern() -> String {
     )
 }
 
-/// A JSON text (`serde_json`'s compact one, keys ascending) with every
-/// character past ASCII escaped: what a payload schema is written as.
-pub fn ascii_json(value: &serde_json::Value) -> String {
-    ascii_only(&value.to_string(), EscapeForm::Json)
-}
-
 /// `name` as a reference token of a JSON Pointer (RFC 6901, section 3): `~`
 /// written `~0`, `/` written `~1`.
 fn pointer_token(name: &str) -> String {
@@ -2031,25 +2189,25 @@ fn pointer_token(name: &str) -> String {
 /// - a byte string's characters are each one byte;
 /// - an optional value is `anyOf` its element and `null`, and its key stays
 ///   required;
-/// - a record is a `$ref` to its definition, an object of every key and no
-///   other;
+/// - a record is a `$ref` to its definition, an object of every key, in the
+///   order its document declares them, and no other;
 /// - a list is an `array` of at most its bound.
 pub fn json_schema_of(
     ty: &ValueType,
     env: &dyn TypeEnv,
     defs: &mut SchemaDefs,
-) -> Result<serde_json::Value, GrammarError> {
+) -> Result<SchemaObject, GrammarError> {
     json_schema(ty, env, defs, &mut Vec::new())
 }
 
 /// `S` of a record of `fields`: an object of every key, each required, and no
-/// other. What a payload's schema states at its root and a record's
-/// definition states in `$defs`.
+/// other, the keys in the order of `fields`. What a payload's schema states at
+/// its root and a record's definition states in `$defs`.
 pub fn json_schema_object(
     fields: &[(String, ValueType)],
     env: &dyn TypeEnv,
     defs: &mut SchemaDefs,
-) -> Result<JsonObject, GrammarError> {
+) -> Result<SchemaObject, GrammarError> {
     json_object(fields, env, defs, &mut Vec::new())
 }
 
@@ -2058,21 +2216,19 @@ fn json_object(
     env: &dyn TypeEnv,
     defs: &mut SchemaDefs,
     on_path: &mut Vec<String>,
-) -> Result<JsonObject, GrammarError> {
-    let mut properties = JsonObject::new();
+) -> Result<SchemaObject, GrammarError> {
+    let mut properties = Vec::with_capacity(fields.len());
     for (id, field) in fields {
-        properties.insert(id.clone(), json_schema(field, env, defs, on_path)?);
+        properties.push((id.clone(), json_schema(field, env, defs, on_path)?));
     }
-    // Every key, in the canonical order: ascending by UTF-8 bytes, which is
-    // the order of a `str`.
-    let mut required: Vec<&str> = fields.iter().map(|(id, _)| id.as_str()).collect();
-    required.sort_unstable();
-    let mut object = JsonObject::new();
-    object.insert("type".to_string(), "object".into());
-    object.insert("properties".to_string(), properties.into());
-    object.insert("required".to_string(), required.into());
-    object.insert("additionalProperties".to_string(), false.into());
-    Ok(object)
+    // Every key, in the order the document declares them, as `properties`
+    // states them: a decoder held to the schema writes the keys in this order
+    // (docs/adr/0087, section 1.1, item 2).
+    let required: Vec<&str> = fields.iter().map(|(id, _)| id.as_str()).collect();
+    Ok(SchemaObject::typed("object")
+        .with(Keyword::Properties, SchemaNode::Named(properties))
+        .with(Keyword::Required, SchemaNode::value(required))
+        .with(Keyword::AdditionalProperties, SchemaNode::value(false)))
 }
 
 fn json_schema(
@@ -2080,32 +2236,30 @@ fn json_schema(
     env: &dyn TypeEnv,
     defs: &mut SchemaDefs,
     on_path: &mut Vec<String>,
-) -> Result<serde_json::Value, GrammarError> {
-    use serde_json::json;
+) -> Result<SchemaObject, GrammarError> {
     Ok(match ty {
         ValueType::Scalar(t) => json_scalar(t, env)?,
         // `maxLength` counts characters (draft-bhutton-json-schema-validation-01,
         // section 6.3.1): a text of at most B bytes has at most B of them, so it
         // admits every value and some longer, which the reader refuses.
-        ValueType::Text { max } => json!({
-            "type": "string",
-            "maxLength": max.max,
-            "x-sce-max-bytes": max.max
-        }),
-        ValueType::Bytes { max } => json!({
-            "type": "string",
-            "maxLength": max.max,
-            "pattern": latin1_pattern()
-        }),
+        ValueType::Text { max } => SchemaObject::typed("string")
+            .with(Keyword::MaxLength, SchemaNode::value(max.max))
+            .with(Keyword::MaxBytes, SchemaNode::value(max.max)),
+        ValueType::Bytes { max } => SchemaObject::typed("string")
+            .with(Keyword::MaxLength, SchemaNode::value(max.max))
+            .with(Keyword::Pattern, SchemaNode::value(latin1_pattern())),
         // A writer writes the key of a value that is absent, as `null`.
-        ValueType::Optional { elem } => json!({
-            "anyOf": [json_schema(elem, env, defs, on_path)?, {"type": "null"}]
-        }),
-        ValueType::List { elem, max } => json!({
-            "type": "array",
-            "items": json_schema(elem, env, defs, on_path)?,
-            "maxItems": max.max
-        }),
+        ValueType::Optional { elem } => {
+            let element = json_schema(elem, env, defs, on_path)?;
+            let null = SchemaObject::typed("null");
+            SchemaObject::default().with(Keyword::AnyOf, SchemaNode::Schemas(vec![element, null]))
+        }
+        ValueType::List { elem, max } => {
+            let element = json_schema(elem, env, defs, on_path)?;
+            SchemaObject::typed("array")
+                .with(Keyword::Items, SchemaNode::Schema(element))
+                .with(Keyword::MaxItems, SchemaNode::value(max.max))
+        }
         ValueType::Record { alias } => {
             let record = grammar_record(alias, env, on_path)?;
             match defs.defs.get(&record.name) {
@@ -2122,18 +2276,17 @@ fn json_schema(
                     if defs.defs.contains_key(&record.name) {
                         return Err(GrammarError::SharedName { name: record.name });
                     }
-                    defs.defs
-                        .insert(record.name.clone(), (record.key, object.into()));
+                    defs.defs.insert(record.name.clone(), (record.key, object));
                 }
             }
-            json!({"$ref": format!("#/$defs/{}", pointer_token(&record.name))})
+            let reference = format!("#/$defs/{}", pointer_token(&record.name));
+            SchemaObject::default().with(Keyword::Ref, SchemaNode::value(reference))
         }
     })
 }
 
 /// `S` of a scalar.
-fn json_scalar(t: &SceType, env: &dyn TypeEnv) -> Result<serde_json::Value, GrammarError> {
-    use serde_json::json;
+fn json_scalar(t: &SceType, env: &dyn TypeEnv) -> Result<SchemaObject, GrammarError> {
     Ok(match t {
         SceType::Uint8
         | SceType::Uint16
@@ -2143,27 +2296,32 @@ fn json_scalar(t: &SceType, env: &dyn TypeEnv) -> Result<serde_json::Value, Gram
         | SceType::Int32 => {
             let (lo, hi) = integer_bounds(t);
             let narrow = |n: i128| i64::try_from(n).expect("a 32-bit end fits 64 bits");
-            json!({"type": "integer", "minimum": narrow(lo), "maximum": narrow(hi)})
+            SchemaObject::typed("integer")
+                .with(Keyword::Minimum, SchemaNode::value(narrow(lo)))
+                .with(Keyword::Maximum, SchemaNode::value(narrow(hi)))
         }
         // A 64-bit integer crosses as the quoted text of its digits
         // (docs/adr/0086, section 3.1).
         SceType::Uint64 | SceType::Int64 => {
             let (lo, hi) = integer_bounds(t);
-            json!({"type": "string", "pattern": regex_range(lo, hi)})
+            SchemaObject::typed("string")
+                .with(Keyword::Pattern, SchemaNode::value(regex_range(lo, hi)))
         }
         SceType::Float32 => {
             let most = f64::from(f32::MAX);
-            json!({"type": "number", "minimum": -most, "maximum": most})
+            SchemaObject::typed("number")
+                .with(Keyword::Minimum, SchemaNode::value(-most))
+                .with(Keyword::Maximum, SchemaNode::value(most))
         }
-        SceType::Float64 => json!({"type": "number"}),
-        SceType::Bool => json!({"type": "boolean"}),
+        SceType::Float64 => SchemaObject::typed("number"),
+        SceType::Bool => SchemaObject::typed("boolean"),
         SceType::Enum(reference) => {
             let names: Vec<&str> = closed_enum(reference, env)?
                 .variants
                 .iter()
                 .map(|v| v.name.as_str())
                 .collect();
-            json!({ "enum": names })
+            SchemaObject::default().with(Keyword::Enum, SchemaNode::value(names))
         }
         SceType::String | SceType::Bytes => {
             return Err(GrammarError::Unbounded {
@@ -2386,8 +2544,8 @@ impl GbnfRules {
 /// - `bool` is `true` or `false`; a closed enum one quoted name of its own;
 /// - a text and a byte string are quoted, their bytes counted exactly;
 /// - an optional value is `null` or its element's;
-/// - a record is its rule: `{`, each key in the canonical order with its
-///   value, `,` between two, `}`;
+/// - a record is its rule: `{`, each key in the order its document declares
+///   them with its value, `,` between two, `}`;
 /// - a list is `[`, at most its bound of its element's, `,` between two, `]`.
 pub fn gbnf_of(
     ty: &ValueType,
@@ -2413,13 +2571,12 @@ fn gbnf_record(
     rules: &mut GbnfRules,
     on_path: &mut Vec<String>,
 ) -> Result<String, GrammarError> {
-    // The keys in the canonical order: ascending by UTF-8 bytes, which is the
-    // order of a `str`.
-    let sorted: std::collections::BTreeMap<&str, &ValueType> =
-        fields.iter().map(|(id, ty)| (id.as_str(), ty)).collect();
+    // The keys in the order the record's document declares them, the order
+    // the JSON Schema's `properties` states them in: a decoder held to either
+    // form writes them so (docs/adr/0087, section 1.1, item 2).
     let mut parts = Vec::new();
     let mut literal = String::from("{");
-    for (at, (id, field)) in sorted.into_iter().enumerate() {
+    for (at, (id, field)) in fields.iter().enumerate() {
         if at > 0 {
             literal.push(',');
         }
@@ -4107,11 +4264,37 @@ mod tests {
         scope
     }
 
-    /// `S` of `ty` in [`grammar_scope`], and the `$defs` it gathered.
-    fn schema_of(ty: &ValueType) -> Result<(serde_json::Value, Option<JsonObject>), GrammarError> {
+    /// `text`, a schema's text, read back as JSON.
+    fn read_json(text: &str) -> serde_json::Value {
+        serde_json::from_str(text).unwrap_or_else(|e| panic!("not JSON ({e}): {text}"))
+    }
+
+    /// The text of what a schema holds under `$defs`.
+    fn defs_text(defs: SchemaNode) -> String {
+        let text = SchemaObject::default().with(Keyword::Defs, defs).text();
+        let inner = text
+            .strip_prefix("{\"$defs\":")
+            .and_then(|t| t.strip_suffix('}'));
+        inner.expect("one keyword").to_string()
+    }
+
+    /// `S` of `ty` in [`grammar_scope`], read back from its text, and the
+    /// `$defs` it gathered.
+    fn schema_of(
+        ty: &ValueType,
+    ) -> Result<(serde_json::Value, Option<serde_json::Value>), GrammarError> {
         let mut defs = SchemaDefs::default();
         let schema = json_schema_of(ty, &grammar_scope(), &mut defs)?;
-        Ok((schema, defs.into_object()))
+        let gathered = defs.into_node().map(|d| read_json(&defs_text(d)));
+        Ok((read_json(&schema.text()), gathered))
+    }
+
+    /// `S` of `ty` in [`grammar_scope`] as it is written.
+    fn schema_text(text: &str) -> String {
+        let mut defs = SchemaDefs::default();
+        json_schema_of(&ty(text), &grammar_scope(), &mut defs)
+            .expect("a grammar")
+            .text()
     }
 
     /// The whole GBNF grammar whose root is `G` of `ty` in [`grammar_scope`].
@@ -4165,6 +4348,11 @@ mod tests {
                 "{text}"
             );
         }
+        // Its keywords in the one order every schema writes them in.
+        assert_eq!(
+            schema_text("int8"),
+            "{\"type\":\"integer\",\"minimum\":-128,\"maximum\":127}"
+        );
         assert_eq!(
             gbnf_text("uint8"),
             format!("root ::= uint8\n{UINT8_RULE}\n")
@@ -4192,6 +4380,10 @@ mod tests {
             assert!(
                 pattern.starts_with("^(") && pattern.ends_with(")$"),
                 "{pattern}"
+            );
+            assert!(
+                schema_text(text).starts_with("{\"type\":\"string\",\"pattern\":\"^("),
+                "{text}"
             );
             let grammar = gbnf_text(text);
             assert!(
@@ -4268,6 +4460,12 @@ mod tests {
             json_of("float32"),
             serde_json::json!({"type": "number", "minimum": -most, "maximum": most})
         );
+        let single = schema_text("float32");
+        assert!(
+            single.starts_with("{\"type\":\"number\",\"minimum\":-")
+                && single.contains(",\"maximum\":"),
+            "{single}"
+        );
         assert_eq!(json_of("float64"), serde_json::json!({"type": "number"}));
         let number = "number ::= \"-\"? ( \"0\" | [1-9] [0-9]* ) ( \".\" [0-9]+ )? ( [eE] [-+]? \
                       [0-9]+ )?\n";
@@ -4291,6 +4489,11 @@ mod tests {
         assert_eq!(
             json_of("string[16]"),
             serde_json::json!({"type": "string", "maxLength": 16, "x-sce-max-bytes": 16})
+        );
+        // The annotation stands beside the keyword it qualifies.
+        assert_eq!(
+            schema_text("string[16]"),
+            "{\"type\":\"string\",\"maxLength\":16,\"x-sce-max-bytes\":16}"
         );
         assert_eq!(
             gbnf_text("string[5]"),
@@ -4320,6 +4523,10 @@ mod tests {
             serde_json::json!({"type": "string", "maxLength": 4, "pattern": "^[\\u0000-\\u00ff]*$"})
         );
         assert_eq!(
+            schema_text("bytes[4]"),
+            "{\"type\":\"string\",\"maxLength\":4,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}"
+        );
+        assert_eq!(
             gbnf_text("bytes[3]"),
             "root ::= \"\\\"\" b3 \"\\\"\"\n\
              byte ::= [\\x20-\\x21\\x23-\\x5b\\x5d-\\u00ff] | \"\\\\\" [\\\"\\\\bfnrt] | \"\\\\u000\" \
@@ -4341,6 +4548,10 @@ mod tests {
             ]})
         );
         assert_eq!(
+            schema_text("optional<bool>"),
+            "{\"anyOf\":[{\"type\":\"boolean\"},{\"type\":\"null\"}]}"
+        );
+        assert_eq!(
             gbnf_text("optional<bool>"),
             "root ::= ( \"null\" | ( \"true\" | \"false\" ) )\n"
         );
@@ -4355,6 +4566,11 @@ mod tests {
                 "items": {"type": "integer", "minimum": 0, "maximum": 255},
                 "maxItems": 3
             })
+        );
+        assert_eq!(
+            schema_text("list<uint8>[3]"),
+            "{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\
+             \"maxItems\":3}"
         );
         assert_eq!(
             gbnf_text("list<uint8>[3]"),
@@ -4412,30 +4628,30 @@ mod tests {
     fn a_record_is_defined_once_with_every_key_and_no_other() {
         let (schema, defs) = schema_of(&ty("record:Item")).unwrap();
         assert_eq!(schema, serde_json::json!({"$ref": "#/$defs/item"}));
-        // Its enum is read in the record's own document.
-        let item = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "id": {"type": "integer", "minimum": 0, "maximum": 255},
-                "mood": {"enum": ["calm", "tense"]}
-            },
-            "required": ["id", "mood"],
-            "additionalProperties": false
-        });
+        // Its enum is read in the record's own document, and its keys stand in
+        // the order that document declares them, `mood` before `id`, in the
+        // definition and in the grammar.
+        let item = "{\"type\":\"object\",\"properties\":{\"mood\":{\"enum\":[\"calm\",\"tense\"]},\
+                    \"id\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}},\
+                    \"required\":[\"mood\",\"id\"],\"additionalProperties\":false}";
+        assert_eq!(defs, Some(read_json(&format!("{{\"item\":{item}}}"))));
+        let mut gathered = SchemaDefs::default();
+        json_schema_of(&ty("record:Item"), &grammar_scope(), &mut gathered).unwrap();
         assert_eq!(
-            defs.map(serde_json::Value::Object),
-            Some(serde_json::json!({ "item": item }))
+            gathered.into_node().map(defs_text),
+            Some(format!("{{\"item\":{item}}}"))
         );
         assert_eq!(
             gbnf_text("record:Item"),
             format!(
                 "root ::= record-1\n\
-                 record-1 ::= \"{{\\\"id\\\":\" uint8 \",\\\"mood\\\":\" ( \"\\\"calm\\\"\" | \
-                 \"\\\"tense\\\"\" ) \"}}\"\n\
+                 record-1 ::= \"{{\\\"mood\\\":\" ( \"\\\"calm\\\"\" | \"\\\"tense\\\"\" ) \
+                 \",\\\"id\\\":\" uint8 \"}}\"\n\
                  {UINT8_RULE}\n"
             )
         );
-        // Met twice, it is defined once.
+        // Met twice, it is defined once; the keys of the record that holds it
+        // stand in the order of its fields, `b` before `a`.
         let twice = [
             ("b".to_string(), ty("record:Item")),
             ("a".to_string(), ty("list<optional<record:Item>>[2]")),
@@ -4443,35 +4659,25 @@ mod tests {
         let mut defs = SchemaDefs::default();
         let object = json_schema_object(&twice, &grammar_scope(), &mut defs).unwrap();
         assert_eq!(
-            serde_json::Value::Object(object),
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "a": {
-                        "type": "array",
-                        "items": {"anyOf": [{"$ref": "#/$defs/item"}, {"type": "null"}]},
-                        "maxItems": 2
-                    },
-                    "b": {"$ref": "#/$defs/item"}
-                },
-                "required": ["a", "b"],
-                "additionalProperties": false
-            })
+            object.text(),
+            "{\"type\":\"object\",\"properties\":{\"b\":{\"$ref\":\"#/$defs/item\"},\
+             \"a\":{\"type\":\"array\",\"items\":{\"anyOf\":[{\"$ref\":\"#/$defs/item\"},\
+             {\"type\":\"null\"}]},\"maxItems\":2}},\"required\":[\"b\",\"a\"],\
+             \"additionalProperties\":false}"
         );
-        assert_eq!(
-            defs.into_object().map(|d| d.len()),
-            Some(1),
-            "one definition"
-        );
+        let Some(SchemaNode::Named(definitions)) = defs.into_node() else {
+            panic!("the definitions of a type that holds a record");
+        };
+        assert_eq!(definitions.len(), 1, "one definition");
         let mut rules = GbnfRules::default();
         let root = gbnf_object(&twice, &grammar_scope(), &mut rules).unwrap();
         assert_eq!(
             rules.grammar(&root),
             format!(
-                "root ::= \"{{\\\"a\\\":\" \"[\" ( item-1 item-1-tail-1 )? \"]\" \",\\\"b\\\":\" \
-                 record-1 \"}}\"\n\
-                 record-1 ::= \"{{\\\"id\\\":\" uint8 \",\\\"mood\\\":\" ( \"\\\"calm\\\"\" | \
-                 \"\\\"tense\\\"\" ) \"}}\"\n\
+                "root ::= \"{{\\\"b\\\":\" record-1 \",\\\"a\\\":\" \"[\" ( item-1 item-1-tail-1 )? \
+                 \"]\" \"}}\"\n\
+                 record-1 ::= \"{{\\\"mood\\\":\" ( \"\\\"calm\\\"\" | \"\\\"tense\\\"\" ) \
+                 \",\\\"id\\\":\" uint8 \"}}\"\n\
                  item-1 ::= ( \"null\" | record-1 )\n\
                  item-1-tail-0 ::= \"\"\n\
                  item-1-tail-1 ::= \"\" | \",\" item-1 item-1-tail-0\n\
@@ -4481,8 +4687,10 @@ mod tests {
         // A record of no field is the empty object.
         let mut defs = SchemaDefs::default();
         assert_eq!(
-            serde_json::Value::Object(
-                json_schema_object(&[], &grammar_scope(), &mut defs).unwrap()
+            read_json(
+                &json_schema_object(&[], &grammar_scope(), &mut defs)
+                    .unwrap()
+                    .text()
             ),
             serde_json::json!({
                 "type": "object",
@@ -4639,7 +4847,12 @@ mod tests {
         assert_eq!(escaped('\u{1f600}', EscapeForm::Json), "\\ud83d\\ude00");
         assert_eq!(gbnf_literal("\"caf\u{e9}\""), "\"\\\"caf\\u00e9\\\"\"");
         assert_eq!(
-            ascii_json(&serde_json::json!({"enum": ["caf\u{e9}", "\u{1f600}"]})),
+            SchemaObject::default()
+                .with(
+                    Keyword::Enum,
+                    SchemaNode::value(vec!["caf\u{e9}", "\u{1f600}"])
+                )
+                .text(),
             "{\"enum\":[\"caf\\u00e9\",\"\\ud83d\\ude00\"]}"
         );
         assert_eq!(latin1_pattern(), "^[\\u0000-\\u00ff]*$");
