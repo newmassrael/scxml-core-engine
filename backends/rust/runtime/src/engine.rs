@@ -1511,6 +1511,13 @@ impl<P: StatePolicy> Engine<P> {
     /// bare-metal profile's inbox, whose capacity the deployment names
     /// (`BoundedInbox`). Replaces one attached before; what that one still
     /// holds stays in it.
+    ///
+    /// In the `std` profile the inbox records this engine's session id here,
+    /// so a post resolves an ending's address against it when it is posted
+    /// (ARCHITECTURE.md "Engine Threading", item 3). An engine's id is fixed
+    /// from its construction (a restore binds the saved one before it builds
+    /// the engine), so attaching is the one moment it can change for the
+    /// inbox: attached to another engine, it answers for that one.
     #[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
     pub fn attach_inbox<W: Hal + 'static, const N: usize>(
         &mut self,
@@ -1518,6 +1525,8 @@ impl<P: StatePolicy> Engine<P> {
     ) where
         crate::inbox::InboxInputOf<P>: Send,
     {
+        #[cfg(feature = "std")]
+        inbox.attached_to(self.policy.own_session_id());
         let source: crate::inbox::AttachedInbox<P> = inbox;
         self.attached_inbox = Some(source);
     }
@@ -1614,6 +1623,11 @@ impl<P: StatePolicy> Engine<P> {
                 self.raise_external_by_name_with_meta(&name, &metadata);
             }
             #[cfg(feature = "std")]
+            // Both inboxes resolved the address when the ending was posted
+            // (ARCHITECTURE.md "Engine Threading", item 3), and hold an
+            // ending of their own session without it, so none is read here:
+            // reading this session's id would read the policy, which a drain
+            // made inside the policy's own code must not.
             InboxInput::HostInvokeEnding {
                 session_id,
                 processor_type,
@@ -1621,16 +1635,19 @@ impl<P: StatePolicy> Engine<P> {
                 token,
                 done,
                 data,
-            } => self.apply_posted_host_invoke_ending(
-                session_id.as_deref(),
-                crate::host_processor::HostInvokeEnding {
+            } => {
+                debug_assert!(
+                    session_id.is_none(),
+                    "an inbox holds an ending still addressed to a session"
+                );
+                self.apply_posted_host_invoke_ending(crate::host_processor::HostInvokeEnding {
                     processor_type: &processor_type,
                     invoke_id: &invoke_id,
                     token,
                     done,
                     data: &data,
-                },
-            ),
+                });
+            }
         }
     }
 
@@ -1641,31 +1658,11 @@ impl<P: StatePolicy> Engine<P> {
     /// theirs, so a stale ending is refused here as a direct one is
     /// (§scxml-6.4); the poster was answered when the inbox took it, so the
     /// refusal is logged.
-    ///
-    /// `session_id` is the address the ending still carries. The engine's own
-    /// inbox holds none: its handle resolved the address when the ending was
-    /// posted, and put it on the inbox of the session it names, this one's
-    /// without an address. A `BoundedInbox` resolves no address, so an ending
-    /// it took that carries one is refused here and not routed; reading this
-    /// session's id to compare would read the policy, which a drain made
-    /// inside the policy's own code must not.
     #[cfg(feature = "std")]
     fn apply_posted_host_invoke_ending(
         &mut self,
-        session_id: Option<&str>,
         ending: crate::host_processor::HostInvokeEnding<'_>,
     ) {
-        if let Some(named) = session_id {
-            sce_log_debug!(
-                "Engine: a posted ending of start {} of the '{}' invocation '{}' was refused: it \
-                 names session '{}', and only an engine's own inbox resolves a session",
-                ending.token,
-                ending.processor_type,
-                ending.invoke_id,
-                named
-            );
-            return;
-        }
         let ended = if ending.done {
             self.complete_host_invoke(
                 ending.processor_type,

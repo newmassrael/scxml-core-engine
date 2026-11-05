@@ -39,8 +39,9 @@ use std::time::Duration;
 
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_runtime::{
-    Engine, EngineInbox, HostInvokeEnding, HostInvokeEvent, HostInvokeResponse, IScriptEngine,
-    InboxInput, InboxInputOf, InboxRefusal, InboxWaker, SceClock, StatePolicy,
+    BoundedInbox, Engine, EngineInbox, HostInvokeEnding, HostInvokeEvent, HostInvokeResponse,
+    IScriptEngine, InboxInput, InboxInputOf, InboxRefusal, InboxWaker, SceClock, StatePolicy,
+    StdHal,
 };
 use sce_rust_tests::integration::host_processor::{
     InboxProbeEvent as Event, InboxProbePolicy as Policy,
@@ -484,6 +485,96 @@ fn a_posted_ending_naming_a_session_of_the_tree_is_applied_in_that_session() {
     machine.engine.step();
     assert_eq!(machine.taken(), "done:here;");
     assert_eq!(machine.host_log(), [format!("start:{token}")]);
+}
+
+/// A bounded inbox for the case of its own session; each case declares its own,
+/// as cargo runs the cases on parallel threads.
+static BOUNDED_OWN: BoundedInbox<Policy, 4, StdHal> = BoundedInbox::new();
+/// A bounded inbox attached to one engine and then to another.
+static BOUNDED_MOVED: BoundedInbox<Policy, 4, StdHal> = BoundedInbox::new();
+
+/// The session id `machine`'s root was built under.
+fn session_of(machine: &Machine) -> String {
+    machine
+        .engine
+        .policy()
+        .session_id
+        .clone()
+        .expect("a generated root has a session id from its construction")
+}
+
+// A bounded inbox reaches only the engine it is attached to, and resolves an
+// ending's address when it is posted, as the engine's own inbox does: an ending
+// naming that engine's session is taken and applied, and one naming any other
+// session is refused then, with the input, and not taken to be dropped later.
+#[test]
+fn a_bounded_inbox_takes_an_ending_naming_its_engines_session_and_refuses_another() {
+    let mut machine = Machine::booted();
+    let token = machine.latest_token();
+    let session = session_of(&machine);
+    machine.engine.attach_inbox(&BOUNDED_OWN);
+
+    let answer = BOUNDED_OWN.post(ending_of(
+        Some("no-such-session"),
+        token,
+        true,
+        &quoted("elsewhere"),
+    ));
+    assert!(
+        matches!(answer, Err(InboxRefusal::UnknownSession(_))),
+        "a bounded inbox answered {answer:?} to an ending naming a session it does not reach"
+    );
+    let answer = BOUNDED_OWN.post(ending_of(
+        Some(session.as_str()),
+        token,
+        true,
+        &quoted("here"),
+    ));
+    assert!(
+        answer.is_ok(),
+        "a bounded inbox answered {answer:?} to an ending naming its engine's session"
+    );
+    machine.engine.step();
+    assert_eq!(
+        machine.taken(),
+        "done:here;",
+        "the ending the bounded inbox took was not applied, or the refused one was"
+    );
+}
+
+// Attaching is the owner's operation that tells a bounded inbox whose session
+// it serves: attached to another engine, it takes an ending naming that
+// engine's session, and refuses one naming the engine it served before.
+#[test]
+fn a_bounded_inbox_attached_to_another_engine_answers_for_that_engines_session() {
+    let mut first = Machine::booted();
+    first.engine.attach_inbox(&BOUNDED_MOVED);
+    let before = session_of(&first);
+    drop(first);
+
+    let mut second = Machine::booted();
+    second.engine.attach_inbox(&BOUNDED_MOVED);
+    let token = second.latest_token();
+    let now = session_of(&second);
+    assert_ne!(before, now, "two machines were built under one drawn id");
+
+    let answer = BOUNDED_MOVED.post(ending_of(
+        Some(before.as_str()),
+        token,
+        true,
+        &quoted("before"),
+    ));
+    assert!(
+        matches!(answer, Err(InboxRefusal::UnknownSession(_))),
+        "a bounded inbox answered {answer:?} to an ending naming the engine it served before"
+    );
+    let answer = BOUNDED_MOVED.post(ending_of(Some(now.as_str()), token, true, &quoted("now")));
+    assert!(
+        answer.is_ok(),
+        "a bounded inbox answered {answer:?} to an ending naming the engine it serves now"
+    );
+    second.engine.step();
+    assert_eq!(second.taken(), "done:now;");
 }
 
 // The inbox is open from the moment the engine is built, so what is posted before

@@ -98,8 +98,9 @@ pub enum InboxInput<E, D = ()> {
     /// ending posted for a start that was cancelled or started again by then
     /// raises nothing, as a direct one would.
     ///
-    /// A [`BoundedInbox`] resolves no session: an ending posted to one names
-    /// none, and one that names a session is refused when it is applied.
+    /// A [`BoundedInbox`] reaches only the engine it is attached to: it takes
+    /// an ending that names that engine's session, and refuses one that names
+    /// another when it is posted.
     #[cfg(feature = "std")]
     HostInvokeEnding {
         /// The session of the tree whose invocation ends; `None` for the
@@ -583,6 +584,11 @@ pub struct BoundedInbox<P: StatePolicy, const N: usize, W> {
     queue: ::heapless::mpmc::MpMcQueue<InboxInputOf<P>, N>,
     /// Posts refused because the inbox was full.
     refused: AtomicUsize,
+    /// The session id of the engine this inbox is attached to, recorded by
+    /// the owner in `Engine::attach_inbox`: the one session an ending posted
+    /// here may name. `None` until it is attached.
+    #[cfg(feature = "std")]
+    session_id: Mutex<Option<String>>,
     waker: core::marker::PhantomData<fn() -> W>,
 }
 
@@ -593,7 +599,68 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
         Self {
             queue: ::heapless::mpmc::MpMcQueue::new(),
             refused: AtomicUsize::new(0),
+            #[cfg(feature = "std")]
+            session_id: Mutex::new(None),
             waker: core::marker::PhantomData,
+        }
+    }
+
+    /// Record `session_id`, the id of the engine this inbox is attached to
+    /// now, so a post resolves an ending's address against it.
+    #[cfg(feature = "std")]
+    pub(crate) fn attached_to(&self, session_id: &str) {
+        *self
+            .session_id
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(session_id.to_string());
+    }
+
+    /// `input` as this inbox holds it, its address resolved now: an ending
+    /// that names the session of the engine it is attached to loses the
+    /// address, as the engine's own inbox does, and one that names any other
+    /// session is refused, since this inbox reaches no other session.
+    #[cfg(feature = "std")]
+    // As `post`: the refusal hands the caller's input back.
+    #[allow(clippy::result_large_err)]
+    fn addressed(
+        &self,
+        input: InboxInputOf<P>,
+    ) -> Result<InboxInputOf<P>, InboxRefusal<InboxInputOf<P>>> {
+        let (session_id, processor_type, invoke_id, token, done, data) = match input {
+            InboxInput::HostInvokeEnding {
+                session_id: Some(session_id),
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+            } => (session_id, processor_type, invoke_id, token, done, data),
+            other => return Ok(other),
+        };
+        let own = self
+            .session_id
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_deref()
+            == Some(session_id.as_str());
+        if own {
+            Ok(InboxInput::HostInvokeEnding {
+                session_id: None,
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+            })
+        } else {
+            Err(InboxRefusal::UnknownSession(InboxInput::HostInvokeEnding {
+                session_id: Some(session_id),
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+            }))
         }
     }
 
@@ -604,13 +671,19 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
     /// # Errors
     ///
     /// [`InboxRefusal::Full`], with the input, when the inbox holds `N` inputs;
-    /// the refusal is counted ([`refused_posts`](Self::refused_posts)).
+    /// the refusal is counted ([`refused_posts`](Self::refused_posts)). In the
+    /// `std` profile, [`InboxRefusal::UnknownSession`] for an ending that names
+    /// a session other than that of the engine the inbox is attached to, or
+    /// any session before it is attached: this inbox reaches no other session
+    /// (ARCHITECTURE.md "Engine Threading", item 3).
     // The refusal hands the caller's input back, as `std::sync::mpsc`'s
     // `TrySendError` does, so its size is the machine's event and payload
     // types', not this crate's to box, and a bare-metal deployment has no
     // allocator to box it with.
     #[allow(clippy::result_large_err)]
     pub fn post(&self, input: InboxInputOf<P>) -> Result<(), InboxRefusal<InboxInputOf<P>>> {
+        #[cfg(feature = "std")]
+        let input = self.addressed(input)?;
         if let Err(input) = self.queue.enqueue(input) {
             // A count that stops at its ceiling rather than wraps to zero, which
             // would read as no refusal at all. The compare-exchange loop is the
