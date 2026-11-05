@@ -337,6 +337,22 @@ pub trait StatePolicy: Sized + 'static {
     /// Whether the policy supports child-tick for nested invokes.
     const HAS_CHILD_TICK: bool = false;
 
+    /// Whether the document hands an `<invoke>` to a host invoker: a type the
+    /// host declared it runs, or a Mesh request
+    /// ([`HOST_INVOKE_IDS`](StatePolicy::HOST_INVOKE_IDS) names them).
+    ///
+    /// When `false` the engine starts no host-run invocation, so none can end,
+    /// and the code that starts one, ends one or lets its deadline pass is
+    /// left out of the machine: a program pays for that code only in the
+    /// machines whose documents use it. A start asked for anyway is answered
+    /// as one no invoker ran, and an ending is refused as one for a start that
+    /// is not running.
+    ///
+    /// `true` by default, so a policy written by hand keeps every host-run
+    /// path; the generator writes `false` for a document with no such
+    /// `<invoke>`.
+    const HAS_HOST_INVOKES: bool = true;
+
     // ──────────────────────────────────────────────
     // Static metadata methods (C++ `constexpr static`)
     //

@@ -444,6 +444,21 @@ fn the_invoke_half_is_reported_and_then_claimed() {
         !emitted.contains(&unsupported_invoke_refusal(FIXTURE_INVOKE_TYPE)),
         "a declared invoker still emitted the unsupported-type refusal",
     );
+
+    // The policy says whether the machine runs a host invocation, and the
+    // engine leaves the code that starts and ends one out of a machine that
+    // says it does not: declared, the machine starts them, so it must say so;
+    // undeclared, it starts none.
+    assert!(
+        emitted.contains("const HAS_HOST_INVOKES: bool = true;"),
+        "a machine that starts host invocations does not say it has them",
+    );
+    let bare = std::fs::read_to_string(undeclared.join("statechart_host_invoker_sm.rs"))
+        .expect("the generator wrote the undeclared machine");
+    assert!(
+        bare.contains("const HAS_HOST_INVOKES: bool = false;"),
+        "a machine that starts no host invocation does not say it has none",
+    );
 }
 
 /// The two declarations are separate contracts, and the flags must not

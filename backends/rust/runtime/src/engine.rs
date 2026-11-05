@@ -4373,13 +4373,19 @@ impl<P: StatePolicy> Engine<P> {
     /// host, arm the deadline at `deadline_at` (a moment of the engine's clock),
     /// and take a completion the host reported at once.
     ///
-    /// `false` when no invoker is registered.
+    /// `false` when no invoker is registered, and in a machine whose document
+    /// hands no `<invoke>` to a host ([`StatePolicy::HAS_HOST_INVOKES`]),
+    /// which runs none: the code that would start, end or expire one is left
+    /// out of it.
     #[cfg(feature = "std")]
     fn start_host_invoke(
         &mut self,
         mut request: crate::host_processor::HostInvokeRequest,
         deadline_at: Option<SchedTimePoint>,
     ) -> bool {
+        if !P::HAS_HOST_INVOKES {
+            return false;
+        }
         // docs/adr/0045: the session that starts it, which the host may serve
         // or refuse it by, and names again to end it.
         request.session_id = self.policy.own_session_id().to_string();
@@ -4442,7 +4448,10 @@ impl<P: StatePolicy> Engine<P> {
     /// document's own start gets.
     #[cfg(feature = "std")]
     pub(crate) fn start_restored_host_invokes(&mut self) {
-        if self.restored_host_invokes.is_empty() {
+        // A restore re-arms only what the document hands to a host
+        // (`StatePolicy::host_invoke_owner`), so a machine with no such
+        // `<invoke>` has nothing here, and leaves the code out.
+        if !P::HAS_HOST_INVOKES || self.restored_host_invokes.is_empty() {
             return;
         }
         for restored in std::mem::take(&mut self.restored_host_invokes) {
@@ -4765,6 +4774,10 @@ impl<P: StatePolicy> Engine<P> {
     /// the token check and the event, which are the same for every machine
     /// (`HostProcessorRegistry::end_started`), then the deadline drop and the
     /// enqueue, which are this machine's.
+    ///
+    /// A machine whose document hands no `<invoke>` to a host
+    /// ([`StatePolicy::HAS_HOST_INVOKES`]) starts none, so no ending finds
+    /// its start running, and the body is left out of that machine.
     #[cfg(feature = "std")]
     fn end_host_invoke(
         &mut self,
@@ -4772,6 +4785,9 @@ impl<P: StatePolicy> Engine<P> {
         origin: &str,
         origin_type: &str,
     ) -> bool {
+        if !P::HAS_HOST_INVOKES {
+            return false;
+        }
         let Some((event_name, metadata)) =
             self.host_processors
                 .end_started(ending, origin, origin_type)
@@ -4831,9 +4847,12 @@ impl<P: StatePolicy> Engine<P> {
     /// nothing, so the deadline does nothing.
     #[cfg(feature = "std")]
     fn expire_host_invoke(&mut self, processor_type: &str, invoke_id: &str, token: u64) {
-        if !self
-            .host_processors
-            .expire_invoke(processor_type, invoke_id, token)
+        // Only a start arms a deadline, and a machine with no host-run
+        // `<invoke>` starts none (`StatePolicy::HAS_HOST_INVOKES`).
+        if !P::HAS_HOST_INVOKES
+            || !self
+                .host_processors
+                .expire_invoke(processor_type, invoke_id, token)
         {
             return;
         }
