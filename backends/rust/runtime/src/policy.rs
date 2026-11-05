@@ -719,6 +719,16 @@ pub trait StatePolicy: Sized + 'static {
     fn adopt_host_invokers_in_children(&mut self, _invokers: &crate::host_processor::TreeInvokers) {
     }
 
+    /// Hand `tree`, the inboxes of the tree, to every child this session
+    /// holds ([`Engine::adopt_tree_inboxes`]; ARCHITECTURE.md "Engine
+    /// Threading", item 3).
+    ///
+    /// Generated when the document has an `<invoke type="scxml">`. A policy
+    /// with no children has none to hand it to, which is what the default
+    /// says.
+    #[cfg(feature = "std")]
+    fn adopt_tree_inboxes_in_children(&mut self, _tree: &crate::inbox::TreeInboxes) {}
+
     /// Route `ending`, a host's ending of a host-run invocation of session
     /// `session_id`, to the child that is that session or holds it in its
     /// tree ([`Engine::route_host_invoke_end`]; docs/adr/0045). `None` when

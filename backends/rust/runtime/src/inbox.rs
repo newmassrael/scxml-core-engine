@@ -25,6 +25,12 @@
 //! A refused post gives its input back ([`InboxRefusal`]), so nothing posted is
 //! dropped without the poster being told.
 //!
+//! Every session of a tree has its own `std` inbox, a child's as well as the
+//! root's, and the tree keeps one directory of them and one waker
+//! ([`TreeInboxes`]; ARCHITECTURE.md "Engine Threading", item 3). An input
+//! that names another session of the tree is posted straight to that
+//! session's inbox when it is posted, and each session applies its own inbox.
+//!
 //! Neither inbox closes when a run ends. A post taken after the run reached a
 //! top-level final state, or was stopped, is applied where the owner next
 //! reaches the end of its loop, as the direct call made at that moment would
@@ -41,7 +47,9 @@
 //! have one.
 
 #[cfg(feature = "std")]
-use std::sync::{mpsc, Arc, Mutex, PoisonError};
+use std::collections::HashMap;
+#[cfg(feature = "std")]
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
 
 #[cfg(any(
     feature = "std",
@@ -80,17 +88,22 @@ pub enum InboxInput<E, D = ()> {
         /// Its `_event` fields.
         metadata: EventMetadata,
     },
-    /// The end of one start of a host-run invocation. With no `session_id` it
-    /// ends one of the machine whose inbox this is, applied with
-    /// `Engine::complete_host_invoke` or `Engine::fail_host_invoke`; with one it
-    /// ends one of that session of the tree, applied with
-    /// `Engine::end_host_invoke_in`. The token check those make is made when the
-    /// input is applied, so an ending posted for a start that was cancelled or
-    /// started again by then raises nothing, as a direct one would.
+    /// The end of one start of a host-run invocation of a session of the
+    /// tree, applied by that session with `Engine::complete_host_invoke` or
+    /// `Engine::fail_host_invoke`. With no `session_id`, or with the id of
+    /// the session whose inbox takes the post, it is that session's own; with
+    /// the id of another session, [`EngineInbox::post`] posts it to that
+    /// session's inbox, and refuses it when the tree does not hold that
+    /// session. The token check is made when the input is applied, so an
+    /// ending posted for a start that was cancelled or started again by then
+    /// raises nothing, as a direct one would.
+    ///
+    /// A [`BoundedInbox`] resolves no session: an ending posted to one names
+    /// none, and one that names a session is refused when it is applied.
     #[cfg(feature = "std")]
     HostInvokeEnding {
         /// The session of the tree whose invocation ends; `None` for the
-        /// machine whose inbox this is.
+        /// session whose inbox takes the post.
         session_id: Option<String>,
         /// The `type` the request named.
         processor_type: String,
@@ -159,13 +172,18 @@ pub enum InboxRefusal<I> {
     Full(I),
     /// The engine the inbox belonged to is gone, so nothing would apply it.
     EngineGone(I),
+    /// The input names a session the tree does not hold: it was never
+    /// started, or it has ended. Nothing in the tree would apply it.
+    UnknownSession(I),
 }
 
 impl<I> InboxRefusal<I> {
     /// The input the inbox did not take.
     pub fn into_inner(self) -> I {
         match self {
-            InboxRefusal::Full(input) | InboxRefusal::EngineGone(input) => input,
+            InboxRefusal::Full(input)
+            | InboxRefusal::EngineGone(input)
+            | InboxRefusal::UnknownSession(input) => input,
         }
     }
 }
@@ -185,7 +203,8 @@ pub(crate) trait InboxSource<I> {
 pub(crate) type AttachedInbox<P> = &'static (dyn InboxSource<InboxInputOf<P>> + Sync);
 
 // ─────────────────────────────────────────────────────────────────────
-// The std profile: the engine's own inbox, unbounded
+// The std profile: each session's own inbox, unbounded, and the tree's
+// directory of them
 // ─────────────────────────────────────────────────────────────────────
 
 /// A waker a host installs on an engine's inbox (`EngineInbox::wake_with`),
@@ -193,7 +212,130 @@ pub(crate) type AttachedInbox<P> = &'static (dyn InboxSource<InboxInputOf<P>> + 
 #[cfg(feature = "std")]
 pub type InboxWaker = Arc<dyn Fn() + Send + Sync>;
 
-/// What an engine's inbox and every handle to it share.
+/// The inboxes of one tree of sessions in the `std` profile (ARCHITECTURE.md
+/// "Engine Threading", item 3): a directory from the id of each session the
+/// tree started to that session's inbox, which any thread may read, and the
+/// tree's one waker.
+///
+/// The engine the host built makes it, and a parent hands its own to each
+/// child it starts or resumes, before the child's first macrostep
+/// ([`Engine::share_tree_inboxes_with`]); the child leaves it when it ends
+/// ([`Engine::leave_tree_inboxes`]). Opaque: the generated parent only passes
+/// it on.
+///
+/// [`Engine::share_tree_inboxes_with`]: crate::Engine::share_tree_inboxes_with
+/// [`Engine::leave_tree_inboxes`]: crate::Engine::leave_tree_inboxes
+#[cfg(feature = "std")]
+#[derive(Clone, Default)]
+pub struct TreeInboxes(Arc<TreeShared>);
+
+/// The directory of a tree: the inbox of each session it started, by the
+/// session's id.
+#[cfg(feature = "std")]
+type Directory = HashMap<String, Arc<dyn SessionDoor>>;
+
+/// What every handle of [`TreeInboxes`] shares.
+#[cfg(feature = "std")]
+#[derive(Default)]
+struct TreeShared {
+    /// What `EngineInbox::wake_with` installed, through the handle of any
+    /// session of the tree: a post to any of them wakes the tree's one owner.
+    waker: Mutex<Option<InboxWaker>>,
+    /// The sessions the tree started. A post naming one pushes onto its inbox
+    /// with this held, and a session leaves with this held, so no post
+    /// reaches the inbox of a session once it has left.
+    directory: Mutex<Directory>,
+}
+
+/// Why a tree did not take a post that names one of its sessions.
+#[cfg(feature = "std")]
+enum TreeRefusal {
+    /// The tree does not hold the session.
+    UnknownSession,
+    /// The session's engine is gone.
+    EngineGone,
+}
+
+#[cfg(feature = "std")]
+impl TreeInboxes {
+    fn directory(&self) -> MutexGuard<'_, Directory> {
+        // A poster that panicked left the directory as it was.
+        self.0
+            .directory
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Session `session_id` has ended: a post naming it is refused from now
+    /// on, and none is pushed onto its inbox once this returns.
+    pub(crate) fn remove(&self, session_id: &str) {
+        self.directory().remove(session_id);
+    }
+
+    /// Push `ending` onto the inbox of session `session_id`.
+    fn post_ending(
+        &self,
+        session_id: &str,
+        ending: crate::host_processor::HostInvokeEnding<'_>,
+    ) -> Result<(), TreeRefusal> {
+        let directory = self.directory();
+        let door = directory
+            .get(session_id)
+            .ok_or(TreeRefusal::UnknownSession)?;
+        if door.push_ending(ending) {
+            Ok(())
+        } else {
+            Err(TreeRefusal::EngineGone)
+        }
+    }
+
+    fn install_waker(&self, waker: Option<InboxWaker>) {
+        *self.0.waker.lock().unwrap_or_else(PoisonError::into_inner) = waker;
+    }
+
+    /// Call the installed waker, if there is one, on this thread.
+    fn wake(&self) {
+        let waker = self
+            .0
+            .waker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(waker) = waker {
+            (*waker)();
+        }
+    }
+}
+
+/// One session's inbox as its tree's directory holds it, without the
+/// session's types: what a post naming the session pushes onto.
+#[cfg(feature = "std")]
+trait SessionDoor: Send + Sync {
+    /// Push `ending`, of an invocation of this session, onto its inbox;
+    /// `false` when its engine is gone.
+    fn push_ending(&self, ending: crate::host_processor::HostInvokeEnding<'_>) -> bool;
+}
+
+#[cfg(feature = "std")]
+impl<E: Send, D: Send> SessionDoor for Shared<InboxInput<E, D>> {
+    fn push_ending(&self, ending: crate::host_processor::HostInvokeEnding<'_>) -> bool {
+        self.push_own_ending(ending)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<E, D> Shared<InboxInput<E, D>> {
+    /// Push `ending`, of an invocation of this session, onto its inbox
+    /// without an address: what the inbox holds is its own session's, so the
+    /// owner applies it without reading whose it is. `false` when the engine
+    /// is gone.
+    fn push_own_ending(&self, ending: crate::host_processor::HostInvokeEnding<'_>) -> bool {
+        self.push(InboxInput::host_invoke_ending(None, ending))
+            .is_ok()
+    }
+}
+
+/// What a session's inbox and every handle to it share.
 #[cfg(feature = "std")]
 struct Shared<I> {
     /// The channel's sending half. `Sync`, so every handle posts through this
@@ -202,8 +344,31 @@ struct Shared<I> {
     /// Posts taken and not yet taken off by the owner: what a boundary drains,
     /// read once when it is reached.
     held: AtomicUsize,
-    /// What `EngineInbox::wake_with` installed.
-    waker: Mutex<Option<InboxWaker>>,
+    /// The id of the session whose inbox this is.
+    session_id: String,
+    /// The tree the session is in now: a child resumed with its parent is
+    /// moved to the tree of the parent's host when that parent is
+    /// ([`OwnedInbox::join`]).
+    tree: Mutex<TreeInboxes>,
+}
+
+#[cfg(feature = "std")]
+impl<I> Shared<I> {
+    /// Push `input` onto the channel; the input back when the owner's half of
+    /// it is gone with the engine.
+    fn push(&self, input: I) -> Result<(), I> {
+        self.sender.send(input).map_err(|refused| refused.0)?;
+        self.held.fetch_add(1, Ordering::AcqRel);
+        Ok(())
+    }
+
+    /// The tree the session is in now.
+    fn tree(&self) -> TreeInboxes {
+        self.tree
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 /// The engine's own hold on its inbox in the `std` profile: the receiving half
@@ -217,17 +382,35 @@ pub(crate) struct OwnedInbox<I> {
 
 #[cfg(feature = "std")]
 impl<I> OwnedInbox<I> {
-    /// An empty inbox.
-    pub(crate) fn new() -> Self {
+    /// An empty inbox of session `session_id`, in `tree`.
+    pub(crate) fn new(session_id: &str, tree: TreeInboxes) -> Self {
         let (sender, receiver) = mpsc::channel();
         Self {
             shared: Arc::new(Shared {
                 sender,
                 held: AtomicUsize::new(0),
-                waker: Mutex::new(None),
+                session_id: session_id.to_string(),
+                tree: Mutex::new(tree),
             }),
             receiver,
         }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<E: Send + 'static, D: Send + 'static> OwnedInbox<InboxInput<E, D>> {
+    /// Put this inbox in `tree`: its session is in that tree from now on, and
+    /// the tree's directory names this inbox under the session's id.
+    pub(crate) fn join(&self, tree: &TreeInboxes) {
+        *self
+            .shared
+            .tree
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = tree.clone();
+        let shared: Arc<Shared<InboxInput<E, D>>> = Arc::clone(&self.shared);
+        let door: Arc<dyn SessionDoor> = shared;
+        tree.directory()
+            .insert(self.shared.session_id.clone(), door);
     }
 }
 
@@ -276,52 +459,92 @@ impl<P: StatePolicy> EngineInbox<P> {
         }
     }
 
-    /// Post `input`. Taken unless the engine is gone, and then the owner applies
-    /// it at its next macrostep boundary. After a post the inbox took, the
-    /// policy's HAL is woken (`Hal::wake`) and then the waker installed with
-    /// [`wake_with`](Self::wake_with), both on this thread.
+    /// Post `input`. Taken unless its engine is gone, and then the owner
+    /// applies it at its next macrostep boundary. After a post the inbox took,
+    /// the policy's HAL is woken (`Hal::wake`) and then the waker installed
+    /// with [`wake_with`](Self::wake_with), both on this thread.
+    ///
+    /// An ending that names another session of the tree
+    /// ([`InboxInput::HostInvokeEnding`]) is posted to that session's inbox
+    /// now, through the tree's directory, and that session applies it at its
+    /// own boundary or before an event of its own joins its external queue
+    /// (ARCHITECTURE.md "Engine Threading", items 3 and 4). It wakes the same
+    /// owner: one waker serves the whole tree.
     ///
     /// # Errors
     ///
-    /// [`InboxRefusal::EngineGone`], with the input, when the engine was dropped.
+    /// [`InboxRefusal::EngineGone`], with the input, when the engine of the
+    /// session it is for was dropped; [`InboxRefusal::UnknownSession`] when it
+    /// names a session the tree does not hold, never started or ended.
     // The refusal hands the caller's input back, as `std::sync::mpsc`'s
     // `SendError` does, so its size is the machine's event and payload types',
     // not this crate's to box; the bounded inbox beside this one has no
     // allocator to box it with.
     #[allow(clippy::result_large_err)]
     pub fn post(&self, input: InboxInputOf<P>) -> Result<(), InboxRefusal<InboxInputOf<P>>> {
-        self.shared
-            .sender
-            .send(input)
-            .map_err(|refused| InboxRefusal::EngineGone(refused.0))?;
-        self.shared.held.fetch_add(1, Ordering::AcqRel);
-        <P::Hal as Hal>::wake();
-        let waker = self
-            .shared
-            .waker
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        if let Some(waker) = waker {
-            (*waker)();
+        let tree = self.shared.tree();
+        match input {
+            // The address of an ending is resolved now, not when it is drained
+            // (ARCHITECTURE.md "Engine Threading", item 3): this session's own
+            // goes onto this inbox without it, another session's onto that
+            // session's inbox.
+            InboxInput::HostInvokeEnding {
+                session_id: Some(session_id),
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+            } => {
+                let ending = crate::host_processor::HostInvokeEnding {
+                    processor_type: &processor_type,
+                    invoke_id: &invoke_id,
+                    token,
+                    done,
+                    data: &data,
+                };
+                let posted = if session_id == self.shared.session_id {
+                    if self.shared.push_own_ending(ending) {
+                        Ok(())
+                    } else {
+                        Err(TreeRefusal::EngineGone)
+                    }
+                } else {
+                    tree.post_ending(&session_id, ending)
+                };
+                if let Err(refusal) = posted {
+                    let input = InboxInput::HostInvokeEnding {
+                        session_id: Some(session_id),
+                        processor_type,
+                        invoke_id,
+                        token,
+                        done,
+                        data,
+                    };
+                    return Err(match refusal {
+                        TreeRefusal::UnknownSession => InboxRefusal::UnknownSession(input),
+                        TreeRefusal::EngineGone => InboxRefusal::EngineGone(input),
+                    });
+                }
+            }
+            input => self.shared.push(input).map_err(InboxRefusal::EngineGone)?,
         }
+        <P::Hal as Hal>::wake();
+        tree.wake();
         Ok(())
     }
 
     /// Install `waker`, called on the posting thread after each post the inbox
     /// took, so a host that drives the engine itself (`step`, `tick`) learns
-    /// there is something to apply. `None` removes it. One waker per inbox:
-    /// installing through any handle replaces what any handle installed.
+    /// there is something to apply. `None` removes it. One waker per tree:
+    /// installing through any handle replaces what any handle installed, and
+    /// a post to any session of the tree calls it.
     ///
     /// The policy's HAL is woken as well; this is for a host whose machine's
     /// HAL it does not choose, as a generated `std` machine's is
     /// [`StdHal`](crate::StdHal), whose wake does nothing.
     pub fn wake_with(&self, waker: Option<InboxWaker>) {
-        *self
-            .shared
-            .waker
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = waker;
+        self.shared.tree().install_waker(waker);
     }
 }
 

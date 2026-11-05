@@ -541,10 +541,11 @@ pub use http::{HttpSendRequest, HttpSendResponse};
 /// in a `static` and hands to [`Engine::attach_inbox`].
 #[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
 pub use inbox::BoundedInbox;
-/// docs/adr/0084: the `std` profile's inbox handle (`Engine::inbox`) and the
-/// waker a host installs on it.
+/// docs/adr/0084: the `std` profile's inbox handle (`Engine::inbox`), the
+/// waker a host installs on it, and the inboxes of a tree of sessions that a
+/// generated parent hands to its children.
 #[cfg(feature = "std")]
-pub use inbox::{EngineInbox, InboxWaker};
+pub use inbox::{EngineInbox, InboxWaker, TreeInboxes};
 /// docs/adr/0084: what a thread that does not own an engine may post to its
 /// inbox, and why a post was refused.
 pub use inbox::{InboxInput, InboxInputOf, InboxRefusal};

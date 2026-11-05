@@ -1133,11 +1133,16 @@ pub struct Engine<P: StatePolicy> {
     /// id an earlier run already did — the document may still hold it.
     pub(crate) auto_send_seq: u64,
     /// This engine's own inbox in the `std` profile (docs/adr/0084), made by
-    /// the first `inbox()` call, so an engine nobody posts to
-    /// keeps no channel. Dropped with the engine, which refuses every post
-    /// made after it.
+    /// the first `inbox()` call, or when the engine joins its parent's tree as
+    /// a child, so an engine nobody posts to keeps no channel. Dropped with
+    /// the engine, which refuses every post made after it.
     #[cfg(feature = "std")]
     pub(crate) inbox: core::cell::OnceCell<crate::inbox::OwnedInbox<crate::inbox::InboxInputOf<P>>>,
+    /// The inboxes of the tree this session is in (ARCHITECTURE.md "Engine
+    /// Threading", item 3): its own until a parent hands it the tree's
+    /// ([`share_tree_inboxes_with`](Engine::share_tree_inboxes_with)).
+    #[cfg(feature = "std")]
+    pub(crate) tree_inboxes: crate::inbox::TreeInboxes,
     /// The inbox a deployment declared and handed over with `attach_inbox`
     /// (docs/adr/0084), drained at each macrostep boundary after the engine's
     /// own. `None` until one is attached.
@@ -1148,17 +1153,6 @@ pub struct Engine<P: StatePolicy> {
     /// drain already running is that drain, so the flag turns the second one
     /// into nothing rather than into a drain inside a drain.
     pub(crate) draining_inbox: bool,
-    /// The policy is lent to its own code ([`with_policy`](Engine::with_policy)),
-    /// which may be the code asking for a drain. An ending for a child session
-    /// is applied through the policy, so while it is lent such an ending waits
-    /// in `held_child_endings`.
-    #[cfg(feature = "std")]
-    pub(crate) policy_lent: bool,
-    /// Endings for a child session of the tree that a drain took while the
-    /// policy was lent, oldest first; the next drain made when it is not
-    /// applies them before anything it takes.
-    #[cfg(feature = "std")]
-    pub(crate) held_child_endings: Vec<crate::inbox::InboxInputOf<P>>,
 }
 
 /// Every field of a new [`Engine`] and the value it starts at, handed to
@@ -1205,12 +1199,10 @@ macro_rules! engine_initial_fields {
             auto_send_seq: 0,
             #[cfg(feature = "std")]
             inbox: core::cell::OnceCell::new(),
+            #[cfg(feature = "std")]
+            tree_inboxes: crate::inbox::TreeInboxes::default(),
             attached_inbox: None,
             draining_inbox: false,
-            #[cfg(feature = "std")]
-            policy_lent: false,
-            #[cfg(feature = "std")]
-            held_child_endings: Vec::new(),
         }
     };
 }
@@ -1447,11 +1439,70 @@ impl<P: StatePolicy> Engine<P> {
     /// that queue first: the posts go ahead of that event, as they arrived
     /// ahead of it. Each is applied in the order the inbox took it, by the
     /// owner-thread operation of the same name. Unbounded, so `post` is
-    /// refused only once this engine is gone. A post taken before the first
-    /// run is applied at that run's first boundary at the latest.
+    /// refused only once this engine is gone, or when the input names a
+    /// session the tree does not hold. A post taken before the first run is
+    /// applied at that run's first boundary at the latest.
+    ///
+    /// An ending that names a child session of the tree is posted straight to
+    /// that child's inbox, and the child applies it (ARCHITECTURE.md "Engine
+    /// Threading", item 3).
     #[cfg(feature = "std")]
     pub fn inbox(&self) -> crate::inbox::EngineInbox<P> {
-        crate::inbox::EngineInbox::of(self.inbox.get_or_init(crate::inbox::OwnedInbox::new))
+        crate::inbox::EngineInbox::of(self.owned_inbox())
+    }
+
+    /// This session's own inbox, made in the tree it is in now if it has none
+    /// yet.
+    #[cfg(feature = "std")]
+    fn owned_inbox(&self) -> &crate::inbox::OwnedInbox<crate::inbox::InboxInputOf<P>> {
+        self.inbox.get_or_init(|| {
+            crate::inbox::OwnedInbox::new(self.policy.own_session_id(), self.tree_inboxes.clone())
+        })
+    }
+
+    /// Hand the inboxes of this session's tree to `child`, a session it is
+    /// starting or resuming, before the child's first macrostep: the child's
+    /// inbox enters the tree's directory under its session id, so an input a
+    /// host posts naming it reaches it, and a post to it wakes the tree's one
+    /// owner (ARCHITECTURE.md "Engine Threading", item 3). The parent drives
+    /// the child, so the child applies what it was posted at its own
+    /// boundaries, the next of which the parent's next drive reaches.
+    #[cfg(feature = "std")]
+    pub fn share_tree_inboxes_with<Q: StatePolicy>(&self, child: &mut Engine<Q>)
+    where
+        Q::Event: Send,
+        Q::Payload: Send,
+    {
+        child.adopt_tree_inboxes(&self.tree_inboxes);
+    }
+
+    /// Be in `tree`, the tree's inboxes, and hand it on to every child this
+    /// session holds now: a child a restore resumed holds children of its own,
+    /// resumed with it before its parent could hand it anything.
+    #[cfg(feature = "std")]
+    pub fn adopt_tree_inboxes(&mut self, tree: &crate::inbox::TreeInboxes)
+    where
+        P::Event: Send,
+        P::Payload: Send,
+    {
+        self.tree_inboxes = tree.clone();
+        self.owned_inbox().join(tree);
+        self.policy.adopt_tree_inboxes_in_children(tree);
+    }
+
+    /// The child session this machine is has ended, by reaching a top-level
+    /// `<final>` or because its parent stopped it: its inbox leaves the tree's
+    /// directory, so a post naming it is refused from then on, and what the
+    /// inbox still holds is applied now, as at the end of a run. An ending
+    /// finds its invocation over and is refused by the token check
+    /// (ARCHITECTURE.md "Engine Threading", item 3). The generated parent
+    /// calls it where it tells the child's Mesh router the session ended.
+    #[cfg(feature = "std")]
+    pub fn leave_tree_inboxes(&mut self) {
+        self.tree_inboxes.remove(self.policy.own_session_id());
+        let opened = self.begin_turn();
+        self.run_main_event_loop();
+        self.end_turn(opened);
     }
 
     /// Drain `inbox`, which the deployment declared in a `static`, at each
@@ -1495,20 +1546,17 @@ impl<P: StatePolicy> Engine<P> {
         self.draining_inbox = false;
     }
 
-    /// The body of [`drain_inbox`](Self::drain_inbox): the child sessions'
-    /// endings an earlier drain held, when the policy is free to take them,
-    /// then the engine's own inbox, then the attached one.
+    /// The body of [`drain_inbox`](Self::drain_inbox): the engine's own inbox,
+    /// then the attached one. Each holds this session's inputs alone, since
+    /// an input that names another session was posted to that session's inbox
+    /// (ARCHITECTURE.md "Engine Threading", item 3), so applying one never
+    /// reaches another engine of the tree.
     fn apply_held_inputs(&mut self) {
         // Named by path: the calls on the attached inbox are calls on a trait
         // object, which need no import, and the profile without `std` makes no
         // other.
         #[cfg(feature = "std")]
         {
-            if !self.policy_lent {
-                for ending in core::mem::take(&mut self.held_child_endings) {
-                    self.apply_inbox_input(ending);
-                }
-            }
             let due = self
                 .inbox
                 .get()
@@ -1517,7 +1565,7 @@ impl<P: StatePolicy> Engine<P> {
                 let Some(input) = self.inbox.get().and_then(crate::inbox::InboxSource::take) else {
                     break;
                 };
-                self.apply_held(input);
+                self.apply_inbox_input(input);
             }
         }
         if let Some(attached) = self.attached_inbox {
@@ -1525,39 +1573,9 @@ impl<P: StatePolicy> Engine<P> {
                 let Some(input) = crate::inbox::InboxSource::take(attached) else {
                     break;
                 };
-                self.apply_held(input);
+                self.apply_inbox_input(input);
             }
         }
-    }
-
-    /// Apply `input`, which a drain took, or hold it for the next drain when it
-    /// ends an invocation of a child session and the policy is lent.
-    ///
-    /// Such an ending is applied through the policy, which holds the child
-    /// (`route_host_invoke_end`). While the policy is lent to its own code,
-    /// which is what a drain asked for by a `<send>` of that code runs inside,
-    /// the engine must not change it ([`with_policy`](Self::with_policy),
-    /// point 2), and the child may be what that code is driving. The ending
-    /// puts its event on the child's queue and not on this machine's, so
-    /// holding it keeps this machine's external queue in arrival order; the
-    /// held endings keep theirs among themselves, and the macrostep boundary,
-    /// which every turn reaches before it consults the external queue,
-    /// applies them.
-    fn apply_held(&mut self, input: crate::inbox::InboxInputOf<P>) {
-        #[cfg(feature = "std")]
-        if self.policy_lent
-            && matches!(
-                &input,
-                crate::inbox::InboxInput::HostInvokeEnding {
-                    session_id: Some(session_id),
-                    ..
-                } if session_id.as_str() != self.policy.own_session_id()
-            )
-        {
-            self.held_child_endings.push(input);
-            return;
-        }
-        self.apply_inbox_input(input);
     }
 
     /// Put `event`, an event this machine queues itself, on its external
@@ -1616,52 +1634,62 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// A posted host-run invocation's `ending`, applied as the host's own call
-    /// on the owner would be: [`complete_host_invoke`](Self::complete_host_invoke)
-    /// or [`fail_host_invoke`](Self::fail_host_invoke) for this machine when
-    /// `session_id` is `None`, [`end_host_invoke_in`](Self::end_host_invoke_in)
-    /// for that session of the tree otherwise. The token check is theirs, so a
-    /// stale ending is refused here as a direct one is (§scxml-6.4); the poster
-    /// was answered when the inbox took it, so the refusal is logged.
+    /// A posted host-run invocation's `ending`, of this session, applied as
+    /// the host's own call on the owner would be:
+    /// [`complete_host_invoke`](Self::complete_host_invoke) or
+    /// [`fail_host_invoke`](Self::fail_host_invoke). The token check is
+    /// theirs, so a stale ending is refused here as a direct one is
+    /// (§scxml-6.4); the poster was answered when the inbox took it, so the
+    /// refusal is logged.
+    ///
+    /// `session_id` is the address the ending still carries. The engine's own
+    /// inbox holds none: its handle resolved the address when the ending was
+    /// posted, and put it on the inbox of the session it names, this one's
+    /// without an address. A `BoundedInbox` resolves no address, so an ending
+    /// it took that carries one is refused here and not routed; reading this
+    /// session's id to compare would read the policy, which a drain made
+    /// inside the policy's own code must not.
     #[cfg(feature = "std")]
     fn apply_posted_host_invoke_ending(
         &mut self,
         session_id: Option<&str>,
         ending: crate::host_processor::HostInvokeEnding<'_>,
     ) {
-        let Some(session_id) = session_id else {
-            let ended = if ending.done {
-                self.complete_host_invoke(
-                    ending.processor_type,
-                    ending.invoke_id,
-                    ending.token,
-                    ending.data,
-                )
-            } else {
-                self.fail_host_invoke(
-                    ending.processor_type,
-                    ending.invoke_id,
-                    ending.token,
-                    ending.data,
-                    "",
-                    "",
-                )
-            };
-            if !ended {
-                sce_log_debug!(
-                    "Engine: a posted ending of start {} of the '{}' invocation '{}' was refused: \
-                     it was cancelled, has ended, or was started again since",
-                    ending.token,
-                    ending.processor_type,
-                    ending.invoke_id
-                );
-            }
-            return;
-        };
-        if let Err(refusal) = self.end_host_invoke_in(session_id, ending) {
+        if let Some(named) = session_id {
             sce_log_debug!(
-                "Engine: a posted host-run invocation's ending was refused: {}",
-                refusal.reason()
+                "Engine: a posted ending of start {} of the '{}' invocation '{}' was refused: it \
+                 names session '{}', and only an engine's own inbox resolves a session",
+                ending.token,
+                ending.processor_type,
+                ending.invoke_id,
+                named
+            );
+            return;
+        }
+        let ended = if ending.done {
+            self.complete_host_invoke(
+                ending.processor_type,
+                ending.invoke_id,
+                ending.token,
+                ending.data,
+            )
+        } else {
+            self.fail_host_invoke(
+                ending.processor_type,
+                ending.invoke_id,
+                ending.token,
+                ending.data,
+                "",
+                "",
+            )
+        };
+        if !ended {
+            sce_log_debug!(
+                "Engine: a posted ending of start {} of the '{}' invocation '{}' was refused: \
+                 it was cancelled, has ended, or was started again since",
+                ending.token,
+                ending.processor_type,
+                ending.invoke_id
             );
         }
     }
@@ -1694,23 +1722,11 @@ impl<P: StatePolicy> Engine<P> {
     ///    public route back to `policy` for generated code to take.
     /// 3. The pointer is not held beyond the scope of the single call.
     fn with_policy<R>(&mut self, f: impl FnOnce(&mut P, &mut Self) -> R) -> R {
-        // Recorded so a drain the policy's code causes (a `<send>` to this
-        // session queues an external event) keeps to point 2 below: it leaves
-        // an input that is applied through the policy for a drain made when
-        // the policy is back. Restored rather than cleared, as a lend can sit
-        // inside another.
-        #[cfg(feature = "std")]
-        let lent_before = core::mem::replace(&mut self.policy_lent, true);
         let policy_ptr: *mut P = &mut self.policy as *mut P;
         // SAFETY: see the doc comment above — the policy field and the rest of
         // the engine's fields are disjoint, and the split borrow lasts only for
         // the duration of `f`.
-        let result = unsafe { f(&mut *policy_ptr, self) };
-        #[cfg(feature = "std")]
-        {
-            self.policy_lent = lent_before;
-        }
-        result
+        unsafe { f(&mut *policy_ptr, self) }
     }
 
     /// docs/adr/0045: resume each of `children`, the running children a saved

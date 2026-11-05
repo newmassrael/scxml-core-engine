@@ -2025,6 +2025,20 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endfor %}
     }
 
+    // ARCHITECTURE.md "Engine Threading", item 3: the tree's inboxes, handed to
+    // each child this session holds, and by each child to its own.
+    fn adopt_tree_inboxes_in_children(&mut self, tree: &::sce_rust_runtime::TreeInboxes) {
+{% for invoke_info in model.invokes | scxml_family %}
+{% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
+{% for target in child_targets %}
+{% set slot = ('self.child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+        if let Some(ref mut child) = {{ slot }} {
+            child.adopt_tree_inboxes(tree);
+        }
+{% endfor %}
+{% endfor %}
+    }
+
     // docs/adr/0045: a host's ending of a host-run invocation of session
     // `session_id`, to the child that is that session or holds it below. A
     // child's id is `<parent>.<invokeid>`, so a session below a child has the

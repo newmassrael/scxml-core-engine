@@ -12,28 +12,35 @@
 //     those of a single-threaded replay of the same posts;
 //   * an ending posted for a start that was cancelled or started again is
 //     refused by the token check, as a direct one is;
-//   * an ending posted for a session of the tree, named by its id, is applied
-//     as `end_host_invoke_in` applies it;
+//   * an ending that names the machine's own session is applied by it, and one
+//     naming a session the tree does not hold is refused when it is posted;
 //   * a post is taken before the run starts and applied at its first boundary,
 //     and one taken after the run was stopped is counted as unseen;
 //   * a post made before the owner puts an event of its own on the external
-//     queue is taken before that event (W3C test 201's shape), and an ending
-//     for a child session posted then is still applied.
+//     queue is taken before that event (W3C test 201's shape);
+//   * an ending that names a child session is posted to that child's inbox
+//     (ARCHITECTURE.md "Engine Threading", item 3): the child takes it before
+//     what its parent sends it afterwards, the root's waker is called, the
+//     child applies it at the parent's next drive, a child resumed by a
+//     restore is in the directory with its own children, and a child that
+//     has ended is not.
 //
 // Fixture: tests/integration/inbox_probe.scxml, generated with the host-invoker
 // declaration `x-sce-host` into src/integration/host_processor/ by
 // scripts/regen_host_processor.sh. `taken` is what the machine took, in order,
-// as `ping:<data>;`, `done:<data>;` and `failed:<data>;`. The child session's
-// case drives sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml,
-// as a_child_sessions_host_invocation_is_served_by_the_trees_host.rs does.
+// as `ping:<data>;`, `done:<data>;` and `failed:<data>;`. The child sessions'
+// cases drive sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml,
+// as a_child_sessions_host_invocation_is_served_by_the_trees_host.rs does, and
+// static_invoke_ending_order.scxml beside it.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
+use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_runtime::{
     Engine, EngineInbox, HostInvokeEnding, HostInvokeEvent, HostInvokeResponse, IScriptEngine,
-    InboxInput, InboxInputOf, InboxWaker, SceClock,
+    InboxInput, InboxInputOf, InboxRefusal, InboxWaker, SceClock, StatePolicy,
 };
 use sce_rust_tests::integration::host_processor::{
     InboxProbeEvent as Event, InboxProbePolicy as Policy,
@@ -41,7 +48,9 @@ use sce_rust_tests::integration::host_processor::{
 use sce_rust_tests::integration::static_datamodel::static_invoke_ending_order_sm::{
     StaticInvokeEndingOrderActions, StaticInvokeEndingOrderEvent, StaticInvokeEndingOrderPolicy,
 };
-use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::StaticInvokeTreePolicy;
+use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::{
+    StaticInvokeTreePersist, StaticInvokeTreePolicy,
+};
 
 /// The type the fixture was generated for (`HOST_INVOKER` in
 /// scripts/regen_host_processor.sh).
@@ -49,7 +58,21 @@ const TYPE: &str = "x-sce-host";
 /// The fixture's one host-run invocation.
 const JOB: &str = "job";
 
+/// The session id the child sessions' cases give their root, as
+/// a_child_sessions_host_invocation_is_served_by_the_trees_host.rs does.
+const ROOT: &str = "fixture-root";
+/// The session `worker` is in both trees: the root's id and the id its first
+/// start is started under (`<state>.<start>.<invoke>`).
+const WORKER: &str = "fixture-root.working.1.worker";
+/// The standard host type `worker` asks.
+const CLOCK: &str = "sce-host-clock-now";
+/// A completion of the clock `worker`'s result record reads.
+const NOW: &str = r#"{"error":"","utc_ms":1700000000000,"monotonic_ms":5}"#;
+/// The wall-clock moment a tree is saved at.
+const SAVED_AT_MS: u64 = 1_700_000_000_000;
+
 type Input = InboxInputOf<Policy>;
+type TreeInput = InboxInputOf<StaticInvokeTreePolicy>;
 
 /// One machine and its host's half: what the invoker was asked, in order, as
 /// `start:<token>` and `cancel:<token>`.
@@ -424,9 +447,9 @@ fn a_posted_ending_of_a_cancelled_or_restarted_start_is_refused_as_a_direct_one_
     );
 }
 
-// An ending that names a session of the tree is applied as `end_host_invoke_in`
-// applies it: the root's own id reaches the root, and an id no session of the
-// tree has ends nothing.
+// An ending that names a session of the tree is resolved when it is posted: the
+// root's own id reaches the root, and an id no session of the tree has is
+// refused then, with the input, and ends nothing.
 #[test]
 fn a_posted_ending_naming_a_session_of_the_tree_is_applied_in_that_session() {
     let mut machine = Machine::booted();
@@ -438,10 +461,15 @@ fn a_posted_ending_naming_a_session_of_the_tree_is_applied_in_that_session() {
         .clone()
         .expect("a generated root has a session id from its construction");
 
-    assert!(post_from_another_thread(
-        &machine.engine,
-        ending_of(Some("no-such-session"), token, true, &quoted("elsewhere"))
-    ));
+    let inbox = machine.engine.inbox();
+    let elsewhere = ending_of(Some("no-such-session"), token, true, &quoted("elsewhere"));
+    let answer = std::thread::spawn(move || inbox.post(elsewhere))
+        .join()
+        .expect("the posting thread");
+    assert!(
+        matches!(answer, Err(InboxRefusal::UnknownSession(_))),
+        "a post naming a session the tree does not hold was answered {answer:?}"
+    );
     machine.engine.step();
     assert_eq!(
         machine.taken(),
@@ -533,46 +561,51 @@ fn a_post_made_before_the_hosts_own_raise_is_taken_before_it() {
     );
 }
 
-// An ending for a child session is applied through the root's policy, which
-// the root's own code holds while it raises a child's report on the root; the
-// drain that report asks for runs inside that code. The ending waits for the
-// root's macrostep boundary and is applied there, so the child takes its
-// `done.invoke.clock` at its next drive and tells its parent `stamped`.
-#[test]
-fn an_ending_for_a_child_session_posted_before_the_childs_report_is_applied() {
-    // The ids and the completion
-    // a_child_sessions_host_invocation_is_served_by_the_trees_host.rs uses.
-    const ROOT: &str = "fixture-root";
-    const WORKER: &str = "fixture-root.working.1.worker";
-    const CLOCK: &str = "sce-host-clock-now";
-    const NOW: &str = r#"{"error":"","utc_ms":1700000000000,"monotonic_ms":5}"#;
+/// The tokens of the starts of the clock, in order.
+type Starts = Arc<Mutex<Vec<u64>>>;
 
-    let mut engine =
-        Engine::new(StaticInvokeTreePolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
-    engine.set_clock(SceClock::Manual(0));
-    let tokens: Arc<Mutex<Vec<u64>>> = Arc::default();
-    let seen = Arc::clone(&tokens);
+/// Serve the clock on `engine`, the root of a tree: each start's token is
+/// recorded and none is answered, so each invocation keeps running.
+fn serve_the_clock<P: StatePolicy>(engine: &mut Engine<P>) -> Starts {
+    let starts = Starts::default();
+    let seen = Arc::clone(&starts);
     engine.register_invoker(CLOCK, move |event: HostInvokeEvent| {
         if let HostInvokeEvent::Start(request) = event {
             seen.lock().expect("the starts").push(request.token);
         }
         None
     });
+    starts
+}
+
+/// The token of the one start of the clock so far.
+fn the_one_start(starts: &Starts) -> u64 {
+    let starts = starts.lock().expect("the starts");
+    assert_eq!(starts.len(), 1, "one start of the clock: {starts:?}");
+    starts[0]
+}
+
+/// `static_invoke_tree` built under `ROOT`, served, and driven until `worker`
+/// has started its clock, with the token of that start: `go`, which the root
+/// forwards to `worker` in one tick and `worker` takes in the next, arming its
+/// `report` 5 s on, entering `second` and starting the clock.
+fn tree_with_its_clock_running() -> (Engine<StaticInvokeTreePolicy>, u64) {
+    let mut engine =
+        Engine::new(StaticInvokeTreePolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
+    engine.set_clock(SceClock::Manual(0));
+    let starts = serve_the_clock(&mut engine);
     engine.initialize();
-    // `go`, which the root forwards to `worker` in one tick and `worker` takes in
-    // the next: it arms its `report` 5 s on, enters `second` and starts the clock.
     engine.raise_external_by_name("go", "");
     engine.tick();
     engine.tick();
-    let token = {
-        let tokens = tokens.lock().expect("the starts");
-        assert_eq!(tokens.len(), 1, "one start of the clock: {tokens:?}");
-        tokens[0]
-    };
+    let token = the_one_start(&starts);
+    (engine, token)
+}
 
-    let inbox = engine.inbox();
-    let ending = InboxInput::host_invoke_ending(
-        Some(WORKER),
+/// The completion of start `token` of the clock of session `session_id`.
+fn clock_ending(session_id: &str, token: u64) -> TreeInput {
+    InboxInput::host_invoke_ending(
+        Some(session_id),
         HostInvokeEnding {
             processor_type: CLOCK,
             invoke_id: "clock",
@@ -580,12 +613,32 @@ fn an_ending_for_a_child_session_posted_before_the_childs_report_is_applied() {
             done: true,
             data: NOW,
         },
-    );
+    )
+}
+
+/// Post `input` to the inbox of `engine`, a root, from a thread of its own,
+/// joined before it returns: the refusal, if the inbox refused it.
+fn post_to_the_tree(
+    engine: &Engine<StaticInvokeTreePolicy>,
+    input: TreeInput,
+) -> Option<InboxRefusal<TreeInput>> {
+    let inbox = engine.inbox();
+    std::thread::spawn(move || inbox.post(input).err())
+        .join()
+        .expect("the posting thread")
+}
+
+// An ending posted for a child session goes to the child's inbox, and the child
+// applies it at its own boundaries. The tick that releases the child's due
+// `report` drives the child too, so the child takes `done.invoke.clock` in that
+// drive or the next and tells its parent `stamped`.
+#[test]
+fn an_ending_for_a_child_session_posted_before_the_childs_report_is_applied() {
+    let (mut engine, token) = tree_with_its_clock_running();
+    let refused = post_to_the_tree(&engine, clock_ending(WORKER, token));
     assert!(
-        std::thread::spawn(move || inbox.post(ending).is_ok())
-            .join()
-            .expect("the posting thread"),
-        "the inbox refused a post"
+        refused.is_none(),
+        "the inbox refused an ending for `worker`: {refused:?}"
     );
 
     // The report comes due, and the root takes it in this turn.
@@ -628,41 +681,23 @@ impl StaticInvokeEndingOrderActions for BeforeQuestion {
 // Fixture: sce-build/tests/fixtures/static_datamodel/static_invoke_ending_order.scxml.
 #[test]
 fn an_ending_posted_for_a_child_before_its_parents_send_to_it_is_taken_first() {
-    const ROOT: &str = "fixture-root";
-    const WORKER: &str = "fixture-root.working.1.worker";
-    const CLOCK: &str = "sce-host-clock-now";
-    const NOW: &str = r#"{"error":"","utc_ms":1700000000000,"monotonic_ms":5}"#;
-
     let act: Arc<Mutex<Option<HostAct>>> = Arc::default();
     let mut engine = Engine::new(
         StaticInvokeEndingOrderPolicy::new_with_session_id(ROOT, BeforeQuestion(Arc::clone(&act)))
             .expect("an Nmtoken"),
     );
     engine.set_clock(SceClock::Manual(0));
-    // The clock records each start's token and does not answer, so the
-    // invocation keeps running.
-    let tokens: Arc<Mutex<Vec<u64>>> = Arc::default();
-    let seen = Arc::clone(&tokens);
-    engine.register_invoker(CLOCK, move |event: HostInvokeEvent| {
-        if let HostInvokeEvent::Start(request) = event {
-            seen.lock().expect("the starts").push(request.token);
-        }
-        None
-    });
+    let starts = serve_the_clock(&mut engine);
     engine.initialize();
     // Driven until `worker` has started its clock, a bounded number of times,
     // so a start that never comes fails the case rather than hangs it.
     for _ in 0..8 {
-        if !tokens.lock().expect("the starts").is_empty() {
+        if !starts.lock().expect("the starts").is_empty() {
             break;
         }
         engine.tick();
     }
-    let token = {
-        let tokens = tokens.lock().expect("the starts");
-        assert_eq!(tokens.len(), 1, "one start of the clock: {tokens:?}");
-        tokens[0]
-    };
+    let token = the_one_start(&starts);
 
     let inbox = engine.inbox();
     *act.lock().expect("the host action") = Some(Box::new(move || {
@@ -694,5 +729,108 @@ fn an_ending_posted_for_a_child_before_its_parents_send_to_it_is_taken_first() {
         (1, 2),
         "the parent heard `stamped` and `answer` in the places {heard:?}, so `worker` took \
          the parent's `question` before the ending the host had posted for it first"
+    );
+}
+
+// One owner drives the tree, and a post to any of its sessions wakes it through
+// the waker the host installed on the root. The owner, woken by the post for
+// `worker` alone, drives the tree as it always does, and that drive reaches
+// `worker`, which applies the ending at its own boundary and tells its parent
+// `stamped`.
+#[test]
+fn an_ending_posted_for_a_child_session_wakes_the_roots_owner_and_its_drive_applies_it() {
+    let (mut engine, token) = tree_with_its_clock_running();
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&wakes);
+    let waker: InboxWaker = Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+    });
+    engine.inbox().wake_with(Some(waker));
+
+    let refused = post_to_the_tree(&engine, clock_ending(WORKER, token));
+    assert!(
+        refused.is_none(),
+        "the inbox refused an ending for `worker`: {refused:?}"
+    );
+    assert_eq!(
+        wakes.load(Ordering::SeqCst),
+        1,
+        "a post for a child session did not call the waker the host installed on the root"
+    );
+    assert_eq!(
+        engine.policy().stamps(),
+        0,
+        "the ending was applied before the owner drove the tree"
+    );
+    engine.tick();
+    assert_eq!(
+        engine.policy().stamps(),
+        1,
+        "the owner's drive did not reach the child whose inbox held the post"
+    );
+}
+
+// A child that has ended has left the tree's directory, so an ending posted for
+// it is refused when it is posted, and the refusal says so, rather than being
+// taken and dropped.
+#[test]
+fn an_ending_for_a_child_session_that_has_ended_is_refused_when_it_is_posted() {
+    let (mut engine, token) = tree_with_its_clock_running();
+    // `rest` leaves `working`, which stops `worker` and cancels its clock.
+    engine.raise_external_by_name("rest", "");
+    engine.tick();
+
+    let refused = post_to_the_tree(&engine, clock_ending(WORKER, token));
+    assert!(
+        matches!(refused, Some(InboxRefusal::UnknownSession(_))),
+        "an ending for a child session that has ended was answered {refused:?}"
+    );
+}
+
+// A restore resumes `worker`, and the grandchild `worker` runs, before the host
+// holds the tree. Each enters the restored tree's directory: `worker` when the
+// root resumes it, and the grandchild when `worker` is handed the root's tree.
+// An ending posted for either is taken, and `worker` applies its own.
+#[test]
+fn a_restored_trees_resumed_sessions_are_in_its_directory() {
+    let (engine, _) = tree_with_its_clock_running();
+    let saved = engine
+        .save_at(SAVED_AT_MS)
+        .unwrap_or_else(|refusal| panic!("saves with the clock running: {refusal}"));
+    let SavedInvokes::Resumed(children) = &saved.invokes else {
+        panic!("a format-2 tree");
+    };
+    let SavedInvokes::Resumed(grandchildren) = &children[0].session.invokes else {
+        panic!("a format-2 child");
+    };
+    let grandchild = format!("{WORKER}.{}", grandchildren[0].invoke_id);
+
+    let mut restored = Engine::<StaticInvokeTreePolicy>::restore_with(
+        StaticInvokeTreePolicy::new(),
+        &SavedState::from_json(&saved.to_json()).expect("reads"),
+        SceClock::Manual(0),
+        SAVED_AT_MS,
+    )
+    .unwrap_or_else(|refusal| panic!("restores: {refusal}"));
+    let starts = serve_the_clock(&mut restored);
+    // The parent's first drive of `worker` starts its clock again.
+    restored.tick();
+    let token = the_one_start(&starts);
+
+    let refused = post_to_the_tree(&restored, clock_ending(&grandchild, token));
+    assert!(
+        refused.is_none(),
+        "an ending for the resumed grandchild '{grandchild}' was refused: {refused:?}"
+    );
+    let refused = post_to_the_tree(&restored, clock_ending(WORKER, token));
+    assert!(
+        refused.is_none(),
+        "an ending for the resumed `worker` was refused: {refused:?}"
+    );
+    restored.tick();
+    assert_eq!(
+        restored.policy().stamps(),
+        1,
+        "the resumed `worker` did not apply the ending posted for it"
     );
 }

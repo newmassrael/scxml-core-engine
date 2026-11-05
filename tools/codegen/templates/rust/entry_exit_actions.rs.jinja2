@@ -507,6 +507,10 @@
                         // ended, after the child stopped, so what it sent while
                         // stopping was handed to its router first.
                         child.detach_mesh();
+                        // ARCHITECTURE.md "Engine Threading", item 3: its inbox
+                        // leaves the tree's directory, and what it held is
+                        // applied to the stopped session.
+                        child.leave_tree_inboxes();
                     }
                 }
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");
@@ -519,17 +523,20 @@
    same guard the single-slot shape used, once per slot. A cancelled candidate
    is exited before it is dropped, as a static child is (§scxml-D-exitInterpreter),
    which cancels its own children first; then the session's Mesh router is told
-   it ended (SCE_MESH.md, Child Sessions in Mesh). #}
+   it ended (SCE_MESH.md, Child Sessions in Mesh), and its inbox leaves the
+   tree's directory (ARCHITECTURE.md "Engine Threading", item 3). #}
 {% for candidate in invoke_info.candidates %}
                 if let Some(mut child) = self.child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
 {% endfor %}
 {% else %}
                 if let Some(mut child) = self.child_{{ invoke_info.field_suffix }}.take() {
                     child.stop();
                     child.detach_mesh();
+                    child.leave_tree_inboxes();
                 }
 {% endif %}
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");
