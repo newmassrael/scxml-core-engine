@@ -349,7 +349,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     // --- Script Engine Session (§scxml-B-1) ---
 
-    /** Session ID for script engine scope isolation. */
+    /**
+     * Session ID for script engine scope isolation. Volatile because a thread
+     * posting to the tree reads it ([identityAsPostedTo]).
+     */
+    @Volatile
     protected var scriptSessionId: String? = null
         private set
 
@@ -375,7 +379,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * docs/adr/0045): the parent's own id and the id of the start,
      * `<parent>.<invokeid>`, so a child's id comes from the tree alone and is
      * the text every backend writes. `null` for a session a host started.
+     * Volatile, as the other parts of the id are, for [identityAsPostedTo].
      */
+    @Volatile
     private var assignedSessionId: String? = null
 
     /**
@@ -392,8 +398,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Whether this machine is a `datamodel="sce-static"` one, whose root session
      * has an id bound when it is created (docs/adr/0045, "Questions the owner
      * answered" 2), and what that id is once it is given, drawn or restored.
+     * Volatile for [identityAsPostedTo].
      */
+    @Volatile
     private var bindsRootSessionId = false
+
+    @Volatile
     private var rootSessionId: String? = null
 
     /**
@@ -424,6 +434,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
         } else {
             null
         }
+
+    /**
+     * [sessionIdentity] as a thread posting to the tree reads it
+     * ([sessionPostedTo]): the id this session has, or `null` for a `sce-static`
+     * root that has drawn none yet, which nothing can have named. It draws none,
+     * since a draw is the owner's.
+     */
+    private fun identityAsPostedTo(): String? =
+        scriptSessionId ?: assignedSessionId ?: if (bindsRootSessionId) rootSessionId else ""
 
     /**
      * This session's id, the value of `_sessionid` (§scxml-5.10): the one a
@@ -719,21 +738,28 @@ abstract class StateMachineEngine<S : State, E : Event>(
     @Volatile
     private var inboxClosed = false
 
-    /** What [EngineInbox.wakeWith] installed. */
+    /**
+     * The session tree this engine is a session of (ARCHITECTURE.md "Engine
+     * Threading", item 3): its own until a parent starts or resumes it, and from
+     * then on the parent's, handed on in [wireChild] as the tree's invokers are.
+     * Volatile because the posting threads read the field.
+     */
     @Volatile
-    private var inboxWaker: (() -> Unit)? = null
+    private var tree = SessionTree(this)
 
     /**
      * This engine's inbox: the handle a thread that does not own the engine
      * posts external events, host-run invocations' endings and Mesh deliveries
      * through. Thread-safe; everything else of the engine that changes its state
-     * is an owner-thread operation (ARCHITECTURE.md "Engine Threading").
+     * is an owner-thread operation (ARCHITECTURE.md "Engine Threading"). An input
+     * that names a session is posted to the inbox of the session of this tree it
+     * names ([postToInbox]), and a waker installed here is the tree's.
      */
     val inbox: EngineInbox<E> = object : EngineInbox<E> {
         override fun post(input: InboxInput<E>): Boolean = postToInbox(input)
 
         override fun wakeWith(waker: (() -> Unit)?) {
-            inboxWaker = waker
+            tree.waker = waker
         }
     }
 
@@ -799,10 +825,42 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
     }
 
-    /** [EngineInbox.post]: take [input] unless the inbox is closed, and wake the owner. */
-    private fun postToInbox(input: InboxInput<E>): Boolean {
+    /**
+     * [EngineInbox.post]: an input that names a session goes to that session's
+     * inbox, looked up now ([sessionPostedTo]), so its address is resolved when
+     * it is posted and not when it is drained (docs/adr/0084, D2 as amended at
+     * step 10); one naming a session the tree does not hold is refused. Any
+     * other input goes to this engine's own.
+     */
+    private fun postToInbox(input: InboxInput<E>): Boolean = when (input) {
+        is InboxInput.HostInvokeEnding -> postToSession(input, input.sessionId)
+        is InboxInput.MeshDelivery -> postToSession(input, input.sessionId)
+        is InboxInput.ExternalEvent, is InboxInput.ExternalEventByName -> takePost(input)
+    }
+
+    /** [input] for the session [sessionId] names: this engine's own when it names none. */
+    private fun postToSession(input: InboxInput<Nothing>, sessionId: String?): Boolean {
+        if (sessionId == null) return takePost(input)
+        val session = sessionPostedTo(sessionId) ?: return false
+        return session.takePost(input)
+    }
+
+    /**
+     * The session of this tree named [id], as a posting thread finds it: a child
+     * the directory holds, or the tree's root. Reads nothing an owner changes
+     * without publishing it.
+     */
+    private fun sessionPostedTo(id: String): StateMachineEngine<*, *>? {
+        val held = tree
+        held.childNamed(id)?.let { return it }
+        val root = held.root
+        return if (root.identityAsPostedTo() == id) root else null
+    }
+
+    /** Take [input] into this session's own inbox unless it is closed, and wake the tree's owner. */
+    private fun takePost(input: InboxInput<E>): Boolean {
         if (!eventChannel.trySend(input).isSuccess) return false
-        inboxWaker?.invoke()
+        tree.waker?.invoke()
         return true
     }
 
@@ -908,50 +966,30 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
     }
 
-    /** A posted [ending], applied by the call the host would have made on the owner. */
+    /**
+     * A posted [ending], applied by the call the host would have made on this
+     * session's owner. Whatever this inbox holds is this session's: an ending
+     * that named a session was posted to that session's inbox ([postToInbox]).
+     */
     private fun applyHostInvokeEnding(ending: InboxInput.HostInvokeEnding) {
-        val sessionId = ending.sessionId
-        if (sessionId == null) {
-            if (ending.done) {
-                completeHostInvoke(
-                    ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin, ending.originType,
-                )
-            } else {
-                failHostInvoke(
-                    ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin, ending.originType,
-                )
-            }
-        } else if (ending.done) {
-            completeHostInvokeIn(
-                sessionId, ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin,
-                ending.originType,
+        if (ending.done) {
+            completeHostInvoke(
+                ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin, ending.originType,
             )
         } else {
-            failHostInvokeIn(
-                sessionId, ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin,
-                ending.originType,
+            failHostInvoke(
+                ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin, ending.originType,
             )
         }
     }
 
     /**
-     * A posted Mesh [delivery], applied with [applyMeshCall] on the session it
-     * names: this one, a descendant this owner drives, or, for a descendant
-     * running a loop of its own, handed to that session's inbox. A session the
-     * tree no longer holds takes nothing.
+     * A posted Mesh [delivery], applied with [applyMeshCall] on this session,
+     * which it was posted to ([postToInbox]) as [applyHostInvokeEnding]'s ending
+     * was.
      */
     private fun applyMeshDelivery(delivery: InboxInput.MeshDelivery) {
-        val sessionId = delivery.sessionId
-        if (sessionId == null) {
-            applyMeshCallWith(delivery.call, onOwner = true)
-            return
-        }
-        val holder = sessionReached(sessionId) ?: return
-        if (holder !== this && holder.runsItsOwnLoop) {
-            holder.postToInbox(delivery)
-        } else {
-            holder.applyMeshCallWith(delivery.call, onOwner = true)
-        }
+        applyMeshCallWith(delivery.call, onOwner = true)
     }
 
     /**
@@ -1828,10 +1866,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * start that session is not running.
      *
      * An owner-thread operation, posted from another thread as an
-     * [InboxInput.HostInvokeEnding] naming the session. In the coroutine mode a
-     * child session runs a loop of its own and is its own owner, so an ending
-     * for it or for a session below it is handed to that child's inbox, and the
-     * answer is whether that inbox took it; the token check is made there.
+     * [InboxInput.HostInvokeEnding] naming the session, which goes straight to
+     * that session's inbox. In the coroutine mode a child session runs a loop of
+     * its own and is its own owner, so an ending for it or for a session below
+     * it is posted to the inbox of the session it names, and the answer is
+     * whether that inbox took it; the token check is made there.
      */
     fun completeHostInvokeIn(
         sessionId: String,
@@ -1886,11 +1925,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * The one body behind [completeHostInvokeIn] and [failHostInvokeIn]: [ending]
-     * on the session [sessionId] names, from this session's owner.
+     * on the session [sessionId] names, from this session's owner, between its
+     * macrosteps. A session this owner drives is reached by the walk and ends the
+     * invocation through its own chokepoint; past a child that runs a loop of its
+     * own, the ending is posted to the inbox of the session it names.
      */
     private fun endHostInvokeIn(ending: InboxInput.HostInvokeEnding, sessionId: String): Boolean {
         val holder = sessionReached(sessionId) ?: return false
-        if (holder !== this && holder.runsItsOwnLoop) return holder.postToInbox(ending)
+        if (holder !== this && holder.runsItsOwnLoop) return postToInbox(ending)
         return holder.endHostInvoke(
             ending.processorType,
             ending.invokeId,
@@ -3688,6 +3730,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // §scxml-6.4: the child's delayed sends are measured against the same
             // clock as ours, as the start of one makes them.
             engine.clock = clock
+            enterTree(engine)
             engine.restoreAsSession(child.session, wallNowMs)
             val onComplete = completionCallback(child.id, engine, built.doneEvent)
             activeInvokes[child.id] = InvokeEntry(
@@ -4337,6 +4380,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             externalEventQueue.clear()
             for ((_, entry) in activeInvokes) {
                 entry.child.cleanup()
+                // Released with this machine: the tree holds it no more.
+                leaveTree(entry.child)
             }
             activeInvokes.clear()
             pendingInvokes.clear()
@@ -4613,7 +4658,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
     }
 
-    /** C++ tickChildren pattern — tick all active child SMs. */
+    /**
+     * C++ tickChildren pattern — tick all active child SMs. Each child's tick
+     * applies what was posted to its inbox at its macrostep boundary, so a post
+     * for a child, which wakes the tree's owner, is applied by the owner's next
+     * [tick] (ARCHITECTURE.md "Engine Threading", item 4).
+     */
     private fun tickChildren() {
         for ((_, entry) in activeInvokes.toList()) {
             if (entry.child.isInFinalState) continue
@@ -4826,6 +4876,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // Cut off before the stop, as in [cancelInvoke].
                 entry.child.onSendToParent = null
                 entry.child.stop()
+                leaveTree(entry.child)
                 entry.monitorJob.cancel()
                 entry.child.detachMesh()
             }
@@ -5264,6 +5315,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // because the host advances the engine it holds, not the ones that
             // engine invoked.
             child.clock = clock
+            enterTree(child)
             child.initialize()
             activeInvokes[invokeId] = InvokeEntry(
                 child, Job(), autoforward, finalizeScript, onComplete, generatedInvokeId, savedDocument,
@@ -5277,6 +5329,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
 
         val scope = engineScope ?: return
+        enterTree(child)
         child.start(scope)
 
         val monitorJob = scope.launch(Dispatchers.Default) {
@@ -5307,6 +5360,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // invocations start at its first drive, so a resumed child's re-armed ones
         // find them, and a registration made later serves the child as well.
         child.sharedHostInvokers = sharedHostInvokers
+        // ARCHITECTURE.md "Engine Threading", item 3: the tree's directory and its
+        // one waker, handed on the same way, before the child's own children are
+        // started or resumed, so they enter the same directory.
+        child.tree = tree
         // §scxml-6.4: Set up child->parent event routing with metadata
         child.onSendToParent = { eventName, eventData ->
             resolveArrivingEvent(eventName)?.let {
@@ -5324,6 +5381,33 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 ))
             }
         }
+    }
+
+    /**
+     * Enter [child], wired to this tree ([wireChild]), in the tree's directory
+     * under the id it was given where it was built ([adoptChild]): from here an
+     * input posted for it is posted to its inbox. Made by this owner when the
+     * child starts or resumes, before the child's first macrostep, so nothing
+     * posted for it waits anywhere else.
+     *
+     * @throws IllegalStateException for a child given no id (codegen invariant).
+     */
+    private fun enterTree(child: StateMachineEngine<*, *>) {
+        val id = checkNotNull(child.assignedSessionId) {
+            "a child session is given its id where it is built, before it starts (codegen invariant)"
+        }
+        tree.enter(id, child)
+    }
+
+    /**
+     * Take [child], which has ended, out of the tree's directory: a post naming
+     * it is refused from here. Made by this owner after the child's inbox closed,
+     * by its stop or by its top-level `<final>`, which applied what it held as at
+     * the end of a run, so an ending held there was refused by the token check.
+     */
+    private fun leaveTree(child: StateMachineEngine<*, *>) {
+        val id = child.assignedSessionId ?: return
+        tree.leave(id, child)
     }
 
     /**
@@ -5365,6 +5449,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // dropped rather than delivered by a session already cancelled.
             it.child.onSendToParent = null
             it.child.stop()
+            // After the stop closed the child's inbox.
+            leaveTree(it.child)
             it.monitorJob.cancel()
             // SCE_MESH.md, Child Sessions in Mesh: the session ended, after the
             // child stopped, so what it sent while stopping was handed over first.
@@ -5863,6 +5949,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val ended = activeInvokes.filterValues { it.child.isInFinalState }
         for ((invokeId, entry) in ended) {
             activeInvokes.remove(invokeId)
+            // Its final state closed its inbox.
+            leaveTree(entry.child)
             // SCE_MESH.md, Child Sessions in Mesh: the session ended in its
             // final state; its router is told so.
             entry.child.detachMesh()

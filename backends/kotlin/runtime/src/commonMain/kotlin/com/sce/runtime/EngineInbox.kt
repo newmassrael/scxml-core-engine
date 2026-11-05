@@ -42,13 +42,15 @@ sealed class InboxInput<out E : Event> {
      * (`error.invoke`) otherwise, with [data] as `_event.data` and [origin] /
      * [originType] as `_event.origin` / `_event.origintype`.
      *
-     * [sessionId] `null` ends an invocation of the machine whose inbox this is,
-     * applied with [StateMachineEngine.completeHostInvoke] or
-     * [StateMachineEngine.failHostInvoke]; a session id ends one of that
-     * session of the tree, applied with [StateMachineEngine.completeHostInvokeIn]
-     * or [StateMachineEngine.failHostInvokeIn]. The token check those make is
-     * made when the input is applied, so an ending posted for a start that was
-     * cancelled or started again by then raises nothing, as a direct one would.
+     * [sessionId] `null` ends an invocation of the machine whose inbox this is.
+     * A session id names a session of the machine's tree, and the post goes to
+     * that session's inbox, looked up when it is posted; a post naming a session
+     * the tree does not hold is refused. Either way the session applies it with
+     * [StateMachineEngine.completeHostInvoke] or
+     * [StateMachineEngine.failHostInvoke] at its own macrostep boundary. The
+     * token check those make is made when the input is applied, so an ending
+     * posted for a start that was cancelled or started again by then raises
+     * nothing, as a direct one would.
      */
     data class HostInvokeEnding(
         val sessionId: String?,
@@ -64,8 +66,9 @@ sealed class InboxInput<out E : Event> {
     /**
      * What a Mesh endpoint has for a session, applied with
      * [StateMachineEngine.applyMeshCall]: on the machine whose inbox this is when
-     * [sessionId] is `null`, on that session of the tree otherwise, and on none
-     * when the tree no longer holds it.
+     * [sessionId] is `null`, and otherwise on the session of the tree it names,
+     * to whose inbox it is posted as [HostInvokeEnding] is. A post naming a
+     * session the tree does not hold is refused.
      */
     data class MeshDelivery(
         val call: MeshCall,
@@ -80,13 +83,19 @@ sealed class InboxInput<out E : Event> {
  * boundary, before it takes the next external event, in the order the posts were
  * taken; or sooner, before it puts an event of its own on the external queue,
  * which takes events in the order they arrived.
+ *
+ * Every session of a tree has one, a child as well as the root, and an input
+ * that names a session is posted to that session's (ARCHITECTURE.md "Engine
+ * Threading", items 3 and 4).
  */
 interface EngineInbox<E : Event> {
     /**
      * Post [input]. `true` when the inbox took it. The inbox is unbounded, so it
      * takes every post from the moment the engine is built until the engine stops
      * ([StateMachineEngine.stop]) or its run reaches a top-level `<final>`, and
-     * refuses every post after either, until the engine is started again. A post
+     * refuses every post after either, until the engine is started again. An
+     * input that names a session is taken or refused by that session's inbox,
+     * and refused when the tree holds no session of that id. A post
      * taken before the engine starts is applied at its first macrostep boundary;
      * one taken and not yet applied when the engine stops is discarded with its
      * queues.
@@ -96,9 +105,11 @@ interface EngineInbox<E : Event> {
     /**
      * Install [waker], called on the posting thread after each post the inbox
      * took, so a host that drives the engine itself ([StateMachineEngine.tick])
-     * knows there is something to apply. `null` removes it. An engine that runs
-     * its own loop ([StateMachineEngine.start]) is woken by the post itself and
-     * needs none.
+     * knows there is something to apply. `null` removes it. A tree has one
+     * waker: it is called as well after a post a child session's inbox took,
+     * whose owner is the same, and the host's next tick applies that post. An
+     * engine that runs its own loop ([StateMachineEngine.start]) is woken by the
+     * post itself and needs none.
      */
     fun wakeWith(waker: (() -> Unit)?)
 }

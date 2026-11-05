@@ -26,6 +26,7 @@ import com.sce.runtime.MeshCall
 import com.sce.runtime.SavedInvokes
 import com.sce.runtime.SavedState
 import com.sce.runtime.StateMachineEngine
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -191,27 +192,32 @@ class AChildSessionsHostInvocationIsServedByTheTreesHostTest {
     )
 
     /**
-     * docs/adr/0084: what a host's own thread has for a child session is posted to
-     * the inbox of the machine the host holds, naming the session. The root applies
-     * it at its next macrostep boundary with the call the host would have made on
-     * the owner (`completeHostInvokeIn`, `applyMeshCall` on the child), and the
-     * child takes the events when its parent next drives it.
+     * docs/adr/0084, D2 as amended at step 10: what a host's own thread has for a
+     * child session is posted through the inbox of the machine the host holds,
+     * naming the session, and goes straight to that session's inbox. The post
+     * wakes the tree's owner through the waker the host installed on the root, and
+     * the child applies it at its own macrostep boundary with the call the host
+     * would have made on its owner (`completeHostInvoke`, `applyMeshCall`), when
+     * the host's next tick drives it.
      */
     @Test
-    fun whatAnotherThreadPostsForAChildReachesItThroughTheRootsInbox() {
+    fun whatAnotherThreadPostsForAChildReachesItThroughItsOwnInbox() {
         val (sm, starts) = started()
         try {
             intoSecond(sm)
             val request = starts.only()
+            val wakes = AtomicInteger(0)
+            sm.inbox.wakeWith { wakes.incrementAndGet() }
             var taken = emptyList<Boolean>()
             val host = Thread { taken = postsFor(request).map { sm.inbox.post(it) } }
             host.start()
             host.join(10_000)
-            assertEquals(listOf(true, true), taken, "the root's inbox refused a post")
+            assertEquals(listOf(true, true), taken, "the inbox of the session the posts name refused one")
+            assertEquals(2, wakes.get(), "a post for a child session did not wake the tree's owner")
 
-            repeat(3) { sm.tick() }
-            assertEquals(1u, sm.stamps, "the child took done.invoke.clock and told its parent, once")
-            assertEquals(1u, sm.answers, "the child took the Mesh delivery and answered its parent, once")
+            sm.tick()
+            assertEquals(1u, sm.stamps, "the host's next tick did not have the child take done.invoke.clock")
+            assertEquals(1u, sm.answers, "the host's next tick did not have the child take the Mesh delivery")
             assertFalse(
                 sm.completeHostInvokeIn(worker, clock, "clock", request.token, now),
                 "the posted ending did not end the start",
@@ -222,9 +228,41 @@ class AChildSessionsHostInvocationIsServedByTheTreesHostTest {
     }
 
     /**
+     * The tree's directory holds a child from its start to its end: once the
+     * parent has left `working`, which cancels `worker`, a post naming `worker` is
+     * refused and says so, and a post naming the root is still taken.
+     */
+    @Test
+    fun aPostForAChildSessionThatHasEndedIsRefused() {
+        val (sm, starts) = started()
+        try {
+            intoSecond(sm)
+            val request = starts.only()
+            sm.sendEventByName("rest")
+            sm.tick()
+            var taken = emptyList<Boolean>()
+            val host = Thread {
+                taken = postsFor(request).map { sm.inbox.post(it) } +
+                    sm.inbox.post(InboxInput.MeshDelivery(MeshCall.Raise("back", EventMetadata.external()), sessionId = root))
+            }
+            host.start()
+            host.join(10_000)
+            assertEquals(
+                listOf(false, false, true),
+                taken,
+                "a post naming the ended `worker` was taken, or one naming the root was refused",
+            )
+            sm.tick()
+            assertEquals(0u, sm.stamps, "an ending posted for the ended `worker` raised an event")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
      * In the coroutine mode the child runs a loop of its own and is its own owner:
-     * the root's loop does not reach into it, but hands what was posted for it to
-     * the child's inbox, and the child applies it on its loop.
+     * the root's loop does not reach into it. What was posted for it goes straight
+     * to its inbox, and the child applies it on its loop.
      */
     @Test
     fun whatIsPostedForAChildRunningItsOwnLoopIsHandedToThatChild() = runBlocking {

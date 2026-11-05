@@ -16,7 +16,8 @@
 //     error that names the inbox, and changes nothing;
 //   * an ending posted for a start that was cancelled, or started again, is
 //     refused by the token check, as a direct one is (§scxml-6.4);
-//   * a post is taken before the run starts and refused once the engine stops;
+//   * a post is taken before the run starts and refused once the engine stops,
+//     and one naming a session the tree does not hold is refused;
 //   * what the inbox holds when the engine stops is applied as a direct call
 //     then is: an event joins the queue nothing dequeues and is counted as
 //     unseen, and an ending finds its invocation cancelled by the exit;
@@ -652,9 +653,16 @@ class WhatAnotherThreadPostsEntersThroughTheInboxTest {
             // Addressed by the session id: this machine.
             val addressed = MeshCall.Raise("ping", EventMetadata.external(data = "addressed"))
             assertTrue(postFromAnotherThread(sm, InboxInput.MeshDelivery(addressed, sessionId = sm.sessionId)))
-            // A session the tree does not hold takes nothing.
+            // A post naming a session the tree does not hold is refused, and says so.
             val astray = MeshCall.Raise("ping", EventMetadata.external(data = "astray"))
-            assertTrue(postFromAnotherThread(sm, InboxInput.MeshDelivery(astray, sessionId = "nowhere")))
+            assertFalse(
+                postFromAnotherThread(sm, InboxInput.MeshDelivery(astray, sessionId = "nowhere")),
+                "the inbox took a Mesh delivery naming a session the tree does not hold",
+            )
+            assertFalse(
+                postFromAnotherThread(sm, ending(token, done = true, data = "astray", sessionId = "nowhere")),
+                "the inbox took an ending naming a session the tree does not hold",
+            )
             sm.tick()
             assertEquals(listOf("ping:peer", "ping:addressed"), sm.taken.toList())
             assertEquals(listOf("start:$token"), log.toList())
