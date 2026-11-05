@@ -49,7 +49,9 @@ const (
 // EndHostInvokeIn, CompleteHostInvokeIn, FailHostInvokeIn, CancelHostInvoke),
 // applying a Mesh delivery (ApplyMeshCall, ApplyMeshCalls) and Stop; every other
 // method is the owner's too. Another goroutine uses Inbox instead, the one
-// handle that is safe for concurrent use. Nothing checks the owner at run time:
+// handle that is safe for concurrent use; every session of the tree, a child as
+// well as the root, has an inbox of its own, and the root's handle posts an input
+// naming a session to that session's inbox. Nothing checks the owner at run time:
 // the rule holds by the host keeping it, as for any Go value confined to one
 // goroutine, and `go test -race` is what finds a call that breaks it.
 type Engine[S comparable, E comparable] struct {
@@ -65,11 +67,11 @@ type Engine[S comparable, E comparable] struct {
 	// externalQueue is the §scxml-C-1 external event queue (low priority).
 	externalQueue *EventQueueManager[EventWithMetadata[E]]
 
-	// inbox is what other goroutines post to this engine (docs/adr/0084),
+	// inbox is what other goroutines post to this session (docs/adr/0084),
 	// applied at each macrostep boundary before externalQueue is consulted, and
 	// before the owner puts an event of its own on externalQueue
-	// (enqueueExternal). Made with the engine and never replaced, so Inbox may
-	// read it from any goroutine. See inbox.go.
+	// (enqueueExternal). Made with the engine and never replaced, so Inbox and
+	// the tree's directory may read it from any goroutine. See inbox.go.
 	inbox *inboxState[E]
 
 	// drainingInbox is set while drainInbox applies what the inbox held; the
@@ -118,9 +120,15 @@ type Engine[S comparable, E comparable] struct {
 
 	// treeInvokers is what runs the host's own `<invoke type>`s for this session,
 	// and for every other session of the tree it is the root of: the one registry
-	// a parent hands each child it starts or resumes (docs/adr/0045). Nil until
-	// first used. See tree.
+	// a parent hands each child it starts or resumes (docs/adr/0045), with the
+	// tree's directory of inboxes. Made with the engine; a child's is replaced by
+	// its parent's (AdoptHostInvokers). See tree.
 	treeInvokers *TreeInvokers
+
+	// enteredAs is the session id this session is entered under in its tree's
+	// directory, empty while it is not entered: from the start of a run to its
+	// end (enterDirectory, leaveDirectory). The owner's.
+	enteredAs string
 
 	// childMeshRouters is the factory of the routers of this machine's
 	// children (SCE_MESH.md, Child Sessions in Mesh): registered by the host
@@ -289,12 +297,14 @@ type Engine[S comparable, E comparable] struct {
 //
 // Matches Rust Engine::new.
 func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, E] {
+	tree := newTreeInvokers()
 	return &Engine[S, E]{
 		policy:          policy,
 		currentState:    policy.InitialState(),
 		internalQueue:   NewEventQueueManager[EventWithMetadata[E]](),
 		externalQueue:   NewEventQueueManager[EventWithMetadata[E]](),
-		inbox:           &inboxState[E]{},
+		inbox:           &inboxState[E]{directory: tree.directory},
+		treeInvokers:    tree,
 		isRunning:       false,
 		scheduler:       NewPullScheduler[E](),
 		donedataAtFinal: "",
@@ -375,8 +385,10 @@ func (e *Engine[S, E]) Initialize() {
 	e.lateBoundStates = nil
 	// docs/adr/0084: a run that ended or was stopped closed the inbox; this one
 	// takes posts again, and what was posted before the first run is applied at
-	// its first boundary.
+	// its first boundary. The session is entered in its tree's directory before
+	// its first macrostep, so a post naming it reaches its inbox from now on.
 	e.inbox.open()
+	e.enterDirectory()
 
 	// §scxml-5.3: Initialize datamodel before any state entry
 	if e.policy.NeedsDataModelInit() {
@@ -495,8 +507,10 @@ func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationReject
 	}
 
 	e.isRunning = true
-	// docs/adr/0084: the run resumed here takes posts, as one Initialize enters.
+	// docs/adr/0084: the run resumed here takes posts, and is entered in its
+	// tree's directory, as one Initialize enters.
 	e.inbox.open()
+	e.enterDirectory()
 	return ConfigurationAccepted
 }
 

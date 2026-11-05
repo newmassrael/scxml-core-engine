@@ -12,23 +12,36 @@ import "fmt"
 // each request names the session that made it (HostInvokeRequest.SessionID). The
 // host ends an invocation of any session of the tree through the engine it built,
 // naming the session and the start (Engine.CompleteHostInvokeIn), which reaches
-// the session that started it wherever it stands. The Go twin of
+// the session that started it wherever it stands; from another goroutine it posts
+// the ending through that engine's inbox, which finds the session in the tree's
+// directory (Inbox.EndHostInvoke). The Go twin of
 // `sce_rust_runtime::host_processor::TreeInvokers` and the endings of
 // `Engine::end_host_invoke_in`.
 
-// TreeInvokers is the invokers a host registered for the types it serves, shared
-// by every session of one tree: the engine the host built makes it, and a parent
-// hands its own to each child it starts or resumes. Opaque: a host registers
-// through Engine.RegisterInvoker, and the generated parent only passes it on.
+// TreeInvokers is what every session of one tree shares: the invokers a host
+// registered for the types it serves, and the directory of the tree's sessions'
+// inboxes with the tree's one waker (sessionDirectory). Every engine is made with
+// one, and a parent hands its own to each child it starts or resumes, so the
+// tree's is the root's. Opaque: a host registers through Engine.RegisterInvoker
+// and posts through Engine.Inbox, and the generated parent only passes it on.
 type TreeInvokers struct {
+	// handlers is the owner's.
 	handlers map[string]HostInvokeHandler
+	// directory is safe for any goroutine (see sessionDirectory).
+	directory *sessionDirectory
 }
 
-// tree is the invokers this session is served by, made when it has none yet.
-func (e *Engine[S, E]) tree() *TreeInvokers {
-	if e.treeInvokers == nil {
-		e.treeInvokers = &TreeInvokers{handlers: map[string]HostInvokeHandler{}}
+// newTreeInvokers is the tree of a session no parent has handed one yet: no
+// invoker registered, and no session entered.
+func newTreeInvokers() *TreeInvokers {
+	return &TreeInvokers{
+		handlers:  map[string]HostInvokeHandler{},
+		directory: &sessionDirectory{sessions: map[string]sessionInbox{}},
 	}
+}
+
+// tree is what this session shares with the rest of its tree.
+func (e *Engine[S, E]) tree() *TreeInvokers {
 	return e.treeInvokers
 }
 
@@ -91,9 +104,19 @@ func (e *Engine[S, E]) ShareHostInvokersWith(child HostInvokeTree) {
 }
 
 // AdoptHostInvokers is served by invokers, the tree's, and hands them on to every
-// child this machine holds now.
+// child this machine holds now. Its inbox joins the tree's directory with them: a
+// post to it wakes the tree's owner, and a session whose run is going (a child a
+// restore resumed) moves its entry into the tree's directory, so a post naming
+// it is posted to its inbox (ARCHITECTURE.md "Engine Threading", item 3). One not
+// running yet is entered when its run starts.
 func (e *Engine[S, E]) AdoptHostInvokers(invokers *TreeInvokers) {
+	entered := e.enteredAs != ""
+	e.leaveDirectory()
 	e.treeInvokers = invokers
+	e.inbox.joinDirectory(invokers.directory)
+	if entered {
+		e.enterDirectory()
+	}
 	if holder, ok := any(e.policy).(HostInvokeChildren); ok {
 		holder.AdoptHostInvokersInChildren(invokers)
 	}
@@ -141,7 +164,10 @@ func (e *Engine[S, E]) RouteHostInvokeEnd(sessionID string, ending HostInvokeEnd
 // EndHostInvokeIn ends a host-run invocation of the session sessionID, this one or
 // one below it at any depth, reached by its id as a send to a child session is.
 // The session's queue takes `done.invoke` or `error.invoke` as CompleteHostInvoke
-// and FailHostInvoke raise them; a child takes it when its parent next drives it.
+// and FailHostInvoke raise them, through that session's own door onto its
+// external queue, so what its inbox held goes ahead; a child takes it when its
+// parent next drives it. An owner-goroutine call, made between macrosteps;
+// another goroutine posts the ending instead (Inbox.EndHostInvoke).
 //
 // The refusal says which when no session of that id runs in the tree, or that
 // session is not running that start of the invocation (cancelled, ended, or started

@@ -16,6 +16,11 @@ import "sync"
 // and a buffered channel is a bounded queue that would refuse, or block, a post
 // when full. A post never waits for a macrostep: the lock is held for an append
 // on one side and for taking the slice on the other.
+//
+// Every session of a tree has an inbox, a child as well as the root, and the
+// tree keeps a directory from session id to inbox (sessionDirectory), so an input
+// naming a session is posted to that session's inbox and its address is resolved
+// when it is posted (ARCHITECTURE.md "Engine Threading", items 3 and 4).
 
 // Inbox is the handle a goroutine that does not own an engine posts to it
 // through (Engine.Inbox). It is safe for concurrent use, as is every copy of it,
@@ -55,17 +60,33 @@ func (in Inbox[E]) RaiseExternalByName(eventName, eventData string) bool {
 }
 
 // EndHostInvoke posts the end of a host-run invocation's start. An empty
-// sessionID ends an invocation of the machine whose inbox this is, applied with
-// Engine.CompleteHostInvokeFrom when ending.Done and with Engine.FailHostInvoke
-// otherwise; a session id ends one of that session of the tree, applied with
-// Engine.EndHostInvokeIn.
+// sessionID ends an invocation of the machine whose inbox this is. A session id
+// ends one of that session of the tree, this machine or one below it: the post
+// is made to that session's own inbox, found in the tree's directory now, so the
+// session takes the ending ahead of anything its own owner puts on its external
+// queue afterwards, a parent's `<send>` to it included. A session the tree does
+// not hold refuses the post: one not started, one whose run has ended, or any
+// session before the run of the machine whose inbox this is has started.
 //
-// The token check those make is made when the input is applied, so an ending
-// posted for a start that was cancelled, has ended, or was started again by then
-// raises nothing, as a direct one would. There is no caller to hand that refusal
-// to, so it is not reported; the post's answer says only that the inbox took it.
+// The session applies the ending with Engine.CompleteHostInvokeFrom when
+// ending.Done and with Engine.FailHostInvoke otherwise, at its own macrostep
+// boundary, or sooner when its owner puts an event on its external queue. A child
+// reaches its boundary when its parent next drives it (Engine.Tick drives every
+// running child), so a host woken by a post to a child applies it on its usual
+// drive. The token check those make is made when the input is applied, so an
+// ending posted for a start that was cancelled, has ended, or was started again
+// by then raises nothing, as a direct one would. There is no caller to hand that
+// refusal to, so it is not reported; the post's answer says only that the inbox
+// took it.
 func (in Inbox[E]) EndHostInvoke(sessionID string, ending HostInvokeEnding) bool {
-	return in.state.post(inboxInput[E]{kind: inboxHostInvokeEnding, sessionID: sessionID, ending: ending})
+	if sessionID == "" {
+		return in.state.postEnding(ending)
+	}
+	session, held := in.state.directoryOf().lookup(sessionID)
+	if !held {
+		return false
+	}
+	return session.postEnding(ending)
 }
 
 // ApplyMeshCall posts what Engine.ApplyMeshCall takes: one thing the Mesh
@@ -78,14 +99,15 @@ func (in Inbox[E]) ApplyMeshCall(call MeshCall) bool {
 }
 
 // WakeWith installs waker, called on the posting goroutine after each post the
-// inbox took, so a host that drives the engine itself (Engine.Tick, Engine.Step)
-// learns there is something to apply. Nil removes it. A waker runs on whichever
-// goroutine posted, and must not block it: a send on a channel of capacity one,
-// in a select with a default, is the usual shape.
+// inbox, or the inbox of any other session of its tree, took, so a host that
+// drives the engine itself (Engine.Tick, Engine.Step) learns there is something
+// to apply. A tree has one owner and one waker: the host installs it on the
+// root's inbox, and a child's inbox wakes it from the moment its parent starts
+// it. Nil removes it. A waker runs on whichever goroutine posted, and must not
+// block it: a send on a channel of capacity one, in a select with a default, is
+// the usual shape.
 func (in Inbox[E]) WakeWith(waker func()) {
-	in.state.mu.Lock()
-	in.state.waker = waker
-	in.state.mu.Unlock()
+	in.state.directoryOf().setWaker(waker)
 }
 
 // inboxInputKind says which input an inboxInput is.
@@ -114,29 +136,30 @@ type inboxInput[E comparable] struct {
 	data   string
 	origin string
 
-	// sessionID and ending are an inboxHostInvokeEnding's.
-	sessionID string
-	ending    HostInvokeEnding
+	// ending is an inboxHostInvokeEnding's, of an invocation of this session.
+	ending HostInvokeEnding
 
 	// mesh is an inboxMeshDelivery's call.
 	mesh MeshCall
 }
 
 // inboxState is what an engine and every handle to its inbox share. The posting
-// half (post, and Inbox.WakeWith) is safe from any goroutine; the rest is the
-// owner's.
+// half (post, postEnding, directoryOf) is safe from any goroutine; the rest is
+// the owner's.
 type inboxState[E comparable] struct {
 	mu sync.Mutex
 	// held is what was posted and not yet applied, oldest first.
 	held []inboxInput[E]
 	// closed refuses every post while set.
 	closed bool
-	// waker is what Inbox.WakeWith installed; nil for none.
-	waker func()
+	// directory is the directory of the tree this session belongs to, whose
+	// waker a post calls: the engine's own until a parent hands it the tree's
+	// (joinDirectory).
+	directory *sessionDirectory
 }
 
-// post takes input unless the inbox is closed, and wakes the owner when it took
-// it. The waker is called after the lock is released, so a waker that posts
+// post takes input unless the inbox is closed, and wakes the tree's owner when it
+// took it. The waker is called after the lock is released, so a waker that posts
 // again, or one slow to return, holds up no other post and no drain.
 func (s *inboxState[E]) post(input inboxInput[E]) bool {
 	s.mu.Lock()
@@ -145,12 +168,118 @@ func (s *inboxState[E]) post(input inboxInput[E]) bool {
 		return false
 	}
 	s.held = append(s.held, input)
-	waker := s.waker
+	directory := s.directory
 	s.mu.Unlock()
+	directory.wake()
+	return true
+}
+
+// postEnding posts the ending of one of this session's own invocations
+// (sessionInbox).
+func (s *inboxState[E]) postEnding(ending HostInvokeEnding) bool {
+	return s.post(inboxInput[E]{kind: inboxHostInvokeEnding, ending: ending})
+}
+
+// directoryOf is the directory of the tree this session belongs to now.
+func (s *inboxState[E]) directoryOf() *sessionDirectory {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.directory
+}
+
+// joinDirectory makes directory, a tree's, the one this inbox wakes through and
+// is found in. The owner's, when a parent hands its tree to this session.
+func (s *inboxState[E]) joinDirectory(directory *sessionDirectory) {
+	s.mu.Lock()
+	s.directory = directory
+	s.mu.Unlock()
+}
+
+// sessionInbox is the posting half of one session's inbox, whatever the
+// session's event type: what the tree's directory holds for it.
+type sessionInbox interface {
+	// postEnding posts the ending of one of the session's own invocations and
+	// answers whether its inbox took it.
+	postEnding(ending HostInvokeEnding) bool
+}
+
+// sessionDirectory is the directory a tree keeps (ARCHITECTURE.md "Engine
+// Threading", item 3): the inbox of each session the tree holds, by session id,
+// and the tree's one waker. Safe for concurrent use: a post reads it on the
+// posting goroutine, and the owner enters a session when its run starts, before
+// its first macrostep, and removes it when the run ends, after closing its inbox
+// (Engine.enterDirectory, Engine.leaveDirectory).
+type sessionDirectory struct {
+	mu sync.Mutex
+	// sessions is the inbox of every session the tree holds, by its id.
+	sessions map[string]sessionInbox
+	// waker is what Inbox.WakeWith installed; nil for none.
+	waker func()
+}
+
+// lookup is the inbox of the session sessionID, when the tree holds it.
+func (d *sessionDirectory) lookup(sessionID string) (sessionInbox, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	inbox, held := d.sessions[sessionID]
+	return inbox, held
+}
+
+// enter makes inbox the one sessionID names.
+func (d *sessionDirectory) enter(sessionID string, inbox sessionInbox) {
+	d.mu.Lock()
+	d.sessions[sessionID] = inbox
+	d.mu.Unlock()
+}
+
+// remove takes sessionID out when it names inbox, and leaves an entry another
+// session made under that id alone.
+func (d *sessionDirectory) remove(sessionID string, inbox sessionInbox) {
+	d.mu.Lock()
+	if d.sessions[sessionID] == inbox {
+		delete(d.sessions, sessionID)
+	}
+	d.mu.Unlock()
+}
+
+// setWaker installs waker, nil for none.
+func (d *sessionDirectory) setWaker(waker func()) {
+	d.mu.Lock()
+	d.waker = waker
+	d.mu.Unlock()
+}
+
+// wake calls the tree's waker, if one is installed, with no lock held.
+func (d *sessionDirectory) wake() {
+	d.mu.Lock()
+	waker := d.waker
+	d.mu.Unlock()
 	if waker != nil {
 		waker()
 	}
-	return true
+}
+
+// enterDirectory enters this session in its tree's directory under its session
+// id, so a post naming it reaches its inbox: when its run starts, and when a
+// session whose run is going joins a tree. A session with no id is not entered.
+func (e *Engine[S, E]) enterDirectory() {
+	e.leaveDirectory()
+	id := e.sessionID()
+	if id == "" {
+		return
+	}
+	e.tree().directory.enter(id, e.inbox)
+	e.enteredAs = id
+}
+
+// leaveDirectory takes this session out of its tree's directory, so a post
+// naming it is refused from then on.
+func (e *Engine[S, E]) leaveDirectory() {
+	if e.enteredAs == "" {
+		return
+	}
+	e.tree().directory.remove(e.enteredAs, e.inbox)
+	e.enteredAs = ""
 }
 
 // take answers what the inbox holds, oldest first, and empties it. What other
@@ -231,14 +360,16 @@ func (e *Engine[S, E]) enqueueExternal(event EventWithMetadata[E]) {
 	e.externalQueue.Raise(event)
 }
 
-// closeInbox closes the inbox and applies what it still holds. A run that ended,
-// or was stopped, takes no more posts; what was posted before is applied as a
-// direct call would be now, so an event joins the external queue of a machine
-// that will not dequeue it and is counted with the rest (UnseenExternalEvents),
-// and an ending finds its invocation over. Nothing taken is dropped unsaid.
+// closeInbox closes the inbox, applies what it still holds, and takes the session
+// out of its tree's directory. A run that ended, or was stopped, takes no more
+// posts; what was posted before is applied as a direct call would be now, so an
+// event joins the external queue of a machine that will not dequeue it and is
+// counted with the rest (UnseenExternalEvents), and an ending finds its
+// invocation over. Nothing taken is dropped unsaid.
 func (e *Engine[S, E]) closeInbox() {
 	e.inbox.close()
 	e.drainInbox()
+	e.leaveDirectory()
 }
 
 // applyInboxInput applies one posted input by the operation a direct call on the
@@ -250,21 +381,18 @@ func (e *Engine[S, E]) applyInboxInput(input inboxInput[E]) {
 	case inboxExternalEventByName:
 		e.RaiseExternalByName(input.name, input.data)
 	case inboxHostInvokeEnding:
-		e.applyHostInvokeEnding(input.sessionID, input.ending)
+		e.applyHostInvokeEnding(input.ending)
 	case inboxMeshDelivery:
 		e.ApplyMeshCall(input.mesh)
 	}
 }
 
-// applyHostInvokeEnding applies a posted ending: on this machine by
-// CompleteHostInvokeFrom or FailHostInvoke when sessionID is empty, and on the
-// session it names by EndHostInvokeIn otherwise. What either answers is a
-// refusal there is no caller left to hand to (see Inbox.EndHostInvoke).
-func (e *Engine[S, E]) applyHostInvokeEnding(sessionID string, ending HostInvokeEnding) {
-	if sessionID != "" {
-		_ = e.EndHostInvokeIn(sessionID, ending)
-		return
-	}
+// applyHostInvokeEnding applies a posted ending of one of this session's own
+// invocations by CompleteHostInvokeFrom or FailHostInvoke: an ending naming
+// another session of the tree was posted to that session's inbox. What either
+// answers is a refusal there is no caller left to hand to (see
+// Inbox.EndHostInvoke).
+func (e *Engine[S, E]) applyHostInvokeEnding(ending HostInvokeEnding) {
 	if ending.Done {
 		e.CompleteHostInvokeFrom(ending.ProcessorType, ending.InvokeID, ending.Token, ending.Data, ending.Origin, ending.OriginType)
 		return

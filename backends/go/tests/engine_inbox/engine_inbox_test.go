@@ -27,7 +27,10 @@
 //     own session after it (W3C test 201's shape);
 //   - an ending posted for a child session, from inside the parent's macrostep,
 //     is taken by the child before an event the parent sends it later in that
-//     macrostep (docs/adr/0084, D2 as amended at step 10).
+//     macrostep (docs/adr/0084, D2 as amended at step 10);
+//   - a post to a child's inbox wakes the tree's owner, whose next tick applies
+//     it, and a post naming a session the tree does not hold, or a child that
+//     has ended, is refused.
 //
 // The probe machine is written by hand, as the Kotlin one is: the smallest one
 // with a host-run invocation. The tree cases drive generated machines instead,
@@ -58,6 +61,7 @@ import (
 	sce "github.com/newmassrael/sce-go-runtime"
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_ending_order"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_tree"
 )
 
 type probeState int
@@ -980,5 +984,97 @@ func TestAnEndingPostedForAChildBeforeItsParentSendsToItIsTakenFirst(t *testing.
 		t.Fatalf("`worker` took the question its parent sent after the clock's ending was posted before "+
 			"that ending: the parent heard `stamped` as number %d and `answer` as number %d, want 1 and 2",
 			policy.StampedAt(), policy.AnswerAt())
+	}
+}
+
+// A post to a child's inbox wakes the tree's one owner through the waker the host
+// installed on the root, and the owner's usual drive (Tick) applies it: the
+// parent hears `stamped` after one tick.
+func TestAPostToAChildWakesTheTreesOwnerAndItsNextTickAppliesIt(t *testing.T) {
+	host := &orderHost{}
+	engine, policy, start := orderStarted(t, host)
+	var woken atomic.Int32
+	host.inbox.WakeWith(func() { woken.Add(1) })
+
+	if !postFromAnotherGoroutine(t, host.inbox, func(in sce.Inbox[orderEvent]) bool {
+		return in.EndHostInvoke(start.SessionID, clockEnding(start))
+	}) {
+		t.Fatalf("the inbox refused the ending the host posted for `worker` (%s)", start.SessionID)
+	}
+	if got := woken.Load(); got != 1 {
+		t.Fatalf("a post to `worker`'s inbox did not wake the tree's owner once: woken %d times", got)
+	}
+	engine.Tick()
+	if policy.StampedAt() != 1 || policy.AnswerAt() != 0 {
+		t.Fatalf("the tick after the wake did not apply the ending posted for `worker`: `stamped` heard as "+
+			"number %d and `answer` as number %d, want 1 and 0", policy.StampedAt(), policy.AnswerAt())
+	}
+}
+
+// A post naming a session the tree does not hold is refused, and its answer says
+// so; nothing is raised.
+func TestAPostNamingASessionTheTreeDoesNotHoldIsRefused(t *testing.T) {
+	host := &orderHost{}
+	engine, policy, start := orderStarted(t, host)
+	for _, nowhere := range []string{treeRoot + ".nowhere", start.SessionID + ".nowhere", "elsewhere"} {
+		if postFromAnotherGoroutine(t, host.inbox, func(in sce.Inbox[orderEvent]) bool {
+			return in.EndHostInvoke(nowhere, clockEnding(start))
+		}) {
+			t.Errorf("an ending naming %q, a session the tree does not hold, was taken", nowhere)
+		}
+	}
+	engine.Tick()
+	if policy.StampedAt() != 0 {
+		t.Fatalf("a refused ending reached `worker`: `stamped` heard as number %d", policy.StampedAt())
+	}
+}
+
+// A child whose run ended leaves the tree's directory: `rest` leaves `working`,
+// which stops `worker`, and a post naming it is refused from then on, where it
+// was taken while `worker` ran.
+func TestAPostNamingAChildThatHasEndedIsRefused(t *testing.T) {
+	policy := static_invoke_tree.NewStaticInvokeTreePolicy()
+	if err := policy.SetSessionID(treeRoot); err != nil {
+		t.Fatal(err)
+	}
+	engine := sce.NewEngine[static_invoke_tree.StaticInvokeTreeState, static_invoke_tree.StaticInvokeTreeEvent](&policy)
+	engine.SetClock(sce.NewManualClock(0))
+	var starts []sce.HostInvokeRequest
+	engine.RegisterInvoker(treeClock, func(event sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if event.Start != nil {
+			starts = append(starts, *event.Start)
+		}
+		return nil
+	})
+	inbox := engine.Inbox()
+	engine.Initialize()
+	// `go` is forwarded to `worker`, which enters `second` and starts the clock.
+	engine.RaiseExternalByName("go", "")
+	for drives := 0; len(starts) == 0 && drives < treeDrives; drives++ {
+		engine.Tick()
+	}
+	if len(starts) != 1 {
+		t.Fatalf("`worker` did not start the clock once: the host was handed %+v", starts)
+	}
+	start := starts[0]
+	// A stale token: taken by the running `worker`'s inbox, refused by its token
+	// check when applied, so the clock keeps running.
+	stale := clockEnding(start)
+	stale.Token = start.Token + 1
+	if !postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[static_invoke_tree.StaticInvokeTreeEvent]) bool {
+		return in.EndHostInvoke(start.SessionID, stale)
+	}) {
+		t.Fatalf("the inbox of `worker` (%s) refused a post while it ran", start.SessionID)
+	}
+
+	engine.RaiseExternalByName("rest", "")
+	engine.Tick()
+	if postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[static_invoke_tree.StaticInvokeTreeEvent]) bool {
+		return in.EndHostInvoke(start.SessionID, clockEnding(start))
+	}) {
+		t.Fatalf("an ending naming `worker` (%s) was taken after `rest` stopped it", start.SessionID)
+	}
+	if got := policy.Stamps(); got != 0 {
+		t.Fatalf("an ending reached `worker` after it ended, or a stale one before: stamps is %d", got)
 	}
 }
