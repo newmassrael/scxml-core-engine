@@ -1031,3 +1031,17 @@ Every other C++ codec is unchanged until the landing that moves it.
   expression reads `frame_.msgId()`, and a procedure's `<assign location="frame.msgId">` makes the value again,
   `frame_ = CodecSimpleFrame(msgId_, frame_.length(), frame_.payload())`. The document does not change.
 
+## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
+
+Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
+Kotlin, Go and Swift static_datamodel units, and the Rust and Kotlin mesh units) is regenerated after it.
+
+- A schema's `properties` and `required`, and a GBNF record's keys, follow the order the event-schema document
+  declares its fields, at every depth; they were sorted by name. The schema's keywords stand in one fixed order
+  (ADR 0087 §1.1 item 4). The set of payloads a schema admits, its `$id` and its `x-sce-source-hash` are unchanged.
+- A grammar-constrained decoder that reads the schema (llguidance, XGrammar, Outlines) writes an object's keys in the
+  schema's order, so its output now follows the declared order. Declare a record's fields in the order a writer
+  should produce them; nothing else needs to change.
+- A consumer that holds the constant's text, or a digest of it, as a fixture sees new bytes of the same length;
+  replace the fixture. A consumer that parses the schema sees the same schema.
+
