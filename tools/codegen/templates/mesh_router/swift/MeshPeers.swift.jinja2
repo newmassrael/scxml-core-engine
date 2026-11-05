@@ -1,0 +1,67 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- SCE_MESH.md §mesh-19: one machine's peer table for the Swift host Mesh
+    core (backends/swift/mesh). Data only — every value was decided by
+    `mesh::codegen::peer_policy`, the function the C++ router's context is
+    built from, so the two cores cannot read one binding two ways.
+
+    `machine` is the deploy.yaml key — the `source` the machine's envelopes
+    carry — and `document` the SCXML document it was generated from. -#}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.machine) }}
+// {{ machine }}'s Mesh peers, as deploy.yaml binds them (SCE_MESH.md §mesh-19),
+// generated from {{ document }}.
+//
+// GENERATED — DO NOT EDIT. `sce-codegen generate --deploy <deploy.yaml> --language swift`.
+// A host builds its router with `{{ document_pascal }}MeshPeers.machine.router()` and opens
+// one connection per `PeerLink` below; every rule about envelopes lives in `SceMesh`.
+
+import SceMesh
+
+public enum {{ document_pascal }}MeshPeers {
+    /// {{ machine }}'s side of the deployment.
+    public static let machine = MeshMachine(
+        name: "{{ machine | escape_swift }}",
+        dedupWindow: {{ dedup_window }},
+        gapTimeoutMs: {{ gap_timeout_ms }},
+        peers: [
+{%- for peer in peers %}
+            Peer(
+                name: "{{ peer.name | escape_swift }}",
+                config: PeerConfig(
+                    transport: "{{ peer.transport }}",
+{%- if peer.buffer %}
+                    buffer: OutboundBuffer(maxPending: {{ peer.buffer.max_pending }}, maxAgeMs: {{ peer.buffer.max_age_ms }}),
+{%- else %}
+                    buffer: nil,
+{%- endif %}
+{%- if peer.retry %}
+                    retry: RetryPolicy(
+                        maxRetries: {{ peer.retry.max_retries }},
+                        initialBackoffMs: {{ peer.retry.initial_backoff_ms }},
+                        backoffMultiplier: {{ peer.retry.backoff_multiplier }},
+                        maxBackoffMs: {{ peer.retry.max_backoff_ms }},
+                        jitterPct: {{ peer.retry.jitter_pct }}
+                    ),
+{%- else %}
+                    retry: nil,
+{%- endif %}
+                    stampSequence: {{ peer.stamp_sequence }},
+                    delivery: Delivery(dedup: {{ peer.dedup }}, ordered: {{ peer.ordered }}),
+                    responders: [{% for r in peer.responders %}"{{ r | escape_swift }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+                    deadlineMs: {% if peer.deadline_ms is not none %}{{ peer.deadline_ms }}{% else %}nil{% endif %},
+                    replyEvents: [{% for e in peer.reply_events %}"{{ e | escape_swift }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+                ),
+{%- if peer.link.kind == "wss_dial" %}
+                link: .wssDial(
+                    url: "{{ peer.link.url | escape_swift }}",
+                    keepaliveMs: {% if peer.link.keepalive_ms %}{{ peer.link.keepalive_ms }}{% else %}nil{% endif %}
+                )
+{%- elif peer.link.kind == "wss_accept" %}
+                link: .wssAccept(keepaliveMs: {% if peer.link.keepalive_ms %}{{ peer.link.keepalive_ms }}{% else %}nil{% endif %})
+{%- endif %}
+            ),
+{%- endfor %}
+        ]
+    )
+}

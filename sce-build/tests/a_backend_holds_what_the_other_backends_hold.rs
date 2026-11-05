@@ -458,9 +458,7 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     ),
     // The gates, which run what an emitter writes.
     // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
-    (Language::Swift, "Mesh emitter", Why::NotYet(SWIFT_NO_MESH)),
-    (Language::Swift, "host Mesh core over `wss`", Why::NotYet(SWIFT_NO_MESH)),
-    (Language::Swift, "host Mesh core over `zenoh_inbox`", Why::NotYet(SWIFT_NO_MESH)),
+    (Language::Swift, "host Mesh core over `zenoh_inbox`", Why::NotYet(SWIFT_NO_ZENOH)),
 ];
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
@@ -488,9 +486,10 @@ const SWIFT_NO_FORGE: &str =
     "Swift writes each Forge kind in part and refuses the rest of it by name; the codec shapes beyond \
      fixed-width integer frames and the procedure and observer kinds are built after them";
 
-/// Swift has no host Mesh core, as Go, Python and C11 have none.
-const SWIFT_NO_MESH: &str =
-    "no host Mesh core for this backend; its core and wss adapter are built after the runtime";
+/// Swift's host Mesh core carries `wss` and not `zenoh_inbox`, as Kotlin's does: the Zenoh
+/// adapter is the Rust core's alone (SCE_MESH.md section 20.4).
+const SWIFT_NO_ZENOH: &str =
+    "the Swift core carries `wss` only; the Zenoh adapter is written for the Rust core alone";
 
 /// What the comparison found: gaps with no entry, and entries whose gap is
 /// not there.

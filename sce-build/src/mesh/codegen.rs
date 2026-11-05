@@ -1217,7 +1217,8 @@ fn mesh_backend(language: Language) -> Option<MeshBackend> {
         Language::Cpp => Some(generate_cpp_mesh),
         Language::Rust => Some(generate_rust_mesh),
         Language::Kotlin => Some(generate_kotlin_mesh),
-        Language::Go | Language::Python | Language::C11 | Language::Swift => None,
+        Language::Swift => Some(generate_swift_mesh),
+        Language::Go | Language::Python | Language::C11 => None,
     }
 }
 
@@ -2202,11 +2203,11 @@ fn host_peer_table_template(language: crate::generator::Language) -> Option<&'st
     match language {
         crate::generator::Language::Rust => Some("mesh_router/rust/mesh_peers.rs.jinja2"),
         crate::generator::Language::Kotlin => Some("mesh_router/kotlin/MeshPeers.kt.jinja2"),
+        crate::generator::Language::Swift => Some("mesh_router/swift/MeshPeers.swift.jinja2"),
         crate::generator::Language::Cpp
         | crate::generator::Language::Go
         | crate::generator::Language::Python
-        | crate::generator::Language::C11
-        | crate::generator::Language::Swift => None,
+        | crate::generator::Language::C11 => None,
     }
 }
 
@@ -2220,12 +2221,17 @@ fn host_peer_table_file(machine_name: &str, language: crate::generator::Language
                 filters::to_pascal_case(machine_name.to_string())
             )
         }
+        crate::generator::Language::Swift => {
+            format!(
+                "{}MeshPeers.swift",
+                filters::to_pascal_case(machine_name.to_string())
+            )
+        }
         crate::generator::Language::Rust
         | crate::generator::Language::Cpp
         | crate::generator::Language::Go
         | crate::generator::Language::Python
-        | crate::generator::Language::C11
-        | crate::generator::Language::Swift => format!("{machine_name}_mesh_peers.rs"),
+        | crate::generator::Language::C11 => format!("{machine_name}_mesh_peers.rs"),
     }
 }
 
@@ -2235,6 +2241,10 @@ fn generate_rust_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, 
 
 fn generate_kotlin_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError> {
     generate_host_mesh(inputs, crate::generator::Language::Kotlin)
+}
+
+fn generate_swift_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError> {
+    generate_host_mesh(inputs, crate::generator::Language::Swift)
 }
 
 /// A host-core machine's peer table (SCE_MESH.md §mesh-19): every peer it

@@ -677,6 +677,10 @@ fn verify_passes_on_real_committed_mesh_peer_tables() {
             workspace.join("backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/client"),
             "backends/kotlin/mesh/generate.sh",
         ),
+        (
+            workspace.join("backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated"),
+            "backends/swift/mesh-wss/generate.sh",
+        ),
     ] {
         let result = Command::new(env_bin())
             .arg("verify")

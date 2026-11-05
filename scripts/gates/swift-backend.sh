@@ -4,7 +4,7 @@
 #
 # Mirrors: swift-backend.yml
 #
-# The Swift backend's own lane: five of the SwiftPM packages under `backends/swift/`
+# The Swift backend's own lane: six of the SwiftPM packages under `backends/swift/`
 # built and tested with the toolchain the workflow pins.
 #
 #   runtime          the statechart runtime (`SceRuntime`)
@@ -12,6 +12,8 @@
 #   mesh             the host Mesh core (`SceMesh`): the standard Mesh documents generated from
 #                    `stdlib/mesh` and the router core that applies them, held to the Kotlin and
 #                    Rust cores' tests
+#   mesh-wss         the WebSocket binding's SwiftNIO client for that core (`SceMeshWss`), run
+#                    against the Rust core's server machine over one real socket
 #   tests            the machines the generator writes, replayed against the shared
 #                    scenarios of `sce-build/tests/fixtures/static_datamodel/scenarios/`
 #   feature-conformance
@@ -61,10 +63,11 @@ set -e
     || sce_gate_fail "scripts/test_swift_backend.sh exited $status (a Swift package failed to build or a test failed; the output above names it)"
 
 # One `Test run with N tests` line per test target that ran: the runtime, the reference host,
-# the tests package's two targets, the feature conformance package's one and the host Mesh core's.
+# the tests package's two targets, the feature conformance package's one, the host Mesh core's and
+# its WebSocket client's.
 runs="$(grep -cE 'Test run with [0-9]+ tests? ' "$LOG" || true)"
-[ "$runs" -ge 6 ] \
-    || sce_gate_fail "$runs Swift test runs reported, expected one per test target (6 or more): a package built and ran nothing"
+[ "$runs" -ge 7 ] \
+    || sce_gate_fail "$runs Swift test runs reported, expected one per test target (7 or more): a package built and ran nothing"
 if grep -qE 'Test run with 0 tests ' "$LOG"; then
     sce_gate_fail "a Swift test run reported 0 tests: its test target was not discovered"
 fi

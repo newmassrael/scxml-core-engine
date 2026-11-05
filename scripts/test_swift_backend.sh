@@ -26,6 +26,9 @@
 # its transports (SCE_MESH.md section 6.4), held to the Kotlin and Rust cores' tests. It is among the
 # default list.
 #
+# `mesh-wss` is the package `backends/swift/mesh-wss`: the WebSocket binding's SwiftNIO client for that
+# core, run against the Rust core over one real socket. It is among the default list.
+#
 # `feature-conformance` is the package `backends/swift/feature-conformance`, whose machines
 # `scripts/regen_swift_feature_conformance.sh` writes first: the machine for every build of
 # a product line, held to each build's own (docs/adr/0057 §10). It is among the default list.
@@ -68,7 +71,7 @@ fi
 if [ "$#" -gt 0 ]; then
     PACKAGES=("$@")
 else
-    PACKAGES=(runtime host-features tests transition-outputs feature-conformance mesh)
+    PACKAGES=(runtime host-features tests transition-outputs feature-conformance mesh mesh-wss)
 fi
 
 for package in "${PACKAGES[@]}"; do
@@ -140,6 +143,19 @@ for package in "${PACKAGES[@]}"; do
             backends/swift/mesh/generate.sh
             echo "== swift test: backends/swift/mesh"
             (cd backends/swift/mesh && swift test)
+            ;;
+        mesh-wss)
+            # The WebSocket binding's client (`backends/swift/mesh-wss`, SCE_MESH.md section 18) over
+            # SwiftNIO, which SwiftPM resolves from the exact versions its manifest names. Its
+            # loopback test dials the Rust core's server machine (`wss_peer`), built here from the
+            # current sources, so the Swift and Rust cores are run against each other on every run
+            # and not against a binary somebody left behind; the generated peer table both sides
+            # build their routers from is written first.
+            backends/swift/mesh-wss/generate.sh
+            cargo build -p sce-rust-mesh --features wss --example wss_peer
+            echo "== swift test: backends/swift/mesh-wss"
+            (cd backends/swift/mesh-wss \
+                && SCE_MESH_WSS_PEER="$REPO_ROOT/${CARGO_TARGET_DIR:-target}/debug/examples/wss_peer" swift test)
             ;;
         transition-outputs)
             # Each name is matched exactly in both test binaries, so each binary runs the one

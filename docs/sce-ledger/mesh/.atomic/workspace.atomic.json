@@ -3082,6 +3082,10 @@
         {
           "file": "sce-build/tests/mesh_error_format_json.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
+          "kind": "references"
         }
       ]
     },
@@ -3138,6 +3142,10 @@
         {
           "file": "backends/swift/mesh/Sources/SceMesh/Peers.swift",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
+          "kind": "implements"
         }
       ]
     },
@@ -3162,6 +3170,10 @@
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
+          "kind": "implements"
         }
       ]
     },
@@ -3214,6 +3226,10 @@
         {
           "file": "backends/swift/mesh/Sources/SceMesh/Peers.swift",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
+          "kind": "implements"
         }
       ]
     },
@@ -3242,6 +3258,10 @@
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
+          "kind": "implements"
         }
       ]
     },

@@ -162,6 +162,7 @@ sce_generated_trees() {
         backends/kotlin/mesh/src/commonMain/kotlin/generated \
         backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated \
         backends/swift/mesh/Sources/SceMesh/Generated \
+        backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated \
         sce/src/mesh/generated \
         sce-specs/src/*/generated; do
         printf '%s\n' "$tree"

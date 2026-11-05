@@ -171,6 +171,8 @@ paths = [
     # generated tree under `Sources/SceMesh/Generated` carries no §mesh- cite, as the
     # Kotlin one does not.
     "backends/swift/mesh/Sources",
+    # Its WebSocket client, a package of its own (`SceMeshWss`, §18.4).
+    "backends/swift/mesh-wss/Sources",
     # The two files outside those trees that cite §18.4, the WebSocket
     # binding's implementations: the Rust crate's manifest (the `wss` feature)
     # and the lowering that makes a Mesh send and request host-served (§19).

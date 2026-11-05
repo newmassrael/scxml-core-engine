@@ -1444,16 +1444,16 @@ pub fn known_names() -> &'static [&'static str] {
 /// [`ServiceKind::HostCore`] says a transport needs no C++ arm; it does not
 /// say which host core speaks it, because the adapter is the one piece of a
 /// host core written by hand per language (SCE_MESH.md sections 18.4 and
-/// 20.4) and the cores do not have the same set. `wss` is in the Rust and the Kotlin core;
-/// the Zenoh binding is in the Rust one only, so a Kotlin peer table naming it
-/// is refused instead of emitted for a core with no `PeerLink` for it.
+/// 20.4) and the cores do not have the same set. `wss` is in the Rust, the Kotlin and the
+/// Swift core; the Zenoh binding is in the Rust one only, so a Kotlin or Swift peer table
+/// naming it is refused instead of emitted for a core with no `PeerLink` for it.
 ///
 /// Empty for a transport no host core carries (every C++-served one, and an
 /// unknown name).
 pub fn host_core_languages(transport: &str) -> &'static [crate::generator::Language] {
-    use crate::generator::Language::{Kotlin, Rust};
+    use crate::generator::Language::{Kotlin, Rust, Swift};
     match transport {
-        "wss" => &[Rust, Kotlin],
+        "wss" => &[Rust, Kotlin, Swift],
         "zenoh_inbox" => &[Rust],
         _ => &[],
     }
@@ -1580,11 +1580,11 @@ mod tests {
 
     #[test]
     fn a_host_core_carries_only_the_transports_its_adapter_speaks() {
-        use crate::generator::Language::{Cpp, Kotlin, Rust};
+        use crate::generator::Language::{Cpp, Kotlin, Rust, Swift};
         // The set is asked per language because the adapter is written per
-        // language: the Kotlin core has the WebSocket client and no Zenoh
-        // session, so it must not be offered a peer table naming one.
-        assert_eq!(host_core_languages("wss"), [Rust, Kotlin]);
+        // language: the Kotlin and Swift cores have the WebSocket client and
+        // no Zenoh session, so neither must be offered a peer table naming one.
+        assert_eq!(host_core_languages("wss"), [Rust, Kotlin, Swift]);
         assert_eq!(host_core_languages("zenoh_inbox"), [Rust]);
         // A C++-served transport and an unknown name belong to no host core.
         for name in implemented_names_served_by(ServiceKind::CppTemplate) {
