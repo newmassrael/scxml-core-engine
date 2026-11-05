@@ -120,8 +120,7 @@ TEST_F(DonedataChildrenTakeTheInlineReadingTest, AJsonValueIsThatValue) {
     run(R"({"k": 7})");
 
     EXPECT_EQ(sm_->terminalState().value_or(""), "done") << describe();
-    EXPECT_EQ(read("typeof got === 'object' && got.k === 7"), "true")
-        << "_event.data must be the object the children spell. " << describe();
+    EXPECT_EQ(read("got.k === 7"), "true") << "_event.data must be the object the children spell. " << describe();
 }
 
 // Children that open with `<` travel as written, and the DOM is built where
