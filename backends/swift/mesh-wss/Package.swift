@@ -28,6 +28,11 @@ let package = Package(
         .package(path: "../forge-runtime"),
         .package(url: "https://github.com/apple/swift-nio.git", exact: "2.103.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", exact: "2.37.5"),
+        // The tests make the certificate a `wss://` server presents when they run, as the Rust
+        // core's do with `rcgen`, so no private key is committed.
+        .package(url: "https://github.com/apple/swift-certificates.git", exact: "1.21.0"),
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.0.3"),
+        .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.3"),
     ],
     targets: [
         .target(
@@ -54,6 +59,10 @@ let package = Package(
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SwiftASN1", package: "swift-asn1"),
             ]
         ),
     ]

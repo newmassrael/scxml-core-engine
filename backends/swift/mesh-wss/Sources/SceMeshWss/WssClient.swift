@@ -233,7 +233,8 @@ public final class WssClient: Transport, @unchecked Sendable {
         }
         let request = UpgradeRequest(
             path: path, host: hostHeader, headers: configuration.headers,
-            refused: { status in self.lost(generation, "the upgrade was answered \(status.code)") })
+            refused: { status in self.lost(generation, "the upgrade was answered \(status.code)") },
+            failed: { reason in self.lost(generation, reason) })
         let upgrade: NIOHTTPClientUpgradeConfiguration = (
             upgraders: [upgrader],
             completionHandler: { context in
@@ -337,12 +338,17 @@ private final class UpgradeRequest: ChannelInboundHandler, RemovableChannelHandl
     private let host: String
     private let headers: HTTPHeaders
     private let refused: @Sendable (HTTPResponseStatus) -> Void
+    private let failed: @Sendable (String) -> Void
 
-    init(path: String, host: String, headers: HTTPHeaders, refused: @escaping @Sendable (HTTPResponseStatus) -> Void) {
+    init(
+        path: String, host: String, headers: HTTPHeaders, refused: @escaping @Sendable (HTTPResponseStatus) -> Void,
+        failed: @escaping @Sendable (String) -> Void
+    ) {
         self.path = path
         self.host = host
         self.headers = headers
         self.refused = refused
+        self.failed = failed
     }
 
     func channelActive(context: ChannelHandlerContext) {
@@ -366,8 +372,17 @@ private final class UpgradeRequest: ChannelInboundHandler, RemovableChannelHandl
         }
     }
 
+    /// What goes wrong before the upgrade completes (a TLS handshake the client refuses, a peer that
+    /// hangs up) is a link that never opened: it is reported, since nothing else on the pipeline yet
+    /// can, and a host that was told nothing would wait on it for ever.
     func errorCaught(context: ChannelHandlerContext, error: any Error) {
+        failed("\(error)")
         context.close(promise: nil)
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        failed("the connection closed before the upgrade completed")
+        context.fireChannelInactive()
     }
 }
 

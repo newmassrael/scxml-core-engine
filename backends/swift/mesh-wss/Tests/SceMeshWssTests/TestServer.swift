@@ -10,6 +10,7 @@ import NIOConcurrencyHelpers
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+import NIOSSL
 import NIOWebSocket
 
 /// What a test waits on: a queue its producer pushes to from an event loop and the test takes from,
@@ -97,7 +98,8 @@ final class TestServer: @unchecked Sendable {
     /// - Parameters:
     ///   - refuseUpgrade: answer every upgrade request `404` instead of upgrading it.
     ///   - answerPings: answer a ping with a pong, as a WebSocket peer does.
-    init(refuseUpgrade: Bool = false, answerPings: Bool = true) throws {
+    ///   - tls: serve TLS with this context, as a `wss://` server does.
+    init(refuseUpgrade: Bool = false, answerPings: Bool = true, tls: NIOSSLContext? = nil) throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         self.group = group
         let paths = paths
@@ -108,6 +110,13 @@ final class TestServer: @unchecked Sendable {
         listener = try ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
+                if let tls {
+                    do {
+                        try channel.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: tls))
+                    } catch {
+                        return channel.eventLoop.makeFailedFuture(error)
+                    }
+                }
                 let upgrader = NIOWebSocketServerUpgrader(
                     shouldUpgrade: { channel, head in
                         paths.push(head.uri)
