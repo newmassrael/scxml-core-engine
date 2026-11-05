@@ -70,12 +70,15 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: ParallelCompletionRaisesDoneStateState): Boolean = when (state) {
-        is ParallelCompletionRaisesDoneStateState.A, is ParallelCompletionRaisesDoneStateState.B -> true
+        is ParallelCompletionRaisesDoneStateState.A -> true
+        is ParallelCompletionRaisesDoneStateState.B -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: ParallelCompletionRaisesDoneStateState): Boolean = when (state) {
@@ -83,11 +86,15 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: ParallelCompletionRaisesDoneStateState): Boolean = when (state) {
-        is ParallelCompletionRaisesDoneStateState.A2, is ParallelCompletionRaisesDoneStateState.B2, is ParallelCompletionRaisesDoneStateState.Stopped -> true
+        is ParallelCompletionRaisesDoneStateState.A2 -> true
+        is ParallelCompletionRaisesDoneStateState.B2 -> true
+        is ParallelCompletionRaisesDoneStateState.Stopped -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -104,19 +111,32 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<ParallelCompletionRaisesDoneStateState, List<ParallelCompletionRaisesDoneStateState>> = mapOf(
-            ParallelCompletionRaisesDoneStateState.A to listOf(ParallelCompletionRaisesDoneStateState.A1, ParallelCompletionRaisesDoneStateState.A2),
-            ParallelCompletionRaisesDoneStateState.B to listOf(ParallelCompletionRaisesDoneStateState.B1, ParallelCompletionRaisesDoneStateState.B2),
-            ParallelCompletionRaisesDoneStateState.Run to listOf(ParallelCompletionRaisesDoneStateState.A, ParallelCompletionRaisesDoneStateState.B),
-        )
+        val childStates: Map<ParallelCompletionRaisesDoneStateState, List<ParallelCompletionRaisesDoneStateState>> = LinkedHashMap<ParallelCompletionRaisesDoneStateState, List<ParallelCompletionRaisesDoneStateState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<ParallelCompletionRaisesDoneStateState, List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>>> = mapOf(
-            ParallelCompletionRaisesDoneStateState.A to listOf(StateTarget(ParallelCompletionRaisesDoneStateState.A1)),
-            ParallelCompletionRaisesDoneStateState.B to listOf(StateTarget(ParallelCompletionRaisesDoneStateState.B1)),
-        )
+        private fun childStatesPart0(table: MutableMap<ParallelCompletionRaisesDoneStateState, List<ParallelCompletionRaisesDoneStateState>>) {
+            table[ParallelCompletionRaisesDoneStateState.A] = listOf(ParallelCompletionRaisesDoneStateState.A1, ParallelCompletionRaisesDoneStateState.A2)
+            table[ParallelCompletionRaisesDoneStateState.B] = listOf(ParallelCompletionRaisesDoneStateState.B1, ParallelCompletionRaisesDoneStateState.B2)
+            table[ParallelCompletionRaisesDoneStateState.Run] = listOf(ParallelCompletionRaisesDoneStateState.A, ParallelCompletionRaisesDoneStateState.B)
+        }
+
+
+        val initialTargets: Map<ParallelCompletionRaisesDoneStateState, List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>>> = LinkedHashMap<ParallelCompletionRaisesDoneStateState, List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<ParallelCompletionRaisesDoneStateState, List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>>>) {
+            table[ParallelCompletionRaisesDoneStateState.A] = listOf(StateTarget(ParallelCompletionRaisesDoneStateState.A1))
+            table[ParallelCompletionRaisesDoneStateState.B] = listOf(StateTarget(ParallelCompletionRaisesDoneStateState.B1))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>> =
             listOf(StateTarget(ParallelCompletionRaisesDoneStateState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: a1's transition 0, as the microstep reads it.
         val transitionA1At0 = EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>(
@@ -146,6 +166,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ParallelCompletionRaisesDoneStateState? = when (stateId) {
         "a" -> ParallelCompletionRaisesDoneStateState.A
@@ -159,6 +180,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ParallelCompletionRaisesDoneStateState): String = when (state) {
         is ParallelCompletionRaisesDoneStateState.A -> "a"
@@ -170,6 +192,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         is ParallelCompletionRaisesDoneStateState.Run -> "run"
         is ParallelCompletionRaisesDoneStateState.Stopped -> "stopped"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ParallelCompletionRaisesDoneStateState): Int = when (state) {
@@ -183,6 +206,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         is ParallelCompletionRaisesDoneStateState.Stopped -> 7
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ParallelCompletionRaisesDoneStateEvent? = when (name) {
         "bail" -> ParallelCompletionRaisesDoneStateEvent.Bail
@@ -192,6 +216,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         "go" -> ParallelCompletionRaisesDoneStateEvent.Go
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ParallelCompletionRaisesDoneStateEvent): String? = when (event) {
@@ -206,42 +231,69 @@ class ParallelCompletionRaisesDoneStateStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ParallelCompletionRaisesDoneStateState,
-        event: ParallelCompletionRaisesDoneStateEvent?
-    ): EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>? = when (state) {
-        is ParallelCompletionRaisesDoneStateState.A1 -> when {
-            event is ParallelCompletionRaisesDoneStateEvent.Go -> transitionA1At0
-            else -> null
-        }
-        is ParallelCompletionRaisesDoneStateState.B1 -> when {
-            event is ParallelCompletionRaisesDoneStateEvent.Go -> transitionB1At0
-            else -> null
-        }
-        is ParallelCompletionRaisesDoneStateState.Run -> when {
-            event is ParallelCompletionRaisesDoneStateEvent.Bail -> transitionRunAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ParallelCompletionRaisesDoneStateState, event: ParallelCompletionRaisesDoneStateEvent?): EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>? = when (state) {
+        is ParallelCompletionRaisesDoneStateState.A1 -> firstEnabledTransitionOfA1(state, event)
+        is ParallelCompletionRaisesDoneStateState.B1 -> firstEnabledTransitionOfB1(state, event)
+        is ParallelCompletionRaisesDoneStateState.Run -> firstEnabledTransitionOfRun(state, event)
         else -> null
     }
+
+
+    // a1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfA1(state: ParallelCompletionRaisesDoneStateState, event: ParallelCompletionRaisesDoneStateEvent?): EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>? = when {
+        event is ParallelCompletionRaisesDoneStateEvent.Go -> TransitionsPart0.transitionA1At0
+        else -> null
+    }
+
+
+    // b1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfB1(state: ParallelCompletionRaisesDoneStateState, event: ParallelCompletionRaisesDoneStateEvent?): EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>? = when {
+        event is ParallelCompletionRaisesDoneStateEvent.Go -> TransitionsPart0.transitionB1At0
+        else -> null
+    }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ParallelCompletionRaisesDoneStateState, event: ParallelCompletionRaisesDoneStateEvent?): EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>? = when {
+        event is ParallelCompletionRaisesDoneStateEvent.Bail -> TransitionsPart0.transitionRunAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: parallel_completion_raises_done_state.scxml:21 :: _machine
     override fun onEntry(state: ParallelCompletionRaisesDoneStateState, isDefaultEntry: Boolean) {
         when (state) {
-            is ParallelCompletionRaisesDoneStateState.A -> {
+            is ParallelCompletionRaisesDoneStateState.A -> onEntryOfA()
+            is ParallelCompletionRaisesDoneStateState.A1 -> onEntryOfA1()
+            is ParallelCompletionRaisesDoneStateState.A2 -> onEntryOfA2()
+            is ParallelCompletionRaisesDoneStateState.B -> onEntryOfB()
+            is ParallelCompletionRaisesDoneStateState.B1 -> onEntryOfB1()
+            is ParallelCompletionRaisesDoneStateState.B2 -> onEntryOfB2()
+            is ParallelCompletionRaisesDoneStateState.Run -> onEntryOfRun()
+            is ParallelCompletionRaisesDoneStateState.Stopped -> onEntryOfStopped()
+        }
+    }
+
+
+    private fun onEntryOfA() {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:26 :: a :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.A1 -> {
+    }
+
+    private fun onEntryOfA1() {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:27 :: a1 :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.A2 -> {
+    }
+
+    private fun onEntryOfA2() {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:30 :: a2 :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(ParallelCompletionRaisesDoneStateEvent.Done.State.A, EventMetadata.platform())
@@ -252,14 +304,17 @@ class ParallelCompletionRaisesDoneStateStateMachine(
                 if (isStateInFinalState(ParallelCompletionRaisesDoneStateState.Run)) {
                     raiseInternal(ParallelCompletionRaisesDoneStateEvent.Done.State.Run)
                 }
-            }
-            is ParallelCompletionRaisesDoneStateState.B -> {
+    }
+
+    private fun onEntryOfB() {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:33 :: b :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.B1 -> {
+    }
+
+    private fun onEntryOfB1() {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:34 :: b1 :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.B2 -> {
+    }
+
+    private fun onEntryOfB2() {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:37 :: b2 :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(ParallelCompletionRaisesDoneStateEvent.Done.State.B, EventMetadata.platform())
@@ -270,55 +325,73 @@ class ParallelCompletionRaisesDoneStateStateMachine(
                 if (isStateInFinalState(ParallelCompletionRaisesDoneStateState.Run)) {
                     raiseInternal(ParallelCompletionRaisesDoneStateEvent.Done.State.Run)
                 }
-            }
-            is ParallelCompletionRaisesDoneStateState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:24 :: run :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.Stopped -> {
+    }
+
+    private fun onEntryOfStopped() {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:54 :: stopped :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: parallel_completion_raises_done_state.scxml:21 :: _machine
     override fun onExit(state: ParallelCompletionRaisesDoneStateState) {
         when (state) {
-            is ParallelCompletionRaisesDoneStateState.A -> {
-                // SCE-MAP: parallel_completion_raises_done_state.scxml:26 :: a :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.A1 -> {
-                // SCE-MAP: parallel_completion_raises_done_state.scxml:27 :: a1 :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.A2 -> {
-                // SCE-MAP: parallel_completion_raises_done_state.scxml:30 :: a2 :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.B -> {
-                // SCE-MAP: parallel_completion_raises_done_state.scxml:33 :: b :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.B1 -> {
-                // SCE-MAP: parallel_completion_raises_done_state.scxml:34 :: b1 :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.B2 -> {
-                // SCE-MAP: parallel_completion_raises_done_state.scxml:37 :: b2 :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.Run -> {
-                // SCE-MAP: parallel_completion_raises_done_state.scxml:24 :: run :: _state_body
-            }
-            is ParallelCompletionRaisesDoneStateState.Stopped -> {
-                // SCE-MAP: parallel_completion_raises_done_state.scxml:54 :: stopped :: _state_body
-            }
+            is ParallelCompletionRaisesDoneStateState.A -> onExitOfA()
+            is ParallelCompletionRaisesDoneStateState.A1 -> onExitOfA1()
+            is ParallelCompletionRaisesDoneStateState.A2 -> onExitOfA2()
+            is ParallelCompletionRaisesDoneStateState.B -> onExitOfB()
+            is ParallelCompletionRaisesDoneStateState.B1 -> onExitOfB1()
+            is ParallelCompletionRaisesDoneStateState.B2 -> onExitOfB2()
+            is ParallelCompletionRaisesDoneStateState.Run -> onExitOfRun()
+            is ParallelCompletionRaisesDoneStateState.Stopped -> onExitOfStopped()
         }
     }
+
+
+    private fun onExitOfA() {
+                // SCE-MAP: parallel_completion_raises_done_state.scxml:26 :: a :: _state_body
+    }
+
+    private fun onExitOfA1() {
+                // SCE-MAP: parallel_completion_raises_done_state.scxml:27 :: a1 :: _state_body
+    }
+
+    private fun onExitOfA2() {
+                // SCE-MAP: parallel_completion_raises_done_state.scxml:30 :: a2 :: _state_body
+    }
+
+    private fun onExitOfB() {
+                // SCE-MAP: parallel_completion_raises_done_state.scxml:33 :: b :: _state_body
+    }
+
+    private fun onExitOfB1() {
+                // SCE-MAP: parallel_completion_raises_done_state.scxml:34 :: b1 :: _state_body
+    }
+
+    private fun onExitOfB2() {
+                // SCE-MAP: parallel_completion_raises_done_state.scxml:37 :: b2 :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: parallel_completion_raises_done_state.scxml:24 :: run :: _state_body
+    }
+
+    private fun onExitOfStopped() {
+                // SCE-MAP: parallel_completion_raises_done_state.scxml:54 :: stopped :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: parallel_completion_raises_done_state.scxml:21 :: _machine
     override fun executeTransitionContent(source: ParallelCompletionRaisesDoneStateState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

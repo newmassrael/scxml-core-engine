@@ -152,6 +152,10 @@ class StaticOptionalRecordStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.title?.let { vTitle = it }
         params.count?.let { vCount = it }
         params.shown?.let { vShown = it }
@@ -263,22 +267,24 @@ class StaticOptionalRecordStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "pick" to SavedValues.optional(vPick) { it.toSaved() },
-            "found" to SavedValues.optional(vFound) { it.toSaved() },
-            "draft" to vDraft.toSaved(),
-            "items" to SavedValues.list(vItems) { it.toSaved() },
-            "title" to SavedValues.of(vTitle),
-            "count" to SavedValues.of(vCount),
-            "shown" to SavedValues.of(vShown),
-            "known" to SavedValues.of(vKnown),
-            "absent" to SavedValues.of(vAbsent),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "pick" to SavedValues.optional(vPick) { it.toSaved() }
+        variables += "found" to SavedValues.optional(vFound) { it.toSaved() }
+        variables += "draft" to vDraft.toSaved()
+        variables += "items" to SavedValues.list(vItems) { it.toSaved() }
+        variables += "title" to SavedValues.of(vTitle)
+        variables += "count" to SavedValues.of(vCount)
+        variables += "shown" to SavedValues.of(vShown)
+        variables += "known" to SavedValues.of(vKnown)
+        variables += "absent" to SavedValues.of(vAbsent)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -303,6 +309,15 @@ class StaticOptionalRecordStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.optional(savedGrown.variable("pick"), "pick") { e, w -> StaticOptionalRecordItemRecord.fromSaved(e, w) }
         val saved2 = SavedValues.optional(savedGrown.variable("found"), "found") { e, w -> StaticOptionalRecordItemRecord.fromSaved(e, w) }
         val saved3 = StaticOptionalRecordItemRecord.fromSaved(savedGrown.variable("draft"), "draft")
@@ -313,17 +328,18 @@ class StaticOptionalRecordStateMachine(
         val saved8 = SavedValues.bool(savedGrown.variable("known"), "known")
         val saved9 = SavedValues.bool(savedGrown.variable("absent"), "absent")
         val saved10 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vPick = saved1
-        vFound = saved2
-        vDraft = saved3
-        vItems = saved4
-        vTitle = saved5
-        vCount = saved6
-        vShown = saved7
-        vKnown = saved8
-        vAbsent = saved9
-        vErrors = saved10
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vPick = saved1
+            vFound = saved2
+            vDraft = saved3
+            vItems = saved4
+            vTitle = saved5
+            vCount = saved6
+            vShown = saved7
+            vKnown = saved8
+            vAbsent = saved9
+            vErrors = saved10
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -336,6 +352,10 @@ class StaticOptionalRecordStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.optional(savedGrown.variable("pick"), "pick") { e, w -> StaticOptionalRecordItemRecord.fromSaved(e, w) }
         SavedValues.optional(savedGrown.variable("found"), "found") { e, w -> StaticOptionalRecordItemRecord.fromSaved(e, w) }
         StaticOptionalRecordItemRecord.fromSaved(savedGrown.variable("draft"), "draft")
@@ -422,6 +442,9 @@ class StaticOptionalRecordStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticOptionalRecordState, HistoryId>> =
             listOf(StateTarget(StaticOptionalRecordState.Holding))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: holding's transition 0, as the microstep reads it.
         val transitionHoldingAt0 = EnabledTransition<StaticOptionalRecordState, HistoryId>(
@@ -496,21 +519,25 @@ class StaticOptionalRecordStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticOptionalRecordState? = when (stateId) {
         "holding" -> StaticOptionalRecordState.Holding
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticOptionalRecordState): String = when (state) {
         is StaticOptionalRecordState.Holding -> "holding"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticOptionalRecordState): Int = when (state) {
         is StaticOptionalRecordState.Holding -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticOptionalRecordEvent? = when (name) {
@@ -524,6 +551,7 @@ class StaticOptionalRecordStateMachine(
         "pick.second" -> StaticOptionalRecordEvent.Pick.Second
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticOptionalRecordEvent): String? = when (event) {
@@ -541,56 +569,92 @@ class StaticOptionalRecordStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticOptionalRecordState,
-        event: StaticOptionalRecordEvent?
-    ): EnabledTransition<StaticOptionalRecordState, HistoryId>? = when (state) {
-        is StaticOptionalRecordState.Holding -> when {
-            event is StaticOptionalRecordEvent.Item.Picked -> transitionHoldingAt0
-            event is StaticOptionalRecordEvent.Pick.Draft -> transitionHoldingAt1
-            event is StaticOptionalRecordEvent.Pick.Second -> transitionHoldingAt2
-            event is StaticOptionalRecordEvent.Pick.Clear -> transitionHoldingAt3
-            event is StaticOptionalRecordEvent.Pick.Read -> transitionHoldingAt4
-            event is StaticOptionalRecordEvent.Pick.Bump -> transitionHoldingAt5
-            event is StaticOptionalRecordEvent.Pick.Find -> transitionHoldingAt6
-            event is StaticOptionalRecordEvent.Error.Execution -> transitionHoldingAt7
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticOptionalRecordState, event: StaticOptionalRecordEvent?): EnabledTransition<StaticOptionalRecordState, HistoryId>? = when (state) {
+        is StaticOptionalRecordState.Holding -> firstEnabledTransitionOfHolding(state, event)
     }
+
+
+    // holding's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfHolding(state: StaticOptionalRecordState, event: StaticOptionalRecordEvent?): EnabledTransition<StaticOptionalRecordState, HistoryId>? = when {
+        event is StaticOptionalRecordEvent.Item.Picked -> TransitionsPart0.transitionHoldingAt0
+        event is StaticOptionalRecordEvent.Pick.Draft -> TransitionsPart0.transitionHoldingAt1
+        event is StaticOptionalRecordEvent.Pick.Second -> TransitionsPart0.transitionHoldingAt2
+        event is StaticOptionalRecordEvent.Pick.Clear -> TransitionsPart0.transitionHoldingAt3
+        event is StaticOptionalRecordEvent.Pick.Read -> TransitionsPart0.transitionHoldingAt4
+        event is StaticOptionalRecordEvent.Pick.Bump -> TransitionsPart0.transitionHoldingAt5
+        event is StaticOptionalRecordEvent.Pick.Find -> TransitionsPart0.transitionHoldingAt6
+        event is StaticOptionalRecordEvent.Error.Execution -> TransitionsPart0.transitionHoldingAt7
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_optional_record.scxml:25 :: _machine
     override fun onEntry(state: StaticOptionalRecordState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticOptionalRecordState.Holding -> {
-                // SCE-MAP: static_optional_record.scxml:45 :: holding :: _state_body
-            }
+            is StaticOptionalRecordState.Holding -> onEntryOfHolding()
         }
+    }
+
+
+    private fun onEntryOfHolding() {
+                // SCE-MAP: static_optional_record.scxml:45 :: holding :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_optional_record.scxml:25 :: _machine
     override fun onExit(state: StaticOptionalRecordState) {
         when (state) {
-            is StaticOptionalRecordState.Holding -> {
-                // SCE-MAP: static_optional_record.scxml:45 :: holding :: _state_body
-            }
+            is StaticOptionalRecordState.Holding -> onExitOfHolding()
         }
     }
+
+
+    private fun onExitOfHolding() {
+                // SCE-MAP: static_optional_record.scxml:45 :: holding :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_optional_record.scxml:25 :: _machine
     override fun executeTransitionContent(source: StaticOptionalRecordState, transitionIndex: Int) {
         when (source) {
-        is StaticOptionalRecordState.Holding -> when (transitionIndex) {
-            0 -> {
+            is StaticOptionalRecordState.Holding -> transitionContentOfHolding(transitionIndex)
+        }
+    }
+
+
+    // The content of `holding`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfHolding(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfHoldingAt0()
+            1 -> transitionContentOfHoldingAt1()
+            2 -> transitionContentOfHoldingAt2()
+            3 -> transitionContentOfHoldingAt3()
+            4 -> transitionContentOfHoldingAt4()
+            5 -> transitionContentOfHoldingAt5()
+            6 -> transitionContentOfHoldingAt6()
+            7 -> transitionContentOfHoldingAt7()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfHoldingAt0() {
                 // SCE-MAP: static_optional_record.scxml:48 :: holding :: _transition_0
                 if (pendingItemPickedPayload == null) {
                     return
@@ -607,25 +671,29 @@ class StaticOptionalRecordStateMachine(
             if (try { vPick = StaticOptionalRecordItemRecord(id = pendingItemPickedPayload!!.id, title = com.sce.forge.runtime.SceChecked.bounded(pendingItemPickedPayload!!.title, 16), count = pendingItemPickedPayload!!.count); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfHoldingAt1() {
                 // SCE-MAP: static_optional_record.scxml:54 :: holding :: _transition_1
 
             vPick = vDraft
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfHoldingAt2() {
                 // SCE-MAP: static_optional_record.scxml:57 :: holding :: _transition_2
 
             if (try { vPick = com.sce.forge.runtime.SceChecked.at(vItems, (1).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfHoldingAt3() {
                 // SCE-MAP: static_optional_record.scxml:60 :: holding :: _transition_3
 
             vPick = null
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfHoldingAt4() {
                 // SCE-MAP: static_optional_record.scxml:64 :: holding :: _transition_4
 
 
@@ -650,8 +718,9 @@ class StaticOptionalRecordStateMachine(
             vAbsent = vPick == null
 
             vShown = if (vPick != null) com.sce.forge.runtime.SceOptional.proven(vPick).count else 0
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfHoldingAt5() {
                 // SCE-MAP: static_optional_record.scxml:77 :: holding :: _transition_5
 
 
@@ -665,21 +734,19 @@ class StaticOptionalRecordStateMachine(
                 return
             }
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfHoldingAt6() {
                 // SCE-MAP: static_optional_record.scxml:84 :: holding :: _transition_6
 
             vFound = call_FirstAtLeast__v(vItems, 5)
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfHoldingAt7() {
                 // SCE-MAP: static_optional_record.scxml:87 :: holding :: _transition_7
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalRecordEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

@@ -90,6 +90,10 @@ class StaticReal32StateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.level?.let { vLevel = it }
         params.tenth?.let { vTenth = it }
         params.drift?.let { vDrift = it }
@@ -175,18 +179,20 @@ class StaticReal32StateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "level" to SavedValues.of(vLevel),
-            "tenth" to SavedValues.of(vTenth),
-            "drift" to SavedValues.of(vDrift),
-            "wide" to SavedValues.of(vWide),
-            "samples" to SavedValues.list(vSamples) { SavedValues.of(it) },
-            "total" to SavedValues.of(vTotal),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "level" to SavedValues.of(vLevel)
+        variables += "tenth" to SavedValues.of(vTenth)
+        variables += "drift" to SavedValues.of(vDrift)
+        variables += "wide" to SavedValues.of(vWide)
+        variables += "samples" to SavedValues.list(vSamples) { SavedValues.of(it) }
+        variables += "total" to SavedValues.of(vTotal)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -211,19 +217,29 @@ class StaticReal32StateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.float32(savedGrown.variable("level"), "level")
         val saved2 = SavedValues.float32(savedGrown.variable("tenth"), "tenth")
         val saved3 = SavedValues.float32(savedGrown.variable("drift"), "drift")
         val saved4 = SavedValues.float64(savedGrown.variable("wide"), "wide")
         val saved5 = SavedValues.list(savedGrown.variable("samples"), "samples", 3) { e, w -> SavedValues.float32(e, w) }
         val saved6 = SavedValues.float32(savedGrown.variable("total"), "total")
-        vLevel = saved1
-        vTenth = saved2
-        vDrift = saved3
-        vWide = saved4
-        vSamples = saved5
-        vTotal = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLevel = saved1
+            vTenth = saved2
+            vDrift = saved3
+            vWide = saved4
+            vSamples = saved5
+            vTotal = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -236,6 +252,10 @@ class StaticReal32StateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.float32(savedGrown.variable("level"), "level")
         SavedValues.float32(savedGrown.variable("tenth"), "tenth")
         SavedValues.float32(savedGrown.variable("drift"), "drift")
@@ -271,6 +291,9 @@ class StaticReal32StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticReal32State, HistoryId>> =
             listOf(StateTarget(StaticReal32State.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticReal32State, HistoryId>(
@@ -345,21 +368,25 @@ class StaticReal32StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticReal32State? = when (stateId) {
         "idle" -> StaticReal32State.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticReal32State): String = when (state) {
         is StaticReal32State.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticReal32State): Int = when (state) {
         is StaticReal32State.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticReal32Event? = when (name) {
@@ -373,6 +400,7 @@ class StaticReal32StateMachine(
         "widen" -> StaticReal32Event.Widen
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticReal32Event): String? = when (event) {
@@ -390,95 +418,138 @@ class StaticReal32StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticReal32State,
-        event: StaticReal32Event?
-    ): EnabledTransition<StaticReal32State, HistoryId>? = when (state) {
-        is StaticReal32State.Idle -> when {
-            event is StaticReal32Event.Bump -> transitionIdleAt0
-            event is StaticReal32Event.Halve -> transitionIdleAt1
-            event is StaticReal32Event.Drift -> transitionIdleAt2
-            event is StaticReal32Event.Widen -> transitionIdleAt3
-            event is StaticReal32Event.Mix -> transitionIdleAt4
-            event is StaticReal32Event.Keep -> transitionIdleAt5
-            event is StaticReal32Event.Keepwide -> transitionIdleAt6
-            event is StaticReal32Event.Sum -> transitionIdleAt7
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticReal32State, event: StaticReal32Event?): EnabledTransition<StaticReal32State, HistoryId>? = when (state) {
+        is StaticReal32State.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticReal32State, event: StaticReal32Event?): EnabledTransition<StaticReal32State, HistoryId>? = when {
+        event is StaticReal32Event.Bump -> TransitionsPart0.transitionIdleAt0
+        event is StaticReal32Event.Halve -> TransitionsPart0.transitionIdleAt1
+        event is StaticReal32Event.Drift -> TransitionsPart0.transitionIdleAt2
+        event is StaticReal32Event.Widen -> TransitionsPart0.transitionIdleAt3
+        event is StaticReal32Event.Mix -> TransitionsPart0.transitionIdleAt4
+        event is StaticReal32Event.Keep -> TransitionsPart0.transitionIdleAt5
+        event is StaticReal32Event.Keepwide -> TransitionsPart0.transitionIdleAt6
+        event is StaticReal32Event.Sum -> TransitionsPart0.transitionIdleAt7
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_real32.scxml:30 :: _machine
     override fun onEntry(state: StaticReal32State, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticReal32State.Idle -> {
-                // SCE-MAP: static_real32.scxml:40 :: idle :: _state_body
-            }
+            is StaticReal32State.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_real32.scxml:40 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_real32.scxml:30 :: _machine
     override fun onExit(state: StaticReal32State) {
         when (state) {
-            is StaticReal32State.Idle -> {
-                // SCE-MAP: static_real32.scxml:40 :: idle :: _state_body
-            }
+            is StaticReal32State.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_real32.scxml:40 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_real32.scxml:30 :: _machine
     override fun executeTransitionContent(source: StaticReal32State, transitionIndex: Int) {
         when (source) {
-        is StaticReal32State.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticReal32State.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            7 -> transitionContentOfIdleAt7()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_real32.scxml:42 :: idle :: _transition_0
 
             vLevel = vLevel + 1.0f
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_real32.scxml:46 :: idle :: _transition_1
 
             vLevel = vLevel / 2.0f
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_real32.scxml:50 :: idle :: _transition_2
 
             vDrift = vTenth + 0.2f
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_real32.scxml:54 :: idle :: _transition_3
 
             vWide = vTenth.toDouble()
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_real32.scxml:61 :: idle :: _transition_4
 
             vWide = vTenth.toDouble() + 0.2
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_real32.scxml:65 :: idle :: _transition_5
 
             if (if (vSamples.size < 3) { vSamples = vSamples + (vTenth + 0.2f); false } else { true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_real32.scxml:70 :: idle :: _transition_6
 
             if (if (vSamples.size < 3) { vSamples = vSamples + (vWide.toFloat()); false } else { true }) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfIdleAt7() {
                 // SCE-MAP: static_real32.scxml:74 :: idle :: _transition_7
 
             vTotal = 0.0f
@@ -488,9 +559,5 @@ class StaticReal32StateMachine(
 
             vTotal = vTotal + v
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

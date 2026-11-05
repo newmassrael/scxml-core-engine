@@ -220,6 +220,10 @@ class StaticForgeCallsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.gear?.let { vGear = it }
         params.ratio?.let { vRatio = it }
         params.code?.let { vCode = it }
@@ -350,26 +354,28 @@ class StaticForgeCallsStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "gear" to SavedValues.of(vGear),
-            "ratio" to SavedValues.of(vRatio),
-            "code" to SavedValues.of(vCode),
-            "misses" to SavedValues.of(vMisses),
-            "level" to SavedValues.of(vLevel),
-            "offset" to SavedValues.of(vOffset),
-            "accepted" to SavedValues.of(vAccepted),
-            "rpm" to SavedValues.of(vRpm),
-            "limit" to SavedValues.of(vLimit),
-            "highs" to SavedValues.of(vHighs),
-            "phase" to vPhase.toSaved(),
-            "weight" to vWeight.toSaved(),
-            "customer" to SavedValues.of(vCustomer),
-            "known" to SavedValues.of(vKnown),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "gear" to SavedValues.of(vGear)
+        variables += "ratio" to SavedValues.of(vRatio)
+        variables += "code" to SavedValues.of(vCode)
+        variables += "misses" to SavedValues.of(vMisses)
+        variables += "level" to SavedValues.of(vLevel)
+        variables += "offset" to SavedValues.of(vOffset)
+        variables += "accepted" to SavedValues.of(vAccepted)
+        variables += "rpm" to SavedValues.of(vRpm)
+        variables += "limit" to SavedValues.of(vLimit)
+        variables += "highs" to SavedValues.of(vHighs)
+        variables += "phase" to vPhase.toSaved()
+        variables += "weight" to vWeight.toSaved()
+        variables += "customer" to SavedValues.of(vCustomer)
+        variables += "known" to SavedValues.of(vKnown)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -394,6 +400,15 @@ class StaticForgeCallsStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint8(savedGrown.variable("gear"), "gear")
         val saved2 = SavedValues.int32(savedGrown.variable("ratio"), "ratio")
         val saved3 = SavedValues.int32(savedGrown.variable("code"), "code")
@@ -408,21 +423,22 @@ class StaticForgeCallsStateMachine(
         val saved12 = StaticForgeCallsLevelEnum.fromSaved(savedGrown.variable("weight"), "weight")
         val saved13 = SavedValues.string(savedGrown.variable("customer"), "customer", 16)
         val saved14 = SavedValues.bool(savedGrown.variable("known"), "known")
-        vGear = saved1
-        vRatio = saved2
-        vCode = saved3
-        vMisses = saved4
-        vLevel = saved5
-        vOffset = saved6
-        vAccepted = saved7
-        vRpm = saved8
-        vLimit = saved9
-        vHighs = saved10
-        vPhase = saved11
-        vWeight = saved12
-        vCustomer = saved13
-        vKnown = saved14
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vGear = saved1
+            vRatio = saved2
+            vCode = saved3
+            vMisses = saved4
+            vLevel = saved5
+            vOffset = saved6
+            vAccepted = saved7
+            vRpm = saved8
+            vLimit = saved9
+            vHighs = saved10
+            vPhase = saved11
+            vWeight = saved12
+            vCustomer = saved13
+            vKnown = saved14
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -435,6 +451,10 @@ class StaticForgeCallsStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint8(savedGrown.variable("gear"), "gear")
         SavedValues.int32(savedGrown.variable("ratio"), "ratio")
         SavedValues.int32(savedGrown.variable("code"), "code")
@@ -478,6 +498,9 @@ class StaticForgeCallsStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticForgeCallsState, HistoryId>> =
             listOf(StateTarget(StaticForgeCallsState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
         val transitionRunAt0 = EnabledTransition<StaticForgeCallsState, HistoryId>(
@@ -552,21 +575,25 @@ class StaticForgeCallsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticForgeCallsState? = when (stateId) {
         "run" -> StaticForgeCallsState.Run
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticForgeCallsState): String = when (state) {
         is StaticForgeCallsState.Run -> "run"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticForgeCallsState): Int = when (state) {
         is StaticForgeCallsState.Run -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticForgeCallsEvent? = when (name) {
@@ -580,6 +607,7 @@ class StaticForgeCallsStateMachine(
         "spin" -> StaticForgeCallsEvent.Spin
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticForgeCallsEvent): String? = when (event) {
@@ -597,56 +625,92 @@ class StaticForgeCallsStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticForgeCallsState,
-        event: StaticForgeCallsEvent?
-    ): EnabledTransition<StaticForgeCallsState, HistoryId>? = when (state) {
-        is StaticForgeCallsState.Run -> when {
-            event is StaticForgeCallsEvent.Shift -> transitionRunAt0
-            event is StaticForgeCallsEvent.Rise -> transitionRunAt1
-            event is StaticForgeCallsEvent.Spin -> transitionRunAt2
-            event is StaticForgeCallsEvent.Probe && forgeCallHigh(vLevel) -> transitionRunAt3
-            event is StaticForgeCallsEvent.Advance -> transitionRunAt4
-            event is StaticForgeCallsEvent.CheckCustomer -> transitionRunAt5
-            event is StaticForgeCallsEvent.ClearCustomer -> transitionRunAt6
-            event is StaticForgeCallsEvent.Error.Execution -> transitionRunAt7
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticForgeCallsState, event: StaticForgeCallsEvent?): EnabledTransition<StaticForgeCallsState, HistoryId>? = when (state) {
+        is StaticForgeCallsState.Run -> firstEnabledTransitionOfRun(state, event)
     }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: StaticForgeCallsState, event: StaticForgeCallsEvent?): EnabledTransition<StaticForgeCallsState, HistoryId>? = when {
+        event is StaticForgeCallsEvent.Shift -> TransitionsPart0.transitionRunAt0
+        event is StaticForgeCallsEvent.Rise -> TransitionsPart0.transitionRunAt1
+        event is StaticForgeCallsEvent.Spin -> TransitionsPart0.transitionRunAt2
+        event is StaticForgeCallsEvent.Probe && forgeCallHigh(vLevel) -> TransitionsPart0.transitionRunAt3
+        event is StaticForgeCallsEvent.Advance -> TransitionsPart0.transitionRunAt4
+        event is StaticForgeCallsEvent.CheckCustomer -> TransitionsPart0.transitionRunAt5
+        event is StaticForgeCallsEvent.ClearCustomer -> TransitionsPart0.transitionRunAt6
+        event is StaticForgeCallsEvent.Error.Execution -> TransitionsPart0.transitionRunAt7
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     override fun onEntry(state: StaticForgeCallsState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticForgeCallsState.Run -> {
-                // SCE-MAP: static_forge_calls.scxml:52 :: run :: _state_body
-            }
+            is StaticForgeCallsState.Run -> onEntryOfRun()
         }
+    }
+
+
+    private fun onEntryOfRun() {
+                // SCE-MAP: static_forge_calls.scxml:52 :: run :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     override fun onExit(state: StaticForgeCallsState) {
         when (state) {
-            is StaticForgeCallsState.Run -> {
-                // SCE-MAP: static_forge_calls.scxml:52 :: run :: _state_body
-            }
+            is StaticForgeCallsState.Run -> onExitOfRun()
         }
     }
+
+
+    private fun onExitOfRun() {
+                // SCE-MAP: static_forge_calls.scxml:52 :: run :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     override fun executeTransitionContent(source: StaticForgeCallsState, transitionIndex: Int) {
         when (source) {
-        is StaticForgeCallsState.Run -> when (transitionIndex) {
-            0 -> {
+            is StaticForgeCallsState.Run -> transitionContentOfRun(transitionIndex)
+        }
+    }
+
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
+            1 -> transitionContentOfRunAt1()
+            2 -> transitionContentOfRunAt2()
+            3 -> transitionContentOfRunAt3()
+            4 -> transitionContentOfRunAt4()
+            5 -> transitionContentOfRunAt5()
+            6 -> transitionContentOfRunAt6()
+            7 -> transitionContentOfRunAt7()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: static_forge_calls.scxml:53 :: run :: _transition_0
 
             if (try { vGear = com.sce.forge.runtime.SceChecked.add(vGear, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='gear'>: an integer operation overflowed or failed"); true }) {
@@ -658,8 +722,9 @@ class StaticForgeCallsStateMachine(
             if (try { vCode = com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(lookupCode(vGear))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='code'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunAt1() {
                 // SCE-MAP: static_forge_calls.scxml:58 :: run :: _transition_1
 
             if (try { vLevel = com.sce.forge.runtime.SceChecked.add(vLevel, 7); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
@@ -669,8 +734,9 @@ class StaticForgeCallsStateMachine(
             vOffset = computeOffset(vLevel)
 
             vAccepted = ForgeCallRange().validate(vLevel, vOffset).valid
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRunAt2() {
                 // SCE-MAP: static_forge_calls.scxml:63 :: run :: _transition_2
 
             if (try { vRpm = com.sce.forge.runtime.SceChecked.add(vRpm, 500.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='rpm'>: an integer operation overflowed or failed"); true }) {
@@ -678,15 +744,17 @@ class StaticForgeCallsStateMachine(
             }
 
             vLimit = ForgeCallLimit.lookup(vRpm)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfRunAt3() {
                 // SCE-MAP: static_forge_calls.scxml:67 :: run :: _transition_3
 
             if (try { vHighs = com.sce.forge.runtime.SceChecked.add(vHighs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='highs'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfRunAt4() {
                 // SCE-MAP: static_forge_calls.scxml:70 :: run :: _transition_4
 
             vPhase = StaticForgeCallsStatusEnumFromDocument(computeAfter(StaticForgeCallsStatusEnumToDocument(vPhase)))
@@ -694,28 +762,27 @@ class StaticForgeCallsStateMachine(
             if (try { vWeight = StaticForgeCallsLevelEnumFromDocument(com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(lookupWeight(StaticForgeCallsStatusEnumToDocument(vPhase))))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='weight'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfRunAt5() {
                 // SCE-MAP: static_forge_calls.scxml:74 :: run :: _transition_5
 
             vKnown = ForgeCallNamed().validate(vCustomer).valid
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfRunAt6() {
                 // SCE-MAP: static_forge_calls.scxml:77 :: run :: _transition_6
 
             if (try { vCustomer = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='customer'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfRunAt7() {
                 // SCE-MAP: static_forge_calls.scxml:80 :: run :: _transition_7
 
             if (try { vMisses = com.sce.forge.runtime.SceChecked.add(vMisses, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='misses'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

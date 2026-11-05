@@ -120,6 +120,10 @@ class StaticPayloadEnumStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.zoom?.let { vZoom = it }
         params.agenda?.let { vAgenda = it }
         params.shown?.let { vShown = it }
@@ -211,16 +215,18 @@ class StaticPayloadEnumStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "layout" to vLayout.toSaved(),
-            "zoom" to SavedValues.of(vZoom),
-            "agenda" to SavedValues.of(vAgenda),
-            "shown" to SavedValues.of(vShown),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "layout" to vLayout.toSaved()
+        variables += "zoom" to SavedValues.of(vZoom)
+        variables += "agenda" to SavedValues.of(vAgenda)
+        variables += "shown" to SavedValues.of(vShown)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -245,15 +251,25 @@ class StaticPayloadEnumStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticPayloadEnumViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         val saved2 = SavedValues.uint8(savedGrown.variable("zoom"), "zoom")
         val saved3 = SavedValues.bool(savedGrown.variable("agenda"), "agenda")
         val saved4 = SavedValues.uint32(savedGrown.variable("shown"), "shown")
-        vLayout = saved1
-        vZoom = saved2
-        vAgenda = saved3
-        vShown = saved4
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLayout = saved1
+            vZoom = saved2
+            vAgenda = saved3
+            vShown = saved4
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -266,6 +282,10 @@ class StaticPayloadEnumStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticPayloadEnumViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         SavedValues.uint8(savedGrown.variable("zoom"), "zoom")
         SavedValues.bool(savedGrown.variable("agenda"), "agenda")
@@ -346,6 +366,9 @@ class StaticPayloadEnumStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticPayloadEnumState, HistoryId>> =
             listOf(StateTarget(StaticPayloadEnumState.Browsing))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: browsing's transition 0, as the microstep reads it.
         val transitionBrowsingAt0 = EnabledTransition<StaticPayloadEnumState, HistoryId>(
@@ -366,27 +389,32 @@ class StaticPayloadEnumStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticPayloadEnumState? = when (stateId) {
         "browsing" -> StaticPayloadEnumState.Browsing
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticPayloadEnumState): String = when (state) {
         is StaticPayloadEnumState.Browsing -> "browsing"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticPayloadEnumState): Int = when (state) {
         is StaticPayloadEnumState.Browsing -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticPayloadEnumEvent? = when (name) {
         "view.shown" -> StaticPayloadEnumEvent.View.Shown
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticPayloadEnumEvent): String? = when (event) {
@@ -397,50 +425,80 @@ class StaticPayloadEnumStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticPayloadEnumState,
-        event: StaticPayloadEnumEvent?
-    ): EnabledTransition<StaticPayloadEnumState, HistoryId>? = when (state) {
-        is StaticPayloadEnumState.Browsing -> when {
-            event is StaticPayloadEnumEvent.View.Shown && pendingViewShownPayload != null && (pendingViewShownPayload!!.layout == StaticPayloadEnumViewModeEnum.AGENDA_LIST) -> transitionBrowsingAt0
-            event is StaticPayloadEnumEvent.View.Shown -> transitionBrowsingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticPayloadEnumState, event: StaticPayloadEnumEvent?): EnabledTransition<StaticPayloadEnumState, HistoryId>? = when (state) {
+        is StaticPayloadEnumState.Browsing -> firstEnabledTransitionOfBrowsing(state, event)
     }
+
+
+    // browsing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBrowsing(state: StaticPayloadEnumState, event: StaticPayloadEnumEvent?): EnabledTransition<StaticPayloadEnumState, HistoryId>? = when {
+        event is StaticPayloadEnumEvent.View.Shown && pendingViewShownPayload != null && (pendingViewShownPayload!!.layout == StaticPayloadEnumViewModeEnum.AGENDA_LIST) -> TransitionsPart0.transitionBrowsingAt0
+        event is StaticPayloadEnumEvent.View.Shown -> TransitionsPart0.transitionBrowsingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_payload_enum.scxml:15 :: _machine
     override fun onEntry(state: StaticPayloadEnumState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticPayloadEnumState.Browsing -> {
-                // SCE-MAP: static_payload_enum.scxml:25 :: browsing :: _state_body
-            }
+            is StaticPayloadEnumState.Browsing -> onEntryOfBrowsing()
         }
+    }
+
+
+    private fun onEntryOfBrowsing() {
+                // SCE-MAP: static_payload_enum.scxml:25 :: browsing :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_payload_enum.scxml:15 :: _machine
     override fun onExit(state: StaticPayloadEnumState) {
         when (state) {
-            is StaticPayloadEnumState.Browsing -> {
-                // SCE-MAP: static_payload_enum.scxml:25 :: browsing :: _state_body
-            }
+            is StaticPayloadEnumState.Browsing -> onExitOfBrowsing()
         }
     }
+
+
+    private fun onExitOfBrowsing() {
+                // SCE-MAP: static_payload_enum.scxml:25 :: browsing :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_payload_enum.scxml:15 :: _machine
     override fun executeTransitionContent(source: StaticPayloadEnumState, transitionIndex: Int) {
         when (source) {
-        is StaticPayloadEnumState.Browsing -> when (transitionIndex) {
-            0 -> {
+            is StaticPayloadEnumState.Browsing -> transitionContentOfBrowsing(transitionIndex)
+        }
+    }
+
+
+    // The content of `browsing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfBrowsing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfBrowsingAt0()
+            1 -> transitionContentOfBrowsingAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfBrowsingAt0() {
                 // SCE-MAP: static_payload_enum.scxml:26 :: browsing :: _transition_0
                 if (pendingViewShownPayload == null) {
                     return
@@ -455,8 +513,9 @@ class StaticPayloadEnumStateMachine(
             if (try { vShown = com.sce.forge.runtime.SceChecked.add(vShown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfBrowsingAt1() {
                 // SCE-MAP: static_payload_enum.scxml:32 :: browsing :: _transition_1
                 if (pendingViewShownPayload == null) {
                     return
@@ -471,9 +530,5 @@ class StaticPayloadEnumStateMachine(
             if (try { vShown = com.sce.forge.runtime.SceChecked.add(vShown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

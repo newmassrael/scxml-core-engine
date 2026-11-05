@@ -90,18 +90,27 @@ class Test387StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: Test387State): Boolean = when (state) {
-        is Test387State.S0, is Test387State.S01, is Test387State.S02, is Test387State.S1, is Test387State.S11, is Test387State.S12 -> true
+        is Test387State.S0 -> true
+        is Test387State.S01 -> true
+        is Test387State.S02 -> true
+        is Test387State.S1 -> true
+        is Test387State.S11 -> true
+        is Test387State.S12 -> true
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test387State): Boolean = when (state) {
-        is Test387State.Fail, is Test387State.Pass -> true
+        is Test387State.Fail -> true
+        is Test387State.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -131,56 +140,84 @@ class Test387StateMachine(
 
     private companion object {
         /** W3C SCXML 3.10: the `s0HistDeep` <history> (deep). */
-        val historyS0HistDeep = HistoryId(0)
+        val historyS0HistDeep: HistoryId get() = HistoryId(0)
 
         /** W3C SCXML 3.10: the `s0HistShallow` <history> (shallow). */
-        val historyS0HistShallow = HistoryId(1)
+        val historyS0HistShallow: HistoryId get() = HistoryId(1)
 
         /** W3C SCXML 3.10: the `s1HistDeep` <history> (deep). */
-        val historyS1HistDeep = HistoryId(2)
+        val historyS1HistDeep: HistoryId get() = HistoryId(2)
 
         /** W3C SCXML 3.10: the `s1HistShallow` <history> (shallow). */
-        val historyS1HistShallow = HistoryId(3)
+        val historyS1HistShallow: HistoryId get() = HistoryId(3)
 
-        val childStates: Map<Test387State, List<Test387State>> = mapOf(
-            Test387State.S0 to listOf(Test387State.S01, Test387State.S02),
-            Test387State.S01 to listOf(Test387State.S011, Test387State.S012),
-            Test387State.S02 to listOf(Test387State.S021, Test387State.S022),
-            Test387State.S1 to listOf(Test387State.S11, Test387State.S12),
-            Test387State.S11 to listOf(Test387State.S111, Test387State.S112),
-            Test387State.S12 to listOf(Test387State.S121, Test387State.S122),
-        )
+        val childStates: Map<Test387State, List<Test387State>> = LinkedHashMap<Test387State, List<Test387State>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<Test387State, List<EntryTarget<Test387State, HistoryId>>> = mapOf(
-            Test387State.S0 to listOf(StateTarget(Test387State.S01)),
-            Test387State.S01 to listOf(StateTarget(Test387State.S011)),
-            Test387State.S02 to listOf(StateTarget(Test387State.S021)),
-            Test387State.S1 to listOf(StateTarget(Test387State.S11)),
-            Test387State.S11 to listOf(StateTarget(Test387State.S111)),
-            Test387State.S12 to listOf(StateTarget(Test387State.S121)),
-        )
+        private fun childStatesPart0(table: MutableMap<Test387State, List<Test387State>>) {
+            table[Test387State.S0] = listOf(Test387State.S01, Test387State.S02)
+            table[Test387State.S01] = listOf(Test387State.S011, Test387State.S012)
+            table[Test387State.S02] = listOf(Test387State.S021, Test387State.S022)
+            table[Test387State.S1] = listOf(Test387State.S11, Test387State.S12)
+            table[Test387State.S11] = listOf(Test387State.S111, Test387State.S112)
+            table[Test387State.S12] = listOf(Test387State.S121, Test387State.S122)
+        }
+
+
+        val initialTargets: Map<Test387State, List<EntryTarget<Test387State, HistoryId>>> = LinkedHashMap<Test387State, List<EntryTarget<Test387State, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<Test387State, List<EntryTarget<Test387State, HistoryId>>>) {
+            table[Test387State.S0] = listOf(StateTarget(Test387State.S01))
+            table[Test387State.S01] = listOf(StateTarget(Test387State.S011))
+            table[Test387State.S02] = listOf(StateTarget(Test387State.S021))
+            table[Test387State.S1] = listOf(StateTarget(Test387State.S11))
+            table[Test387State.S11] = listOf(StateTarget(Test387State.S111))
+            table[Test387State.S12] = listOf(StateTarget(Test387State.S121))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test387State, HistoryId>> =
             listOf(StateTarget(Test387State.S3))
 
-        val historyParents: Map<HistoryId, Test387State> = mapOf(
-            historyS0HistDeep to Test387State.S0,
-            historyS0HistShallow to Test387State.S0,
-            historyS1HistDeep to Test387State.S1,
-            historyS1HistShallow to Test387State.S1,
-        )
+        val historyParents: Map<HistoryId, Test387State> = LinkedHashMap<HistoryId, Test387State>().also {
+            historyParentsPart0(it)
+        }
 
-        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<Test387State, HistoryId>>> = mapOf(
-            historyS0HistDeep to listOf(StateTarget(Test387State.S022)),
-            historyS0HistShallow to listOf(StateTarget(Test387State.S01)),
-            historyS1HistDeep to listOf(StateTarget(Test387State.S122)),
-            historyS1HistShallow to listOf(StateTarget(Test387State.S11)),
-        )
+        private fun historyParentsPart0(table: MutableMap<HistoryId, Test387State>) {
+            table[historyS0HistDeep] = Test387State.S0
+            table[historyS0HistShallow] = Test387State.S0
+            table[historyS1HistDeep] = Test387State.S1
+            table[historyS1HistShallow] = Test387State.S1
+        }
 
-        val historiesByParent: Map<Test387State, List<Pair<HistoryId, Boolean>>> = mapOf(
-            Test387State.S0 to listOf(historyS0HistDeep to true, historyS0HistShallow to false),
-            Test387State.S1 to listOf(historyS1HistDeep to true, historyS1HistShallow to false),
-        )
+
+        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<Test387State, HistoryId>>> = LinkedHashMap<HistoryId, List<EntryTarget<Test387State, HistoryId>>>().also {
+            historyDefaultTargetsPart0(it)
+        }
+
+        private fun historyDefaultTargetsPart0(table: MutableMap<HistoryId, List<EntryTarget<Test387State, HistoryId>>>) {
+            table[historyS0HistDeep] = listOf(StateTarget(Test387State.S022))
+            table[historyS0HistShallow] = listOf(StateTarget(Test387State.S01))
+            table[historyS1HistDeep] = listOf(StateTarget(Test387State.S122))
+            table[historyS1HistShallow] = listOf(StateTarget(Test387State.S11))
+        }
+
+
+        val historiesByParent: Map<Test387State, List<Pair<HistoryId, Boolean>>> = LinkedHashMap<Test387State, List<Pair<HistoryId, Boolean>>>().also {
+            historiesByParentPart0(it)
+        }
+
+        private fun historiesByParentPart0(table: MutableMap<Test387State, List<Pair<HistoryId, Boolean>>>) {
+            table[Test387State.S0] = listOf(historyS0HistDeep to true, historyS0HistShallow to false)
+            table[Test387State.S1] = listOf(historyS1HistDeep to true, historyS1HistShallow to false)
+        }
+
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test387State, HistoryId>(
@@ -237,6 +274,7 @@ class Test387StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test387State? = when (stateId) {
         "fail" -> Test387State.Fail
@@ -260,6 +298,7 @@ class Test387StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test387State): String = when (state) {
         is Test387State.Fail -> "fail"
@@ -281,6 +320,7 @@ class Test387StateMachine(
         is Test387State.S3 -> "s3"
         is Test387State.S4 -> "s4"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test387State): Int = when (state) {
@@ -304,6 +344,7 @@ class Test387StateMachine(
         is Test387State.S4 -> 15
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test387Event? = when (name) {
         "enteringS011" -> Test387Event.EnteringS011
@@ -319,6 +360,7 @@ class Test387StateMachine(
         "*" -> Test387Event.Wildcard
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test387Event): String? = when (event) {
@@ -339,134 +381,189 @@ class Test387StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test387State,
-        event: Test387Event?
-    ): EnabledTransition<Test387State, HistoryId>? = when (state) {
-        is Test387State.S0 -> when {
-            event is Test387Event.EnteringS011 -> transitionS0At0
-            event != null -> transitionS0At1
-            else -> null
-        }
-        is Test387State.S1 -> when {
-            event is Test387Event.EnteringS122 -> transitionS1At0
-            event != null -> transitionS1At1
-            else -> null
-        }
-        is Test387State.S3 -> when {
-            event == null -> transitionS3At0
-            else -> null
-        }
-        is Test387State.S4 -> when {
-            event == null -> transitionS4At0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test387State, event: Test387Event?): EnabledTransition<Test387State, HistoryId>? = when (state) {
+        is Test387State.S0 -> firstEnabledTransitionOfS0(state, event)
+        is Test387State.S1 -> firstEnabledTransitionOfS1(state, event)
+        is Test387State.S3 -> firstEnabledTransitionOfS3(state, event)
+        is Test387State.S4 -> firstEnabledTransitionOfS4(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test387State, event: Test387Event?): EnabledTransition<Test387State, HistoryId>? = when {
+        event is Test387Event.EnteringS011 -> TransitionsPart0.transitionS0At0
+        event != null -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test387State, event: Test387Event?): EnabledTransition<Test387State, HistoryId>? = when {
+        event is Test387Event.EnteringS122 -> TransitionsPart0.transitionS1At0
+        event != null -> TransitionsPart0.transitionS1At1
+        else -> null
+    }
+
+
+    // s3's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test387State, event: Test387Event?): EnabledTransition<Test387State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS3At0
+        else -> null
+    }
+
+
+    // s4's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS4(state: Test387State, event: Test387Event?): EnabledTransition<Test387State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS4At0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test387.scxml:7 :: _machine
     override fun onEntry(state: Test387State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test387State.Fail -> {
+            is Test387State.Fail -> onEntryOfFail()
+            is Test387State.Pass -> onEntryOfPass()
+            is Test387State.S0 -> onEntryOfS0()
+            is Test387State.S01 -> onEntryOfS01()
+            is Test387State.S011 -> onEntryOfS011()
+            is Test387State.S012 -> onEntryOfS012()
+            is Test387State.S02 -> onEntryOfS02()
+            is Test387State.S021 -> onEntryOfS021()
+            is Test387State.S022 -> onEntryOfS022()
+            is Test387State.S1 -> onEntryOfS1()
+            is Test387State.S11 -> onEntryOfS11()
+            is Test387State.S111 -> onEntryOfS111()
+            is Test387State.S112 -> onEntryOfS112()
+            is Test387State.S12 -> onEntryOfS12()
+            is Test387State.S121 -> onEntryOfS121()
+            is Test387State.S122 -> onEntryOfS122()
+            is Test387State.S3 -> onEntryOfS3()
+            is Test387State.S4 -> onEntryOfS4()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test387.scxml:99 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test387State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test387.scxml:98 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test387State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test387.scxml:10 :: s0 :: _state_body
-            }
-            is Test387State.S01 -> {
+    }
+
+    private fun onEntryOfS01() {
                 // SCE-MAP: test387.scxml:21 :: s01 :: _state_body
-            }
-            is Test387State.S011 -> {
+    }
+
+    private fun onEntryOfS011() {
                 // SCE-MAP: test387.scxml:22 :: s011 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test387Event.EnteringS011)
                 }
-            }
-            is Test387State.S012 -> {
+    }
+
+    private fun onEntryOfS012() {
                 // SCE-MAP: test387.scxml:27 :: s012 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test387Event.EnteringS012)
                 }
-            }
-            is Test387State.S02 -> {
+    }
+
+    private fun onEntryOfS02() {
                 // SCE-MAP: test387.scxml:33 :: s02 :: _state_body
-            }
-            is Test387State.S021 -> {
+    }
+
+    private fun onEntryOfS021() {
                 // SCE-MAP: test387.scxml:34 :: s021 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test387Event.EnteringS021)
                 }
-            }
-            is Test387State.S022 -> {
+    }
+
+    private fun onEntryOfS022() {
                 // SCE-MAP: test387.scxml:39 :: s022 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test387Event.EnteringS022)
                 }
-            }
-            is Test387State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test387.scxml:48 :: s1 :: _state_body
-            }
-            is Test387State.S11 -> {
+    }
+
+    private fun onEntryOfS11() {
                 // SCE-MAP: test387.scxml:59 :: s11 :: _state_body
-            }
-            is Test387State.S111 -> {
+    }
+
+    private fun onEntryOfS111() {
                 // SCE-MAP: test387.scxml:60 :: s111 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test387Event.EnteringS111)
                 }
-            }
-            is Test387State.S112 -> {
+    }
+
+    private fun onEntryOfS112() {
                 // SCE-MAP: test387.scxml:65 :: s112 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test387Event.EnteringS112)
                 }
-            }
-            is Test387State.S12 -> {
+    }
+
+    private fun onEntryOfS12() {
                 // SCE-MAP: test387.scxml:71 :: s12 :: _state_body
-            }
-            is Test387State.S121 -> {
+    }
+
+    private fun onEntryOfS121() {
                 // SCE-MAP: test387.scxml:72 :: s121 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test387Event.EnteringS121)
                 }
-            }
-            is Test387State.S122 -> {
+    }
+
+    private fun onEntryOfS122() {
                 // SCE-MAP: test387.scxml:77 :: s122 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test387Event.EnteringS122)
                 }
-            }
-            is Test387State.S3 -> {
+    }
+
+    private fun onEntryOfS3() {
                 // SCE-MAP: test387.scxml:87 :: s3 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -483,80 +580,117 @@ class Test387StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is Test387State.S4 -> {
+    }
+
+    private fun onEntryOfS4() {
                 // SCE-MAP: test387.scxml:94 :: s4 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test387.scxml:7 :: _machine
     override fun onExit(state: Test387State) {
         when (state) {
-            is Test387State.Fail -> {
-                // SCE-MAP: test387.scxml:99 :: fail :: _state_body
-            }
-            is Test387State.Pass -> {
-                // SCE-MAP: test387.scxml:98 :: pass :: _state_body
-            }
-            is Test387State.S0 -> {
-                // SCE-MAP: test387.scxml:10 :: s0 :: _state_body
-            }
-            is Test387State.S01 -> {
-                // SCE-MAP: test387.scxml:21 :: s01 :: _state_body
-            }
-            is Test387State.S011 -> {
-                // SCE-MAP: test387.scxml:22 :: s011 :: _state_body
-            }
-            is Test387State.S012 -> {
-                // SCE-MAP: test387.scxml:27 :: s012 :: _state_body
-            }
-            is Test387State.S02 -> {
-                // SCE-MAP: test387.scxml:33 :: s02 :: _state_body
-            }
-            is Test387State.S021 -> {
-                // SCE-MAP: test387.scxml:34 :: s021 :: _state_body
-            }
-            is Test387State.S022 -> {
-                // SCE-MAP: test387.scxml:39 :: s022 :: _state_body
-            }
-            is Test387State.S1 -> {
-                // SCE-MAP: test387.scxml:48 :: s1 :: _state_body
-            }
-            is Test387State.S11 -> {
-                // SCE-MAP: test387.scxml:59 :: s11 :: _state_body
-            }
-            is Test387State.S111 -> {
-                // SCE-MAP: test387.scxml:60 :: s111 :: _state_body
-            }
-            is Test387State.S112 -> {
-                // SCE-MAP: test387.scxml:65 :: s112 :: _state_body
-            }
-            is Test387State.S12 -> {
-                // SCE-MAP: test387.scxml:71 :: s12 :: _state_body
-            }
-            is Test387State.S121 -> {
-                // SCE-MAP: test387.scxml:72 :: s121 :: _state_body
-            }
-            is Test387State.S122 -> {
-                // SCE-MAP: test387.scxml:77 :: s122 :: _state_body
-            }
-            is Test387State.S3 -> {
-                // SCE-MAP: test387.scxml:87 :: s3 :: _state_body
-            }
-            is Test387State.S4 -> {
-                // SCE-MAP: test387.scxml:94 :: s4 :: _state_body
-            }
+            is Test387State.Fail -> onExitOfFail()
+            is Test387State.Pass -> onExitOfPass()
+            is Test387State.S0 -> onExitOfS0()
+            is Test387State.S01 -> onExitOfS01()
+            is Test387State.S011 -> onExitOfS011()
+            is Test387State.S012 -> onExitOfS012()
+            is Test387State.S02 -> onExitOfS02()
+            is Test387State.S021 -> onExitOfS021()
+            is Test387State.S022 -> onExitOfS022()
+            is Test387State.S1 -> onExitOfS1()
+            is Test387State.S11 -> onExitOfS11()
+            is Test387State.S111 -> onExitOfS111()
+            is Test387State.S112 -> onExitOfS112()
+            is Test387State.S12 -> onExitOfS12()
+            is Test387State.S121 -> onExitOfS121()
+            is Test387State.S122 -> onExitOfS122()
+            is Test387State.S3 -> onExitOfS3()
+            is Test387State.S4 -> onExitOfS4()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test387.scxml:99 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test387.scxml:98 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test387.scxml:10 :: s0 :: _state_body
+    }
+
+    private fun onExitOfS01() {
+                // SCE-MAP: test387.scxml:21 :: s01 :: _state_body
+    }
+
+    private fun onExitOfS011() {
+                // SCE-MAP: test387.scxml:22 :: s011 :: _state_body
+    }
+
+    private fun onExitOfS012() {
+                // SCE-MAP: test387.scxml:27 :: s012 :: _state_body
+    }
+
+    private fun onExitOfS02() {
+                // SCE-MAP: test387.scxml:33 :: s02 :: _state_body
+    }
+
+    private fun onExitOfS021() {
+                // SCE-MAP: test387.scxml:34 :: s021 :: _state_body
+    }
+
+    private fun onExitOfS022() {
+                // SCE-MAP: test387.scxml:39 :: s022 :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test387.scxml:48 :: s1 :: _state_body
+    }
+
+    private fun onExitOfS11() {
+                // SCE-MAP: test387.scxml:59 :: s11 :: _state_body
+    }
+
+    private fun onExitOfS111() {
+                // SCE-MAP: test387.scxml:60 :: s111 :: _state_body
+    }
+
+    private fun onExitOfS112() {
+                // SCE-MAP: test387.scxml:65 :: s112 :: _state_body
+    }
+
+    private fun onExitOfS12() {
+                // SCE-MAP: test387.scxml:71 :: s12 :: _state_body
+    }
+
+    private fun onExitOfS121() {
+                // SCE-MAP: test387.scxml:72 :: s121 :: _state_body
+    }
+
+    private fun onExitOfS122() {
+                // SCE-MAP: test387.scxml:77 :: s122 :: _state_body
+    }
+
+    private fun onExitOfS3() {
+                // SCE-MAP: test387.scxml:87 :: s3 :: _state_body
+    }
+
+    private fun onExitOfS4() {
+                // SCE-MAP: test387.scxml:94 :: s4 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test387.scxml:7 :: _machine
     override fun executeTransitionContent(source: Test387State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

@@ -111,6 +111,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>>
@@ -119,6 +120,9 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>> =
             listOf(StateTarget(AComputedEventNameIsMatchedLikeAnyOtherState.S1))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s1's transition 0, as the microstep reads it.
         val transitionS1At0 = EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>(
@@ -175,6 +179,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AComputedEventNameIsMatchedLikeAnyOtherState? = when (stateId) {
         "pass" -> AComputedEventNameIsMatchedLikeAnyOtherState.Pass
@@ -187,6 +192,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AComputedEventNameIsMatchedLikeAnyOtherState): String = when (state) {
         is AComputedEventNameIsMatchedLikeAnyOtherState.Pass -> "pass"
@@ -197,6 +203,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
         is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> "s5"
         is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> "s6"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AComputedEventNameIsMatchedLikeAnyOtherState): Int = when (state) {
@@ -209,6 +216,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
         is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> 5
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AComputedEventNameIsMatchedLikeAnyOtherEvent? = when (name) {
         "error.communication" -> AComputedEventNameIsMatchedLikeAnyOtherEvent.Error.Communication
@@ -218,6 +226,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AComputedEventNameIsMatchedLikeAnyOtherEvent): String? = when (event) {
         is AComputedEventNameIsMatchedLikeAnyOtherEvent.Error.Communication -> "error.communication"
@@ -225,6 +234,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
         is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request -> "request"
         is AComputedEventNameIsMatchedLikeAnyOtherEvent.Wildcard -> "*"
     }
+
 
 
 
@@ -459,48 +469,84 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AComputedEventNameIsMatchedLikeAnyOtherState,
-        event: AComputedEventNameIsMatchedLikeAnyOtherEvent?
-    ): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when (state) {
-        is AComputedEventNameIsMatchedLikeAnyOtherState.S1 -> when {
-            event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.new\")", "_event.name === 'request.new'")) -> transitionS1At0
-            else -> null
-        }
-        is AComputedEventNameIsMatchedLikeAnyOtherState.S2 -> when {
-            event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"other.thing\")", "_event.name === 'other.thing'")) -> transitionS2At0
-            else -> null
-        }
-        is AComputedEventNameIsMatchedLikeAnyOtherState.S3 -> when {
-            event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.again\")", "_event.name === 'request.again'")) -> transitionS3At0
-            else -> null
-        }
-        is AComputedEventNameIsMatchedLikeAnyOtherState.S4 -> when {
-            event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"last.one\")", "_event.name === 'last.one'")) -> transitionS4At0
-            else -> null
-        }
-        is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> when {
-            event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.third\")", "_event.name === 'request.third'")) -> transitionS5At0
-            else -> null
-        }
-        is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> when {
-            event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"last.two\")", "_event.name === 'last.two'")) -> transitionS6At0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when (state) {
+        is AComputedEventNameIsMatchedLikeAnyOtherState.S1 -> firstEnabledTransitionOfS1(state, event)
+        is AComputedEventNameIsMatchedLikeAnyOtherState.S2 -> firstEnabledTransitionOfS2(state, event)
+        is AComputedEventNameIsMatchedLikeAnyOtherState.S3 -> firstEnabledTransitionOfS3(state, event)
+        is AComputedEventNameIsMatchedLikeAnyOtherState.S4 -> firstEnabledTransitionOfS4(state, event)
+        is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> firstEnabledTransitionOfS5(state, event)
+        is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> firstEnabledTransitionOfS6(state, event)
         else -> null
     }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
+        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.new\")", "_event.name === 'request.new'")) -> TransitionsPart0.transitionS1At0
+        else -> null
+    }
+
+
+    // s2's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"other.thing\")", "_event.name === 'other.thing'")) -> TransitionsPart0.transitionS2At0
+        else -> null
+    }
+
+
+    // s3's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
+        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.again\")", "_event.name === 'request.again'")) -> TransitionsPart0.transitionS3At0
+        else -> null
+    }
+
+
+    // s4's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS4(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"last.one\")", "_event.name === 'last.one'")) -> TransitionsPart0.transitionS4At0
+        else -> null
+    }
+
+
+    // s5's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS5(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
+        event is AComputedEventNameIsMatchedLikeAnyOtherEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.third\")", "_event.name === 'request.third'")) -> TransitionsPart0.transitionS5At0
+        else -> null
+    }
+
+
+    // s6's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS6(state: AComputedEventNameIsMatchedLikeAnyOtherState, event: AComputedEventNameIsMatchedLikeAnyOtherEvent?): EnabledTransition<AComputedEventNameIsMatchedLikeAnyOtherState, HistoryId>? = when {
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"last.two\")", "_event.name === 'last.two'")) -> TransitionsPart0.transitionS6At0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:38 :: _machine
     override fun onEntry(state: AComputedEventNameIsMatchedLikeAnyOtherState, isDefaultEntry: Boolean) {
         when (state) {
-            is AComputedEventNameIsMatchedLikeAnyOtherState.Pass -> {
+            is AComputedEventNameIsMatchedLikeAnyOtherState.Pass -> onEntryOfPass()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S1 -> onEntryOfS1()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S2 -> onEntryOfS2()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S3 -> onEntryOfS3()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S4 -> onEntryOfS4()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> onEntryOfS5()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> onEntryOfS6()
+        }
+    }
+
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:78 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:42 :: s1 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -536,8 +582,9 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S2 -> {
+    }
+
+    private fun onEntryOfS2() {
                 // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:48 :: s2 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -573,8 +620,9 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S3 -> {
+    }
+
+    private fun onEntryOfS3() {
                 // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:54 :: s3 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -611,8 +659,9 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S4 -> {
+    }
+
+    private fun onEntryOfS4() {
                 // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:60 :: s4 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -651,8 +700,9 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> {
+    }
+
+    private fun onEntryOfS5() {
                 // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:66 :: s5 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -760,8 +810,9 @@ sendEventName,
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> {
+    }
+
+    private fun onEntryOfS6() {
                 // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:72 :: s6 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -867,44 +918,58 @@ sendEventName,
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:38 :: _machine
     override fun onExit(state: AComputedEventNameIsMatchedLikeAnyOtherState) {
         when (state) {
-            is AComputedEventNameIsMatchedLikeAnyOtherState.Pass -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:78 :: pass :: _state_body
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S1 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:42 :: s1 :: _state_body
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S2 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:48 :: s2 :: _state_body
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S3 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:54 :: s3 :: _state_body
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S4 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:60 :: s4 :: _state_body
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:66 :: s5 :: _state_body
-            }
-            is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:72 :: s6 :: _state_body
-            }
+            is AComputedEventNameIsMatchedLikeAnyOtherState.Pass -> onExitOfPass()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S1 -> onExitOfS1()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S2 -> onExitOfS2()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S3 -> onExitOfS3()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S4 -> onExitOfS4()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> onExitOfS5()
+            is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> onExitOfS6()
         }
     }
+
+
+    private fun onExitOfPass() {
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:78 :: pass :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:42 :: s1 :: _state_body
+    }
+
+    private fun onExitOfS2() {
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:48 :: s2 :: _state_body
+    }
+
+    private fun onExitOfS3() {
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:54 :: s3 :: _state_body
+    }
+
+    private fun onExitOfS4() {
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:60 :: s4 :: _state_body
+    }
+
+    private fun onExitOfS5() {
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:66 :: s5 :: _state_body
+    }
+
+    private fun onExitOfS6() {
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:72 :: s6 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:38 :: _machine
     override fun executeTransitionContent(source: AComputedEventNameIsMatchedLikeAnyOtherState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

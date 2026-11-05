@@ -69,12 +69,15 @@ class ParallelDoneStateIsDeliveredStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: ParallelDoneStateIsDeliveredState): Boolean = when (state) {
-        is ParallelDoneStateIsDeliveredState.A, is ParallelDoneStateIsDeliveredState.B -> true
+        is ParallelDoneStateIsDeliveredState.A -> true
+        is ParallelDoneStateIsDeliveredState.B -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: ParallelDoneStateIsDeliveredState): Boolean = when (state) {
@@ -82,11 +85,15 @@ class ParallelDoneStateIsDeliveredStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: ParallelDoneStateIsDeliveredState): Boolean = when (state) {
-        is ParallelDoneStateIsDeliveredState.A2, is ParallelDoneStateIsDeliveredState.B2, is ParallelDoneStateIsDeliveredState.Settled -> true
+        is ParallelDoneStateIsDeliveredState.A2 -> true
+        is ParallelDoneStateIsDeliveredState.B2 -> true
+        is ParallelDoneStateIsDeliveredState.Settled -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -103,19 +110,32 @@ class ParallelDoneStateIsDeliveredStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<ParallelDoneStateIsDeliveredState, List<ParallelDoneStateIsDeliveredState>> = mapOf(
-            ParallelDoneStateIsDeliveredState.A to listOf(ParallelDoneStateIsDeliveredState.A1, ParallelDoneStateIsDeliveredState.A2),
-            ParallelDoneStateIsDeliveredState.B to listOf(ParallelDoneStateIsDeliveredState.B1, ParallelDoneStateIsDeliveredState.B2),
-            ParallelDoneStateIsDeliveredState.Run to listOf(ParallelDoneStateIsDeliveredState.A, ParallelDoneStateIsDeliveredState.B),
-        )
+        val childStates: Map<ParallelDoneStateIsDeliveredState, List<ParallelDoneStateIsDeliveredState>> = LinkedHashMap<ParallelDoneStateIsDeliveredState, List<ParallelDoneStateIsDeliveredState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<ParallelDoneStateIsDeliveredState, List<EntryTarget<ParallelDoneStateIsDeliveredState, HistoryId>>> = mapOf(
-            ParallelDoneStateIsDeliveredState.A to listOf(StateTarget(ParallelDoneStateIsDeliveredState.A1)),
-            ParallelDoneStateIsDeliveredState.B to listOf(StateTarget(ParallelDoneStateIsDeliveredState.B1)),
-        )
+        private fun childStatesPart0(table: MutableMap<ParallelDoneStateIsDeliveredState, List<ParallelDoneStateIsDeliveredState>>) {
+            table[ParallelDoneStateIsDeliveredState.A] = listOf(ParallelDoneStateIsDeliveredState.A1, ParallelDoneStateIsDeliveredState.A2)
+            table[ParallelDoneStateIsDeliveredState.B] = listOf(ParallelDoneStateIsDeliveredState.B1, ParallelDoneStateIsDeliveredState.B2)
+            table[ParallelDoneStateIsDeliveredState.Run] = listOf(ParallelDoneStateIsDeliveredState.A, ParallelDoneStateIsDeliveredState.B)
+        }
+
+
+        val initialTargets: Map<ParallelDoneStateIsDeliveredState, List<EntryTarget<ParallelDoneStateIsDeliveredState, HistoryId>>> = LinkedHashMap<ParallelDoneStateIsDeliveredState, List<EntryTarget<ParallelDoneStateIsDeliveredState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<ParallelDoneStateIsDeliveredState, List<EntryTarget<ParallelDoneStateIsDeliveredState, HistoryId>>>) {
+            table[ParallelDoneStateIsDeliveredState.A] = listOf(StateTarget(ParallelDoneStateIsDeliveredState.A1))
+            table[ParallelDoneStateIsDeliveredState.B] = listOf(StateTarget(ParallelDoneStateIsDeliveredState.B1))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<ParallelDoneStateIsDeliveredState, HistoryId>> =
             listOf(StateTarget(ParallelDoneStateIsDeliveredState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: a1's transition 0, as the microstep reads it.
         val transitionA1At0 = EnabledTransition<ParallelDoneStateIsDeliveredState, HistoryId>(
@@ -145,6 +165,7 @@ class ParallelDoneStateIsDeliveredStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ParallelDoneStateIsDeliveredState? = when (stateId) {
         "a" -> ParallelDoneStateIsDeliveredState.A
@@ -158,6 +179,7 @@ class ParallelDoneStateIsDeliveredStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ParallelDoneStateIsDeliveredState): String = when (state) {
         is ParallelDoneStateIsDeliveredState.A -> "a"
@@ -169,6 +191,7 @@ class ParallelDoneStateIsDeliveredStateMachine(
         is ParallelDoneStateIsDeliveredState.Run -> "run"
         is ParallelDoneStateIsDeliveredState.Settled -> "settled"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ParallelDoneStateIsDeliveredState): Int = when (state) {
@@ -182,6 +205,7 @@ class ParallelDoneStateIsDeliveredStateMachine(
         is ParallelDoneStateIsDeliveredState.Settled -> 7
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ParallelDoneStateIsDeliveredEvent? = when (name) {
         "done.state.a" -> ParallelDoneStateIsDeliveredEvent.Done.State.A
@@ -190,6 +214,7 @@ class ParallelDoneStateIsDeliveredStateMachine(
         "go" -> ParallelDoneStateIsDeliveredEvent.Go
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ParallelDoneStateIsDeliveredEvent): String? = when (event) {
@@ -203,42 +228,69 @@ class ParallelDoneStateIsDeliveredStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ParallelDoneStateIsDeliveredState,
-        event: ParallelDoneStateIsDeliveredEvent?
-    ): EnabledTransition<ParallelDoneStateIsDeliveredState, HistoryId>? = when (state) {
-        is ParallelDoneStateIsDeliveredState.A1 -> when {
-            event is ParallelDoneStateIsDeliveredEvent.Go -> transitionA1At0
-            else -> null
-        }
-        is ParallelDoneStateIsDeliveredState.B1 -> when {
-            event is ParallelDoneStateIsDeliveredEvent.Go -> transitionB1At0
-            else -> null
-        }
-        is ParallelDoneStateIsDeliveredState.Run -> when {
-            event is ParallelDoneStateIsDeliveredEvent.Done.State.Run -> transitionRunAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ParallelDoneStateIsDeliveredState, event: ParallelDoneStateIsDeliveredEvent?): EnabledTransition<ParallelDoneStateIsDeliveredState, HistoryId>? = when (state) {
+        is ParallelDoneStateIsDeliveredState.A1 -> firstEnabledTransitionOfA1(state, event)
+        is ParallelDoneStateIsDeliveredState.B1 -> firstEnabledTransitionOfB1(state, event)
+        is ParallelDoneStateIsDeliveredState.Run -> firstEnabledTransitionOfRun(state, event)
         else -> null
     }
+
+
+    // a1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfA1(state: ParallelDoneStateIsDeliveredState, event: ParallelDoneStateIsDeliveredEvent?): EnabledTransition<ParallelDoneStateIsDeliveredState, HistoryId>? = when {
+        event is ParallelDoneStateIsDeliveredEvent.Go -> TransitionsPart0.transitionA1At0
+        else -> null
+    }
+
+
+    // b1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfB1(state: ParallelDoneStateIsDeliveredState, event: ParallelDoneStateIsDeliveredEvent?): EnabledTransition<ParallelDoneStateIsDeliveredState, HistoryId>? = when {
+        event is ParallelDoneStateIsDeliveredEvent.Go -> TransitionsPart0.transitionB1At0
+        else -> null
+    }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ParallelDoneStateIsDeliveredState, event: ParallelDoneStateIsDeliveredEvent?): EnabledTransition<ParallelDoneStateIsDeliveredState, HistoryId>? = when {
+        event is ParallelDoneStateIsDeliveredEvent.Done.State.Run -> TransitionsPart0.transitionRunAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: parallel_done_state_is_delivered.scxml:32 :: _machine
     override fun onEntry(state: ParallelDoneStateIsDeliveredState, isDefaultEntry: Boolean) {
         when (state) {
-            is ParallelDoneStateIsDeliveredState.A -> {
+            is ParallelDoneStateIsDeliveredState.A -> onEntryOfA()
+            is ParallelDoneStateIsDeliveredState.A1 -> onEntryOfA1()
+            is ParallelDoneStateIsDeliveredState.A2 -> onEntryOfA2()
+            is ParallelDoneStateIsDeliveredState.B -> onEntryOfB()
+            is ParallelDoneStateIsDeliveredState.B1 -> onEntryOfB1()
+            is ParallelDoneStateIsDeliveredState.B2 -> onEntryOfB2()
+            is ParallelDoneStateIsDeliveredState.Run -> onEntryOfRun()
+            is ParallelDoneStateIsDeliveredState.Settled -> onEntryOfSettled()
+        }
+    }
+
+
+    private fun onEntryOfA() {
                 // SCE-MAP: parallel_done_state_is_delivered.scxml:37 :: a :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.A1 -> {
+    }
+
+    private fun onEntryOfA1() {
                 // SCE-MAP: parallel_done_state_is_delivered.scxml:38 :: a1 :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.A2 -> {
+    }
+
+    private fun onEntryOfA2() {
                 // SCE-MAP: parallel_done_state_is_delivered.scxml:41 :: a2 :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(ParallelDoneStateIsDeliveredEvent.Done.State.A, EventMetadata.platform())
@@ -249,14 +301,17 @@ class ParallelDoneStateIsDeliveredStateMachine(
                 if (isStateInFinalState(ParallelDoneStateIsDeliveredState.Run)) {
                     raiseInternal(ParallelDoneStateIsDeliveredEvent.Done.State.Run)
                 }
-            }
-            is ParallelDoneStateIsDeliveredState.B -> {
+    }
+
+    private fun onEntryOfB() {
                 // SCE-MAP: parallel_done_state_is_delivered.scxml:44 :: b :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.B1 -> {
+    }
+
+    private fun onEntryOfB1() {
                 // SCE-MAP: parallel_done_state_is_delivered.scxml:45 :: b1 :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.B2 -> {
+    }
+
+    private fun onEntryOfB2() {
                 // SCE-MAP: parallel_done_state_is_delivered.scxml:48 :: b2 :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(ParallelDoneStateIsDeliveredEvent.Done.State.B, EventMetadata.platform())
@@ -267,55 +322,73 @@ class ParallelDoneStateIsDeliveredStateMachine(
                 if (isStateInFinalState(ParallelDoneStateIsDeliveredState.Run)) {
                     raiseInternal(ParallelDoneStateIsDeliveredEvent.Done.State.Run)
                 }
-            }
-            is ParallelDoneStateIsDeliveredState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: parallel_done_state_is_delivered.scxml:35 :: run :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.Settled -> {
+    }
+
+    private fun onEntryOfSettled() {
                 // SCE-MAP: parallel_done_state_is_delivered.scxml:64 :: settled :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: parallel_done_state_is_delivered.scxml:32 :: _machine
     override fun onExit(state: ParallelDoneStateIsDeliveredState) {
         when (state) {
-            is ParallelDoneStateIsDeliveredState.A -> {
-                // SCE-MAP: parallel_done_state_is_delivered.scxml:37 :: a :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.A1 -> {
-                // SCE-MAP: parallel_done_state_is_delivered.scxml:38 :: a1 :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.A2 -> {
-                // SCE-MAP: parallel_done_state_is_delivered.scxml:41 :: a2 :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.B -> {
-                // SCE-MAP: parallel_done_state_is_delivered.scxml:44 :: b :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.B1 -> {
-                // SCE-MAP: parallel_done_state_is_delivered.scxml:45 :: b1 :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.B2 -> {
-                // SCE-MAP: parallel_done_state_is_delivered.scxml:48 :: b2 :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.Run -> {
-                // SCE-MAP: parallel_done_state_is_delivered.scxml:35 :: run :: _state_body
-            }
-            is ParallelDoneStateIsDeliveredState.Settled -> {
-                // SCE-MAP: parallel_done_state_is_delivered.scxml:64 :: settled :: _state_body
-            }
+            is ParallelDoneStateIsDeliveredState.A -> onExitOfA()
+            is ParallelDoneStateIsDeliveredState.A1 -> onExitOfA1()
+            is ParallelDoneStateIsDeliveredState.A2 -> onExitOfA2()
+            is ParallelDoneStateIsDeliveredState.B -> onExitOfB()
+            is ParallelDoneStateIsDeliveredState.B1 -> onExitOfB1()
+            is ParallelDoneStateIsDeliveredState.B2 -> onExitOfB2()
+            is ParallelDoneStateIsDeliveredState.Run -> onExitOfRun()
+            is ParallelDoneStateIsDeliveredState.Settled -> onExitOfSettled()
         }
     }
+
+
+    private fun onExitOfA() {
+                // SCE-MAP: parallel_done_state_is_delivered.scxml:37 :: a :: _state_body
+    }
+
+    private fun onExitOfA1() {
+                // SCE-MAP: parallel_done_state_is_delivered.scxml:38 :: a1 :: _state_body
+    }
+
+    private fun onExitOfA2() {
+                // SCE-MAP: parallel_done_state_is_delivered.scxml:41 :: a2 :: _state_body
+    }
+
+    private fun onExitOfB() {
+                // SCE-MAP: parallel_done_state_is_delivered.scxml:44 :: b :: _state_body
+    }
+
+    private fun onExitOfB1() {
+                // SCE-MAP: parallel_done_state_is_delivered.scxml:45 :: b1 :: _state_body
+    }
+
+    private fun onExitOfB2() {
+                // SCE-MAP: parallel_done_state_is_delivered.scxml:48 :: b2 :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: parallel_done_state_is_delivered.scxml:35 :: run :: _state_body
+    }
+
+    private fun onExitOfSettled() {
+                // SCE-MAP: parallel_done_state_is_delivered.scxml:64 :: settled :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: parallel_done_state_is_delivered.scxml:32 :: _machine
     override fun executeTransitionContent(source: ParallelDoneStateIsDeliveredState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

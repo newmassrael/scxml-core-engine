@@ -100,6 +100,7 @@ class TheRunEndsByExitingEveryStateStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: TheRunEndsByExitingEveryStateState): Boolean = when (state) {
@@ -107,11 +108,13 @@ class TheRunEndsByExitingEveryStateStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: TheRunEndsByExitingEveryStateState): Boolean = when (state) {
         is TheRunEndsByExitingEveryStateState.Done -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -128,16 +131,29 @@ class TheRunEndsByExitingEveryStateStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<TheRunEndsByExitingEveryStateState, List<TheRunEndsByExitingEveryStateState>> = mapOf(
-            TheRunEndsByExitingEveryStateState.Outer to listOf(TheRunEndsByExitingEveryStateState.Inner),
-        )
+        val childStates: Map<TheRunEndsByExitingEveryStateState, List<TheRunEndsByExitingEveryStateState>> = LinkedHashMap<TheRunEndsByExitingEveryStateState, List<TheRunEndsByExitingEveryStateState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<TheRunEndsByExitingEveryStateState, List<EntryTarget<TheRunEndsByExitingEveryStateState, HistoryId>>> = mapOf(
-            TheRunEndsByExitingEveryStateState.Outer to listOf(StateTarget(TheRunEndsByExitingEveryStateState.Inner)),
-        )
+        private fun childStatesPart0(table: MutableMap<TheRunEndsByExitingEveryStateState, List<TheRunEndsByExitingEveryStateState>>) {
+            table[TheRunEndsByExitingEveryStateState.Outer] = listOf(TheRunEndsByExitingEveryStateState.Inner)
+        }
+
+
+        val initialTargets: Map<TheRunEndsByExitingEveryStateState, List<EntryTarget<TheRunEndsByExitingEveryStateState, HistoryId>>> = LinkedHashMap<TheRunEndsByExitingEveryStateState, List<EntryTarget<TheRunEndsByExitingEveryStateState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<TheRunEndsByExitingEveryStateState, List<EntryTarget<TheRunEndsByExitingEveryStateState, HistoryId>>>) {
+            table[TheRunEndsByExitingEveryStateState.Outer] = listOf(StateTarget(TheRunEndsByExitingEveryStateState.Inner))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<TheRunEndsByExitingEveryStateState, HistoryId>> =
             listOf(StateTarget(TheRunEndsByExitingEveryStateState.Outer))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: inner's transition 0, as the microstep reads it.
         val transitionInnerAt0 = EnabledTransition<TheRunEndsByExitingEveryStateState, HistoryId>(
@@ -149,6 +165,7 @@ class TheRunEndsByExitingEveryStateStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): TheRunEndsByExitingEveryStateState? = when (stateId) {
         "done" -> TheRunEndsByExitingEveryStateState.Done
@@ -157,12 +174,14 @@ class TheRunEndsByExitingEveryStateStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: TheRunEndsByExitingEveryStateState): String = when (state) {
         is TheRunEndsByExitingEveryStateState.Done -> "done"
         is TheRunEndsByExitingEveryStateState.Inner -> "inner"
         is TheRunEndsByExitingEveryStateState.Outer -> "outer"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: TheRunEndsByExitingEveryStateState): Int = when (state) {
@@ -171,6 +190,7 @@ class TheRunEndsByExitingEveryStateStateMachine(
         is TheRunEndsByExitingEveryStateState.Outer -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): TheRunEndsByExitingEveryStateEvent? = when (name) {
         "error.execution" -> TheRunEndsByExitingEveryStateEvent.Error.Execution
@@ -178,11 +198,13 @@ class TheRunEndsByExitingEveryStateStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: TheRunEndsByExitingEveryStateEvent): String? = when (event) {
         is TheRunEndsByExitingEveryStateEvent.Error.Execution -> "error.execution"
         is TheRunEndsByExitingEveryStateEvent.Finish -> "finish"
     }
+
 
 
 
@@ -212,6 +234,29 @@ class TheRunEndsByExitingEveryStateStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+        // W3C SCXML 5.9.2: Register In() predicate callback
+        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'order' with expr
         try {
             val initResult_order = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -233,24 +278,6 @@ class TheRunEndsByExitingEveryStateStateMachine(
         } catch (e: Exception) {
             raisePlatformError(TheRunEndsByExitingEveryStateEvent.Error.Execution, "<data id='selfInFinal'> expr failed to evaluate")
         }
-
-
-
-        // W3C SCXML 5.9.2: Register In() predicate callback
-        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -440,41 +467,59 @@ class TheRunEndsByExitingEveryStateStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: TheRunEndsByExitingEveryStateState,
-        event: TheRunEndsByExitingEveryStateEvent?
-    ): EnabledTransition<TheRunEndsByExitingEveryStateState, HistoryId>? = when (state) {
-        is TheRunEndsByExitingEveryStateState.Inner -> when {
-            event is TheRunEndsByExitingEveryStateEvent.Finish -> transitionInnerAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: TheRunEndsByExitingEveryStateState, event: TheRunEndsByExitingEveryStateEvent?): EnabledTransition<TheRunEndsByExitingEveryStateState, HistoryId>? = when (state) {
+        is TheRunEndsByExitingEveryStateState.Inner -> firstEnabledTransitionOfInner(state, event)
         else -> null
     }
+
+
+    // inner's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfInner(state: TheRunEndsByExitingEveryStateState, event: TheRunEndsByExitingEveryStateEvent?): EnabledTransition<TheRunEndsByExitingEveryStateState, HistoryId>? = when {
+        event is TheRunEndsByExitingEveryStateEvent.Finish -> TransitionsPart0.transitionInnerAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:37 :: _machine
     override fun onEntry(state: TheRunEndsByExitingEveryStateState, isDefaultEntry: Boolean) {
         when (state) {
-            is TheRunEndsByExitingEveryStateState.Done -> {
+            is TheRunEndsByExitingEveryStateState.Done -> onEntryOfDone()
+            is TheRunEndsByExitingEveryStateState.Inner -> onEntryOfInner()
+            is TheRunEndsByExitingEveryStateState.Outer -> onEntryOfOuter()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:60 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is TheRunEndsByExitingEveryStateState.Inner -> {
+    }
+
+    private fun onEntryOfInner() {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:52 :: inner :: _state_body
-            }
-            is TheRunEndsByExitingEveryStateState.Outer -> {
+    }
+
+    private fun onEntryOfOuter() {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:47 :: outer :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:37 :: _machine
     override fun onExit(state: TheRunEndsByExitingEveryStateState) {
         when (state) {
-            is TheRunEndsByExitingEveryStateState.Done -> {
+            is TheRunEndsByExitingEveryStateState.Done -> onExitOfDone()
+            is TheRunEndsByExitingEveryStateState.Inner -> onExitOfInner()
+            is TheRunEndsByExitingEveryStateState.Outer -> onExitOfOuter()
+        }
+    }
+
+
+    private fun onExitOfDone() {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:60 :: done :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -493,8 +538,9 @@ class TheRunEndsByExitingEveryStateStateMachine(
             }
             }
                 }
-            }
-            is TheRunEndsByExitingEveryStateState.Inner -> {
+    }
+
+    private fun onExitOfInner() {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:52 :: inner :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -504,8 +550,9 @@ class TheRunEndsByExitingEveryStateStateMachine(
                 return@run
             }
                 }
-            }
-            is TheRunEndsByExitingEveryStateState.Outer -> {
+    }
+
+    private fun onExitOfOuter() {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:47 :: outer :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -515,16 +562,15 @@ class TheRunEndsByExitingEveryStateStateMachine(
                 return@run
             }
                 }
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:37 :: _machine
     override fun executeTransitionContent(source: TheRunEndsByExitingEveryStateState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

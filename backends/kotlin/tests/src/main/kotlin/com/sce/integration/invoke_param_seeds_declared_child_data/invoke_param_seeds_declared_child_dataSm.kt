@@ -104,9 +104,18 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: InvokeParamSeedsDeclaredChildDataState): Boolean = when (state) {
-        is InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression, is InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost, is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamCollapsed, is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost, is InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost, is InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost, is InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost, is InvokeParamSeedsDeclaredChildDataState.FailUnmatchedParamEnteredTheChild, is InvokeParamSeedsDeclaredChildDataState.Pass -> true
+        is InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression -> true
+        is InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost -> true
+        is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamCollapsed -> true
+        is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost -> true
+        is InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost -> true
+        is InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost -> true
+        is InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost -> true
+        is InvokeParamSeedsDeclaredChildDataState.FailUnmatchedParamEnteredTheChild -> true
+        is InvokeParamSeedsDeclaredChildDataState.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -116,6 +125,9 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokeParamSeedsDeclaredChildDataState, HistoryId>> =
             listOf(StateTarget(InvokeParamSeedsDeclaredChildDataState.Shadowed))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: infinite's transition 0, as the microstep reads it.
         val transitionInfiniteAt0 = EnabledTransition<InvokeParamSeedsDeclaredChildDataState, HistoryId>(
@@ -280,6 +292,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeParamSeedsDeclaredChildDataState? = when (stateId) {
         "failChildEvaluatedTheExpression" -> InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression
@@ -299,6 +312,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokeParamSeedsDeclaredChildDataState): String = when (state) {
         is InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression -> "failChildEvaluatedTheExpression"
@@ -316,6 +330,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
         is InvokeParamSeedsDeclaredChildDataState.SoleName -> "soleName"
         is InvokeParamSeedsDeclaredChildDataState.Unmatched -> "unmatched"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeParamSeedsDeclaredChildDataState): Int = when (state) {
@@ -335,6 +350,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
         is InvokeParamSeedsDeclaredChildDataState.Unmatched -> 2
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeParamSeedsDeclaredChildDataEvent? = when (name) {
         "done.invoke" -> InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke
@@ -347,6 +363,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeParamSeedsDeclaredChildDataEvent): String? = when (event) {
         is InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke -> "done.invoke"
@@ -357,6 +374,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
         is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> "seed.ok"
         is InvokeParamSeedsDeclaredChildDataEvent.Seed.Shadowed -> "seed.shadowed"
     }
+
 
 
 
@@ -386,20 +404,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'token' with expr
-        try {
-            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"parent\"", "'parent'"))
-            engine.setVariable(sid, "token", initResult_token)
-        } catch (e: Exception) {
-            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
-        }
-        // W3C SCXML 5.3: Initialize variable 'only_here' with expr
-        try {
-            val initResult_onlyHere = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"sole\"", "'sole'"))
-            engine.setVariable(sid, "only_here", initResult_onlyHere)
-        } catch (e: Exception) {
-            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<data id='only_here'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -416,6 +421,24 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'token' with expr
+        try {
+            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"parent\"", "'parent'"))
+            engine.setVariable(sid, "token", initResult_token)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'only_here' with expr
+        try {
+            val initResult_onlyHere = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"sole\"", "'sole'"))
+            engine.setVariable(sid, "only_here", initResult_onlyHere)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<data id='only_here'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -605,122 +628,171 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokeParamSeedsDeclaredChildDataState,
-        event: InvokeParamSeedsDeclaredChildDataEvent?
-    ): EnabledTransition<InvokeParamSeedsDeclaredChildDataState, HistoryId>? = when (state) {
-        is InvokeParamSeedsDeclaredChildDataState.Infinite -> when {
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> transitionInfiniteAt0
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> transitionInfiniteAt1
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Collapsed -> transitionInfiniteAt2
-            event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> transitionInfiniteAt3
-            else -> null
-        }
-        is InvokeParamSeedsDeclaredChildDataState.NamelistPhase -> when {
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> transitionNamelistPhaseAt0
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> transitionNamelistPhaseAt1
-            event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> transitionNamelistPhaseAt2
-            else -> null
-        }
-        is InvokeParamSeedsDeclaredChildDataState.Shadowed -> when {
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> transitionShadowedAt0
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Shadowed -> transitionShadowedAt1
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> transitionShadowedAt2
-            event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> transitionShadowedAt3
-            else -> null
-        }
-        is InvokeParamSeedsDeclaredChildDataState.SoleName -> when {
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> transitionSoleNameAt0
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> transitionSoleNameAt1
-            event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> transitionSoleNameAt2
-            else -> null
-        }
-        is InvokeParamSeedsDeclaredChildDataState.Unmatched -> when {
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> transitionUnmatchedAt0
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Leaked -> transitionUnmatchedAt1
-            event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> transitionUnmatchedAt2
-            event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> transitionUnmatchedAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokeParamSeedsDeclaredChildDataState, event: InvokeParamSeedsDeclaredChildDataEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataState, HistoryId>? = when (state) {
+        is InvokeParamSeedsDeclaredChildDataState.Infinite -> firstEnabledTransitionOfInfinite(state, event)
+        is InvokeParamSeedsDeclaredChildDataState.NamelistPhase -> firstEnabledTransitionOfNamelistPhase(state, event)
+        is InvokeParamSeedsDeclaredChildDataState.Shadowed -> firstEnabledTransitionOfShadowed(state, event)
+        is InvokeParamSeedsDeclaredChildDataState.SoleName -> firstEnabledTransitionOfSoleName(state, event)
+        is InvokeParamSeedsDeclaredChildDataState.Unmatched -> firstEnabledTransitionOfUnmatched(state, event)
         else -> null
     }
+
+
+    // infinite's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfInfinite(state: InvokeParamSeedsDeclaredChildDataState, event: InvokeParamSeedsDeclaredChildDataEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataState, HistoryId>? = when {
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionsPart0.transitionInfiniteAt0
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionsPart0.transitionInfiniteAt1
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Collapsed -> TransitionsPart0.transitionInfiniteAt2
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionsPart0.transitionInfiniteAt3
+        else -> null
+    }
+
+
+    // namelistPhase's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfNamelistPhase(state: InvokeParamSeedsDeclaredChildDataState, event: InvokeParamSeedsDeclaredChildDataEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataState, HistoryId>? = when {
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionsPart0.transitionNamelistPhaseAt0
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionsPart0.transitionNamelistPhaseAt1
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionsPart0.transitionNamelistPhaseAt2
+        else -> null
+    }
+
+
+    // shadowed's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfShadowed(state: InvokeParamSeedsDeclaredChildDataState, event: InvokeParamSeedsDeclaredChildDataEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataState, HistoryId>? = when {
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionsPart0.transitionShadowedAt0
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Shadowed -> TransitionsPart0.transitionShadowedAt1
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionsPart0.transitionShadowedAt2
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionsPart0.transitionShadowedAt3
+        else -> null
+    }
+
+
+    // soleName's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSoleName(state: InvokeParamSeedsDeclaredChildDataState, event: InvokeParamSeedsDeclaredChildDataEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataState, HistoryId>? = when {
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionsPart0.transitionSoleNameAt0
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionsPart0.transitionSoleNameAt1
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionsPart0.transitionSoleNameAt2
+        else -> null
+    }
+
+
+    // unmatched's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfUnmatched(state: InvokeParamSeedsDeclaredChildDataState, event: InvokeParamSeedsDeclaredChildDataEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataState, HistoryId>? = when {
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionsPart0.transitionUnmatchedAt0
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Leaked -> TransitionsPart0.transitionUnmatchedAt1
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionsPart0.transitionUnmatchedAt2
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionsPart0.transitionUnmatchedAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
     override fun onEntry(state: InvokeParamSeedsDeclaredChildDataState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression -> {
+            is InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression -> onEntryOfFailChildEvaluatedTheExpression()
+            is InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost -> onEntryOfFailDeclaredParamLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamCollapsed -> onEntryOfFailInfiniteParamCollapsed()
+            is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost -> onEntryOfFailInfiniteParamLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost -> onEntryOfFailNamelistValueLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost -> onEntryOfFailParentOnlyExprLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost -> onEntryOfFailShadowSeedLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailUnmatchedParamEnteredTheChild -> onEntryOfFailUnmatchedParamEnteredTheChild()
+            is InvokeParamSeedsDeclaredChildDataState.Infinite -> onEntryOfInfinite()
+            is InvokeParamSeedsDeclaredChildDataState.NamelistPhase -> onEntryOfNamelistPhase()
+            is InvokeParamSeedsDeclaredChildDataState.Pass -> onEntryOfPass()
+            is InvokeParamSeedsDeclaredChildDataState.Shadowed -> onEntryOfShadowed()
+            is InvokeParamSeedsDeclaredChildDataState.SoleName -> onEntryOfSoleName()
+            is InvokeParamSeedsDeclaredChildDataState.Unmatched -> onEntryOfUnmatched()
+        }
+    }
+
+
+    private fun onEntryOfFailChildEvaluatedTheExpression() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:266 :: failChildEvaluatedTheExpression :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost -> {
+    }
+
+    private fun onEntryOfFailDeclaredParamLost() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:270 :: failDeclaredParamLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamCollapsed -> {
+    }
+
+    private fun onEntryOfFailInfiniteParamCollapsed() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:273 :: failInfiniteParamCollapsed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost -> {
+    }
+
+    private fun onEntryOfFailInfiniteParamLost() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:272 :: failInfiniteParamLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost -> {
+    }
+
+    private fun onEntryOfFailNamelistValueLost() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:271 :: failNamelistValueLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost -> {
+    }
+
+    private fun onEntryOfFailParentOnlyExprLost() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:268 :: failParentOnlyExprLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost -> {
+    }
+
+    private fun onEntryOfFailShadowSeedLost() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:267 :: failShadowSeedLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailUnmatchedParamEnteredTheChild -> {
+    }
+
+    private fun onEntryOfFailUnmatchedParamEnteredTheChild() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:269 :: failUnmatchedParamEnteredTheChild :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.Infinite -> {
+    }
+
+    private fun onEntryOfInfinite() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:235 :: infinite :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_infinite", state)
-            }
-            is InvokeParamSeedsDeclaredChildDataState.NamelistPhase -> {
+                deferStaticInvoke("inv_infinite", InvokeParamSeedsDeclaredChildDataState.Infinite)
+    }
+
+    private fun onEntryOfNamelistPhase() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:193 :: namelistPhase :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_namelist", state)
-            }
-            is InvokeParamSeedsDeclaredChildDataState.Pass -> {
+                deferStaticInvoke("inv_namelist", InvokeParamSeedsDeclaredChildDataState.NamelistPhase)
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:265 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataState.Shadowed -> {
+    }
+
+    private fun onEntryOfShadowed() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:92 :: shadowed :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_shadow", state)
-            }
-            is InvokeParamSeedsDeclaredChildDataState.SoleName -> {
+                deferStaticInvoke("inv_shadow", InvokeParamSeedsDeclaredChildDataState.Shadowed)
+    }
+
+    private fun onEntryOfSoleName() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:123 :: soleName :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_sole", state)
-            }
-            is InvokeParamSeedsDeclaredChildDataState.Unmatched -> {
+                deferStaticInvoke("inv_sole", InvokeParamSeedsDeclaredChildDataState.SoleName)
+    }
+
+    private fun onEntryOfUnmatched() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:149 :: unmatched :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_unmatched", state)
-            }
-        }
+                deferStaticInvoke("inv_unmatched", InvokeParamSeedsDeclaredChildDataState.Unmatched)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -733,9 +805,24 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: InvokeParamSeedsDeclaredChildDataState) {
         when (invokeId) {
-            "inv_infinite" -> run {
+            "inv_infinite" -> startInvokeOfInfiniteAt0(state)
+            "inv_namelist" -> startInvokeOfNamelistPhaseAt0(state)
+            "inv_shadow" -> startInvokeOfShadowedAt0(state)
+            "inv_sole" -> startInvokeOfSoleNameAt0(state)
+            "inv_unmatched" -> startInvokeOfUnmatchedAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfInfiniteAt0(state: InvokeParamSeedsDeclaredChildDataState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "infinite.${nextInvokeStart("inv_infinite")}.inv_infinite"
@@ -763,7 +850,10 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     startInvoke("inv_infinite", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite", "inv_infinite")
                 }
             }
-            "inv_namelist" -> run {
+    }
+
+    private fun startInvokeOfNamelistPhaseAt0(state: InvokeParamSeedsDeclaredChildDataState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "namelistPhase.${nextInvokeStart("inv_namelist")}.inv_namelist"
@@ -787,7 +877,10 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     startInvoke("inv_namelist", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist", "inv_namelist")
                 }
             }
-            "inv_shadow" -> run {
+    }
+
+    private fun startInvokeOfShadowedAt0(state: InvokeParamSeedsDeclaredChildDataState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "shadowed.${nextInvokeStart("inv_shadow")}.inv_shadow"
@@ -815,7 +908,10 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     startInvoke("inv_shadow", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow", "inv_shadow")
                 }
             }
-            "inv_sole" -> run {
+    }
+
+    private fun startInvokeOfSoleNameAt0(state: InvokeParamSeedsDeclaredChildDataState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "soleName.${nextInvokeStart("inv_sole")}.inv_sole"
@@ -843,7 +939,10 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     startInvoke("inv_sole", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole", "inv_sole")
                 }
             }
-            "inv_unmatched" -> run {
+    }
+
+    private fun startInvokeOfUnmatchedAt0(state: InvokeParamSeedsDeclaredChildDataState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "unmatched.${nextInvokeStart("inv_unmatched")}.inv_unmatched"
@@ -880,85 +979,113 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     startInvoke("inv_unmatched", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched", "inv_unmatched")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
     override fun onExit(state: InvokeParamSeedsDeclaredChildDataState) {
         when (state) {
-            is InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:266 :: failChildEvaluatedTheExpression :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:270 :: failDeclaredParamLost :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamCollapsed -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:273 :: failInfiniteParamCollapsed :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:272 :: failInfiniteParamLost :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:271 :: failNamelistValueLost :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:268 :: failParentOnlyExprLost :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:267 :: failShadowSeedLost :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.FailUnmatchedParamEnteredTheChild -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:269 :: failUnmatchedParamEnteredTheChild :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.Infinite -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:235 :: infinite :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_infinite")
-            }
-            is InvokeParamSeedsDeclaredChildDataState.NamelistPhase -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:193 :: namelistPhase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_namelist")
-            }
-            is InvokeParamSeedsDeclaredChildDataState.Pass -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:265 :: pass :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataState.Shadowed -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:92 :: shadowed :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_shadow")
-            }
-            is InvokeParamSeedsDeclaredChildDataState.SoleName -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:123 :: soleName :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_sole")
-            }
-            is InvokeParamSeedsDeclaredChildDataState.Unmatched -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:149 :: unmatched :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_unmatched")
-            }
+            is InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression -> onExitOfFailChildEvaluatedTheExpression()
+            is InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost -> onExitOfFailDeclaredParamLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamCollapsed -> onExitOfFailInfiniteParamCollapsed()
+            is InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost -> onExitOfFailInfiniteParamLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost -> onExitOfFailNamelistValueLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost -> onExitOfFailParentOnlyExprLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost -> onExitOfFailShadowSeedLost()
+            is InvokeParamSeedsDeclaredChildDataState.FailUnmatchedParamEnteredTheChild -> onExitOfFailUnmatchedParamEnteredTheChild()
+            is InvokeParamSeedsDeclaredChildDataState.Infinite -> onExitOfInfinite()
+            is InvokeParamSeedsDeclaredChildDataState.NamelistPhase -> onExitOfNamelistPhase()
+            is InvokeParamSeedsDeclaredChildDataState.Pass -> onExitOfPass()
+            is InvokeParamSeedsDeclaredChildDataState.Shadowed -> onExitOfShadowed()
+            is InvokeParamSeedsDeclaredChildDataState.SoleName -> onExitOfSoleName()
+            is InvokeParamSeedsDeclaredChildDataState.Unmatched -> onExitOfUnmatched()
         }
     }
+
+
+    private fun onExitOfFailChildEvaluatedTheExpression() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:266 :: failChildEvaluatedTheExpression :: _state_body
+    }
+
+    private fun onExitOfFailDeclaredParamLost() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:270 :: failDeclaredParamLost :: _state_body
+    }
+
+    private fun onExitOfFailInfiniteParamCollapsed() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:273 :: failInfiniteParamCollapsed :: _state_body
+    }
+
+    private fun onExitOfFailInfiniteParamLost() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:272 :: failInfiniteParamLost :: _state_body
+    }
+
+    private fun onExitOfFailNamelistValueLost() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:271 :: failNamelistValueLost :: _state_body
+    }
+
+    private fun onExitOfFailParentOnlyExprLost() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:268 :: failParentOnlyExprLost :: _state_body
+    }
+
+    private fun onExitOfFailShadowSeedLost() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:267 :: failShadowSeedLost :: _state_body
+    }
+
+    private fun onExitOfFailUnmatchedParamEnteredTheChild() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:269 :: failUnmatchedParamEnteredTheChild :: _state_body
+    }
+
+    private fun onExitOfInfinite() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:235 :: infinite :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokeParamSeedsDeclaredChildDataState.Infinite)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_infinite")
+    }
+
+    private fun onExitOfNamelistPhase() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:193 :: namelistPhase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokeParamSeedsDeclaredChildDataState.NamelistPhase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_namelist")
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:265 :: pass :: _state_body
+    }
+
+    private fun onExitOfShadowed() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:92 :: shadowed :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokeParamSeedsDeclaredChildDataState.Shadowed)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_shadow")
+    }
+
+    private fun onExitOfSoleName() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:123 :: soleName :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokeParamSeedsDeclaredChildDataState.SoleName)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_sole")
+    }
+
+    private fun onExitOfUnmatched() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:149 :: unmatched :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokeParamSeedsDeclaredChildDataState.Unmatched)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_unmatched")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
     override fun executeTransitionContent(source: InvokeParamSeedsDeclaredChildDataState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

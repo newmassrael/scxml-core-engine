@@ -115,6 +115,9 @@ class LateDataBindsOnFirstEntryStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<LateDataBindsOnFirstEntryState, HistoryId>> =
             listOf(StateTarget(LateDataBindsOnFirstEntryState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<LateDataBindsOnFirstEntryState, HistoryId>(
@@ -144,6 +147,7 @@ class LateDataBindsOnFirstEntryStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): LateDataBindsOnFirstEntryState? = when (stateId) {
         "idle" -> LateDataBindsOnFirstEntryState.Idle
@@ -151,17 +155,20 @@ class LateDataBindsOnFirstEntryStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: LateDataBindsOnFirstEntryState): String = when (state) {
         is LateDataBindsOnFirstEntryState.Idle -> "idle"
         is LateDataBindsOnFirstEntryState.S -> "s"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: LateDataBindsOnFirstEntryState): Int = when (state) {
         is LateDataBindsOnFirstEntryState.Idle -> 0
         is LateDataBindsOnFirstEntryState.S -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): LateDataBindsOnFirstEntryEvent? = when (name) {
@@ -172,6 +179,7 @@ class LateDataBindsOnFirstEntryStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: LateDataBindsOnFirstEntryEvent): String? = when (event) {
         is LateDataBindsOnFirstEntryEvent.Back -> "back"
@@ -179,6 +187,7 @@ class LateDataBindsOnFirstEntryStateMachine(
         is LateDataBindsOnFirstEntryEvent.Error.Execution -> "error.execution"
         is LateDataBindsOnFirstEntryEvent.Go -> "go"
     }
+
 
 
 
@@ -208,6 +217,27 @@ class LateDataBindsOnFirstEntryStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'entries' with expr
         try {
             val initResult_entries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -229,22 +259,6 @@ class LateDataBindsOnFirstEntryStateMachine(
         } catch (e: Exception) {
             raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='contentSeen'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -434,36 +448,51 @@ class LateDataBindsOnFirstEntryStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: LateDataBindsOnFirstEntryState,
-        event: LateDataBindsOnFirstEntryEvent?
-    ): EnabledTransition<LateDataBindsOnFirstEntryState, HistoryId>? = when (state) {
-        is LateDataBindsOnFirstEntryState.Idle -> when {
-            event is LateDataBindsOnFirstEntryEvent.Go -> transitionIdleAt0
-            else -> null
-        }
-        is LateDataBindsOnFirstEntryState.S -> when {
-            event is LateDataBindsOnFirstEntryEvent.Bump -> transitionSAt0
-            event is LateDataBindsOnFirstEntryEvent.Back -> transitionSAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: LateDataBindsOnFirstEntryState, event: LateDataBindsOnFirstEntryEvent?): EnabledTransition<LateDataBindsOnFirstEntryState, HistoryId>? = when (state) {
+        is LateDataBindsOnFirstEntryState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is LateDataBindsOnFirstEntryState.S -> firstEnabledTransitionOfS(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: LateDataBindsOnFirstEntryState, event: LateDataBindsOnFirstEntryEvent?): EnabledTransition<LateDataBindsOnFirstEntryState, HistoryId>? = when {
+        event is LateDataBindsOnFirstEntryEvent.Go -> TransitionsPart0.transitionIdleAt0
+        else -> null
+    }
+
+
+    // s's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS(state: LateDataBindsOnFirstEntryState, event: LateDataBindsOnFirstEntryEvent?): EnabledTransition<LateDataBindsOnFirstEntryState, HistoryId>? = when {
+        event is LateDataBindsOnFirstEntryEvent.Bump -> TransitionsPart0.transitionSAt0
+        event is LateDataBindsOnFirstEntryEvent.Back -> TransitionsPart0.transitionSAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: late_data_binds_on_first_entry.scxml:26 :: _machine
     override fun onEntry(state: LateDataBindsOnFirstEntryState, isDefaultEntry: Boolean) {
         when (state) {
-            is LateDataBindsOnFirstEntryState.Idle -> {
+            is LateDataBindsOnFirstEntryState.Idle -> onEntryOfIdle()
+            is LateDataBindsOnFirstEntryState.S -> onEntryOfS()
+        }
+    }
+
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: late_data_binds_on_first_entry.scxml:36 :: idle :: _state_body
-            }
-            is LateDataBindsOnFirstEntryState.S -> {
+    }
+
+    private fun onEntryOfS() {
                 // SCE-MAP: late_data_binds_on_first_entry.scxml:40 :: s :: _state_body
                 // §scxml-D-enterStates, late binding: the state's <data> is bound
                 // on its FIRST entry only (s.isFirstEntry), before its <onentry>.
                 // The engine owns the first-entry rule; this is only what binding
                 // means for this state.
-                if (claimLateBindingFirstEntry(state)) {
+                if (claimLateBindingFirstEntry(LateDataBindsOnFirstEntryState.S)) {
                     ensureScriptEngine()
                     val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -498,40 +527,57 @@ class LateDataBindsOnFirstEntryStateMachine(
                 return@run
             }
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: late_data_binds_on_first_entry.scxml:26 :: _machine
     override fun onExit(state: LateDataBindsOnFirstEntryState) {
         when (state) {
-            is LateDataBindsOnFirstEntryState.Idle -> {
-                // SCE-MAP: late_data_binds_on_first_entry.scxml:36 :: idle :: _state_body
-            }
-            is LateDataBindsOnFirstEntryState.S -> {
-                // SCE-MAP: late_data_binds_on_first_entry.scxml:40 :: s :: _state_body
-            }
+            is LateDataBindsOnFirstEntryState.Idle -> onExitOfIdle()
+            is LateDataBindsOnFirstEntryState.S -> onExitOfS()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: late_data_binds_on_first_entry.scxml:36 :: idle :: _state_body
+    }
+
+    private fun onExitOfS() {
+                // SCE-MAP: late_data_binds_on_first_entry.scxml:40 :: s :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: late_data_binds_on_first_entry.scxml:26 :: _machine
     override fun executeTransitionContent(source: LateDataBindsOnFirstEntryState, transitionIndex: Int) {
         when (source) {
-        is LateDataBindsOnFirstEntryState.S -> when (transitionIndex) {
-            0 -> {
+            is LateDataBindsOnFirstEntryState.S -> transitionContentOfS(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfSAt0() {
                 // SCE-MAP: late_data_binds_on_first_entry.scxml:50 :: s :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("v", "v"), com.sce.runtime.ScriptSource.lua("5", "5"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

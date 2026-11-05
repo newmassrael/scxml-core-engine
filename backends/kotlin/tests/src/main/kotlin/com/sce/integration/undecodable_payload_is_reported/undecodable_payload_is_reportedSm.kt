@@ -88,6 +88,7 @@ class UndecodablePayloadIsReportedStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<UndecodablePayloadIsReportedState, HistoryId>>
@@ -96,6 +97,9 @@ class UndecodablePayloadIsReportedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<UndecodablePayloadIsReportedState, HistoryId>> =
             listOf(StateTarget(UndecodablePayloadIsReportedState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>(
@@ -125,6 +129,7 @@ class UndecodablePayloadIsReportedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): UndecodablePayloadIsReportedState? = when (stateId) {
         "accepted" -> UndecodablePayloadIsReportedState.Accepted
@@ -132,17 +137,20 @@ class UndecodablePayloadIsReportedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: UndecodablePayloadIsReportedState): String = when (state) {
         is UndecodablePayloadIsReportedState.Accepted -> "accepted"
         is UndecodablePayloadIsReportedState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: UndecodablePayloadIsReportedState): Int = when (state) {
         is UndecodablePayloadIsReportedState.Accepted -> 1
         is UndecodablePayloadIsReportedState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): UndecodablePayloadIsReportedEvent? = when (name) {
@@ -152,12 +160,14 @@ class UndecodablePayloadIsReportedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: UndecodablePayloadIsReportedEvent): String? = when (event) {
         is UndecodablePayloadIsReportedEvent.Answer -> "answer"
         is UndecodablePayloadIsReportedEvent.Error.Execution -> "error.execution"
         is UndecodablePayloadIsReportedEvent.Note -> "note"
     }
+
 
 
 
@@ -187,20 +197,7 @@ class UndecodablePayloadIsReportedStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'answers' with expr
-        try {
-            val initResult_answers = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "answers", initResult_answers)
-        } catch (e: Exception) {
-            raisePlatformError(UndecodablePayloadIsReportedEvent.Error.Execution, "<data id='answers'> expr failed to evaluate")
-        }
-        // W3C SCXML 5.3: Initialize variable 'notes' with expr
-        try {
-            val initResult_notes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "notes", initResult_notes)
-        } catch (e: Exception) {
-            raisePlatformError(UndecodablePayloadIsReportedEvent.Error.Execution, "<data id='notes'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -217,6 +214,24 @@ class UndecodablePayloadIsReportedStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'answers' with expr
+        try {
+            val initResult_answers = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "answers", initResult_answers)
+        } catch (e: Exception) {
+            raisePlatformError(UndecodablePayloadIsReportedEvent.Error.Execution, "<data id='answers'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'notes' with expr
+        try {
+            val initResult_notes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "notes", initResult_notes)
+        } catch (e: Exception) {
+            raisePlatformError(UndecodablePayloadIsReportedEvent.Error.Execution, "<data id='notes'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -406,73 +421,103 @@ class UndecodablePayloadIsReportedStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: UndecodablePayloadIsReportedState,
-        event: UndecodablePayloadIsReportedEvent?
-    ): EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>? = when (state) {
-        is UndecodablePayloadIsReportedState.Waiting -> when {
-            event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> transitionWaitingAt0
-            event is UndecodablePayloadIsReportedEvent.Answer -> transitionWaitingAt1
-            event is UndecodablePayloadIsReportedEvent.Note -> transitionWaitingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: UndecodablePayloadIsReportedState, event: UndecodablePayloadIsReportedEvent?): EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>? = when (state) {
+        is UndecodablePayloadIsReportedState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: UndecodablePayloadIsReportedState, event: UndecodablePayloadIsReportedEvent?): EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>? = when {
+        event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> TransitionsPart0.transitionWaitingAt0
+        event is UndecodablePayloadIsReportedEvent.Answer -> TransitionsPart0.transitionWaitingAt1
+        event is UndecodablePayloadIsReportedEvent.Note -> TransitionsPart0.transitionWaitingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: undecodable_payload_is_reported.scxml:56 :: _machine
     override fun onEntry(state: UndecodablePayloadIsReportedState, isDefaultEntry: Boolean) {
         when (state) {
-            is UndecodablePayloadIsReportedState.Accepted -> {
+            is UndecodablePayloadIsReportedState.Accepted -> onEntryOfAccepted()
+            is UndecodablePayloadIsReportedState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfAccepted() {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:72 :: accepted :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is UndecodablePayloadIsReportedState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:63 :: waiting :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: undecodable_payload_is_reported.scxml:56 :: _machine
     override fun onExit(state: UndecodablePayloadIsReportedState) {
         when (state) {
-            is UndecodablePayloadIsReportedState.Accepted -> {
-                // SCE-MAP: undecodable_payload_is_reported.scxml:72 :: accepted :: _state_body
-            }
-            is UndecodablePayloadIsReportedState.Waiting -> {
-                // SCE-MAP: undecodable_payload_is_reported.scxml:63 :: waiting :: _state_body
-            }
+            is UndecodablePayloadIsReportedState.Accepted -> onExitOfAccepted()
+            is UndecodablePayloadIsReportedState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfAccepted() {
+                // SCE-MAP: undecodable_payload_is_reported.scxml:72 :: accepted :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: undecodable_payload_is_reported.scxml:63 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: undecodable_payload_is_reported.scxml:56 :: _machine
     override fun executeTransitionContent(source: UndecodablePayloadIsReportedState, transitionIndex: Int) {
         when (source) {
-        is UndecodablePayloadIsReportedState.Waiting -> when (transitionIndex) {
-            1 -> {
+            is UndecodablePayloadIsReportedState.Waiting -> transitionContentOfWaiting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            1 -> transitionContentOfWaitingAt1()
+            2 -> transitionContentOfWaitingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:65 :: waiting :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("answers", "answers"), com.sce.runtime.ScriptSource.lua("_scxml_add(answers, 1)", "answers + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfWaitingAt2() {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:68 :: waiting :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("notes", "notes"), com.sce.runtime.ScriptSource.lua("_scxml_add(notes, 1)", "notes + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

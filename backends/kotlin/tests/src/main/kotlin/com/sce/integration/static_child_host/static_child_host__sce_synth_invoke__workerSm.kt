@@ -111,6 +111,10 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.steps?.let { vSteps = it }
     }
 
@@ -173,13 +177,15 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "steps" to SavedValues.of(vSteps),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "steps" to SavedValues.of(vSteps)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -204,9 +210,19 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(savedGrown.variable("steps"), "steps")
-        vSteps = saved1
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
         enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
+        val saved1 = SavedValues.uint32(savedGrown.variable("steps"), "steps")
+        return {
+            vSteps = saved1
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -219,6 +235,10 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("steps"), "steps")
     }
 
@@ -247,6 +267,7 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticChildHostSceSynthInvokeWorkerState, HistoryId>>
@@ -255,6 +276,9 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticChildHostSceSynthInvokeWorkerState, HistoryId>> =
             listOf(StateTarget(StaticChildHostSceSynthInvokeWorkerState.First))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: first's transition 0, as the microstep reads it.
         val transitionFirstAt0 = EnabledTransition<StaticChildHostSceSynthInvokeWorkerState, HistoryId>(
@@ -275,6 +299,7 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticChildHostSceSynthInvokeWorkerState? = when (stateId) {
         "first" -> StaticChildHostSceSynthInvokeWorkerState.First
@@ -283,12 +308,14 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticChildHostSceSynthInvokeWorkerState): String = when (state) {
         is StaticChildHostSceSynthInvokeWorkerState.First -> "first"
         is StaticChildHostSceSynthInvokeWorkerState.Leaf -> "leaf"
         is StaticChildHostSceSynthInvokeWorkerState.Second -> "second"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticChildHostSceSynthInvokeWorkerState): Int = when (state) {
@@ -297,12 +324,14 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
         is StaticChildHostSceSynthInvokeWorkerState.Second -> 1
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticChildHostSceSynthInvokeWorkerEvent? = when (name) {
         "a" -> StaticChildHostSceSynthInvokeWorkerEvent.A
         "b" -> StaticChildHostSceSynthInvokeWorkerEvent.B
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticChildHostSceSynthInvokeWorkerEvent): String? = when (event) {
@@ -314,32 +343,48 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticChildHostSceSynthInvokeWorkerState,
-        event: StaticChildHostSceSynthInvokeWorkerEvent?
-    ): EnabledTransition<StaticChildHostSceSynthInvokeWorkerState, HistoryId>? = when (state) {
-        is StaticChildHostSceSynthInvokeWorkerState.First -> when {
-            event is StaticChildHostSceSynthInvokeWorkerEvent.A -> transitionFirstAt0
-            else -> null
-        }
-        is StaticChildHostSceSynthInvokeWorkerState.Second -> when {
-            event is StaticChildHostSceSynthInvokeWorkerEvent.B -> transitionSecondAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticChildHostSceSynthInvokeWorkerState, event: StaticChildHostSceSynthInvokeWorkerEvent?): EnabledTransition<StaticChildHostSceSynthInvokeWorkerState, HistoryId>? = when (state) {
+        is StaticChildHostSceSynthInvokeWorkerState.First -> firstEnabledTransitionOfFirst(state, event)
+        is StaticChildHostSceSynthInvokeWorkerState.Second -> firstEnabledTransitionOfSecond(state, event)
         else -> null
     }
+
+
+    // first's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfFirst(state: StaticChildHostSceSynthInvokeWorkerState, event: StaticChildHostSceSynthInvokeWorkerEvent?): EnabledTransition<StaticChildHostSceSynthInvokeWorkerState, HistoryId>? = when {
+        event is StaticChildHostSceSynthInvokeWorkerEvent.A -> TransitionsPart0.transitionFirstAt0
+        else -> null
+    }
+
+
+    // second's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSecond(state: StaticChildHostSceSynthInvokeWorkerState, event: StaticChildHostSceSynthInvokeWorkerEvent?): EnabledTransition<StaticChildHostSceSynthInvokeWorkerState, HistoryId>? = when {
+        event is StaticChildHostSceSynthInvokeWorkerEvent.B -> TransitionsPart0.transitionSecondAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_child_host.scxml:32 :: _machine
     override fun onEntry(state: StaticChildHostSceSynthInvokeWorkerState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticChildHostSceSynthInvokeWorkerState.First -> {
+            is StaticChildHostSceSynthInvokeWorkerState.First -> onEntryOfFirst()
+            is StaticChildHostSceSynthInvokeWorkerState.Leaf -> onEntryOfLeaf()
+            is StaticChildHostSceSynthInvokeWorkerState.Second -> onEntryOfSecond()
+        }
+    }
+
+
+    private fun onEntryOfFirst() {
                 // SCE-MAP: static_child_host.scxml:37 :: first :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -347,51 +392,89 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
             // W3C SCXML G.7: <sce:action name="started">
             actions.started()
                 }
-            }
-            is StaticChildHostSceSynthInvokeWorkerState.Leaf -> {
+    }
+
+    private fun onEntryOfLeaf() {
                 // SCE-MAP: static_child_host.scxml:53 :: leaf :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticChildHostSceSynthInvokeWorkerState.Second -> {
+    }
+
+    private fun onEntryOfSecond() {
                 // SCE-MAP: static_child_host.scxml:45 :: second :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_child_host.scxml:32 :: _machine
     override fun onExit(state: StaticChildHostSceSynthInvokeWorkerState) {
         when (state) {
-            is StaticChildHostSceSynthInvokeWorkerState.First -> {
-                // SCE-MAP: static_child_host.scxml:37 :: first :: _state_body
-            }
-            is StaticChildHostSceSynthInvokeWorkerState.Leaf -> {
-                // SCE-MAP: static_child_host.scxml:53 :: leaf :: _state_body
-            }
-            is StaticChildHostSceSynthInvokeWorkerState.Second -> {
-                // SCE-MAP: static_child_host.scxml:45 :: second :: _state_body
-            }
+            is StaticChildHostSceSynthInvokeWorkerState.First -> onExitOfFirst()
+            is StaticChildHostSceSynthInvokeWorkerState.Leaf -> onExitOfLeaf()
+            is StaticChildHostSceSynthInvokeWorkerState.Second -> onExitOfSecond()
         }
     }
+
+
+    private fun onExitOfFirst() {
+                // SCE-MAP: static_child_host.scxml:37 :: first :: _state_body
+    }
+
+    private fun onExitOfLeaf() {
+                // SCE-MAP: static_child_host.scxml:53 :: leaf :: _state_body
+    }
+
+    private fun onExitOfSecond() {
+                // SCE-MAP: static_child_host.scxml:45 :: second :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_child_host.scxml:32 :: _machine
     override fun executeTransitionContent(source: StaticChildHostSceSynthInvokeWorkerState, transitionIndex: Int) {
         when (source) {
-        is StaticChildHostSceSynthInvokeWorkerState.First -> when (transitionIndex) {
-            0 -> {
+            is StaticChildHostSceSynthInvokeWorkerState.First -> transitionContentOfFirst(transitionIndex)
+            is StaticChildHostSceSynthInvokeWorkerState.Second -> transitionContentOfSecond(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `first`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfFirst(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfFirstAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfFirstAt0() {
                 // SCE-MAP: static_child_host.scxml:41 :: first :: _transition_0
 
             if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
+    }
+
+    // The content of `second`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSecond(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSecondAt0()
             else -> {}
         }
-        is StaticChildHostSceSynthInvokeWorkerState.Second -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfSecondAt0() {
                 // SCE-MAP: static_child_host.scxml:46 :: second :: _transition_0
 
             if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
@@ -400,10 +483,5 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
 
             // W3C SCXML G.7: <sce:action name="finished">
             actions.finished(vSteps)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

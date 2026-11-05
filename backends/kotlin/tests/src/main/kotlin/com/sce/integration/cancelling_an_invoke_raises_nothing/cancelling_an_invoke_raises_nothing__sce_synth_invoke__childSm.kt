@@ -54,26 +54,31 @@ class CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine(
             listOf(StateTarget(CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): CancellingAnInvokeRaisesNothingSceSynthInvokeChildState? = when (stateId) {
         "idle" -> CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState): String = when (state) {
         is CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle -> "idle"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState): Int = when (state) {
         is CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): CancellingAnInvokeRaisesNothingSceSynthInvokeChildEvent? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -94,40 +99,47 @@ class CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState,
-        event: CancellingAnInvokeRaisesNothingSceSynthInvokeChildEvent?
-    ): EnabledTransition<CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, event: CancellingAnInvokeRaisesNothingSceSynthInvokeChildEvent?): EnabledTransition<CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:3 :: _machine
     override fun onEntry(state: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, isDefaultEntry: Boolean) {
         when (state) {
-            is CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle -> {
-                // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:4 :: idle :: _state_body
-            }
+            is CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:4 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:3 :: _machine
     override fun onExit(state: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState) {
         when (state) {
-            is CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle -> {
-                // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:4 :: idle :: _state_body
-            }
+            is CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:4 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:3 :: _machine
     override fun executeTransitionContent(source: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

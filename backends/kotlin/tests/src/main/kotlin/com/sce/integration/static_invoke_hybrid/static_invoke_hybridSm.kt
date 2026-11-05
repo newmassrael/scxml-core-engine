@@ -87,6 +87,10 @@ class StaticInvokeHybridStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.pick?.let { vPick = it }
         params.base?.let { vBase = it }
         params.enabled?.let { vEnabled = it }
@@ -166,17 +170,19 @@ class StaticInvokeHybridStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "pick" to SavedValues.of(vPick),
-            "base" to SavedValues.of(vBase),
-            "enabled" to SavedValues.of(vEnabled),
-            "completed" to SavedValues.of(vCompleted),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "pick" to SavedValues.of(vPick)
+        variables += "base" to SavedValues.of(vBase)
+        variables += "enabled" to SavedValues.of(vEnabled)
+        variables += "completed" to SavedValues.of(vCompleted)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -201,17 +207,27 @@ class StaticInvokeHybridStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("pick"), "pick", 48)
         val saved2 = SavedValues.uint32(savedGrown.variable("base"), "base")
         val saved3 = SavedValues.bool(savedGrown.variable("enabled"), "enabled")
         val saved4 = SavedValues.uint32(savedGrown.variable("completed"), "completed")
         val saved5 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vPick = saved1
-        vBase = saved2
-        vEnabled = saved3
-        vCompleted = saved4
-        vErrors = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vPick = saved1
+            vBase = saved2
+            vEnabled = saved3
+            vCompleted = saved4
+            vErrors = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -224,6 +240,10 @@ class StaticInvokeHybridStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("pick"), "pick", 48)
         SavedValues.uint32(savedGrown.variable("base"), "base")
         SavedValues.bool(savedGrown.variable("enabled"), "enabled")
@@ -272,6 +292,7 @@ class StaticInvokeHybridStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: StaticInvokeHybridState): Boolean = when (state) {
@@ -279,11 +300,13 @@ class StaticInvokeHybridStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: StaticInvokeHybridState): Boolean = when (state) {
         is StaticInvokeHybridState.Over -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -300,16 +323,29 @@ class StaticInvokeHybridStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<StaticInvokeHybridState, List<StaticInvokeHybridState>> = mapOf(
-            StaticInvokeHybridState.Run to listOf(StaticInvokeHybridState.First, StaticInvokeHybridState.Second, StaticInvokeHybridState.Lossy, StaticInvokeHybridState.Missing),
-        )
+        val childStates: Map<StaticInvokeHybridState, List<StaticInvokeHybridState>> = LinkedHashMap<StaticInvokeHybridState, List<StaticInvokeHybridState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<StaticInvokeHybridState, List<EntryTarget<StaticInvokeHybridState, HistoryId>>> = mapOf(
-            StaticInvokeHybridState.Run to listOf(StateTarget(StaticInvokeHybridState.First)),
-        )
+        private fun childStatesPart0(table: MutableMap<StaticInvokeHybridState, List<StaticInvokeHybridState>>) {
+            table[StaticInvokeHybridState.Run] = listOf(StaticInvokeHybridState.First, StaticInvokeHybridState.Second, StaticInvokeHybridState.Lossy, StaticInvokeHybridState.Missing)
+        }
+
+
+        val initialTargets: Map<StaticInvokeHybridState, List<EntryTarget<StaticInvokeHybridState, HistoryId>>> = LinkedHashMap<StaticInvokeHybridState, List<EntryTarget<StaticInvokeHybridState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<StaticInvokeHybridState, List<EntryTarget<StaticInvokeHybridState, HistoryId>>>) {
+            table[StaticInvokeHybridState.Run] = listOf(StateTarget(StaticInvokeHybridState.First))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<StaticInvokeHybridState, HistoryId>> =
             listOf(StateTarget(StaticInvokeHybridState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: first's transition 0, as the microstep reads it.
         val transitionFirstAt0 = EnabledTransition<StaticInvokeHybridState, HistoryId>(
@@ -366,6 +402,7 @@ class StaticInvokeHybridStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticInvokeHybridState? = when (stateId) {
         "first" -> StaticInvokeHybridState.First
@@ -377,6 +414,7 @@ class StaticInvokeHybridStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticInvokeHybridState): String = when (state) {
         is StaticInvokeHybridState.First -> "first"
@@ -386,6 +424,7 @@ class StaticInvokeHybridStateMachine(
         is StaticInvokeHybridState.Run -> "run"
         is StaticInvokeHybridState.Second -> "second"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticInvokeHybridState): Int = when (state) {
@@ -397,6 +436,7 @@ class StaticInvokeHybridStateMachine(
         is StaticInvokeHybridState.Second -> 2
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticInvokeHybridEvent? = when (name) {
         "done.invoke.first_run" -> StaticInvokeHybridEvent.Done.Invoke.FirstRun
@@ -406,6 +446,7 @@ class StaticInvokeHybridStateMachine(
         "error.execution" -> StaticInvokeHybridEvent.Error.Execution
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticInvokeHybridEvent): String? = when (event) {
@@ -420,45 +461,76 @@ class StaticInvokeHybridStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticInvokeHybridState,
-        event: StaticInvokeHybridEvent?
-    ): EnabledTransition<StaticInvokeHybridState, HistoryId>? = when (state) {
-        is StaticInvokeHybridState.First -> when {
-            event is StaticInvokeHybridEvent.Done.Invoke.FirstRun -> transitionFirstAt0
-            else -> null
-        }
-        is StaticInvokeHybridState.Lossy -> when {
-            event is StaticInvokeHybridEvent.Done.Invoke.LossyRun -> transitionLossyAt0
-            else -> null
-        }
-        is StaticInvokeHybridState.Missing -> when {
-            event is StaticInvokeHybridEvent.Done.Invoke.MissingRun -> transitionMissingAt0
-            event is StaticInvokeHybridEvent.Error.Execution -> transitionMissingAt1
-            else -> null
-        }
-        is StaticInvokeHybridState.Run -> when {
-            event is StaticInvokeHybridEvent.Error.Execution -> transitionRunAt0
-            else -> null
-        }
-        is StaticInvokeHybridState.Second -> when {
-            event is StaticInvokeHybridEvent.Done.Invoke.SecondRun -> transitionSecondAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticInvokeHybridState, event: StaticInvokeHybridEvent?): EnabledTransition<StaticInvokeHybridState, HistoryId>? = when (state) {
+        is StaticInvokeHybridState.First -> firstEnabledTransitionOfFirst(state, event)
+        is StaticInvokeHybridState.Lossy -> firstEnabledTransitionOfLossy(state, event)
+        is StaticInvokeHybridState.Missing -> firstEnabledTransitionOfMissing(state, event)
+        is StaticInvokeHybridState.Run -> firstEnabledTransitionOfRun(state, event)
+        is StaticInvokeHybridState.Second -> firstEnabledTransitionOfSecond(state, event)
         else -> null
     }
+
+
+    // first's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfFirst(state: StaticInvokeHybridState, event: StaticInvokeHybridEvent?): EnabledTransition<StaticInvokeHybridState, HistoryId>? = when {
+        event is StaticInvokeHybridEvent.Done.Invoke.FirstRun -> TransitionsPart0.transitionFirstAt0
+        else -> null
+    }
+
+
+    // lossy's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfLossy(state: StaticInvokeHybridState, event: StaticInvokeHybridEvent?): EnabledTransition<StaticInvokeHybridState, HistoryId>? = when {
+        event is StaticInvokeHybridEvent.Done.Invoke.LossyRun -> TransitionsPart0.transitionLossyAt0
+        else -> null
+    }
+
+
+    // missing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfMissing(state: StaticInvokeHybridState, event: StaticInvokeHybridEvent?): EnabledTransition<StaticInvokeHybridState, HistoryId>? = when {
+        event is StaticInvokeHybridEvent.Done.Invoke.MissingRun -> TransitionsPart0.transitionMissingAt0
+        event is StaticInvokeHybridEvent.Error.Execution -> TransitionsPart0.transitionMissingAt1
+        else -> null
+    }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: StaticInvokeHybridState, event: StaticInvokeHybridEvent?): EnabledTransition<StaticInvokeHybridState, HistoryId>? = when {
+        event is StaticInvokeHybridEvent.Error.Execution -> TransitionsPart0.transitionRunAt0
+        else -> null
+    }
+
+
+    // second's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSecond(state: StaticInvokeHybridState, event: StaticInvokeHybridEvent?): EnabledTransition<StaticInvokeHybridState, HistoryId>? = when {
+        event is StaticInvokeHybridEvent.Done.Invoke.SecondRun -> TransitionsPart0.transitionSecondAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_invoke_hybrid.scxml:33 :: _machine
     override fun onEntry(state: StaticInvokeHybridState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticInvokeHybridState.First -> {
+            is StaticInvokeHybridState.First -> onEntryOfFirst()
+            is StaticInvokeHybridState.Lossy -> onEntryOfLossy()
+            is StaticInvokeHybridState.Missing -> onEntryOfMissing()
+            is StaticInvokeHybridState.Over -> onEntryOfOver()
+            is StaticInvokeHybridState.Run -> onEntryOfRun()
+            is StaticInvokeHybridState.Second -> onEntryOfSecond()
+        }
+    }
+
+
+    private fun onEntryOfFirst() {
                 // SCE-MAP: static_invoke_hybrid.scxml:46 :: first :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -470,9 +542,10 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("first_run", state)
-            }
-            is StaticInvokeHybridState.Lossy -> {
+                deferStaticInvoke("first_run", StaticInvokeHybridState.First)
+    }
+
+    private fun onEntryOfLossy() {
                 // SCE-MAP: static_invoke_hybrid.scxml:72 :: lossy :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -484,9 +557,10 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("lossy_run", state)
-            }
-            is StaticInvokeHybridState.Missing -> {
+                deferStaticInvoke("lossy_run", StaticInvokeHybridState.Lossy)
+    }
+
+    private fun onEntryOfMissing() {
                 // SCE-MAP: static_invoke_hybrid.scxml:85 :: missing :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -498,17 +572,20 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("missing_run", state)
-            }
-            is StaticInvokeHybridState.Over -> {
+                deferStaticInvoke("missing_run", StaticInvokeHybridState.Missing)
+    }
+
+    private fun onEntryOfOver() {
                 // SCE-MAP: static_invoke_hybrid.scxml:101 :: over :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticInvokeHybridState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: static_invoke_hybrid.scxml:42 :: run :: _state_body
-            }
-            is StaticInvokeHybridState.Second -> {
+    }
+
+    private fun onEntryOfSecond() {
                 // SCE-MAP: static_invoke_hybrid.scxml:59 :: second :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -520,9 +597,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("second_run", state)
-            }
-        }
+                deferStaticInvoke("second_run", StaticInvokeHybridState.Second)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -535,9 +610,22 @@ class StaticInvokeHybridStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: StaticInvokeHybridState) {
         when (invokeId) {
-            "first_run" -> {
+            "first_run" -> startInvokeOfFirstAt0(state)
+            "lossy_run" -> startInvokeOfLossyAt0(state)
+            "missing_run" -> startInvokeOfMissingAt0(state)
+            "second_run" -> startInvokeOfSecondAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfFirstAt0(state: StaticInvokeHybridState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -603,8 +691,9 @@ class StaticInvokeHybridStateMachine(
                         }
                     }
                 }
-            }
-            "lossy_run" -> {
+    }
+
+    private fun startInvokeOfLossyAt0(state: StaticInvokeHybridState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -670,8 +759,9 @@ class StaticInvokeHybridStateMachine(
                         }
                     }
                 }
-            }
-            "missing_run" -> {
+    }
+
+    private fun startInvokeOfMissingAt0(state: StaticInvokeHybridState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -723,8 +813,9 @@ class StaticInvokeHybridStateMachine(
                         }
                     }
                 }
-            }
-            "second_run" -> {
+    }
+
+    private fun startInvokeOfSecondAt0(state: StaticInvokeHybridState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -790,9 +881,6 @@ class StaticInvokeHybridStateMachine(
                         }
                     }
                 }
-            }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -801,8 +889,21 @@ class StaticInvokeHybridStateMachine(
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
     override fun buildSavedChild(child: SavedChild): ResumedChild<StaticInvokeHybridEvent> = when (child.id) {
-        "first_run" -> when (child.document) {
+        "first_run" -> savedChildOfFirstAt0(child)
+        "lossy_run" -> savedChildOfLossyAt0(child)
+        "missing_run" -> savedChildOfMissingAt0(child)
+        "second_run" -> savedChildOfSecondAt0(child)
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
+    }
+
+
+    private fun savedChildOfFirstAt0(child: SavedChild): ResumedChild<StaticInvokeHybridEvent> =
+        when (child.document) {
             "static_hybrid_first" -> ResumedChild(
                 StaticHybridFirstStateMachine(),
                 false, StaticInvokeHybridEvent.Done.Invoke.FirstRun, "", "static_hybrid_first", "first_run",
@@ -813,7 +914,9 @@ class StaticInvokeHybridStateMachine(
             )
             else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "lossy_run" -> when (child.document) {
+
+    private fun savedChildOfLossyAt0(child: SavedChild): ResumedChild<StaticInvokeHybridEvent> =
+        when (child.document) {
             "static_hybrid_first" -> ResumedChild(
                 StaticHybridFirstStateMachine(),
                 false, StaticInvokeHybridEvent.Done.Invoke.LossyRun, "", "static_hybrid_first", "lossy_run",
@@ -824,7 +927,9 @@ class StaticInvokeHybridStateMachine(
             )
             else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "missing_run" -> when (child.document) {
+
+    private fun savedChildOfMissingAt0(child: SavedChild): ResumedChild<StaticInvokeHybridEvent> =
+        when (child.document) {
             "static_hybrid_first" -> ResumedChild(
                 StaticHybridFirstStateMachine(),
                 false, StaticInvokeHybridEvent.Done.Invoke.MissingRun, "", "static_hybrid_first", "missing_run",
@@ -835,7 +940,9 @@ class StaticInvokeHybridStateMachine(
             )
             else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "second_run" -> when (child.document) {
+
+    private fun savedChildOfSecondAt0(child: SavedChild): ResumedChild<StaticInvokeHybridEvent> =
+        when (child.document) {
             "static_hybrid_first" -> ResumedChild(
                 StaticHybridFirstStateMachine(),
                 false, StaticInvokeHybridEvent.Done.Invoke.SecondRun, "", "static_hybrid_first", "second_run",
@@ -846,113 +953,188 @@ class StaticInvokeHybridStateMachine(
             )
             else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_invoke_hybrid.scxml:33 :: _machine
     override fun onExit(state: StaticInvokeHybridState) {
         when (state) {
-            is StaticInvokeHybridState.First -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:46 :: first :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("first_run")
-            }
-            is StaticInvokeHybridState.Lossy -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:72 :: lossy :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("lossy_run")
-            }
-            is StaticInvokeHybridState.Missing -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:85 :: missing :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("missing_run")
-            }
-            is StaticInvokeHybridState.Over -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:101 :: over :: _state_body
-            }
-            is StaticInvokeHybridState.Run -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:42 :: run :: _state_body
-            }
-            is StaticInvokeHybridState.Second -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:59 :: second :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("second_run")
-            }
+            is StaticInvokeHybridState.First -> onExitOfFirst()
+            is StaticInvokeHybridState.Lossy -> onExitOfLossy()
+            is StaticInvokeHybridState.Missing -> onExitOfMissing()
+            is StaticInvokeHybridState.Over -> onExitOfOver()
+            is StaticInvokeHybridState.Run -> onExitOfRun()
+            is StaticInvokeHybridState.Second -> onExitOfSecond()
         }
     }
+
+
+    private fun onExitOfFirst() {
+                // SCE-MAP: static_invoke_hybrid.scxml:46 :: first :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticInvokeHybridState.First)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("first_run")
+    }
+
+    private fun onExitOfLossy() {
+                // SCE-MAP: static_invoke_hybrid.scxml:72 :: lossy :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticInvokeHybridState.Lossy)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("lossy_run")
+    }
+
+    private fun onExitOfMissing() {
+                // SCE-MAP: static_invoke_hybrid.scxml:85 :: missing :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticInvokeHybridState.Missing)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("missing_run")
+    }
+
+    private fun onExitOfOver() {
+                // SCE-MAP: static_invoke_hybrid.scxml:101 :: over :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: static_invoke_hybrid.scxml:42 :: run :: _state_body
+    }
+
+    private fun onExitOfSecond() {
+                // SCE-MAP: static_invoke_hybrid.scxml:59 :: second :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticInvokeHybridState.Second)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("second_run")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_invoke_hybrid.scxml:33 :: _machine
     override fun executeTransitionContent(source: StaticInvokeHybridState, transitionIndex: Int) {
         when (source) {
-        is StaticInvokeHybridState.First -> when (transitionIndex) {
-            0 -> {
+            is StaticInvokeHybridState.First -> transitionContentOfFirst(transitionIndex)
+            is StaticInvokeHybridState.Lossy -> transitionContentOfLossy(transitionIndex)
+            is StaticInvokeHybridState.Missing -> transitionContentOfMissing(transitionIndex)
+            is StaticInvokeHybridState.Run -> transitionContentOfRun(transitionIndex)
+            is StaticInvokeHybridState.Second -> transitionContentOfSecond(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `first`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfFirst(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfFirstAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfFirstAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:55 :: first :: _transition_0
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `lossy`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfLossy(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfLossyAt0()
             else -> {}
         }
-        is StaticInvokeHybridState.Lossy -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfLossyAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:81 :: lossy :: _transition_0
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `missing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfMissing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfMissingAt0()
+            1 -> transitionContentOfMissingAt1()
             else -> {}
         }
-        is StaticInvokeHybridState.Missing -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfMissingAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:93 :: missing :: _transition_0
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1000.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfMissingAt1() {
                 // SCE-MAP: static_invoke_hybrid.scxml:96 :: missing :: _transition_1
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
             else -> {}
         }
-        is StaticInvokeHybridState.Run -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:43 :: run :: _transition_0
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `second`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSecond(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSecondAt0()
             else -> {}
         }
-        is StaticInvokeHybridState.Second -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfSecondAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:68 :: second :: _transition_0
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

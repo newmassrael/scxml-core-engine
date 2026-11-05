@@ -55,6 +55,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<SendParamPayloadSceSynthInvokeInvEmitterState, HistoryId>>
@@ -63,6 +64,9 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<SendParamPayloadSceSynthInvokeInvEmitterState, HistoryId>> =
             listOf(StateTarget(SendParamPayloadSceSynthInvokeInvEmitterState.Emit))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: emit's transition 0, as the microstep reads it.
         val transitionEmitAt0 = EnabledTransition<SendParamPayloadSceSynthInvokeInvEmitterState, HistoryId>(
@@ -74,6 +78,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): SendParamPayloadSceSynthInvokeInvEmitterState? = when (stateId) {
         "emit" -> SendParamPayloadSceSynthInvokeInvEmitterState.Emit
@@ -81,17 +86,20 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: SendParamPayloadSceSynthInvokeInvEmitterState): String = when (state) {
         is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> "emit"
         is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> "sent"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: SendParamPayloadSceSynthInvokeInvEmitterState): Int = when (state) {
         is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> 0
         is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SendParamPayloadSceSynthInvokeInvEmitterEvent? = when (name) {
@@ -100,6 +108,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
         "fromChild" -> SendParamPayloadSceSynthInvokeInvEmitterEvent.FromChild
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SendParamPayloadSceSynthInvokeInvEmitterEvent): String? = when (event) {
@@ -112,28 +121,39 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: SendParamPayloadSceSynthInvokeInvEmitterState,
-        event: SendParamPayloadSceSynthInvokeInvEmitterEvent?
-    ): EnabledTransition<SendParamPayloadSceSynthInvokeInvEmitterState, HistoryId>? = when (state) {
-        is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> when {
-            event == null -> transitionEmitAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: SendParamPayloadSceSynthInvokeInvEmitterState, event: SendParamPayloadSceSynthInvokeInvEmitterEvent?): EnabledTransition<SendParamPayloadSceSynthInvokeInvEmitterState, HistoryId>? = when (state) {
+        is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> firstEnabledTransitionOfEmit(state, event)
         else -> null
     }
+
+
+    // emit's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfEmit(state: SendParamPayloadSceSynthInvokeInvEmitterState, event: SendParamPayloadSceSynthInvokeInvEmitterEvent?): EnabledTransition<SendParamPayloadSceSynthInvokeInvEmitterState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionEmitAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
     override fun onEntry(state: SendParamPayloadSceSynthInvokeInvEmitterState, isDefaultEntry: Boolean) {
         when (state) {
-            is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> {
+            is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> onEntryOfEmit()
+            is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> onEntryOfSent()
+        }
+    }
+
+
+    private fun onEntryOfEmit() {
                 // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -159,34 +179,39 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> {
+    }
+
+    private fun onEntryOfSent() {
                 // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13 :: sent :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
     override fun onExit(state: SendParamPayloadSceSynthInvokeInvEmitterState) {
         when (state) {
-            is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body
-            }
-            is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13 :: sent :: _state_body
-            }
+            is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> onExitOfEmit()
+            is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> onExitOfSent()
         }
     }
+
+
+    private fun onExitOfEmit() {
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body
+    }
+
+    private fun onExitOfSent() {
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13 :: sent :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
     override fun executeTransitionContent(source: SendParamPayloadSceSynthInvokeInvEmitterState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

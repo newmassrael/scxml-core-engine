@@ -319,6 +319,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ATargetExpressionIsRoutedAsItsLiteralIsState, HistoryId>>
@@ -327,6 +328,9 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ATargetExpressionIsRoutedAsItsLiteralIsState, HistoryId>> =
             listOf(StateTarget(ATargetExpressionIsRoutedAsItsLiteralIsState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
         val transitionRunAt0 = EnabledTransition<ATargetExpressionIsRoutedAsItsLiteralIsState, HistoryId>(
@@ -419,6 +423,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ATargetExpressionIsRoutedAsItsLiteralIsState? = when (stateId) {
         "done" -> ATargetExpressionIsRoutedAsItsLiteralIsState.Done
@@ -426,17 +431,20 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ATargetExpressionIsRoutedAsItsLiteralIsState): String = when (state) {
         is ATargetExpressionIsRoutedAsItsLiteralIsState.Done -> "done"
         is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> "run"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ATargetExpressionIsRoutedAsItsLiteralIsState): Int = when (state) {
         is ATargetExpressionIsRoutedAsItsLiteralIsState.Done -> 1
         is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ATargetExpressionIsRoutedAsItsLiteralIsEvent? = when (name) {
@@ -459,6 +467,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ATargetExpressionIsRoutedAsItsLiteralIsEvent): String? = when (event) {
         is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Done.Invoke -> "done.invoke"
@@ -478,6 +487,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
         is ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater -> "sLater"
         is ATargetExpressionIsRoutedAsItsLiteralIsEvent.SNow -> "sNow"
     }
+
 
 
 
@@ -507,6 +517,27 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'tInternal' with expr
         try {
             val initResult_tInternal = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'"))
@@ -647,22 +678,6 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterBogusLater'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -852,37 +867,48 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ATargetExpressionIsRoutedAsItsLiteralIsState,
-        event: ATargetExpressionIsRoutedAsItsLiteralIsEvent?
-    ): EnabledTransition<ATargetExpressionIsRoutedAsItsLiteralIsState, HistoryId>? = when (state) {
-        is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> when {
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Communication -> transitionRunAt0
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution -> transitionRunAt1
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Hello -> transitionRunAt2
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.InNow && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.type == \"internal\")", "_event.type === 'internal'")) -> transitionRunAt3
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.InLater && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.type == \"internal\")", "_event.type === 'internal'")) -> transitionRunAt4
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.KAckNow -> transitionRunAt5
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.KAckLater -> transitionRunAt6
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.SAckNow -> transitionRunAt7
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.SAckLater -> transitionRunAt8
-            event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Settle -> transitionRunAt9
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ATargetExpressionIsRoutedAsItsLiteralIsState, event: ATargetExpressionIsRoutedAsItsLiteralIsEvent?): EnabledTransition<ATargetExpressionIsRoutedAsItsLiteralIsState, HistoryId>? = when (state) {
+        is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> firstEnabledTransitionOfRun(state, event)
         else -> null
     }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ATargetExpressionIsRoutedAsItsLiteralIsState, event: ATargetExpressionIsRoutedAsItsLiteralIsEvent?): EnabledTransition<ATargetExpressionIsRoutedAsItsLiteralIsState, HistoryId>? = when {
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Communication -> TransitionsPart0.transitionRunAt0
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution -> TransitionsPart0.transitionRunAt1
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Hello -> TransitionsPart0.transitionRunAt2
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.InNow && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.type == \"internal\")", "_event.type === 'internal'")) -> TransitionsPart0.transitionRunAt3
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.InLater && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.type == \"internal\")", "_event.type === 'internal'")) -> TransitionsPart0.transitionRunAt4
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.KAckNow -> TransitionsPart0.transitionRunAt5
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.KAckLater -> TransitionsPart0.transitionRunAt6
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.SAckNow -> TransitionsPart0.transitionRunAt7
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.SAckLater -> TransitionsPart0.transitionRunAt8
+        event is ATargetExpressionIsRoutedAsItsLiteralIsEvent.Settle -> TransitionsPart0.transitionRunAt9
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:47 :: _machine
     override fun onEntry(state: ATargetExpressionIsRoutedAsItsLiteralIsState, isDefaultEntry: Boolean) {
         when (state) {
-            is ATargetExpressionIsRoutedAsItsLiteralIsState.Done -> {
+            is ATargetExpressionIsRoutedAsItsLiteralIsState.Done -> onEntryOfDone()
+            is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> onEntryOfRun()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:164 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:73 :: run :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/6
                 run {
@@ -1449,9 +1475,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
             }
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("kid", state)
-            }
-        }
+                deferStaticInvoke("kid", ATargetExpressionIsRoutedAsItsLiteralIsState.Run)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -1464,9 +1488,20 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: ATargetExpressionIsRoutedAsItsLiteralIsState) {
         when (invokeId) {
-            "kid" -> run {
+            "kid" -> startInvokeOfRunAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfRunAt0(state: ATargetExpressionIsRoutedAsItsLiteralIsState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "run.${nextInvokeStart("kid")}.kid"
@@ -1477,50 +1512,82 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
                     startInvoke("kid", childSM, false, ATargetExpressionIsRoutedAsItsLiteralIsEvent.Done.Invoke, "", generatedInvokeId, "", "a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid", "kid")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:47 :: _machine
     override fun onExit(state: ATargetExpressionIsRoutedAsItsLiteralIsState) {
         when (state) {
-            is ATargetExpressionIsRoutedAsItsLiteralIsState.Done -> {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:164 :: done :: _state_body
-            }
-            is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:73 :: run :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("kid")
-            }
+            is ATargetExpressionIsRoutedAsItsLiteralIsState.Done -> onExitOfDone()
+            is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> onExitOfRun()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:164 :: done :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:73 :: run :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(ATargetExpressionIsRoutedAsItsLiteralIsState.Run)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("kid")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:47 :: _machine
     override fun executeTransitionContent(source: ATargetExpressionIsRoutedAsItsLiteralIsState, transitionIndex: Int) {
         when (source) {
-        is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> when (transitionIndex) {
-            0 -> {
+            is ATargetExpressionIsRoutedAsItsLiteralIsState.Run -> transitionContentOfRun(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
+            1 -> transitionContentOfRunAt1()
+            2 -> transitionContentOfRunAt2()
+            3 -> transitionContentOfRunAt3()
+            4 -> transitionContentOfRunAt4()
+            5 -> transitionContentOfRunAt5()
+            6 -> transitionContentOfRunAt6()
+            7 -> transitionContentOfRunAt7()
+            8 -> transitionContentOfRunAt8()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:127 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("commErrors", "commErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(commErrors, 1)", "commErrors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunAt1() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:130 :: run :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("execErrors", "execErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(execErrors, 1)", "execErrors + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRunAt2() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:133 :: run :: _transition_2
 
 
@@ -2055,58 +2122,59 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfRunAt3() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:143 :: run :: _transition_3
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("internalNow", "internalNow"), com.sce.runtime.ScriptSource.lua("_scxml_add(internalNow, 1)", "internalNow + 1"))) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfRunAt4() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:146 :: run :: _transition_4
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("internalLater", "internalLater"), com.sce.runtime.ScriptSource.lua("_scxml_add(internalLater, 1)", "internalLater + 1"))) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfRunAt5() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:149 :: run :: _transition_5
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("kidNow", "kidNow"), com.sce.runtime.ScriptSource.lua("_scxml_add(kidNow, 1)", "kidNow + 1"))) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfRunAt6() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:152 :: run :: _transition_6
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("kidLater", "kidLater"), com.sce.runtime.ScriptSource.lua("_scxml_add(kidLater, 1)", "kidLater + 1"))) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfRunAt7() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:155 :: run :: _transition_7
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("sessNow", "sessNow"), com.sce.runtime.ScriptSource.lua("_scxml_add(sessNow, 1)", "sessNow + 1"))) {
                 return
             }
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfRunAt8() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:158 :: run :: _transition_8
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("sessLater", "sessLater"), com.sce.runtime.ScriptSource.lua("_scxml_add(sessLater, 1)", "sessLater + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

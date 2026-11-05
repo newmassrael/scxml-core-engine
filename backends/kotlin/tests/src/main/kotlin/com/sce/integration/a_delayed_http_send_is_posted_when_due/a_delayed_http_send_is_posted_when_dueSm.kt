@@ -82,6 +82,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ADelayedHttpSendIsPostedWhenDueState, HistoryId>>
@@ -90,6 +91,9 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ADelayedHttpSendIsPostedWhenDueState, HistoryId>> =
             listOf(StateTarget(ADelayedHttpSendIsPostedWhenDueState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
         val transitionRunAt0 = EnabledTransition<ADelayedHttpSendIsPostedWhenDueState, HistoryId>(
@@ -101,6 +105,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ADelayedHttpSendIsPostedWhenDueState? = when (stateId) {
         "done" -> ADelayedHttpSendIsPostedWhenDueState.Done
@@ -108,17 +113,20 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ADelayedHttpSendIsPostedWhenDueState): String = when (state) {
         is ADelayedHttpSendIsPostedWhenDueState.Done -> "done"
         is ADelayedHttpSendIsPostedWhenDueState.Run -> "run"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ADelayedHttpSendIsPostedWhenDueState): Int = when (state) {
         is ADelayedHttpSendIsPostedWhenDueState.Done -> 1
         is ADelayedHttpSendIsPostedWhenDueState.Run -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ADelayedHttpSendIsPostedWhenDueEvent? = when (name) {
@@ -134,6 +142,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ADelayedHttpSendIsPostedWhenDueEvent): String? = when (event) {
         is ADelayedHttpSendIsPostedWhenDueEvent.Dropped -> "dropped"
@@ -146,6 +155,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         is ADelayedHttpSendIsPostedWhenDueEvent.Zero -> "zero"
         is ADelayedHttpSendIsPostedWhenDueEvent.Zeroexpr -> "zeroexpr"
     }
+
 
 
 
@@ -175,13 +185,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'dynamicUrl' with expr
-        try {
-            val initResult_dynamicUrl = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"http://127.0.0.1:18081/dynamic\"", "'http://127.0.0.1:18081/dynamic'"))
-            engine.setVariable(sid, "dynamicUrl", initResult_dynamicUrl)
-        } catch (e: Exception) {
-            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<data id='dynamicUrl'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -198,6 +202,17 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'dynamicUrl' with expr
+        try {
+            val initResult_dynamicUrl = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"http://127.0.0.1:18081/dynamic\"", "'http://127.0.0.1:18081/dynamic'"))
+            engine.setVariable(sid, "dynamicUrl", initResult_dynamicUrl)
+        } catch (e: Exception) {
+            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<data id='dynamicUrl'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -387,28 +402,39 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ADelayedHttpSendIsPostedWhenDueState,
-        event: ADelayedHttpSendIsPostedWhenDueEvent?
-    ): EnabledTransition<ADelayedHttpSendIsPostedWhenDueState, HistoryId>? = when (state) {
-        is ADelayedHttpSendIsPostedWhenDueState.Run -> when {
-            event is ADelayedHttpSendIsPostedWhenDueEvent.Settle -> transitionRunAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ADelayedHttpSendIsPostedWhenDueState, event: ADelayedHttpSendIsPostedWhenDueEvent?): EnabledTransition<ADelayedHttpSendIsPostedWhenDueState, HistoryId>? = when (state) {
+        is ADelayedHttpSendIsPostedWhenDueState.Run -> firstEnabledTransitionOfRun(state, event)
         else -> null
     }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ADelayedHttpSendIsPostedWhenDueState, event: ADelayedHttpSendIsPostedWhenDueEvent?): EnabledTransition<ADelayedHttpSendIsPostedWhenDueState, HistoryId>? = when {
+        event is ADelayedHttpSendIsPostedWhenDueEvent.Settle -> TransitionsPart0.transitionRunAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     override fun onEntry(state: ADelayedHttpSendIsPostedWhenDueState, isDefaultEntry: Boolean) {
         when (state) {
-            is ADelayedHttpSendIsPostedWhenDueState.Done -> {
+            is ADelayedHttpSendIsPostedWhenDueState.Done -> onEntryOfDone()
+            is ADelayedHttpSendIsPostedWhenDueState.Run -> onEntryOfRun()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:68 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ADelayedHttpSendIsPostedWhenDueState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:46 :: run :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -561,29 +587,33 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     override fun onExit(state: ADelayedHttpSendIsPostedWhenDueState) {
         when (state) {
-            is ADelayedHttpSendIsPostedWhenDueState.Done -> {
-                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:68 :: done :: _state_body
-            }
-            is ADelayedHttpSendIsPostedWhenDueState.Run -> {
-                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:46 :: run :: _state_body
-            }
+            is ADelayedHttpSendIsPostedWhenDueState.Done -> onExitOfDone()
+            is ADelayedHttpSendIsPostedWhenDueState.Run -> onExitOfRun()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:68 :: done :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:46 :: run :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     override fun executeTransitionContent(source: ADelayedHttpSendIsPostedWhenDueState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

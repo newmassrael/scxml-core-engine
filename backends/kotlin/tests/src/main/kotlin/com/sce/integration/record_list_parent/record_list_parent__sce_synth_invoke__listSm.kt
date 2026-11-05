@@ -647,6 +647,10 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.node?.let { vNode = it }
         params.hub?.let { vHub = it }
         params.typed?.let { vTyped = it }
@@ -909,82 +913,84 @@ class RecordListParentSceSynthInvokeListStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "node" to SavedValues.of(vNode),
-            "hub" to SavedValues.of(vHub),
-            "clock" to vClock.toSaved(),
-            "stamp" to vStamp.toSaved(),
-            "adds" to SavedValues.list(vAdds) { it.toSaved() },
-            "tombstones" to SavedValues.list(vTombstones) { it.toSaved() },
-            "one" to SavedValues.list(vOne) { it.toSaved() },
-            "stable" to SavedValues.list(vStable) { it.toSaved() },
-            "entry" to vEntry.toSaved(),
-            "values" to SavedValues.list(vValues) { it.toSaved() },
-            "typed" to SavedValues.of(vTyped),
-            "held" to vHeld.toSaved(),
-            "digest" to SavedValues.list(vDigest) { it.toSaved() },
-            "mine" to SavedValues.of(vMine),
-            "shareId" to SavedValues.of(vShareId),
-            "shareField" to SavedValues.of(vShareField),
-            "known" to SavedValues.of(vKnown),
-            "wasLive" to SavedValues.of(vWasLive),
-            "isLive" to SavedValues.of(vIsLive),
-            "present" to SavedValues.of(vPresent),
-            "refusals" to SavedValues.of(vRefusals),
-            "floor" to SavedValues.of(vFloor),
-            "stale" to SavedValues.of(vStale),
-            "late" to SavedValues.of(vLate),
-            "frozenFor" to SavedValues.of(vFrozenFor),
-            "frozenHash" to SavedValues.of(vFrozenHash),
-            "pending" to SavedValues.of(vPending),
-            "members" to SavedValues.of(vMembers),
-            "agreeing" to SavedValues.of(vAgreeing),
-            "answers" to SavedValues.list(vAnswers) { it.toSaved() },
-            "answer" to vAnswer.toSaved(),
-            "agreed" to SavedValues.of(vAgreed),
-            "roomValues" to SavedValues.of(vRoomValues),
-            "roomHistory" to SavedValues.of(vRoomHistory),
-            "roomDigest" to SavedValues.of(vRoomDigest),
-            "full" to SavedValues.of(vFull),
-            "roster" to SavedValues.list(vRoster) { it.toSaved() },
-            "denied" to SavedValues.of(vDenied),
-            "forbidden" to SavedValues.of(vForbidden),
-            "authorized" to SavedValues.of(vAuthorized),
-            "announce" to SavedValues.of(vAnnounce),
-            "announced" to SavedValues.of(vAnnounced),
-            "moved" to SavedValues.list(vMoved) { SavedValues.of(it) },
-            "listed" to SavedValues.of(vListed),
-            "live" to SavedValues.list(vLive) { it.toSaved() },
-            "ordinal" to SavedValues.of(vOrdinal),
-            "empty" to vEmpty.toSaved(),
-            "staged" to SavedValues.list(vStaged) { it.toSaved() },
-            "holding" to SavedValues.of(vHolding),
-            "closingNow" to SavedValues.of(vClosingNow),
-            "spoiled" to SavedValues.of(vSpoiled),
-            "probing" to SavedValues.of(vProbing),
-            "gone" to SavedValues.of(vGone),
-            "writes" to SavedValues.of(vWrites),
-            "covered" to SavedValues.of(vCovered),
-            "probe" to vProbe.toSaved(),
-            "spoiledFor" to vSpoiledFor.toSaved(),
-            "namedId" to SavedValues.of(vNamedId),
-            "namedField" to SavedValues.of(vNamedField),
-            "namedKind" to vNamedKind.toSaved(),
-            "taking" to SavedValues.list(vTaking) { it.toSaved() },
-            "took" to SavedValues.of(vTook),
-            "passing" to SavedValues.list(vPassing) { it.toSaved() },
-            "passed" to SavedValues.of(vPassed),
-            "waiting" to SavedValues.list(vWaiting) { it.toSaved() },
-            "kept" to SavedValues.list(vKept) { it.toSaved() },
-            "part" to vPart.toSaved(),
-            "op" to vOp.toSaved(),
-            "already" to SavedValues.of(vAlready),
-            "count" to SavedValues.of(vCount),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "node" to SavedValues.of(vNode)
+        variables += "hub" to SavedValues.of(vHub)
+        variables += "clock" to vClock.toSaved()
+        variables += "stamp" to vStamp.toSaved()
+        variables += "adds" to SavedValues.list(vAdds) { it.toSaved() }
+        variables += "tombstones" to SavedValues.list(vTombstones) { it.toSaved() }
+        variables += "one" to SavedValues.list(vOne) { it.toSaved() }
+        variables += "stable" to SavedValues.list(vStable) { it.toSaved() }
+        variables += "entry" to vEntry.toSaved()
+        variables += "values" to SavedValues.list(vValues) { it.toSaved() }
+        variables += "typed" to SavedValues.of(vTyped)
+        variables += "held" to vHeld.toSaved()
+        variables += "digest" to SavedValues.list(vDigest) { it.toSaved() }
+        variables += "mine" to SavedValues.of(vMine)
+        variables += "shareId" to SavedValues.of(vShareId)
+        variables += "shareField" to SavedValues.of(vShareField)
+        variables += "known" to SavedValues.of(vKnown)
+        variables += "wasLive" to SavedValues.of(vWasLive)
+        variables += "isLive" to SavedValues.of(vIsLive)
+        variables += "present" to SavedValues.of(vPresent)
+        variables += "refusals" to SavedValues.of(vRefusals)
+        variables += "floor" to SavedValues.of(vFloor)
+        variables += "stale" to SavedValues.of(vStale)
+        variables += "late" to SavedValues.of(vLate)
+        variables += "frozenFor" to SavedValues.of(vFrozenFor)
+        variables += "frozenHash" to SavedValues.of(vFrozenHash)
+        variables += "pending" to SavedValues.of(vPending)
+        variables += "members" to SavedValues.of(vMembers)
+        variables += "agreeing" to SavedValues.of(vAgreeing)
+        variables += "answers" to SavedValues.list(vAnswers) { it.toSaved() }
+        variables += "answer" to vAnswer.toSaved()
+        variables += "agreed" to SavedValues.of(vAgreed)
+        variables += "roomValues" to SavedValues.of(vRoomValues)
+        variables += "roomHistory" to SavedValues.of(vRoomHistory)
+        variables += "roomDigest" to SavedValues.of(vRoomDigest)
+        variables += "full" to SavedValues.of(vFull)
+        variables += "roster" to SavedValues.list(vRoster) { it.toSaved() }
+        variables += "denied" to SavedValues.of(vDenied)
+        variables += "forbidden" to SavedValues.of(vForbidden)
+        variables += "authorized" to SavedValues.of(vAuthorized)
+        variables += "announce" to SavedValues.of(vAnnounce)
+        variables += "announced" to SavedValues.of(vAnnounced)
+        variables += "moved" to SavedValues.list(vMoved) { SavedValues.of(it) }
+        variables += "listed" to SavedValues.of(vListed)
+        variables += "live" to SavedValues.list(vLive) { it.toSaved() }
+        variables += "ordinal" to SavedValues.of(vOrdinal)
+        variables += "empty" to vEmpty.toSaved()
+        variables += "staged" to SavedValues.list(vStaged) { it.toSaved() }
+        variables += "holding" to SavedValues.of(vHolding)
+        variables += "closingNow" to SavedValues.of(vClosingNow)
+        variables += "spoiled" to SavedValues.of(vSpoiled)
+        variables += "probing" to SavedValues.of(vProbing)
+        variables += "gone" to SavedValues.of(vGone)
+        variables += "writes" to SavedValues.of(vWrites)
+        variables += "covered" to SavedValues.of(vCovered)
+        variables += "probe" to vProbe.toSaved()
+        variables += "spoiledFor" to vSpoiledFor.toSaved()
+        variables += "namedId" to SavedValues.of(vNamedId)
+        variables += "namedField" to SavedValues.of(vNamedField)
+        variables += "namedKind" to vNamedKind.toSaved()
+        variables += "taking" to SavedValues.list(vTaking) { it.toSaved() }
+        variables += "took" to SavedValues.of(vTook)
+        variables += "passing" to SavedValues.list(vPassing) { it.toSaved() }
+        variables += "passed" to SavedValues.of(vPassed)
+        variables += "waiting" to SavedValues.list(vWaiting) { it.toSaved() }
+        variables += "kept" to SavedValues.list(vKept) { it.toSaved() }
+        variables += "part" to vPart.toSaved()
+        variables += "op" to vOp.toSaved()
+        variables += "already" to SavedValues.of(vAlready)
+        variables += "count" to SavedValues.of(vCount)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -1009,6 +1015,15 @@ class RecordListParentSceSynthInvokeListStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint64(savedGrown.variable("node"), "node")
         val saved2 = SavedValues.bool(savedGrown.variable("hub"), "hub")
         val saved3 = RecordListParentSceSynthInvokeListHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
@@ -1079,77 +1094,78 @@ class RecordListParentSceSynthInvokeListStateMachine(
         val saved68 = RecordListParentSceSynthInvokeListPartRecord.fromSaved(savedGrown.variable("op"), "op")
         val saved69 = SavedValues.bool(savedGrown.variable("already"), "already")
         val saved70 = SavedValues.uint32(savedGrown.variable("count"), "count")
-        vNode = saved1
-        vHub = saved2
-        vClock = saved3
-        vStamp = saved4
-        vAdds = saved5
-        vTombstones = saved6
-        vOne = saved7
-        vStable = saved8
-        vEntry = saved9
-        vValues = saved10
-        vTyped = saved11
-        vHeld = saved12
-        vDigest = saved13
-        vMine = saved14
-        vShareId = saved15
-        vShareField = saved16
-        vKnown = saved17
-        vWasLive = saved18
-        vIsLive = saved19
-        vPresent = saved20
-        vRefusals = saved21
-        vFloor = saved22
-        vStale = saved23
-        vLate = saved24
-        vFrozenFor = saved25
-        vFrozenHash = saved26
-        vPending = saved27
-        vMembers = saved28
-        vAgreeing = saved29
-        vAnswers = saved30
-        vAnswer = saved31
-        vAgreed = saved32
-        vRoomValues = saved33
-        vRoomHistory = saved34
-        vRoomDigest = saved35
-        vFull = saved36
-        vRoster = saved37
-        vDenied = saved38
-        vForbidden = saved39
-        vAuthorized = saved40
-        vAnnounce = saved41
-        vAnnounced = saved42
-        vMoved = saved43
-        vListed = saved44
-        vLive = saved45
-        vOrdinal = saved46
-        vEmpty = saved47
-        vStaged = saved48
-        vHolding = saved49
-        vClosingNow = saved50
-        vSpoiled = saved51
-        vProbing = saved52
-        vGone = saved53
-        vWrites = saved54
-        vCovered = saved55
-        vProbe = saved56
-        vSpoiledFor = saved57
-        vNamedId = saved58
-        vNamedField = saved59
-        vNamedKind = saved60
-        vTaking = saved61
-        vTook = saved62
-        vPassing = saved63
-        vPassed = saved64
-        vWaiting = saved65
-        vKept = saved66
-        vPart = saved67
-        vOp = saved68
-        vAlready = saved69
-        vCount = saved70
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vNode = saved1
+            vHub = saved2
+            vClock = saved3
+            vStamp = saved4
+            vAdds = saved5
+            vTombstones = saved6
+            vOne = saved7
+            vStable = saved8
+            vEntry = saved9
+            vValues = saved10
+            vTyped = saved11
+            vHeld = saved12
+            vDigest = saved13
+            vMine = saved14
+            vShareId = saved15
+            vShareField = saved16
+            vKnown = saved17
+            vWasLive = saved18
+            vIsLive = saved19
+            vPresent = saved20
+            vRefusals = saved21
+            vFloor = saved22
+            vStale = saved23
+            vLate = saved24
+            vFrozenFor = saved25
+            vFrozenHash = saved26
+            vPending = saved27
+            vMembers = saved28
+            vAgreeing = saved29
+            vAnswers = saved30
+            vAnswer = saved31
+            vAgreed = saved32
+            vRoomValues = saved33
+            vRoomHistory = saved34
+            vRoomDigest = saved35
+            vFull = saved36
+            vRoster = saved37
+            vDenied = saved38
+            vForbidden = saved39
+            vAuthorized = saved40
+            vAnnounce = saved41
+            vAnnounced = saved42
+            vMoved = saved43
+            vListed = saved44
+            vLive = saved45
+            vOrdinal = saved46
+            vEmpty = saved47
+            vStaged = saved48
+            vHolding = saved49
+            vClosingNow = saved50
+            vSpoiled = saved51
+            vProbing = saved52
+            vGone = saved53
+            vWrites = saved54
+            vCovered = saved55
+            vProbe = saved56
+            vSpoiledFor = saved57
+            vNamedId = saved58
+            vNamedField = saved59
+            vNamedKind = saved60
+            vTaking = saved61
+            vTook = saved62
+            vPassing = saved63
+            vPassed = saved64
+            vWaiting = saved65
+            vKept = saved66
+            vPart = saved67
+            vOp = saved68
+            vAlready = saved69
+            vCount = saved70
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -1162,6 +1178,10 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint64(savedGrown.variable("node"), "node")
         SavedValues.bool(savedGrown.variable("hub"), "hub")
         RecordListParentSceSynthInvokeListHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
@@ -1682,6 +1702,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<RecordListParentSceSynthInvokeListState, HistoryId>> =
             listOf(StateTarget(RecordListParentSceSynthInvokeListState.Open))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: open's transition 0, as the microstep reads it.
         val transitionOpenAt0 = EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>(
@@ -1927,21 +1950,25 @@ class RecordListParentSceSynthInvokeListStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): RecordListParentSceSynthInvokeListState? = when (stateId) {
         "open" -> RecordListParentSceSynthInvokeListState.Open
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: RecordListParentSceSynthInvokeListState): String = when (state) {
         is RecordListParentSceSynthInvokeListState.Open -> "open"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: RecordListParentSceSynthInvokeListState): Int = when (state) {
         is RecordListParentSceSynthInvokeListState.Open -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): RecordListParentSceSynthInvokeListEvent? = when (name) {
@@ -1976,6 +2003,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
         "record_list.write" -> RecordListParentSceSynthInvokeListEvent.RecordList.Write
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: RecordListParentSceSynthInvokeListEvent): String? = when (event) {
@@ -2014,75 +2042,130 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: RecordListParentSceSynthInvokeListState,
-        event: RecordListParentSceSynthInvokeListEvent?
-    ): EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>? = when (state) {
-        is RecordListParentSceSynthInvokeListState.Open -> when {
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Join -> transitionOpenAt0
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Room -> transitionOpenAt1
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Role -> transitionOpenAt2
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Edit -> transitionOpenAt3
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Clear -> transitionOpenAt4
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Retire -> transitionOpenAt5
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Close -> transitionOpenAt6
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Take -> transitionOpenAt7
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Pass -> transitionOpenAt8
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Write && pendingRecordListWritePayload != null && (vFloor > 0 && pendingRecordListWritePayload!!.wallTime <= vFloor) -> transitionOpenAt9
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Write -> transitionOpenAt10
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Supersede && pendingRecordListSupersedePayload != null && (vFloor > 0 && pendingRecordListSupersedePayload!!.parts > 1.toUInt() && pendingRecordListSupersedePayload!!.atWallTime <= vFloor) -> transitionOpenAt11
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Supersede -> transitionOpenAt12
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Arrive -> transitionOpenAt13
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Announce && vAnnounce -> transitionOpenAt14
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Tell && vAnnounce -> transitionOpenAt15
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Keep -> transitionOpenAt16
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Compact -> transitionOpenAt17
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Settle -> transitionOpenAt18
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Propose -> transitionOpenAt19
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Ack -> transitionOpenAt20
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Floor -> transitionOpenAt21
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Resync -> transitionOpenAt22
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Visit -> transitionOpenAt23
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Node -> transitionOpenAt24
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Share -> transitionOpenAt25
-            event is RecordListParentSceSynthInvokeListEvent.Error.Execution -> transitionOpenAt26
-            else -> null
-        }
+    override fun firstEnabledTransition(state: RecordListParentSceSynthInvokeListState, event: RecordListParentSceSynthInvokeListEvent?): EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>? = when (state) {
+        is RecordListParentSceSynthInvokeListState.Open -> firstEnabledTransitionOfOpen(state, event)
     }
+
+
+    // open's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOpen(state: RecordListParentSceSynthInvokeListState, event: RecordListParentSceSynthInvokeListEvent?): EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>? = when {
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Join -> TransitionsPart0.transitionOpenAt0
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Room -> TransitionsPart0.transitionOpenAt1
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Role -> TransitionsPart0.transitionOpenAt2
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Edit -> TransitionsPart0.transitionOpenAt3
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Clear -> TransitionsPart0.transitionOpenAt4
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Retire -> TransitionsPart0.transitionOpenAt5
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Close -> TransitionsPart0.transitionOpenAt6
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Take -> TransitionsPart0.transitionOpenAt7
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Pass -> TransitionsPart0.transitionOpenAt8
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Write && pendingRecordListWritePayload != null && (vFloor > 0 && pendingRecordListWritePayload!!.wallTime <= vFloor) -> TransitionsPart0.transitionOpenAt9
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Write -> TransitionsPart0.transitionOpenAt10
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Supersede && pendingRecordListSupersedePayload != null && (vFloor > 0 && pendingRecordListSupersedePayload!!.parts > 1.toUInt() && pendingRecordListSupersedePayload!!.atWallTime <= vFloor) -> TransitionsPart0.transitionOpenAt11
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Supersede -> TransitionsPart0.transitionOpenAt12
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Arrive -> TransitionsPart0.transitionOpenAt13
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Announce && vAnnounce -> TransitionsPart0.transitionOpenAt14
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Tell && vAnnounce -> TransitionsPart0.transitionOpenAt15
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Keep -> TransitionsPart0.transitionOpenAt16
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Compact -> TransitionsPart0.transitionOpenAt17
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Settle -> TransitionsPart0.transitionOpenAt18
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Propose -> TransitionsPart0.transitionOpenAt19
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Ack -> TransitionsPart0.transitionOpenAt20
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Floor -> TransitionsPart0.transitionOpenAt21
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Resync -> TransitionsPart0.transitionOpenAt22
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Visit -> TransitionsPart0.transitionOpenAt23
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Node -> TransitionsPart0.transitionOpenAt24
+        event is RecordListParentSceSynthInvokeListEvent.RecordList.Share -> TransitionsPart0.transitionOpenAt25
+        event is RecordListParentSceSynthInvokeListEvent.Error.Execution -> TransitionsPart0.transitionOpenAt26
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: record_list.scxml:209 :: _machine
     override fun onEntry(state: RecordListParentSceSynthInvokeListState, isDefaultEntry: Boolean) {
         when (state) {
-            is RecordListParentSceSynthInvokeListState.Open -> {
-                // SCE-MAP: record_list.scxml:432 :: open :: _state_body
-            }
+            is RecordListParentSceSynthInvokeListState.Open -> onEntryOfOpen()
         }
+    }
+
+
+    private fun onEntryOfOpen() {
+                // SCE-MAP: record_list.scxml:432 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: record_list.scxml:209 :: _machine
     override fun onExit(state: RecordListParentSceSynthInvokeListState) {
         when (state) {
-            is RecordListParentSceSynthInvokeListState.Open -> {
-                // SCE-MAP: record_list.scxml:432 :: open :: _state_body
-            }
+            is RecordListParentSceSynthInvokeListState.Open -> onExitOfOpen()
         }
     }
+
+
+    private fun onExitOfOpen() {
+                // SCE-MAP: record_list.scxml:432 :: open :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: record_list.scxml:209 :: _machine
     override fun executeTransitionContent(source: RecordListParentSceSynthInvokeListState, transitionIndex: Int) {
         when (source) {
-        is RecordListParentSceSynthInvokeListState.Open -> when (transitionIndex) {
-            0 -> {
+            is RecordListParentSceSynthInvokeListState.Open -> transitionContentOfOpen(transitionIndex)
+        }
+    }
+
+
+    // The content of `open`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfOpen(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfOpenAt0()
+            1 -> transitionContentOfOpenAt1()
+            2 -> transitionContentOfOpenAt2()
+            3 -> transitionContentOfOpenAt3()
+            4 -> transitionContentOfOpenAt4()
+            5 -> transitionContentOfOpenAt5()
+            6 -> transitionContentOfOpenAt6()
+            7 -> transitionContentOfOpenAt7()
+            8 -> transitionContentOfOpenAt8()
+            9 -> transitionContentOfOpenAt9()
+            10 -> transitionContentOfOpenAt10()
+            11 -> transitionContentOfOpenAt11()
+            12 -> transitionContentOfOpenAt12()
+            13 -> transitionContentOfOpenAt13()
+            14 -> transitionContentOfOpenAt14()
+            15 -> transitionContentOfOpenAt15()
+            16 -> transitionContentOfOpenAt16()
+            17 -> transitionContentOfOpenAt17()
+            18 -> transitionContentOfOpenAt18()
+            19 -> transitionContentOfOpenAt19()
+            20 -> transitionContentOfOpenAt20()
+            21 -> transitionContentOfOpenAt21()
+            22 -> transitionContentOfOpenAt22()
+            23 -> transitionContentOfOpenAt23()
+            24 -> transitionContentOfOpenAt24()
+            25 -> transitionContentOfOpenAt25()
+            26 -> transitionContentOfOpenAt26()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfOpenAt0() {
                 // SCE-MAP: record_list.scxml:433 :: open :: _transition_0
                 if (pendingRecordListJoinPayload == null) {
                     return
@@ -2091,8 +2174,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
             vNode = pendingRecordListJoinPayload!!.node
 
             vHub = pendingRecordListJoinPayload!!.hub
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfOpenAt1() {
                 // SCE-MAP: record_list.scxml:440 :: open :: _transition_1
                 if (pendingRecordListRoomPayload == null) {
                     return
@@ -2103,8 +2187,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
             vRoomHistory = pendingRecordListRoomPayload!!.history
 
             vRoomDigest = pendingRecordListRoomPayload!!.digest
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfOpenAt2() {
                 // SCE-MAP: record_list.scxml:451 :: open :: _transition_2
                 if (pendingRecordListRolePayload == null) {
                     return
@@ -2113,8 +2198,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
             if (try { vRoster = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RecordRoster__v(vRoster, pendingRecordListRolePayload!!.node, pendingRecordListRolePayload!!.role)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='roster'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfOpenAt3() {
                 // SCE-MAP: record_list.scxml:462 :: open :: _transition_3
                 if (pendingRecordListEditPayload == null) {
                     return
@@ -2178,8 +2264,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfOpenAt4() {
                 // SCE-MAP: record_list.scxml:489 :: open :: _transition_4
                 if (pendingRecordListClearPayload == null) {
                     return
@@ -2237,8 +2324,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfOpenAt5() {
                 // SCE-MAP: record_list.scxml:514 :: open :: _transition_5
                 if (pendingRecordListRetirePayload == null) {
                     return
@@ -2296,8 +2384,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfOpenAt6() {
                 // SCE-MAP: record_list.scxml:556 :: open :: _transition_6
 
 
@@ -2711,8 +2800,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfOpenAt7() {
                 // SCE-MAP: record_list.scxml:708 :: open :: _transition_7
 
             if (try { vOp = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op'>: an integer operation overflowed or failed"); true }) {
@@ -3008,8 +3098,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfOpenAt8() {
                 // SCE-MAP: record_list.scxml:844 :: open :: _transition_8
 
             if (try { vOp = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op'>: an integer operation overflowed or failed"); true }) {
@@ -3515,8 +3606,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            9 -> {
+    }
+
+    private fun transitionContentOfOpenAt9() {
                 // SCE-MAP: record_list.scxml:947 :: open :: _transition_9
                 if (pendingRecordListWritePayload == null) {
                     return
@@ -3541,8 +3633,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 return
             }
             }
-            }
-            10 -> {
+    }
+
+    private fun transitionContentOfOpenAt10() {
                 // SCE-MAP: record_list.scxml:970 :: open :: _transition_10
                 if (pendingRecordListWritePayload == null) {
                     return
@@ -3616,15 +3709,17 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            11 -> {
+    }
+
+    private fun transitionContentOfOpenAt11() {
                 // SCE-MAP: record_list.scxml:1005 :: open :: _transition_11
 
             if (try { vLate = com.sce.forge.runtime.SceChecked.add(vLate, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='late'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            12 -> {
+    }
+
+    private fun transitionContentOfOpenAt12() {
                 // SCE-MAP: record_list.scxml:1012 :: open :: _transition_12
                 if (pendingRecordListSupersedePayload == null) {
                     return
@@ -3698,8 +3793,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            13 -> {
+    }
+
+    private fun transitionContentOfOpenAt13() {
                 // SCE-MAP: record_list.scxml:1052 :: open :: _transition_13
 
 
@@ -3892,8 +3988,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            14 -> {
+    }
+
+    private fun transitionContentOfOpenAt14() {
                 // SCE-MAP: record_list.scxml:1131 :: open :: _transition_14
                 if (pendingRecordListAnnouncePayload == null) {
                     return
@@ -3941,8 +4038,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 return
             }
             }
-            }
-            15 -> {
+    }
+
+    private fun transitionContentOfOpenAt15() {
                 // SCE-MAP: record_list.scxml:1154 :: open :: _transition_15
 
 
@@ -4187,8 +4285,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             }
 
             vMoved = emptyList()
-            }
-            16 -> {
+    }
+
+    private fun transitionContentOfOpenAt16() {
                 // SCE-MAP: record_list.scxml:1209 :: open :: _transition_16
                 if (pendingRecordListKeepPayload == null) {
                     return
@@ -4209,8 +4308,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             if (try { vDigest = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MerkleInsert__v(vDigest, com.sce.forge.runtime.SceChecked.div(pendingRecordListKeepPayload!!.wallTime, 60000), vMine)), 2048); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='digest'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            17 -> {
+    }
+
+    private fun transitionContentOfOpenAt17() {
                 // SCE-MAP: record_list.scxml:1226 :: open :: _transition_17
                 if (pendingRecordListCompactPayload == null) {
                     return
@@ -4273,8 +4373,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 return
             }
             }
-            }
-            18 -> {
+    }
+
+    private fun transitionContentOfOpenAt18() {
                 // SCE-MAP: record_list.scxml:1260 :: open :: _transition_18
                 if (pendingRecordListSettlePayload == null) {
                     return
@@ -4344,8 +4445,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            19 -> {
+    }
+
+    private fun transitionContentOfOpenAt19() {
                 // SCE-MAP: record_list.scxml:1281 :: open :: _transition_19
                 if (pendingRecordListProposePayload == null) {
                     return
@@ -4433,8 +4535,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            20 -> {
+    }
+
+    private fun transitionContentOfOpenAt20() {
                 // SCE-MAP: record_list.scxml:1311 :: open :: _transition_20
                 if (pendingRecordListAckPayload == null) {
                     return
@@ -4625,8 +4728,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            21 -> {
+    }
+
+    private fun transitionContentOfOpenAt21() {
                 // SCE-MAP: record_list.scxml:1375 :: open :: _transition_21
                 if (pendingRecordListFloorPayload == null) {
                     return
@@ -4727,8 +4831,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             vStale = true
             }
             }
-            }
-            22 -> {
+    }
+
+    private fun transitionContentOfOpenAt22() {
                 // SCE-MAP: record_list.scxml:1425 :: open :: _transition_22
 
             vTaking = emptyList()
@@ -4783,8 +4888,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            23 -> {
+    }
+
+    private fun transitionContentOfOpenAt23() {
                 // SCE-MAP: record_list.scxml:1445 :: open :: _transition_23
                 if (pendingRecordListVisitPayload == null) {
                     return
@@ -4919,8 +5025,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            24 -> {
+    }
+
+    private fun transitionContentOfOpenAt24() {
                 // SCE-MAP: record_list.scxml:1482 :: open :: _transition_24
                 if (pendingRecordListNodePayload == null) {
                     return
@@ -5092,8 +5199,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            25 -> {
+    }
+
+    private fun transitionContentOfOpenAt25() {
                 // SCE-MAP: record_list.scxml:1531 :: open :: _transition_25
                 if (pendingRecordListSharePayload == null) {
                     return
@@ -5378,8 +5486,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 return
             }
             }
-            }
-            26 -> {
+    }
+
+    private fun transitionContentOfOpenAt26() {
                 // SCE-MAP: record_list.scxml:1593 :: open :: _transition_26
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
@@ -5412,9 +5521,5 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

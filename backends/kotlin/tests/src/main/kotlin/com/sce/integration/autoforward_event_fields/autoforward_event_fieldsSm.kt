@@ -63,9 +63,11 @@ class AutoforwardEventFieldsStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: AutoforwardEventFieldsState): Boolean = when (state) {
-        is AutoforwardEventFieldsState.Fail, is AutoforwardEventFieldsState.Pass -> true
+        is AutoforwardEventFieldsState.Fail -> true
+        is AutoforwardEventFieldsState.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -75,6 +77,9 @@ class AutoforwardEventFieldsStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AutoforwardEventFieldsState, HistoryId>> =
             listOf(StateTarget(AutoforwardEventFieldsState.Phase))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: phase's transition 0, as the microstep reads it.
         val transitionPhaseAt0 = EnabledTransition<AutoforwardEventFieldsState, HistoryId>(
@@ -113,6 +118,7 @@ class AutoforwardEventFieldsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AutoforwardEventFieldsState? = when (stateId) {
         "fail" -> AutoforwardEventFieldsState.Fail
@@ -121,6 +127,7 @@ class AutoforwardEventFieldsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AutoforwardEventFieldsState): String = when (state) {
         is AutoforwardEventFieldsState.Fail -> "fail"
@@ -128,12 +135,14 @@ class AutoforwardEventFieldsStateMachine(
         is AutoforwardEventFieldsState.Phase -> "phase"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AutoforwardEventFieldsState): Int = when (state) {
         is AutoforwardEventFieldsState.Fail -> 2
         is AutoforwardEventFieldsState.Pass -> 1
         is AutoforwardEventFieldsState.Phase -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AutoforwardEventFieldsEvent? = when (name) {
@@ -145,6 +154,7 @@ class AutoforwardEventFieldsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AutoforwardEventFieldsEvent): String? = when (event) {
         is AutoforwardEventFieldsEvent.ChildToParent -> "childToParent"
@@ -153,6 +163,7 @@ class AutoforwardEventFieldsStateMachine(
         is AutoforwardEventFieldsEvent.FieldsPreserved -> "fieldsPreserved"
         is AutoforwardEventFieldsEvent.FieldsStripped -> "fieldsStripped"
     }
+
 
 
 
@@ -387,41 +398,52 @@ class AutoforwardEventFieldsStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AutoforwardEventFieldsState,
-        event: AutoforwardEventFieldsEvent?
-    ): EnabledTransition<AutoforwardEventFieldsState, HistoryId>? = when (state) {
-        is AutoforwardEventFieldsState.Phase -> when {
-            event is AutoforwardEventFieldsEvent.ChildToParent -> transitionPhaseAt0
-            event is AutoforwardEventFieldsEvent.FieldsPreserved -> transitionPhaseAt1
-            event is AutoforwardEventFieldsEvent.FieldsStripped -> transitionPhaseAt2
-            event is AutoforwardEventFieldsEvent.Error.Execution -> transitionPhaseAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AutoforwardEventFieldsState, event: AutoforwardEventFieldsEvent?): EnabledTransition<AutoforwardEventFieldsState, HistoryId>? = when (state) {
+        is AutoforwardEventFieldsState.Phase -> firstEnabledTransitionOfPhase(state, event)
         else -> null
     }
+
+
+    // phase's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPhase(state: AutoforwardEventFieldsState, event: AutoforwardEventFieldsEvent?): EnabledTransition<AutoforwardEventFieldsState, HistoryId>? = when {
+        event is AutoforwardEventFieldsEvent.ChildToParent -> TransitionsPart0.transitionPhaseAt0
+        event is AutoforwardEventFieldsEvent.FieldsPreserved -> TransitionsPart0.transitionPhaseAt1
+        event is AutoforwardEventFieldsEvent.FieldsStripped -> TransitionsPart0.transitionPhaseAt2
+        event is AutoforwardEventFieldsEvent.Error.Execution -> TransitionsPart0.transitionPhaseAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
     override fun onEntry(state: AutoforwardEventFieldsState, isDefaultEntry: Boolean) {
         when (state) {
-            is AutoforwardEventFieldsState.Fail -> {
+            is AutoforwardEventFieldsState.Fail -> onEntryOfFail()
+            is AutoforwardEventFieldsState.Pass -> onEntryOfPass()
+            is AutoforwardEventFieldsState.Phase -> onEntryOfPhase()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: autoforward_event_fields.scxml:65 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AutoforwardEventFieldsState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: autoforward_event_fields.scxml:64 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AutoforwardEventFieldsState.Phase -> {
+    }
+
+    private fun onEntryOfPhase() {
                 // SCE-MAP: autoforward_event_fields.scxml:33 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_echo", state)
-            }
-        }
+                deferStaticInvoke("inv_echo", AutoforwardEventFieldsState.Phase)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -434,9 +456,20 @@ class AutoforwardEventFieldsStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: AutoforwardEventFieldsState) {
         when (invokeId) {
-            "inv_echo" -> run {
+            "inv_echo" -> startInvokeOfPhaseAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfPhaseAt0(state: AutoforwardEventFieldsState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_echo")}.inv_echo"
@@ -447,36 +480,42 @@ class AutoforwardEventFieldsStateMachine(
                     startInvoke("inv_echo", childSM, true, AutoforwardEventFieldsEvent.Done.Invoke, "", generatedInvokeId, "", "autoforward_event_fields__sce_synth_invoke__inv_echo", "inv_echo")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
     override fun onExit(state: AutoforwardEventFieldsState) {
         when (state) {
-            is AutoforwardEventFieldsState.Fail -> {
-                // SCE-MAP: autoforward_event_fields.scxml:65 :: fail :: _state_body
-            }
-            is AutoforwardEventFieldsState.Pass -> {
-                // SCE-MAP: autoforward_event_fields.scxml:64 :: pass :: _state_body
-            }
-            is AutoforwardEventFieldsState.Phase -> {
-                // SCE-MAP: autoforward_event_fields.scxml:33 :: phase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_echo")
-            }
+            is AutoforwardEventFieldsState.Fail -> onExitOfFail()
+            is AutoforwardEventFieldsState.Pass -> onExitOfPass()
+            is AutoforwardEventFieldsState.Phase -> onExitOfPhase()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: autoforward_event_fields.scxml:65 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: autoforward_event_fields.scxml:64 :: pass :: _state_body
+    }
+
+    private fun onExitOfPhase() {
+                // SCE-MAP: autoforward_event_fields.scxml:33 :: phase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(AutoforwardEventFieldsState.Phase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_echo")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
     override fun executeTransitionContent(source: AutoforwardEventFieldsState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

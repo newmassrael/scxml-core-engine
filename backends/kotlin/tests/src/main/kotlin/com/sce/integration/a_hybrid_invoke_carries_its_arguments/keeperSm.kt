@@ -100,6 +100,7 @@ class KeeperStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<KeeperState, HistoryId>>
@@ -108,6 +109,9 @@ class KeeperStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<KeeperState, HistoryId>> =
             listOf(StateTarget(KeeperState.Up))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: up's transition 0, as the microstep reads it.
         val transitionUpAt0 = EnabledTransition<KeeperState, HistoryId>(
@@ -119,6 +123,7 @@ class KeeperStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): KeeperState? = when (stateId) {
         "gone" -> KeeperState.Gone
@@ -126,17 +131,20 @@ class KeeperStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: KeeperState): String = when (state) {
         is KeeperState.Gone -> "gone"
         is KeeperState.Up -> "up"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: KeeperState): Int = when (state) {
         is KeeperState.Gone -> 1
         is KeeperState.Up -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): KeeperEvent? = when (name) {
@@ -146,12 +154,14 @@ class KeeperStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: KeeperEvent): String? = when (event) {
         is KeeperEvent.ChildUp -> "childUp"
         is KeeperEvent.Error.Communication -> "error.communication"
         is KeeperEvent.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -181,6 +191,27 @@ class KeeperStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'seed' with expr
         try {
             val initResult_seed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
@@ -202,22 +233,6 @@ class KeeperStateMachine(
         } catch (e: Exception) {
             raisePlatformError(KeeperEvent.Error.Execution, "<data id='emptyLoc'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -407,53 +422,86 @@ class KeeperStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: KeeperState,
-        event: KeeperEvent?
-    ): EnabledTransition<KeeperState, HistoryId>? = when (state) {
-        is KeeperState.Up -> when {
-            event == null -> transitionUpAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: KeeperState, event: KeeperEvent?): EnabledTransition<KeeperState, HistoryId>? = when (state) {
+        is KeeperState.Up -> firstEnabledTransitionOfUp(state, event)
         else -> null
     }
+
+
+    // up's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfUp(state: KeeperState, event: KeeperEvent?): EnabledTransition<KeeperState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionUpAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: keeper.scxml:6 :: _machine
     override fun onEntry(state: KeeperState, isDefaultEntry: Boolean) {
         when (state) {
-            is KeeperState.Gone -> {
+            is KeeperState.Gone -> onEntryOfGone()
+            is KeeperState.Up -> onEntryOfUp()
+        }
+    }
+
+
+    private fun onEntryOfGone() {
                 // SCE-MAP: keeper.scxml:23 :: gone :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is KeeperState.Up -> {
+    }
+
+    private fun onEntryOfUp() {
                 // SCE-MAP: keeper.scxml:13 :: up :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: keeper.scxml:6 :: _machine
     override fun onExit(state: KeeperState) {
         when (state) {
-            is KeeperState.Gone -> {
-                // SCE-MAP: keeper.scxml:23 :: gone :: _state_body
-            }
-            is KeeperState.Up -> {
-                // SCE-MAP: keeper.scxml:13 :: up :: _state_body
-            }
+            is KeeperState.Gone -> onExitOfGone()
+            is KeeperState.Up -> onExitOfUp()
         }
     }
+
+
+    private fun onExitOfGone() {
+                // SCE-MAP: keeper.scxml:23 :: gone :: _state_body
+    }
+
+    private fun onExitOfUp() {
+                // SCE-MAP: keeper.scxml:13 :: up :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: keeper.scxml:6 :: _machine
     override fun executeTransitionContent(source: KeeperState, transitionIndex: Int) {
         when (source) {
-        is KeeperState.Up -> when (transitionIndex) {
-            0 -> {
+            is KeeperState.Up -> transitionContentOfUp(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `up`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfUp(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfUpAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfUpAt0() {
                 // SCE-MAP: keeper.scxml:14 :: up :: _transition_0
 
 
@@ -507,10 +555,5 @@ class KeeperStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

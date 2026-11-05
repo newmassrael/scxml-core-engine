@@ -64,6 +64,10 @@ class StaticEventWildcardStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.requests?.let { vRequests = it }
         params.strays?.let { vStrays = it }
     }
@@ -140,14 +144,16 @@ class StaticEventWildcardStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "requests" to SavedValues.of(vRequests),
-            "strays" to SavedValues.of(vStrays),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "requests" to SavedValues.of(vRequests)
+        variables += "strays" to SavedValues.of(vStrays)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -172,11 +178,21 @@ class StaticEventWildcardStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("requests"), "requests")
         val saved2 = SavedValues.uint32(savedGrown.variable("strays"), "strays")
-        vRequests = saved1
-        vStrays = saved2
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vRequests = saved1
+            vStrays = saved2
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -189,6 +205,10 @@ class StaticEventWildcardStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("requests"), "requests")
         SavedValues.uint32(savedGrown.variable("strays"), "strays")
     }
@@ -220,6 +240,9 @@ class StaticEventWildcardStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticEventWildcardState, HistoryId>> =
             listOf(StateTarget(StaticEventWildcardState.Listening))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: listening's transition 0, as the microstep reads it.
         val transitionListeningAt0 = EnabledTransition<StaticEventWildcardState, HistoryId>(
@@ -240,21 +263,25 @@ class StaticEventWildcardStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticEventWildcardState? = when (stateId) {
         "listening" -> StaticEventWildcardState.Listening
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticEventWildcardState): String = when (state) {
         is StaticEventWildcardState.Listening -> "listening"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticEventWildcardState): Int = when (state) {
         is StaticEventWildcardState.Listening -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticEventWildcardEvent? = when (name) {
@@ -262,6 +289,7 @@ class StaticEventWildcardStateMachine(
         "*" -> StaticEventWildcardEvent.Wildcard
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticEventWildcardEvent): String? = when (event) {
@@ -273,65 +301,92 @@ class StaticEventWildcardStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticEventWildcardState,
-        event: StaticEventWildcardEvent?
-    ): EnabledTransition<StaticEventWildcardState, HistoryId>? = when (state) {
-        is StaticEventWildcardState.Listening -> when {
-            event is StaticEventWildcardEvent.Request -> transitionListeningAt0
-            event != null -> transitionListeningAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticEventWildcardState, event: StaticEventWildcardEvent?): EnabledTransition<StaticEventWildcardState, HistoryId>? = when (state) {
+        is StaticEventWildcardState.Listening -> firstEnabledTransitionOfListening(state, event)
     }
+
+
+    // listening's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfListening(state: StaticEventWildcardState, event: StaticEventWildcardEvent?): EnabledTransition<StaticEventWildcardState, HistoryId>? = when {
+        event is StaticEventWildcardEvent.Request -> TransitionsPart0.transitionListeningAt0
+        event != null -> TransitionsPart0.transitionListeningAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_event_wildcard.scxml:21 :: _machine
     override fun onEntry(state: StaticEventWildcardState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticEventWildcardState.Listening -> {
-                // SCE-MAP: static_event_wildcard.scxml:27 :: listening :: _state_body
-            }
+            is StaticEventWildcardState.Listening -> onEntryOfListening()
         }
+    }
+
+
+    private fun onEntryOfListening() {
+                // SCE-MAP: static_event_wildcard.scxml:27 :: listening :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_event_wildcard.scxml:21 :: _machine
     override fun onExit(state: StaticEventWildcardState) {
         when (state) {
-            is StaticEventWildcardState.Listening -> {
-                // SCE-MAP: static_event_wildcard.scxml:27 :: listening :: _state_body
-            }
+            is StaticEventWildcardState.Listening -> onExitOfListening()
         }
     }
+
+
+    private fun onExitOfListening() {
+                // SCE-MAP: static_event_wildcard.scxml:27 :: listening :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_event_wildcard.scxml:21 :: _machine
     override fun executeTransitionContent(source: StaticEventWildcardState, transitionIndex: Int) {
         when (source) {
-        is StaticEventWildcardState.Listening -> when (transitionIndex) {
-            0 -> {
+            is StaticEventWildcardState.Listening -> transitionContentOfListening(transitionIndex)
+        }
+    }
+
+
+    // The content of `listening`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfListening(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfListeningAt0()
+            1 -> transitionContentOfListeningAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfListeningAt0() {
                 // SCE-MAP: static_event_wildcard.scxml:28 :: listening :: _transition_0
 
             if (try { vRequests = com.sce.forge.runtime.SceChecked.add(vRequests, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfListeningAt1() {
                 // SCE-MAP: static_event_wildcard.scxml:31 :: listening :: _transition_1
 
             if (try { vStrays = com.sce.forge.runtime.SceChecked.add(vStrays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

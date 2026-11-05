@@ -179,6 +179,10 @@ class StaticStateAlgorithmEnumStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.openCount?.let { vOpenCount = it }
         params.startedCount?.let { vStartedCount = it }
         params.doneCount?.let { vDoneCount = it }
@@ -293,20 +297,22 @@ class StaticStateAlgorithmEnumStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "items" to SavedValues.list(vItems) { it.toSaved() },
-            "draft" to vDraft.toSaved(),
-            "last" to vLast.toSaved(),
-            "openCount" to SavedValues.of(vOpenCount),
-            "startedCount" to SavedValues.of(vStartedCount),
-            "doneCount" to SavedValues.of(vDoneCount),
-            "checks" to SavedValues.of(vChecks),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "items" to SavedValues.list(vItems) { it.toSaved() }
+        variables += "draft" to vDraft.toSaved()
+        variables += "last" to vLast.toSaved()
+        variables += "openCount" to SavedValues.of(vOpenCount)
+        variables += "startedCount" to SavedValues.of(vStartedCount)
+        variables += "doneCount" to SavedValues.of(vDoneCount)
+        variables += "checks" to SavedValues.of(vChecks)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -331,6 +337,15 @@ class StaticStateAlgorithmEnumStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.list(savedGrown.variable("items"), "items", 4) { e, w -> StaticStateAlgorithmEnumItemRecord.fromSaved(e, w) }
         val saved2 = StaticStateAlgorithmEnumItemRecord.fromSaved(savedGrown.variable("draft"), "draft")
         val saved3 = StaticStateAlgorithmEnumStatusEnum.fromSaved(savedGrown.variable("last"), "last")
@@ -339,15 +354,16 @@ class StaticStateAlgorithmEnumStateMachine(
         val saved6 = SavedValues.uint32(savedGrown.variable("doneCount"), "doneCount")
         val saved7 = SavedValues.uint32(savedGrown.variable("checks"), "checks")
         val saved8 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vItems = saved1
-        vDraft = saved2
-        vLast = saved3
-        vOpenCount = saved4
-        vStartedCount = saved5
-        vDoneCount = saved6
-        vChecks = saved7
-        vRefusals = saved8
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vItems = saved1
+            vDraft = saved2
+            vLast = saved3
+            vOpenCount = saved4
+            vStartedCount = saved5
+            vDoneCount = saved6
+            vChecks = saved7
+            vRefusals = saved8
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -360,6 +376,10 @@ class StaticStateAlgorithmEnumStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.list(savedGrown.variable("items"), "items", 4) { e, w -> StaticStateAlgorithmEnumItemRecord.fromSaved(e, w) }
         StaticStateAlgorithmEnumItemRecord.fromSaved(savedGrown.variable("draft"), "draft")
         StaticStateAlgorithmEnumStatusEnum.fromSaved(savedGrown.variable("last"), "last")
@@ -466,6 +486,9 @@ class StaticStateAlgorithmEnumStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticStateAlgorithmEnumState, HistoryId>> =
             listOf(StateTarget(StaticStateAlgorithmEnumState.Board))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: board's transition 0, as the microstep reads it.
         val transitionBoardAt0 = EnabledTransition<StaticStateAlgorithmEnumState, HistoryId>(
@@ -513,21 +536,25 @@ class StaticStateAlgorithmEnumStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticStateAlgorithmEnumState? = when (stateId) {
         "board" -> StaticStateAlgorithmEnumState.Board
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticStateAlgorithmEnumState): String = when (state) {
         is StaticStateAlgorithmEnumState.Board -> "board"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticStateAlgorithmEnumState): Int = when (state) {
         is StaticStateAlgorithmEnumState.Board -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticStateAlgorithmEnumEvent? = when (name) {
@@ -538,6 +565,7 @@ class StaticStateAlgorithmEnumStateMachine(
         "item.moved" -> StaticStateAlgorithmEnumEvent.Item.Moved
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticStateAlgorithmEnumEvent): String? = when (event) {
@@ -552,53 +580,86 @@ class StaticStateAlgorithmEnumStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticStateAlgorithmEnumState,
-        event: StaticStateAlgorithmEnumEvent?
-    ): EnabledTransition<StaticStateAlgorithmEnumState, HistoryId>? = when (state) {
-        is StaticStateAlgorithmEnumState.Board -> when {
-            event is StaticStateAlgorithmEnumEvent.Item.Added -> transitionBoardAt0
-            event is StaticStateAlgorithmEnumEvent.Item.Moved -> transitionBoardAt1
-            event is StaticStateAlgorithmEnumEvent.Count -> transitionBoardAt2
-            event is StaticStateAlgorithmEnumEvent.Check && call_StatusOf__v(vItems, 1.toUInt()) == StaticStateAlgorithmEnumStatusEnum.DONE -> transitionBoardAt3
-            event is StaticStateAlgorithmEnumEvent.Error.Execution -> transitionBoardAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticStateAlgorithmEnumState, event: StaticStateAlgorithmEnumEvent?): EnabledTransition<StaticStateAlgorithmEnumState, HistoryId>? = when (state) {
+        is StaticStateAlgorithmEnumState.Board -> firstEnabledTransitionOfBoard(state, event)
     }
+
+
+    // board's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBoard(state: StaticStateAlgorithmEnumState, event: StaticStateAlgorithmEnumEvent?): EnabledTransition<StaticStateAlgorithmEnumState, HistoryId>? = when {
+        event is StaticStateAlgorithmEnumEvent.Item.Added -> TransitionsPart0.transitionBoardAt0
+        event is StaticStateAlgorithmEnumEvent.Item.Moved -> TransitionsPart0.transitionBoardAt1
+        event is StaticStateAlgorithmEnumEvent.Count -> TransitionsPart0.transitionBoardAt2
+        event is StaticStateAlgorithmEnumEvent.Check && call_StatusOf__v(vItems, 1.toUInt()) == StaticStateAlgorithmEnumStatusEnum.DONE -> TransitionsPart0.transitionBoardAt3
+        event is StaticStateAlgorithmEnumEvent.Error.Execution -> TransitionsPart0.transitionBoardAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_state_algorithm_enum.scxml:22 :: _machine
     override fun onEntry(state: StaticStateAlgorithmEnumState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticStateAlgorithmEnumState.Board -> {
-                // SCE-MAP: static_state_algorithm_enum.scxml:43 :: board :: _state_body
-            }
+            is StaticStateAlgorithmEnumState.Board -> onEntryOfBoard()
         }
+    }
+
+
+    private fun onEntryOfBoard() {
+                // SCE-MAP: static_state_algorithm_enum.scxml:43 :: board :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_state_algorithm_enum.scxml:22 :: _machine
     override fun onExit(state: StaticStateAlgorithmEnumState) {
         when (state) {
-            is StaticStateAlgorithmEnumState.Board -> {
-                // SCE-MAP: static_state_algorithm_enum.scxml:43 :: board :: _state_body
-            }
+            is StaticStateAlgorithmEnumState.Board -> onExitOfBoard()
         }
     }
+
+
+    private fun onExitOfBoard() {
+                // SCE-MAP: static_state_algorithm_enum.scxml:43 :: board :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_state_algorithm_enum.scxml:22 :: _machine
     override fun executeTransitionContent(source: StaticStateAlgorithmEnumState, transitionIndex: Int) {
         when (source) {
-        is StaticStateAlgorithmEnumState.Board -> when (transitionIndex) {
-            0 -> {
+            is StaticStateAlgorithmEnumState.Board -> transitionContentOfBoard(transitionIndex)
+        }
+    }
+
+
+    // The content of `board`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfBoard(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfBoardAt0()
+            1 -> transitionContentOfBoardAt1()
+            2 -> transitionContentOfBoardAt2()
+            3 -> transitionContentOfBoardAt3()
+            4 -> transitionContentOfBoardAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfBoardAt0() {
                 // SCE-MAP: static_state_algorithm_enum.scxml:44 :: board :: _transition_0
                 if (pendingItemAddedPayload == null) {
                     return
@@ -609,8 +670,9 @@ class StaticStateAlgorithmEnumStateMachine(
             if (if (vItems.size < 4) { vItems = vItems + (vDraft); false } else { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<sce:append target='items'>: the list already holds its capacity of 4"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfBoardAt1() {
                 // SCE-MAP: static_state_algorithm_enum.scxml:48 :: board :: _transition_1
                 if (pendingItemMovedPayload == null) {
                     return
@@ -621,8 +683,9 @@ class StaticStateAlgorithmEnumStateMachine(
             }
 
             vLast = call_StatusOf__v(vItems, pendingItemMovedPayload!!.id)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfBoardAt2() {
                 // SCE-MAP: static_state_algorithm_enum.scxml:52 :: board :: _transition_2
 
             if (try { vOpenCount = com.sce.forge.runtime.SceChecked.take(call_CountStatus__v(vItems, StaticStateAlgorithmEnumStatusEnum.OPEN)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='openCount'>: an integer operation overflowed or failed"); true }) {
@@ -636,23 +699,21 @@ class StaticStateAlgorithmEnumStateMachine(
             if (try { vDoneCount = com.sce.forge.runtime.SceChecked.take(call_CountStatus__v(vItems, StaticStateAlgorithmEnumStatusEnum.DONE)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='doneCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfBoardAt3() {
                 // SCE-MAP: static_state_algorithm_enum.scxml:57 :: board :: _transition_3
 
             if (try { vChecks = com.sce.forge.runtime.SceChecked.add(vChecks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='checks'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfBoardAt4() {
                 // SCE-MAP: static_state_algorithm_enum.scxml:60 :: board :: _transition_4
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

@@ -49,6 +49,7 @@ class InvokeExpressionFailureIsReportedHybrid0StateMachine(
         is InvokeExpressionFailureIsReportedHybrid0State.Final -> true
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<InvokeExpressionFailureIsReportedHybrid0State, HistoryId>>
@@ -59,26 +60,31 @@ class InvokeExpressionFailureIsReportedHybrid0StateMachine(
             listOf(StateTarget(InvokeExpressionFailureIsReportedHybrid0State.Final))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeExpressionFailureIsReportedHybrid0State? = when (stateId) {
         "final" -> InvokeExpressionFailureIsReportedHybrid0State.Final
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokeExpressionFailureIsReportedHybrid0State): String = when (state) {
         is InvokeExpressionFailureIsReportedHybrid0State.Final -> "final"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeExpressionFailureIsReportedHybrid0State): Int = when (state) {
         is InvokeExpressionFailureIsReportedHybrid0State.Final -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeExpressionFailureIsReportedHybrid0Event? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -99,42 +105,49 @@ class InvokeExpressionFailureIsReportedHybrid0StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokeExpressionFailureIsReportedHybrid0State,
-        event: InvokeExpressionFailureIsReportedHybrid0Event?
-    ): EnabledTransition<InvokeExpressionFailureIsReportedHybrid0State, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: InvokeExpressionFailureIsReportedHybrid0State, event: InvokeExpressionFailureIsReportedHybrid0Event?): EnabledTransition<InvokeExpressionFailureIsReportedHybrid0State, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:2 :: _machine
     override fun onEntry(state: InvokeExpressionFailureIsReportedHybrid0State, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokeExpressionFailureIsReportedHybrid0State.Final -> {
+            is InvokeExpressionFailureIsReportedHybrid0State.Final -> onEntryOfFinal()
+        }
+    }
+
+
+    private fun onEntryOfFinal() {
                 // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:3 :: final :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:2 :: _machine
     override fun onExit(state: InvokeExpressionFailureIsReportedHybrid0State) {
         when (state) {
-            is InvokeExpressionFailureIsReportedHybrid0State.Final -> {
-                // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:3 :: final :: _state_body
-            }
+            is InvokeExpressionFailureIsReportedHybrid0State.Final -> onExitOfFinal()
         }
     }
+
+
+    private fun onExitOfFinal() {
+                // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:3 :: final :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:2 :: _machine
     override fun executeTransitionContent(source: InvokeExpressionFailureIsReportedHybrid0State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

@@ -155,6 +155,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: AHybridInvokeCarriesItsArgumentsState): Boolean = when (state) {
@@ -162,11 +163,15 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: AHybridInvokeCarriesItsArgumentsState): Boolean = when (state) {
-        is AHybridInvokeCarriesItsArgumentsState.Done, is AHybridInvokeCarriesItsArgumentsState.FailRefusedChildStarted, is AHybridInvokeCarriesItsArgumentsState.FailWrongChild -> true
+        is AHybridInvokeCarriesItsArgumentsState.Done -> true
+        is AHybridInvokeCarriesItsArgumentsState.FailRefusedChildStarted -> true
+        is AHybridInvokeCarriesItsArgumentsState.FailWrongChild -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -183,16 +188,29 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<AHybridInvokeCarriesItsArgumentsState, List<AHybridInvokeCarriesItsArgumentsState>> = mapOf(
-            AHybridInvokeCarriesItsArgumentsState.Run to listOf(AHybridInvokeCarriesItsArgumentsState.ParamsPhase, AHybridInvokeCarriesItsArgumentsState.NamelistPhase, AHybridInvokeCarriesItsArgumentsState.RefusedPhase),
-        )
+        val childStates: Map<AHybridInvokeCarriesItsArgumentsState, List<AHybridInvokeCarriesItsArgumentsState>> = LinkedHashMap<AHybridInvokeCarriesItsArgumentsState, List<AHybridInvokeCarriesItsArgumentsState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<AHybridInvokeCarriesItsArgumentsState, List<EntryTarget<AHybridInvokeCarriesItsArgumentsState, HistoryId>>> = mapOf(
-            AHybridInvokeCarriesItsArgumentsState.Run to listOf(StateTarget(AHybridInvokeCarriesItsArgumentsState.ParamsPhase)),
-        )
+        private fun childStatesPart0(table: MutableMap<AHybridInvokeCarriesItsArgumentsState, List<AHybridInvokeCarriesItsArgumentsState>>) {
+            table[AHybridInvokeCarriesItsArgumentsState.Run] = listOf(AHybridInvokeCarriesItsArgumentsState.ParamsPhase, AHybridInvokeCarriesItsArgumentsState.NamelistPhase, AHybridInvokeCarriesItsArgumentsState.RefusedPhase)
+        }
+
+
+        val initialTargets: Map<AHybridInvokeCarriesItsArgumentsState, List<EntryTarget<AHybridInvokeCarriesItsArgumentsState, HistoryId>>> = LinkedHashMap<AHybridInvokeCarriesItsArgumentsState, List<EntryTarget<AHybridInvokeCarriesItsArgumentsState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<AHybridInvokeCarriesItsArgumentsState, List<EntryTarget<AHybridInvokeCarriesItsArgumentsState, HistoryId>>>) {
+            table[AHybridInvokeCarriesItsArgumentsState.Run] = listOf(StateTarget(AHybridInvokeCarriesItsArgumentsState.ParamsPhase))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<AHybridInvokeCarriesItsArgumentsState, HistoryId>> =
             listOf(StateTarget(AHybridInvokeCarriesItsArgumentsState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: namelistPhase's transition 0, as the microstep reads it.
         val transitionNamelistPhaseAt0 = EnabledTransition<AHybridInvokeCarriesItsArgumentsState, HistoryId>(
@@ -249,6 +267,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AHybridInvokeCarriesItsArgumentsState? = when (stateId) {
         "done" -> AHybridInvokeCarriesItsArgumentsState.Done
@@ -261,6 +280,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AHybridInvokeCarriesItsArgumentsState): String = when (state) {
         is AHybridInvokeCarriesItsArgumentsState.Done -> "done"
@@ -271,6 +291,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> "refusedPhase"
         is AHybridInvokeCarriesItsArgumentsState.Run -> "run"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AHybridInvokeCarriesItsArgumentsState): Int = when (state) {
@@ -283,6 +304,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         is AHybridInvokeCarriesItsArgumentsState.Run -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AHybridInvokeCarriesItsArgumentsEvent? = when (name) {
         "childUp" -> AHybridInvokeCarriesItsArgumentsEvent.ChildUp
@@ -291,12 +313,14 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AHybridInvokeCarriesItsArgumentsEvent): String? = when (event) {
         is AHybridInvokeCarriesItsArgumentsEvent.ChildUp -> "childUp"
         is AHybridInvokeCarriesItsArgumentsEvent.Error.Execution -> "error.execution"
         is AHybridInvokeCarriesItsArgumentsEvent.WrongChild -> "wrongChild"
     }
+
 
 
 
@@ -326,6 +350,27 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pick' with expr
         try {
             val initResult_pick = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"file:keeper.scxml\"", "'file:keeper.scxml'"))
@@ -375,22 +420,6 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         } catch (e: Exception) {
             raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='namelistOk'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -580,76 +609,107 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AHybridInvokeCarriesItsArgumentsState,
-        event: AHybridInvokeCarriesItsArgumentsEvent?
-    ): EnabledTransition<AHybridInvokeCarriesItsArgumentsState, HistoryId>? = when (state) {
-        is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> when {
-            event is AHybridInvokeCarriesItsArgumentsEvent.ChildUp -> transitionNamelistPhaseAt0
-            else -> null
-        }
-        is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> when {
-            event is AHybridInvokeCarriesItsArgumentsEvent.ChildUp -> transitionParamsPhaseAt0
-            else -> null
-        }
-        is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> when {
-            event is AHybridInvokeCarriesItsArgumentsEvent.Error.Execution -> transitionRefusedPhaseAt0
-            event is AHybridInvokeCarriesItsArgumentsEvent.ChildUp -> transitionRefusedPhaseAt1
-            else -> null
-        }
-        is AHybridInvokeCarriesItsArgumentsState.Run -> when {
-            event is AHybridInvokeCarriesItsArgumentsEvent.Error.Execution -> transitionRunAt0
-            event is AHybridInvokeCarriesItsArgumentsEvent.WrongChild -> transitionRunAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AHybridInvokeCarriesItsArgumentsState, event: AHybridInvokeCarriesItsArgumentsEvent?): EnabledTransition<AHybridInvokeCarriesItsArgumentsState, HistoryId>? = when (state) {
+        is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> firstEnabledTransitionOfNamelistPhase(state, event)
+        is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> firstEnabledTransitionOfParamsPhase(state, event)
+        is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> firstEnabledTransitionOfRefusedPhase(state, event)
+        is AHybridInvokeCarriesItsArgumentsState.Run -> firstEnabledTransitionOfRun(state, event)
         else -> null
     }
+
+
+    // namelistPhase's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfNamelistPhase(state: AHybridInvokeCarriesItsArgumentsState, event: AHybridInvokeCarriesItsArgumentsEvent?): EnabledTransition<AHybridInvokeCarriesItsArgumentsState, HistoryId>? = when {
+        event is AHybridInvokeCarriesItsArgumentsEvent.ChildUp -> TransitionsPart0.transitionNamelistPhaseAt0
+        else -> null
+    }
+
+
+    // paramsPhase's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfParamsPhase(state: AHybridInvokeCarriesItsArgumentsState, event: AHybridInvokeCarriesItsArgumentsEvent?): EnabledTransition<AHybridInvokeCarriesItsArgumentsState, HistoryId>? = when {
+        event is AHybridInvokeCarriesItsArgumentsEvent.ChildUp -> TransitionsPart0.transitionParamsPhaseAt0
+        else -> null
+    }
+
+
+    // refusedPhase's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRefusedPhase(state: AHybridInvokeCarriesItsArgumentsState, event: AHybridInvokeCarriesItsArgumentsEvent?): EnabledTransition<AHybridInvokeCarriesItsArgumentsState, HistoryId>? = when {
+        event is AHybridInvokeCarriesItsArgumentsEvent.Error.Execution -> TransitionsPart0.transitionRefusedPhaseAt0
+        event is AHybridInvokeCarriesItsArgumentsEvent.ChildUp -> TransitionsPart0.transitionRefusedPhaseAt1
+        else -> null
+    }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: AHybridInvokeCarriesItsArgumentsState, event: AHybridInvokeCarriesItsArgumentsEvent?): EnabledTransition<AHybridInvokeCarriesItsArgumentsState, HistoryId>? = when {
+        event is AHybridInvokeCarriesItsArgumentsEvent.Error.Execution -> TransitionsPart0.transitionRunAt0
+        event is AHybridInvokeCarriesItsArgumentsEvent.WrongChild -> TransitionsPart0.transitionRunAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:40 :: _machine
     override fun onEntry(state: AHybridInvokeCarriesItsArgumentsState, isDefaultEntry: Boolean) {
         when (state) {
-            is AHybridInvokeCarriesItsArgumentsState.Done -> {
+            is AHybridInvokeCarriesItsArgumentsState.Done -> onEntryOfDone()
+            is AHybridInvokeCarriesItsArgumentsState.FailRefusedChildStarted -> onEntryOfFailRefusedChildStarted()
+            is AHybridInvokeCarriesItsArgumentsState.FailWrongChild -> onEntryOfFailWrongChild()
+            is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> onEntryOfNamelistPhase()
+            is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> onEntryOfParamsPhase()
+            is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> onEntryOfRefusedPhase()
+            is AHybridInvokeCarriesItsArgumentsState.Run -> onEntryOfRun()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:100 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AHybridInvokeCarriesItsArgumentsState.FailRefusedChildStarted -> {
+    }
+
+    private fun onEntryOfFailRefusedChildStarted() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:102 :: failRefusedChildStarted :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AHybridInvokeCarriesItsArgumentsState.FailWrongChild -> {
+    }
+
+    private fun onEntryOfFailWrongChild() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:101 :: failWrongChild :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> {
+    }
+
+    private fun onEntryOfNamelistPhase() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:76 :: namelistPhase :: _state_body
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("_invoke_1", state)
-            }
-            is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> {
+                deferStaticInvoke("_invoke_1", AHybridInvokeCarriesItsArgumentsState.NamelistPhase)
+    }
+
+    private fun onEntryOfParamsPhase() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:60 :: paramsPhase :: _state_body
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("_invoke_0", state)
-            }
-            is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> {
+                deferStaticInvoke("_invoke_0", AHybridInvokeCarriesItsArgumentsState.ParamsPhase)
+    }
+
+    private fun onEntryOfRefusedPhase() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:87 :: refusedPhase :: _state_body
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("_invoke_2", state)
-            }
-            is AHybridInvokeCarriesItsArgumentsState.Run -> {
+                deferStaticInvoke("_invoke_2", AHybridInvokeCarriesItsArgumentsState.RefusedPhase)
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:54 :: run :: _state_body
-            }
-        }
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -662,9 +722,21 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: AHybridInvokeCarriesItsArgumentsState) {
         when (invokeId) {
-            "_invoke_1" -> {
+            "_invoke_1" -> startInvokeOfNamelistPhaseAt0(state)
+            "_invoke_0" -> startInvokeOfParamsPhaseAt0(state)
+            "_invoke_2" -> startInvokeOfRefusedPhaseAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfNamelistPhaseAt0(state: AHybridInvokeCarriesItsArgumentsState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -732,8 +804,9 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         }
                     }
                 }
-            }
-            "_invoke_0" -> {
+    }
+
+    private fun startInvokeOfParamsPhaseAt0(state: AHybridInvokeCarriesItsArgumentsState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -824,8 +897,9 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         }
                     }
                 }
-            }
-            "_invoke_2" -> {
+    }
+
+    private fun startInvokeOfRefusedPhaseAt0(state: AHybridInvokeCarriesItsArgumentsState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -902,58 +976,92 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         }
                     }
                 }
-            }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:40 :: _machine
     override fun onExit(state: AHybridInvokeCarriesItsArgumentsState) {
         when (state) {
-            is AHybridInvokeCarriesItsArgumentsState.Done -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:100 :: done :: _state_body
-            }
-            is AHybridInvokeCarriesItsArgumentsState.FailRefusedChildStarted -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:102 :: failRefusedChildStarted :: _state_body
-            }
-            is AHybridInvokeCarriesItsArgumentsState.FailWrongChild -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:101 :: failWrongChild :: _state_body
-            }
-            is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:76 :: namelistPhase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("_invoke_1")
-            }
-            is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:60 :: paramsPhase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("_invoke_0")
-            }
-            is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:87 :: refusedPhase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("_invoke_2")
-            }
-            is AHybridInvokeCarriesItsArgumentsState.Run -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:54 :: run :: _state_body
-            }
+            is AHybridInvokeCarriesItsArgumentsState.Done -> onExitOfDone()
+            is AHybridInvokeCarriesItsArgumentsState.FailRefusedChildStarted -> onExitOfFailRefusedChildStarted()
+            is AHybridInvokeCarriesItsArgumentsState.FailWrongChild -> onExitOfFailWrongChild()
+            is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> onExitOfNamelistPhase()
+            is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> onExitOfParamsPhase()
+            is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> onExitOfRefusedPhase()
+            is AHybridInvokeCarriesItsArgumentsState.Run -> onExitOfRun()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:100 :: done :: _state_body
+    }
+
+    private fun onExitOfFailRefusedChildStarted() {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:102 :: failRefusedChildStarted :: _state_body
+    }
+
+    private fun onExitOfFailWrongChild() {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:101 :: failWrongChild :: _state_body
+    }
+
+    private fun onExitOfNamelistPhase() {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:76 :: namelistPhase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(AHybridInvokeCarriesItsArgumentsState.NamelistPhase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("_invoke_1")
+    }
+
+    private fun onExitOfParamsPhase() {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:60 :: paramsPhase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(AHybridInvokeCarriesItsArgumentsState.ParamsPhase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("_invoke_0")
+    }
+
+    private fun onExitOfRefusedPhase() {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:87 :: refusedPhase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(AHybridInvokeCarriesItsArgumentsState.RefusedPhase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("_invoke_2")
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:54 :: run :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:40 :: _machine
     override fun executeTransitionContent(source: AHybridInvokeCarriesItsArgumentsState, transitionIndex: Int) {
         when (source) {
-        is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> when (transitionIndex) {
-            0 -> {
+            is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> transitionContentOfNamelistPhase(transitionIndex)
+            is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> transitionContentOfParamsPhase(transitionIndex)
+            is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> transitionContentOfRefusedPhase(transitionIndex)
+            is AHybridInvokeCarriesItsArgumentsState.Run -> transitionContentOfRun(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `namelistPhase`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfNamelistPhase(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfNamelistPhaseAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfNamelistPhaseAt0() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:79 :: namelistPhase :: _transition_0
 
 
@@ -973,11 +1081,22 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             if (ifCondFailed2) {
                 return
             }
-            }
+    }
+
+    // The content of `paramsPhase`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfParamsPhase(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfParamsPhaseAt0()
             else -> {}
         }
-        is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfParamsPhaseAt0() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:68 :: paramsPhase :: _transition_0
 
 
@@ -997,32 +1116,49 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             if (ifCondFailed1) {
                 return
             }
-            }
+    }
+
+    // The content of `refusedPhase`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRefusedPhase(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRefusedPhaseAt0()
             else -> {}
         }
-        is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfRefusedPhaseAt0() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:93 :: refusedPhase :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
             else -> {}
         }
-        is AHybridInvokeCarriesItsArgumentsState.Run -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:55 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

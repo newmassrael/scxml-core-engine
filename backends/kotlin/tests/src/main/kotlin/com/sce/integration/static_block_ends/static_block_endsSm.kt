@@ -119,6 +119,10 @@ class StaticBlockEndsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.a?.let { vA = it }
         params.b?.let { vB = it }
         params.afterAssign?.let { vAfterAssign = it }
@@ -219,22 +223,24 @@ class StaticBlockEndsStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "a" to SavedValues.of(vA),
-            "b" to SavedValues.of(vB),
-            "afterAssign" to SavedValues.of(vAfterAssign),
-            "thenRan" to SavedValues.of(vThenRan),
-            "elseRan" to SavedValues.of(vElseRan),
-            "afterIf" to SavedValues.of(vAfterIf),
-            "inBranch" to SavedValues.of(vInBranch),
-            "afterBranch" to SavedValues.of(vAfterBranch),
-            "afterOk" to SavedValues.of(vAfterOk),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "a" to SavedValues.of(vA)
+        variables += "b" to SavedValues.of(vB)
+        variables += "afterAssign" to SavedValues.of(vAfterAssign)
+        variables += "thenRan" to SavedValues.of(vThenRan)
+        variables += "elseRan" to SavedValues.of(vElseRan)
+        variables += "afterIf" to SavedValues.of(vAfterIf)
+        variables += "inBranch" to SavedValues.of(vInBranch)
+        variables += "afterBranch" to SavedValues.of(vAfterBranch)
+        variables += "afterOk" to SavedValues.of(vAfterOk)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -259,6 +265,15 @@ class StaticBlockEndsStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint8(savedGrown.variable("a"), "a")
         val saved2 = SavedValues.uint8(savedGrown.variable("b"), "b")
         val saved3 = SavedValues.uint8(savedGrown.variable("afterAssign"), "afterAssign")
@@ -269,17 +284,18 @@ class StaticBlockEndsStateMachine(
         val saved8 = SavedValues.uint8(savedGrown.variable("afterBranch"), "afterBranch")
         val saved9 = SavedValues.uint8(savedGrown.variable("afterOk"), "afterOk")
         val saved10 = SavedValues.uint8(savedGrown.variable("errors"), "errors")
-        vA = saved1
-        vB = saved2
-        vAfterAssign = saved3
-        vThenRan = saved4
-        vElseRan = saved5
-        vAfterIf = saved6
-        vInBranch = saved7
-        vAfterBranch = saved8
-        vAfterOk = saved9
-        vErrors = saved10
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vA = saved1
+            vB = saved2
+            vAfterAssign = saved3
+            vThenRan = saved4
+            vElseRan = saved5
+            vAfterIf = saved6
+            vInBranch = saved7
+            vAfterBranch = saved8
+            vAfterOk = saved9
+            vErrors = saved10
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -292,6 +308,10 @@ class StaticBlockEndsStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint8(savedGrown.variable("a"), "a")
         SavedValues.uint8(savedGrown.variable("b"), "b")
         SavedValues.uint8(savedGrown.variable("afterAssign"), "afterAssign")
@@ -331,6 +351,9 @@ class StaticBlockEndsStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticBlockEndsState, HistoryId>> =
             listOf(StateTarget(StaticBlockEndsState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StaticBlockEndsState, HistoryId>(
@@ -378,21 +401,25 @@ class StaticBlockEndsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticBlockEndsState? = when (stateId) {
         "waiting" -> StaticBlockEndsState.Waiting
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticBlockEndsState): String = when (state) {
         is StaticBlockEndsState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticBlockEndsState): Int = when (state) {
         is StaticBlockEndsState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticBlockEndsEvent? = when (name) {
@@ -403,6 +430,7 @@ class StaticBlockEndsStateMachine(
         "ok" -> StaticBlockEndsEvent.Ok
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticBlockEndsEvent): String? = when (event) {
@@ -417,53 +445,86 @@ class StaticBlockEndsStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticBlockEndsState,
-        event: StaticBlockEndsEvent?
-    ): EnabledTransition<StaticBlockEndsState, HistoryId>? = when (state) {
-        is StaticBlockEndsState.Waiting -> when {
-            event is StaticBlockEndsEvent.Fail.Assign -> transitionWaitingAt0
-            event is StaticBlockEndsEvent.Fail.Cond -> transitionWaitingAt1
-            event is StaticBlockEndsEvent.Fail.Branch -> transitionWaitingAt2
-            event is StaticBlockEndsEvent.Ok -> transitionWaitingAt3
-            event is StaticBlockEndsEvent.Error.Execution -> transitionWaitingAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticBlockEndsState, event: StaticBlockEndsEvent?): EnabledTransition<StaticBlockEndsState, HistoryId>? = when (state) {
+        is StaticBlockEndsState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticBlockEndsState, event: StaticBlockEndsEvent?): EnabledTransition<StaticBlockEndsState, HistoryId>? = when {
+        event is StaticBlockEndsEvent.Fail.Assign -> TransitionsPart0.transitionWaitingAt0
+        event is StaticBlockEndsEvent.Fail.Cond -> TransitionsPart0.transitionWaitingAt1
+        event is StaticBlockEndsEvent.Fail.Branch -> TransitionsPart0.transitionWaitingAt2
+        event is StaticBlockEndsEvent.Ok -> TransitionsPart0.transitionWaitingAt3
+        event is StaticBlockEndsEvent.Error.Execution -> TransitionsPart0.transitionWaitingAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_block_ends.scxml:24 :: _machine
     override fun onEntry(state: StaticBlockEndsState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticBlockEndsState.Waiting -> {
-                // SCE-MAP: static_block_ends.scxml:38 :: waiting :: _state_body
-            }
+            is StaticBlockEndsState.Waiting -> onEntryOfWaiting()
         }
+    }
+
+
+    private fun onEntryOfWaiting() {
+                // SCE-MAP: static_block_ends.scxml:38 :: waiting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_block_ends.scxml:24 :: _machine
     override fun onExit(state: StaticBlockEndsState) {
         when (state) {
-            is StaticBlockEndsState.Waiting -> {
-                // SCE-MAP: static_block_ends.scxml:38 :: waiting :: _state_body
-            }
+            is StaticBlockEndsState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: static_block_ends.scxml:38 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_block_ends.scxml:24 :: _machine
     override fun executeTransitionContent(source: StaticBlockEndsState, transitionIndex: Int) {
         when (source) {
-        is StaticBlockEndsState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is StaticBlockEndsState.Waiting -> transitionContentOfWaiting(transitionIndex)
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            1 -> transitionContentOfWaitingAt1()
+            2 -> transitionContentOfWaitingAt2()
+            3 -> transitionContentOfWaitingAt3()
+            4 -> transitionContentOfWaitingAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_block_ends.scxml:39 :: waiting :: _transition_0
 
             if (try { vA = com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
@@ -471,8 +532,9 @@ class StaticBlockEndsStateMachine(
             }
 
             vAfterAssign = 1.toUByte()
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: static_block_ends.scxml:43 :: waiting :: _transition_1
 
 
@@ -489,8 +551,9 @@ class StaticBlockEndsStateMachine(
             }
 
             vAfterIf = 1.toUByte()
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfWaitingAt2() {
                 // SCE-MAP: static_block_ends.scxml:51 :: waiting :: _transition_2
 
 
@@ -504,8 +567,9 @@ class StaticBlockEndsStateMachine(
             }
 
             vAfterBranch = 1.toUByte()
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfWaitingAt3() {
                 // SCE-MAP: static_block_ends.scxml:58 :: waiting :: _transition_3
 
             if (try { vB = com.sce.forge.runtime.SceChecked.add(vB, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='b'>: an integer operation overflowed or failed"); true }) {
@@ -513,16 +577,13 @@ class StaticBlockEndsStateMachine(
             }
 
             vAfterOk = 1.toUByte()
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfWaitingAt4() {
                 // SCE-MAP: static_block_ends.scxml:62 :: waiting :: _transition_4
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

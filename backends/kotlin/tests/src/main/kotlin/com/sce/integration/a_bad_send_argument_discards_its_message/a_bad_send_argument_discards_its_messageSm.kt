@@ -116,6 +116,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ABadSendArgumentDiscardsItsMessageState, HistoryId>>
@@ -124,6 +125,9 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ABadSendArgumentDiscardsItsMessageState, HistoryId>> =
             listOf(StateTarget(ABadSendArgumentDiscardsItsMessageState.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<ABadSendArgumentDiscardsItsMessageState, HistoryId>(
@@ -153,6 +157,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ABadSendArgumentDiscardsItsMessageState? = when (stateId) {
         "done" -> ABadSendArgumentDiscardsItsMessageState.Done
@@ -160,17 +165,20 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ABadSendArgumentDiscardsItsMessageState): String = when (state) {
         is ABadSendArgumentDiscardsItsMessageState.Done -> "done"
         is ABadSendArgumentDiscardsItsMessageState.S0 -> "s0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ABadSendArgumentDiscardsItsMessageState): Int = when (state) {
         is ABadSendArgumentDiscardsItsMessageState.Done -> 1
         is ABadSendArgumentDiscardsItsMessageState.S0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ABadSendArgumentDiscardsItsMessageEvent? = when (name) {
@@ -181,6 +189,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ABadSendArgumentDiscardsItsMessageEvent): String? = when (event) {
         is ABadSendArgumentDiscardsItsMessageEvent.Error.Communication -> "error.communication"
@@ -188,6 +197,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
         is ABadSendArgumentDiscardsItsMessageEvent.Finish -> "finish"
         is ABadSendArgumentDiscardsItsMessageEvent.Sent -> "sent"
     }
+
 
 
 
@@ -217,6 +227,27 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
             val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -245,22 +276,6 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -470,30 +485,41 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ABadSendArgumentDiscardsItsMessageState,
-        event: ABadSendArgumentDiscardsItsMessageEvent?
-    ): EnabledTransition<ABadSendArgumentDiscardsItsMessageState, HistoryId>? = when (state) {
-        is ABadSendArgumentDiscardsItsMessageState.S0 -> when {
-            event is ABadSendArgumentDiscardsItsMessageEvent.Error.Execution -> transitionS0At0
-            event is ABadSendArgumentDiscardsItsMessageEvent.Sent -> transitionS0At1
-            event is ABadSendArgumentDiscardsItsMessageEvent.Finish -> transitionS0At2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ABadSendArgumentDiscardsItsMessageState, event: ABadSendArgumentDiscardsItsMessageEvent?): EnabledTransition<ABadSendArgumentDiscardsItsMessageState, HistoryId>? = when (state) {
+        is ABadSendArgumentDiscardsItsMessageState.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: ABadSendArgumentDiscardsItsMessageState, event: ABadSendArgumentDiscardsItsMessageEvent?): EnabledTransition<ABadSendArgumentDiscardsItsMessageState, HistoryId>? = when {
+        event is ABadSendArgumentDiscardsItsMessageEvent.Error.Execution -> TransitionsPart0.transitionS0At0
+        event is ABadSendArgumentDiscardsItsMessageEvent.Sent -> TransitionsPart0.transitionS0At1
+        event is ABadSendArgumentDiscardsItsMessageEvent.Finish -> TransitionsPart0.transitionS0At2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:31 :: _machine
     override fun onEntry(state: ABadSendArgumentDiscardsItsMessageState, isDefaultEntry: Boolean) {
         when (state) {
-            is ABadSendArgumentDiscardsItsMessageState.Done -> {
+            is ABadSendArgumentDiscardsItsMessageState.Done -> onEntryOfDone()
+            is ABadSendArgumentDiscardsItsMessageState.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:77 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ABadSendArgumentDiscardsItsMessageState.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:42 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/6
                 run {
@@ -783,48 +809,67 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
                 return@run
             }
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:31 :: _machine
     override fun onExit(state: ABadSendArgumentDiscardsItsMessageState) {
         when (state) {
-            is ABadSendArgumentDiscardsItsMessageState.Done -> {
-                // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:77 :: done :: _state_body
-            }
-            is ABadSendArgumentDiscardsItsMessageState.S0 -> {
-                // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:42 :: s0 :: _state_body
-            }
+            is ABadSendArgumentDiscardsItsMessageState.Done -> onExitOfDone()
+            is ABadSendArgumentDiscardsItsMessageState.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:77 :: done :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:42 :: s0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:31 :: _machine
     override fun executeTransitionContent(source: ABadSendArgumentDiscardsItsMessageState, transitionIndex: Int) {
         when (source) {
-        is ABadSendArgumentDiscardsItsMessageState.S0 -> when (transitionIndex) {
-            0 -> {
+            is ABadSendArgumentDiscardsItsMessageState.S0 -> transitionContentOfS0(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
+            1 -> transitionContentOfS0At1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:68 :: s0 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfS0At1() {
                 // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:71 :: s0 :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("sent", "sent"), com.sce.runtime.ScriptSource.lua("_scxml_add(sent, 1)", "sent + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

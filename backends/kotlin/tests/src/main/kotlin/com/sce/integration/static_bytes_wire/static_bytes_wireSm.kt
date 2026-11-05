@@ -100,6 +100,10 @@ class StaticBytesWireStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.relays?.let { vRelays = it }
         params.errors?.let { vErrors = it }
     }
@@ -180,16 +184,18 @@ class StaticBytesWireStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "held" to SavedValues.of(vHeld),
-            "echo" to SavedValues.of(vEcho),
-            "relays" to SavedValues.of(vRelays),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "held" to SavedValues.of(vHeld)
+        variables += "echo" to SavedValues.of(vEcho)
+        variables += "relays" to SavedValues.of(vRelays)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -214,15 +220,25 @@ class StaticBytesWireStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.bytes(savedGrown.variable("held"), "held", 8)
         val saved2 = SavedValues.bytes(savedGrown.variable("echo"), "echo", 8)
         val saved3 = SavedValues.uint32(savedGrown.variable("relays"), "relays")
         val saved4 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vHeld = saved1
-        vEcho = saved2
-        vRelays = saved3
-        vErrors = saved4
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vHeld = saved1
+            vEcho = saved2
+            vRelays = saved3
+            vErrors = saved4
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -235,6 +251,10 @@ class StaticBytesWireStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.bytes(savedGrown.variable("held"), "held", 8)
         SavedValues.bytes(savedGrown.variable("echo"), "echo", 8)
         SavedValues.uint32(savedGrown.variable("relays"), "relays")
@@ -335,6 +355,7 @@ class StaticBytesWireStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticBytesWireState, HistoryId>>
@@ -343,6 +364,9 @@ class StaticBytesWireStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticBytesWireState, HistoryId>> =
             listOf(StateTarget(StaticBytesWireState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticBytesWireState, HistoryId>(
@@ -390,6 +414,7 @@ class StaticBytesWireStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticBytesWireState? = when (stateId) {
         "done" -> StaticBytesWireState.Done
@@ -397,17 +422,20 @@ class StaticBytesWireStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticBytesWireState): String = when (state) {
         is StaticBytesWireState.Done -> "done"
         is StaticBytesWireState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticBytesWireState): Int = when (state) {
         is StaticBytesWireState.Done -> 1
         is StaticBytesWireState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticBytesWireEvent? = when (name) {
@@ -418,6 +446,7 @@ class StaticBytesWireStateMachine(
         "relay" -> StaticBytesWireEvent.Relay
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticBytesWireEvent): String? = when (event) {
@@ -432,32 +461,43 @@ class StaticBytesWireStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticBytesWireState,
-        event: StaticBytesWireEvent?
-    ): EnabledTransition<StaticBytesWireState, HistoryId>? = when (state) {
-        is StaticBytesWireState.Idle -> when {
-            event is StaticBytesWireEvent.Framed.Taken -> transitionIdleAt0
-            event is StaticBytesWireEvent.Relay -> transitionIdleAt1
-            event is StaticBytesWireEvent.Framed.Relayed -> transitionIdleAt2
-            event is StaticBytesWireEvent.Finish -> transitionIdleAt3
-            event is StaticBytesWireEvent.Error.Execution -> transitionIdleAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticBytesWireState, event: StaticBytesWireEvent?): EnabledTransition<StaticBytesWireState, HistoryId>? = when (state) {
+        is StaticBytesWireState.Idle -> firstEnabledTransitionOfIdle(state, event)
         else -> null
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticBytesWireState, event: StaticBytesWireEvent?): EnabledTransition<StaticBytesWireState, HistoryId>? = when {
+        event is StaticBytesWireEvent.Framed.Taken -> TransitionsPart0.transitionIdleAt0
+        event is StaticBytesWireEvent.Relay -> TransitionsPart0.transitionIdleAt1
+        event is StaticBytesWireEvent.Framed.Relayed -> TransitionsPart0.transitionIdleAt2
+        event is StaticBytesWireEvent.Finish -> TransitionsPart0.transitionIdleAt3
+        event is StaticBytesWireEvent.Error.Execution -> TransitionsPart0.transitionIdleAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_bytes_wire.scxml:15 :: _machine
     override fun onEntry(state: StaticBytesWireState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticBytesWireState.Done -> {
+            is StaticBytesWireState.Done -> onEntryOfDone()
+            is StaticBytesWireState.Idle -> onEntryOfIdle()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: static_bytes_wire.scxml:44 :: done :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
@@ -476,33 +516,59 @@ class StaticBytesWireStateMachine(
                 }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticBytesWireState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: static_bytes_wire.scxml:25 :: idle :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_bytes_wire.scxml:15 :: _machine
     override fun onExit(state: StaticBytesWireState) {
         when (state) {
-            is StaticBytesWireState.Done -> {
-                // SCE-MAP: static_bytes_wire.scxml:44 :: done :: _state_body
-            }
-            is StaticBytesWireState.Idle -> {
-                // SCE-MAP: static_bytes_wire.scxml:25 :: idle :: _state_body
-            }
+            is StaticBytesWireState.Done -> onExitOfDone()
+            is StaticBytesWireState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: static_bytes_wire.scxml:44 :: done :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_bytes_wire.scxml:25 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_bytes_wire.scxml:15 :: _machine
     override fun executeTransitionContent(source: StaticBytesWireState, transitionIndex: Int) {
         when (source) {
-        is StaticBytesWireState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticBytesWireState.Idle -> transitionContentOfIdle(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            4 -> transitionContentOfIdleAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_bytes_wire.scxml:26 :: idle :: _transition_0
                 if (pendingFramedTakenPayload == null) {
                     return
@@ -511,8 +577,9 @@ class StaticBytesWireStateMachine(
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded(pendingFramedTakenPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='held'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_bytes_wire.scxml:29 :: idle :: _transition_1
 
 
@@ -531,8 +598,9 @@ class StaticBytesWireStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_bytes_wire.scxml:35 :: idle :: _transition_2
                 if (pendingFramedRelayedPayload == null) {
                     return
@@ -545,17 +613,13 @@ class StaticBytesWireStateMachine(
             if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_bytes_wire.scxml:40 :: idle :: _transition_4
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

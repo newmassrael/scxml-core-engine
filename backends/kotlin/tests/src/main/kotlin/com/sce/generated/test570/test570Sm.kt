@@ -98,12 +98,15 @@ class Test570StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: Test570State): Boolean = when (state) {
-        is Test570State.P0s1, is Test570State.P0s2 -> true
+        is Test570State.P0s1 -> true
+        is Test570State.P0s2 -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: Test570State): Boolean = when (state) {
@@ -111,11 +114,16 @@ class Test570StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test570State): Boolean = when (state) {
-        is Test570State.Fail, is Test570State.P0s1final, is Test570State.P0s2final, is Test570State.Pass -> true
+        is Test570State.Fail -> true
+        is Test570State.P0s1final -> true
+        is Test570State.P0s2final -> true
+        is Test570State.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -132,19 +140,32 @@ class Test570StateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<Test570State, List<Test570State>> = mapOf(
-            Test570State.P0 to listOf(Test570State.P0s1, Test570State.P0s2),
-            Test570State.P0s1 to listOf(Test570State.P0s11, Test570State.P0s1final),
-            Test570State.P0s2 to listOf(Test570State.P0s21, Test570State.P0s2final),
-        )
+        val childStates: Map<Test570State, List<Test570State>> = LinkedHashMap<Test570State, List<Test570State>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<Test570State, List<EntryTarget<Test570State, HistoryId>>> = mapOf(
-            Test570State.P0s1 to listOf(StateTarget(Test570State.P0s11)),
-            Test570State.P0s2 to listOf(StateTarget(Test570State.P0s21)),
-        )
+        private fun childStatesPart0(table: MutableMap<Test570State, List<Test570State>>) {
+            table[Test570State.P0] = listOf(Test570State.P0s1, Test570State.P0s2)
+            table[Test570State.P0s1] = listOf(Test570State.P0s11, Test570State.P0s1final)
+            table[Test570State.P0s2] = listOf(Test570State.P0s21, Test570State.P0s2final)
+        }
+
+
+        val initialTargets: Map<Test570State, List<EntryTarget<Test570State, HistoryId>>> = LinkedHashMap<Test570State, List<EntryTarget<Test570State, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<Test570State, List<EntryTarget<Test570State, HistoryId>>>) {
+            table[Test570State.P0s1] = listOf(StateTarget(Test570State.P0s11))
+            table[Test570State.P0s2] = listOf(StateTarget(Test570State.P0s21))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test570State, HistoryId>> =
             listOf(StateTarget(Test570State.P0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: p0's transition 0, as the microstep reads it.
         val transitionP0At0 = EnabledTransition<Test570State, HistoryId>(
@@ -210,6 +231,7 @@ class Test570StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test570State? = when (stateId) {
         "fail" -> Test570State.Fail
@@ -225,6 +247,7 @@ class Test570StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test570State): String = when (state) {
         is Test570State.Fail -> "fail"
@@ -238,6 +261,7 @@ class Test570StateMachine(
         is Test570State.Pass -> "pass"
         is Test570State.S1 -> "s1"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test570State): Int = when (state) {
@@ -253,6 +277,7 @@ class Test570StateMachine(
         is Test570State.S1 -> 7
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test570Event? = when (name) {
         "done.state.p0" -> Test570Event.Done.State.P0
@@ -266,6 +291,7 @@ class Test570StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test570Event): String? = when (event) {
         is Test570Event.Done.State.P0 -> "done.state.p0"
@@ -277,6 +303,7 @@ class Test570StateMachine(
         is Test570Event.Timeout -> "timeout"
         is Test570Event.Wildcard -> "*"
     }
+
 
 
 
@@ -306,13 +333,7 @@ class Test570StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
-        try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "Var1", initResult_Var1)
-        } catch (e: Exception) {
-            raisePlatformError(Test570Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -331,6 +352,17 @@ class Test570StateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
+        try {
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "Var1", initResult_Var1)
+        } catch (e: Exception) {
+            raisePlatformError(Test570Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -520,43 +552,74 @@ class Test570StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test570State,
-        event: Test570Event?
-    ): EnabledTransition<Test570State, HistoryId>? = when (state) {
-        is Test570State.P0 -> when {
-            event is Test570Event.Done.State.P0s1 -> transitionP0At0
-            event is Test570Event.Done.State.P0s2 -> transitionP0At1
-            event is Test570Event.Timeout -> transitionP0At2
-            else -> null
-        }
-        is Test570State.P0s11 -> when {
-            event is Test570Event.E1 -> transitionP0s11At0
-            else -> null
-        }
-        is Test570State.P0s21 -> when {
-            event is Test570Event.E2 -> transitionP0s21At0
-            else -> null
-        }
-        is Test570State.S1 -> when {
-            event is Test570Event.Done.State.P0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> transitionS1At0
-            event != null -> transitionS1At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test570State, event: Test570Event?): EnabledTransition<Test570State, HistoryId>? = when (state) {
+        is Test570State.P0 -> firstEnabledTransitionOfP0(state, event)
+        is Test570State.P0s11 -> firstEnabledTransitionOfP0s11(state, event)
+        is Test570State.P0s21 -> firstEnabledTransitionOfP0s21(state, event)
+        is Test570State.S1 -> firstEnabledTransitionOfS1(state, event)
         else -> null
     }
+
+
+    // p0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP0(state: Test570State, event: Test570Event?): EnabledTransition<Test570State, HistoryId>? = when {
+        event is Test570Event.Done.State.P0s1 -> TransitionsPart0.transitionP0At0
+        event is Test570Event.Done.State.P0s2 -> TransitionsPart0.transitionP0At1
+        event is Test570Event.Timeout -> TransitionsPart0.transitionP0At2
+        else -> null
+    }
+
+
+    // p0s11's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP0s11(state: Test570State, event: Test570Event?): EnabledTransition<Test570State, HistoryId>? = when {
+        event is Test570Event.E1 -> TransitionsPart0.transitionP0s11At0
+        else -> null
+    }
+
+
+    // p0s21's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP0s21(state: Test570State, event: Test570Event?): EnabledTransition<Test570State, HistoryId>? = when {
+        event is Test570Event.E2 -> TransitionsPart0.transitionP0s21At0
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test570State, event: Test570Event?): EnabledTransition<Test570State, HistoryId>? = when {
+        event is Test570Event.Done.State.P0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionS1At0
+        event != null -> TransitionsPart0.transitionS1At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test570.scxml:5 :: _machine
     override fun onEntry(state: Test570State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test570State.Fail -> {
+            is Test570State.Fail -> onEntryOfFail()
+            is Test570State.P0 -> onEntryOfP0()
+            is Test570State.P0s1 -> onEntryOfP0s1()
+            is Test570State.P0s11 -> onEntryOfP0s11()
+            is Test570State.P0s1final -> onEntryOfP0s1final()
+            is Test570State.P0s2 -> onEntryOfP0s2()
+            is Test570State.P0s21 -> onEntryOfP0s21()
+            is Test570State.P0s2final -> onEntryOfP0s2final()
+            is Test570State.Pass -> onEntryOfPass()
+            is Test570State.S1 -> onEntryOfS1()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test570.scxml:47 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test570State.P0 -> {
+    }
+
+    private fun onEntryOfP0() {
                 // SCE-MAP: test570.scxml:9 :: p0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -577,14 +640,17 @@ class Test570StateMachine(
 
             raiseInternal(Test570Event.E2)
                 }
-            }
-            is Test570State.P0s1 -> {
+    }
+
+    private fun onEntryOfP0s1() {
                 // SCE-MAP: test570.scxml:24 :: p0s1 :: _state_body
-            }
-            is Test570State.P0s11 -> {
+    }
+
+    private fun onEntryOfP0s11() {
                 // SCE-MAP: test570.scxml:25 :: p0s11 :: _state_body
-            }
-            is Test570State.P0s1final -> {
+    }
+
+    private fun onEntryOfP0s1final() {
                 // SCE-MAP: test570.scxml:28 :: p0s1final :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test570Event.Done.State.P0s1, EventMetadata.platform())
@@ -595,14 +661,17 @@ class Test570StateMachine(
                 if (isStateInFinalState(Test570State.P0)) {
                     raiseInternal(Test570Event.Done.State.P0)
                 }
-            }
-            is Test570State.P0s2 -> {
+    }
+
+    private fun onEntryOfP0s2() {
                 // SCE-MAP: test570.scxml:31 :: p0s2 :: _state_body
-            }
-            is Test570State.P0s21 -> {
+    }
+
+    private fun onEntryOfP0s21() {
                 // SCE-MAP: test570.scxml:32 :: p0s21 :: _state_body
-            }
-            is Test570State.P0s2final -> {
+    }
+
+    private fun onEntryOfP0s2final() {
                 // SCE-MAP: test570.scxml:35 :: p0s2final :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test570Event.Done.State.P0s2, EventMetadata.platform())
@@ -613,72 +682,107 @@ class Test570StateMachine(
                 if (isStateInFinalState(Test570State.P0)) {
                     raiseInternal(Test570Event.Done.State.P0)
                 }
-            }
-            is Test570State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test570.scxml:46 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test570State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test570.scxml:40 :: s1 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test570.scxml:5 :: _machine
     override fun onExit(state: Test570State) {
         when (state) {
-            is Test570State.Fail -> {
-                // SCE-MAP: test570.scxml:47 :: fail :: _state_body
-            }
-            is Test570State.P0 -> {
-                // SCE-MAP: test570.scxml:9 :: p0 :: _state_body
-            }
-            is Test570State.P0s1 -> {
-                // SCE-MAP: test570.scxml:24 :: p0s1 :: _state_body
-            }
-            is Test570State.P0s11 -> {
-                // SCE-MAP: test570.scxml:25 :: p0s11 :: _state_body
-            }
-            is Test570State.P0s1final -> {
-                // SCE-MAP: test570.scxml:28 :: p0s1final :: _state_body
-            }
-            is Test570State.P0s2 -> {
-                // SCE-MAP: test570.scxml:31 :: p0s2 :: _state_body
-            }
-            is Test570State.P0s21 -> {
-                // SCE-MAP: test570.scxml:32 :: p0s21 :: _state_body
-            }
-            is Test570State.P0s2final -> {
-                // SCE-MAP: test570.scxml:35 :: p0s2final :: _state_body
-            }
-            is Test570State.Pass -> {
-                // SCE-MAP: test570.scxml:46 :: pass :: _state_body
-            }
-            is Test570State.S1 -> {
-                // SCE-MAP: test570.scxml:40 :: s1 :: _state_body
-            }
+            is Test570State.Fail -> onExitOfFail()
+            is Test570State.P0 -> onExitOfP0()
+            is Test570State.P0s1 -> onExitOfP0s1()
+            is Test570State.P0s11 -> onExitOfP0s11()
+            is Test570State.P0s1final -> onExitOfP0s1final()
+            is Test570State.P0s2 -> onExitOfP0s2()
+            is Test570State.P0s21 -> onExitOfP0s21()
+            is Test570State.P0s2final -> onExitOfP0s2final()
+            is Test570State.Pass -> onExitOfPass()
+            is Test570State.S1 -> onExitOfS1()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test570.scxml:47 :: fail :: _state_body
+    }
+
+    private fun onExitOfP0() {
+                // SCE-MAP: test570.scxml:9 :: p0 :: _state_body
+    }
+
+    private fun onExitOfP0s1() {
+                // SCE-MAP: test570.scxml:24 :: p0s1 :: _state_body
+    }
+
+    private fun onExitOfP0s11() {
+                // SCE-MAP: test570.scxml:25 :: p0s11 :: _state_body
+    }
+
+    private fun onExitOfP0s1final() {
+                // SCE-MAP: test570.scxml:28 :: p0s1final :: _state_body
+    }
+
+    private fun onExitOfP0s2() {
+                // SCE-MAP: test570.scxml:31 :: p0s2 :: _state_body
+    }
+
+    private fun onExitOfP0s21() {
+                // SCE-MAP: test570.scxml:32 :: p0s21 :: _state_body
+    }
+
+    private fun onExitOfP0s2final() {
+                // SCE-MAP: test570.scxml:35 :: p0s2final :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test570.scxml:46 :: pass :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test570.scxml:40 :: s1 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test570.scxml:5 :: _machine
     override fun executeTransitionContent(source: Test570State, transitionIndex: Int) {
         when (source) {
-        is Test570State.P0 -> when (transitionIndex) {
-            0 -> {
+            is Test570State.P0 -> transitionContentOfP0(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `p0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfP0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfP0At0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfP0At0() {
                 // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

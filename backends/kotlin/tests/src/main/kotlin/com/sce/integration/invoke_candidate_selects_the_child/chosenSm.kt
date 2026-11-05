@@ -57,6 +57,7 @@ class ChosenStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ChosenState, HistoryId>>
@@ -65,6 +66,9 @@ class ChosenStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ChosenState, HistoryId>> =
             listOf(StateTarget(ChosenState.Speak))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: speak's transition 0, as the microstep reads it.
         val transitionSpeakAt0 = EnabledTransition<ChosenState, HistoryId>(
@@ -76,6 +80,7 @@ class ChosenStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ChosenState? = when (stateId) {
         "done" -> ChosenState.Done
@@ -83,17 +88,20 @@ class ChosenStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ChosenState): String = when (state) {
         is ChosenState.Done -> "done"
         is ChosenState.Speak -> "speak"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ChosenState): Int = when (state) {
         is ChosenState.Done -> 1
         is ChosenState.Speak -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ChosenEvent? = when (name) {
@@ -102,6 +110,7 @@ class ChosenStateMachine(
         "from.chosen" -> ChosenEvent.From.Chosen
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ChosenEvent): String? = when (event) {
@@ -114,33 +123,45 @@ class ChosenStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ChosenState,
-        event: ChosenEvent?
-    ): EnabledTransition<ChosenState, HistoryId>? = when (state) {
-        is ChosenState.Speak -> when {
-            event == null -> transitionSpeakAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ChosenState, event: ChosenEvent?): EnabledTransition<ChosenState, HistoryId>? = when (state) {
+        is ChosenState.Speak -> firstEnabledTransitionOfSpeak(state, event)
         else -> null
     }
+
+
+    // speak's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSpeak(state: ChosenState, event: ChosenEvent?): EnabledTransition<ChosenState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionSpeakAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: chosen.scxml:5 :: _machine
     override fun onEntry(state: ChosenState, isDefaultEntry: Boolean) {
         when (state) {
-            is ChosenState.Done -> {
+            is ChosenState.Done -> onEntryOfDone()
+            is ChosenState.Speak -> onEntryOfSpeak()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: chosen.scxml:13 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ChosenState.Speak -> {
+    }
+
+    private fun onEntryOfSpeak() {
                 // SCE-MAP: chosen.scxml:7 :: speak :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -164,29 +185,33 @@ class ChosenStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: chosen.scxml:5 :: _machine
     override fun onExit(state: ChosenState) {
         when (state) {
-            is ChosenState.Done -> {
-                // SCE-MAP: chosen.scxml:13 :: done :: _state_body
-            }
-            is ChosenState.Speak -> {
-                // SCE-MAP: chosen.scxml:7 :: speak :: _state_body
-            }
+            is ChosenState.Done -> onExitOfDone()
+            is ChosenState.Speak -> onExitOfSpeak()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: chosen.scxml:13 :: done :: _state_body
+    }
+
+    private fun onExitOfSpeak() {
+                // SCE-MAP: chosen.scxml:7 :: speak :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: chosen.scxml:5 :: _machine
     override fun executeTransitionContent(source: ChosenState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

@@ -70,9 +70,15 @@ class EventDataArrivesAsSentStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: EventDataArrivesAsSentState): Boolean = when (state) {
-        is EventDataArrivesAsSentState.Evaluated, is EventDataArrivesAsSentState.Flattened, is EventDataArrivesAsSentState.Garbled, is EventDataArrivesAsSentState.Mangled, is EventDataArrivesAsSentState.Settled, is EventDataArrivesAsSentState.Swallowed -> true
+        is EventDataArrivesAsSentState.Evaluated -> true
+        is EventDataArrivesAsSentState.Flattened -> true
+        is EventDataArrivesAsSentState.Garbled -> true
+        is EventDataArrivesAsSentState.Mangled -> true
+        is EventDataArrivesAsSentState.Settled -> true
+        is EventDataArrivesAsSentState.Swallowed -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -82,6 +88,9 @@ class EventDataArrivesAsSentStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<EventDataArrivesAsSentState, HistoryId>> =
             listOf(StateTarget(EventDataArrivesAsSentState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: documented's transition 0, as the microstep reads it.
         val transitionDocumentedAt0 = EnabledTransition<EventDataArrivesAsSentState, HistoryId>(
@@ -174,6 +183,7 @@ class EventDataArrivesAsSentStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EventDataArrivesAsSentState? = when (stateId) {
         "documented" -> EventDataArrivesAsSentState.Documented
@@ -190,6 +200,7 @@ class EventDataArrivesAsSentStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: EventDataArrivesAsSentState): String = when (state) {
         is EventDataArrivesAsSentState.Documented -> "documented"
@@ -204,6 +215,7 @@ class EventDataArrivesAsSentStateMachine(
         is EventDataArrivesAsSentState.Swallowed -> "swallowed"
         is EventDataArrivesAsSentState.Waiting -> "waiting"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: EventDataArrivesAsSentState): Int = when (state) {
@@ -220,6 +232,7 @@ class EventDataArrivesAsSentStateMachine(
         is EventDataArrivesAsSentState.Waiting -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EventDataArrivesAsSentEvent? = when (name) {
         "arith" -> EventDataArrivesAsSentEvent.Arith
@@ -231,6 +244,7 @@ class EventDataArrivesAsSentStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EventDataArrivesAsSentEvent): String? = when (event) {
         is EventDataArrivesAsSentEvent.Arith -> "arith"
@@ -240,6 +254,7 @@ class EventDataArrivesAsSentStateMachine(
         is EventDataArrivesAsSentEvent.Note -> "note"
         is EventDataArrivesAsSentEvent.Payload -> "payload"
     }
+
 
 
 
@@ -474,137 +489,204 @@ class EventDataArrivesAsSentStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: EventDataArrivesAsSentState,
-        event: EventDataArrivesAsSentEvent?
-    ): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when (state) {
-        is EventDataArrivesAsSentState.Documented -> when {
-            event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_scxml_truthy(_event.data) and _scxml_truthy(_event.data.documentElement)) and (_event.data.documentElement.nodeName == \"books\"))", "_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> transitionDocumentedAt0
-            event is EventDataArrivesAsSentEvent.Doc -> transitionDocumentedAt1
-            else -> null
-        }
-        is EventDataArrivesAsSentState.Heard -> when {
-            event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"hold the line\")", "_event.data === 'hold the line'")) -> transitionHeardAt0
-            event is EventDataArrivesAsSentEvent.Note -> transitionHeardAt1
-            else -> null
-        }
-        is EventDataArrivesAsSentState.Opening -> when {
-            event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"<assign> to detail failed\")", "_event.data === '<assign> to detail failed'")) -> transitionOpeningAt0
-            event is EventDataArrivesAsSentEvent.Broken -> transitionOpeningAt1
-            else -> null
-        }
-        is EventDataArrivesAsSentState.Quoted -> when {
-            event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"2 + 3\")", "_event.data === '2 + 3'")) -> transitionQuotedAt0
-            event is EventDataArrivesAsSentEvent.Arith -> transitionQuotedAt1
-            else -> null
-        }
-        is EventDataArrivesAsSentState.Waiting -> when {
-            event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_scxml_truthy(_event.data) and (_event.data.milestone == \"refined\")) and (_event.data.turns == 2))", "_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> transitionWaitingAt0
-            event is EventDataArrivesAsSentEvent.Payload -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when (state) {
+        is EventDataArrivesAsSentState.Documented -> firstEnabledTransitionOfDocumented(state, event)
+        is EventDataArrivesAsSentState.Heard -> firstEnabledTransitionOfHeard(state, event)
+        is EventDataArrivesAsSentState.Opening -> firstEnabledTransitionOfOpening(state, event)
+        is EventDataArrivesAsSentState.Quoted -> firstEnabledTransitionOfQuoted(state, event)
+        is EventDataArrivesAsSentState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // documented's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfDocumented(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
+        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_scxml_truthy(_event.data) and _scxml_truthy(_event.data.documentElement)) and (_event.data.documentElement.nodeName == \"books\"))", "_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> TransitionsPart0.transitionDocumentedAt0
+        event is EventDataArrivesAsSentEvent.Doc -> TransitionsPart0.transitionDocumentedAt1
+        else -> null
+    }
+
+
+    // heard's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfHeard(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
+        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"hold the line\")", "_event.data === 'hold the line'")) -> TransitionsPart0.transitionHeardAt0
+        event is EventDataArrivesAsSentEvent.Note -> TransitionsPart0.transitionHeardAt1
+        else -> null
+    }
+
+
+    // opening's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOpening(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
+        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"<assign> to detail failed\")", "_event.data === '<assign> to detail failed'")) -> TransitionsPart0.transitionOpeningAt0
+        event is EventDataArrivesAsSentEvent.Broken -> TransitionsPart0.transitionOpeningAt1
+        else -> null
+    }
+
+
+    // quoted's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfQuoted(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
+        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"2 + 3\")", "_event.data === '2 + 3'")) -> TransitionsPart0.transitionQuotedAt0
+        event is EventDataArrivesAsSentEvent.Arith -> TransitionsPart0.transitionQuotedAt1
+        else -> null
+    }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: EventDataArrivesAsSentState, event: EventDataArrivesAsSentEvent?): EnabledTransition<EventDataArrivesAsSentState, HistoryId>? = when {
+        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_scxml_truthy(_event.data) and (_event.data.milestone == \"refined\")) and (_event.data.turns == 2))", "_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> TransitionsPart0.transitionWaitingAt0
+        event is EventDataArrivesAsSentEvent.Payload -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     override fun onEntry(state: EventDataArrivesAsSentState, isDefaultEntry: Boolean) {
         when (state) {
-            is EventDataArrivesAsSentState.Documented -> {
+            is EventDataArrivesAsSentState.Documented -> onEntryOfDocumented()
+            is EventDataArrivesAsSentState.Evaluated -> onEntryOfEvaluated()
+            is EventDataArrivesAsSentState.Flattened -> onEntryOfFlattened()
+            is EventDataArrivesAsSentState.Garbled -> onEntryOfGarbled()
+            is EventDataArrivesAsSentState.Heard -> onEntryOfHeard()
+            is EventDataArrivesAsSentState.Mangled -> onEntryOfMangled()
+            is EventDataArrivesAsSentState.Opening -> onEntryOfOpening()
+            is EventDataArrivesAsSentState.Quoted -> onEntryOfQuoted()
+            is EventDataArrivesAsSentState.Settled -> onEntryOfSettled()
+            is EventDataArrivesAsSentState.Swallowed -> onEntryOfSwallowed()
+            is EventDataArrivesAsSentState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfDocumented() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:100 :: documented :: _state_body
-            }
-            is EventDataArrivesAsSentState.Evaluated -> {
+    }
+
+    private fun onEntryOfEvaluated() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:122 :: evaluated :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDataArrivesAsSentState.Flattened -> {
+    }
+
+    private fun onEntryOfFlattened() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:123 :: flattened :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDataArrivesAsSentState.Garbled -> {
+    }
+
+    private fun onEntryOfGarbled() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:121 :: garbled :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDataArrivesAsSentState.Heard -> {
+    }
+
+    private fun onEntryOfHeard() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:83 :: heard :: _state_body
-            }
-            is EventDataArrivesAsSentState.Mangled -> {
+    }
+
+    private fun onEntryOfMangled() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:120 :: mangled :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDataArrivesAsSentState.Opening -> {
+    }
+
+    private fun onEntryOfOpening() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:114 :: opening :: _state_body
-            }
-            is EventDataArrivesAsSentState.Quoted -> {
+    }
+
+    private fun onEntryOfQuoted() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:88 :: quoted :: _state_body
-            }
-            is EventDataArrivesAsSentState.Settled -> {
+    }
+
+    private fun onEntryOfSettled() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:119 :: settled :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDataArrivesAsSentState.Swallowed -> {
+    }
+
+    private fun onEntryOfSwallowed() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:124 :: swallowed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDataArrivesAsSentState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: event_data_arrives_as_sent.scxml:76 :: waiting :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     override fun onExit(state: EventDataArrivesAsSentState) {
         when (state) {
-            is EventDataArrivesAsSentState.Documented -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:100 :: documented :: _state_body
-            }
-            is EventDataArrivesAsSentState.Evaluated -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:122 :: evaluated :: _state_body
-            }
-            is EventDataArrivesAsSentState.Flattened -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:123 :: flattened :: _state_body
-            }
-            is EventDataArrivesAsSentState.Garbled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:121 :: garbled :: _state_body
-            }
-            is EventDataArrivesAsSentState.Heard -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:83 :: heard :: _state_body
-            }
-            is EventDataArrivesAsSentState.Mangled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:120 :: mangled :: _state_body
-            }
-            is EventDataArrivesAsSentState.Opening -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:114 :: opening :: _state_body
-            }
-            is EventDataArrivesAsSentState.Quoted -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:88 :: quoted :: _state_body
-            }
-            is EventDataArrivesAsSentState.Settled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:119 :: settled :: _state_body
-            }
-            is EventDataArrivesAsSentState.Swallowed -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:124 :: swallowed :: _state_body
-            }
-            is EventDataArrivesAsSentState.Waiting -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:76 :: waiting :: _state_body
-            }
+            is EventDataArrivesAsSentState.Documented -> onExitOfDocumented()
+            is EventDataArrivesAsSentState.Evaluated -> onExitOfEvaluated()
+            is EventDataArrivesAsSentState.Flattened -> onExitOfFlattened()
+            is EventDataArrivesAsSentState.Garbled -> onExitOfGarbled()
+            is EventDataArrivesAsSentState.Heard -> onExitOfHeard()
+            is EventDataArrivesAsSentState.Mangled -> onExitOfMangled()
+            is EventDataArrivesAsSentState.Opening -> onExitOfOpening()
+            is EventDataArrivesAsSentState.Quoted -> onExitOfQuoted()
+            is EventDataArrivesAsSentState.Settled -> onExitOfSettled()
+            is EventDataArrivesAsSentState.Swallowed -> onExitOfSwallowed()
+            is EventDataArrivesAsSentState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfDocumented() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:100 :: documented :: _state_body
+    }
+
+    private fun onExitOfEvaluated() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:122 :: evaluated :: _state_body
+    }
+
+    private fun onExitOfFlattened() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:123 :: flattened :: _state_body
+    }
+
+    private fun onExitOfGarbled() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:121 :: garbled :: _state_body
+    }
+
+    private fun onExitOfHeard() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:83 :: heard :: _state_body
+    }
+
+    private fun onExitOfMangled() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:120 :: mangled :: _state_body
+    }
+
+    private fun onExitOfOpening() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:114 :: opening :: _state_body
+    }
+
+    private fun onExitOfQuoted() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:88 :: quoted :: _state_body
+    }
+
+    private fun onExitOfSettled() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:119 :: settled :: _state_body
+    }
+
+    private fun onExitOfSwallowed() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:124 :: swallowed :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:76 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     override fun executeTransitionContent(source: EventDataArrivesAsSentState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

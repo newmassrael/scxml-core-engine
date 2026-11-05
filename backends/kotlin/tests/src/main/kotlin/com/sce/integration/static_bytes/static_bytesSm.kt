@@ -94,6 +94,10 @@ class StaticBytesStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.size?.let { vSize = it }
         params.matches?.let { vMatches = it }
         params.misses?.let { vMisses = it }
@@ -180,18 +184,20 @@ class StaticBytesStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "frame" to SavedValues.of(vFrame),
-            "tail" to SavedValues.of(vTail),
-            "size" to SavedValues.of(vSize),
-            "matches" to SavedValues.of(vMatches),
-            "misses" to SavedValues.of(vMisses),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "frame" to SavedValues.of(vFrame)
+        variables += "tail" to SavedValues.of(vTail)
+        variables += "size" to SavedValues.of(vSize)
+        variables += "matches" to SavedValues.of(vMatches)
+        variables += "misses" to SavedValues.of(vMisses)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -216,19 +222,29 @@ class StaticBytesStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.bytes(savedGrown.variable("frame"), "frame", 8)
         val saved2 = SavedValues.bytes(savedGrown.variable("tail"), "tail", 4)
         val saved3 = SavedValues.uint32(savedGrown.variable("size"), "size")
         val saved4 = SavedValues.uint32(savedGrown.variable("matches"), "matches")
         val saved5 = SavedValues.uint32(savedGrown.variable("misses"), "misses")
         val saved6 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vFrame = saved1
-        vTail = saved2
-        vSize = saved3
-        vMatches = saved4
-        vMisses = saved5
-        vErrors = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vFrame = saved1
+            vTail = saved2
+            vSize = saved3
+            vMatches = saved4
+            vMisses = saved5
+            vErrors = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -241,6 +257,10 @@ class StaticBytesStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.bytes(savedGrown.variable("frame"), "frame", 8)
         SavedValues.bytes(savedGrown.variable("tail"), "tail", 4)
         SavedValues.uint32(savedGrown.variable("size"), "size")
@@ -276,6 +296,9 @@ class StaticBytesStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticBytesState, HistoryId>> =
             listOf(StateTarget(StaticBytesState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticBytesState, HistoryId>(
@@ -359,21 +382,25 @@ class StaticBytesStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticBytesState? = when (stateId) {
         "idle" -> StaticBytesState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticBytesState): String = when (state) {
         is StaticBytesState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticBytesState): Int = when (state) {
         is StaticBytesState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticBytesEvent? = when (name) {
@@ -387,6 +414,7 @@ class StaticBytesStateMachine(
         "toowide" -> StaticBytesEvent.Toowide
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticBytesEvent): String? = when (event) {
@@ -404,119 +432,160 @@ class StaticBytesStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticBytesState,
-        event: StaticBytesEvent?
-    ): EnabledTransition<StaticBytesState, HistoryId>? = when (state) {
-        is StaticBytesState.Idle -> when {
-            event is StaticBytesEvent.Fill -> transitionIdleAt0
-            event is StaticBytesEvent.Toowide -> transitionIdleAt1
-            event is StaticBytesEvent.Reset -> transitionIdleAt2
-            event is StaticBytesEvent.Other -> transitionIdleAt3
-            event is StaticBytesEvent.Copy -> transitionIdleAt4
-            event is StaticBytesEvent.Check && vFrame.contentEquals("ab".toByteArray()) -> transitionIdleAt5
-            event is StaticBytesEvent.Check && !vFrame.contentEquals("ab".toByteArray()) -> transitionIdleAt6
-            event is StaticBytesEvent.Measure -> transitionIdleAt7
-            event is StaticBytesEvent.Error.Execution -> transitionIdleAt8
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticBytesState, event: StaticBytesEvent?): EnabledTransition<StaticBytesState, HistoryId>? = when (state) {
+        is StaticBytesState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticBytesState, event: StaticBytesEvent?): EnabledTransition<StaticBytesState, HistoryId>? = when {
+        event is StaticBytesEvent.Fill -> TransitionsPart0.transitionIdleAt0
+        event is StaticBytesEvent.Toowide -> TransitionsPart0.transitionIdleAt1
+        event is StaticBytesEvent.Reset -> TransitionsPart0.transitionIdleAt2
+        event is StaticBytesEvent.Other -> TransitionsPart0.transitionIdleAt3
+        event is StaticBytesEvent.Copy -> TransitionsPart0.transitionIdleAt4
+        event is StaticBytesEvent.Check && vFrame.contentEquals("ab".toByteArray()) -> TransitionsPart0.transitionIdleAt5
+        event is StaticBytesEvent.Check && !vFrame.contentEquals("ab".toByteArray()) -> TransitionsPart0.transitionIdleAt6
+        event is StaticBytesEvent.Measure -> TransitionsPart0.transitionIdleAt7
+        event is StaticBytesEvent.Error.Execution -> TransitionsPart0.transitionIdleAt8
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_bytes.scxml:25 :: _machine
     override fun onEntry(state: StaticBytesState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticBytesState.Idle -> {
-                // SCE-MAP: static_bytes.scxml:35 :: idle :: _state_body
-            }
+            is StaticBytesState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_bytes.scxml:35 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_bytes.scxml:25 :: _machine
     override fun onExit(state: StaticBytesState) {
         when (state) {
-            is StaticBytesState.Idle -> {
-                // SCE-MAP: static_bytes.scxml:35 :: idle :: _state_body
-            }
+            is StaticBytesState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_bytes.scxml:35 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_bytes.scxml:25 :: _machine
     override fun executeTransitionContent(source: StaticBytesState, transitionIndex: Int) {
         when (source) {
-        is StaticBytesState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticBytesState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            7 -> transitionContentOfIdleAt7()
+            8 -> transitionContentOfIdleAt8()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_bytes.scxml:36 :: idle :: _transition_0
 
             if (try { vFrame = com.sce.forge.runtime.SceChecked.bounded("abcdefgh".toByteArray(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='frame'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_bytes.scxml:39 :: idle :: _transition_1
 
             if (try { vFrame = com.sce.forge.runtime.SceChecked.bounded("abcdefghi".toByteArray(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='frame'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_bytes.scxml:42 :: idle :: _transition_2
 
             if (try { vFrame = com.sce.forge.runtime.SceChecked.bounded("ab".toByteArray(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='frame'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_bytes.scxml:45 :: idle :: _transition_3
 
             if (try { vFrame = com.sce.forge.runtime.SceChecked.bounded("ba".toByteArray(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='frame'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_bytes.scxml:48 :: idle :: _transition_4
 
             if (try { vTail = com.sce.forge.runtime.SceChecked.bounded(vFrame, 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='tail'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_bytes.scxml:51 :: idle :: _transition_5
 
             if (try { vMatches = com.sce.forge.runtime.SceChecked.add(vMatches, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='matches'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_bytes.scxml:54 :: idle :: _transition_6
 
             if (try { vMisses = com.sce.forge.runtime.SceChecked.add(vMisses, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='misses'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfIdleAt7() {
                 // SCE-MAP: static_bytes.scxml:57 :: idle :: _transition_7
 
             vSize = (vFrame).size.toUInt()
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfIdleAt8() {
                 // SCE-MAP: static_bytes.scxml:60 :: idle :: _transition_8
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

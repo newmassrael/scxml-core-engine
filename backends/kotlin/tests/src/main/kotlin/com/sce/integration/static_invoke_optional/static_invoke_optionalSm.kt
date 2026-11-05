@@ -88,6 +88,10 @@ class StaticInvokeOptionalStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.size?.let { vSize = it }
         params.label?.let { vLabel = it }
         params.nosize?.let { vNosize = it }
@@ -168,18 +172,20 @@ class StaticInvokeOptionalStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "size" to SavedValues.optional(vSize) { SavedValues.of(it) },
-            "label" to SavedValues.optional(vLabel) { SavedValues.of(it) },
-            "nosize" to SavedValues.optional(vNosize) { SavedValues.of(it) },
-            "lengthy" to SavedValues.of(vLengthy),
-            "completed" to SavedValues.of(vCompleted),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "size" to SavedValues.optional(vSize) { SavedValues.of(it) }
+        variables += "label" to SavedValues.optional(vLabel) { SavedValues.of(it) }
+        variables += "nosize" to SavedValues.optional(vNosize) { SavedValues.of(it) }
+        variables += "lengthy" to SavedValues.of(vLengthy)
+        variables += "completed" to SavedValues.of(vCompleted)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -204,19 +210,29 @@ class StaticInvokeOptionalStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.optional(savedGrown.variable("size"), "size") { e, w -> SavedValues.int32(e, w) }
         val saved2 = SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 8) }
         val saved3 = SavedValues.optional(savedGrown.variable("nosize"), "nosize") { e, w -> SavedValues.int32(e, w) }
         val saved4 = SavedValues.string(savedGrown.variable("lengthy"), "lengthy", 8)
         val saved5 = SavedValues.uint32(savedGrown.variable("completed"), "completed")
         val saved6 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vSize = saved1
-        vLabel = saved2
-        vNosize = saved3
-        vLengthy = saved4
-        vCompleted = saved5
-        vErrors = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vSize = saved1
+            vLabel = saved2
+            vNosize = saved3
+            vLengthy = saved4
+            vCompleted = saved5
+            vErrors = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -229,6 +245,10 @@ class StaticInvokeOptionalStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.optional(savedGrown.variable("size"), "size") { e, w -> SavedValues.int32(e, w) }
         SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 8) }
         SavedValues.optional(savedGrown.variable("nosize"), "nosize") { e, w -> SavedValues.int32(e, w) }
@@ -279,6 +299,9 @@ class StaticInvokeOptionalStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticInvokeOptionalState, HistoryId>> =
             listOf(StateTarget(StaticInvokeOptionalState.Running))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: running's transition 0, as the microstep reads it.
         val transitionRunningAt0 = EnabledTransition<StaticInvokeOptionalState, HistoryId>(
@@ -344,21 +367,25 @@ class StaticInvokeOptionalStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticInvokeOptionalState? = when (stateId) {
         "running" -> StaticInvokeOptionalState.Running
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticInvokeOptionalState): String = when (state) {
         is StaticInvokeOptionalState.Running -> "running"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticInvokeOptionalState): Int = when (state) {
         is StaticInvokeOptionalState.Running -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticInvokeOptionalEvent? = when (name) {
@@ -372,6 +399,7 @@ class StaticInvokeOptionalStateMachine(
         "error.execution" -> StaticInvokeOptionalEvent.Error.Execution
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticInvokeOptionalEvent): String? = when (event) {
@@ -389,48 +417,56 @@ class StaticInvokeOptionalStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticInvokeOptionalState,
-        event: StaticInvokeOptionalEvent?
-    ): EnabledTransition<StaticInvokeOptionalState, HistoryId>? = when (state) {
-        is StaticInvokeOptionalState.Running -> when {
-            event is StaticInvokeOptionalEvent.Done.Invoke.Given -> transitionRunningAt0
-            event is StaticInvokeOptionalEvent.Done.Invoke.Lifted -> transitionRunningAt1
-            event is StaticInvokeOptionalEvent.Done.Invoke.Absent -> transitionRunningAt2
-            event is StaticInvokeOptionalEvent.Done.Invoke.Replaced -> transitionRunningAt3
-            event is StaticInvokeOptionalEvent.Done.Invoke.Over -> transitionRunningAt4
-            event is StaticInvokeOptionalEvent.Done.Invoke.Fits -> transitionRunningAt5
-            event is StaticInvokeOptionalEvent.Error.Execution -> transitionRunningAt6
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticInvokeOptionalState, event: StaticInvokeOptionalEvent?): EnabledTransition<StaticInvokeOptionalState, HistoryId>? = when (state) {
+        is StaticInvokeOptionalState.Running -> firstEnabledTransitionOfRunning(state, event)
     }
+
+
+    // running's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRunning(state: StaticInvokeOptionalState, event: StaticInvokeOptionalEvent?): EnabledTransition<StaticInvokeOptionalState, HistoryId>? = when {
+        event is StaticInvokeOptionalEvent.Done.Invoke.Given -> TransitionsPart0.transitionRunningAt0
+        event is StaticInvokeOptionalEvent.Done.Invoke.Lifted -> TransitionsPart0.transitionRunningAt1
+        event is StaticInvokeOptionalEvent.Done.Invoke.Absent -> TransitionsPart0.transitionRunningAt2
+        event is StaticInvokeOptionalEvent.Done.Invoke.Replaced -> TransitionsPart0.transitionRunningAt3
+        event is StaticInvokeOptionalEvent.Done.Invoke.Over -> TransitionsPart0.transitionRunningAt4
+        event is StaticInvokeOptionalEvent.Done.Invoke.Fits -> TransitionsPart0.transitionRunningAt5
+        event is StaticInvokeOptionalEvent.Error.Execution -> TransitionsPart0.transitionRunningAt6
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_invoke_optional.scxml:34 :: _machine
     override fun onEntry(state: StaticInvokeOptionalState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticInvokeOptionalState.Running -> {
+            is StaticInvokeOptionalState.Running -> onEntryOfRunning()
+        }
+    }
+
+
+    private fun onEntryOfRunning() {
                 // SCE-MAP: static_invoke_optional.scxml:44 :: running :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("given", state)
+                deferStaticInvoke("given", StaticInvokeOptionalState.Running)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("lifted", state)
+                deferStaticInvoke("lifted", StaticInvokeOptionalState.Running)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("absent", state)
+                deferStaticInvoke("absent", StaticInvokeOptionalState.Running)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("replaced", state)
+                deferStaticInvoke("replaced", StaticInvokeOptionalState.Running)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("over", state)
+                deferStaticInvoke("over", StaticInvokeOptionalState.Running)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("fits", state)
-            }
-        }
+                deferStaticInvoke("fits", StaticInvokeOptionalState.Running)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -443,9 +479,25 @@ class StaticInvokeOptionalStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: StaticInvokeOptionalState) {
         when (invokeId) {
-            "given" -> run {
+            "given" -> startInvokeOfRunningAt0(state)
+            "lifted" -> startInvokeOfRunningAt1(state)
+            "absent" -> startInvokeOfRunningAt2(state)
+            "replaced" -> startInvokeOfRunningAt3(state)
+            "over" -> startInvokeOfRunningAt4(state)
+            "fits" -> startInvokeOfRunningAt5(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfRunningAt0(state: StaticInvokeOptionalState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "running.${nextInvokeStart("given")}.given"
@@ -467,7 +519,10 @@ class StaticInvokeOptionalStateMachine(
                     startInvoke("given", childSM, false, StaticInvokeOptionalEvent.Done.Invoke.Given, "", generatedInvokeId, "", "static_invoke_optional__sce_synth_invoke__given", "given")
                 }
             }
-            "lifted" -> run {
+    }
+
+    private fun startInvokeOfRunningAt1(state: StaticInvokeOptionalState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "running.${nextInvokeStart("lifted")}.lifted"
@@ -489,7 +544,10 @@ class StaticInvokeOptionalStateMachine(
                     startInvoke("lifted", childSM, false, StaticInvokeOptionalEvent.Done.Invoke.Lifted, "", generatedInvokeId, "", "static_invoke_optional__sce_synth_invoke__lifted", "lifted")
                 }
             }
-            "absent" -> run {
+    }
+
+    private fun startInvokeOfRunningAt2(state: StaticInvokeOptionalState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "running.${nextInvokeStart("absent")}.absent"
@@ -506,7 +564,10 @@ class StaticInvokeOptionalStateMachine(
                     startInvoke("absent", childSM, false, StaticInvokeOptionalEvent.Done.Invoke.Absent, "", generatedInvokeId, "", "static_invoke_optional__sce_synth_invoke__absent", "absent")
                 }
             }
-            "replaced" -> run {
+    }
+
+    private fun startInvokeOfRunningAt3(state: StaticInvokeOptionalState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "running.${nextInvokeStart("replaced")}.replaced"
@@ -522,7 +583,10 @@ class StaticInvokeOptionalStateMachine(
                     startInvoke("replaced", childSM, false, StaticInvokeOptionalEvent.Done.Invoke.Replaced, "", generatedInvokeId, "", "static_invoke_optional__sce_synth_invoke__replaced", "replaced")
                 }
             }
-            "over" -> run {
+    }
+
+    private fun startInvokeOfRunningAt4(state: StaticInvokeOptionalState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "running.${nextInvokeStart("over")}.over"
@@ -543,7 +607,10 @@ class StaticInvokeOptionalStateMachine(
                     startInvoke("over", childSM, false, StaticInvokeOptionalEvent.Done.Invoke.Over, "", generatedInvokeId, "", "static_invoke_optional__sce_synth_invoke__over", "over")
                 }
             }
-            "fits" -> run {
+    }
+
+    private fun startInvokeOfRunningAt5(state: StaticInvokeOptionalState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "running.${nextInvokeStart("fits")}.fits"
@@ -564,8 +631,6 @@ class StaticInvokeOptionalStateMachine(
                     startInvoke("fits", childSM, false, StaticInvokeOptionalEvent.Done.Invoke.Fits, "", generatedInvokeId, "", "static_invoke_optional__sce_synth_invoke__fits", "fits")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -574,8 +639,23 @@ class StaticInvokeOptionalStateMachine(
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
     override fun buildSavedChild(child: SavedChild): ResumedChild<StaticInvokeOptionalEvent> = when (child.id) {
-        "given" -> if (child.document == "static_invoke_optional__sce_synth_invoke__given") {
+        "given" -> savedChildOfRunningAt0(child)
+        "lifted" -> savedChildOfRunningAt1(child)
+        "absent" -> savedChildOfRunningAt2(child)
+        "replaced" -> savedChildOfRunningAt3(child)
+        "over" -> savedChildOfRunningAt4(child)
+        "fits" -> savedChildOfRunningAt5(child)
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
+    }
+
+
+    private fun savedChildOfRunningAt0(child: SavedChild): ResumedChild<StaticInvokeOptionalEvent> =
+        if (child.document == "static_invoke_optional__sce_synth_invoke__given") {
             ResumedChild(
                 StaticInvokeOptionalSceSynthInvokeGivenStateMachine(),
                 false, StaticInvokeOptionalEvent.Done.Invoke.Given, "", "", "given",
@@ -583,7 +663,9 @@ class StaticInvokeOptionalStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "lifted" -> if (child.document == "static_invoke_optional__sce_synth_invoke__lifted") {
+
+    private fun savedChildOfRunningAt1(child: SavedChild): ResumedChild<StaticInvokeOptionalEvent> =
+        if (child.document == "static_invoke_optional__sce_synth_invoke__lifted") {
             ResumedChild(
                 StaticInvokeOptionalSceSynthInvokeLiftedStateMachine(),
                 false, StaticInvokeOptionalEvent.Done.Invoke.Lifted, "", "", "lifted",
@@ -591,7 +673,9 @@ class StaticInvokeOptionalStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "absent" -> if (child.document == "static_invoke_optional__sce_synth_invoke__absent") {
+
+    private fun savedChildOfRunningAt2(child: SavedChild): ResumedChild<StaticInvokeOptionalEvent> =
+        if (child.document == "static_invoke_optional__sce_synth_invoke__absent") {
             ResumedChild(
                 StaticInvokeOptionalSceSynthInvokeAbsentStateMachine(),
                 false, StaticInvokeOptionalEvent.Done.Invoke.Absent, "", "", "absent",
@@ -599,7 +683,9 @@ class StaticInvokeOptionalStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "replaced" -> if (child.document == "static_invoke_optional__sce_synth_invoke__replaced") {
+
+    private fun savedChildOfRunningAt3(child: SavedChild): ResumedChild<StaticInvokeOptionalEvent> =
+        if (child.document == "static_invoke_optional__sce_synth_invoke__replaced") {
             ResumedChild(
                 StaticInvokeOptionalSceSynthInvokeReplacedStateMachine(),
                 false, StaticInvokeOptionalEvent.Done.Invoke.Replaced, "", "", "replaced",
@@ -607,7 +693,9 @@ class StaticInvokeOptionalStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "over" -> if (child.document == "static_invoke_optional__sce_synth_invoke__over") {
+
+    private fun savedChildOfRunningAt4(child: SavedChild): ResumedChild<StaticInvokeOptionalEvent> =
+        if (child.document == "static_invoke_optional__sce_synth_invoke__over") {
             ResumedChild(
                 StaticInvokeOptionalSceSynthInvokeOverStateMachine(),
                 false, StaticInvokeOptionalEvent.Done.Invoke.Over, "", "", "over",
@@ -615,7 +703,9 @@ class StaticInvokeOptionalStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "fits" -> if (child.document == "static_invoke_optional__sce_synth_invoke__fits") {
+
+    private fun savedChildOfRunningAt5(child: SavedChild): ResumedChild<StaticInvokeOptionalEvent> =
+        if (child.document == "static_invoke_optional__sce_synth_invoke__fits") {
             ResumedChild(
                 StaticInvokeOptionalSceSynthInvokeFitsStateMachine(),
                 false, StaticInvokeOptionalEvent.Done.Invoke.Fits, "", "", "fits",
@@ -623,17 +713,20 @@ class StaticInvokeOptionalStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_invoke_optional.scxml:34 :: _machine
     override fun onExit(state: StaticInvokeOptionalState) {
         when (state) {
-            is StaticInvokeOptionalState.Running -> {
+            is StaticInvokeOptionalState.Running -> onExitOfRunning()
+        }
+    }
+
+
+    private fun onExitOfRunning() {
                 // SCE-MAP: static_invoke_optional.scxml:44 :: running :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticInvokeOptionalState.Running)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("given")
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -646,67 +739,91 @@ class StaticInvokeOptionalStateMachine(
                 cancelInvoke("over")
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("fits")
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_invoke_optional.scxml:34 :: _machine
     override fun executeTransitionContent(source: StaticInvokeOptionalState, transitionIndex: Int) {
         when (source) {
-        is StaticInvokeOptionalState.Running -> when (transitionIndex) {
-            0 -> {
+            is StaticInvokeOptionalState.Running -> transitionContentOfRunning(transitionIndex)
+        }
+    }
+
+
+    // The content of `running`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRunning(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunningAt0()
+            1 -> transitionContentOfRunningAt1()
+            2 -> transitionContentOfRunningAt2()
+            3 -> transitionContentOfRunningAt3()
+            4 -> transitionContentOfRunningAt4()
+            5 -> transitionContentOfRunningAt5()
+            6 -> transitionContentOfRunningAt6()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunningAt0() {
                 // SCE-MAP: static_invoke_optional.scxml:141 :: running :: _transition_0
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeOptionalEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunningAt1() {
                 // SCE-MAP: static_invoke_optional.scxml:144 :: running :: _transition_1
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeOptionalEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRunningAt2() {
                 // SCE-MAP: static_invoke_optional.scxml:147 :: running :: _transition_2
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeOptionalEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfRunningAt3() {
                 // SCE-MAP: static_invoke_optional.scxml:150 :: running :: _transition_3
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1000.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeOptionalEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfRunningAt4() {
                 // SCE-MAP: static_invoke_optional.scxml:153 :: running :: _transition_4
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10000.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeOptionalEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfRunningAt5() {
                 // SCE-MAP: static_invoke_optional.scxml:156 :: running :: _transition_5
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100000.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeOptionalEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfRunningAt6() {
                 // SCE-MAP: static_invoke_optional.scxml:159 :: running :: _transition_6
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeOptionalEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

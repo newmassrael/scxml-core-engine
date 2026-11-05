@@ -146,6 +146,10 @@ class StaticStateAlgorithmOptionalStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.today?.let { vToday = it }
         params.first?.let { vFirst = it }
         params.left?.let { vLeft = it }
@@ -247,20 +251,22 @@ class StaticStateAlgorithmOptionalStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "goals" to SavedValues.list(vGoals) { it.toSaved() },
-            "draft" to vDraft.toSaved(),
-            "today" to SavedValues.of(vToday),
-            "first" to SavedValues.optional(vFirst) { SavedValues.of(it) },
-            "left" to SavedValues.optional(vLeft) { SavedValues.of(it) },
-            "undated" to SavedValues.of(vUndated),
-            "total" to SavedValues.of(vTotal),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "goals" to SavedValues.list(vGoals) { it.toSaved() }
+        variables += "draft" to vDraft.toSaved()
+        variables += "today" to SavedValues.of(vToday)
+        variables += "first" to SavedValues.optional(vFirst) { SavedValues.of(it) }
+        variables += "left" to SavedValues.optional(vLeft) { SavedValues.of(it) }
+        variables += "undated" to SavedValues.of(vUndated)
+        variables += "total" to SavedValues.of(vTotal)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -285,6 +291,15 @@ class StaticStateAlgorithmOptionalStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.list(savedGrown.variable("goals"), "goals", 4) { e, w -> StaticStateAlgorithmOptionalGoalRecord.fromSaved(e, w) }
         val saved2 = StaticStateAlgorithmOptionalGoalRecord.fromSaved(savedGrown.variable("draft"), "draft")
         val saved3 = SavedValues.int64(savedGrown.variable("today"), "today")
@@ -293,15 +308,16 @@ class StaticStateAlgorithmOptionalStateMachine(
         val saved6 = SavedValues.uint32(savedGrown.variable("undated"), "undated")
         val saved7 = SavedValues.int64(savedGrown.variable("total"), "total")
         val saved8 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vGoals = saved1
-        vDraft = saved2
-        vToday = saved3
-        vFirst = saved4
-        vLeft = saved5
-        vUndated = saved6
-        vTotal = saved7
-        vErrors = saved8
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vGoals = saved1
+            vDraft = saved2
+            vToday = saved3
+            vFirst = saved4
+            vLeft = saved5
+            vUndated = saved6
+            vTotal = saved7
+            vErrors = saved8
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -314,6 +330,10 @@ class StaticStateAlgorithmOptionalStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.list(savedGrown.variable("goals"), "goals", 4) { e, w -> StaticStateAlgorithmOptionalGoalRecord.fromSaved(e, w) }
         StaticStateAlgorithmOptionalGoalRecord.fromSaved(savedGrown.variable("draft"), "draft")
         SavedValues.int64(savedGrown.variable("today"), "today")
@@ -398,6 +418,9 @@ class StaticStateAlgorithmOptionalStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticStateAlgorithmOptionalState, HistoryId>> =
             listOf(StateTarget(StaticStateAlgorithmOptionalState.Tracking))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: tracking's transition 0, as the microstep reads it.
         val transitionTrackingAt0 = EnabledTransition<StaticStateAlgorithmOptionalState, HistoryId>(
@@ -445,21 +468,25 @@ class StaticStateAlgorithmOptionalStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticStateAlgorithmOptionalState? = when (stateId) {
         "tracking" -> StaticStateAlgorithmOptionalState.Tracking
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticStateAlgorithmOptionalState): String = when (state) {
         is StaticStateAlgorithmOptionalState.Tracking -> "tracking"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticStateAlgorithmOptionalState): Int = when (state) {
         is StaticStateAlgorithmOptionalState.Tracking -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticStateAlgorithmOptionalEvent? = when (name) {
@@ -470,6 +497,7 @@ class StaticStateAlgorithmOptionalStateMachine(
         "until.none" -> StaticStateAlgorithmOptionalEvent.Until.None
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticStateAlgorithmOptionalEvent): String? = when (event) {
@@ -484,53 +512,86 @@ class StaticStateAlgorithmOptionalStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticStateAlgorithmOptionalState,
-        event: StaticStateAlgorithmOptionalEvent?
-    ): EnabledTransition<StaticStateAlgorithmOptionalState, HistoryId>? = when (state) {
-        is StaticStateAlgorithmOptionalState.Tracking -> when {
-            event is StaticStateAlgorithmOptionalEvent.Goal.Added -> transitionTrackingAt0
-            event is StaticStateAlgorithmOptionalEvent.Until.None -> transitionTrackingAt1
-            event is StaticStateAlgorithmOptionalEvent.Until.At -> transitionTrackingAt2
-            event is StaticStateAlgorithmOptionalEvent.Clear -> transitionTrackingAt3
-            event is StaticStateAlgorithmOptionalEvent.Error.Execution -> transitionTrackingAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticStateAlgorithmOptionalState, event: StaticStateAlgorithmOptionalEvent?): EnabledTransition<StaticStateAlgorithmOptionalState, HistoryId>? = when (state) {
+        is StaticStateAlgorithmOptionalState.Tracking -> firstEnabledTransitionOfTracking(state, event)
     }
+
+
+    // tracking's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfTracking(state: StaticStateAlgorithmOptionalState, event: StaticStateAlgorithmOptionalEvent?): EnabledTransition<StaticStateAlgorithmOptionalState, HistoryId>? = when {
+        event is StaticStateAlgorithmOptionalEvent.Goal.Added -> TransitionsPart0.transitionTrackingAt0
+        event is StaticStateAlgorithmOptionalEvent.Until.None -> TransitionsPart0.transitionTrackingAt1
+        event is StaticStateAlgorithmOptionalEvent.Until.At -> TransitionsPart0.transitionTrackingAt2
+        event is StaticStateAlgorithmOptionalEvent.Clear -> TransitionsPart0.transitionTrackingAt3
+        event is StaticStateAlgorithmOptionalEvent.Error.Execution -> TransitionsPart0.transitionTrackingAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_state_algorithm_optional.scxml:23 :: _machine
     override fun onEntry(state: StaticStateAlgorithmOptionalState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticStateAlgorithmOptionalState.Tracking -> {
-                // SCE-MAP: static_state_algorithm_optional.scxml:44 :: tracking :: _state_body
-            }
+            is StaticStateAlgorithmOptionalState.Tracking -> onEntryOfTracking()
         }
+    }
+
+
+    private fun onEntryOfTracking() {
+                // SCE-MAP: static_state_algorithm_optional.scxml:44 :: tracking :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_state_algorithm_optional.scxml:23 :: _machine
     override fun onExit(state: StaticStateAlgorithmOptionalState) {
         when (state) {
-            is StaticStateAlgorithmOptionalState.Tracking -> {
-                // SCE-MAP: static_state_algorithm_optional.scxml:44 :: tracking :: _state_body
-            }
+            is StaticStateAlgorithmOptionalState.Tracking -> onExitOfTracking()
         }
     }
+
+
+    private fun onExitOfTracking() {
+                // SCE-MAP: static_state_algorithm_optional.scxml:44 :: tracking :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_state_algorithm_optional.scxml:23 :: _machine
     override fun executeTransitionContent(source: StaticStateAlgorithmOptionalState, transitionIndex: Int) {
         when (source) {
-        is StaticStateAlgorithmOptionalState.Tracking -> when (transitionIndex) {
-            0 -> {
+            is StaticStateAlgorithmOptionalState.Tracking -> transitionContentOfTracking(transitionIndex)
+        }
+    }
+
+
+    // The content of `tracking`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfTracking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfTrackingAt0()
+            1 -> transitionContentOfTrackingAt1()
+            2 -> transitionContentOfTrackingAt2()
+            3 -> transitionContentOfTrackingAt3()
+            4 -> transitionContentOfTrackingAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfTrackingAt0() {
                 // SCE-MAP: static_state_algorithm_optional.scxml:45 :: tracking :: _transition_0
                 if (pendingGoalAddedPayload == null) {
                     return
@@ -555,22 +616,25 @@ class StaticStateAlgorithmOptionalStateMachine(
             if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_DaySum__v(vGoals, 0)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfTrackingAt1() {
                 // SCE-MAP: static_state_algorithm_optional.scxml:53 :: tracking :: _transition_1
 
             if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, null)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfTrackingAt2() {
                 // SCE-MAP: static_state_algorithm_optional.scxml:56 :: tracking :: _transition_2
 
             if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, 150L)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfTrackingAt3() {
                 // SCE-MAP: static_state_algorithm_optional.scxml:59 :: tracking :: _transition_3
 
             vGoals = emptyList()
@@ -588,16 +652,13 @@ class StaticStateAlgorithmOptionalStateMachine(
             if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_DaySum__v(vGoals, 0)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfTrackingAt4() {
                 // SCE-MAP: static_state_algorithm_optional.scxml:66 :: tracking :: _transition_4
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

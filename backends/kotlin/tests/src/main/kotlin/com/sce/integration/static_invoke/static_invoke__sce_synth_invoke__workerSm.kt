@@ -73,12 +73,10 @@ class StaticInvokeSceSynthInvokeWorkerStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        return savedState(savedShape, variables, wallNowMs)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -143,6 +141,7 @@ class StaticInvokeSceSynthInvokeWorkerStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticInvokeSceSynthInvokeWorkerState, HistoryId>>
@@ -151,6 +150,9 @@ class StaticInvokeSceSynthInvokeWorkerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticInvokeSceSynthInvokeWorkerState, HistoryId>> =
             listOf(StateTarget(StaticInvokeSceSynthInvokeWorkerState.First))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: first's transition 0, as the microstep reads it.
         val transitionFirstAt0 = EnabledTransition<StaticInvokeSceSynthInvokeWorkerState, HistoryId>(
@@ -171,6 +173,7 @@ class StaticInvokeSceSynthInvokeWorkerStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticInvokeSceSynthInvokeWorkerState? = when (stateId) {
         "first" -> StaticInvokeSceSynthInvokeWorkerState.First
@@ -179,12 +182,14 @@ class StaticInvokeSceSynthInvokeWorkerStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticInvokeSceSynthInvokeWorkerState): String = when (state) {
         is StaticInvokeSceSynthInvokeWorkerState.First -> "first"
         is StaticInvokeSceSynthInvokeWorkerState.Leaf -> "leaf"
         is StaticInvokeSceSynthInvokeWorkerState.Second -> "second"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticInvokeSceSynthInvokeWorkerState): Int = when (state) {
@@ -193,12 +198,14 @@ class StaticInvokeSceSynthInvokeWorkerStateMachine(
         is StaticInvokeSceSynthInvokeWorkerState.Second -> 1
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticInvokeSceSynthInvokeWorkerEvent? = when (name) {
         "a" -> StaticInvokeSceSynthInvokeWorkerEvent.A
         "b" -> StaticInvokeSceSynthInvokeWorkerEvent.B
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticInvokeSceSynthInvokeWorkerEvent): String? = when (event) {
@@ -210,67 +217,91 @@ class StaticInvokeSceSynthInvokeWorkerStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticInvokeSceSynthInvokeWorkerState,
-        event: StaticInvokeSceSynthInvokeWorkerEvent?
-    ): EnabledTransition<StaticInvokeSceSynthInvokeWorkerState, HistoryId>? = when (state) {
-        is StaticInvokeSceSynthInvokeWorkerState.First -> when {
-            event is StaticInvokeSceSynthInvokeWorkerEvent.A -> transitionFirstAt0
-            else -> null
-        }
-        is StaticInvokeSceSynthInvokeWorkerState.Second -> when {
-            event is StaticInvokeSceSynthInvokeWorkerEvent.B -> transitionSecondAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticInvokeSceSynthInvokeWorkerState, event: StaticInvokeSceSynthInvokeWorkerEvent?): EnabledTransition<StaticInvokeSceSynthInvokeWorkerState, HistoryId>? = when (state) {
+        is StaticInvokeSceSynthInvokeWorkerState.First -> firstEnabledTransitionOfFirst(state, event)
+        is StaticInvokeSceSynthInvokeWorkerState.Second -> firstEnabledTransitionOfSecond(state, event)
         else -> null
     }
+
+
+    // first's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfFirst(state: StaticInvokeSceSynthInvokeWorkerState, event: StaticInvokeSceSynthInvokeWorkerEvent?): EnabledTransition<StaticInvokeSceSynthInvokeWorkerState, HistoryId>? = when {
+        event is StaticInvokeSceSynthInvokeWorkerEvent.A -> TransitionsPart0.transitionFirstAt0
+        else -> null
+    }
+
+
+    // second's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSecond(state: StaticInvokeSceSynthInvokeWorkerState, event: StaticInvokeSceSynthInvokeWorkerEvent?): EnabledTransition<StaticInvokeSceSynthInvokeWorkerState, HistoryId>? = when {
+        event is StaticInvokeSceSynthInvokeWorkerEvent.B -> TransitionsPart0.transitionSecondAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_invoke.scxml:35 :: _machine
     override fun onEntry(state: StaticInvokeSceSynthInvokeWorkerState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticInvokeSceSynthInvokeWorkerState.First -> {
+            is StaticInvokeSceSynthInvokeWorkerState.First -> onEntryOfFirst()
+            is StaticInvokeSceSynthInvokeWorkerState.Leaf -> onEntryOfLeaf()
+            is StaticInvokeSceSynthInvokeWorkerState.Second -> onEntryOfSecond()
+        }
+    }
+
+
+    private fun onEntryOfFirst() {
                 // SCE-MAP: static_invoke.scxml:36 :: first :: _state_body
-            }
-            is StaticInvokeSceSynthInvokeWorkerState.Leaf -> {
+    }
+
+    private fun onEntryOfLeaf() {
                 // SCE-MAP: static_invoke.scxml:42 :: leaf :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticInvokeSceSynthInvokeWorkerState.Second -> {
+    }
+
+    private fun onEntryOfSecond() {
                 // SCE-MAP: static_invoke.scxml:39 :: second :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_invoke.scxml:35 :: _machine
     override fun onExit(state: StaticInvokeSceSynthInvokeWorkerState) {
         when (state) {
-            is StaticInvokeSceSynthInvokeWorkerState.First -> {
-                // SCE-MAP: static_invoke.scxml:36 :: first :: _state_body
-            }
-            is StaticInvokeSceSynthInvokeWorkerState.Leaf -> {
-                // SCE-MAP: static_invoke.scxml:42 :: leaf :: _state_body
-            }
-            is StaticInvokeSceSynthInvokeWorkerState.Second -> {
-                // SCE-MAP: static_invoke.scxml:39 :: second :: _state_body
-            }
+            is StaticInvokeSceSynthInvokeWorkerState.First -> onExitOfFirst()
+            is StaticInvokeSceSynthInvokeWorkerState.Leaf -> onExitOfLeaf()
+            is StaticInvokeSceSynthInvokeWorkerState.Second -> onExitOfSecond()
         }
     }
+
+
+    private fun onExitOfFirst() {
+                // SCE-MAP: static_invoke.scxml:36 :: first :: _state_body
+    }
+
+    private fun onExitOfLeaf() {
+                // SCE-MAP: static_invoke.scxml:42 :: leaf :: _state_body
+    }
+
+    private fun onExitOfSecond() {
+                // SCE-MAP: static_invoke.scxml:39 :: second :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_invoke.scxml:35 :: _machine
     override fun executeTransitionContent(source: StaticInvokeSceSynthInvokeWorkerState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

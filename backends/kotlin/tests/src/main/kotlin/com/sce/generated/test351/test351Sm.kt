@@ -64,9 +64,11 @@ class Test351StateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test351State): Boolean = when (state) {
-        is Test351State.Fail, is Test351State.Pass -> true
+        is Test351State.Fail -> true
+        is Test351State.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -76,6 +78,9 @@ class Test351StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test351State, HistoryId>> =
             listOf(StateTarget(Test351State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test351State, HistoryId>(
@@ -150,6 +155,7 @@ class Test351StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test351State? = when (stateId) {
         "fail" -> Test351State.Fail
@@ -161,6 +167,7 @@ class Test351StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test351State): String = when (state) {
         is Test351State.Fail -> "fail"
@@ -170,6 +177,7 @@ class Test351StateMachine(
         is Test351State.S2 -> "s2"
         is Test351State.S3 -> "s3"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test351State): Int = when (state) {
@@ -181,6 +189,7 @@ class Test351StateMachine(
         is Test351State.S3 -> 3
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test351Event? = when (name) {
         "error.execution" -> Test351Event.Error.Execution
@@ -191,6 +200,7 @@ class Test351StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test351Event): String? = when (event) {
         is Test351Event.Error.Execution -> "error.execution"
@@ -199,6 +209,7 @@ class Test351StateMachine(
         is Test351Event.Timeout -> "timeout"
         is Test351Event.Wildcard -> "*"
     }
+
 
 
 
@@ -228,16 +239,7 @@ class Test351StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.2: Runtime variable 'Var1' (late binding, undefined)
-        try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "Var1", null)
-        } catch (_: Exception) {}
-        // W3C SCXML 5.2: Runtime variable 'Var2' (late binding, undefined)
-        try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "Var2", null)
-        } catch (_: Exception) {}
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -254,6 +256,20 @@ class Test351StateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.2: Runtime variable 'Var1' (late binding, undefined)
+        try {
+            engine.evaluateExpr(sid, "undefined")
+            engine.setVariable(sid, "Var1", null)
+        } catch (_: Exception) {}
+        // W3C SCXML 5.2: Runtime variable 'Var2' (late binding, undefined)
+        try {
+            engine.evaluateExpr(sid, "undefined")
+            engine.setVariable(sid, "Var2", null)
+        } catch (_: Exception) {}
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -443,48 +459,76 @@ class Test351StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test351State,
-        event: Test351Event?
-    ): EnabledTransition<Test351State, HistoryId>? = when (state) {
-        is Test351State.S0 -> when {
-            event is Test351Event.S0Event -> transitionS0At0
-            event != null -> transitionS0At1
-            else -> null
-        }
-        is Test351State.S1 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"send1\")", "Var1 == 'send1'")) -> transitionS1At0
-            event == null -> transitionS1At1
-            else -> null
-        }
-        is Test351State.S2 -> when {
-            event is Test351Event.S0Event2 -> transitionS2At0
-            event != null -> transitionS2At1
-            else -> null
-        }
-        is Test351State.S3 -> when {
-            event == null -> transitionS3At0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test351State, event: Test351Event?): EnabledTransition<Test351State, HistoryId>? = when (state) {
+        is Test351State.S0 -> firstEnabledTransitionOfS0(state, event)
+        is Test351State.S1 -> firstEnabledTransitionOfS1(state, event)
+        is Test351State.S2 -> firstEnabledTransitionOfS2(state, event)
+        is Test351State.S3 -> firstEnabledTransitionOfS3(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test351State, event: Test351Event?): EnabledTransition<Test351State, HistoryId>? = when {
+        event is Test351Event.S0Event -> TransitionsPart0.transitionS0At0
+        event != null -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test351State, event: Test351Event?): EnabledTransition<Test351State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"send1\")", "Var1 == 'send1'")) -> TransitionsPart0.transitionS1At0
+        event == null -> TransitionsPart0.transitionS1At1
+        else -> null
+    }
+
+
+    // s2's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: Test351State, event: Test351Event?): EnabledTransition<Test351State, HistoryId>? = when {
+        event is Test351Event.S0Event2 -> TransitionsPart0.transitionS2At0
+        event != null -> TransitionsPart0.transitionS2At1
+        else -> null
+    }
+
+
+    // s3's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test351State, event: Test351Event?): EnabledTransition<Test351State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS3At0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test351.scxml:5 :: _machine
     override fun onEntry(state: Test351State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test351State.Fail -> {
+            is Test351State.Fail -> onEntryOfFail()
+            is Test351State.Pass -> onEntryOfPass()
+            is Test351State.S0 -> onEntryOfS0()
+            is Test351State.S1 -> onEntryOfS1()
+            is Test351State.S2 -> onEntryOfS2()
+            is Test351State.S3 -> onEntryOfS3()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test351.scxml:50 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test351State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test351.scxml:49 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test351State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test351.scxml:12 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -513,11 +557,13 @@ class Test351StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is Test351State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test351.scxml:26 :: s1 :: _state_body
-            }
-            is Test351State.S2 -> {
+    }
+
+    private fun onEntryOfS2() {
                 // SCE-MAP: test351.scxml:31 :: s2 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -546,66 +592,104 @@ class Test351StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is Test351State.S3 -> {
+    }
+
+    private fun onEntryOfS3() {
                 // SCE-MAP: test351.scxml:43 :: s3 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test351.scxml:5 :: _machine
     override fun onExit(state: Test351State) {
         when (state) {
-            is Test351State.Fail -> {
-                // SCE-MAP: test351.scxml:50 :: fail :: _state_body
-            }
-            is Test351State.Pass -> {
-                // SCE-MAP: test351.scxml:49 :: pass :: _state_body
-            }
-            is Test351State.S0 -> {
-                // SCE-MAP: test351.scxml:12 :: s0 :: _state_body
-            }
-            is Test351State.S1 -> {
-                // SCE-MAP: test351.scxml:26 :: s1 :: _state_body
-            }
-            is Test351State.S2 -> {
-                // SCE-MAP: test351.scxml:31 :: s2 :: _state_body
-            }
-            is Test351State.S3 -> {
-                // SCE-MAP: test351.scxml:43 :: s3 :: _state_body
-            }
+            is Test351State.Fail -> onExitOfFail()
+            is Test351State.Pass -> onExitOfPass()
+            is Test351State.S0 -> onExitOfS0()
+            is Test351State.S1 -> onExitOfS1()
+            is Test351State.S2 -> onExitOfS2()
+            is Test351State.S3 -> onExitOfS3()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test351.scxml:50 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test351.scxml:49 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test351.scxml:12 :: s0 :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test351.scxml:26 :: s1 :: _state_body
+    }
+
+    private fun onExitOfS2() {
+                // SCE-MAP: test351.scxml:31 :: s2 :: _state_body
+    }
+
+    private fun onExitOfS3() {
+                // SCE-MAP: test351.scxml:43 :: s3 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test351.scxml:5 :: _machine
     override fun executeTransitionContent(source: Test351State, transitionIndex: Int) {
         when (source) {
-        is Test351State.S0 -> when (transitionIndex) {
-            0 -> {
+            is Test351State.S0 -> transitionContentOfS0(transitionIndex)
+            is Test351State.S2 -> transitionContentOfS2(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: test351.scxml:18 :: s0 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.sendid", "_event.sendid"))) {
                 return
             }
-            }
+    }
+
+    // The content of `s2`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS2(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS2At0()
             else -> {}
         }
-        is Test351State.S2 -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfS2At0() {
                 // SCE-MAP: test351.scxml:37 :: s2 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.sendid", "_event.sendid"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

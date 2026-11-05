@@ -65,6 +65,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, HistoryId>>
@@ -73,6 +74,9 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, HistoryId>> =
             listOf(StateTarget(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, HistoryId>(
@@ -93,6 +97,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState? = when (stateId) {
         "heard" -> AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard
@@ -100,17 +105,20 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState): String = when (state) {
         is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard -> "heard"
         is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState): Int = when (state) {
         is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard -> 1
         is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent? = when (name) {
@@ -123,6 +131,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent): String? = when (event) {
         is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.ArrivedAsSent -> "arrivedAsSent"
@@ -132,6 +141,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
         is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Ready -> "ready"
         is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Request -> "request"
     }
+
 
 
 
@@ -366,29 +376,40 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState,
-        event: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent?
-    ): EnabledTransition<AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, HistoryId>? = when (state) {
-        is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> when {
-            event is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.new\")", "_event.name === 'request.new'")) -> transitionWaitingAt0
-            event is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Request -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, event: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent?): EnabledTransition<AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, HistoryId>? = when (state) {
+        is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, event: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent?): EnabledTransition<AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, HistoryId>? = when {
+        event is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Request && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.name == \"request.new\")", "_event.name === 'request.new'")) -> TransitionsPart0.transitionWaitingAt0
+        event is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent.Request -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:3 :: _machine
     override fun onEntry(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, isDefaultEntry: Boolean) {
         when (state) {
-            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard -> {
+            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard -> onEntryOfHeard()
+            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfHeard() {
                 // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:18 :: heard :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:5 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -412,30 +433,53 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:3 :: _machine
     override fun onExit(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState) {
         when (state) {
-            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard -> {
-                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:18 :: heard :: _state_body
-            }
-            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> {
-                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:5 :: waiting :: _state_body
-            }
+            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard -> onExitOfHeard()
+            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfHeard() {
+                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:18 :: heard :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:5 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:3 :: _machine
     override fun executeTransitionContent(source: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, transitionIndex: Int) {
         when (source) {
-        is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> transitionContentOfWaiting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            1 -> transitionContentOfWaitingAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:9 :: waiting :: _transition_0
 
 
@@ -456,8 +500,9 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:14 :: waiting :: _transition_1
 
 
@@ -478,10 +523,5 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

@@ -79,6 +79,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, HistoryId>>
@@ -87,6 +88,9 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, HistoryId>> =
             listOf(StateTarget(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: report's transition 0, as the microstep reads it.
         val transitionReportAt0 = EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, HistoryId>(
@@ -107,6 +111,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState? = when (stateId) {
         "done" -> InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done
@@ -114,17 +119,20 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState): String = when (state) {
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done -> "done"
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> "report"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState): Int = when (state) {
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done -> 1
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent? = when (name) {
@@ -135,6 +143,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent): String? = when (event) {
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent.Error.Communication -> "error.communication"
@@ -142,6 +151,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent.Seed.Missing -> "seed.missing"
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent.Seed.Ok -> "seed.ok"
     }
+
 
 
 
@@ -171,13 +181,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'token' with expr
-        try {
-            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
-            engine.setVariable(sid, "token", initResult_token)
-        } catch (e: Exception) {
-            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -194,6 +198,17 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'token' with expr
+        try {
+            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            engine.setVariable(sid, "token", initResult_token)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -383,54 +398,88 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState,
-        event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent?
-    ): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, HistoryId>? = when (state) {
-        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(token == \"parent\")", "token === 'parent'")) -> transitionReportAt0
-            event == null -> transitionReportAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, HistoryId>? = when (state) {
+        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> firstEnabledTransitionOfReport(state, event)
         else -> null
     }
+
+
+    // report's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReport(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(token == \"parent\")", "token === 'parent'")) -> TransitionsPart0.transitionReportAt0
+        event == null -> TransitionsPart0.transitionReportAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:3 :: _machine
     override fun onEntry(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done -> {
+            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done -> onEntryOfDone()
+            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> onEntryOfReport()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:16 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> {
+    }
+
+    private fun onEntryOfReport() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:8 :: report :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:3 :: _machine
     override fun onExit(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState) {
         when (state) {
-            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:16 :: done :: _state_body
-            }
-            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> {
-                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:8 :: report :: _state_body
-            }
+            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done -> onExitOfDone()
+            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> onExitOfReport()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:16 :: done :: _state_body
+    }
+
+    private fun onExitOfReport() {
+                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:8 :: report :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:3 :: _machine
     override fun executeTransitionContent(source: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, transitionIndex: Int) {
         when (source) {
-        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> when (transitionIndex) {
-            0 -> {
+            is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report -> transitionContentOfReport(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `report`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfReport(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfReportAt0()
+            1 -> transitionContentOfReportAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfReportAt0() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:9 :: report :: _transition_0
 
 
@@ -451,8 +500,9 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfReportAt1() {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:12 :: report :: _transition_1
 
 
@@ -473,10 +523,5 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

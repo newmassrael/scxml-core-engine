@@ -59,6 +59,7 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<AChildTimerIsADeadlineOfItsParentState, HistoryId>>
@@ -67,6 +68,9 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AChildTimerIsADeadlineOfItsParentState, HistoryId>> =
             listOf(StateTarget(AChildTimerIsADeadlineOfItsParentState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<AChildTimerIsADeadlineOfItsParentState, HistoryId>(
@@ -78,6 +82,7 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AChildTimerIsADeadlineOfItsParentState? = when (stateId) {
         "finished" -> AChildTimerIsADeadlineOfItsParentState.Finished
@@ -85,17 +90,20 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AChildTimerIsADeadlineOfItsParentState): String = when (state) {
         is AChildTimerIsADeadlineOfItsParentState.Finished -> "finished"
         is AChildTimerIsADeadlineOfItsParentState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AChildTimerIsADeadlineOfItsParentState): Int = when (state) {
         is AChildTimerIsADeadlineOfItsParentState.Finished -> 1
         is AChildTimerIsADeadlineOfItsParentState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AChildTimerIsADeadlineOfItsParentEvent? = when (name) {
@@ -104,6 +112,7 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
         "error.execution" -> AChildTimerIsADeadlineOfItsParentEvent.Error.Execution
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AChildTimerIsADeadlineOfItsParentEvent): String? = when (event) {
@@ -116,38 +125,48 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AChildTimerIsADeadlineOfItsParentState,
-        event: AChildTimerIsADeadlineOfItsParentEvent?
-    ): EnabledTransition<AChildTimerIsADeadlineOfItsParentState, HistoryId>? = when (state) {
-        is AChildTimerIsADeadlineOfItsParentState.Waiting -> when {
-            event is AChildTimerIsADeadlineOfItsParentEvent.Done.Invoke.Kid -> transitionWaitingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AChildTimerIsADeadlineOfItsParentState, event: AChildTimerIsADeadlineOfItsParentEvent?): EnabledTransition<AChildTimerIsADeadlineOfItsParentState, HistoryId>? = when (state) {
+        is AChildTimerIsADeadlineOfItsParentState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: AChildTimerIsADeadlineOfItsParentState, event: AChildTimerIsADeadlineOfItsParentEvent?): EnabledTransition<AChildTimerIsADeadlineOfItsParentState, HistoryId>? = when {
+        event is AChildTimerIsADeadlineOfItsParentEvent.Done.Invoke.Kid -> TransitionsPart0.transitionWaitingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:37 :: _machine
     override fun onEntry(state: AChildTimerIsADeadlineOfItsParentState, isDefaultEntry: Boolean) {
         when (state) {
-            is AChildTimerIsADeadlineOfItsParentState.Finished -> {
+            is AChildTimerIsADeadlineOfItsParentState.Finished -> onEntryOfFinished()
+            is AChildTimerIsADeadlineOfItsParentState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfFinished() {
                 // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:65 :: finished :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AChildTimerIsADeadlineOfItsParentState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:41 :: waiting :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("kid", state)
-            }
-        }
+                deferStaticInvoke("kid", AChildTimerIsADeadlineOfItsParentState.Waiting)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -160,9 +179,20 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: AChildTimerIsADeadlineOfItsParentState) {
         when (invokeId) {
-            "kid" -> run {
+            "kid" -> startInvokeOfWaitingAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfWaitingAt0(state: AChildTimerIsADeadlineOfItsParentState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "waiting.${nextInvokeStart("kid")}.kid"
@@ -173,33 +203,37 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
                     startInvoke("kid", childSM, false, AChildTimerIsADeadlineOfItsParentEvent.Done.Invoke.Kid, "", generatedInvokeId, "", "a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid", "kid")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:37 :: _machine
     override fun onExit(state: AChildTimerIsADeadlineOfItsParentState) {
         when (state) {
-            is AChildTimerIsADeadlineOfItsParentState.Finished -> {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:65 :: finished :: _state_body
-            }
-            is AChildTimerIsADeadlineOfItsParentState.Waiting -> {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:41 :: waiting :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("kid")
-            }
+            is AChildTimerIsADeadlineOfItsParentState.Finished -> onExitOfFinished()
+            is AChildTimerIsADeadlineOfItsParentState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfFinished() {
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:65 :: finished :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:41 :: waiting :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(AChildTimerIsADeadlineOfItsParentState.Waiting)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("kid")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:37 :: _machine
     override fun executeTransitionContent(source: AChildTimerIsADeadlineOfItsParentState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

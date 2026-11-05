@@ -207,6 +207,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: AnErrorInsideAForeachEndsItsBlockState): Boolean = when (state) {
@@ -214,11 +215,13 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: AnErrorInsideAForeachEndsItsBlockState): Boolean = when (state) {
         is AnErrorInsideAForeachEndsItsBlockState.Done -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -235,16 +238,29 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<AnErrorInsideAForeachEndsItsBlockState, List<AnErrorInsideAForeachEndsItsBlockState>> = mapOf(
-            AnErrorInsideAForeachEndsItsBlockState.Run to listOf(AnErrorInsideAForeachEndsItsBlockState.S1, AnErrorInsideAForeachEndsItsBlockState.S2),
-        )
+        val childStates: Map<AnErrorInsideAForeachEndsItsBlockState, List<AnErrorInsideAForeachEndsItsBlockState>> = LinkedHashMap<AnErrorInsideAForeachEndsItsBlockState, List<AnErrorInsideAForeachEndsItsBlockState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<AnErrorInsideAForeachEndsItsBlockState, List<EntryTarget<AnErrorInsideAForeachEndsItsBlockState, HistoryId>>> = mapOf(
-            AnErrorInsideAForeachEndsItsBlockState.Run to listOf(StateTarget(AnErrorInsideAForeachEndsItsBlockState.S1)),
-        )
+        private fun childStatesPart0(table: MutableMap<AnErrorInsideAForeachEndsItsBlockState, List<AnErrorInsideAForeachEndsItsBlockState>>) {
+            table[AnErrorInsideAForeachEndsItsBlockState.Run] = listOf(AnErrorInsideAForeachEndsItsBlockState.S1, AnErrorInsideAForeachEndsItsBlockState.S2)
+        }
+
+
+        val initialTargets: Map<AnErrorInsideAForeachEndsItsBlockState, List<EntryTarget<AnErrorInsideAForeachEndsItsBlockState, HistoryId>>> = LinkedHashMap<AnErrorInsideAForeachEndsItsBlockState, List<EntryTarget<AnErrorInsideAForeachEndsItsBlockState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<AnErrorInsideAForeachEndsItsBlockState, List<EntryTarget<AnErrorInsideAForeachEndsItsBlockState, HistoryId>>>) {
+            table[AnErrorInsideAForeachEndsItsBlockState.Run] = listOf(StateTarget(AnErrorInsideAForeachEndsItsBlockState.S1))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<AnErrorInsideAForeachEndsItsBlockState, HistoryId>> =
             listOf(StateTarget(AnErrorInsideAForeachEndsItsBlockState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
         val transitionRunAt0 = EnabledTransition<AnErrorInsideAForeachEndsItsBlockState, HistoryId>(
@@ -292,6 +308,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AnErrorInsideAForeachEndsItsBlockState? = when (stateId) {
         "done" -> AnErrorInsideAForeachEndsItsBlockState.Done
@@ -301,6 +318,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AnErrorInsideAForeachEndsItsBlockState): String = when (state) {
         is AnErrorInsideAForeachEndsItsBlockState.Done -> "done"
@@ -309,6 +327,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         is AnErrorInsideAForeachEndsItsBlockState.S2 -> "s2"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AnErrorInsideAForeachEndsItsBlockState): Int = when (state) {
         is AnErrorInsideAForeachEndsItsBlockState.Done -> 3
@@ -316,6 +335,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         is AnErrorInsideAForeachEndsItsBlockState.S1 -> 1
         is AnErrorInsideAForeachEndsItsBlockState.S2 -> 2
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AnErrorInsideAForeachEndsItsBlockEvent? = when (name) {
@@ -327,6 +347,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AnErrorInsideAForeachEndsItsBlockEvent): String? = when (event) {
         is AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution -> "error.execution"
@@ -335,6 +356,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         is AnErrorInsideAForeachEndsItsBlockEvent.Sent -> "sent"
         is AnErrorInsideAForeachEndsItsBlockEvent.T -> "t"
     }
+
 
 
 
@@ -364,6 +386,27 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
             val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -441,22 +484,6 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -646,38 +673,56 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AnErrorInsideAForeachEndsItsBlockState,
-        event: AnErrorInsideAForeachEndsItsBlockEvent?
-    ): EnabledTransition<AnErrorInsideAForeachEndsItsBlockState, HistoryId>? = when (state) {
-        is AnErrorInsideAForeachEndsItsBlockState.Run -> when {
-            event is AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution -> transitionRunAt0
-            event is AnErrorInsideAForeachEndsItsBlockEvent.Sent -> transitionRunAt1
-            event is AnErrorInsideAForeachEndsItsBlockEvent.T -> transitionRunAt2
-            event is AnErrorInsideAForeachEndsItsBlockEvent.Finish -> transitionRunAt3
-            else -> null
-        }
-        is AnErrorInsideAForeachEndsItsBlockState.S1 -> when {
-            event is AnErrorInsideAForeachEndsItsBlockEvent.Go -> transitionS1At0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AnErrorInsideAForeachEndsItsBlockState, event: AnErrorInsideAForeachEndsItsBlockEvent?): EnabledTransition<AnErrorInsideAForeachEndsItsBlockState, HistoryId>? = when (state) {
+        is AnErrorInsideAForeachEndsItsBlockState.Run -> firstEnabledTransitionOfRun(state, event)
+        is AnErrorInsideAForeachEndsItsBlockState.S1 -> firstEnabledTransitionOfS1(state, event)
         else -> null
     }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: AnErrorInsideAForeachEndsItsBlockState, event: AnErrorInsideAForeachEndsItsBlockEvent?): EnabledTransition<AnErrorInsideAForeachEndsItsBlockState, HistoryId>? = when {
+        event is AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution -> TransitionsPart0.transitionRunAt0
+        event is AnErrorInsideAForeachEndsItsBlockEvent.Sent -> TransitionsPart0.transitionRunAt1
+        event is AnErrorInsideAForeachEndsItsBlockEvent.T -> TransitionsPart0.transitionRunAt2
+        event is AnErrorInsideAForeachEndsItsBlockEvent.Finish -> TransitionsPart0.transitionRunAt3
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: AnErrorInsideAForeachEndsItsBlockState, event: AnErrorInsideAForeachEndsItsBlockEvent?): EnabledTransition<AnErrorInsideAForeachEndsItsBlockState, HistoryId>? = when {
+        event is AnErrorInsideAForeachEndsItsBlockEvent.Go -> TransitionsPart0.transitionS1At0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:38 :: _machine
     override fun onEntry(state: AnErrorInsideAForeachEndsItsBlockState, isDefaultEntry: Boolean) {
         when (state) {
-            is AnErrorInsideAForeachEndsItsBlockState.Done -> {
+            is AnErrorInsideAForeachEndsItsBlockState.Done -> onEntryOfDone()
+            is AnErrorInsideAForeachEndsItsBlockState.Run -> onEntryOfRun()
+            is AnErrorInsideAForeachEndsItsBlockState.S1 -> onEntryOfS1()
+            is AnErrorInsideAForeachEndsItsBlockState.S2 -> onEntryOfS2()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:98 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AnErrorInsideAForeachEndsItsBlockState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:56 :: run :: _state_body
-            }
-            is AnErrorInsideAForeachEndsItsBlockState.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:74 :: s1 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -737,8 +782,9 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 return@run
             }
                 }
-            }
-            is AnErrorInsideAForeachEndsItsBlockState.S2 -> {
+    }
+
+    private fun onEntryOfS2() {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:87 :: s2 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -776,52 +822,82 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 return@run
             }
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:38 :: _machine
     override fun onExit(state: AnErrorInsideAForeachEndsItsBlockState) {
         when (state) {
-            is AnErrorInsideAForeachEndsItsBlockState.Done -> {
-                // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:98 :: done :: _state_body
-            }
-            is AnErrorInsideAForeachEndsItsBlockState.Run -> {
-                // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:56 :: run :: _state_body
-            }
-            is AnErrorInsideAForeachEndsItsBlockState.S1 -> {
-                // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:74 :: s1 :: _state_body
-            }
-            is AnErrorInsideAForeachEndsItsBlockState.S2 -> {
-                // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:87 :: s2 :: _state_body
-            }
+            is AnErrorInsideAForeachEndsItsBlockState.Done -> onExitOfDone()
+            is AnErrorInsideAForeachEndsItsBlockState.Run -> onExitOfRun()
+            is AnErrorInsideAForeachEndsItsBlockState.S1 -> onExitOfS1()
+            is AnErrorInsideAForeachEndsItsBlockState.S2 -> onExitOfS2()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:98 :: done :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:56 :: run :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:74 :: s1 :: _state_body
+    }
+
+    private fun onExitOfS2() {
+                // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:87 :: s2 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:38 :: _machine
     override fun executeTransitionContent(source: AnErrorInsideAForeachEndsItsBlockState, transitionIndex: Int) {
         when (source) {
-        is AnErrorInsideAForeachEndsItsBlockState.Run -> when (transitionIndex) {
-            0 -> {
+            is AnErrorInsideAForeachEndsItsBlockState.Run -> transitionContentOfRun(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
+            1 -> transitionContentOfRunAt1()
+            2 -> transitionContentOfRunAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:57 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunAt1() {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:60 :: run :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("sent", "sent"), com.sce.runtime.ScriptSource.lua("_scxml_add(sent, 1)", "sent + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRunAt2() {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:63 :: run :: _transition_2
 
 
@@ -878,10 +954,5 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("after3", "after3"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

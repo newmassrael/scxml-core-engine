@@ -117,6 +117,10 @@ class StaticSendParamsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.count?.let { vCount = it }
         params.small?.let { vSmall = it }
         params.label?.let { vLabel = it }
@@ -206,21 +210,23 @@ class StaticSendParamsStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "count" to SavedValues.of(vCount),
-            "small" to SavedValues.of(vSmall),
-            "label" to SavedValues.of(vLabel),
-            "total" to SavedValues.of(vTotal),
-            "ok" to SavedValues.of(vOk),
-            "tag" to SavedValues.of(vTag),
-            "partialTotal" to SavedValues.of(vPartialTotal),
-            "partialPart" to SavedValues.of(vPartialPart),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "count" to SavedValues.of(vCount)
+        variables += "small" to SavedValues.of(vSmall)
+        variables += "label" to SavedValues.of(vLabel)
+        variables += "total" to SavedValues.of(vTotal)
+        variables += "ok" to SavedValues.of(vOk)
+        variables += "tag" to SavedValues.of(vTag)
+        variables += "partialTotal" to SavedValues.of(vPartialTotal)
+        variables += "partialPart" to SavedValues.of(vPartialPart)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -245,6 +251,15 @@ class StaticSendParamsStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("count"), "count")
         val saved2 = SavedValues.uint8(savedGrown.variable("small"), "small")
         val saved3 = SavedValues.string(savedGrown.variable("label"), "label", 16)
@@ -254,16 +269,17 @@ class StaticSendParamsStateMachine(
         val saved7 = SavedValues.uint32(savedGrown.variable("partialTotal"), "partialTotal")
         val saved8 = SavedValues.uint8(savedGrown.variable("partialPart"), "partialPart")
         val saved9 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vCount = saved1
-        vSmall = saved2
-        vLabel = saved3
-        vTotal = saved4
-        vOk = saved5
-        vTag = saved6
-        vPartialTotal = saved7
-        vPartialPart = saved8
-        vRefusals = saved9
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vCount = saved1
+            vSmall = saved2
+            vLabel = saved3
+            vTotal = saved4
+            vOk = saved5
+            vTag = saved6
+            vPartialTotal = saved7
+            vPartialPart = saved8
+            vRefusals = saved9
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -276,6 +292,10 @@ class StaticSendParamsStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("count"), "count")
         SavedValues.uint8(savedGrown.variable("small"), "small")
         SavedValues.string(savedGrown.variable("label"), "label", 16)
@@ -383,6 +403,9 @@ class StaticSendParamsStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticSendParamsState, HistoryId>> =
             listOf(StateTarget(StaticSendParamsState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticSendParamsState, HistoryId>(
@@ -430,21 +453,25 @@ class StaticSendParamsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticSendParamsState? = when (stateId) {
         "idle" -> StaticSendParamsState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticSendParamsState): String = when (state) {
         is StaticSendParamsState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticSendParamsState): Int = when (state) {
         is StaticSendParamsState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticSendParamsEvent? = when (name) {
@@ -455,6 +482,7 @@ class StaticSendParamsStateMachine(
         "partial" -> StaticSendParamsEvent.Partial
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticSendParamsEvent): String? = when (event) {
@@ -469,53 +497,86 @@ class StaticSendParamsStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticSendParamsState,
-        event: StaticSendParamsEvent?
-    ): EnabledTransition<StaticSendParamsState, HistoryId>? = when (state) {
-        is StaticSendParamsState.Idle -> when {
-            event is StaticSendParamsEvent.Go -> transitionIdleAt0
-            event is StaticSendParamsEvent.Bad -> transitionIdleAt1
-            event is StaticSendParamsEvent.Echo -> transitionIdleAt2
-            event is StaticSendParamsEvent.Partial -> transitionIdleAt3
-            event is StaticSendParamsEvent.Error.Execution -> transitionIdleAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticSendParamsState, event: StaticSendParamsEvent?): EnabledTransition<StaticSendParamsState, HistoryId>? = when (state) {
+        is StaticSendParamsState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticSendParamsState, event: StaticSendParamsEvent?): EnabledTransition<StaticSendParamsState, HistoryId>? = when {
+        event is StaticSendParamsEvent.Go -> TransitionsPart0.transitionIdleAt0
+        event is StaticSendParamsEvent.Bad -> TransitionsPart0.transitionIdleAt1
+        event is StaticSendParamsEvent.Echo -> TransitionsPart0.transitionIdleAt2
+        event is StaticSendParamsEvent.Partial -> TransitionsPart0.transitionIdleAt3
+        event is StaticSendParamsEvent.Error.Execution -> TransitionsPart0.transitionIdleAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_send_params.scxml:23 :: _machine
     override fun onEntry(state: StaticSendParamsState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticSendParamsState.Idle -> {
-                // SCE-MAP: static_send_params.scxml:38 :: idle :: _state_body
-            }
+            is StaticSendParamsState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_send_params.scxml:38 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_send_params.scxml:23 :: _machine
     override fun onExit(state: StaticSendParamsState) {
         when (state) {
-            is StaticSendParamsState.Idle -> {
-                // SCE-MAP: static_send_params.scxml:38 :: idle :: _state_body
-            }
+            is StaticSendParamsState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_send_params.scxml:38 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_send_params.scxml:23 :: _machine
     override fun executeTransitionContent(source: StaticSendParamsState, transitionIndex: Int) {
         when (source) {
-        is StaticSendParamsState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticSendParamsState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_send_params.scxml:39 :: idle :: _transition_0
 
 
@@ -542,8 +603,9 @@ class StaticSendParamsStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_send_params.scxml:46 :: idle :: _transition_1
 
 
@@ -573,8 +635,9 @@ class StaticSendParamsStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_params.scxml:52 :: idle :: _transition_2
                 if (pendingEchoPayload == null) {
                     return
@@ -587,8 +650,9 @@ class StaticSendParamsStateMachine(
             if (try { vTag = com.sce.forge.runtime.SceChecked.bounded(pendingEchoPayload!!.tag, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='tag'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_params.scxml:57 :: idle :: _transition_3
                 if (pendingPartialPayload == null) {
                     return
@@ -597,16 +661,13 @@ class StaticSendParamsStateMachine(
             vPartialPart = pendingPartialPayload!!.part
 
             vPartialTotal = pendingPartialPayload!!.total
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_params.scxml:61 :: idle :: _transition_4
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

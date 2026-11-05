@@ -58,6 +58,10 @@ class StaticHybridFirstStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.start?.let { vStart = it }
         params.enabled?.let { vEnabled = it }
     }
@@ -121,14 +125,16 @@ class StaticHybridFirstStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "start" to SavedValues.of(vStart),
-            "enabled" to SavedValues.of(vEnabled),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "start" to SavedValues.of(vStart)
+        variables += "enabled" to SavedValues.of(vEnabled)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -153,11 +159,21 @@ class StaticHybridFirstStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("start"), "start")
         val saved2 = SavedValues.bool(savedGrown.variable("enabled"), "enabled")
-        vStart = saved1
-        vEnabled = saved2
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vStart = saved1
+            vEnabled = saved2
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -170,6 +186,10 @@ class StaticHybridFirstStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("start"), "start")
         SavedValues.bool(savedGrown.variable("enabled"), "enabled")
     }
@@ -199,6 +219,7 @@ class StaticHybridFirstStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticHybridFirstState, HistoryId>>
@@ -207,6 +228,9 @@ class StaticHybridFirstStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticHybridFirstState, HistoryId>> =
             listOf(StateTarget(StaticHybridFirstState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StaticHybridFirstState, HistoryId>(
@@ -218,6 +242,7 @@ class StaticHybridFirstStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticHybridFirstState? = when (stateId) {
         "leaf" -> StaticHybridFirstState.Leaf
@@ -225,11 +250,13 @@ class StaticHybridFirstStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticHybridFirstState): String = when (state) {
         is StaticHybridFirstState.Leaf -> "leaf"
         is StaticHybridFirstState.Waiting -> "waiting"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticHybridFirstState): Int = when (state) {
@@ -237,10 +264,12 @@ class StaticHybridFirstStateMachine(
         is StaticHybridFirstState.Waiting -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticHybridFirstEvent? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -261,52 +290,67 @@ class StaticHybridFirstStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticHybridFirstState,
-        event: StaticHybridFirstEvent?
-    ): EnabledTransition<StaticHybridFirstState, HistoryId>? = when (state) {
-        is StaticHybridFirstState.Waiting -> when {
-            event == null && vStart == 7.toUInt() && vEnabled -> transitionWaitingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticHybridFirstState, event: StaticHybridFirstEvent?): EnabledTransition<StaticHybridFirstState, HistoryId>? = when (state) {
+        is StaticHybridFirstState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticHybridFirstState, event: StaticHybridFirstEvent?): EnabledTransition<StaticHybridFirstState, HistoryId>? = when {
+        event == null && vStart == 7.toUInt() && vEnabled -> TransitionsPart0.transitionWaitingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_hybrid_first.scxml:13 :: _machine
     override fun onEntry(state: StaticHybridFirstState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticHybridFirstState.Leaf -> {
+            is StaticHybridFirstState.Leaf -> onEntryOfLeaf()
+            is StaticHybridFirstState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfLeaf() {
                 // SCE-MAP: static_hybrid_first.scxml:22 :: leaf :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticHybridFirstState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: static_hybrid_first.scxml:19 :: waiting :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_hybrid_first.scxml:13 :: _machine
     override fun onExit(state: StaticHybridFirstState) {
         when (state) {
-            is StaticHybridFirstState.Leaf -> {
-                // SCE-MAP: static_hybrid_first.scxml:22 :: leaf :: _state_body
-            }
-            is StaticHybridFirstState.Waiting -> {
-                // SCE-MAP: static_hybrid_first.scxml:19 :: waiting :: _state_body
-            }
+            is StaticHybridFirstState.Leaf -> onExitOfLeaf()
+            is StaticHybridFirstState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfLeaf() {
+                // SCE-MAP: static_hybrid_first.scxml:22 :: leaf :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: static_hybrid_first.scxml:19 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_hybrid_first.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticHybridFirstState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

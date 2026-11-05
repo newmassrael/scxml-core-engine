@@ -107,6 +107,9 @@ class EventlessMacrostepIsBoundedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<EventlessMacrostepIsBoundedState, HistoryId>> =
             listOf(StateTarget(EventlessMacrostepIsBoundedState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: bounded_a's transition 0, as the microstep reads it.
         val transitionBoundedAAt0 = EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>(
@@ -208,6 +211,7 @@ class EventlessMacrostepIsBoundedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EventlessMacrostepIsBoundedState? = when (stateId) {
         "bounded_a" -> EventlessMacrostepIsBoundedState.BoundedA
@@ -218,6 +222,7 @@ class EventlessMacrostepIsBoundedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: EventlessMacrostepIsBoundedState): String = when (state) {
         is EventlessMacrostepIsBoundedState.BoundedA -> "bounded_a"
@@ -227,6 +232,7 @@ class EventlessMacrostepIsBoundedStateMachine(
         is EventlessMacrostepIsBoundedState.SpinB -> "spin_b"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: EventlessMacrostepIsBoundedState): Int = when (state) {
         is EventlessMacrostepIsBoundedState.BoundedA -> 1
@@ -235,6 +241,7 @@ class EventlessMacrostepIsBoundedStateMachine(
         is EventlessMacrostepIsBoundedState.SpinA -> 3
         is EventlessMacrostepIsBoundedState.SpinB -> 4
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EventlessMacrostepIsBoundedEvent? = when (name) {
@@ -246,6 +253,7 @@ class EventlessMacrostepIsBoundedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EventlessMacrostepIsBoundedEvent): String? = when (event) {
         is EventlessMacrostepIsBoundedEvent.Bounded -> "bounded"
@@ -254,6 +262,7 @@ class EventlessMacrostepIsBoundedStateMachine(
         is EventlessMacrostepIsBoundedEvent.Reset -> "reset"
         is EventlessMacrostepIsBoundedEvent.Spin -> "spin"
     }
+
 
 
 
@@ -283,6 +292,27 @@ class EventlessMacrostepIsBoundedStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
             val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -304,22 +334,6 @@ class EventlessMacrostepIsBoundedStateMachine(
         } catch (e: Exception) {
             raisePlatformError(EventlessMacrostepIsBoundedEvent.Error.Execution, "<data id='spins'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -509,138 +523,222 @@ class EventlessMacrostepIsBoundedStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: EventlessMacrostepIsBoundedState,
-        event: EventlessMacrostepIsBoundedEvent?
-    ): EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>? = when (state) {
-        is EventlessMacrostepIsBoundedState.BoundedA -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 500)", "laps < 500")) -> transitionBoundedAAt0
-            event is EventlessMacrostepIsBoundedEvent.Poke -> transitionBoundedAAt1
-            else -> null
-        }
-        is EventlessMacrostepIsBoundedState.BoundedB -> when {
-            event == null -> transitionBoundedBAt0
-            else -> null
-        }
-        is EventlessMacrostepIsBoundedState.Idle -> when {
-            event is EventlessMacrostepIsBoundedEvent.Poke -> transitionIdleAt0
-            event is EventlessMacrostepIsBoundedEvent.Bounded -> transitionIdleAt1
-            event is EventlessMacrostepIsBoundedEvent.Spin -> transitionIdleAt2
-            else -> null
-        }
-        is EventlessMacrostepIsBoundedState.SpinA -> when {
-            event == null -> transitionSpinAAt0
-            event is EventlessMacrostepIsBoundedEvent.Poke -> transitionSpinAAt1
-            event is EventlessMacrostepIsBoundedEvent.Reset -> transitionSpinAAt2
-            else -> null
-        }
-        is EventlessMacrostepIsBoundedState.SpinB -> when {
-            event == null -> transitionSpinBAt0
-            event is EventlessMacrostepIsBoundedEvent.Reset -> transitionSpinBAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: EventlessMacrostepIsBoundedState, event: EventlessMacrostepIsBoundedEvent?): EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>? = when (state) {
+        is EventlessMacrostepIsBoundedState.BoundedA -> firstEnabledTransitionOfBoundedA(state, event)
+        is EventlessMacrostepIsBoundedState.BoundedB -> firstEnabledTransitionOfBoundedB(state, event)
+        is EventlessMacrostepIsBoundedState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is EventlessMacrostepIsBoundedState.SpinA -> firstEnabledTransitionOfSpinA(state, event)
+        is EventlessMacrostepIsBoundedState.SpinB -> firstEnabledTransitionOfSpinB(state, event)
     }
+
+
+    // bounded_a's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBoundedA(state: EventlessMacrostepIsBoundedState, event: EventlessMacrostepIsBoundedEvent?): EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 500)", "laps < 500")) -> TransitionsPart0.transitionBoundedAAt0
+        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionsPart0.transitionBoundedAAt1
+        else -> null
+    }
+
+
+    // bounded_b's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBoundedB(state: EventlessMacrostepIsBoundedState, event: EventlessMacrostepIsBoundedEvent?): EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionBoundedBAt0
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: EventlessMacrostepIsBoundedState, event: EventlessMacrostepIsBoundedEvent?): EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>? = when {
+        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionsPart0.transitionIdleAt0
+        event is EventlessMacrostepIsBoundedEvent.Bounded -> TransitionsPart0.transitionIdleAt1
+        event is EventlessMacrostepIsBoundedEvent.Spin -> TransitionsPart0.transitionIdleAt2
+        else -> null
+    }
+
+
+    // spin_a's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSpinA(state: EventlessMacrostepIsBoundedState, event: EventlessMacrostepIsBoundedEvent?): EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionSpinAAt0
+        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionsPart0.transitionSpinAAt1
+        event is EventlessMacrostepIsBoundedEvent.Reset -> TransitionsPart0.transitionSpinAAt2
+        else -> null
+    }
+
+
+    // spin_b's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSpinB(state: EventlessMacrostepIsBoundedState, event: EventlessMacrostepIsBoundedEvent?): EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionSpinBAt0
+        event is EventlessMacrostepIsBoundedEvent.Reset -> TransitionsPart0.transitionSpinBAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     override fun onEntry(state: EventlessMacrostepIsBoundedState, isDefaultEntry: Boolean) {
         when (state) {
-            is EventlessMacrostepIsBoundedState.BoundedA -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:84 :: bounded_a :: _state_body
-            }
-            is EventlessMacrostepIsBoundedState.BoundedB -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:95 :: bounded_b :: _state_body
-            }
-            is EventlessMacrostepIsBoundedState.Idle -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:71 :: idle :: _state_body
-            }
-            is EventlessMacrostepIsBoundedState.SpinA -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:104 :: spin_a :: _state_body
-            }
-            is EventlessMacrostepIsBoundedState.SpinB -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:125 :: spin_b :: _state_body
-            }
+            is EventlessMacrostepIsBoundedState.BoundedA -> onEntryOfBoundedA()
+            is EventlessMacrostepIsBoundedState.BoundedB -> onEntryOfBoundedB()
+            is EventlessMacrostepIsBoundedState.Idle -> onEntryOfIdle()
+            is EventlessMacrostepIsBoundedState.SpinA -> onEntryOfSpinA()
+            is EventlessMacrostepIsBoundedState.SpinB -> onEntryOfSpinB()
         }
+    }
+
+
+    private fun onEntryOfBoundedA() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:84 :: bounded_a :: _state_body
+    }
+
+    private fun onEntryOfBoundedB() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:95 :: bounded_b :: _state_body
+    }
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:71 :: idle :: _state_body
+    }
+
+    private fun onEntryOfSpinA() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:104 :: spin_a :: _state_body
+    }
+
+    private fun onEntryOfSpinB() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:125 :: spin_b :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     override fun onExit(state: EventlessMacrostepIsBoundedState) {
         when (state) {
-            is EventlessMacrostepIsBoundedState.BoundedA -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:84 :: bounded_a :: _state_body
-            }
-            is EventlessMacrostepIsBoundedState.BoundedB -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:95 :: bounded_b :: _state_body
-            }
-            is EventlessMacrostepIsBoundedState.Idle -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:71 :: idle :: _state_body
-            }
-            is EventlessMacrostepIsBoundedState.SpinA -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:104 :: spin_a :: _state_body
-            }
-            is EventlessMacrostepIsBoundedState.SpinB -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:125 :: spin_b :: _state_body
-            }
+            is EventlessMacrostepIsBoundedState.BoundedA -> onExitOfBoundedA()
+            is EventlessMacrostepIsBoundedState.BoundedB -> onExitOfBoundedB()
+            is EventlessMacrostepIsBoundedState.Idle -> onExitOfIdle()
+            is EventlessMacrostepIsBoundedState.SpinA -> onExitOfSpinA()
+            is EventlessMacrostepIsBoundedState.SpinB -> onExitOfSpinB()
         }
     }
+
+
+    private fun onExitOfBoundedA() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:84 :: bounded_a :: _state_body
+    }
+
+    private fun onExitOfBoundedB() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:95 :: bounded_b :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:71 :: idle :: _state_body
+    }
+
+    private fun onExitOfSpinA() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:104 :: spin_a :: _state_body
+    }
+
+    private fun onExitOfSpinB() {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:125 :: spin_b :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     override fun executeTransitionContent(source: EventlessMacrostepIsBoundedState, transitionIndex: Int) {
         when (source) {
-        is EventlessMacrostepIsBoundedState.BoundedA -> when (transitionIndex) {
-            0 -> {
+            is EventlessMacrostepIsBoundedState.BoundedA -> transitionContentOfBoundedA(transitionIndex)
+            is EventlessMacrostepIsBoundedState.Idle -> transitionContentOfIdle(transitionIndex)
+            is EventlessMacrostepIsBoundedState.SpinA -> transitionContentOfSpinA(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `bounded_a`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfBoundedA(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfBoundedAAt0()
+            1 -> transitionContentOfBoundedAAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfBoundedAAt0() {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:85 :: bounded_a :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfBoundedAAt1() {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:90 :: bounded_a :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
             else -> {}
         }
-        is EventlessMacrostepIsBoundedState.Idle -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:72 :: idle :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `spin_a`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSpinA(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSpinAAt0()
+            1 -> transitionContentOfSpinAAt1()
             else -> {}
         }
-        is EventlessMacrostepIsBoundedState.SpinA -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfSpinAAt0() {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:105 :: spin_a :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("spins", "spins"), com.sce.runtime.ScriptSource.lua("_scxml_add(spins, 1)", "spins + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfSpinAAt1() {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:108 :: spin_a :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

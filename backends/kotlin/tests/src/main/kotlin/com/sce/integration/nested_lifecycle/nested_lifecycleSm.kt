@@ -74,18 +74,23 @@ class NestedLifecycleStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: NestedLifecycleState): Boolean = when (state) {
-        is NestedLifecycleState.Active, is NestedLifecycleState.Session, is NestedLifecycleState.Setup -> true
+        is NestedLifecycleState.Active -> true
+        is NestedLifecycleState.Session -> true
+        is NestedLifecycleState.Setup -> true
         else -> false
     }
+
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: NestedLifecycleState): Boolean = when (state) {
         is NestedLifecycleState.Closed -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -102,20 +107,33 @@ class NestedLifecycleStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<NestedLifecycleState, List<NestedLifecycleState>> = mapOf(
-            NestedLifecycleState.Active to listOf(NestedLifecycleState.Working, NestedLifecycleState.Held),
-            NestedLifecycleState.Session to listOf(NestedLifecycleState.Active, NestedLifecycleState.Setup),
-            NestedLifecycleState.Setup to listOf(NestedLifecycleState.Retrying, NestedLifecycleState.Loading, NestedLifecycleState.Ready),
-        )
+        val childStates: Map<NestedLifecycleState, List<NestedLifecycleState>> = LinkedHashMap<NestedLifecycleState, List<NestedLifecycleState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<NestedLifecycleState, List<EntryTarget<NestedLifecycleState, HistoryId>>> = mapOf(
-            NestedLifecycleState.Active to listOf(StateTarget(NestedLifecycleState.Working)),
-            NestedLifecycleState.Session to listOf(StateTarget(NestedLifecycleState.Setup)),
-            NestedLifecycleState.Setup to listOf(StateTarget(NestedLifecycleState.Loading)),
-        )
+        private fun childStatesPart0(table: MutableMap<NestedLifecycleState, List<NestedLifecycleState>>) {
+            table[NestedLifecycleState.Active] = listOf(NestedLifecycleState.Working, NestedLifecycleState.Held)
+            table[NestedLifecycleState.Session] = listOf(NestedLifecycleState.Active, NestedLifecycleState.Setup)
+            table[NestedLifecycleState.Setup] = listOf(NestedLifecycleState.Retrying, NestedLifecycleState.Loading, NestedLifecycleState.Ready)
+        }
+
+
+        val initialTargets: Map<NestedLifecycleState, List<EntryTarget<NestedLifecycleState, HistoryId>>> = LinkedHashMap<NestedLifecycleState, List<EntryTarget<NestedLifecycleState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<NestedLifecycleState, List<EntryTarget<NestedLifecycleState, HistoryId>>>) {
+            table[NestedLifecycleState.Active] = listOf(StateTarget(NestedLifecycleState.Working))
+            table[NestedLifecycleState.Session] = listOf(StateTarget(NestedLifecycleState.Setup))
+            table[NestedLifecycleState.Setup] = listOf(StateTarget(NestedLifecycleState.Loading))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<NestedLifecycleState, HistoryId>> =
             listOf(StateTarget(NestedLifecycleState.Session))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: active's transition 0, as the microstep reads it.
         val transitionActiveAt0 = EnabledTransition<NestedLifecycleState, HistoryId>(
@@ -226,6 +244,7 @@ class NestedLifecycleStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): NestedLifecycleState? = when (stateId) {
         "active" -> NestedLifecycleState.Active
@@ -240,6 +259,7 @@ class NestedLifecycleStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: NestedLifecycleState): String = when (state) {
         is NestedLifecycleState.Active -> "active"
@@ -252,6 +272,7 @@ class NestedLifecycleStateMachine(
         is NestedLifecycleState.Setup -> "setup"
         is NestedLifecycleState.Working -> "working"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: NestedLifecycleState): Int = when (state) {
@@ -266,6 +287,7 @@ class NestedLifecycleStateMachine(
         is NestedLifecycleState.Working -> 2
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): NestedLifecycleEvent? = when (name) {
         "abort" -> NestedLifecycleEvent.Abort
@@ -279,6 +301,7 @@ class NestedLifecycleStateMachine(
         "*" -> NestedLifecycleEvent.Wildcard
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: NestedLifecycleEvent): String? = when (event) {
@@ -297,128 +320,196 @@ class NestedLifecycleStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: NestedLifecycleState,
-        event: NestedLifecycleEvent?
-    ): EnabledTransition<NestedLifecycleState, HistoryId>? = when (state) {
-        is NestedLifecycleState.Active -> when {
-            event is NestedLifecycleEvent.Pause -> transitionActiveAt0
-            event is NestedLifecycleEvent.Reset -> transitionActiveAt1
-            else -> null
-        }
-        is NestedLifecycleState.Held -> when {
-            event is NestedLifecycleEvent.Resume -> transitionHeldAt0
-            event != null -> transitionHeldAt1
-            else -> null
-        }
-        is NestedLifecycleState.Loading -> when {
-            event is NestedLifecycleEvent.Data.Ready -> transitionLoadingAt0
-            event is NestedLifecycleEvent.Data.Failed -> transitionLoadingAt1
-            else -> null
-        }
-        is NestedLifecycleState.Ready -> when {
-            event is NestedLifecycleEvent.Go -> transitionReadyAt0
-            else -> null
-        }
-        is NestedLifecycleState.Retrying -> when {
-            event is NestedLifecycleEvent.Data.Ready -> transitionRetryingAt0
-            (event is NestedLifecycleEvent.Data.Failed || event is NestedLifecycleEvent.Data.Ready) -> transitionRetryingAt1
-            else -> null
-        }
-        is NestedLifecycleState.Session -> when {
-            event is NestedLifecycleEvent.Abort -> transitionSessionAt0
-            else -> null
-        }
-        is NestedLifecycleState.Working -> when {
-            event is NestedLifecycleEvent.Done -> transitionWorkingAt0
-            event is NestedLifecycleEvent.Resume -> transitionWorkingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: NestedLifecycleState, event: NestedLifecycleEvent?): EnabledTransition<NestedLifecycleState, HistoryId>? = when (state) {
+        is NestedLifecycleState.Active -> firstEnabledTransitionOfActive(state, event)
+        is NestedLifecycleState.Held -> firstEnabledTransitionOfHeld(state, event)
+        is NestedLifecycleState.Loading -> firstEnabledTransitionOfLoading(state, event)
+        is NestedLifecycleState.Ready -> firstEnabledTransitionOfReady(state, event)
+        is NestedLifecycleState.Retrying -> firstEnabledTransitionOfRetrying(state, event)
+        is NestedLifecycleState.Session -> firstEnabledTransitionOfSession(state, event)
+        is NestedLifecycleState.Working -> firstEnabledTransitionOfWorking(state, event)
         else -> null
     }
+
+
+    // active's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfActive(state: NestedLifecycleState, event: NestedLifecycleEvent?): EnabledTransition<NestedLifecycleState, HistoryId>? = when {
+        event is NestedLifecycleEvent.Pause -> TransitionsPart0.transitionActiveAt0
+        event is NestedLifecycleEvent.Reset -> TransitionsPart0.transitionActiveAt1
+        else -> null
+    }
+
+
+    // held's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfHeld(state: NestedLifecycleState, event: NestedLifecycleEvent?): EnabledTransition<NestedLifecycleState, HistoryId>? = when {
+        event is NestedLifecycleEvent.Resume -> TransitionsPart0.transitionHeldAt0
+        event != null -> TransitionsPart0.transitionHeldAt1
+        else -> null
+    }
+
+
+    // loading's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfLoading(state: NestedLifecycleState, event: NestedLifecycleEvent?): EnabledTransition<NestedLifecycleState, HistoryId>? = when {
+        event is NestedLifecycleEvent.Data.Ready -> TransitionsPart0.transitionLoadingAt0
+        event is NestedLifecycleEvent.Data.Failed -> TransitionsPart0.transitionLoadingAt1
+        else -> null
+    }
+
+
+    // ready's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReady(state: NestedLifecycleState, event: NestedLifecycleEvent?): EnabledTransition<NestedLifecycleState, HistoryId>? = when {
+        event is NestedLifecycleEvent.Go -> TransitionsPart0.transitionReadyAt0
+        else -> null
+    }
+
+
+    // retrying's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRetrying(state: NestedLifecycleState, event: NestedLifecycleEvent?): EnabledTransition<NestedLifecycleState, HistoryId>? = when {
+        event is NestedLifecycleEvent.Data.Ready -> TransitionsPart0.transitionRetryingAt0
+        (event is NestedLifecycleEvent.Data.Failed || event is NestedLifecycleEvent.Data.Ready) -> TransitionsPart0.transitionRetryingAt1
+        else -> null
+    }
+
+
+    // session's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSession(state: NestedLifecycleState, event: NestedLifecycleEvent?): EnabledTransition<NestedLifecycleState, HistoryId>? = when {
+        event is NestedLifecycleEvent.Abort -> TransitionsPart0.transitionSessionAt0
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: NestedLifecycleState, event: NestedLifecycleEvent?): EnabledTransition<NestedLifecycleState, HistoryId>? = when {
+        event is NestedLifecycleEvent.Done -> TransitionsPart0.transitionWorkingAt0
+        event is NestedLifecycleEvent.Resume -> TransitionsPart0.transitionWorkingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: nested_lifecycle.scxml:27 :: _machine
     override fun onEntry(state: NestedLifecycleState, isDefaultEntry: Boolean) {
         when (state) {
-            is NestedLifecycleState.Active -> {
+            is NestedLifecycleState.Active -> onEntryOfActive()
+            is NestedLifecycleState.Closed -> onEntryOfClosed()
+            is NestedLifecycleState.Held -> onEntryOfHeld()
+            is NestedLifecycleState.Loading -> onEntryOfLoading()
+            is NestedLifecycleState.Ready -> onEntryOfReady()
+            is NestedLifecycleState.Retrying -> onEntryOfRetrying()
+            is NestedLifecycleState.Session -> onEntryOfSession()
+            is NestedLifecycleState.Setup -> onEntryOfSetup()
+            is NestedLifecycleState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfActive() {
                 // SCE-MAP: nested_lifecycle.scxml:36 :: active :: _state_body
-            }
-            is NestedLifecycleState.Closed -> {
+    }
+
+    private fun onEntryOfClosed() {
                 // SCE-MAP: nested_lifecycle.scxml:63 :: closed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is NestedLifecycleState.Held -> {
+    }
+
+    private fun onEntryOfHeld() {
                 // SCE-MAP: nested_lifecycle.scxml:43 :: held :: _state_body
-            }
-            is NestedLifecycleState.Loading -> {
+    }
+
+    private fun onEntryOfLoading() {
                 // SCE-MAP: nested_lifecycle.scxml:54 :: loading :: _state_body
-            }
-            is NestedLifecycleState.Ready -> {
+    }
+
+    private fun onEntryOfReady() {
                 // SCE-MAP: nested_lifecycle.scxml:58 :: ready :: _state_body
-            }
-            is NestedLifecycleState.Retrying -> {
+    }
+
+    private fun onEntryOfRetrying() {
                 // SCE-MAP: nested_lifecycle.scxml:50 :: retrying :: _state_body
-            }
-            is NestedLifecycleState.Session -> {
+    }
+
+    private fun onEntryOfSession() {
                 // SCE-MAP: nested_lifecycle.scxml:34 :: session :: _state_body
-            }
-            is NestedLifecycleState.Setup -> {
+    }
+
+    private fun onEntryOfSetup() {
                 // SCE-MAP: nested_lifecycle.scxml:48 :: setup :: _state_body
-            }
-            is NestedLifecycleState.Working -> {
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: nested_lifecycle.scxml:39 :: working :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: nested_lifecycle.scxml:27 :: _machine
     override fun onExit(state: NestedLifecycleState) {
         when (state) {
-            is NestedLifecycleState.Active -> {
-                // SCE-MAP: nested_lifecycle.scxml:36 :: active :: _state_body
-            }
-            is NestedLifecycleState.Closed -> {
-                // SCE-MAP: nested_lifecycle.scxml:63 :: closed :: _state_body
-            }
-            is NestedLifecycleState.Held -> {
-                // SCE-MAP: nested_lifecycle.scxml:43 :: held :: _state_body
-            }
-            is NestedLifecycleState.Loading -> {
-                // SCE-MAP: nested_lifecycle.scxml:54 :: loading :: _state_body
-            }
-            is NestedLifecycleState.Ready -> {
-                // SCE-MAP: nested_lifecycle.scxml:58 :: ready :: _state_body
-            }
-            is NestedLifecycleState.Retrying -> {
-                // SCE-MAP: nested_lifecycle.scxml:50 :: retrying :: _state_body
-            }
-            is NestedLifecycleState.Session -> {
-                // SCE-MAP: nested_lifecycle.scxml:34 :: session :: _state_body
-            }
-            is NestedLifecycleState.Setup -> {
-                // SCE-MAP: nested_lifecycle.scxml:48 :: setup :: _state_body
-            }
-            is NestedLifecycleState.Working -> {
-                // SCE-MAP: nested_lifecycle.scxml:39 :: working :: _state_body
-            }
+            is NestedLifecycleState.Active -> onExitOfActive()
+            is NestedLifecycleState.Closed -> onExitOfClosed()
+            is NestedLifecycleState.Held -> onExitOfHeld()
+            is NestedLifecycleState.Loading -> onExitOfLoading()
+            is NestedLifecycleState.Ready -> onExitOfReady()
+            is NestedLifecycleState.Retrying -> onExitOfRetrying()
+            is NestedLifecycleState.Session -> onExitOfSession()
+            is NestedLifecycleState.Setup -> onExitOfSetup()
+            is NestedLifecycleState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfActive() {
+                // SCE-MAP: nested_lifecycle.scxml:36 :: active :: _state_body
+    }
+
+    private fun onExitOfClosed() {
+                // SCE-MAP: nested_lifecycle.scxml:63 :: closed :: _state_body
+    }
+
+    private fun onExitOfHeld() {
+                // SCE-MAP: nested_lifecycle.scxml:43 :: held :: _state_body
+    }
+
+    private fun onExitOfLoading() {
+                // SCE-MAP: nested_lifecycle.scxml:54 :: loading :: _state_body
+    }
+
+    private fun onExitOfReady() {
+                // SCE-MAP: nested_lifecycle.scxml:58 :: ready :: _state_body
+    }
+
+    private fun onExitOfRetrying() {
+                // SCE-MAP: nested_lifecycle.scxml:50 :: retrying :: _state_body
+    }
+
+    private fun onExitOfSession() {
+                // SCE-MAP: nested_lifecycle.scxml:34 :: session :: _state_body
+    }
+
+    private fun onExitOfSetup() {
+                // SCE-MAP: nested_lifecycle.scxml:48 :: setup :: _state_body
+    }
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: nested_lifecycle.scxml:39 :: working :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: nested_lifecycle.scxml:27 :: _machine
     override fun executeTransitionContent(source: NestedLifecycleState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

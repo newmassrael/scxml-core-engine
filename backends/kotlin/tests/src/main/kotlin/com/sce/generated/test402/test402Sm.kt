@@ -71,6 +71,7 @@ class Test402StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: Test402State): Boolean = when (state) {
@@ -78,11 +79,14 @@ class Test402StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test402State): Boolean = when (state) {
-        is Test402State.Fail, is Test402State.Pass -> true
+        is Test402State.Fail -> true
+        is Test402State.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -99,16 +103,29 @@ class Test402StateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<Test402State, List<Test402State>> = mapOf(
-            Test402State.S0 to listOf(Test402State.S01, Test402State.S02, Test402State.S03),
-        )
+        val childStates: Map<Test402State, List<Test402State>> = LinkedHashMap<Test402State, List<Test402State>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<Test402State, List<EntryTarget<Test402State, HistoryId>>> = mapOf(
-            Test402State.S0 to listOf(StateTarget(Test402State.S01)),
-        )
+        private fun childStatesPart0(table: MutableMap<Test402State, List<Test402State>>) {
+            table[Test402State.S0] = listOf(Test402State.S01, Test402State.S02, Test402State.S03)
+        }
+
+
+        val initialTargets: Map<Test402State, List<EntryTarget<Test402State, HistoryId>>> = LinkedHashMap<Test402State, List<EntryTarget<Test402State, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<Test402State, List<EntryTarget<Test402State, HistoryId>>>) {
+            table[Test402State.S0] = listOf(StateTarget(Test402State.S01))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test402State, HistoryId>> =
             listOf(StateTarget(Test402State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test402State, HistoryId>(
@@ -174,6 +191,7 @@ class Test402StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test402State? = when (stateId) {
         "fail" -> Test402State.Fail
@@ -185,6 +203,7 @@ class Test402StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test402State): String = when (state) {
         is Test402State.Fail -> "fail"
@@ -195,6 +214,7 @@ class Test402StateMachine(
         is Test402State.S03 -> "s03"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test402State): Int = when (state) {
         is Test402State.Fail -> 5
@@ -204,6 +224,7 @@ class Test402StateMachine(
         is Test402State.S02 -> 2
         is Test402State.S03 -> 3
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test402Event? = when (name) {
@@ -216,6 +237,7 @@ class Test402StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test402Event): String? = when (event) {
         is Test402Event.Error.Self -> "error"
@@ -225,6 +247,7 @@ class Test402StateMachine(
         is Test402Event.Timeout -> "timeout"
         is Test402Event.Wildcard -> "*"
     }
+
 
 
 
@@ -459,48 +482,76 @@ class Test402StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test402State,
-        event: Test402Event?
-    ): EnabledTransition<Test402State, HistoryId>? = when (state) {
-        is Test402State.S0 -> when {
-            event is Test402Event.Timeout -> transitionS0At0
-            else -> null
-        }
-        is Test402State.S01 -> when {
-            event is Test402Event.Event1 -> transitionS01At0
-            event != null -> transitionS01At1
-            else -> null
-        }
-        is Test402State.S02 -> when {
-            (event is Test402Event.Error || event is Test402Event.Error.Execution) -> transitionS02At0
-            event != null -> transitionS02At1
-            else -> null
-        }
-        is Test402State.S03 -> when {
-            event is Test402Event.Event2 -> transitionS03At0
-            event != null -> transitionS03At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test402State, event: Test402Event?): EnabledTransition<Test402State, HistoryId>? = when (state) {
+        is Test402State.S0 -> firstEnabledTransitionOfS0(state, event)
+        is Test402State.S01 -> firstEnabledTransitionOfS01(state, event)
+        is Test402State.S02 -> firstEnabledTransitionOfS02(state, event)
+        is Test402State.S03 -> firstEnabledTransitionOfS03(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test402State, event: Test402Event?): EnabledTransition<Test402State, HistoryId>? = when {
+        event is Test402Event.Timeout -> TransitionsPart0.transitionS0At0
+        else -> null
+    }
+
+
+    // s01's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS01(state: Test402State, event: Test402Event?): EnabledTransition<Test402State, HistoryId>? = when {
+        event is Test402Event.Event1 -> TransitionsPart0.transitionS01At0
+        event != null -> TransitionsPart0.transitionS01At1
+        else -> null
+    }
+
+
+    // s02's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS02(state: Test402State, event: Test402Event?): EnabledTransition<Test402State, HistoryId>? = when {
+        (event is Test402Event.Error || event is Test402Event.Error.Execution) -> TransitionsPart0.transitionS02At0
+        event != null -> TransitionsPart0.transitionS02At1
+        else -> null
+    }
+
+
+    // s03's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS03(state: Test402State, event: Test402Event?): EnabledTransition<Test402State, HistoryId>? = when {
+        event is Test402Event.Event2 -> TransitionsPart0.transitionS03At0
+        event != null -> TransitionsPart0.transitionS03At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test402.scxml:6 :: _machine
     override fun onEntry(state: Test402State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test402State.Fail -> {
+            is Test402State.Fail -> onEntryOfFail()
+            is Test402State.Pass -> onEntryOfPass()
+            is Test402State.S0 -> onEntryOfS0()
+            is Test402State.S01 -> onEntryOfS01()
+            is Test402State.S02 -> onEntryOfS02()
+            is Test402State.S03 -> onEntryOfS03()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test402.scxml:43 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test402State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test402.scxml:42 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test402State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test402.scxml:9 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -517,8 +568,9 @@ class Test402StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is Test402State.S01 -> {
+    }
+
+    private fun onEntryOfS01() {
                 // SCE-MAP: test402.scxml:16 :: s01 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -536,55 +588,82 @@ class Test402StateMachine(
                 return@run
             }
                 }
-            }
-            is Test402State.S02 -> {
+    }
+
+    private fun onEntryOfS02() {
                 // SCE-MAP: test402.scxml:30 :: s02 :: _state_body
-            }
-            is Test402State.S03 -> {
+    }
+
+    private fun onEntryOfS03() {
                 // SCE-MAP: test402.scxml:35 :: s03 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test402.scxml:6 :: _machine
     override fun onExit(state: Test402State) {
         when (state) {
-            is Test402State.Fail -> {
-                // SCE-MAP: test402.scxml:43 :: fail :: _state_body
-            }
-            is Test402State.Pass -> {
-                // SCE-MAP: test402.scxml:42 :: pass :: _state_body
-            }
-            is Test402State.S0 -> {
-                // SCE-MAP: test402.scxml:9 :: s0 :: _state_body
-            }
-            is Test402State.S01 -> {
-                // SCE-MAP: test402.scxml:16 :: s01 :: _state_body
-            }
-            is Test402State.S02 -> {
-                // SCE-MAP: test402.scxml:30 :: s02 :: _state_body
-            }
-            is Test402State.S03 -> {
-                // SCE-MAP: test402.scxml:35 :: s03 :: _state_body
-            }
+            is Test402State.Fail -> onExitOfFail()
+            is Test402State.Pass -> onExitOfPass()
+            is Test402State.S0 -> onExitOfS0()
+            is Test402State.S01 -> onExitOfS01()
+            is Test402State.S02 -> onExitOfS02()
+            is Test402State.S03 -> onExitOfS03()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test402.scxml:43 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test402.scxml:42 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test402.scxml:9 :: s0 :: _state_body
+    }
+
+    private fun onExitOfS01() {
+                // SCE-MAP: test402.scxml:16 :: s01 :: _state_body
+    }
+
+    private fun onExitOfS02() {
+                // SCE-MAP: test402.scxml:30 :: s02 :: _state_body
+    }
+
+    private fun onExitOfS03() {
+                // SCE-MAP: test402.scxml:35 :: s03 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test402.scxml:6 :: _machine
     override fun executeTransitionContent(source: Test402State, transitionIndex: Int) {
         when (source) {
-        is Test402State.S01 -> when (transitionIndex) {
-            0 -> {
+            is Test402State.S01 -> transitionContentOfS01(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s01`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS01(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS01At0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS01At0() {
                 // SCE-MAP: test402.scxml:24 :: s01 :: _transition_0
 
             raiseInternal(Test402Event.Event2)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

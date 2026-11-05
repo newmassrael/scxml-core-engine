@@ -87,6 +87,10 @@ class StaticInvokeTreeStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.answers?.let { vAnswers = it }
         params.reports?.let { vReports = it }
         params.stamps?.let { vStamps = it }
@@ -166,15 +170,17 @@ class StaticInvokeTreeStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "answers" to SavedValues.of(vAnswers),
-            "reports" to SavedValues.of(vReports),
-            "stamps" to SavedValues.of(vStamps),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "answers" to SavedValues.of(vAnswers)
+        variables += "reports" to SavedValues.of(vReports)
+        variables += "stamps" to SavedValues.of(vStamps)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -199,13 +205,23 @@ class StaticInvokeTreeStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("answers"), "answers")
         val saved2 = SavedValues.uint32(savedGrown.variable("reports"), "reports")
         val saved3 = SavedValues.uint32(savedGrown.variable("stamps"), "stamps")
-        vAnswers = saved1
-        vReports = saved2
-        vStamps = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vAnswers = saved1
+            vReports = saved2
+            vStamps = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -218,6 +234,10 @@ class StaticInvokeTreeStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("answers"), "answers")
         SavedValues.uint32(savedGrown.variable("reports"), "reports")
         SavedValues.uint32(savedGrown.variable("stamps"), "stamps")
@@ -260,6 +280,9 @@ class StaticInvokeTreeStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticInvokeTreeState, HistoryId>> =
             listOf(StateTarget(StaticInvokeTreeState.Working))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: resting's transition 0, as the microstep reads it.
         val transitionRestingAt0 = EnabledTransition<StaticInvokeTreeState, HistoryId>(
@@ -343,6 +366,7 @@ class StaticInvokeTreeStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticInvokeTreeState? = when (stateId) {
         "resting" -> StaticInvokeTreeState.Resting
@@ -350,17 +374,20 @@ class StaticInvokeTreeStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticInvokeTreeState): String = when (state) {
         is StaticInvokeTreeState.Resting -> "resting"
         is StaticInvokeTreeState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticInvokeTreeState): Int = when (state) {
         is StaticInvokeTreeState.Resting -> 1
         is StaticInvokeTreeState.Working -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticInvokeTreeEvent? = when (name) {
@@ -380,6 +407,7 @@ class StaticInvokeTreeStateMachine(
         "swap" -> StaticInvokeTreeEvent.Swap
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticInvokeTreeEvent): String? = when (event) {
@@ -403,46 +431,60 @@ class StaticInvokeTreeStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticInvokeTreeState,
-        event: StaticInvokeTreeEvent?
-    ): EnabledTransition<StaticInvokeTreeState, HistoryId>? = when (state) {
-        is StaticInvokeTreeState.Resting -> when {
-            event is StaticInvokeTreeEvent.Back -> transitionRestingAt0
-            else -> null
-        }
-        is StaticInvokeTreeState.Working -> when {
-            event is StaticInvokeTreeEvent.Go -> transitionWorkingAt0
-            event is StaticInvokeTreeEvent.Swap -> transitionWorkingAt1
-            event is StaticInvokeTreeEvent.Ask -> transitionWorkingAt2
-            event is StaticInvokeTreeEvent.Arm -> transitionWorkingAt3
-            event is StaticInvokeTreeEvent.Answer -> transitionWorkingAt4
-            event is StaticInvokeTreeEvent.Report -> transitionWorkingAt5
-            event is StaticInvokeTreeEvent.Stamped -> transitionWorkingAt6
-            event is StaticInvokeTreeEvent.Rest -> transitionWorkingAt7
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticInvokeTreeState, event: StaticInvokeTreeEvent?): EnabledTransition<StaticInvokeTreeState, HistoryId>? = when (state) {
+        is StaticInvokeTreeState.Resting -> firstEnabledTransitionOfResting(state, event)
+        is StaticInvokeTreeState.Working -> firstEnabledTransitionOfWorking(state, event)
     }
+
+
+    // resting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfResting(state: StaticInvokeTreeState, event: StaticInvokeTreeEvent?): EnabledTransition<StaticInvokeTreeState, HistoryId>? = when {
+        event is StaticInvokeTreeEvent.Back -> TransitionsPart0.transitionRestingAt0
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: StaticInvokeTreeState, event: StaticInvokeTreeEvent?): EnabledTransition<StaticInvokeTreeState, HistoryId>? = when {
+        event is StaticInvokeTreeEvent.Go -> TransitionsPart0.transitionWorkingAt0
+        event is StaticInvokeTreeEvent.Swap -> TransitionsPart0.transitionWorkingAt1
+        event is StaticInvokeTreeEvent.Ask -> TransitionsPart0.transitionWorkingAt2
+        event is StaticInvokeTreeEvent.Arm -> TransitionsPart0.transitionWorkingAt3
+        event is StaticInvokeTreeEvent.Answer -> TransitionsPart0.transitionWorkingAt4
+        event is StaticInvokeTreeEvent.Report -> TransitionsPart0.transitionWorkingAt5
+        event is StaticInvokeTreeEvent.Stamped -> TransitionsPart0.transitionWorkingAt6
+        event is StaticInvokeTreeEvent.Rest -> TransitionsPart0.transitionWorkingAt7
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_invoke_tree.scxml:23 :: _machine
     override fun onEntry(state: StaticInvokeTreeState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticInvokeTreeState.Resting -> {
+            is StaticInvokeTreeState.Resting -> onEntryOfResting()
+            is StaticInvokeTreeState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfResting() {
                 // SCE-MAP: static_invoke_tree.scxml:102 :: resting :: _state_body
-            }
-            is StaticInvokeTreeState.Working -> {
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: static_invoke_tree.scxml:30 :: working :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("worker", state)
-            }
-        }
+                deferStaticInvoke("worker", StaticInvokeTreeState.Working)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -455,9 +497,20 @@ class StaticInvokeTreeStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: StaticInvokeTreeState) {
         when (invokeId) {
-            "worker" -> run {
+            "worker" -> startInvokeOfWorkingAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfWorkingAt0(state: StaticInvokeTreeState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "working.${nextInvokeStart("worker")}.worker"
@@ -469,8 +522,6 @@ class StaticInvokeTreeStateMachine(
                     startInvoke("worker", childSM, true, StaticInvokeTreeEvent.Done.Invoke, "", generatedInvokeId, "", "static_invoke_tree__sce_synth_invoke__worker", "worker")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -479,8 +530,18 @@ class StaticInvokeTreeStateMachine(
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
     override fun buildSavedChild(child: SavedChild): ResumedChild<StaticInvokeTreeEvent> = when (child.id) {
-        "worker" -> if (child.document == "static_invoke_tree__sce_synth_invoke__worker") {
+        "worker" -> savedChildOfWorkingAt0(child)
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
+    }
+
+
+    private fun savedChildOfWorkingAt0(child: SavedChild): ResumedChild<StaticInvokeTreeEvent> =
+        if (child.document == "static_invoke_tree__sce_synth_invoke__worker") {
             ResumedChild(
                 StaticInvokeTreeSceSynthInvokeWorkerStateMachine(),
                 true, StaticInvokeTreeEvent.Done.Invoke, "", "", "worker",
@@ -488,33 +549,59 @@ class StaticInvokeTreeStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_invoke_tree.scxml:23 :: _machine
     override fun onExit(state: StaticInvokeTreeState) {
         when (state) {
-            is StaticInvokeTreeState.Resting -> {
-                // SCE-MAP: static_invoke_tree.scxml:102 :: resting :: _state_body
-            }
-            is StaticInvokeTreeState.Working -> {
-                // SCE-MAP: static_invoke_tree.scxml:30 :: working :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("worker")
-            }
+            is StaticInvokeTreeState.Resting -> onExitOfResting()
+            is StaticInvokeTreeState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfResting() {
+                // SCE-MAP: static_invoke_tree.scxml:102 :: resting :: _state_body
+    }
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: static_invoke_tree.scxml:30 :: working :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticInvokeTreeState.Working)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("worker")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_invoke_tree.scxml:23 :: _machine
     override fun executeTransitionContent(source: StaticInvokeTreeState, transitionIndex: Int) {
         when (source) {
-        is StaticInvokeTreeState.Working -> when (transitionIndex) {
-            2 -> {
+            is StaticInvokeTreeState.Working -> transitionContentOfWorking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            2 -> transitionContentOfWorkingAt2()
+            3 -> transitionContentOfWorkingAt3()
+            4 -> transitionContentOfWorkingAt4()
+            5 -> transitionContentOfWorkingAt5()
+            6 -> transitionContentOfWorkingAt6()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWorkingAt2() {
                 // SCE-MAP: static_invoke_tree.scxml:85 :: working :: _transition_2
 
 
@@ -533,8 +620,9 @@ class StaticInvokeTreeStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfWorkingAt3() {
                 // SCE-MAP: static_invoke_tree.scxml:88 :: working :: _transition_3
 
 
@@ -550,31 +638,29 @@ class StaticInvokeTreeStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfWorkingAt4() {
                 // SCE-MAP: static_invoke_tree.scxml:91 :: working :: _transition_4
 
             if (try { vAnswers = com.sce.forge.runtime.SceChecked.add(vAnswers, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, "<assign location='answers'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfWorkingAt5() {
                 // SCE-MAP: static_invoke_tree.scxml:94 :: working :: _transition_5
 
             if (try { vReports = com.sce.forge.runtime.SceChecked.add(vReports, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, "<assign location='reports'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfWorkingAt6() {
                 // SCE-MAP: static_invoke_tree.scxml:97 :: working :: _transition_6
 
             if (try { vStamps = com.sce.forge.runtime.SceChecked.add(vStamps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, "<assign location='stamps'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

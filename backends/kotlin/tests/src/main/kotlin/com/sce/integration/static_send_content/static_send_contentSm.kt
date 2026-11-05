@@ -142,6 +142,10 @@ class StaticSendContentStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.level?.let { vLevel = it }
         params.relays?.let { vRelays = it }
     }
@@ -245,16 +249,18 @@ class StaticSendContentStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "shown" to vShown.toSaved(),
-            "received" to vReceived.toSaved(),
-            "level" to SavedValues.of(vLevel),
-            "relays" to SavedValues.of(vRelays),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "shown" to vShown.toSaved()
+        variables += "received" to vReceived.toSaved()
+        variables += "level" to SavedValues.of(vLevel)
+        variables += "relays" to SavedValues.of(vRelays)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -279,15 +285,25 @@ class StaticSendContentStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticSendContentViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
         val saved2 = StaticSendContentViewModeEnum.fromSaved(savedGrown.variable("received"), "received")
         val saved3 = SavedValues.uint8(savedGrown.variable("level"), "level")
         val saved4 = SavedValues.uint32(savedGrown.variable("relays"), "relays")
-        vShown = saved1
-        vReceived = saved2
-        vLevel = saved3
-        vRelays = saved4
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vShown = saved1
+            vReceived = saved2
+            vLevel = saved3
+            vRelays = saved4
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -300,6 +316,10 @@ class StaticSendContentStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticSendContentViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
         StaticSendContentViewModeEnum.fromSaved(savedGrown.variable("received"), "received")
         SavedValues.uint8(savedGrown.variable("level"), "level")
@@ -402,6 +422,9 @@ class StaticSendContentStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticSendContentState, HistoryId>> =
             listOf(StateTarget(StaticSendContentState.Viewing))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: viewing's transition 0, as the microstep reads it.
         val transitionViewingAt0 = EnabledTransition<StaticSendContentState, HistoryId>(
@@ -440,21 +463,25 @@ class StaticSendContentStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticSendContentState? = when (stateId) {
         "viewing" -> StaticSendContentState.Viewing
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticSendContentState): String = when (state) {
         is StaticSendContentState.Viewing -> "viewing"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticSendContentState): Int = when (state) {
         is StaticSendContentState.Viewing -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticSendContentEvent? = when (name) {
@@ -465,6 +492,7 @@ class StaticSendContentStateMachine(
         "view.shown" -> StaticSendContentEvent.View.Shown
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticSendContentEvent): String? = when (event) {
@@ -479,52 +507,84 @@ class StaticSendContentStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticSendContentState,
-        event: StaticSendContentEvent?
-    ): EnabledTransition<StaticSendContentState, HistoryId>? = when (state) {
-        is StaticSendContentState.Viewing -> when {
-            event is StaticSendContentEvent.Bump -> transitionViewingAt0
-            event is StaticSendContentEvent.Send.Record -> transitionViewingAt1
-            event is StaticSendContentEvent.View.Shown -> transitionViewingAt2
-            event is StaticSendContentEvent.View.Relayed -> transitionViewingAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticSendContentState, event: StaticSendContentEvent?): EnabledTransition<StaticSendContentState, HistoryId>? = when (state) {
+        is StaticSendContentState.Viewing -> firstEnabledTransitionOfViewing(state, event)
     }
+
+
+    // viewing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfViewing(state: StaticSendContentState, event: StaticSendContentEvent?): EnabledTransition<StaticSendContentState, HistoryId>? = when {
+        event is StaticSendContentEvent.Bump -> TransitionsPart0.transitionViewingAt0
+        event is StaticSendContentEvent.Send.Record -> TransitionsPart0.transitionViewingAt1
+        event is StaticSendContentEvent.View.Shown -> TransitionsPart0.transitionViewingAt2
+        event is StaticSendContentEvent.View.Relayed -> TransitionsPart0.transitionViewingAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_send_content.scxml:14 :: _machine
     override fun onEntry(state: StaticSendContentState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticSendContentState.Viewing -> {
-                // SCE-MAP: static_send_content.scxml:28 :: viewing :: _state_body
-            }
+            is StaticSendContentState.Viewing -> onEntryOfViewing()
         }
+    }
+
+
+    private fun onEntryOfViewing() {
+                // SCE-MAP: static_send_content.scxml:28 :: viewing :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_send_content.scxml:14 :: _machine
     override fun onExit(state: StaticSendContentState) {
         when (state) {
-            is StaticSendContentState.Viewing -> {
-                // SCE-MAP: static_send_content.scxml:28 :: viewing :: _state_body
-            }
+            is StaticSendContentState.Viewing -> onExitOfViewing()
         }
     }
+
+
+    private fun onExitOfViewing() {
+                // SCE-MAP: static_send_content.scxml:28 :: viewing :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_send_content.scxml:14 :: _machine
     override fun executeTransitionContent(source: StaticSendContentState, transitionIndex: Int) {
         when (source) {
-        is StaticSendContentState.Viewing -> when (transitionIndex) {
-            0 -> {
+            is StaticSendContentState.Viewing -> transitionContentOfViewing(transitionIndex)
+        }
+    }
+
+
+    // The content of `viewing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfViewing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfViewingAt0()
+            1 -> transitionContentOfViewingAt1()
+            2 -> transitionContentOfViewingAt2()
+            3 -> transitionContentOfViewingAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfViewingAt0() {
                 // SCE-MAP: static_send_content.scxml:29 :: viewing :: _transition_0
 
             if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
@@ -532,8 +592,9 @@ class StaticSendContentStateMachine(
             }
 
             vShown = vShown.copy(layout = StaticSendContentViewModeEnum.WEEK)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfViewingAt1() {
                 // SCE-MAP: static_send_content.scxml:33 :: viewing :: _transition_1
 
 
@@ -552,8 +613,9 @@ class StaticSendContentStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfViewingAt2() {
                 // SCE-MAP: static_send_content.scxml:38 :: viewing :: _transition_2
                 if (pendingViewShownPayload == null) {
                     return
@@ -575,8 +637,9 @@ class StaticSendContentStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfViewingAt3() {
                 // SCE-MAP: static_send_content.scxml:43 :: viewing :: _transition_3
                 if (pendingViewRelayedPayload == null) {
                     return
@@ -589,9 +652,5 @@ class StaticSendContentStateMachine(
             if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

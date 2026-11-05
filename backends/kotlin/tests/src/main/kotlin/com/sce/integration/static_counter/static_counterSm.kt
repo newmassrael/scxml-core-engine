@@ -68,6 +68,10 @@ class StaticCounterStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.count?.let { vCount = it }
         params.ready?.let { vReady = it }
         params.step?.let { vStep = it }
@@ -145,15 +149,17 @@ class StaticCounterStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "count" to SavedValues.of(vCount),
-            "ready" to SavedValues.of(vReady),
-            "step" to SavedValues.of(vStep),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "count" to SavedValues.of(vCount)
+        variables += "ready" to SavedValues.of(vReady)
+        variables += "step" to SavedValues.of(vStep)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -178,13 +184,23 @@ class StaticCounterStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("count"), "count")
         val saved2 = SavedValues.bool(savedGrown.variable("ready"), "ready")
         val saved3 = SavedValues.uint32(savedGrown.variable("step"), "step")
-        vCount = saved1
-        vReady = saved2
-        vStep = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vCount = saved1
+            vReady = saved2
+            vStep = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -197,6 +213,10 @@ class StaticCounterStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("count"), "count")
         SavedValues.bool(savedGrown.variable("ready"), "ready")
         SavedValues.uint32(savedGrown.variable("step"), "step")
@@ -227,6 +247,7 @@ class StaticCounterStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticCounterState, HistoryId>>
@@ -235,6 +256,9 @@ class StaticCounterStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticCounterState, HistoryId>> =
             listOf(StateTarget(StaticCounterState.Counting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: counting's transition 0, as the microstep reads it.
         val transitionCountingAt0 = EnabledTransition<StaticCounterState, HistoryId>(
@@ -255,6 +279,7 @@ class StaticCounterStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticCounterState? = when (stateId) {
         "counting" -> StaticCounterState.Counting
@@ -262,11 +287,13 @@ class StaticCounterStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticCounterState): String = when (state) {
         is StaticCounterState.Counting -> "counting"
         is StaticCounterState.Done -> "done"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticCounterState): Int = when (state) {
@@ -274,12 +301,14 @@ class StaticCounterStateMachine(
         is StaticCounterState.Done -> 1
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticCounterEvent? = when (name) {
         "go" -> StaticCounterEvent.Go
         "tick" -> StaticCounterEvent.Tick
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticCounterEvent): String? = when (event) {
@@ -291,64 +320,98 @@ class StaticCounterStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticCounterState,
-        event: StaticCounterEvent?
-    ): EnabledTransition<StaticCounterState, HistoryId>? = when (state) {
-        is StaticCounterState.Counting -> when {
-            event is StaticCounterEvent.Tick && vCount < 10.toUInt() && isStateActive("counting") -> transitionCountingAt0
-            event is StaticCounterEvent.Go && vReady -> transitionCountingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticCounterState, event: StaticCounterEvent?): EnabledTransition<StaticCounterState, HistoryId>? = when (state) {
+        is StaticCounterState.Counting -> firstEnabledTransitionOfCounting(state, event)
         else -> null
     }
+
+
+    // counting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCounting(state: StaticCounterState, event: StaticCounterEvent?): EnabledTransition<StaticCounterState, HistoryId>? = when {
+        event is StaticCounterEvent.Tick && vCount < 10.toUInt() && isStateActive("counting") -> TransitionsPart0.transitionCountingAt0
+        event is StaticCounterEvent.Go && vReady -> TransitionsPart0.transitionCountingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_counter.scxml:13 :: _machine
     override fun onEntry(state: StaticCounterState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticCounterState.Counting -> {
+            is StaticCounterState.Counting -> onEntryOfCounting()
+            is StaticCounterState.Done -> onEntryOfDone()
+        }
+    }
+
+
+    private fun onEntryOfCounting() {
                 // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             println("count: " + vCount)
                 }
-            }
-            is StaticCounterState.Done -> {
+    }
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_counter.scxml:13 :: _machine
     override fun onExit(state: StaticCounterState) {
         when (state) {
-            is StaticCounterState.Counting -> {
-                // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
-            }
-            is StaticCounterState.Done -> {
-                // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
-            }
+            is StaticCounterState.Counting -> onExitOfCounting()
+            is StaticCounterState.Done -> onExitOfDone()
         }
     }
+
+
+    private fun onExitOfCounting() {
+                // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
+    }
+
+    private fun onExitOfDone() {
+                // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_counter.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticCounterState, transitionIndex: Int) {
         when (source) {
-        is StaticCounterState.Counting -> when (transitionIndex) {
-            0 -> {
+            is StaticCounterState.Counting -> transitionContentOfCounting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `counting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfCounting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfCountingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfCountingAt0() {
                 // SCE-MAP: static_counter.scxml:22 :: counting :: _transition_0
 
             if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, vStep); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
@@ -363,10 +426,5 @@ class StaticCounterStateMachine(
 
             vReady = false
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

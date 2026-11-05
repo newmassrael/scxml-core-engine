@@ -79,6 +79,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<AChildMaySendManyEventsInOneTickState, HistoryId>>
@@ -87,6 +88,9 @@ class AChildMaySendManyEventsInOneTickStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AChildMaySendManyEventsInOneTickState, HistoryId>> =
             listOf(StateTarget(AChildMaySendManyEventsInOneTickState.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<AChildMaySendManyEventsInOneTickState, HistoryId>(
@@ -107,6 +111,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AChildMaySendManyEventsInOneTickState? = when (stateId) {
         "done" -> AChildMaySendManyEventsInOneTickState.Done
@@ -114,17 +119,20 @@ class AChildMaySendManyEventsInOneTickStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AChildMaySendManyEventsInOneTickState): String = when (state) {
         is AChildMaySendManyEventsInOneTickState.Done -> "done"
         is AChildMaySendManyEventsInOneTickState.S0 -> "s0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AChildMaySendManyEventsInOneTickState): Int = when (state) {
         is AChildMaySendManyEventsInOneTickState.Done -> 1
         is AChildMaySendManyEventsInOneTickState.S0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AChildMaySendManyEventsInOneTickEvent? = when (name) {
@@ -135,6 +143,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AChildMaySendManyEventsInOneTickEvent): String? = when (event) {
         is AChildMaySendManyEventsInOneTickEvent.Done.Invoke -> "done.invoke"
@@ -142,6 +151,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
         is AChildMaySendManyEventsInOneTickEvent.Finish -> "finish"
         is AChildMaySendManyEventsInOneTickEvent.Tick -> "tick"
     }
+
 
 
 
@@ -171,13 +181,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'ticks' with expr
-        try {
-            val initResult_ticks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "ticks", initResult_ticks)
-        } catch (e: Exception) {
-            raisePlatformError(AChildMaySendManyEventsInOneTickEvent.Error.Execution, "<data id='ticks'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -194,6 +198,17 @@ class AChildMaySendManyEventsInOneTickStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'ticks' with expr
+        try {
+            val initResult_ticks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "ticks", initResult_ticks)
+        } catch (e: Exception) {
+            raisePlatformError(AChildMaySendManyEventsInOneTickEvent.Error.Execution, "<data id='ticks'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -383,34 +398,43 @@ class AChildMaySendManyEventsInOneTickStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AChildMaySendManyEventsInOneTickState,
-        event: AChildMaySendManyEventsInOneTickEvent?
-    ): EnabledTransition<AChildMaySendManyEventsInOneTickState, HistoryId>? = when (state) {
-        is AChildMaySendManyEventsInOneTickState.S0 -> when {
-            event is AChildMaySendManyEventsInOneTickEvent.Tick -> transitionS0At0
-            event is AChildMaySendManyEventsInOneTickEvent.Finish -> transitionS0At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AChildMaySendManyEventsInOneTickState, event: AChildMaySendManyEventsInOneTickEvent?): EnabledTransition<AChildMaySendManyEventsInOneTickState, HistoryId>? = when (state) {
+        is AChildMaySendManyEventsInOneTickState.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: AChildMaySendManyEventsInOneTickState, event: AChildMaySendManyEventsInOneTickEvent?): EnabledTransition<AChildMaySendManyEventsInOneTickState, HistoryId>? = when {
+        event is AChildMaySendManyEventsInOneTickEvent.Tick -> TransitionsPart0.transitionS0At0
+        event is AChildMaySendManyEventsInOneTickEvent.Finish -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:22 :: _machine
     override fun onEntry(state: AChildMaySendManyEventsInOneTickState, isDefaultEntry: Boolean) {
         when (state) {
-            is AChildMaySendManyEventsInOneTickState.Done -> {
+            is AChildMaySendManyEventsInOneTickState.Done -> onEntryOfDone()
+            is AChildMaySendManyEventsInOneTickState.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:66 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AChildMaySendManyEventsInOneTickState.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:30 :: s0 :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("chatty", state)
-            }
-        }
+                deferStaticInvoke("chatty", AChildMaySendManyEventsInOneTickState.S0)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -423,9 +447,20 @@ class AChildMaySendManyEventsInOneTickStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: AChildMaySendManyEventsInOneTickState) {
         when (invokeId) {
-            "chatty" -> run {
+            "chatty" -> startInvokeOfS0At0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfS0At0(state: AChildMaySendManyEventsInOneTickState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "s0.${nextInvokeStart("chatty")}.chatty"
@@ -436,44 +471,61 @@ class AChildMaySendManyEventsInOneTickStateMachine(
                     startInvoke("chatty", childSM, false, AChildMaySendManyEventsInOneTickEvent.Done.Invoke, "", generatedInvokeId, "", "a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty", "chatty")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:22 :: _machine
     override fun onExit(state: AChildMaySendManyEventsInOneTickState) {
         when (state) {
-            is AChildMaySendManyEventsInOneTickState.Done -> {
-                // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:66 :: done :: _state_body
-            }
-            is AChildMaySendManyEventsInOneTickState.S0 -> {
-                // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:30 :: s0 :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("chatty")
-            }
+            is AChildMaySendManyEventsInOneTickState.Done -> onExitOfDone()
+            is AChildMaySendManyEventsInOneTickState.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:66 :: done :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:30 :: s0 :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(AChildMaySendManyEventsInOneTickState.S0)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("chatty")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:22 :: _machine
     override fun executeTransitionContent(source: AChildMaySendManyEventsInOneTickState, transitionIndex: Int) {
         when (source) {
-        is AChildMaySendManyEventsInOneTickState.S0 -> when (transitionIndex) {
-            0 -> {
+            is AChildMaySendManyEventsInOneTickState.S0 -> transitionContentOfS0(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:60 :: s0 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("ticks", "ticks"), com.sce.runtime.ScriptSource.lua("_scxml_add(ticks, 1)", "ticks + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

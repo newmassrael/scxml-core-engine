@@ -49,6 +49,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
         is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> true
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<AutoforwardDoneInvokeSceSynthInvokeInvShortState, HistoryId>>
@@ -59,26 +60,31 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
             listOf(StateTarget(AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AutoforwardDoneInvokeSceSynthInvokeInvShortState? = when (stateId) {
         "over" -> AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState): String = when (state) {
         is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> "over"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState): Int = when (state) {
         is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AutoforwardDoneInvokeSceSynthInvokeInvShortEvent? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -99,42 +105,49 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AutoforwardDoneInvokeSceSynthInvokeInvShortState,
-        event: AutoforwardDoneInvokeSceSynthInvokeInvShortEvent?
-    ): EnabledTransition<AutoforwardDoneInvokeSceSynthInvokeInvShortState, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState, event: AutoforwardDoneInvokeSceSynthInvokeInvShortEvent?): EnabledTransition<AutoforwardDoneInvokeSceSynthInvokeInvShortState, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
     override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState, isDefaultEntry: Boolean) {
         when (state) {
-            is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> {
+            is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> onEntryOfOver()
+        }
+    }
+
+
+    private fun onEntryOfOver() {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5 :: over :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
     override fun onExit(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState) {
         when (state) {
-            is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5 :: over :: _state_body
-            }
+            is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> onExitOfOver()
         }
     }
+
+
+    private fun onExitOfOver() {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5 :: over :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
     override fun executeTransitionContent(source: AutoforwardDoneInvokeSceSynthInvokeInvShortState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

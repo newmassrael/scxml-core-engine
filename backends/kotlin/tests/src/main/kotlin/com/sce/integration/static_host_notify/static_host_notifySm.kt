@@ -313,6 +313,10 @@ class StaticHostNotifyStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.id?.let { vId = it }
         params.title?.let { vTitle = it }
         params.body?.let { vBody = it }
@@ -399,20 +403,22 @@ class StaticHostNotifyStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "id" to SavedValues.of(vId),
-            "title" to SavedValues.of(vTitle),
-            "body" to SavedValues.of(vBody),
-            "at_ms" to SavedValues.of(vAtMs),
-            "outcome" to SavedValues.of(vOutcome),
-            "permission" to SavedValues.of(vPermission),
-            "status" to SavedValues.of(vStatus),
-            "existed" to SavedValues.of(vExisted),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "id" to SavedValues.of(vId)
+        variables += "title" to SavedValues.of(vTitle)
+        variables += "body" to SavedValues.of(vBody)
+        variables += "at_ms" to SavedValues.of(vAtMs)
+        variables += "outcome" to SavedValues.of(vOutcome)
+        variables += "permission" to SavedValues.of(vPermission)
+        variables += "status" to SavedValues.of(vStatus)
+        variables += "existed" to SavedValues.of(vExisted)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -437,6 +443,15 @@ class StaticHostNotifyStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("id"), "id", 64)
         val saved2 = SavedValues.string(savedGrown.variable("title"), "title", 128)
         val saved3 = SavedValues.string(savedGrown.variable("body"), "body", 512)
@@ -445,15 +460,16 @@ class StaticHostNotifyStateMachine(
         val saved6 = SavedValues.string(savedGrown.variable("permission"), "permission", 16)
         val saved7 = SavedValues.string(savedGrown.variable("status"), "status", 16)
         val saved8 = SavedValues.bool(savedGrown.variable("existed"), "existed")
-        vId = saved1
-        vTitle = saved2
-        vBody = saved3
-        vAtMs = saved4
-        vOutcome = saved5
-        vPermission = saved6
-        vStatus = saved7
-        vExisted = saved8
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vId = saved1
+            vTitle = saved2
+            vBody = saved3
+            vAtMs = saved4
+            vOutcome = saved5
+            vPermission = saved6
+            vStatus = saved7
+            vExisted = saved8
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -466,6 +482,10 @@ class StaticHostNotifyStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("id"), "id", 64)
         SavedValues.string(savedGrown.variable("title"), "title", 128)
         SavedValues.string(savedGrown.variable("body"), "body", 512)
@@ -886,6 +906,9 @@ class StaticHostNotifyStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticHostNotifyState, HistoryId>> =
             listOf(StateTarget(StaticHostNotifyState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: asking's transition 0, as the microstep reads it.
         val transitionAskingAt0 = EnabledTransition<StaticHostNotifyState, HistoryId>(
@@ -1104,6 +1127,7 @@ class StaticHostNotifyStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticHostNotifyState? = when (stateId) {
         "asking" -> StaticHostNotifyState.Asking
@@ -1115,6 +1139,7 @@ class StaticHostNotifyStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticHostNotifyState): String = when (state) {
         is StaticHostNotifyState.Asking -> "asking"
@@ -1125,6 +1150,7 @@ class StaticHostNotifyStateMachine(
         is StaticHostNotifyState.Requesting -> "requesting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticHostNotifyState): Int = when (state) {
         is StaticHostNotifyState.Asking -> 2
@@ -1134,6 +1160,7 @@ class StaticHostNotifyStateMachine(
         is StaticHostNotifyState.PostingFar -> 1
         is StaticHostNotifyState.Requesting -> 3
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticHostNotifyEvent? = when (name) {
@@ -1156,6 +1183,7 @@ class StaticHostNotifyStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticHostNotifyEvent): String? = when (event) {
         is StaticHostNotifyEvent.Done.Invoke.Self -> "done.invoke"
@@ -1176,6 +1204,7 @@ class StaticHostNotifyStateMachine(
         is StaticHostNotifyEvent.Host.Notify.RequestPermission.Request -> "host.notify.request_permission.request"
     }
 
+
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `completeHostInvoke`.
     override val hostInvokeIds: Set<String> = setOf(
@@ -1195,60 +1224,94 @@ class StaticHostNotifyStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticHostNotifyState,
-        event: StaticHostNotifyEvent?
-    ): EnabledTransition<StaticHostNotifyState, HistoryId>? = when (state) {
-        is StaticHostNotifyState.Asking -> when {
-            event is StaticHostNotifyEvent.Done.Invoke.Ask && pendingDoneInvokeAskPayload != null && (pendingDoneInvokeAskPayload!!.error == "") -> transitionAskingAt0
-            event is StaticHostNotifyEvent.Done.Invoke.Ask -> transitionAskingAt1
-            event is StaticHostNotifyEvent.Error.Invoke.Ask -> transitionAskingAt2
-            event is StaticHostNotifyEvent.Error.Execution -> transitionAskingAt3
-            else -> null
-        }
-        is StaticHostNotifyState.Cancelling -> when {
-            event is StaticHostNotifyEvent.Done.Invoke.Cancel && pendingDoneInvokeCancelPayload != null && (pendingDoneInvokeCancelPayload!!.error == "") -> transitionCancellingAt0
-            event is StaticHostNotifyEvent.Done.Invoke.Cancel -> transitionCancellingAt1
-            event is StaticHostNotifyEvent.Error.Invoke.Cancel -> transitionCancellingAt2
-            event is StaticHostNotifyEvent.Error.Execution -> transitionCancellingAt3
-            else -> null
-        }
-        is StaticHostNotifyState.Idle -> when {
-            event is StaticHostNotifyEvent.Host.Notify.Permission.Request -> transitionIdleAt0
-            event is StaticHostNotifyEvent.Host.Notify.RequestPermission.Request -> transitionIdleAt1
-            event is StaticHostNotifyEvent.Host.Notify.Post.Request -> transitionIdleAt2
-            event is StaticHostNotifyEvent.Host.Notify.Cancel.Request -> transitionIdleAt3
-            event is StaticHostNotifyEvent.Host.Notify.Far.Request -> transitionIdleAt4
-            else -> null
-        }
-        is StaticHostNotifyState.Posting -> when {
-            event is StaticHostNotifyEvent.Done.Invoke.Post && pendingDoneInvokePostPayload != null && (pendingDoneInvokePostPayload!!.error == "") -> transitionPostingAt0
-            event is StaticHostNotifyEvent.Done.Invoke.Post -> transitionPostingAt1
-            event is StaticHostNotifyEvent.Error.Invoke.Post -> transitionPostingAt2
-            event is StaticHostNotifyEvent.Error.Execution -> transitionPostingAt3
-            else -> null
-        }
-        is StaticHostNotifyState.PostingFar -> when {
-            event is StaticHostNotifyEvent.Done.Invoke.Far && pendingDoneInvokeFarPayload != null && (pendingDoneInvokeFarPayload!!.error == "") -> transitionPostingFarAt0
-            event is StaticHostNotifyEvent.Done.Invoke.Far -> transitionPostingFarAt1
-            event is StaticHostNotifyEvent.Error.Execution -> transitionPostingFarAt2
-            else -> null
-        }
-        is StaticHostNotifyState.Requesting -> when {
-            event is StaticHostNotifyEvent.Done.Invoke.Prompt && pendingDoneInvokePromptPayload != null && (pendingDoneInvokePromptPayload!!.error == "") -> transitionRequestingAt0
-            event is StaticHostNotifyEvent.Done.Invoke.Prompt -> transitionRequestingAt1
-            event is StaticHostNotifyEvent.Error.Invoke.Prompt -> transitionRequestingAt2
-            event is StaticHostNotifyEvent.Error.Execution -> transitionRequestingAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticHostNotifyState, event: StaticHostNotifyEvent?): EnabledTransition<StaticHostNotifyState, HistoryId>? = when (state) {
+        is StaticHostNotifyState.Asking -> firstEnabledTransitionOfAsking(state, event)
+        is StaticHostNotifyState.Cancelling -> firstEnabledTransitionOfCancelling(state, event)
+        is StaticHostNotifyState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is StaticHostNotifyState.Posting -> firstEnabledTransitionOfPosting(state, event)
+        is StaticHostNotifyState.PostingFar -> firstEnabledTransitionOfPostingFar(state, event)
+        is StaticHostNotifyState.Requesting -> firstEnabledTransitionOfRequesting(state, event)
     }
+
+
+    // asking's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAsking(state: StaticHostNotifyState, event: StaticHostNotifyEvent?): EnabledTransition<StaticHostNotifyState, HistoryId>? = when {
+        event is StaticHostNotifyEvent.Done.Invoke.Ask && pendingDoneInvokeAskPayload != null && (pendingDoneInvokeAskPayload!!.error == "") -> TransitionsPart0.transitionAskingAt0
+        event is StaticHostNotifyEvent.Done.Invoke.Ask -> TransitionsPart0.transitionAskingAt1
+        event is StaticHostNotifyEvent.Error.Invoke.Ask -> TransitionsPart0.transitionAskingAt2
+        event is StaticHostNotifyEvent.Error.Execution -> TransitionsPart0.transitionAskingAt3
+        else -> null
+    }
+
+
+    // cancelling's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCancelling(state: StaticHostNotifyState, event: StaticHostNotifyEvent?): EnabledTransition<StaticHostNotifyState, HistoryId>? = when {
+        event is StaticHostNotifyEvent.Done.Invoke.Cancel && pendingDoneInvokeCancelPayload != null && (pendingDoneInvokeCancelPayload!!.error == "") -> TransitionsPart0.transitionCancellingAt0
+        event is StaticHostNotifyEvent.Done.Invoke.Cancel -> TransitionsPart0.transitionCancellingAt1
+        event is StaticHostNotifyEvent.Error.Invoke.Cancel -> TransitionsPart0.transitionCancellingAt2
+        event is StaticHostNotifyEvent.Error.Execution -> TransitionsPart0.transitionCancellingAt3
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticHostNotifyState, event: StaticHostNotifyEvent?): EnabledTransition<StaticHostNotifyState, HistoryId>? = when {
+        event is StaticHostNotifyEvent.Host.Notify.Permission.Request -> TransitionsPart0.transitionIdleAt0
+        event is StaticHostNotifyEvent.Host.Notify.RequestPermission.Request -> TransitionsPart0.transitionIdleAt1
+        event is StaticHostNotifyEvent.Host.Notify.Post.Request -> TransitionsPart0.transitionIdleAt2
+        event is StaticHostNotifyEvent.Host.Notify.Cancel.Request -> TransitionsPart0.transitionIdleAt3
+        event is StaticHostNotifyEvent.Host.Notify.Far.Request -> TransitionsPart0.transitionIdleAt4
+        else -> null
+    }
+
+
+    // posting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPosting(state: StaticHostNotifyState, event: StaticHostNotifyEvent?): EnabledTransition<StaticHostNotifyState, HistoryId>? = when {
+        event is StaticHostNotifyEvent.Done.Invoke.Post && pendingDoneInvokePostPayload != null && (pendingDoneInvokePostPayload!!.error == "") -> TransitionsPart0.transitionPostingAt0
+        event is StaticHostNotifyEvent.Done.Invoke.Post -> TransitionsPart0.transitionPostingAt1
+        event is StaticHostNotifyEvent.Error.Invoke.Post -> TransitionsPart0.transitionPostingAt2
+        event is StaticHostNotifyEvent.Error.Execution -> TransitionsPart0.transitionPostingAt3
+        else -> null
+    }
+
+
+    // posting_far's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPostingFar(state: StaticHostNotifyState, event: StaticHostNotifyEvent?): EnabledTransition<StaticHostNotifyState, HistoryId>? = when {
+        event is StaticHostNotifyEvent.Done.Invoke.Far && pendingDoneInvokeFarPayload != null && (pendingDoneInvokeFarPayload!!.error == "") -> TransitionsPart0.transitionPostingFarAt0
+        event is StaticHostNotifyEvent.Done.Invoke.Far -> TransitionsPart0.transitionPostingFarAt1
+        event is StaticHostNotifyEvent.Error.Execution -> TransitionsPart0.transitionPostingFarAt2
+        else -> null
+    }
+
+
+    // requesting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRequesting(state: StaticHostNotifyState, event: StaticHostNotifyEvent?): EnabledTransition<StaticHostNotifyState, HistoryId>? = when {
+        event is StaticHostNotifyEvent.Done.Invoke.Prompt && pendingDoneInvokePromptPayload != null && (pendingDoneInvokePromptPayload!!.error == "") -> TransitionsPart0.transitionRequestingAt0
+        event is StaticHostNotifyEvent.Done.Invoke.Prompt -> TransitionsPart0.transitionRequestingAt1
+        event is StaticHostNotifyEvent.Error.Invoke.Prompt -> TransitionsPart0.transitionRequestingAt2
+        event is StaticHostNotifyEvent.Error.Execution -> TransitionsPart0.transitionRequestingAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_host_notify.scxml:23 :: _machine
     override fun onEntry(state: StaticHostNotifyState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticHostNotifyState.Asking -> {
+            is StaticHostNotifyState.Asking -> onEntryOfAsking()
+            is StaticHostNotifyState.Cancelling -> onEntryOfCancelling()
+            is StaticHostNotifyState.Idle -> onEntryOfIdle()
+            is StaticHostNotifyState.Posting -> onEntryOfPosting()
+            is StaticHostNotifyState.PostingFar -> onEntryOfPostingFar()
+            is StaticHostNotifyState.Requesting -> onEntryOfRequesting()
+        }
+    }
+
+
+    private fun onEntryOfAsking() {
                 // SCE-MAP: static_host_notify.scxml:81 :: asking :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -1262,7 +1325,7 @@ class StaticHostNotifyStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "asking.${System.identityHashCode(this)}.ask"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostNotifyState.Asking, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -1287,8 +1350,9 @@ class StaticHostNotifyStateMachine(
                         }
                     }
                 }
-            }
-            is StaticHostNotifyState.Cancelling -> {
+    }
+
+    private fun onEntryOfCancelling() {
                 // SCE-MAP: static_host_notify.scxml:137 :: cancelling :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -1302,7 +1366,7 @@ class StaticHostNotifyStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "cancelling.${System.identityHashCode(this)}.cancel"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostNotifyState.Cancelling, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -1337,11 +1401,13 @@ class StaticHostNotifyStateMachine(
                         }
                     }
                 }
-            }
-            is StaticHostNotifyState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: static_host_notify.scxml:41 :: idle :: _state_body
-            }
-            is StaticHostNotifyState.Posting -> {
+    }
+
+    private fun onEntryOfPosting() {
                 // SCE-MAP: static_host_notify.scxml:115 :: posting :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -1355,7 +1421,7 @@ class StaticHostNotifyStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "posting.${System.identityHashCode(this)}.post"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostNotifyState.Posting, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -1408,8 +1474,9 @@ class StaticHostNotifyStateMachine(
                         }
                     }
                 }
-            }
-            is StaticHostNotifyState.PostingFar -> {
+    }
+
+    private fun onEntryOfPostingFar() {
                 // SCE-MAP: static_host_notify.scxml:62 :: posting_far :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -1423,7 +1490,7 @@ class StaticHostNotifyStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "posting_far.${System.identityHashCode(this)}.far"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostNotifyState.PostingFar, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -1476,8 +1543,9 @@ class StaticHostNotifyStateMachine(
                         }
                     }
                 }
-            }
-            is StaticHostNotifyState.Requesting -> {
+    }
+
+    private fun onEntryOfRequesting() {
                 // SCE-MAP: static_host_notify.scxml:98 :: requesting :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -1491,7 +1559,7 @@ class StaticHostNotifyStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "requesting.${System.identityHashCode(this)}.prompt"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostNotifyState.Requesting, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -1516,77 +1584,114 @@ class StaticHostNotifyStateMachine(
                         }
                     }
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_host_notify.scxml:23 :: _machine
     override fun onExit(state: StaticHostNotifyState) {
         when (state) {
-            is StaticHostNotifyState.Asking -> {
+            is StaticHostNotifyState.Asking -> onExitOfAsking()
+            is StaticHostNotifyState.Cancelling -> onExitOfCancelling()
+            is StaticHostNotifyState.Idle -> onExitOfIdle()
+            is StaticHostNotifyState.Posting -> onExitOfPosting()
+            is StaticHostNotifyState.PostingFar -> onExitOfPostingFar()
+            is StaticHostNotifyState.Requesting -> onExitOfRequesting()
+        }
+    }
+
+
+    private fun onExitOfAsking() {
                 // SCE-MAP: static_host_notify.scxml:81 :: asking :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostNotifyState.Asking)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-notify-permission", "ask")
-            }
-            is StaticHostNotifyState.Cancelling -> {
+    }
+
+    private fun onExitOfCancelling() {
                 // SCE-MAP: static_host_notify.scxml:137 :: cancelling :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostNotifyState.Cancelling)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-notify-cancel", "cancel")
-            }
-            is StaticHostNotifyState.Idle -> {
+    }
+
+    private fun onExitOfIdle() {
                 // SCE-MAP: static_host_notify.scxml:41 :: idle :: _state_body
-            }
-            is StaticHostNotifyState.Posting -> {
+    }
+
+    private fun onExitOfPosting() {
                 // SCE-MAP: static_host_notify.scxml:115 :: posting :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostNotifyState.Posting)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-notify-post", "post")
-            }
-            is StaticHostNotifyState.PostingFar -> {
+    }
+
+    private fun onExitOfPostingFar() {
                 // SCE-MAP: static_host_notify.scxml:62 :: posting_far :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostNotifyState.PostingFar)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-notify-post", "far")
-            }
-            is StaticHostNotifyState.Requesting -> {
+    }
+
+    private fun onExitOfRequesting() {
                 // SCE-MAP: static_host_notify.scxml:98 :: requesting :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostNotifyState.Requesting)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-notify-request-permission", "prompt")
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_host_notify.scxml:23 :: _machine
     override fun executeTransitionContent(source: StaticHostNotifyState, transitionIndex: Int) {
         when (source) {
-        is StaticHostNotifyState.Asking -> when (transitionIndex) {
-            0 -> {
+            is StaticHostNotifyState.Asking -> transitionContentOfAsking(transitionIndex)
+            is StaticHostNotifyState.Cancelling -> transitionContentOfCancelling(transitionIndex)
+            is StaticHostNotifyState.Idle -> transitionContentOfIdle(transitionIndex)
+            is StaticHostNotifyState.Posting -> transitionContentOfPosting(transitionIndex)
+            is StaticHostNotifyState.PostingFar -> transitionContentOfPostingFar(transitionIndex)
+            is StaticHostNotifyState.Requesting -> transitionContentOfRequesting(transitionIndex)
+        }
+    }
+
+
+    // The content of `asking`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfAsking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfAskingAt0()
+            1 -> transitionContentOfAskingAt1()
+            2 -> transitionContentOfAskingAt2()
+            3 -> transitionContentOfAskingAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfAskingAt0() {
                 // SCE-MAP: static_host_notify.scxml:83 :: asking :: _transition_0
                 if (pendingDoneInvokeAskPayload == null) {
                     return
@@ -1599,8 +1704,9 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfAskingAt1() {
                 // SCE-MAP: static_host_notify.scxml:87 :: asking :: _transition_1
                 if (pendingDoneInvokeAskPayload == null) {
                     return
@@ -1609,25 +1715,41 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeAskPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfAskingAt2() {
                 // SCE-MAP: static_host_notify.scxml:90 :: asking :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfAskingAt3() {
                 // SCE-MAP: static_host_notify.scxml:93 :: asking :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `cancelling`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfCancelling(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfCancellingAt0()
+            1 -> transitionContentOfCancellingAt1()
+            2 -> transitionContentOfCancellingAt2()
+            3 -> transitionContentOfCancellingAt3()
             else -> {}
         }
-        is StaticHostNotifyState.Cancelling -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfCancellingAt0() {
                 // SCE-MAP: static_host_notify.scxml:141 :: cancelling :: _transition_0
                 if (pendingDoneInvokeCancelPayload == null) {
                     return
@@ -1638,8 +1760,9 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfCancellingAt1() {
                 // SCE-MAP: static_host_notify.scxml:145 :: cancelling :: _transition_1
                 if (pendingDoneInvokeCancelPayload == null) {
                     return
@@ -1648,25 +1771,40 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeCancelPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfCancellingAt2() {
                 // SCE-MAP: static_host_notify.scxml:148 :: cancelling :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfCancellingAt3() {
                 // SCE-MAP: static_host_notify.scxml:151 :: cancelling :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
             else -> {}
         }
-        is StaticHostNotifyState.Idle -> when (transitionIndex) {
-            2 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_host_notify.scxml:44 :: idle :: _transition_2
                 if (pendingHostNotifyPostRequestPayload == null) {
                     return
@@ -1685,8 +1823,9 @@ class StaticHostNotifyStateMachine(
             }
 
             vAtMs = pendingHostNotifyPostRequestPayload!!.at_ms
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_host_notify.scxml:50 :: idle :: _transition_3
                 if (pendingHostNotifyCancelRequestPayload == null) {
                     return
@@ -1695,16 +1834,31 @@ class StaticHostNotifyStateMachine(
             if (try { vId = com.sce.forge.runtime.SceChecked.bounded(pendingHostNotifyCancelRequestPayload!!.id, 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='id'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_host_notify.scxml:57 :: idle :: _transition_4
 
             vAtMs = 9223372036854775807
-            }
+    }
+
+    // The content of `posting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPosting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPostingAt0()
+            1 -> transitionContentOfPostingAt1()
+            2 -> transitionContentOfPostingAt2()
+            3 -> transitionContentOfPostingAt3()
             else -> {}
         }
-        is StaticHostNotifyState.Posting -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfPostingAt0() {
                 // SCE-MAP: static_host_notify.scxml:122 :: posting :: _transition_0
                 if (pendingDoneInvokePostPayload == null) {
                     return
@@ -1717,8 +1871,9 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfPostingAt1() {
                 // SCE-MAP: static_host_notify.scxml:126 :: posting :: _transition_1
                 if (pendingDoneInvokePostPayload == null) {
                     return
@@ -1727,25 +1882,40 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePostPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfPostingAt2() {
                 // SCE-MAP: static_host_notify.scxml:129 :: posting :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfPostingAt3() {
                 // SCE-MAP: static_host_notify.scxml:132 :: posting :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `posting_far`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPostingFar(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPostingFarAt0()
+            1 -> transitionContentOfPostingFarAt1()
+            2 -> transitionContentOfPostingFarAt2()
             else -> {}
         }
-        is StaticHostNotifyState.PostingFar -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfPostingFarAt0() {
                 // SCE-MAP: static_host_notify.scxml:69 :: posting_far :: _transition_0
                 if (pendingDoneInvokeFarPayload == null) {
                     return
@@ -1758,8 +1928,9 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfPostingFarAt1() {
                 // SCE-MAP: static_host_notify.scxml:73 :: posting_far :: _transition_1
                 if (pendingDoneInvokeFarPayload == null) {
                     return
@@ -1768,18 +1939,33 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeFarPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfPostingFarAt2() {
                 // SCE-MAP: static_host_notify.scxml:76 :: posting_far :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `requesting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRequesting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRequestingAt0()
+            1 -> transitionContentOfRequestingAt1()
+            2 -> transitionContentOfRequestingAt2()
+            3 -> transitionContentOfRequestingAt3()
             else -> {}
         }
-        is StaticHostNotifyState.Requesting -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfRequestingAt0() {
                 // SCE-MAP: static_host_notify.scxml:100 :: requesting :: _transition_0
                 if (pendingDoneInvokePromptPayload == null) {
                     return
@@ -1792,8 +1978,9 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRequestingAt1() {
                 // SCE-MAP: static_host_notify.scxml:104 :: requesting :: _transition_1
                 if (pendingDoneInvokePromptPayload == null) {
                     return
@@ -1802,23 +1989,21 @@ class StaticHostNotifyStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePromptPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRequestingAt2() {
                 // SCE-MAP: static_host_notify.scxml:107 :: requesting :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfRequestingAt3() {
                 // SCE-MAP: static_host_notify.scxml:110 :: requesting :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostNotifyEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

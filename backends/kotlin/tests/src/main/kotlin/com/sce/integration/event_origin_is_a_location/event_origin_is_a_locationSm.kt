@@ -71,6 +71,7 @@ class EventOriginIsALocationStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: EventOriginIsALocationState): Boolean = when (state) {
@@ -78,11 +79,14 @@ class EventOriginIsALocationStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: EventOriginIsALocationState): Boolean = when (state) {
-        is EventOriginIsALocationState.Fail, is EventOriginIsALocationState.Pass -> true
+        is EventOriginIsALocationState.Fail -> true
+        is EventOriginIsALocationState.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -99,16 +103,29 @@ class EventOriginIsALocationStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<EventOriginIsALocationState, List<EventOriginIsALocationState>> = mapOf(
-            EventOriginIsALocationState.Phase to listOf(EventOriginIsALocationState.Waiting, EventOriginIsALocationState.AwaitReply),
-        )
+        val childStates: Map<EventOriginIsALocationState, List<EventOriginIsALocationState>> = LinkedHashMap<EventOriginIsALocationState, List<EventOriginIsALocationState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<EventOriginIsALocationState, List<EntryTarget<EventOriginIsALocationState, HistoryId>>> = mapOf(
-            EventOriginIsALocationState.Phase to listOf(StateTarget(EventOriginIsALocationState.Waiting)),
-        )
+        private fun childStatesPart0(table: MutableMap<EventOriginIsALocationState, List<EventOriginIsALocationState>>) {
+            table[EventOriginIsALocationState.Phase] = listOf(EventOriginIsALocationState.Waiting, EventOriginIsALocationState.AwaitReply)
+        }
+
+
+        val initialTargets: Map<EventOriginIsALocationState, List<EntryTarget<EventOriginIsALocationState, HistoryId>>> = LinkedHashMap<EventOriginIsALocationState, List<EntryTarget<EventOriginIsALocationState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<EventOriginIsALocationState, List<EntryTarget<EventOriginIsALocationState, HistoryId>>>) {
+            table[EventOriginIsALocationState.Phase] = listOf(StateTarget(EventOriginIsALocationState.Waiting))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<EventOriginIsALocationState, HistoryId>> =
             listOf(StateTarget(EventOriginIsALocationState.Phase))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: await_reply's transition 0, as the microstep reads it.
         val transitionAwaitReplyAt0 = EnabledTransition<EventOriginIsALocationState, HistoryId>(
@@ -138,6 +155,7 @@ class EventOriginIsALocationStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EventOriginIsALocationState? = when (stateId) {
         "await_reply" -> EventOriginIsALocationState.AwaitReply
@@ -148,6 +166,7 @@ class EventOriginIsALocationStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: EventOriginIsALocationState): String = when (state) {
         is EventOriginIsALocationState.AwaitReply -> "await_reply"
@@ -157,6 +176,7 @@ class EventOriginIsALocationStateMachine(
         is EventOriginIsALocationState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: EventOriginIsALocationState): Int = when (state) {
         is EventOriginIsALocationState.AwaitReply -> 2
@@ -165,6 +185,7 @@ class EventOriginIsALocationStateMachine(
         is EventOriginIsALocationState.Phase -> 0
         is EventOriginIsALocationState.Waiting -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EventOriginIsALocationEvent? = when (name) {
@@ -177,6 +198,7 @@ class EventOriginIsALocationStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EventOriginIsALocationEvent): String? = when (event) {
         is EventOriginIsALocationEvent.Done.Invoke -> "done.invoke"
@@ -186,6 +208,7 @@ class EventOriginIsALocationStateMachine(
         is EventOriginIsALocationEvent.Reply -> "reply"
         is EventOriginIsALocationEvent.ReplyArrived -> "replyArrived"
     }
+
 
 
 
@@ -420,49 +443,68 @@ class EventOriginIsALocationStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: EventOriginIsALocationState,
-        event: EventOriginIsALocationEvent?
-    ): EnabledTransition<EventOriginIsALocationState, HistoryId>? = when (state) {
-        is EventOriginIsALocationState.AwaitReply -> when {
-            event is EventOriginIsALocationEvent.ReplyArrived -> transitionAwaitReplyAt0
-            else -> null
-        }
-        is EventOriginIsALocationState.Waiting -> when {
-            event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.origin, _event.data.myLocation)", "_event.origin == _event.data.myLocation")) -> transitionWaitingAt0
-            event is EventOriginIsALocationEvent.FromChild -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: EventOriginIsALocationState, event: EventOriginIsALocationEvent?): EnabledTransition<EventOriginIsALocationState, HistoryId>? = when (state) {
+        is EventOriginIsALocationState.AwaitReply -> firstEnabledTransitionOfAwaitReply(state, event)
+        is EventOriginIsALocationState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // await_reply's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAwaitReply(state: EventOriginIsALocationState, event: EventOriginIsALocationEvent?): EnabledTransition<EventOriginIsALocationState, HistoryId>? = when {
+        event is EventOriginIsALocationEvent.ReplyArrived -> TransitionsPart0.transitionAwaitReplyAt0
+        else -> null
+    }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: EventOriginIsALocationState, event: EventOriginIsALocationEvent?): EnabledTransition<EventOriginIsALocationState, HistoryId>? = when {
+        event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.origin, _event.data.myLocation)", "_event.origin == _event.data.myLocation")) -> TransitionsPart0.transitionWaitingAt0
+        event is EventOriginIsALocationEvent.FromChild -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine
     override fun onEntry(state: EventOriginIsALocationState, isDefaultEntry: Boolean) {
         when (state) {
-            is EventOriginIsALocationState.AwaitReply -> {
+            is EventOriginIsALocationState.AwaitReply -> onEntryOfAwaitReply()
+            is EventOriginIsALocationState.Fail -> onEntryOfFail()
+            is EventOriginIsALocationState.Pass -> onEntryOfPass()
+            is EventOriginIsALocationState.Phase -> onEntryOfPhase()
+            is EventOriginIsALocationState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfAwaitReply() {
                 // SCE-MAP: event_origin_is_a_location.scxml:83 :: await_reply :: _state_body
-            }
-            is EventOriginIsALocationState.Fail -> {
+    }
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: event_origin_is_a_location.scxml:89 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventOriginIsALocationState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: event_origin_is_a_location.scxml:88 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventOriginIsALocationState.Phase -> {
+    }
+
+    private fun onEntryOfPhase() {
                 // SCE-MAP: event_origin_is_a_location.scxml:49 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_peer", state)
-            }
-            is EventOriginIsALocationState.Waiting -> {
+                deferStaticInvoke("inv_peer", EventOriginIsALocationState.Phase)
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: event_origin_is_a_location.scxml:74 :: waiting :: _state_body
-            }
-        }
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -475,9 +517,20 @@ class EventOriginIsALocationStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: EventOriginIsALocationState) {
         when (invokeId) {
-            "inv_peer" -> run {
+            "inv_peer" -> startInvokeOfPhaseAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfPhaseAt0(state: EventOriginIsALocationState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_peer")}.inv_peer"
@@ -488,43 +541,71 @@ class EventOriginIsALocationStateMachine(
                     startInvoke("inv_peer", childSM, false, EventOriginIsALocationEvent.Done.Invoke, "", generatedInvokeId, "", "event_origin_is_a_location__sce_synth_invoke__inv_peer", "inv_peer")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine
     override fun onExit(state: EventOriginIsALocationState) {
         when (state) {
-            is EventOriginIsALocationState.AwaitReply -> {
-                // SCE-MAP: event_origin_is_a_location.scxml:83 :: await_reply :: _state_body
-            }
-            is EventOriginIsALocationState.Fail -> {
-                // SCE-MAP: event_origin_is_a_location.scxml:89 :: fail :: _state_body
-            }
-            is EventOriginIsALocationState.Pass -> {
-                // SCE-MAP: event_origin_is_a_location.scxml:88 :: pass :: _state_body
-            }
-            is EventOriginIsALocationState.Phase -> {
-                // SCE-MAP: event_origin_is_a_location.scxml:49 :: phase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_peer")
-            }
-            is EventOriginIsALocationState.Waiting -> {
-                // SCE-MAP: event_origin_is_a_location.scxml:74 :: waiting :: _state_body
-            }
+            is EventOriginIsALocationState.AwaitReply -> onExitOfAwaitReply()
+            is EventOriginIsALocationState.Fail -> onExitOfFail()
+            is EventOriginIsALocationState.Pass -> onExitOfPass()
+            is EventOriginIsALocationState.Phase -> onExitOfPhase()
+            is EventOriginIsALocationState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfAwaitReply() {
+                // SCE-MAP: event_origin_is_a_location.scxml:83 :: await_reply :: _state_body
+    }
+
+    private fun onExitOfFail() {
+                // SCE-MAP: event_origin_is_a_location.scxml:89 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: event_origin_is_a_location.scxml:88 :: pass :: _state_body
+    }
+
+    private fun onExitOfPhase() {
+                // SCE-MAP: event_origin_is_a_location.scxml:49 :: phase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(EventOriginIsALocationState.Phase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_peer")
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: event_origin_is_a_location.scxml:74 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine
     override fun executeTransitionContent(source: EventOriginIsALocationState, transitionIndex: Int) {
         when (source) {
-        is EventOriginIsALocationState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is EventOriginIsALocationState.Waiting -> transitionContentOfWaiting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: event_origin_is_a_location.scxml:75 :: waiting :: _transition_0
 
 
@@ -613,10 +694,5 @@ EventOriginIsALocationEvent.Reply,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

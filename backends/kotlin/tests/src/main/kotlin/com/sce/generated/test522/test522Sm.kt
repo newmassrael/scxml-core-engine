@@ -62,9 +62,11 @@ class Test522StateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test522State): Boolean = when (state) {
-        is Test522State.Fail, is Test522State.Pass -> true
+        is Test522State.Fail -> true
+        is Test522State.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -74,6 +76,9 @@ class Test522StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test522State, HistoryId>> =
             listOf(StateTarget(Test522State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test522State, HistoryId>(
@@ -103,6 +108,7 @@ class Test522StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test522State? = when (stateId) {
         "fail" -> Test522State.Fail
@@ -111,6 +117,7 @@ class Test522StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test522State): String = when (state) {
         is Test522State.Fail -> "fail"
@@ -118,12 +125,14 @@ class Test522StateMachine(
         is Test522State.S0 -> "s0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test522State): Int = when (state) {
         is Test522State.Fail -> 2
         is Test522State.Pass -> 1
         is Test522State.S0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test522Event? = when (name) {
@@ -136,6 +145,7 @@ class Test522StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test522Event): String? = when (event) {
         is Test522Event.Error.Self -> "error"
@@ -145,6 +155,7 @@ class Test522StateMachine(
         is Test522Event.Timeout -> "timeout"
         is Test522Event.Wildcard -> "*"
     }
+
 
 
 
@@ -379,35 +390,48 @@ class Test522StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test522State,
-        event: Test522Event?
-    ): EnabledTransition<Test522State, HistoryId>? = when (state) {
-        is Test522State.S0 -> when {
-            event is Test522Event.Timeout -> transitionS0At0
-            (event is Test522Event.Error || event is Test522Event.Error.Communication || event is Test522Event.Error.Execution) -> transitionS0At1
-            event != null -> transitionS0At2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test522State, event: Test522Event?): EnabledTransition<Test522State, HistoryId>? = when (state) {
+        is Test522State.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test522State, event: Test522Event?): EnabledTransition<Test522State, HistoryId>? = when {
+        event is Test522Event.Timeout -> TransitionsPart0.transitionS0At0
+        (event is Test522Event.Error || event is Test522Event.Error.Communication || event is Test522Event.Error.Execution) -> TransitionsPart0.transitionS0At1
+        event != null -> TransitionsPart0.transitionS0At2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test522.scxml:6 :: _machine
     override fun onEntry(state: Test522State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test522State.Fail -> {
+            is Test522State.Fail -> onEntryOfFail()
+            is Test522State.Pass -> onEntryOfPass()
+            is Test522State.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test522.scxml:25 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test522State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test522.scxml:24 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test522State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test522.scxml:8 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -465,32 +489,38 @@ class Test522StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test522.scxml:6 :: _machine
     override fun onExit(state: Test522State) {
         when (state) {
-            is Test522State.Fail -> {
-                // SCE-MAP: test522.scxml:25 :: fail :: _state_body
-            }
-            is Test522State.Pass -> {
-                // SCE-MAP: test522.scxml:24 :: pass :: _state_body
-            }
-            is Test522State.S0 -> {
-                // SCE-MAP: test522.scxml:8 :: s0 :: _state_body
-            }
+            is Test522State.Fail -> onExitOfFail()
+            is Test522State.Pass -> onExitOfPass()
+            is Test522State.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test522.scxml:25 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test522.scxml:24 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test522.scxml:8 :: s0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test522.scxml:6 :: _machine
     override fun executeTransitionContent(source: Test522State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

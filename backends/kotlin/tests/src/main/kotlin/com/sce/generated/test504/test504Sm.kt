@@ -135,6 +135,7 @@ class Test504StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: Test504State): Boolean = when (state) {
@@ -142,17 +143,21 @@ class Test504StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: Test504State): Boolean = when (state) {
         is Test504State.P -> true
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test504State): Boolean = when (state) {
-        is Test504State.Fail, is Test504State.Pass -> true
+        is Test504State.Fail -> true
+        is Test504State.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -169,17 +174,30 @@ class Test504StateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<Test504State, List<Test504State>> = mapOf(
-            Test504State.P to listOf(Test504State.Ps1, Test504State.Ps2),
-            Test504State.S2 to listOf(Test504State.P),
-        )
+        val childStates: Map<Test504State, List<Test504State>> = LinkedHashMap<Test504State, List<Test504State>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<Test504State, List<EntryTarget<Test504State, HistoryId>>> = mapOf(
-            Test504State.S2 to listOf(StateTarget(Test504State.P)),
-        )
+        private fun childStatesPart0(table: MutableMap<Test504State, List<Test504State>>) {
+            table[Test504State.P] = listOf(Test504State.Ps1, Test504State.Ps2)
+            table[Test504State.S2] = listOf(Test504State.P)
+        }
+
+
+        val initialTargets: Map<Test504State, List<EntryTarget<Test504State, HistoryId>>> = LinkedHashMap<Test504State, List<EntryTarget<Test504State, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<Test504State, List<EntryTarget<Test504State, HistoryId>>>) {
+            table[Test504State.S2] = listOf(StateTarget(Test504State.P))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test504State, HistoryId>> =
             listOf(StateTarget(Test504State.S1))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: p's transition 0, as the microstep reads it.
         val transitionPAt0 = EnabledTransition<Test504State, HistoryId>(
@@ -290,6 +308,7 @@ class Test504StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test504State? = when (stateId) {
         "fail" -> Test504State.Fail
@@ -306,6 +325,7 @@ class Test504StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test504State): String = when (state) {
         is Test504State.Fail -> "fail"
@@ -320,6 +340,7 @@ class Test504StateMachine(
         is Test504State.S5 -> "s5"
         is Test504State.S6 -> "s6"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test504State): Int = when (state) {
@@ -336,6 +357,7 @@ class Test504StateMachine(
         is Test504State.S6 -> 8
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test504Event? = when (name) {
         "bar" -> Test504Event.Bar
@@ -344,12 +366,14 @@ class Test504StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test504Event): String? = when (event) {
         is Test504Event.Bar -> "bar"
         is Test504Event.Error.Execution -> "error.execution"
         is Test504Event.Foo -> "foo"
     }
+
 
 
 
@@ -379,6 +403,29 @@ class Test504StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+        // W3C SCXML 5.9.2: Register In() predicate callback
+        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
             val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -414,24 +461,6 @@ class Test504StateMachine(
         } catch (e: Exception) {
             raisePlatformError(Test504Event.Error.Execution, "<data id='Var5'> expr failed to evaluate")
         }
-
-
-
-        // W3C SCXML 5.9.2: Register In() predicate callback
-        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -621,68 +650,112 @@ class Test504StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test504State,
-        event: Test504Event?
-    ): EnabledTransition<Test504State, HistoryId>? = when (state) {
-        is Test504State.P -> when {
-            event is Test504Event.Foo -> transitionPAt0
-            event is Test504Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var4, 1)", "Var4 == 1")) -> transitionPAt1
-            event is Test504Event.Bar -> transitionPAt2
-            else -> null
-        }
-        is Test504State.S1 -> when {
-            event == null -> transitionS1At0
-            else -> null
-        }
-        is Test504State.S3 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> transitionS3At0
-            event == null -> transitionS3At1
-            else -> null
-        }
-        is Test504State.S4 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 2)", "Var2 == 2")) -> transitionS4At0
-            event == null -> transitionS4At1
-            else -> null
-        }
-        is Test504State.S5 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var3, 2)", "Var3 == 2")) -> transitionS5At0
-            event == null -> transitionS5At1
-            else -> null
-        }
-        is Test504State.S6 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var5, 1)", "Var5 == 1")) -> transitionS6At0
-            event == null -> transitionS6At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when (state) {
+        is Test504State.P -> firstEnabledTransitionOfP(state, event)
+        is Test504State.S1 -> firstEnabledTransitionOfS1(state, event)
+        is Test504State.S3 -> firstEnabledTransitionOfS3(state, event)
+        is Test504State.S4 -> firstEnabledTransitionOfS4(state, event)
+        is Test504State.S5 -> firstEnabledTransitionOfS5(state, event)
+        is Test504State.S6 -> firstEnabledTransitionOfS6(state, event)
         else -> null
     }
+
+
+    // p's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
+        event is Test504Event.Foo -> TransitionsPart0.transitionPAt0
+        event is Test504Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var4, 1)", "Var4 == 1")) -> TransitionsPart0.transitionPAt1
+        event is Test504Event.Bar -> TransitionsPart0.transitionPAt2
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS1At0
+        else -> null
+    }
+
+
+    // s3's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionsPart0.transitionS3At0
+        event == null -> TransitionsPart0.transitionS3At1
+        else -> null
+    }
+
+
+    // s4's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS4(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 2)", "Var2 == 2")) -> TransitionsPart0.transitionS4At0
+        event == null -> TransitionsPart0.transitionS4At1
+        else -> null
+    }
+
+
+    // s5's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS5(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var3, 2)", "Var3 == 2")) -> TransitionsPart0.transitionS5At0
+        event == null -> TransitionsPart0.transitionS5At1
+        else -> null
+    }
+
+
+    // s6's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS6(state: Test504State, event: Test504Event?): EnabledTransition<Test504State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var5, 1)", "Var5 == 1")) -> TransitionsPart0.transitionS6At0
+        event == null -> TransitionsPart0.transitionS6At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test504.scxml:5 :: _machine
     override fun onEntry(state: Test504State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test504State.Fail -> {
+            is Test504State.Fail -> onEntryOfFail()
+            is Test504State.P -> onEntryOfP()
+            is Test504State.Pass -> onEntryOfPass()
+            is Test504State.Ps1 -> onEntryOfPs1()
+            is Test504State.Ps2 -> onEntryOfPs2()
+            is Test504State.S1 -> onEntryOfS1()
+            is Test504State.S2 -> onEntryOfS2()
+            is Test504State.S3 -> onEntryOfS3()
+            is Test504State.S4 -> onEntryOfS4()
+            is Test504State.S5 -> onEntryOfS5()
+            is Test504State.S6 -> onEntryOfS6()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test504.scxml:77 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test504State.P -> {
+    }
+
+    private fun onEntryOfP() {
                 // SCE-MAP: test504.scxml:27 :: p :: _state_body
-            }
-            is Test504State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test504.scxml:76 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test504State.Ps1 -> {
+    }
+
+    private fun onEntryOfPs1() {
                 // SCE-MAP: test504.scxml:39 :: ps1 :: _state_body
-            }
-            is Test504State.Ps2 -> {
+    }
+
+    private fun onEntryOfPs2() {
                 // SCE-MAP: test504.scxml:44 :: ps2 :: _state_body
-            }
-            is Test504State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test504.scxml:14 :: s1 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -691,33 +764,52 @@ class Test504StateMachine(
 
             raiseInternal(Test504Event.Bar)
                 }
-            }
-            is Test504State.S2 -> {
+    }
+
+    private fun onEntryOfS2() {
                 // SCE-MAP: test504.scxml:22 :: s2 :: _state_body
-            }
-            is Test504State.S3 -> {
+    }
+
+    private fun onEntryOfS3() {
                 // SCE-MAP: test504.scxml:52 :: s3 :: _state_body
-            }
-            is Test504State.S4 -> {
+    }
+
+    private fun onEntryOfS4() {
                 // SCE-MAP: test504.scxml:58 :: s4 :: _state_body
-            }
-            is Test504State.S5 -> {
+    }
+
+    private fun onEntryOfS5() {
                 // SCE-MAP: test504.scxml:64 :: s5 :: _state_body
-            }
-            is Test504State.S6 -> {
+    }
+
+    private fun onEntryOfS6() {
                 // SCE-MAP: test504.scxml:70 :: s6 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test504.scxml:5 :: _machine
     override fun onExit(state: Test504State) {
         when (state) {
-            is Test504State.Fail -> {
+            is Test504State.Fail -> onExitOfFail()
+            is Test504State.P -> onExitOfP()
+            is Test504State.Pass -> onExitOfPass()
+            is Test504State.Ps1 -> onExitOfPs1()
+            is Test504State.Ps2 -> onExitOfPs2()
+            is Test504State.S1 -> onExitOfS1()
+            is Test504State.S2 -> onExitOfS2()
+            is Test504State.S3 -> onExitOfS3()
+            is Test504State.S4 -> onExitOfS4()
+            is Test504State.S5 -> onExitOfS5()
+            is Test504State.S6 -> onExitOfS6()
+        }
+    }
+
+
+    private fun onExitOfFail() {
                 // SCE-MAP: test504.scxml:77 :: fail :: _state_body
-            }
-            is Test504State.P -> {
+    }
+
+    private fun onExitOfP() {
                 // SCE-MAP: test504.scxml:27 :: p :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -727,11 +819,13 @@ class Test504StateMachine(
                 return@run
             }
                 }
-            }
-            is Test504State.Pass -> {
+    }
+
+    private fun onExitOfPass() {
                 // SCE-MAP: test504.scxml:76 :: pass :: _state_body
-            }
-            is Test504State.Ps1 -> {
+    }
+
+    private fun onExitOfPs1() {
                 // SCE-MAP: test504.scxml:39 :: ps1 :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -741,8 +835,9 @@ class Test504StateMachine(
                 return@run
             }
                 }
-            }
-            is Test504State.Ps2 -> {
+    }
+
+    private fun onExitOfPs2() {
                 // SCE-MAP: test504.scxml:44 :: ps2 :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -752,11 +847,13 @@ class Test504StateMachine(
                 return@run
             }
                 }
-            }
-            is Test504State.S1 -> {
+    }
+
+    private fun onExitOfS1() {
                 // SCE-MAP: test504.scxml:14 :: s1 :: _state_body
-            }
-            is Test504State.S2 -> {
+    }
+
+    private fun onExitOfS2() {
                 // SCE-MAP: test504.scxml:22 :: s2 :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -766,39 +863,55 @@ class Test504StateMachine(
                 return@run
             }
                 }
-            }
-            is Test504State.S3 -> {
-                // SCE-MAP: test504.scxml:52 :: s3 :: _state_body
-            }
-            is Test504State.S4 -> {
-                // SCE-MAP: test504.scxml:58 :: s4 :: _state_body
-            }
-            is Test504State.S5 -> {
-                // SCE-MAP: test504.scxml:64 :: s5 :: _state_body
-            }
-            is Test504State.S6 -> {
-                // SCE-MAP: test504.scxml:70 :: s6 :: _state_body
-            }
-        }
     }
+
+    private fun onExitOfS3() {
+                // SCE-MAP: test504.scxml:52 :: s3 :: _state_body
+    }
+
+    private fun onExitOfS4() {
+                // SCE-MAP: test504.scxml:58 :: s4 :: _state_body
+    }
+
+    private fun onExitOfS5() {
+                // SCE-MAP: test504.scxml:64 :: s5 :: _state_body
+    }
+
+    private fun onExitOfS6() {
+                // SCE-MAP: test504.scxml:70 :: s6 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test504.scxml:5 :: _machine
     override fun executeTransitionContent(source: Test504State, transitionIndex: Int) {
         when (source) {
-        is Test504State.P -> when (transitionIndex) {
-            0 -> {
+            is Test504State.P -> transitionContentOfP(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `p`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfP(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfPAt0() {
                 // SCE-MAP: test504.scxml:31 :: p :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var4", "Var4"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var4, 1)", "Var4 + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

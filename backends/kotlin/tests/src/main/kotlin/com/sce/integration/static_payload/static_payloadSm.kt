@@ -93,6 +93,10 @@ class StaticPayloadStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.day?.let { vDay = it }
         params.late?.let { vLate = it }
         params.sinceEpoch?.let { vSinceEpoch = it }
@@ -175,16 +179,18 @@ class StaticPayloadStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "day" to SavedValues.of(vDay),
-            "late" to SavedValues.of(vLate),
-            "sinceEpoch" to SavedValues.of(vSinceEpoch),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "day" to SavedValues.of(vDay)
+        variables += "late" to SavedValues.of(vLate)
+        variables += "sinceEpoch" to SavedValues.of(vSinceEpoch)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -209,15 +215,25 @@ class StaticPayloadStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint8(savedGrown.variable("day"), "day")
         val saved2 = SavedValues.bool(savedGrown.variable("late"), "late")
         val saved3 = SavedValues.uint16(savedGrown.variable("sinceEpoch"), "sinceEpoch")
         val saved4 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vDay = saved1
-        vLate = saved2
-        vSinceEpoch = saved3
-        vRefusals = saved4
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vDay = saved1
+            vLate = saved2
+            vSinceEpoch = saved3
+            vRefusals = saved4
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -230,6 +246,10 @@ class StaticPayloadStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint8(savedGrown.variable("day"), "day")
         SavedValues.bool(savedGrown.variable("late"), "late")
         SavedValues.uint16(savedGrown.variable("sinceEpoch"), "sinceEpoch")
@@ -310,6 +330,9 @@ class StaticPayloadStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticPayloadState, HistoryId>> =
             listOf(StateTarget(StaticPayloadState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StaticPayloadState, HistoryId>(
@@ -339,21 +362,25 @@ class StaticPayloadStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticPayloadState? = when (stateId) {
         "waiting" -> StaticPayloadState.Waiting
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticPayloadState): String = when (state) {
         is StaticPayloadState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticPayloadState): Int = when (state) {
         is StaticPayloadState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticPayloadEvent? = when (name) {
@@ -361,6 +388,7 @@ class StaticPayloadStateMachine(
         "error.execution" -> StaticPayloadEvent.Error.Execution
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticPayloadEvent): String? = when (event) {
@@ -372,51 +400,82 @@ class StaticPayloadStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticPayloadState,
-        event: StaticPayloadEvent?
-    ): EnabledTransition<StaticPayloadState, HistoryId>? = when (state) {
-        is StaticPayloadState.Waiting -> when {
-            event is StaticPayloadEvent.Day.Picked && pendingDayPickedPayload != null && (pendingDayPickedPayload!!.dayOfMonth > 15.toUByte()) -> transitionWaitingAt0
-            event is StaticPayloadEvent.Day.Picked -> transitionWaitingAt1
-            event is StaticPayloadEvent.Error.Execution -> transitionWaitingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticPayloadState, event: StaticPayloadEvent?): EnabledTransition<StaticPayloadState, HistoryId>? = when (state) {
+        is StaticPayloadState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticPayloadState, event: StaticPayloadEvent?): EnabledTransition<StaticPayloadState, HistoryId>? = when {
+        event is StaticPayloadEvent.Day.Picked && pendingDayPickedPayload != null && (pendingDayPickedPayload!!.dayOfMonth > 15.toUByte()) -> TransitionsPart0.transitionWaitingAt0
+        event is StaticPayloadEvent.Day.Picked -> TransitionsPart0.transitionWaitingAt1
+        event is StaticPayloadEvent.Error.Execution -> TransitionsPart0.transitionWaitingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_payload.scxml:14 :: _machine
     override fun onEntry(state: StaticPayloadState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticPayloadState.Waiting -> {
-                // SCE-MAP: static_payload.scxml:23 :: waiting :: _state_body
-            }
+            is StaticPayloadState.Waiting -> onEntryOfWaiting()
         }
+    }
+
+
+    private fun onEntryOfWaiting() {
+                // SCE-MAP: static_payload.scxml:23 :: waiting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_payload.scxml:14 :: _machine
     override fun onExit(state: StaticPayloadState) {
         when (state) {
-            is StaticPayloadState.Waiting -> {
-                // SCE-MAP: static_payload.scxml:23 :: waiting :: _state_body
-            }
+            is StaticPayloadState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: static_payload.scxml:23 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_payload.scxml:14 :: _machine
     override fun executeTransitionContent(source: StaticPayloadState, transitionIndex: Int) {
         when (source) {
-        is StaticPayloadState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is StaticPayloadState.Waiting -> transitionContentOfWaiting(transitionIndex)
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            1 -> transitionContentOfWaitingAt1()
+            2 -> transitionContentOfWaitingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_payload.scxml:24 :: waiting :: _transition_0
                 if (pendingDayPickedPayload == null) {
                     return
@@ -429,8 +488,9 @@ class StaticPayloadStateMachine(
             if (try { vSinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: static_payload.scxml:29 :: waiting :: _transition_1
                 if (pendingDayPickedPayload == null) {
                     return
@@ -443,16 +503,13 @@ class StaticPayloadStateMachine(
             if (try { vSinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfWaitingAt2() {
                 // SCE-MAP: static_payload.scxml:34 :: waiting :: _transition_2
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

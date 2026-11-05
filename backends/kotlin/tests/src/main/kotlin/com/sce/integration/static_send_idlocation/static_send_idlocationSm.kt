@@ -92,6 +92,10 @@ class StaticSendIdlocationStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.first?.let { vFirst = it }
         params.second?.let { vSecond = it }
         params.scale?.let { vScale = it }
@@ -174,18 +178,20 @@ class StaticSendIdlocationStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "first" to SavedValues.of(vFirst),
-            "second" to SavedValues.of(vSecond),
-            "scale" to SavedValues.of(vScale),
-            "first_fired" to SavedValues.of(vFirstFired),
-            "second_fired" to SavedValues.of(vSecondFired),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "first" to SavedValues.of(vFirst)
+        variables += "second" to SavedValues.of(vSecond)
+        variables += "scale" to SavedValues.of(vScale)
+        variables += "first_fired" to SavedValues.of(vFirstFired)
+        variables += "second_fired" to SavedValues.of(vSecondFired)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -210,19 +216,29 @@ class StaticSendIdlocationStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("first"), "first", 32)
         val saved2 = SavedValues.string(savedGrown.variable("second"), "second", 32)
         val saved3 = SavedValues.uint32(savedGrown.variable("scale"), "scale")
         val saved4 = SavedValues.uint32(savedGrown.variable("first_fired"), "first_fired")
         val saved5 = SavedValues.uint32(savedGrown.variable("second_fired"), "second_fired")
         val saved6 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vFirst = saved1
-        vSecond = saved2
-        vScale = saved3
-        vFirstFired = saved4
-        vSecondFired = saved5
-        vRefusals = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vFirst = saved1
+            vSecond = saved2
+            vScale = saved3
+            vFirstFired = saved4
+            vSecondFired = saved5
+            vRefusals = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -235,6 +251,10 @@ class StaticSendIdlocationStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("first"), "first", 32)
         SavedValues.string(savedGrown.variable("second"), "second", 32)
         SavedValues.uint32(savedGrown.variable("scale"), "scale")
@@ -270,6 +290,9 @@ class StaticSendIdlocationStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticSendIdlocationState, HistoryId>> =
             listOf(StateTarget(StaticSendIdlocationState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticSendIdlocationState, HistoryId>(
@@ -335,21 +358,25 @@ class StaticSendIdlocationStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticSendIdlocationState? = when (stateId) {
         "idle" -> StaticSendIdlocationState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticSendIdlocationState): String = when (state) {
         is StaticSendIdlocationState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticSendIdlocationState): Int = when (state) {
         is StaticSendIdlocationState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticSendIdlocationEvent? = when (name) {
@@ -362,6 +389,7 @@ class StaticSendIdlocationStateMachine(
         "second.due" -> StaticSendIdlocationEvent.Second.Due
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticSendIdlocationEvent): String? = when (event) {
@@ -378,55 +406,90 @@ class StaticSendIdlocationStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticSendIdlocationState,
-        event: StaticSendIdlocationEvent?
-    ): EnabledTransition<StaticSendIdlocationState, HistoryId>? = when (state) {
-        is StaticSendIdlocationState.Idle -> when {
-            event is StaticSendIdlocationEvent.Arm -> transitionIdleAt0
-            event is StaticSendIdlocationEvent.Armfail -> transitionIdleAt1
-            event is StaticSendIdlocationEvent.Cancel.First -> transitionIdleAt2
-            event is StaticSendIdlocationEvent.Cancel.Second -> transitionIdleAt3
-            event is StaticSendIdlocationEvent.First.Due -> transitionIdleAt4
-            event is StaticSendIdlocationEvent.Second.Due -> transitionIdleAt5
-            event is StaticSendIdlocationEvent.Error.Execution -> transitionIdleAt6
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticSendIdlocationState, event: StaticSendIdlocationEvent?): EnabledTransition<StaticSendIdlocationState, HistoryId>? = when (state) {
+        is StaticSendIdlocationState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticSendIdlocationState, event: StaticSendIdlocationEvent?): EnabledTransition<StaticSendIdlocationState, HistoryId>? = when {
+        event is StaticSendIdlocationEvent.Arm -> TransitionsPart0.transitionIdleAt0
+        event is StaticSendIdlocationEvent.Armfail -> TransitionsPart0.transitionIdleAt1
+        event is StaticSendIdlocationEvent.Cancel.First -> TransitionsPart0.transitionIdleAt2
+        event is StaticSendIdlocationEvent.Cancel.Second -> TransitionsPart0.transitionIdleAt3
+        event is StaticSendIdlocationEvent.First.Due -> TransitionsPart0.transitionIdleAt4
+        event is StaticSendIdlocationEvent.Second.Due -> TransitionsPart0.transitionIdleAt5
+        event is StaticSendIdlocationEvent.Error.Execution -> TransitionsPart0.transitionIdleAt6
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_send_idlocation.scxml:25 :: _machine
     override fun onEntry(state: StaticSendIdlocationState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticSendIdlocationState.Idle -> {
-                // SCE-MAP: static_send_idlocation.scxml:35 :: idle :: _state_body
-            }
+            is StaticSendIdlocationState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_send_idlocation.scxml:35 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_send_idlocation.scxml:25 :: _machine
     override fun onExit(state: StaticSendIdlocationState) {
         when (state) {
-            is StaticSendIdlocationState.Idle -> {
-                // SCE-MAP: static_send_idlocation.scxml:35 :: idle :: _state_body
-            }
+            is StaticSendIdlocationState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_send_idlocation.scxml:35 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_send_idlocation.scxml:25 :: _machine
     override fun executeTransitionContent(source: StaticSendIdlocationState, transitionIndex: Int) {
         when (source) {
-        is StaticSendIdlocationState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticSendIdlocationState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_send_idlocation.scxml:36 :: idle :: _transition_0
 
 
@@ -464,8 +527,9 @@ class StaticSendIdlocationStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_send_idlocation.scxml:40 :: idle :: _transition_1
 
 
@@ -500,8 +564,9 @@ class StaticSendIdlocationStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_idlocation.scxml:44 :: idle :: _transition_2
 
 
@@ -510,8 +575,9 @@ class StaticSendIdlocationStateMachine(
             // asked. An id no send holds cancels nothing; an operation that fails
             // cannot be evaluated, which raises error.execution and ends the block.
             cancelSend(vFirst)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_idlocation.scxml:47 :: idle :: _transition_3
 
 
@@ -520,30 +586,29 @@ class StaticSendIdlocationStateMachine(
             // asked. An id no send holds cancels nothing; an operation that fails
             // cannot be evaluated, which raises error.execution and ends the block.
             cancelSend(vSecond)
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_idlocation.scxml:50 :: idle :: _transition_4
 
             if (try { vFirstFired = com.sce.forge.runtime.SceChecked.add(vFirstFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='first_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_send_idlocation.scxml:53 :: idle :: _transition_5
 
             if (try { vSecondFired = com.sce.forge.runtime.SceChecked.add(vSecondFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='second_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_send_idlocation.scxml:56 :: idle :: _transition_6
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

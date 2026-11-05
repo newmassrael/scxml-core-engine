@@ -129,12 +129,15 @@ class ABadDonedataPairIsIgnoredStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: ABadDonedataPairIsIgnoredState): Boolean = when (state) {
-        is ABadDonedataPairIsIgnoredState.R1, is ABadDonedataPairIsIgnoredState.R2 -> true
+        is ABadDonedataPairIsIgnoredState.R1 -> true
+        is ABadDonedataPairIsIgnoredState.R2 -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: ABadDonedataPairIsIgnoredState): Boolean = when (state) {
@@ -142,11 +145,15 @@ class ABadDonedataPairIsIgnoredStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: ABadDonedataPairIsIgnoredState): Boolean = when (state) {
-        is ABadDonedataPairIsIgnoredState.Done, is ABadDonedataPairIsIgnoredState.R1f, is ABadDonedataPairIsIgnoredState.R2f -> true
+        is ABadDonedataPairIsIgnoredState.Done -> true
+        is ABadDonedataPairIsIgnoredState.R1f -> true
+        is ABadDonedataPairIsIgnoredState.R2f -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -163,19 +170,32 @@ class ABadDonedataPairIsIgnoredStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<ABadDonedataPairIsIgnoredState, List<ABadDonedataPairIsIgnoredState>> = mapOf(
-            ABadDonedataPairIsIgnoredState.P to listOf(ABadDonedataPairIsIgnoredState.R1, ABadDonedataPairIsIgnoredState.R2),
-            ABadDonedataPairIsIgnoredState.R1 to listOf(ABadDonedataPairIsIgnoredState.R1a, ABadDonedataPairIsIgnoredState.R1f),
-            ABadDonedataPairIsIgnoredState.R2 to listOf(ABadDonedataPairIsIgnoredState.R2f),
-        )
+        val childStates: Map<ABadDonedataPairIsIgnoredState, List<ABadDonedataPairIsIgnoredState>> = LinkedHashMap<ABadDonedataPairIsIgnoredState, List<ABadDonedataPairIsIgnoredState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<ABadDonedataPairIsIgnoredState, List<EntryTarget<ABadDonedataPairIsIgnoredState, HistoryId>>> = mapOf(
-            ABadDonedataPairIsIgnoredState.R1 to listOf(StateTarget(ABadDonedataPairIsIgnoredState.R1a)),
-            ABadDonedataPairIsIgnoredState.R2 to listOf(StateTarget(ABadDonedataPairIsIgnoredState.R2f)),
-        )
+        private fun childStatesPart0(table: MutableMap<ABadDonedataPairIsIgnoredState, List<ABadDonedataPairIsIgnoredState>>) {
+            table[ABadDonedataPairIsIgnoredState.P] = listOf(ABadDonedataPairIsIgnoredState.R1, ABadDonedataPairIsIgnoredState.R2)
+            table[ABadDonedataPairIsIgnoredState.R1] = listOf(ABadDonedataPairIsIgnoredState.R1a, ABadDonedataPairIsIgnoredState.R1f)
+            table[ABadDonedataPairIsIgnoredState.R2] = listOf(ABadDonedataPairIsIgnoredState.R2f)
+        }
+
+
+        val initialTargets: Map<ABadDonedataPairIsIgnoredState, List<EntryTarget<ABadDonedataPairIsIgnoredState, HistoryId>>> = LinkedHashMap<ABadDonedataPairIsIgnoredState, List<EntryTarget<ABadDonedataPairIsIgnoredState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<ABadDonedataPairIsIgnoredState, List<EntryTarget<ABadDonedataPairIsIgnoredState, HistoryId>>>) {
+            table[ABadDonedataPairIsIgnoredState.R1] = listOf(StateTarget(ABadDonedataPairIsIgnoredState.R1a))
+            table[ABadDonedataPairIsIgnoredState.R2] = listOf(StateTarget(ABadDonedataPairIsIgnoredState.R2f))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<ABadDonedataPairIsIgnoredState, HistoryId>> =
             listOf(StateTarget(ABadDonedataPairIsIgnoredState.P))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: p's transition 0, as the microstep reads it.
         val transitionPAt0 = EnabledTransition<ABadDonedataPairIsIgnoredState, HistoryId>(
@@ -223,6 +243,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ABadDonedataPairIsIgnoredState? = when (stateId) {
         "done" -> ABadDonedataPairIsIgnoredState.Done
@@ -235,6 +256,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ABadDonedataPairIsIgnoredState): String = when (state) {
         is ABadDonedataPairIsIgnoredState.Done -> "done"
@@ -245,6 +267,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
         is ABadDonedataPairIsIgnoredState.R2 -> "r2"
         is ABadDonedataPairIsIgnoredState.R2f -> "r2f"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ABadDonedataPairIsIgnoredState): Int = when (state) {
@@ -257,6 +280,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
         is ABadDonedataPairIsIgnoredState.R2f -> 5
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ABadDonedataPairIsIgnoredEvent? = when (name) {
         "done.state.p" -> ABadDonedataPairIsIgnoredEvent.Done.State.P
@@ -266,6 +290,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ABadDonedataPairIsIgnoredEvent): String? = when (event) {
         is ABadDonedataPairIsIgnoredEvent.Done.State.P -> "done.state.p"
@@ -273,6 +298,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
         is ABadDonedataPairIsIgnoredEvent.Done.State.R2 -> "done.state.r2"
         is ABadDonedataPairIsIgnoredEvent.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -302,6 +328,29 @@ class ABadDonedataPairIsIgnoredStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+        // W3C SCXML 5.9.2: Register In() predicate callback
+        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
             val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -330,24 +379,6 @@ class ABadDonedataPairIsIgnoredStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
         }
-
-
-
-        // W3C SCXML 5.9.2: Register In() predicate callback
-        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -537,44 +568,67 @@ class ABadDonedataPairIsIgnoredStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ABadDonedataPairIsIgnoredState,
-        event: ABadDonedataPairIsIgnoredEvent?
-    ): EnabledTransition<ABadDonedataPairIsIgnoredState, HistoryId>? = when (state) {
-        is ABadDonedataPairIsIgnoredState.P -> when {
-            event is ABadDonedataPairIsIgnoredEvent.Error.Execution -> transitionPAt0
-            event is ABadDonedataPairIsIgnoredEvent.Done.State.R1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_event.data.good == 7) and (_typeof(_event.data.empty) == \"undefined\")) and (_typeof(_event.data.bad) == \"undefined\"))", "_event.data.good === 7 && typeof _event.data.empty === 'undefined' && typeof _event.data.bad === 'undefined'")) -> transitionPAt1
-            event is ABadDonedataPairIsIgnoredEvent.Done.State.R1 -> transitionPAt2
-            event is ABadDonedataPairIsIgnoredEvent.Done.State.P -> transitionPAt3
-            else -> null
-        }
-        is ABadDonedataPairIsIgnoredState.R1a -> when {
-            event == null -> transitionR1aAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ABadDonedataPairIsIgnoredState, event: ABadDonedataPairIsIgnoredEvent?): EnabledTransition<ABadDonedataPairIsIgnoredState, HistoryId>? = when (state) {
+        is ABadDonedataPairIsIgnoredState.P -> firstEnabledTransitionOfP(state, event)
+        is ABadDonedataPairIsIgnoredState.R1a -> firstEnabledTransitionOfR1a(state, event)
         else -> null
     }
+
+
+    // p's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP(state: ABadDonedataPairIsIgnoredState, event: ABadDonedataPairIsIgnoredEvent?): EnabledTransition<ABadDonedataPairIsIgnoredState, HistoryId>? = when {
+        event is ABadDonedataPairIsIgnoredEvent.Error.Execution -> TransitionsPart0.transitionPAt0
+        event is ABadDonedataPairIsIgnoredEvent.Done.State.R1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_event.data.good == 7) and (_typeof(_event.data.empty) == \"undefined\")) and (_typeof(_event.data.bad) == \"undefined\"))", "_event.data.good === 7 && typeof _event.data.empty === 'undefined' && typeof _event.data.bad === 'undefined'")) -> TransitionsPart0.transitionPAt1
+        event is ABadDonedataPairIsIgnoredEvent.Done.State.R1 -> TransitionsPart0.transitionPAt2
+        event is ABadDonedataPairIsIgnoredEvent.Done.State.P -> TransitionsPart0.transitionPAt3
+        else -> null
+    }
+
+
+    // r1a's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfR1a(state: ABadDonedataPairIsIgnoredState, event: ABadDonedataPairIsIgnoredEvent?): EnabledTransition<ABadDonedataPairIsIgnoredState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionR1aAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     override fun onEntry(state: ABadDonedataPairIsIgnoredState, isDefaultEntry: Boolean) {
         when (state) {
-            is ABadDonedataPairIsIgnoredState.Done -> {
+            is ABadDonedataPairIsIgnoredState.Done -> onEntryOfDone()
+            is ABadDonedataPairIsIgnoredState.P -> onEntryOfP()
+            is ABadDonedataPairIsIgnoredState.R1 -> onEntryOfR1()
+            is ABadDonedataPairIsIgnoredState.R1a -> onEntryOfR1a()
+            is ABadDonedataPairIsIgnoredState.R1f -> onEntryOfR1f()
+            is ABadDonedataPairIsIgnoredState.R2 -> onEntryOfR2()
+            is ABadDonedataPairIsIgnoredState.R2f -> onEntryOfR2f()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:64 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ABadDonedataPairIsIgnoredState.P -> {
+    }
+
+    private fun onEntryOfP() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:34 :: p :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R1 -> {
+    }
+
+    private fun onEntryOfR1() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:35 :: r1 :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R1a -> {
+    }
+
+    private fun onEntryOfR1a() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:36 :: r1a :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R1f -> {
+    }
+
+    private fun onEntryOfR1f() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:39 :: r1f :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
@@ -613,11 +667,13 @@ class ABadDonedataPairIsIgnoredStateMachine(
                 if (isStateInFinalState(ABadDonedataPairIsIgnoredState.P)) {
                     raiseInternal(ABadDonedataPairIsIgnoredEvent.Done.State.P)
                 }
-            }
-            is ABadDonedataPairIsIgnoredState.R2 -> {
+    }
+
+    private fun onEntryOfR2() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:47 :: r2 :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R2f -> {
+    }
+
+    private fun onEntryOfR2f() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:48 :: r2f :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(ABadDonedataPairIsIgnoredEvent.Done.State.R2, EventMetadata.platform())
@@ -628,71 +684,102 @@ class ABadDonedataPairIsIgnoredStateMachine(
                 if (isStateInFinalState(ABadDonedataPairIsIgnoredState.P)) {
                     raiseInternal(ABadDonedataPairIsIgnoredEvent.Done.State.P)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     override fun onExit(state: ABadDonedataPairIsIgnoredState) {
         when (state) {
-            is ABadDonedataPairIsIgnoredState.Done -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:64 :: done :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.P -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:34 :: p :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R1 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:35 :: r1 :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R1a -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:36 :: r1a :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R1f -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:39 :: r1f :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R2 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:47 :: r2 :: _state_body
-            }
-            is ABadDonedataPairIsIgnoredState.R2f -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:48 :: r2f :: _state_body
-            }
+            is ABadDonedataPairIsIgnoredState.Done -> onExitOfDone()
+            is ABadDonedataPairIsIgnoredState.P -> onExitOfP()
+            is ABadDonedataPairIsIgnoredState.R1 -> onExitOfR1()
+            is ABadDonedataPairIsIgnoredState.R1a -> onExitOfR1a()
+            is ABadDonedataPairIsIgnoredState.R1f -> onExitOfR1f()
+            is ABadDonedataPairIsIgnoredState.R2 -> onExitOfR2()
+            is ABadDonedataPairIsIgnoredState.R2f -> onExitOfR2f()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:64 :: done :: _state_body
+    }
+
+    private fun onExitOfP() {
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:34 :: p :: _state_body
+    }
+
+    private fun onExitOfR1() {
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:35 :: r1 :: _state_body
+    }
+
+    private fun onExitOfR1a() {
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:36 :: r1a :: _state_body
+    }
+
+    private fun onExitOfR1f() {
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:39 :: r1f :: _state_body
+    }
+
+    private fun onExitOfR2() {
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:47 :: r2 :: _state_body
+    }
+
+    private fun onExitOfR2f() {
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:48 :: r2f :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     override fun executeTransitionContent(source: ABadDonedataPairIsIgnoredState, transitionIndex: Int) {
         when (source) {
-        is ABadDonedataPairIsIgnoredState.P -> when (transitionIndex) {
-            0 -> {
+            is ABadDonedataPairIsIgnoredState.P -> transitionContentOfP(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `p`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfP(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPAt0()
+            1 -> transitionContentOfPAt1()
+            2 -> transitionContentOfPAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfPAt0() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:51 :: p :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfPAt1() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:54 :: p :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("shape", "shape"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfPAt2() {
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:58 :: p :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("shape", "shape"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

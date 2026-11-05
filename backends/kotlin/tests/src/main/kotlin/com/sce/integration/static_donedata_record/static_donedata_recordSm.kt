@@ -184,13 +184,15 @@ class StaticDonedataRecordStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "shown" to vShown.toSaved(),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "shown" to vShown.toSaved()
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -215,9 +217,19 @@ class StaticDonedataRecordStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val saved1 = StaticDonedataRecordViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
-        vShown = saved1
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
         enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
+        val saved1 = StaticDonedataRecordViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
+        return {
+            vShown = saved1
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -230,6 +242,10 @@ class StaticDonedataRecordStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticDonedataRecordViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
     }
 
@@ -258,6 +274,7 @@ class StaticDonedataRecordStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticDonedataRecordState, HistoryId>>
@@ -266,6 +283,9 @@ class StaticDonedataRecordStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticDonedataRecordState, HistoryId>> =
             listOf(StateTarget(StaticDonedataRecordState.Counting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: counting's transition 0, as the microstep reads it.
         val transitionCountingAt0 = EnabledTransition<StaticDonedataRecordState, HistoryId>(
@@ -286,6 +306,7 @@ class StaticDonedataRecordStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticDonedataRecordState? = when (stateId) {
         "counting" -> StaticDonedataRecordState.Counting
@@ -293,17 +314,20 @@ class StaticDonedataRecordStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticDonedataRecordState): String = when (state) {
         is StaticDonedataRecordState.Counting -> "counting"
         is StaticDonedataRecordState.Done -> "done"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticDonedataRecordState): Int = when (state) {
         is StaticDonedataRecordState.Counting -> 0
         is StaticDonedataRecordState.Done -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticDonedataRecordEvent? = when (name) {
@@ -312,6 +336,7 @@ class StaticDonedataRecordStateMachine(
         "finish" -> StaticDonedataRecordEvent.Finish
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticDonedataRecordEvent): String? = when (event) {
@@ -324,32 +349,44 @@ class StaticDonedataRecordStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticDonedataRecordState,
-        event: StaticDonedataRecordEvent?
-    ): EnabledTransition<StaticDonedataRecordState, HistoryId>? = when (state) {
-        is StaticDonedataRecordState.Counting -> when {
-            event is StaticDonedataRecordEvent.Bump -> transitionCountingAt0
-            event is StaticDonedataRecordEvent.Finish -> transitionCountingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticDonedataRecordState, event: StaticDonedataRecordEvent?): EnabledTransition<StaticDonedataRecordState, HistoryId>? = when (state) {
+        is StaticDonedataRecordState.Counting -> firstEnabledTransitionOfCounting(state, event)
         else -> null
     }
+
+
+    // counting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCounting(state: StaticDonedataRecordState, event: StaticDonedataRecordEvent?): EnabledTransition<StaticDonedataRecordState, HistoryId>? = when {
+        event is StaticDonedataRecordEvent.Bump -> TransitionsPart0.transitionCountingAt0
+        event is StaticDonedataRecordEvent.Finish -> TransitionsPart0.transitionCountingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_donedata_record.scxml:13 :: _machine
     override fun onEntry(state: StaticDonedataRecordState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticDonedataRecordState.Counting -> {
+            is StaticDonedataRecordState.Counting -> onEntryOfCounting()
+            is StaticDonedataRecordState.Done -> onEntryOfDone()
+        }
+    }
+
+
+    private fun onEntryOfCounting() {
                 // SCE-MAP: static_donedata_record.scxml:23 :: counting :: _state_body
-            }
-            is StaticDonedataRecordState.Done -> {
+    }
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: static_donedata_record.scxml:30 :: done :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
@@ -369,30 +406,52 @@ class StaticDonedataRecordStateMachine(
                 }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_donedata_record.scxml:13 :: _machine
     override fun onExit(state: StaticDonedataRecordState) {
         when (state) {
-            is StaticDonedataRecordState.Counting -> {
-                // SCE-MAP: static_donedata_record.scxml:23 :: counting :: _state_body
-            }
-            is StaticDonedataRecordState.Done -> {
-                // SCE-MAP: static_donedata_record.scxml:30 :: done :: _state_body
-            }
+            is StaticDonedataRecordState.Counting -> onExitOfCounting()
+            is StaticDonedataRecordState.Done -> onExitOfDone()
         }
     }
+
+
+    private fun onExitOfCounting() {
+                // SCE-MAP: static_donedata_record.scxml:23 :: counting :: _state_body
+    }
+
+    private fun onExitOfDone() {
+                // SCE-MAP: static_donedata_record.scxml:30 :: done :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_donedata_record.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticDonedataRecordState, transitionIndex: Int) {
         when (source) {
-        is StaticDonedataRecordState.Counting -> when (transitionIndex) {
-            0 -> {
+            is StaticDonedataRecordState.Counting -> transitionContentOfCounting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `counting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfCounting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfCountingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfCountingAt0() {
                 // SCE-MAP: static_donedata_record.scxml:24 :: counting :: _transition_0
 
             if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataRecordEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
@@ -400,10 +459,5 @@ class StaticDonedataRecordStateMachine(
             }
 
             vShown = vShown.copy(layout = StaticDonedataRecordViewModeEnum.AGENDA_LIST)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

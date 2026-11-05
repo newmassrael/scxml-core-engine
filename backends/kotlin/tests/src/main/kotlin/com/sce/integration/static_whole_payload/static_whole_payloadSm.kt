@@ -136,6 +136,10 @@ class StaticWholePayloadStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.updates?.let { vUpdates = it }
         params.agendas?.let { vAgendas = it }
         params.others?.let { vOthers = it }
@@ -243,17 +247,19 @@ class StaticWholePayloadStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "shown" to vShown.toSaved(),
-            "seen" to SavedValues.list(vSeen) { it.toSaved() },
-            "updates" to SavedValues.of(vUpdates),
-            "agendas" to SavedValues.of(vAgendas),
-            "others" to SavedValues.of(vOthers),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "shown" to vShown.toSaved()
+        variables += "seen" to SavedValues.list(vSeen) { it.toSaved() }
+        variables += "updates" to SavedValues.of(vUpdates)
+        variables += "agendas" to SavedValues.of(vAgendas)
+        variables += "others" to SavedValues.of(vOthers)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -278,17 +284,27 @@ class StaticWholePayloadStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticWholePayloadViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
         val saved2 = SavedValues.list(savedGrown.variable("seen"), "seen", 4) { e, w -> StaticWholePayloadViewRecord.fromSaved(e, w) }
         val saved3 = SavedValues.uint32(savedGrown.variable("updates"), "updates")
         val saved4 = SavedValues.uint32(savedGrown.variable("agendas"), "agendas")
         val saved5 = SavedValues.uint32(savedGrown.variable("others"), "others")
-        vShown = saved1
-        vSeen = saved2
-        vUpdates = saved3
-        vAgendas = saved4
-        vOthers = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vShown = saved1
+            vSeen = saved2
+            vUpdates = saved3
+            vAgendas = saved4
+            vOthers = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -301,6 +317,10 @@ class StaticWholePayloadStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticWholePayloadViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
         SavedValues.list(savedGrown.variable("seen"), "seen", 4) { e, w -> StaticWholePayloadViewRecord.fromSaved(e, w) }
         SavedValues.uint32(savedGrown.variable("updates"), "updates")
@@ -382,6 +402,9 @@ class StaticWholePayloadStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticWholePayloadState, HistoryId>> =
             listOf(StateTarget(StaticWholePayloadState.Viewing))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: viewing's transition 0, as the microstep reads it.
         val transitionViewingAt0 = EnabledTransition<StaticWholePayloadState, HistoryId>(
@@ -411,21 +434,25 @@ class StaticWholePayloadStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticWholePayloadState? = when (stateId) {
         "viewing" -> StaticWholePayloadState.Viewing
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticWholePayloadState): String = when (state) {
         is StaticWholePayloadState.Viewing -> "viewing"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticWholePayloadState): Int = when (state) {
         is StaticWholePayloadState.Viewing -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticWholePayloadEvent? = when (name) {
@@ -433,6 +460,7 @@ class StaticWholePayloadStateMachine(
         "view.shown" -> StaticWholePayloadEvent.View.Shown
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticWholePayloadEvent): String? = when (event) {
@@ -444,51 +472,82 @@ class StaticWholePayloadStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticWholePayloadState,
-        event: StaticWholePayloadEvent?
-    ): EnabledTransition<StaticWholePayloadState, HistoryId>? = when (state) {
-        is StaticWholePayloadState.Viewing -> when {
-            event is StaticWholePayloadEvent.View.Shown -> transitionViewingAt0
-            event is StaticWholePayloadEvent.Peek && vShown.layout == StaticWholePayloadViewModeEnum.AGENDA_LIST -> transitionViewingAt1
-            event is StaticWholePayloadEvent.Peek -> transitionViewingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticWholePayloadState, event: StaticWholePayloadEvent?): EnabledTransition<StaticWholePayloadState, HistoryId>? = when (state) {
+        is StaticWholePayloadState.Viewing -> firstEnabledTransitionOfViewing(state, event)
     }
+
+
+    // viewing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfViewing(state: StaticWholePayloadState, event: StaticWholePayloadEvent?): EnabledTransition<StaticWholePayloadState, HistoryId>? = when {
+        event is StaticWholePayloadEvent.View.Shown -> TransitionsPart0.transitionViewingAt0
+        event is StaticWholePayloadEvent.Peek && vShown.layout == StaticWholePayloadViewModeEnum.AGENDA_LIST -> TransitionsPart0.transitionViewingAt1
+        event is StaticWholePayloadEvent.Peek -> TransitionsPart0.transitionViewingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_whole_payload.scxml:17 :: _machine
     override fun onEntry(state: StaticWholePayloadState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticWholePayloadState.Viewing -> {
-                // SCE-MAP: static_whole_payload.scxml:31 :: viewing :: _state_body
-            }
+            is StaticWholePayloadState.Viewing -> onEntryOfViewing()
         }
+    }
+
+
+    private fun onEntryOfViewing() {
+                // SCE-MAP: static_whole_payload.scxml:31 :: viewing :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_whole_payload.scxml:17 :: _machine
     override fun onExit(state: StaticWholePayloadState) {
         when (state) {
-            is StaticWholePayloadState.Viewing -> {
-                // SCE-MAP: static_whole_payload.scxml:31 :: viewing :: _state_body
-            }
+            is StaticWholePayloadState.Viewing -> onExitOfViewing()
         }
     }
+
+
+    private fun onExitOfViewing() {
+                // SCE-MAP: static_whole_payload.scxml:31 :: viewing :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_whole_payload.scxml:17 :: _machine
     override fun executeTransitionContent(source: StaticWholePayloadState, transitionIndex: Int) {
         when (source) {
-        is StaticWholePayloadState.Viewing -> when (transitionIndex) {
-            0 -> {
+            is StaticWholePayloadState.Viewing -> transitionContentOfViewing(transitionIndex)
+        }
+    }
+
+
+    // The content of `viewing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfViewing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfViewingAt0()
+            1 -> transitionContentOfViewingAt1()
+            2 -> transitionContentOfViewingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfViewingAt0() {
                 // SCE-MAP: static_whole_payload.scxml:32 :: viewing :: _transition_0
                 if (pendingViewShownPayload == null) {
                     return
@@ -503,23 +562,21 @@ class StaticWholePayloadStateMachine(
             if (try { vUpdates = com.sce.forge.runtime.SceChecked.add(vUpdates, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfViewingAt1() {
                 // SCE-MAP: static_whole_payload.scxml:37 :: viewing :: _transition_1
 
             if (try { vAgendas = com.sce.forge.runtime.SceChecked.add(vAgendas, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfViewingAt2() {
                 // SCE-MAP: static_whole_payload.scxml:40 :: viewing :: _transition_2
 
             if (try { vOthers = com.sce.forge.runtime.SceChecked.add(vOthers, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

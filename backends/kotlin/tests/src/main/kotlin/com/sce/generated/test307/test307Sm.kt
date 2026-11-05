@@ -78,6 +78,7 @@ class Test307StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<Test307State, HistoryId>>
@@ -86,6 +87,9 @@ class Test307StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test307State, HistoryId>> =
             listOf(StateTarget(Test307State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test307State, HistoryId>(
@@ -124,6 +128,7 @@ class Test307StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test307State? = when (stateId) {
         "final" -> Test307State.Final
@@ -132,6 +137,7 @@ class Test307StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test307State): String = when (state) {
         is Test307State.Final -> "final"
@@ -139,12 +145,14 @@ class Test307StateMachine(
         is Test307State.S1 -> "s1"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test307State): Int = when (state) {
         is Test307State.Final -> 2
         is Test307State.S0 -> 0
         is Test307State.S1 -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test307Event? = when (name) {
@@ -155,6 +163,7 @@ class Test307StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test307Event): String? = when (event) {
         is Test307Event.Bar -> "bar"
@@ -162,6 +171,7 @@ class Test307StateMachine(
         is Test307Event.Error.Execution -> "error.execution"
         is Test307Event.Foo -> "foo"
     }
+
 
 
 
@@ -396,34 +406,50 @@ class Test307StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test307State,
-        event: Test307Event?
-    ): EnabledTransition<Test307State, HistoryId>? = when (state) {
-        is Test307State.S0 -> when {
-            (event is Test307Event.Error || event is Test307Event.Error.Execution) -> transitionS0At0
-            event is Test307Event.Foo -> transitionS0At1
-            else -> null
-        }
-        is Test307State.S1 -> when {
-            (event is Test307Event.Error || event is Test307Event.Error.Execution) -> transitionS1At0
-            event is Test307Event.Bar -> transitionS1At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test307State, event: Test307Event?): EnabledTransition<Test307State, HistoryId>? = when (state) {
+        is Test307State.S0 -> firstEnabledTransitionOfS0(state, event)
+        is Test307State.S1 -> firstEnabledTransitionOfS1(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test307State, event: Test307Event?): EnabledTransition<Test307State, HistoryId>? = when {
+        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionsPart0.transitionS0At0
+        event is Test307Event.Foo -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test307State, event: Test307Event?): EnabledTransition<Test307State, HistoryId>? = when {
+        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionsPart0.transitionS1At0
+        event is Test307Event.Bar -> TransitionsPart0.transitionS1At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test307.scxml:1 :: _machine
     override fun onEntry(state: Test307State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test307State.Final -> {
+            is Test307State.Final -> onEntryOfFinal()
+            is Test307State.S0 -> onEntryOfS0()
+            is Test307State.S1 -> onEntryOfS1()
+        }
+    }
+
+
+    private fun onEntryOfFinal() {
                 // SCE-MAP: test307.scxml:40 :: final :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test307State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test307.scxml:8 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -445,14 +471,15 @@ class Test307StateMachine(
 
             raiseInternal(Test307Event.Foo)
                 }
-            }
-            is Test307State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test307.scxml:21 :: s1 :: _state_body
                 // §scxml-D-enterStates, late binding: the state's <data> is bound
                 // on its FIRST entry only (s.isFirstEntry), before its <onentry>.
                 // The engine owns the first-entry rule; this is only what binding
                 // means for this state.
-                if (claimLateBindingFirstEntry(state)) {
+                if (claimLateBindingFirstEntry(Test307State.S1)) {
                     ensureScriptEngine()
                     val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -483,33 +510,59 @@ class Test307StateMachine(
 
             raiseInternal(Test307Event.Bar)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test307.scxml:1 :: _machine
     override fun onExit(state: Test307State) {
         when (state) {
-            is Test307State.Final -> {
-                // SCE-MAP: test307.scxml:40 :: final :: _state_body
-            }
-            is Test307State.S0 -> {
-                // SCE-MAP: test307.scxml:8 :: s0 :: _state_body
-            }
-            is Test307State.S1 -> {
-                // SCE-MAP: test307.scxml:21 :: s1 :: _state_body
-            }
+            is Test307State.Final -> onExitOfFinal()
+            is Test307State.S0 -> onExitOfS0()
+            is Test307State.S1 -> onExitOfS1()
         }
     }
+
+
+    private fun onExitOfFinal() {
+                // SCE-MAP: test307.scxml:40 :: final :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test307.scxml:8 :: s0 :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test307.scxml:21 :: s1 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test307.scxml:1 :: _machine
     override fun executeTransitionContent(source: Test307State, transitionIndex: Int) {
         when (source) {
-        is Test307State.S0 -> when (transitionIndex) {
-            0 -> {
+            is Test307State.S0 -> transitionContentOfS0(transitionIndex)
+            is Test307State.S1 -> transitionContentOfS1(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
+            1 -> transitionContentOfS0At1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: test307.scxml:13 :: s0 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation. An expression that fails
@@ -526,16 +579,29 @@ class Test307StateMachine(
             }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfS0At1() {
                 // SCE-MAP: test307.scxml:16 :: s0 :: _transition_1
 
             println("no error in s0")
-            }
+    }
+
+    // The content of `s1`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS1(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS1At0()
+            1 -> transitionContentOfS1At1()
             else -> {}
         }
-        is Test307State.S1 -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfS1At0() {
                 // SCE-MAP: test307.scxml:31 :: s1 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation. An expression that fails
@@ -552,15 +618,11 @@ class Test307StateMachine(
             }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfS1At1() {
                 // SCE-MAP: test307.scxml:34 :: s1 :: _transition_1
 
             println("No error in s1")
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

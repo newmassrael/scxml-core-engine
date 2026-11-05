@@ -99,6 +99,10 @@ class StaticOptionalWidenedStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.entry?.let { vEntry = it }
         params.due?.let { vDue = it }
         params.remind?.let { vRemind = it }
@@ -184,17 +188,19 @@ class StaticOptionalWidenedStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "entry" to SavedValues.of(vEntry),
-            "due" to SavedValues.optional(vDue) { SavedValues.of(it) },
-            "remind" to SavedValues.optional(vRemind) { SavedValues.of(it) },
-            "taken" to SavedValues.of(vTaken),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "entry" to SavedValues.of(vEntry)
+        variables += "due" to SavedValues.optional(vDue) { SavedValues.of(it) }
+        variables += "remind" to SavedValues.optional(vRemind) { SavedValues.of(it) }
+        variables += "taken" to SavedValues.of(vTaken)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -219,17 +225,27 @@ class StaticOptionalWidenedStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("entry"), "entry")
         val saved2 = SavedValues.optional(savedGrown.variable("due"), "due") { e, w -> SavedValues.int64(e, w) }
         val saved3 = SavedValues.optional(savedGrown.variable("remind"), "remind") { e, w -> SavedValues.int64(e, w) }
         val saved4 = SavedValues.uint32(savedGrown.variable("taken"), "taken")
         val saved5 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vEntry = saved1
-        vDue = saved2
-        vRemind = saved3
-        vTaken = saved4
-        vRefusals = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vEntry = saved1
+            vDue = saved2
+            vRemind = saved3
+            vTaken = saved4
+            vRefusals = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -242,6 +258,10 @@ class StaticOptionalWidenedStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("entry"), "entry")
         SavedValues.optional(savedGrown.variable("due"), "due") { e, w -> SavedValues.int64(e, w) }
         SavedValues.optional(savedGrown.variable("remind"), "remind") { e, w -> SavedValues.int64(e, w) }
@@ -323,6 +343,9 @@ class StaticOptionalWidenedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticOptionalWidenedState, HistoryId>> =
             listOf(StateTarget(StaticOptionalWidenedState.Reading))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: reading's transition 0, as the microstep reads it.
         val transitionReadingAt0 = EnabledTransition<StaticOptionalWidenedState, HistoryId>(
@@ -343,21 +366,25 @@ class StaticOptionalWidenedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticOptionalWidenedState? = when (stateId) {
         "reading" -> StaticOptionalWidenedState.Reading
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticOptionalWidenedState): String = when (state) {
         is StaticOptionalWidenedState.Reading -> "reading"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticOptionalWidenedState): Int = when (state) {
         is StaticOptionalWidenedState.Reading -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticOptionalWidenedEvent? = when (name) {
@@ -365,6 +392,7 @@ class StaticOptionalWidenedStateMachine(
         "error.execution" -> StaticOptionalWidenedEvent.Error.Execution
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticOptionalWidenedEvent): String? = when (event) {
@@ -376,50 +404,80 @@ class StaticOptionalWidenedStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticOptionalWidenedState,
-        event: StaticOptionalWidenedEvent?
-    ): EnabledTransition<StaticOptionalWidenedState, HistoryId>? = when (state) {
-        is StaticOptionalWidenedState.Reading -> when {
-            event is StaticOptionalWidenedEvent.Due.Widened -> transitionReadingAt0
-            event is StaticOptionalWidenedEvent.Error.Execution -> transitionReadingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticOptionalWidenedState, event: StaticOptionalWidenedEvent?): EnabledTransition<StaticOptionalWidenedState, HistoryId>? = when (state) {
+        is StaticOptionalWidenedState.Reading -> firstEnabledTransitionOfReading(state, event)
     }
+
+
+    // reading's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReading(state: StaticOptionalWidenedState, event: StaticOptionalWidenedEvent?): EnabledTransition<StaticOptionalWidenedState, HistoryId>? = when {
+        event is StaticOptionalWidenedEvent.Due.Widened -> TransitionsPart0.transitionReadingAt0
+        event is StaticOptionalWidenedEvent.Error.Execution -> TransitionsPart0.transitionReadingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_optional_widened.scxml:19 :: _machine
     override fun onEntry(state: StaticOptionalWidenedState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticOptionalWidenedState.Reading -> {
-                // SCE-MAP: static_optional_widened.scxml:29 :: reading :: _state_body
-            }
+            is StaticOptionalWidenedState.Reading -> onEntryOfReading()
         }
+    }
+
+
+    private fun onEntryOfReading() {
+                // SCE-MAP: static_optional_widened.scxml:29 :: reading :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_optional_widened.scxml:19 :: _machine
     override fun onExit(state: StaticOptionalWidenedState) {
         when (state) {
-            is StaticOptionalWidenedState.Reading -> {
-                // SCE-MAP: static_optional_widened.scxml:29 :: reading :: _state_body
-            }
+            is StaticOptionalWidenedState.Reading -> onExitOfReading()
         }
     }
+
+
+    private fun onExitOfReading() {
+                // SCE-MAP: static_optional_widened.scxml:29 :: reading :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_optional_widened.scxml:19 :: _machine
     override fun executeTransitionContent(source: StaticOptionalWidenedState, transitionIndex: Int) {
         when (source) {
-        is StaticOptionalWidenedState.Reading -> when (transitionIndex) {
-            0 -> {
+            is StaticOptionalWidenedState.Reading -> transitionContentOfReading(transitionIndex)
+        }
+    }
+
+
+    // The content of `reading`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfReading(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfReadingAt0()
+            1 -> transitionContentOfReadingAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfReadingAt0() {
                 // SCE-MAP: static_optional_widened.scxml:30 :: reading :: _transition_0
                 if (pendingDueWidenedPayload == null) {
                     return
@@ -434,16 +492,13 @@ class StaticOptionalWidenedStateMachine(
             if (try { vTaken = com.sce.forge.runtime.SceChecked.add(vTaken, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalWidenedEvent.Error.Execution, "<assign location='taken'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfReadingAt1() {
                 // SCE-MAP: static_optional_widened.scxml:36 :: reading :: _transition_1
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalWidenedEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

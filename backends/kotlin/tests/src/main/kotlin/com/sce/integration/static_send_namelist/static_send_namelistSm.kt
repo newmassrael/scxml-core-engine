@@ -133,6 +133,10 @@ class StaticSendNamelistStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.zoom?.let { vZoom = it }
         params.level?.let { vLevel = it }
         params.deliveries?.let { vDeliveries = it }
@@ -227,17 +231,19 @@ class StaticSendNamelistStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "layout" to vLayout.toSaved(),
-            "zoom" to SavedValues.of(vZoom),
-            "received" to vReceived.toSaved(),
-            "level" to SavedValues.of(vLevel),
-            "deliveries" to SavedValues.of(vDeliveries),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "layout" to vLayout.toSaved()
+        variables += "zoom" to SavedValues.of(vZoom)
+        variables += "received" to vReceived.toSaved()
+        variables += "level" to SavedValues.of(vLevel)
+        variables += "deliveries" to SavedValues.of(vDeliveries)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -262,17 +268,27 @@ class StaticSendNamelistStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticSendNamelistViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         val saved2 = SavedValues.uint8(savedGrown.variable("zoom"), "zoom")
         val saved3 = StaticSendNamelistViewModeEnum.fromSaved(savedGrown.variable("received"), "received")
         val saved4 = SavedValues.uint8(savedGrown.variable("level"), "level")
         val saved5 = SavedValues.uint32(savedGrown.variable("deliveries"), "deliveries")
-        vLayout = saved1
-        vZoom = saved2
-        vReceived = saved3
-        vLevel = saved4
-        vDeliveries = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLayout = saved1
+            vZoom = saved2
+            vReceived = saved3
+            vLevel = saved4
+            vDeliveries = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -285,6 +301,10 @@ class StaticSendNamelistStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticSendNamelistViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         SavedValues.uint8(savedGrown.variable("zoom"), "zoom")
         StaticSendNamelistViewModeEnum.fromSaved(savedGrown.variable("received"), "received")
@@ -366,6 +386,9 @@ class StaticSendNamelistStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticSendNamelistState, HistoryId>> =
             listOf(StateTarget(StaticSendNamelistState.Viewing))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: viewing's transition 0, as the microstep reads it.
         val transitionViewingAt0 = EnabledTransition<StaticSendNamelistState, HistoryId>(
@@ -404,21 +427,25 @@ class StaticSendNamelistStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticSendNamelistState? = when (stateId) {
         "viewing" -> StaticSendNamelistState.Viewing
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticSendNamelistState): String = when (state) {
         is StaticSendNamelistState.Viewing -> "viewing"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticSendNamelistState): Int = when (state) {
         is StaticSendNamelistState.Viewing -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticSendNamelistEvent? = when (name) {
@@ -429,6 +456,7 @@ class StaticSendNamelistStateMachine(
         "view.shown" -> StaticSendNamelistEvent.View.Shown
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticSendNamelistEvent): String? = when (event) {
@@ -443,59 +471,92 @@ class StaticSendNamelistStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticSendNamelistState,
-        event: StaticSendNamelistEvent?
-    ): EnabledTransition<StaticSendNamelistState, HistoryId>? = when (state) {
-        is StaticSendNamelistState.Viewing -> when {
-            event is StaticSendNamelistEvent.Pick -> transitionViewingAt0
-            event is StaticSendNamelistEvent.Send.Names -> transitionViewingAt1
-            event is StaticSendNamelistEvent.Send.Mixed -> transitionViewingAt2
-            event is StaticSendNamelistEvent.View.Shown -> transitionViewingAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticSendNamelistState, event: StaticSendNamelistEvent?): EnabledTransition<StaticSendNamelistState, HistoryId>? = when (state) {
+        is StaticSendNamelistState.Viewing -> firstEnabledTransitionOfViewing(state, event)
     }
+
+
+    // viewing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfViewing(state: StaticSendNamelistState, event: StaticSendNamelistEvent?): EnabledTransition<StaticSendNamelistState, HistoryId>? = when {
+        event is StaticSendNamelistEvent.Pick -> TransitionsPart0.transitionViewingAt0
+        event is StaticSendNamelistEvent.Send.Names -> TransitionsPart0.transitionViewingAt1
+        event is StaticSendNamelistEvent.Send.Mixed -> TransitionsPart0.transitionViewingAt2
+        event is StaticSendNamelistEvent.View.Shown -> TransitionsPart0.transitionViewingAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_send_namelist.scxml:13 :: _machine
     override fun onEntry(state: StaticSendNamelistState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticSendNamelistState.Viewing -> {
-                // SCE-MAP: static_send_namelist.scxml:24 :: viewing :: _state_body
-            }
+            is StaticSendNamelistState.Viewing -> onEntryOfViewing()
         }
+    }
+
+
+    private fun onEntryOfViewing() {
+                // SCE-MAP: static_send_namelist.scxml:24 :: viewing :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_send_namelist.scxml:13 :: _machine
     override fun onExit(state: StaticSendNamelistState) {
         when (state) {
-            is StaticSendNamelistState.Viewing -> {
-                // SCE-MAP: static_send_namelist.scxml:24 :: viewing :: _state_body
-            }
+            is StaticSendNamelistState.Viewing -> onExitOfViewing()
         }
     }
+
+
+    private fun onExitOfViewing() {
+                // SCE-MAP: static_send_namelist.scxml:24 :: viewing :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_send_namelist.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticSendNamelistState, transitionIndex: Int) {
         when (source) {
-        is StaticSendNamelistState.Viewing -> when (transitionIndex) {
-            0 -> {
+            is StaticSendNamelistState.Viewing -> transitionContentOfViewing(transitionIndex)
+        }
+    }
+
+
+    // The content of `viewing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfViewing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfViewingAt0()
+            1 -> transitionContentOfViewingAt1()
+            2 -> transitionContentOfViewingAt2()
+            3 -> transitionContentOfViewingAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfViewingAt0() {
                 // SCE-MAP: static_send_namelist.scxml:25 :: viewing :: _transition_0
 
             vLayout = StaticSendNamelistViewModeEnum.AGENDA_LIST
 
             vZoom = 9.toUByte()
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfViewingAt1() {
                 // SCE-MAP: static_send_namelist.scxml:29 :: viewing :: _transition_1
 
 
@@ -514,8 +575,9 @@ class StaticSendNamelistStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfViewingAt2() {
                 // SCE-MAP: static_send_namelist.scxml:32 :: viewing :: _transition_2
 
 
@@ -540,8 +602,9 @@ class StaticSendNamelistStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfViewingAt3() {
                 // SCE-MAP: static_send_namelist.scxml:37 :: viewing :: _transition_3
                 if (pendingViewShownPayload == null) {
                     return
@@ -554,9 +617,5 @@ class StaticSendNamelistStateMachine(
             if (try { vDeliveries = com.sce.forge.runtime.SceChecked.add(vDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendNamelistEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

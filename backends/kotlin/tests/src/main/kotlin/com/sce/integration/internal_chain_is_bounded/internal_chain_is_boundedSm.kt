@@ -163,6 +163,9 @@ class InternalChainIsBoundedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InternalChainIsBoundedState, HistoryId>> =
             listOf(StateTarget(InternalChainIsBoundedState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: alt's transition 0, as the microstep reads it.
         val transitionAltAt0 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
@@ -345,6 +348,7 @@ class InternalChainIsBoundedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InternalChainIsBoundedState? = when (stateId) {
         "alt" -> InternalChainIsBoundedState.Alt
@@ -356,6 +360,7 @@ class InternalChainIsBoundedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InternalChainIsBoundedState): String = when (state) {
         is InternalChainIsBoundedState.Alt -> "alt"
@@ -366,6 +371,7 @@ class InternalChainIsBoundedStateMachine(
         is InternalChainIsBoundedState.Spin -> "spin"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InternalChainIsBoundedState): Int = when (state) {
         is InternalChainIsBoundedState.Alt -> 4
@@ -375,6 +381,7 @@ class InternalChainIsBoundedStateMachine(
         is InternalChainIsBoundedState.Resuming -> 3
         is InternalChainIsBoundedState.Spin -> 2
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InternalChainIsBoundedEvent? = when (name) {
@@ -393,6 +400,7 @@ class InternalChainIsBoundedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InternalChainIsBoundedEvent): String? = when (event) {
         is InternalChainIsBoundedEvent.Alternate -> "alternate"
@@ -408,6 +416,7 @@ class InternalChainIsBoundedStateMachine(
         is InternalChainIsBoundedEvent.Unanswered -> "unanswered"
         is InternalChainIsBoundedEvent.Unheard -> "unheard"
     }
+
 
 
 
@@ -437,6 +446,27 @@ class InternalChainIsBoundedStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
             val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -486,22 +516,6 @@ class InternalChainIsBoundedStateMachine(
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pending'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -691,108 +705,183 @@ class InternalChainIsBoundedStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InternalChainIsBoundedState,
-        event: InternalChainIsBoundedEvent?
-    ): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when (state) {
-        is InternalChainIsBoundedState.Alt -> when {
-            event is InternalChainIsBoundedEvent.Tick -> transitionAltAt0
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(pending, 1)", "pending == 1")) -> transitionAltAt1
-            event is InternalChainIsBoundedEvent.Poke -> transitionAltAt2
-            else -> null
-        }
-        is InternalChainIsBoundedState.Bounded -> when {
-            event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 999)", "laps < 999")) -> transitionBoundedAt0
-            event is InternalChainIsBoundedEvent.Link -> transitionBoundedAt1
-            event is InternalChainIsBoundedEvent.Poke -> transitionBoundedAt2
-            else -> null
-        }
-        is InternalChainIsBoundedState.Idle -> when {
-            event is InternalChainIsBoundedEvent.Poke -> transitionIdleAt0
-            event is InternalChainIsBoundedEvent.Bounded -> transitionIdleAt1
-            event is InternalChainIsBoundedEvent.Spin -> transitionIdleAt2
-            event is InternalChainIsBoundedEvent.Resume -> transitionIdleAt3
-            event is InternalChainIsBoundedEvent.Alternate -> transitionIdleAt4
-            event is InternalChainIsBoundedEvent.Unanswered -> transitionIdleAt5
-            else -> null
-        }
-        is InternalChainIsBoundedState.Ignoring -> when {
-            event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(ignores < 999)", "ignores < 999")) -> transitionIgnoringAt0
-            event is InternalChainIsBoundedEvent.Beatless -> transitionIgnoringAt1
-            event is InternalChainIsBoundedEvent.Poke -> transitionIgnoringAt2
-            else -> null
-        }
-        is InternalChainIsBoundedState.Resuming -> when {
-            event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(beats < 1499)", "beats < 1499")) -> transitionResumingAt0
-            event is InternalChainIsBoundedEvent.Beat -> transitionResumingAt1
-            event is InternalChainIsBoundedEvent.Poke -> transitionResumingAt2
-            else -> null
-        }
-        is InternalChainIsBoundedState.Spin -> when {
-            event is InternalChainIsBoundedEvent.Link -> transitionSpinAt0
-            event is InternalChainIsBoundedEvent.Poke -> transitionSpinAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InternalChainIsBoundedState, event: InternalChainIsBoundedEvent?): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when (state) {
+        is InternalChainIsBoundedState.Alt -> firstEnabledTransitionOfAlt(state, event)
+        is InternalChainIsBoundedState.Bounded -> firstEnabledTransitionOfBounded(state, event)
+        is InternalChainIsBoundedState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is InternalChainIsBoundedState.Ignoring -> firstEnabledTransitionOfIgnoring(state, event)
+        is InternalChainIsBoundedState.Resuming -> firstEnabledTransitionOfResuming(state, event)
+        is InternalChainIsBoundedState.Spin -> firstEnabledTransitionOfSpin(state, event)
     }
+
+
+    // alt's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAlt(state: InternalChainIsBoundedState, event: InternalChainIsBoundedEvent?): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when {
+        event is InternalChainIsBoundedEvent.Tick -> TransitionsPart0.transitionAltAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(pending, 1)", "pending == 1")) -> TransitionsPart0.transitionAltAt1
+        event is InternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionAltAt2
+        else -> null
+    }
+
+
+    // bounded's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBounded(state: InternalChainIsBoundedState, event: InternalChainIsBoundedEvent?): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when {
+        event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 999)", "laps < 999")) -> TransitionsPart0.transitionBoundedAt0
+        event is InternalChainIsBoundedEvent.Link -> TransitionsPart0.transitionBoundedAt1
+        event is InternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionBoundedAt2
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: InternalChainIsBoundedState, event: InternalChainIsBoundedEvent?): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when {
+        event is InternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionIdleAt0
+        event is InternalChainIsBoundedEvent.Bounded -> TransitionsPart0.transitionIdleAt1
+        event is InternalChainIsBoundedEvent.Spin -> TransitionsPart0.transitionIdleAt2
+        event is InternalChainIsBoundedEvent.Resume -> TransitionsPart0.transitionIdleAt3
+        event is InternalChainIsBoundedEvent.Alternate -> TransitionsPart0.transitionIdleAt4
+        event is InternalChainIsBoundedEvent.Unanswered -> TransitionsPart0.transitionIdleAt5
+        else -> null
+    }
+
+
+    // ignoring's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIgnoring(state: InternalChainIsBoundedState, event: InternalChainIsBoundedEvent?): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when {
+        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(ignores < 999)", "ignores < 999")) -> TransitionsPart0.transitionIgnoringAt0
+        event is InternalChainIsBoundedEvent.Beatless -> TransitionsPart0.transitionIgnoringAt1
+        event is InternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionIgnoringAt2
+        else -> null
+    }
+
+
+    // resuming's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfResuming(state: InternalChainIsBoundedState, event: InternalChainIsBoundedEvent?): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when {
+        event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(beats < 1499)", "beats < 1499")) -> TransitionsPart0.transitionResumingAt0
+        event is InternalChainIsBoundedEvent.Beat -> TransitionsPart0.transitionResumingAt1
+        event is InternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionResumingAt2
+        else -> null
+    }
+
+
+    // spin's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSpin(state: InternalChainIsBoundedState, event: InternalChainIsBoundedEvent?): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when {
+        event is InternalChainIsBoundedEvent.Link -> TransitionsPart0.transitionSpinAt0
+        event is InternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionSpinAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: internal_chain_is_bounded.scxml:90 :: _machine
     override fun onEntry(state: InternalChainIsBoundedState, isDefaultEntry: Boolean) {
         when (state) {
-            is InternalChainIsBoundedState.Alt -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:211 :: alt :: _state_body
-            }
-            is InternalChainIsBoundedState.Bounded -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:153 :: bounded :: _state_body
-            }
-            is InternalChainIsBoundedState.Idle -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _state_body
-            }
-            is InternalChainIsBoundedState.Ignoring -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:244 :: ignoring :: _state_body
-            }
-            is InternalChainIsBoundedState.Resuming -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:192 :: resuming :: _state_body
-            }
-            is InternalChainIsBoundedState.Spin -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:174 :: spin :: _state_body
-            }
+            is InternalChainIsBoundedState.Alt -> onEntryOfAlt()
+            is InternalChainIsBoundedState.Bounded -> onEntryOfBounded()
+            is InternalChainIsBoundedState.Idle -> onEntryOfIdle()
+            is InternalChainIsBoundedState.Ignoring -> onEntryOfIgnoring()
+            is InternalChainIsBoundedState.Resuming -> onEntryOfResuming()
+            is InternalChainIsBoundedState.Spin -> onEntryOfSpin()
         }
+    }
+
+
+    private fun onEntryOfAlt() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:211 :: alt :: _state_body
+    }
+
+    private fun onEntryOfBounded() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:153 :: bounded :: _state_body
+    }
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _state_body
+    }
+
+    private fun onEntryOfIgnoring() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:244 :: ignoring :: _state_body
+    }
+
+    private fun onEntryOfResuming() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:192 :: resuming :: _state_body
+    }
+
+    private fun onEntryOfSpin() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:174 :: spin :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: internal_chain_is_bounded.scxml:90 :: _machine
     override fun onExit(state: InternalChainIsBoundedState) {
         when (state) {
-            is InternalChainIsBoundedState.Alt -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:211 :: alt :: _state_body
-            }
-            is InternalChainIsBoundedState.Bounded -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:153 :: bounded :: _state_body
-            }
-            is InternalChainIsBoundedState.Idle -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _state_body
-            }
-            is InternalChainIsBoundedState.Ignoring -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:244 :: ignoring :: _state_body
-            }
-            is InternalChainIsBoundedState.Resuming -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:192 :: resuming :: _state_body
-            }
-            is InternalChainIsBoundedState.Spin -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:174 :: spin :: _state_body
-            }
+            is InternalChainIsBoundedState.Alt -> onExitOfAlt()
+            is InternalChainIsBoundedState.Bounded -> onExitOfBounded()
+            is InternalChainIsBoundedState.Idle -> onExitOfIdle()
+            is InternalChainIsBoundedState.Ignoring -> onExitOfIgnoring()
+            is InternalChainIsBoundedState.Resuming -> onExitOfResuming()
+            is InternalChainIsBoundedState.Spin -> onExitOfSpin()
         }
     }
+
+
+    private fun onExitOfAlt() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:211 :: alt :: _state_body
+    }
+
+    private fun onExitOfBounded() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:153 :: bounded :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _state_body
+    }
+
+    private fun onExitOfIgnoring() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:244 :: ignoring :: _state_body
+    }
+
+    private fun onExitOfResuming() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:192 :: resuming :: _state_body
+    }
+
+    private fun onExitOfSpin() {
+                // SCE-MAP: internal_chain_is_bounded.scxml:174 :: spin :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: internal_chain_is_bounded.scxml:90 :: _machine
     override fun executeTransitionContent(source: InternalChainIsBoundedState, transitionIndex: Int) {
         when (source) {
-        is InternalChainIsBoundedState.Alt -> when (transitionIndex) {
-            0 -> {
+            is InternalChainIsBoundedState.Alt -> transitionContentOfAlt(transitionIndex)
+            is InternalChainIsBoundedState.Bounded -> transitionContentOfBounded(transitionIndex)
+            is InternalChainIsBoundedState.Idle -> transitionContentOfIdle(transitionIndex)
+            is InternalChainIsBoundedState.Ignoring -> transitionContentOfIgnoring(transitionIndex)
+            is InternalChainIsBoundedState.Resuming -> transitionContentOfResuming(transitionIndex)
+            is InternalChainIsBoundedState.Spin -> transitionContentOfSpin(transitionIndex)
+        }
+    }
+
+
+    // The content of `alt`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfAlt(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfAltAt0()
+            1 -> transitionContentOfAltAt1()
+            2 -> transitionContentOfAltAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfAltAt0() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:212 :: alt :: _transition_0
 
 
@@ -804,8 +893,9 @@ class InternalChainIsBoundedStateMachine(
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pending", "pending"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfAltAt1() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:216 :: alt :: _transition_1
 
 
@@ -814,19 +904,33 @@ class InternalChainIsBoundedStateMachine(
             }
 
             raiseInternal(InternalChainIsBoundedEvent.Tick)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfAltAt2() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:220 :: alt :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `bounded`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfBounded(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfBoundedAt0()
+            1 -> transitionContentOfBoundedAt1()
+            2 -> transitionContentOfBoundedAt2()
             else -> {}
         }
-        is InternalChainIsBoundedState.Bounded -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfBoundedAt0() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:154 :: bounded :: _transition_0
 
 
@@ -835,63 +939,99 @@ class InternalChainIsBoundedStateMachine(
             }
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfBoundedAt1() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:158 :: bounded :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfBoundedAt2() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:163 :: bounded :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
             else -> {}
         }
-        is InternalChainIsBoundedState.Idle -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:123 :: idle :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:126 :: idle :: _transition_1
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:129 :: idle :: _transition_2
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:132 :: idle :: _transition_3
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:135 :: idle :: _transition_4
 
             raiseInternal(InternalChainIsBoundedEvent.Tick)
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:138 :: idle :: _transition_5
 
             raiseInternal(InternalChainIsBoundedEvent.Beatless)
-            }
+    }
+
+    // The content of `ignoring`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIgnoring(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIgnoringAt0()
+            1 -> transitionContentOfIgnoringAt1()
+            2 -> transitionContentOfIgnoringAt2()
             else -> {}
         }
-        is InternalChainIsBoundedState.Ignoring -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIgnoringAt0() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:245 :: ignoring :: _transition_0
 
 
@@ -902,27 +1042,42 @@ class InternalChainIsBoundedStateMachine(
             raiseInternal(InternalChainIsBoundedEvent.Unheard)
 
             raiseInternal(InternalChainIsBoundedEvent.Beatless)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIgnoringAt1() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:250 :: ignoring :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("ignores", "ignores"), com.sce.runtime.ScriptSource.lua("_scxml_add(ignores, 1)", "ignores + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIgnoringAt2() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:253 :: ignoring :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `resuming`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfResuming(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfResumingAt0()
+            1 -> transitionContentOfResumingAt1()
+            2 -> transitionContentOfResumingAt2()
             else -> {}
         }
-        is InternalChainIsBoundedState.Resuming -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfResumingAt0() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_0
 
 
@@ -931,27 +1086,41 @@ class InternalChainIsBoundedStateMachine(
             }
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfResumingAt1() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:197 :: resuming :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("beats", "beats"), com.sce.runtime.ScriptSource.lua("_scxml_add(beats, 1)", "beats + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfResumingAt2() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:200 :: resuming :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `spin`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSpin(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSpinAt0()
+            1 -> transitionContentOfSpinAt1()
             else -> {}
         }
-        is InternalChainIsBoundedState.Spin -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfSpinAt0() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:175 :: spin :: _transition_0
 
 
@@ -960,17 +1129,14 @@ class InternalChainIsBoundedStateMachine(
             }
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfSpinAt1() {
                 // SCE-MAP: internal_chain_is_bounded.scxml:179 :: spin :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

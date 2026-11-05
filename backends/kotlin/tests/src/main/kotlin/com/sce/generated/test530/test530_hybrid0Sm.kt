@@ -49,6 +49,7 @@ class Test530Hybrid0StateMachine(
         is Test530Hybrid0State.Final -> true
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<Test530Hybrid0State, HistoryId>>
@@ -59,26 +60,31 @@ class Test530Hybrid0StateMachine(
             listOf(StateTarget(Test530Hybrid0State.Final))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test530Hybrid0State? = when (stateId) {
         "final" -> Test530Hybrid0State.Final
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test530Hybrid0State): String = when (state) {
         is Test530Hybrid0State.Final -> "final"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test530Hybrid0State): Int = when (state) {
         is Test530Hybrid0State.Final -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test530Hybrid0Event? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -99,42 +105,49 @@ class Test530Hybrid0StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test530Hybrid0State,
-        event: Test530Hybrid0Event?
-    ): EnabledTransition<Test530Hybrid0State, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: Test530Hybrid0State, event: Test530Hybrid0Event?): EnabledTransition<Test530Hybrid0State, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test530_hybrid0.scxml:2 :: _machine
     override fun onEntry(state: Test530Hybrid0State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test530Hybrid0State.Final -> {
+            is Test530Hybrid0State.Final -> onEntryOfFinal()
+        }
+    }
+
+
+    private fun onEntryOfFinal() {
                 // SCE-MAP: test530_hybrid0.scxml:3 :: final :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test530_hybrid0.scxml:2 :: _machine
     override fun onExit(state: Test530Hybrid0State) {
         when (state) {
-            is Test530Hybrid0State.Final -> {
-                // SCE-MAP: test530_hybrid0.scxml:3 :: final :: _state_body
-            }
+            is Test530Hybrid0State.Final -> onExitOfFinal()
         }
     }
+
+
+    private fun onExitOfFinal() {
+                // SCE-MAP: test530_hybrid0.scxml:3 :: final :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test530_hybrid0.scxml:2 :: _machine
     override fun executeTransitionContent(source: Test530Hybrid0State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

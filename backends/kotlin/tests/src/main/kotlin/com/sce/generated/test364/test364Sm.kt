@@ -106,24 +106,40 @@ class Test364StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: Test364State): Boolean = when (state) {
-        is Test364State.S1, is Test364State.S11, is Test364State.S11p11, is Test364State.S11p12, is Test364State.S2, is Test364State.S21, is Test364State.S21p11, is Test364State.S21p12, is Test364State.S3, is Test364State.S31, is Test364State.S311 -> true
+        is Test364State.S1 -> true
+        is Test364State.S11 -> true
+        is Test364State.S11p11 -> true
+        is Test364State.S11p12 -> true
+        is Test364State.S2 -> true
+        is Test364State.S21 -> true
+        is Test364State.S21p11 -> true
+        is Test364State.S21p12 -> true
+        is Test364State.S3 -> true
+        is Test364State.S31 -> true
+        is Test364State.S311 -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: Test364State): Boolean = when (state) {
-        is Test364State.S11p1, is Test364State.S21p1 -> true
+        is Test364State.S11p1 -> true
+        is Test364State.S21p1 -> true
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test364State): Boolean = when (state) {
-        is Test364State.Fail, is Test364State.Pass -> true
+        is Test364State.Fail -> true
+        is Test364State.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -140,38 +156,51 @@ class Test364StateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<Test364State, List<Test364State>> = mapOf(
-            Test364State.S1 to listOf(Test364State.S11),
-            Test364State.S11 to listOf(Test364State.S111, Test364State.S11p1),
-            Test364State.S11p1 to listOf(Test364State.S11p11, Test364State.S11p12),
-            Test364State.S11p11 to listOf(Test364State.S11p111, Test364State.S11p112),
-            Test364State.S11p12 to listOf(Test364State.S11p121, Test364State.S11p122),
-            Test364State.S2 to listOf(Test364State.S21),
-            Test364State.S21 to listOf(Test364State.S211, Test364State.S21p1),
-            Test364State.S21p1 to listOf(Test364State.S21p11, Test364State.S21p12),
-            Test364State.S21p11 to listOf(Test364State.S21p111, Test364State.S21p112),
-            Test364State.S21p12 to listOf(Test364State.S21p121, Test364State.S21p122),
-            Test364State.S3 to listOf(Test364State.S31),
-            Test364State.S31 to listOf(Test364State.S311),
-            Test364State.S311 to listOf(Test364State.S3111, Test364State.S3112, Test364State.S312, Test364State.S32),
-        )
+        val childStates: Map<Test364State, List<Test364State>> = LinkedHashMap<Test364State, List<Test364State>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<Test364State, List<EntryTarget<Test364State, HistoryId>>> = mapOf(
-            Test364State.S1 to listOf(StateTarget(Test364State.S11p112), StateTarget(Test364State.S11p122)),
-            Test364State.S11 to listOf(StateTarget(Test364State.S111)),
-            Test364State.S11p11 to listOf(StateTarget(Test364State.S11p111)),
-            Test364State.S11p12 to listOf(StateTarget(Test364State.S11p121)),
-            Test364State.S2 to listOf(StateTarget(Test364State.S21p112), StateTarget(Test364State.S21p122)),
-            Test364State.S21 to listOf(StateTarget(Test364State.S211)),
-            Test364State.S21p11 to listOf(StateTarget(Test364State.S21p111)),
-            Test364State.S21p12 to listOf(StateTarget(Test364State.S21p121)),
-            Test364State.S3 to listOf(StateTarget(Test364State.S31)),
-            Test364State.S31 to listOf(StateTarget(Test364State.S311)),
-            Test364State.S311 to listOf(StateTarget(Test364State.S3111)),
-        )
+        private fun childStatesPart0(table: MutableMap<Test364State, List<Test364State>>) {
+            table[Test364State.S1] = listOf(Test364State.S11)
+            table[Test364State.S11] = listOf(Test364State.S111, Test364State.S11p1)
+            table[Test364State.S11p1] = listOf(Test364State.S11p11, Test364State.S11p12)
+            table[Test364State.S11p11] = listOf(Test364State.S11p111, Test364State.S11p112)
+            table[Test364State.S11p12] = listOf(Test364State.S11p121, Test364State.S11p122)
+            table[Test364State.S2] = listOf(Test364State.S21)
+            table[Test364State.S21] = listOf(Test364State.S211, Test364State.S21p1)
+            table[Test364State.S21p1] = listOf(Test364State.S21p11, Test364State.S21p12)
+            table[Test364State.S21p11] = listOf(Test364State.S21p111, Test364State.S21p112)
+            table[Test364State.S21p12] = listOf(Test364State.S21p121, Test364State.S21p122)
+            table[Test364State.S3] = listOf(Test364State.S31)
+            table[Test364State.S31] = listOf(Test364State.S311)
+            table[Test364State.S311] = listOf(Test364State.S3111, Test364State.S3112, Test364State.S312, Test364State.S32)
+        }
+
+
+        val initialTargets: Map<Test364State, List<EntryTarget<Test364State, HistoryId>>> = LinkedHashMap<Test364State, List<EntryTarget<Test364State, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<Test364State, List<EntryTarget<Test364State, HistoryId>>>) {
+            table[Test364State.S1] = listOf(StateTarget(Test364State.S11p112), StateTarget(Test364State.S11p122))
+            table[Test364State.S11] = listOf(StateTarget(Test364State.S111))
+            table[Test364State.S11p11] = listOf(StateTarget(Test364State.S11p111))
+            table[Test364State.S11p12] = listOf(StateTarget(Test364State.S11p121))
+            table[Test364State.S2] = listOf(StateTarget(Test364State.S21p112), StateTarget(Test364State.S21p122))
+            table[Test364State.S21] = listOf(StateTarget(Test364State.S211))
+            table[Test364State.S21p11] = listOf(StateTarget(Test364State.S21p111))
+            table[Test364State.S21p12] = listOf(StateTarget(Test364State.S21p121))
+            table[Test364State.S3] = listOf(StateTarget(Test364State.S31))
+            table[Test364State.S31] = listOf(StateTarget(Test364State.S311))
+            table[Test364State.S311] = listOf(StateTarget(Test364State.S3111))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test364State, HistoryId>> =
             listOf(StateTarget(Test364State.S1))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s1's transition 0, as the microstep reads it.
         val transitionS1At0 = EnabledTransition<Test364State, HistoryId>(
@@ -228,6 +257,7 @@ class Test364StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test364State? = when (stateId) {
         "fail" -> Test364State.Fail
@@ -262,6 +292,7 @@ class Test364StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test364State): String = when (state) {
         is Test364State.Fail -> "fail"
@@ -294,6 +325,7 @@ class Test364StateMachine(
         is Test364State.S312 -> "s312"
         is Test364State.S32 -> "s32"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test364State): Int = when (state) {
@@ -328,6 +360,7 @@ class Test364StateMachine(
         is Test364State.S32 -> 26
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test364Event? = when (name) {
         "error.execution" -> Test364Event.Error.Execution
@@ -336,6 +369,7 @@ class Test364StateMachine(
         "timeout" -> Test364Event.Timeout
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test364Event): String? = when (event) {
@@ -349,58 +383,118 @@ class Test364StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test364State,
-        event: Test364Event?
-    ): EnabledTransition<Test364State, HistoryId>? = when (state) {
-        is Test364State.S1 -> when {
-            event is Test364Event.Timeout -> transitionS1At0
-            else -> null
-        }
-        is Test364State.S11p122 -> when {
-            event is Test364Event.InS11p112 -> transitionS11p122At0
-            else -> null
-        }
-        is Test364State.S2 -> when {
-            event is Test364Event.Timeout -> transitionS2At0
-            else -> null
-        }
-        is Test364State.S21p122 -> when {
-            event is Test364Event.InS21p112 -> transitionS21p122At0
-            else -> null
-        }
-        is Test364State.S3 -> when {
-            event == null -> transitionS3At0
-            else -> null
-        }
-        is Test364State.S3111 -> when {
-            event == null -> transitionS3111At0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test364State, event: Test364Event?): EnabledTransition<Test364State, HistoryId>? = when (state) {
+        is Test364State.S1 -> firstEnabledTransitionOfS1(state, event)
+        is Test364State.S11p122 -> firstEnabledTransitionOfS11p122(state, event)
+        is Test364State.S2 -> firstEnabledTransitionOfS2(state, event)
+        is Test364State.S21p122 -> firstEnabledTransitionOfS21p122(state, event)
+        is Test364State.S3 -> firstEnabledTransitionOfS3(state, event)
+        is Test364State.S3111 -> firstEnabledTransitionOfS3111(state, event)
         else -> null
     }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test364State, event: Test364Event?): EnabledTransition<Test364State, HistoryId>? = when {
+        event is Test364Event.Timeout -> TransitionsPart0.transitionS1At0
+        else -> null
+    }
+
+
+    // s11p122's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS11p122(state: Test364State, event: Test364Event?): EnabledTransition<Test364State, HistoryId>? = when {
+        event is Test364Event.InS11p112 -> TransitionsPart0.transitionS11p122At0
+        else -> null
+    }
+
+
+    // s2's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: Test364State, event: Test364Event?): EnabledTransition<Test364State, HistoryId>? = when {
+        event is Test364Event.Timeout -> TransitionsPart0.transitionS2At0
+        else -> null
+    }
+
+
+    // s21p122's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS21p122(state: Test364State, event: Test364Event?): EnabledTransition<Test364State, HistoryId>? = when {
+        event is Test364Event.InS21p112 -> TransitionsPart0.transitionS21p122At0
+        else -> null
+    }
+
+
+    // s3's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test364State, event: Test364Event?): EnabledTransition<Test364State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS3At0
+        else -> null
+    }
+
+
+    // s3111's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3111(state: Test364State, event: Test364Event?): EnabledTransition<Test364State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS3111At0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test364.scxml:7 :: _machine
     override fun onEntry(state: Test364State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test364State.Fail -> {
+            is Test364State.Fail -> onEntryOfFail()
+            is Test364State.Pass -> onEntryOfPass()
+            is Test364State.S1 -> onEntryOfS1()
+            is Test364State.S11 -> onEntryOfS11()
+            is Test364State.S111 -> onEntryOfS111()
+            is Test364State.S11p1 -> onEntryOfS11p1()
+            is Test364State.S11p11 -> onEntryOfS11p11()
+            is Test364State.S11p111 -> onEntryOfS11p111()
+            is Test364State.S11p112 -> onEntryOfS11p112()
+            is Test364State.S11p12 -> onEntryOfS11p12()
+            is Test364State.S11p121 -> onEntryOfS11p121()
+            is Test364State.S11p122 -> onEntryOfS11p122()
+            is Test364State.S2 -> onEntryOfS2()
+            is Test364State.S21 -> onEntryOfS21()
+            is Test364State.S211 -> onEntryOfS211()
+            is Test364State.S21p1 -> onEntryOfS21p1()
+            is Test364State.S21p11 -> onEntryOfS21p11()
+            is Test364State.S21p111 -> onEntryOfS21p111()
+            is Test364State.S21p112 -> onEntryOfS21p112()
+            is Test364State.S21p12 -> onEntryOfS21p12()
+            is Test364State.S21p121 -> onEntryOfS21p121()
+            is Test364State.S21p122 -> onEntryOfS21p122()
+            is Test364State.S3 -> onEntryOfS3()
+            is Test364State.S31 -> onEntryOfS31()
+            is Test364State.S311 -> onEntryOfS311()
+            is Test364State.S3111 -> onEntryOfS3111()
+            is Test364State.S3112 -> onEntryOfS3112()
+            is Test364State.S312 -> onEntryOfS312()
+            is Test364State.S32 -> onEntryOfS32()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test364.scxml:76 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test364State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test364.scxml:75 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test364State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test364.scxml:9 :: s1 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -417,198 +511,282 @@ class Test364StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is Test364State.S11 -> {
+    }
+
+    private fun onEntryOfS11() {
                 // SCE-MAP: test364.scxml:14 :: s11 :: _state_body
-            }
-            is Test364State.S111 -> {
+    }
+
+    private fun onEntryOfS111() {
                 // SCE-MAP: test364.scxml:15 :: s111 :: _state_body
-            }
-            is Test364State.S11p1 -> {
+    }
+
+    private fun onEntryOfS11p1() {
                 // SCE-MAP: test364.scxml:16 :: s11p1 :: _state_body
-            }
-            is Test364State.S11p11 -> {
+    }
+
+    private fun onEntryOfS11p11() {
                 // SCE-MAP: test364.scxml:17 :: s11p11 :: _state_body
-            }
-            is Test364State.S11p111 -> {
+    }
+
+    private fun onEntryOfS11p111() {
                 // SCE-MAP: test364.scxml:18 :: s11p111 :: _state_body
-            }
-            is Test364State.S11p112 -> {
+    }
+
+    private fun onEntryOfS11p112() {
                 // SCE-MAP: test364.scxml:19 :: s11p112 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test364Event.InS11p112)
                 }
-            }
-            is Test364State.S11p12 -> {
+    }
+
+    private fun onEntryOfS11p12() {
                 // SCE-MAP: test364.scxml:25 :: s11p12 :: _state_body
-            }
-            is Test364State.S11p121 -> {
+    }
+
+    private fun onEntryOfS11p121() {
                 // SCE-MAP: test364.scxml:26 :: s11p121 :: _state_body
-            }
-            is Test364State.S11p122 -> {
+    }
+
+    private fun onEntryOfS11p122() {
                 // SCE-MAP: test364.scxml:27 :: s11p122 :: _state_body
-            }
-            is Test364State.S2 -> {
+    }
+
+    private fun onEntryOfS2() {
                 // SCE-MAP: test364.scxml:35 :: s2 :: _state_body
-            }
-            is Test364State.S21 -> {
+    }
+
+    private fun onEntryOfS21() {
                 // SCE-MAP: test364.scxml:40 :: s21 :: _state_body
-            }
-            is Test364State.S211 -> {
+    }
+
+    private fun onEntryOfS211() {
                 // SCE-MAP: test364.scxml:41 :: s211 :: _state_body
-            }
-            is Test364State.S21p1 -> {
+    }
+
+    private fun onEntryOfS21p1() {
                 // SCE-MAP: test364.scxml:42 :: s21p1 :: _state_body
-            }
-            is Test364State.S21p11 -> {
+    }
+
+    private fun onEntryOfS21p11() {
                 // SCE-MAP: test364.scxml:43 :: s21p11 :: _state_body
-            }
-            is Test364State.S21p111 -> {
+    }
+
+    private fun onEntryOfS21p111() {
                 // SCE-MAP: test364.scxml:44 :: s21p111 :: _state_body
-            }
-            is Test364State.S21p112 -> {
+    }
+
+    private fun onEntryOfS21p112() {
                 // SCE-MAP: test364.scxml:45 :: s21p112 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(Test364Event.InS21p112)
                 }
-            }
-            is Test364State.S21p12 -> {
+    }
+
+    private fun onEntryOfS21p12() {
                 // SCE-MAP: test364.scxml:51 :: s21p12 :: _state_body
-            }
-            is Test364State.S21p121 -> {
+    }
+
+    private fun onEntryOfS21p121() {
                 // SCE-MAP: test364.scxml:52 :: s21p121 :: _state_body
-            }
-            is Test364State.S21p122 -> {
+    }
+
+    private fun onEntryOfS21p122() {
                 // SCE-MAP: test364.scxml:53 :: s21p122 :: _state_body
-            }
-            is Test364State.S3 -> {
+    }
+
+    private fun onEntryOfS3() {
                 // SCE-MAP: test364.scxml:61 :: s3 :: _state_body
-            }
-            is Test364State.S31 -> {
+    }
+
+    private fun onEntryOfS31() {
                 // SCE-MAP: test364.scxml:63 :: s31 :: _state_body
-            }
-            is Test364State.S311 -> {
+    }
+
+    private fun onEntryOfS311() {
                 // SCE-MAP: test364.scxml:64 :: s311 :: _state_body
-            }
-            is Test364State.S3111 -> {
+    }
+
+    private fun onEntryOfS3111() {
                 // SCE-MAP: test364.scxml:65 :: s3111 :: _state_body
-            }
-            is Test364State.S3112 -> {
+    }
+
+    private fun onEntryOfS3112() {
                 // SCE-MAP: test364.scxml:68 :: s3112 :: _state_body
-            }
-            is Test364State.S312 -> {
+    }
+
+    private fun onEntryOfS312() {
                 // SCE-MAP: test364.scxml:69 :: s312 :: _state_body
-            }
-            is Test364State.S32 -> {
+    }
+
+    private fun onEntryOfS32() {
                 // SCE-MAP: test364.scxml:70 :: s32 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test364.scxml:7 :: _machine
     override fun onExit(state: Test364State) {
         when (state) {
-            is Test364State.Fail -> {
-                // SCE-MAP: test364.scxml:76 :: fail :: _state_body
-            }
-            is Test364State.Pass -> {
-                // SCE-MAP: test364.scxml:75 :: pass :: _state_body
-            }
-            is Test364State.S1 -> {
-                // SCE-MAP: test364.scxml:9 :: s1 :: _state_body
-            }
-            is Test364State.S11 -> {
-                // SCE-MAP: test364.scxml:14 :: s11 :: _state_body
-            }
-            is Test364State.S111 -> {
-                // SCE-MAP: test364.scxml:15 :: s111 :: _state_body
-            }
-            is Test364State.S11p1 -> {
-                // SCE-MAP: test364.scxml:16 :: s11p1 :: _state_body
-            }
-            is Test364State.S11p11 -> {
-                // SCE-MAP: test364.scxml:17 :: s11p11 :: _state_body
-            }
-            is Test364State.S11p111 -> {
-                // SCE-MAP: test364.scxml:18 :: s11p111 :: _state_body
-            }
-            is Test364State.S11p112 -> {
-                // SCE-MAP: test364.scxml:19 :: s11p112 :: _state_body
-            }
-            is Test364State.S11p12 -> {
-                // SCE-MAP: test364.scxml:25 :: s11p12 :: _state_body
-            }
-            is Test364State.S11p121 -> {
-                // SCE-MAP: test364.scxml:26 :: s11p121 :: _state_body
-            }
-            is Test364State.S11p122 -> {
-                // SCE-MAP: test364.scxml:27 :: s11p122 :: _state_body
-            }
-            is Test364State.S2 -> {
-                // SCE-MAP: test364.scxml:35 :: s2 :: _state_body
-            }
-            is Test364State.S21 -> {
-                // SCE-MAP: test364.scxml:40 :: s21 :: _state_body
-            }
-            is Test364State.S211 -> {
-                // SCE-MAP: test364.scxml:41 :: s211 :: _state_body
-            }
-            is Test364State.S21p1 -> {
-                // SCE-MAP: test364.scxml:42 :: s21p1 :: _state_body
-            }
-            is Test364State.S21p11 -> {
-                // SCE-MAP: test364.scxml:43 :: s21p11 :: _state_body
-            }
-            is Test364State.S21p111 -> {
-                // SCE-MAP: test364.scxml:44 :: s21p111 :: _state_body
-            }
-            is Test364State.S21p112 -> {
-                // SCE-MAP: test364.scxml:45 :: s21p112 :: _state_body
-            }
-            is Test364State.S21p12 -> {
-                // SCE-MAP: test364.scxml:51 :: s21p12 :: _state_body
-            }
-            is Test364State.S21p121 -> {
-                // SCE-MAP: test364.scxml:52 :: s21p121 :: _state_body
-            }
-            is Test364State.S21p122 -> {
-                // SCE-MAP: test364.scxml:53 :: s21p122 :: _state_body
-            }
-            is Test364State.S3 -> {
-                // SCE-MAP: test364.scxml:61 :: s3 :: _state_body
-            }
-            is Test364State.S31 -> {
-                // SCE-MAP: test364.scxml:63 :: s31 :: _state_body
-            }
-            is Test364State.S311 -> {
-                // SCE-MAP: test364.scxml:64 :: s311 :: _state_body
-            }
-            is Test364State.S3111 -> {
-                // SCE-MAP: test364.scxml:65 :: s3111 :: _state_body
-            }
-            is Test364State.S3112 -> {
-                // SCE-MAP: test364.scxml:68 :: s3112 :: _state_body
-            }
-            is Test364State.S312 -> {
-                // SCE-MAP: test364.scxml:69 :: s312 :: _state_body
-            }
-            is Test364State.S32 -> {
-                // SCE-MAP: test364.scxml:70 :: s32 :: _state_body
-            }
+            is Test364State.Fail -> onExitOfFail()
+            is Test364State.Pass -> onExitOfPass()
+            is Test364State.S1 -> onExitOfS1()
+            is Test364State.S11 -> onExitOfS11()
+            is Test364State.S111 -> onExitOfS111()
+            is Test364State.S11p1 -> onExitOfS11p1()
+            is Test364State.S11p11 -> onExitOfS11p11()
+            is Test364State.S11p111 -> onExitOfS11p111()
+            is Test364State.S11p112 -> onExitOfS11p112()
+            is Test364State.S11p12 -> onExitOfS11p12()
+            is Test364State.S11p121 -> onExitOfS11p121()
+            is Test364State.S11p122 -> onExitOfS11p122()
+            is Test364State.S2 -> onExitOfS2()
+            is Test364State.S21 -> onExitOfS21()
+            is Test364State.S211 -> onExitOfS211()
+            is Test364State.S21p1 -> onExitOfS21p1()
+            is Test364State.S21p11 -> onExitOfS21p11()
+            is Test364State.S21p111 -> onExitOfS21p111()
+            is Test364State.S21p112 -> onExitOfS21p112()
+            is Test364State.S21p12 -> onExitOfS21p12()
+            is Test364State.S21p121 -> onExitOfS21p121()
+            is Test364State.S21p122 -> onExitOfS21p122()
+            is Test364State.S3 -> onExitOfS3()
+            is Test364State.S31 -> onExitOfS31()
+            is Test364State.S311 -> onExitOfS311()
+            is Test364State.S3111 -> onExitOfS3111()
+            is Test364State.S3112 -> onExitOfS3112()
+            is Test364State.S312 -> onExitOfS312()
+            is Test364State.S32 -> onExitOfS32()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test364.scxml:76 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test364.scxml:75 :: pass :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test364.scxml:9 :: s1 :: _state_body
+    }
+
+    private fun onExitOfS11() {
+                // SCE-MAP: test364.scxml:14 :: s11 :: _state_body
+    }
+
+    private fun onExitOfS111() {
+                // SCE-MAP: test364.scxml:15 :: s111 :: _state_body
+    }
+
+    private fun onExitOfS11p1() {
+                // SCE-MAP: test364.scxml:16 :: s11p1 :: _state_body
+    }
+
+    private fun onExitOfS11p11() {
+                // SCE-MAP: test364.scxml:17 :: s11p11 :: _state_body
+    }
+
+    private fun onExitOfS11p111() {
+                // SCE-MAP: test364.scxml:18 :: s11p111 :: _state_body
+    }
+
+    private fun onExitOfS11p112() {
+                // SCE-MAP: test364.scxml:19 :: s11p112 :: _state_body
+    }
+
+    private fun onExitOfS11p12() {
+                // SCE-MAP: test364.scxml:25 :: s11p12 :: _state_body
+    }
+
+    private fun onExitOfS11p121() {
+                // SCE-MAP: test364.scxml:26 :: s11p121 :: _state_body
+    }
+
+    private fun onExitOfS11p122() {
+                // SCE-MAP: test364.scxml:27 :: s11p122 :: _state_body
+    }
+
+    private fun onExitOfS2() {
+                // SCE-MAP: test364.scxml:35 :: s2 :: _state_body
+    }
+
+    private fun onExitOfS21() {
+                // SCE-MAP: test364.scxml:40 :: s21 :: _state_body
+    }
+
+    private fun onExitOfS211() {
+                // SCE-MAP: test364.scxml:41 :: s211 :: _state_body
+    }
+
+    private fun onExitOfS21p1() {
+                // SCE-MAP: test364.scxml:42 :: s21p1 :: _state_body
+    }
+
+    private fun onExitOfS21p11() {
+                // SCE-MAP: test364.scxml:43 :: s21p11 :: _state_body
+    }
+
+    private fun onExitOfS21p111() {
+                // SCE-MAP: test364.scxml:44 :: s21p111 :: _state_body
+    }
+
+    private fun onExitOfS21p112() {
+                // SCE-MAP: test364.scxml:45 :: s21p112 :: _state_body
+    }
+
+    private fun onExitOfS21p12() {
+                // SCE-MAP: test364.scxml:51 :: s21p12 :: _state_body
+    }
+
+    private fun onExitOfS21p121() {
+                // SCE-MAP: test364.scxml:52 :: s21p121 :: _state_body
+    }
+
+    private fun onExitOfS21p122() {
+                // SCE-MAP: test364.scxml:53 :: s21p122 :: _state_body
+    }
+
+    private fun onExitOfS3() {
+                // SCE-MAP: test364.scxml:61 :: s3 :: _state_body
+    }
+
+    private fun onExitOfS31() {
+                // SCE-MAP: test364.scxml:63 :: s31 :: _state_body
+    }
+
+    private fun onExitOfS311() {
+                // SCE-MAP: test364.scxml:64 :: s311 :: _state_body
+    }
+
+    private fun onExitOfS3111() {
+                // SCE-MAP: test364.scxml:65 :: s3111 :: _state_body
+    }
+
+    private fun onExitOfS3112() {
+                // SCE-MAP: test364.scxml:68 :: s3112 :: _state_body
+    }
+
+    private fun onExitOfS312() {
+                // SCE-MAP: test364.scxml:69 :: s312 :: _state_body
+    }
+
+    private fun onExitOfS32() {
+                // SCE-MAP: test364.scxml:70 :: s32 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test364.scxml:7 :: _machine
     override fun executeTransitionContent(source: Test364State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

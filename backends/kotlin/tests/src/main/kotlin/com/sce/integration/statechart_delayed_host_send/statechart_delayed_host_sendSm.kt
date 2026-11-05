@@ -64,9 +64,13 @@ class StatechartDelayedHostSendStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: StatechartDelayedHostSendState): Boolean = when (state) {
-        is StatechartDelayedHostSendState.CancelLost, is StatechartDelayedHostSendState.Pass, is StatechartDelayedHostSendState.TooEarly, is StatechartDelayedHostSendState.Unserved -> true
+        is StatechartDelayedHostSendState.CancelLost -> true
+        is StatechartDelayedHostSendState.Pass -> true
+        is StatechartDelayedHostSendState.TooEarly -> true
+        is StatechartDelayedHostSendState.Unserved -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -76,6 +80,9 @@ class StatechartDelayedHostSendStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StatechartDelayedHostSendState, HistoryId>> =
             listOf(StateTarget(StatechartDelayedHostSendState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: armed's transition 0, as the microstep reads it.
         val transitionArmedAt0 = EnabledTransition<StatechartDelayedHostSendState, HistoryId>(
@@ -95,24 +102,6 @@ class StatechartDelayedHostSendStateMachine(
             isInternal = false,
         )
 
-        // W3C SCXML 3.13: cancelling's transition 0, as the microstep reads it.
-        val transitionCancellingAt0 = EnabledTransition<StatechartDelayedHostSendState, HistoryId>(
-            StatechartDelayedHostSendState.Cancelling,
-            listOf(StateTarget(StatechartDelayedHostSendState.CancelPending)),
-            0,
-            hasActions = false,
-            isInternal = false,
-        )
-
-        // W3C SCXML 3.13: cancelling's transition 1, as the microstep reads it.
-        val transitionCancellingAt1 = EnabledTransition<StatechartDelayedHostSendState, HistoryId>(
-            StatechartDelayedHostSendState.Cancelling,
-            listOf(StateTarget(StatechartDelayedHostSendState.CancelLost)),
-            1,
-            hasActions = false,
-            isInternal = false,
-        )
-
         // W3C SCXML 3.13: cancelPending's transition 0, as the microstep reads it.
         val transitionCancelPendingAt0 = EnabledTransition<StatechartDelayedHostSendState, HistoryId>(
             StatechartDelayedHostSendState.CancelPending,
@@ -126,6 +115,24 @@ class StatechartDelayedHostSendStateMachine(
         val transitionCancelPendingAt1 = EnabledTransition<StatechartDelayedHostSendState, HistoryId>(
             StatechartDelayedHostSendState.CancelPending,
             listOf(StateTarget(StatechartDelayedHostSendState.Pass)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: cancelling's transition 0, as the microstep reads it.
+        val transitionCancellingAt0 = EnabledTransition<StatechartDelayedHostSendState, HistoryId>(
+            StatechartDelayedHostSendState.Cancelling,
+            listOf(StateTarget(StatechartDelayedHostSendState.CancelPending)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: cancelling's transition 1, as the microstep reads it.
+        val transitionCancellingAt1 = EnabledTransition<StatechartDelayedHostSendState, HistoryId>(
+            StatechartDelayedHostSendState.Cancelling,
+            listOf(StateTarget(StatechartDelayedHostSendState.CancelLost)),
             1,
             hasActions = false,
             isInternal = false,
@@ -150,6 +157,7 @@ class StatechartDelayedHostSendStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartDelayedHostSendState? = when (stateId) {
         "armed" -> StatechartDelayedHostSendState.Armed
@@ -163,6 +171,7 @@ class StatechartDelayedHostSendStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StatechartDelayedHostSendState): String = when (state) {
         is StatechartDelayedHostSendState.Armed -> "armed"
@@ -174,6 +183,7 @@ class StatechartDelayedHostSendStateMachine(
         is StatechartDelayedHostSendState.Unserved -> "unserved"
         is StatechartDelayedHostSendState.Waiting -> "waiting"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartDelayedHostSendState): Int = when (state) {
@@ -187,6 +197,7 @@ class StatechartDelayedHostSendStateMachine(
         is StatechartDelayedHostSendState.Waiting -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StatechartDelayedHostSendEvent? = when (name) {
         "error.execution" -> StatechartDelayedHostSendEvent.Error.Execution
@@ -197,6 +208,7 @@ class StatechartDelayedHostSendStateMachine(
         "watch.turn" -> StatechartDelayedHostSendEvent.Watch.Turn
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StatechartDelayedHostSendEvent): String? = when (event) {
@@ -212,47 +224,77 @@ class StatechartDelayedHostSendStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StatechartDelayedHostSendState,
-        event: StatechartDelayedHostSendEvent?
-    ): EnabledTransition<StatechartDelayedHostSendState, HistoryId>? = when (state) {
-        is StatechartDelayedHostSendState.Armed -> when {
-            event is StatechartDelayedHostSendEvent.Turn.Done -> transitionArmedAt0
-            event is StatechartDelayedHostSendEvent.Error.Execution -> transitionArmedAt1
-            else -> null
-        }
-        is StatechartDelayedHostSendState.Cancelling -> when {
-            event is StatechartDelayedHostSendEvent.Settle -> transitionCancellingAt0
-            event is StatechartDelayedHostSendEvent.Turn.Done -> transitionCancellingAt1
-            else -> null
-        }
-        is StatechartDelayedHostSendState.CancelPending -> when {
-            event is StatechartDelayedHostSendEvent.Turn.Done -> transitionCancelPendingAt0
-            event is StatechartDelayedHostSendEvent.Finish -> transitionCancelPendingAt1
-            else -> null
-        }
-        is StatechartDelayedHostSendState.Waiting -> when {
-            event is StatechartDelayedHostSendEvent.Turn.Done -> transitionWaitingAt0
-            event is StatechartDelayedHostSendEvent.Probe -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StatechartDelayedHostSendState, event: StatechartDelayedHostSendEvent?): EnabledTransition<StatechartDelayedHostSendState, HistoryId>? = when (state) {
+        is StatechartDelayedHostSendState.Armed -> firstEnabledTransitionOfArmed(state, event)
+        is StatechartDelayedHostSendState.Cancelling -> firstEnabledTransitionOfCancelling(state, event)
+        is StatechartDelayedHostSendState.CancelPending -> firstEnabledTransitionOfCancelPending(state, event)
+        is StatechartDelayedHostSendState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // armed's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfArmed(state: StatechartDelayedHostSendState, event: StatechartDelayedHostSendEvent?): EnabledTransition<StatechartDelayedHostSendState, HistoryId>? = when {
+        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionsPart0.transitionArmedAt0
+        event is StatechartDelayedHostSendEvent.Error.Execution -> TransitionsPart0.transitionArmedAt1
+        else -> null
+    }
+
+
+    // cancelling's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCancelling(state: StatechartDelayedHostSendState, event: StatechartDelayedHostSendEvent?): EnabledTransition<StatechartDelayedHostSendState, HistoryId>? = when {
+        event is StatechartDelayedHostSendEvent.Settle -> TransitionsPart0.transitionCancellingAt0
+        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionsPart0.transitionCancellingAt1
+        else -> null
+    }
+
+
+    // cancelPending's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCancelPending(state: StatechartDelayedHostSendState, event: StatechartDelayedHostSendEvent?): EnabledTransition<StatechartDelayedHostSendState, HistoryId>? = when {
+        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionsPart0.transitionCancelPendingAt0
+        event is StatechartDelayedHostSendEvent.Finish -> TransitionsPart0.transitionCancelPendingAt1
+        else -> null
+    }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StatechartDelayedHostSendState, event: StatechartDelayedHostSendEvent?): EnabledTransition<StatechartDelayedHostSendState, HistoryId>? = when {
+        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionsPart0.transitionWaitingAt0
+        event is StatechartDelayedHostSendEvent.Probe -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_delayed_host_send.scxml:55 :: _machine
     override fun onEntry(state: StatechartDelayedHostSendState, isDefaultEntry: Boolean) {
         when (state) {
-            is StatechartDelayedHostSendState.Armed -> {
+            is StatechartDelayedHostSendState.Armed -> onEntryOfArmed()
+            is StatechartDelayedHostSendState.Cancelling -> onEntryOfCancelling()
+            is StatechartDelayedHostSendState.CancelLost -> onEntryOfCancelLost()
+            is StatechartDelayedHostSendState.CancelPending -> onEntryOfCancelPending()
+            is StatechartDelayedHostSendState.Pass -> onEntryOfPass()
+            is StatechartDelayedHostSendState.TooEarly -> onEntryOfTooEarly()
+            is StatechartDelayedHostSendState.Unserved -> onEntryOfUnserved()
+            is StatechartDelayedHostSendState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfArmed() {
                 // SCE-MAP: statechart_delayed_host_send.scxml:70 :: armed :: _state_body
-            }
-            is StatechartDelayedHostSendState.Cancelling -> {
+    }
+
+    private fun onEntryOfCancelling() {
                 // SCE-MAP: statechart_delayed_host_send.scxml:81 :: cancelling :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -305,13 +347,15 @@ class StatechartDelayedHostSendStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is StatechartDelayedHostSendState.CancelLost -> {
+    }
+
+    private fun onEntryOfCancelLost() {
                 // SCE-MAP: statechart_delayed_host_send.scxml:101 :: cancelLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StatechartDelayedHostSendState.CancelPending -> {
+    }
+
+    private fun onEntryOfCancelPending() {
                 // SCE-MAP: statechart_delayed_host_send.scxml:90 :: cancelPending :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -331,23 +375,27 @@ class StatechartDelayedHostSendStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is StatechartDelayedHostSendState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: statechart_delayed_host_send.scxml:99 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StatechartDelayedHostSendState.TooEarly -> {
+    }
+
+    private fun onEntryOfTooEarly() {
                 // SCE-MAP: statechart_delayed_host_send.scxml:100 :: tooEarly :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StatechartDelayedHostSendState.Unserved -> {
+    }
+
+    private fun onEntryOfUnserved() {
                 // SCE-MAP: statechart_delayed_host_send.scxml:102 :: unserved :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StatechartDelayedHostSendState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: statechart_delayed_host_send.scxml:59 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -400,47 +448,63 @@ class StatechartDelayedHostSendStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: statechart_delayed_host_send.scxml:55 :: _machine
     override fun onExit(state: StatechartDelayedHostSendState) {
         when (state) {
-            is StatechartDelayedHostSendState.Armed -> {
-                // SCE-MAP: statechart_delayed_host_send.scxml:70 :: armed :: _state_body
-            }
-            is StatechartDelayedHostSendState.Cancelling -> {
-                // SCE-MAP: statechart_delayed_host_send.scxml:81 :: cancelling :: _state_body
-            }
-            is StatechartDelayedHostSendState.CancelLost -> {
-                // SCE-MAP: statechart_delayed_host_send.scxml:101 :: cancelLost :: _state_body
-            }
-            is StatechartDelayedHostSendState.CancelPending -> {
-                // SCE-MAP: statechart_delayed_host_send.scxml:90 :: cancelPending :: _state_body
-            }
-            is StatechartDelayedHostSendState.Pass -> {
-                // SCE-MAP: statechart_delayed_host_send.scxml:99 :: pass :: _state_body
-            }
-            is StatechartDelayedHostSendState.TooEarly -> {
-                // SCE-MAP: statechart_delayed_host_send.scxml:100 :: tooEarly :: _state_body
-            }
-            is StatechartDelayedHostSendState.Unserved -> {
-                // SCE-MAP: statechart_delayed_host_send.scxml:102 :: unserved :: _state_body
-            }
-            is StatechartDelayedHostSendState.Waiting -> {
-                // SCE-MAP: statechart_delayed_host_send.scxml:59 :: waiting :: _state_body
-            }
+            is StatechartDelayedHostSendState.Armed -> onExitOfArmed()
+            is StatechartDelayedHostSendState.Cancelling -> onExitOfCancelling()
+            is StatechartDelayedHostSendState.CancelLost -> onExitOfCancelLost()
+            is StatechartDelayedHostSendState.CancelPending -> onExitOfCancelPending()
+            is StatechartDelayedHostSendState.Pass -> onExitOfPass()
+            is StatechartDelayedHostSendState.TooEarly -> onExitOfTooEarly()
+            is StatechartDelayedHostSendState.Unserved -> onExitOfUnserved()
+            is StatechartDelayedHostSendState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfArmed() {
+                // SCE-MAP: statechart_delayed_host_send.scxml:70 :: armed :: _state_body
+    }
+
+    private fun onExitOfCancelling() {
+                // SCE-MAP: statechart_delayed_host_send.scxml:81 :: cancelling :: _state_body
+    }
+
+    private fun onExitOfCancelLost() {
+                // SCE-MAP: statechart_delayed_host_send.scxml:101 :: cancelLost :: _state_body
+    }
+
+    private fun onExitOfCancelPending() {
+                // SCE-MAP: statechart_delayed_host_send.scxml:90 :: cancelPending :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: statechart_delayed_host_send.scxml:99 :: pass :: _state_body
+    }
+
+    private fun onExitOfTooEarly() {
+                // SCE-MAP: statechart_delayed_host_send.scxml:100 :: tooEarly :: _state_body
+    }
+
+    private fun onExitOfUnserved() {
+                // SCE-MAP: statechart_delayed_host_send.scxml:102 :: unserved :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: statechart_delayed_host_send.scxml:59 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: statechart_delayed_host_send.scxml:55 :: _machine
     override fun executeTransitionContent(source: StatechartDelayedHostSendState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

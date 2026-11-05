@@ -220,6 +220,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ASendReachesOnlyWhatItsTargetNamesState, HistoryId>>
@@ -228,6 +229,9 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ASendReachesOnlyWhatItsTargetNamesState, HistoryId>> =
             listOf(StateTarget(ASendReachesOnlyWhatItsTargetNamesState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
         val transitionRunAt0 = EnabledTransition<ASendReachesOnlyWhatItsTargetNamesState, HistoryId>(
@@ -293,6 +297,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ASendReachesOnlyWhatItsTargetNamesState? = when (stateId) {
         "done" -> ASendReachesOnlyWhatItsTargetNamesState.Done
@@ -300,17 +305,20 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ASendReachesOnlyWhatItsTargetNamesState): String = when (state) {
         is ASendReachesOnlyWhatItsTargetNamesState.Done -> "done"
         is ASendReachesOnlyWhatItsTargetNamesState.Run -> "run"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ASendReachesOnlyWhatItsTargetNamesState): Int = when (state) {
         is ASendReachesOnlyWhatItsTargetNamesState.Done -> 1
         is ASendReachesOnlyWhatItsTargetNamesState.Run -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ASendReachesOnlyWhatItsTargetNamesEvent? = when (name) {
@@ -327,6 +335,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ASendReachesOnlyWhatItsTargetNamesEvent): String? = when (event) {
         is ASendReachesOnlyWhatItsTargetNamesEvent.Bare -> "bare"
@@ -340,6 +349,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
         is ASendReachesOnlyWhatItsTargetNamesEvent.Refused -> "refused"
         is ASendReachesOnlyWhatItsTargetNamesEvent.Settle -> "settle"
     }
+
 
 
 
@@ -369,6 +379,27 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
             val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
@@ -453,22 +484,6 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='pongOk'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -658,34 +673,45 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ASendReachesOnlyWhatItsTargetNamesState,
-        event: ASendReachesOnlyWhatItsTargetNamesEvent?
-    ): EnabledTransition<ASendReachesOnlyWhatItsTargetNamesState, HistoryId>? = when (state) {
-        is ASendReachesOnlyWhatItsTargetNamesState.Run -> when {
-            event is ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution -> transitionRunAt0
-            event is ASendReachesOnlyWhatItsTargetNamesEvent.Error.Communication -> transitionRunAt1
-            event is ASendReachesOnlyWhatItsTargetNamesEvent.Bare -> transitionRunAt2
-            event is ASendReachesOnlyWhatItsTargetNamesEvent.Lost -> transitionRunAt3
-            event is ASendReachesOnlyWhatItsTargetNamesEvent.Hello -> transitionRunAt4
-            event is ASendReachesOnlyWhatItsTargetNamesEvent.Pong -> transitionRunAt5
-            event is ASendReachesOnlyWhatItsTargetNamesEvent.Settle -> transitionRunAt6
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ASendReachesOnlyWhatItsTargetNamesState, event: ASendReachesOnlyWhatItsTargetNamesEvent?): EnabledTransition<ASendReachesOnlyWhatItsTargetNamesState, HistoryId>? = when (state) {
+        is ASendReachesOnlyWhatItsTargetNamesState.Run -> firstEnabledTransitionOfRun(state, event)
         else -> null
     }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ASendReachesOnlyWhatItsTargetNamesState, event: ASendReachesOnlyWhatItsTargetNamesEvent?): EnabledTransition<ASendReachesOnlyWhatItsTargetNamesState, HistoryId>? = when {
+        event is ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution -> TransitionsPart0.transitionRunAt0
+        event is ASendReachesOnlyWhatItsTargetNamesEvent.Error.Communication -> TransitionsPart0.transitionRunAt1
+        event is ASendReachesOnlyWhatItsTargetNamesEvent.Bare -> TransitionsPart0.transitionRunAt2
+        event is ASendReachesOnlyWhatItsTargetNamesEvent.Lost -> TransitionsPart0.transitionRunAt3
+        event is ASendReachesOnlyWhatItsTargetNamesEvent.Hello -> TransitionsPart0.transitionRunAt4
+        event is ASendReachesOnlyWhatItsTargetNamesEvent.Pong -> TransitionsPart0.transitionRunAt5
+        event is ASendReachesOnlyWhatItsTargetNamesEvent.Settle -> TransitionsPart0.transitionRunAt6
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
     override fun onEntry(state: ASendReachesOnlyWhatItsTargetNamesState, isDefaultEntry: Boolean) {
         when (state) {
-            is ASendReachesOnlyWhatItsTargetNamesState.Done -> {
+            is ASendReachesOnlyWhatItsTargetNamesState.Done -> onEntryOfDone()
+            is ASendReachesOnlyWhatItsTargetNamesState.Run -> onEntryOfRun()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:147 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ASendReachesOnlyWhatItsTargetNamesState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:72 :: run :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/7
                 run {
@@ -978,9 +1004,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("kid", state)
-            }
-        }
+                deferStaticInvoke("kid", ASendReachesOnlyWhatItsTargetNamesState.Run)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -993,9 +1017,20 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: ASendReachesOnlyWhatItsTargetNamesState) {
         when (invokeId) {
-            "kid" -> run {
+            "kid" -> startInvokeOfRunAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfRunAt0(state: ASendReachesOnlyWhatItsTargetNamesState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "run.${nextInvokeStart("kid")}.kid"
@@ -1006,66 +1041,97 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
                     startInvoke("kid", childSM, false, ASendReachesOnlyWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "", "a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid", "kid")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
     override fun onExit(state: ASendReachesOnlyWhatItsTargetNamesState) {
         when (state) {
-            is ASendReachesOnlyWhatItsTargetNamesState.Done -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:147 :: done :: _state_body
-            }
-            is ASendReachesOnlyWhatItsTargetNamesState.Run -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:72 :: run :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("kid")
-            }
+            is ASendReachesOnlyWhatItsTargetNamesState.Done -> onExitOfDone()
+            is ASendReachesOnlyWhatItsTargetNamesState.Run -> onExitOfRun()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:147 :: done :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:72 :: run :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(ASendReachesOnlyWhatItsTargetNamesState.Run)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("kid")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
     override fun executeTransitionContent(source: ASendReachesOnlyWhatItsTargetNamesState, transitionIndex: Int) {
         when (source) {
-        is ASendReachesOnlyWhatItsTargetNamesState.Run -> when (transitionIndex) {
-            0 -> {
+            is ASendReachesOnlyWhatItsTargetNamesState.Run -> transitionContentOfRun(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
+            1 -> transitionContentOfRunAt1()
+            2 -> transitionContentOfRunAt2()
+            3 -> transitionContentOfRunAt3()
+            4 -> transitionContentOfRunAt4()
+            5 -> transitionContentOfRunAt5()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:121 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("execErrors", "execErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(execErrors, 1)", "execErrors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunAt1() {
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:124 :: run :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("commErrors", "commErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(commErrors, 1)", "commErrors + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRunAt2() {
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:127 :: run :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("bareArrived", "bareArrived"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfRunAt3() {
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:130 :: run :: _transition_3
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterNobody", "afterNobody"), com.sce.runtime.ScriptSource.lua("100", "100"))) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfRunAt4() {
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:133 :: run :: _transition_4
 
 
@@ -1100,8 +1166,9 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfRunAt5() {
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:138 :: run :: _transition_5
 
 
@@ -1128,10 +1195,5 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

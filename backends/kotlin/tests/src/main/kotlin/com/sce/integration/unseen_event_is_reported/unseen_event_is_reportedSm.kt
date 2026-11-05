@@ -76,6 +76,7 @@ class UnseenEventIsReportedStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<UnseenEventIsReportedState, HistoryId>>
@@ -84,6 +85,9 @@ class UnseenEventIsReportedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<UnseenEventIsReportedState, HistoryId>> =
             listOf(StateTarget(UnseenEventIsReportedState.Working))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: working's transition 0, as the microstep reads it.
         val transitionWorkingAt0 = EnabledTransition<UnseenEventIsReportedState, HistoryId>(
@@ -104,6 +108,7 @@ class UnseenEventIsReportedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): UnseenEventIsReportedState? = when (stateId) {
         "done" -> UnseenEventIsReportedState.Done
@@ -111,17 +116,20 @@ class UnseenEventIsReportedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: UnseenEventIsReportedState): String = when (state) {
         is UnseenEventIsReportedState.Done -> "done"
         is UnseenEventIsReportedState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: UnseenEventIsReportedState): Int = when (state) {
         is UnseenEventIsReportedState.Done -> 1
         is UnseenEventIsReportedState.Working -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): UnseenEventIsReportedEvent? = when (name) {
@@ -131,12 +139,14 @@ class UnseenEventIsReportedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: UnseenEventIsReportedEvent): String? = when (event) {
         is UnseenEventIsReportedEvent.Error.Execution -> "error.execution"
         is UnseenEventIsReportedEvent.Finish -> "finish"
         is UnseenEventIsReportedEvent.Poke -> "poke"
     }
+
 
 
 
@@ -166,13 +176,7 @@ class UnseenEventIsReportedStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'pokes' with expr
-        try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "pokes", initResult_pokes)
-        } catch (e: Exception) {
-            raisePlatformError(UnseenEventIsReportedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -189,6 +193,17 @@ class UnseenEventIsReportedStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'pokes' with expr
+        try {
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "pokes", initResult_pokes)
+        } catch (e: Exception) {
+            raisePlatformError(UnseenEventIsReportedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -378,64 +393,92 @@ class UnseenEventIsReportedStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: UnseenEventIsReportedState,
-        event: UnseenEventIsReportedEvent?
-    ): EnabledTransition<UnseenEventIsReportedState, HistoryId>? = when (state) {
-        is UnseenEventIsReportedState.Working -> when {
-            event is UnseenEventIsReportedEvent.Poke -> transitionWorkingAt0
-            event is UnseenEventIsReportedEvent.Finish -> transitionWorkingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: UnseenEventIsReportedState, event: UnseenEventIsReportedEvent?): EnabledTransition<UnseenEventIsReportedState, HistoryId>? = when (state) {
+        is UnseenEventIsReportedState.Working -> firstEnabledTransitionOfWorking(state, event)
         else -> null
     }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: UnseenEventIsReportedState, event: UnseenEventIsReportedEvent?): EnabledTransition<UnseenEventIsReportedState, HistoryId>? = when {
+        event is UnseenEventIsReportedEvent.Poke -> TransitionsPart0.transitionWorkingAt0
+        event is UnseenEventIsReportedEvent.Finish -> TransitionsPart0.transitionWorkingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: unseen_event_is_reported.scxml:41 :: _machine
     override fun onEntry(state: UnseenEventIsReportedState, isDefaultEntry: Boolean) {
         when (state) {
-            is UnseenEventIsReportedState.Done -> {
+            is UnseenEventIsReportedState.Done -> onEntryOfDone()
+            is UnseenEventIsReportedState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: unseen_event_is_reported.scxml:53 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is UnseenEventIsReportedState.Working -> {
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: unseen_event_is_reported.scxml:47 :: working :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: unseen_event_is_reported.scxml:41 :: _machine
     override fun onExit(state: UnseenEventIsReportedState) {
         when (state) {
-            is UnseenEventIsReportedState.Done -> {
-                // SCE-MAP: unseen_event_is_reported.scxml:53 :: done :: _state_body
-            }
-            is UnseenEventIsReportedState.Working -> {
-                // SCE-MAP: unseen_event_is_reported.scxml:47 :: working :: _state_body
-            }
+            is UnseenEventIsReportedState.Done -> onExitOfDone()
+            is UnseenEventIsReportedState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: unseen_event_is_reported.scxml:53 :: done :: _state_body
+    }
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: unseen_event_is_reported.scxml:47 :: working :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: unseen_event_is_reported.scxml:41 :: _machine
     override fun executeTransitionContent(source: UnseenEventIsReportedState, transitionIndex: Int) {
         when (source) {
-        is UnseenEventIsReportedState.Working -> when (transitionIndex) {
-            0 -> {
+            is UnseenEventIsReportedState.Working -> transitionContentOfWorking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWorkingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: unseen_event_is_reported.scxml:48 :: working :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

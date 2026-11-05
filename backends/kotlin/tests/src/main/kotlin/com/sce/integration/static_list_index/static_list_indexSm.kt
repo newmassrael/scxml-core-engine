@@ -130,6 +130,10 @@ class StaticListIndexStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.cursor?.let { vCursor = it }
         params.under?.let { vUnder = it }
         params.first?.let { vFirst = it }
@@ -226,21 +230,23 @@ class StaticListIndexStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "picked" to SavedValues.list(vPicked) { SavedValues.of(it) },
-            "cursor" to SavedValues.of(vCursor),
-            "under" to SavedValues.of(vUnder),
-            "first" to SavedValues.of(vFirst),
-            "last" to SavedValues.of(vLast),
-            "ordered" to SavedValues.of(vOrdered),
-            "room" to SavedValues.of(vRoom),
-            "count" to SavedValues.of(vCount),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "picked" to SavedValues.list(vPicked) { SavedValues.of(it) }
+        variables += "cursor" to SavedValues.of(vCursor)
+        variables += "under" to SavedValues.of(vUnder)
+        variables += "first" to SavedValues.of(vFirst)
+        variables += "last" to SavedValues.of(vLast)
+        variables += "ordered" to SavedValues.of(vOrdered)
+        variables += "room" to SavedValues.of(vRoom)
+        variables += "count" to SavedValues.of(vCount)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -265,6 +271,15 @@ class StaticListIndexStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.list(savedGrown.variable("picked"), "picked", 3) { e, w -> SavedValues.uint8(e, w) }
         val saved2 = SavedValues.int32(savedGrown.variable("cursor"), "cursor")
         val saved3 = SavedValues.uint8(savedGrown.variable("under"), "under")
@@ -274,16 +289,17 @@ class StaticListIndexStateMachine(
         val saved7 = SavedValues.bool(savedGrown.variable("room"), "room")
         val saved8 = SavedValues.uint32(savedGrown.variable("count"), "count")
         val saved9 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vPicked = saved1
-        vCursor = saved2
-        vUnder = saved3
-        vFirst = saved4
-        vLast = saved5
-        vOrdered = saved6
-        vRoom = saved7
-        vCount = saved8
-        vRefusals = saved9
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vPicked = saved1
+            vCursor = saved2
+            vUnder = saved3
+            vFirst = saved4
+            vLast = saved5
+            vOrdered = saved6
+            vRoom = saved7
+            vCount = saved8
+            vRefusals = saved9
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -296,6 +312,10 @@ class StaticListIndexStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.list(savedGrown.variable("picked"), "picked", 3) { e, w -> SavedValues.uint8(e, w) }
         SavedValues.int32(savedGrown.variable("cursor"), "cursor")
         SavedValues.uint8(savedGrown.variable("under"), "under")
@@ -381,6 +401,9 @@ class StaticListIndexStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticListIndexState, HistoryId>> =
             listOf(StateTarget(StaticListIndexState.Reading))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: reading's transition 0, as the microstep reads it.
         val transitionReadingAt0 = EnabledTransition<StaticListIndexState, HistoryId>(
@@ -482,21 +505,25 @@ class StaticListIndexStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticListIndexState? = when (stateId) {
         "reading" -> StaticListIndexState.Reading
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticListIndexState): String = when (state) {
         is StaticListIndexState.Reading -> "reading"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticListIndexState): Int = when (state) {
         is StaticListIndexState.Reading -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticListIndexEvent? = when (name) {
@@ -512,6 +539,7 @@ class StaticListIndexStateMachine(
         "shrink" -> StaticListIndexEvent.Shrink
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticListIndexEvent): String? = when (event) {
@@ -531,59 +559,98 @@ class StaticListIndexStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticListIndexState,
-        event: StaticListIndexEvent?
-    ): EnabledTransition<StaticListIndexState, HistoryId>? = when (state) {
-        is StaticListIndexState.Reading -> when {
-            event is StaticListIndexEvent.Day.Picked -> transitionReadingAt0
-            event is StaticListIndexEvent.Read -> transitionReadingAt1
-            event is StaticListIndexEvent.Readlast -> transitionReadingAt2
-            event is StaticListIndexEvent.Shrink -> transitionReadingAt3
-            event is StaticListIndexEvent.More -> transitionReadingAt4
-            event is StaticListIndexEvent.Next -> transitionReadingAt5
-            event is StaticListIndexEvent.Back -> transitionReadingAt6
-            event is StaticListIndexEvent.Compare && (try { com.sce.forge.runtime.SceChecked.at(vPicked, (0).toLong()) < com.sce.forge.runtime.SceChecked.at(vPicked, (1).toLong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<transition cond='picked[0] < picked[1]'>: an integer operation overflowed or failed"); false }) -> transitionReadingAt7
-            event is StaticListIndexEvent.Compare -> transitionReadingAt8
-            event is StaticListIndexEvent.Reset -> transitionReadingAt9
-            event is StaticListIndexEvent.Error.Execution -> transitionReadingAt10
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticListIndexState, event: StaticListIndexEvent?): EnabledTransition<StaticListIndexState, HistoryId>? = when (state) {
+        is StaticListIndexState.Reading -> firstEnabledTransitionOfReading(state, event)
     }
+
+
+    // reading's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReading(state: StaticListIndexState, event: StaticListIndexEvent?): EnabledTransition<StaticListIndexState, HistoryId>? = when {
+        event is StaticListIndexEvent.Day.Picked -> TransitionsPart0.transitionReadingAt0
+        event is StaticListIndexEvent.Read -> TransitionsPart0.transitionReadingAt1
+        event is StaticListIndexEvent.Readlast -> TransitionsPart0.transitionReadingAt2
+        event is StaticListIndexEvent.Shrink -> TransitionsPart0.transitionReadingAt3
+        event is StaticListIndexEvent.More -> TransitionsPart0.transitionReadingAt4
+        event is StaticListIndexEvent.Next -> TransitionsPart0.transitionReadingAt5
+        event is StaticListIndexEvent.Back -> TransitionsPart0.transitionReadingAt6
+        event is StaticListIndexEvent.Compare && (try { com.sce.forge.runtime.SceChecked.at(vPicked, (0).toLong()) < com.sce.forge.runtime.SceChecked.at(vPicked, (1).toLong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<transition cond='picked[0] < picked[1]'>: an integer operation overflowed or failed"); false }) -> TransitionsPart0.transitionReadingAt7
+        event is StaticListIndexEvent.Compare -> TransitionsPart0.transitionReadingAt8
+        event is StaticListIndexEvent.Reset -> TransitionsPart0.transitionReadingAt9
+        event is StaticListIndexEvent.Error.Execution -> TransitionsPart0.transitionReadingAt10
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_list_index.scxml:27 :: _machine
     override fun onEntry(state: StaticListIndexState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticListIndexState.Reading -> {
-                // SCE-MAP: static_list_index.scxml:41 :: reading :: _state_body
-            }
+            is StaticListIndexState.Reading -> onEntryOfReading()
         }
+    }
+
+
+    private fun onEntryOfReading() {
+                // SCE-MAP: static_list_index.scxml:41 :: reading :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_list_index.scxml:27 :: _machine
     override fun onExit(state: StaticListIndexState) {
         when (state) {
-            is StaticListIndexState.Reading -> {
-                // SCE-MAP: static_list_index.scxml:41 :: reading :: _state_body
-            }
+            is StaticListIndexState.Reading -> onExitOfReading()
         }
     }
+
+
+    private fun onExitOfReading() {
+                // SCE-MAP: static_list_index.scxml:41 :: reading :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_list_index.scxml:27 :: _machine
     override fun executeTransitionContent(source: StaticListIndexState, transitionIndex: Int) {
         when (source) {
-        is StaticListIndexState.Reading -> when (transitionIndex) {
-            0 -> {
+            is StaticListIndexState.Reading -> transitionContentOfReading(transitionIndex)
+        }
+    }
+
+
+    // The content of `reading`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfReading(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfReadingAt0()
+            1 -> transitionContentOfReadingAt1()
+            2 -> transitionContentOfReadingAt2()
+            3 -> transitionContentOfReadingAt3()
+            4 -> transitionContentOfReadingAt4()
+            5 -> transitionContentOfReadingAt5()
+            6 -> transitionContentOfReadingAt6()
+            7 -> transitionContentOfReadingAt7()
+            8 -> transitionContentOfReadingAt8()
+            9 -> transitionContentOfReadingAt9()
+            10 -> transitionContentOfReadingAt10()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfReadingAt0() {
                 // SCE-MAP: static_list_index.scxml:42 :: reading :: _transition_0
                 if (pendingDayPickedPayload == null) {
                     return
@@ -592,34 +659,39 @@ class StaticListIndexStateMachine(
             if (if (vPicked.size < 3) { vPicked = vPicked + (pendingDayPickedPayload!!.dayOfMonth); false } else { raisePlatformError(StaticListIndexEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfReadingAt1() {
                 // SCE-MAP: static_list_index.scxml:45 :: reading :: _transition_1
 
             if (try { vFirst = com.sce.forge.runtime.SceChecked.at(vPicked, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='first'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfReadingAt2() {
                 // SCE-MAP: static_list_index.scxml:48 :: reading :: _transition_2
 
             if (try { vLast = com.sce.forge.runtime.SceChecked.at(vPicked, (com.sce.forge.runtime.SceChecked.sub((vPicked).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfReadingAt3() {
                 // SCE-MAP: static_list_index.scxml:51 :: reading :: _transition_3
 
             if (try { vCount = com.sce.forge.runtime.SceChecked.sub((vPicked).size.toUInt(), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfReadingAt4() {
                 // SCE-MAP: static_list_index.scxml:54 :: reading :: _transition_4
 
             vRoom = vCursor < (vPicked).size.toUInt().toInt()
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfReadingAt5() {
                 // SCE-MAP: static_list_index.scxml:57 :: reading :: _transition_5
 
             if (try { vUnder = com.sce.forge.runtime.SceChecked.at(vPicked, (vCursor).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
@@ -629,8 +701,9 @@ class StaticListIndexStateMachine(
             if (try { vCursor = com.sce.forge.runtime.SceChecked.add(vCursor, 1); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='cursor'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfReadingAt6() {
                 // SCE-MAP: static_list_index.scxml:61 :: reading :: _transition_6
 
             if (try { vUnder = com.sce.forge.runtime.SceChecked.at(vPicked, (com.sce.forge.runtime.SceChecked.sub(vCursor, 1)).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
@@ -640,31 +713,31 @@ class StaticListIndexStateMachine(
             if (try { vCursor = com.sce.forge.runtime.SceChecked.sub(vCursor, 1); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='cursor'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfReadingAt7() {
                 // SCE-MAP: static_list_index.scxml:65 :: reading :: _transition_7
 
             vOrdered = true
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfReadingAt8() {
                 // SCE-MAP: static_list_index.scxml:68 :: reading :: _transition_8
 
             vOrdered = false
-            }
-            9 -> {
+    }
+
+    private fun transitionContentOfReadingAt9() {
                 // SCE-MAP: static_list_index.scxml:71 :: reading :: _transition_9
 
             vPicked = emptyList()
-            }
-            10 -> {
+    }
+
+    private fun transitionContentOfReadingAt10() {
                 // SCE-MAP: static_list_index.scxml:74 :: reading :: _transition_10
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

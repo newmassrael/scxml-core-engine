@@ -324,6 +324,10 @@ class StaticHostModelStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.prompt?.let { vPrompt = it }
         params.maxTokens?.let { vMaxTokens = it }
         params.temperatureMilli?.let { vTemperatureMilli = it }
@@ -467,24 +471,26 @@ class StaticHostModelStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "prompt" to SavedValues.of(vPrompt),
-            "max_tokens" to SavedValues.of(vMaxTokens),
-            "temperature_milli" to SavedValues.of(vTemperatureMilli),
-            "calls" to SavedValues.of(vCalls),
-            "outcome" to SavedValues.of(vOutcome),
-            "finish" to SavedValues.of(vFinish),
-            "constrained" to SavedValues.of(vConstrained),
-            "answered_by" to SavedValues.of(vAnsweredBy),
-            "prompt_tokens" to SavedValues.of(vPromptTokens),
-            "answer_tokens" to SavedValues.of(vAnswerTokens),
-            "answer" to SavedValues.optional(vAnswer) { it.toSaved() },
-            "why" to SavedValues.optional(vWhy) { it.toSaved() },
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "prompt" to SavedValues.of(vPrompt)
+        variables += "max_tokens" to SavedValues.of(vMaxTokens)
+        variables += "temperature_milli" to SavedValues.of(vTemperatureMilli)
+        variables += "calls" to SavedValues.of(vCalls)
+        variables += "outcome" to SavedValues.of(vOutcome)
+        variables += "finish" to SavedValues.of(vFinish)
+        variables += "constrained" to SavedValues.of(vConstrained)
+        variables += "answered_by" to SavedValues.of(vAnsweredBy)
+        variables += "prompt_tokens" to SavedValues.of(vPromptTokens)
+        variables += "answer_tokens" to SavedValues.of(vAnswerTokens)
+        variables += "answer" to SavedValues.optional(vAnswer) { it.toSaved() }
+        variables += "why" to SavedValues.optional(vWhy) { it.toSaved() }
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -509,6 +515,15 @@ class StaticHostModelStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("prompt"), "prompt", 8192)
         val saved2 = SavedValues.uint32(savedGrown.variable("max_tokens"), "max_tokens")
         val saved3 = SavedValues.uint16(savedGrown.variable("temperature_milli"), "temperature_milli")
@@ -521,19 +536,20 @@ class StaticHostModelStateMachine(
         val saved10 = SavedValues.uint32(savedGrown.variable("answer_tokens"), "answer_tokens")
         val saved11 = SavedValues.optional(savedGrown.variable("answer"), "answer") { e, w -> StaticHostModelAnswerRecord.fromSaved(e, w) }
         val saved12 = SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticHostModelLiftRefusalRecord.fromSaved(e, w) }
-        vPrompt = saved1
-        vMaxTokens = saved2
-        vTemperatureMilli = saved3
-        vCalls = saved4
-        vOutcome = saved5
-        vFinish = saved6
-        vConstrained = saved7
-        vAnsweredBy = saved8
-        vPromptTokens = saved9
-        vAnswerTokens = saved10
-        vAnswer = saved11
-        vWhy = saved12
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vPrompt = saved1
+            vMaxTokens = saved2
+            vTemperatureMilli = saved3
+            vCalls = saved4
+            vOutcome = saved5
+            vFinish = saved6
+            vConstrained = saved7
+            vAnsweredBy = saved8
+            vPromptTokens = saved9
+            vAnswerTokens = saved10
+            vAnswer = saved11
+            vWhy = saved12
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -546,6 +562,10 @@ class StaticHostModelStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("prompt"), "prompt", 8192)
         SavedValues.uint32(savedGrown.variable("max_tokens"), "max_tokens")
         SavedValues.uint16(savedGrown.variable("temperature_milli"), "temperature_milli")
@@ -712,6 +732,9 @@ class StaticHostModelStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticHostModelState, HistoryId>> =
             listOf(StateTarget(StaticHostModelState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: generating's transition 0, as the microstep reads it.
         val transitionGeneratingAt0 = EnabledTransition<StaticHostModelState, HistoryId>(
@@ -768,6 +791,7 @@ class StaticHostModelStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticHostModelState? = when (stateId) {
         "generating" -> StaticHostModelState.Generating
@@ -775,17 +799,20 @@ class StaticHostModelStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticHostModelState): String = when (state) {
         is StaticHostModelState.Generating -> "generating"
         is StaticHostModelState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticHostModelState): Int = when (state) {
         is StaticHostModelState.Generating -> 1
         is StaticHostModelState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticHostModelEvent? = when (name) {
@@ -799,6 +826,7 @@ class StaticHostModelStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticHostModelEvent): String? = when (event) {
         is StaticHostModelEvent.Done.Invoke.Self -> "done.invoke"
@@ -809,6 +837,7 @@ class StaticHostModelStateMachine(
         is StaticHostModelEvent.Host.Model.Generate.Request -> "host.model.generate.request"
         is StaticHostModelEvent.Model.Leave -> "model.leave"
     }
+
 
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `completeHostInvoke`.
@@ -825,30 +854,44 @@ class StaticHostModelStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticHostModelState,
-        event: StaticHostModelEvent?
-    ): EnabledTransition<StaticHostModelState, HistoryId>? = when (state) {
-        is StaticHostModelState.Generating -> when {
-            event is StaticHostModelEvent.Done.Invoke.Gen && pendingDoneInvokeGenPayload != null && (pendingDoneInvokeGenPayload!!.error == "") -> transitionGeneratingAt0
-            event is StaticHostModelEvent.Done.Invoke.Gen -> transitionGeneratingAt1
-            event is StaticHostModelEvent.Error.Invoke.Gen -> transitionGeneratingAt2
-            event is StaticHostModelEvent.Error.Execution -> transitionGeneratingAt3
-            event is StaticHostModelEvent.Model.Leave -> transitionGeneratingAt4
-            else -> null
-        }
-        is StaticHostModelState.Idle -> when {
-            event is StaticHostModelEvent.Host.Model.Generate.Request -> transitionIdleAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticHostModelState, event: StaticHostModelEvent?): EnabledTransition<StaticHostModelState, HistoryId>? = when (state) {
+        is StaticHostModelState.Generating -> firstEnabledTransitionOfGenerating(state, event)
+        is StaticHostModelState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // generating's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGenerating(state: StaticHostModelState, event: StaticHostModelEvent?): EnabledTransition<StaticHostModelState, HistoryId>? = when {
+        event is StaticHostModelEvent.Done.Invoke.Gen && pendingDoneInvokeGenPayload != null && (pendingDoneInvokeGenPayload!!.error == "") -> TransitionsPart0.transitionGeneratingAt0
+        event is StaticHostModelEvent.Done.Invoke.Gen -> TransitionsPart0.transitionGeneratingAt1
+        event is StaticHostModelEvent.Error.Invoke.Gen -> TransitionsPart0.transitionGeneratingAt2
+        event is StaticHostModelEvent.Error.Execution -> TransitionsPart0.transitionGeneratingAt3
+        event is StaticHostModelEvent.Model.Leave -> TransitionsPart0.transitionGeneratingAt4
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticHostModelState, event: StaticHostModelEvent?): EnabledTransition<StaticHostModelState, HistoryId>? = when {
+        event is StaticHostModelEvent.Host.Model.Generate.Request -> TransitionsPart0.transitionIdleAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_host_model.scxml:33 :: _machine
     override fun onEntry(state: StaticHostModelState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticHostModelState.Generating -> {
+            is StaticHostModelState.Generating -> onEntryOfGenerating()
+            is StaticHostModelState.Idle -> onEntryOfIdle()
+        }
+    }
+
+
+    private fun onEntryOfGenerating() {
                 // SCE-MAP: static_host_model.scxml:70 :: generating :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -862,7 +905,7 @@ class StaticHostModelStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "generating.${System.identityHashCode(this)}.gen"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostModelState.Generating, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -918,40 +961,67 @@ class StaticHostModelStateMachine(
                         }
                     }
                 }
-            }
-            is StaticHostModelState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: static_host_model.scxml:54 :: idle :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_host_model.scxml:33 :: _machine
     override fun onExit(state: StaticHostModelState) {
         when (state) {
-            is StaticHostModelState.Generating -> {
+            is StaticHostModelState.Generating -> onExitOfGenerating()
+            is StaticHostModelState.Idle -> onExitOfIdle()
+        }
+    }
+
+
+    private fun onExitOfGenerating() {
                 // SCE-MAP: static_host_model.scxml:70 :: generating :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostModelState.Generating)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-model-generate", "gen")
-            }
-            is StaticHostModelState.Idle -> {
-                // SCE-MAP: static_host_model.scxml:54 :: idle :: _state_body
-            }
-        }
     }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_host_model.scxml:54 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_host_model.scxml:33 :: _machine
     override fun executeTransitionContent(source: StaticHostModelState, transitionIndex: Int) {
         when (source) {
-        is StaticHostModelState.Generating -> when (transitionIndex) {
-            0 -> {
+            is StaticHostModelState.Generating -> transitionContentOfGenerating(transitionIndex)
+            is StaticHostModelState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `generating`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfGenerating(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfGeneratingAt0()
+            1 -> transitionContentOfGeneratingAt1()
+            2 -> transitionContentOfGeneratingAt2()
+            3 -> transitionContentOfGeneratingAt3()
+            4 -> transitionContentOfGeneratingAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfGeneratingAt0() {
                 // SCE-MAP: static_host_model.scxml:78 :: generating :: _transition_0
                 if (pendingDoneInvokeGenPayload == null) {
                     return
@@ -985,8 +1055,9 @@ class StaticHostModelStateMachine(
                 return
             }
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfGeneratingAt1() {
                 // SCE-MAP: static_host_model.scxml:91 :: generating :: _transition_1
                 if (pendingDoneInvokeGenPayload == null) {
                     return
@@ -995,32 +1066,46 @@ class StaticHostModelStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfGeneratingAt2() {
                 // SCE-MAP: static_host_model.scxml:94 :: generating :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfGeneratingAt3() {
                 // SCE-MAP: static_host_model.scxml:97 :: generating :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("invalid_argument", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfGeneratingAt4() {
                 // SCE-MAP: static_host_model.scxml:100 :: generating :: _transition_4
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("left", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
             else -> {}
         }
-        is StaticHostModelState.Idle -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_host_model.scxml:55 :: idle :: _transition_0
                 if (pendingHostModelGenerateRequestPayload == null) {
                     return
@@ -1057,9 +1142,5 @@ class StaticHostModelStateMachine(
             vAnswerTokens = 0.toUInt()
 
             vWhy = null
-            }
-            else -> {}
-        }
-        }
     }
 }

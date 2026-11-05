@@ -58,6 +58,10 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.size?.let { vSize = it }
         params.label?.let { vLabel = it }
     }
@@ -121,14 +125,16 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "size" to SavedValues.optional(vSize) { SavedValues.of(it) },
-            "label" to SavedValues.optional(vLabel) { SavedValues.of(it) },
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "size" to SavedValues.optional(vSize) { SavedValues.of(it) }
+        variables += "label" to SavedValues.optional(vLabel) { SavedValues.of(it) }
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -153,11 +159,21 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.optional(savedGrown.variable("size"), "size") { e, w -> SavedValues.int32(e, w) }
         val saved2 = SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 8) }
-        vSize = saved1
-        vLabel = saved2
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vSize = saved1
+            vLabel = saved2
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -170,6 +186,10 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.optional(savedGrown.variable("size"), "size") { e, w -> SavedValues.int32(e, w) }
         SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 8) }
     }
@@ -199,6 +219,7 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticInvokeOptionalSceSynthInvokeGivenState, HistoryId>>
@@ -207,6 +228,9 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticInvokeOptionalSceSynthInvokeGivenState, HistoryId>> =
             listOf(StateTarget(StaticInvokeOptionalSceSynthInvokeGivenState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StaticInvokeOptionalSceSynthInvokeGivenState, HistoryId>(
@@ -218,6 +242,7 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticInvokeOptionalSceSynthInvokeGivenState? = when (stateId) {
         "leaf" -> StaticInvokeOptionalSceSynthInvokeGivenState.Leaf
@@ -225,11 +250,13 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticInvokeOptionalSceSynthInvokeGivenState): String = when (state) {
         is StaticInvokeOptionalSceSynthInvokeGivenState.Leaf -> "leaf"
         is StaticInvokeOptionalSceSynthInvokeGivenState.Waiting -> "waiting"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticInvokeOptionalSceSynthInvokeGivenState): Int = when (state) {
@@ -237,10 +264,12 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
         is StaticInvokeOptionalSceSynthInvokeGivenState.Waiting -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticInvokeOptionalSceSynthInvokeGivenEvent? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -261,52 +290,67 @@ class StaticInvokeOptionalSceSynthInvokeGivenStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticInvokeOptionalSceSynthInvokeGivenState,
-        event: StaticInvokeOptionalSceSynthInvokeGivenEvent?
-    ): EnabledTransition<StaticInvokeOptionalSceSynthInvokeGivenState, HistoryId>? = when (state) {
-        is StaticInvokeOptionalSceSynthInvokeGivenState.Waiting -> when {
-            event == null && vSize != null && com.sce.forge.runtime.SceOptional.proven(vSize) == 7 && vLabel != null && com.sce.forge.runtime.SceOptional.proven(vLabel) == "abc" -> transitionWaitingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticInvokeOptionalSceSynthInvokeGivenState, event: StaticInvokeOptionalSceSynthInvokeGivenEvent?): EnabledTransition<StaticInvokeOptionalSceSynthInvokeGivenState, HistoryId>? = when (state) {
+        is StaticInvokeOptionalSceSynthInvokeGivenState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticInvokeOptionalSceSynthInvokeGivenState, event: StaticInvokeOptionalSceSynthInvokeGivenEvent?): EnabledTransition<StaticInvokeOptionalSceSynthInvokeGivenState, HistoryId>? = when {
+        event == null && vSize != null && com.sce.forge.runtime.SceOptional.proven(vSize) == 7 && vLabel != null && com.sce.forge.runtime.SceOptional.proven(vLabel) == "abc" -> TransitionsPart0.transitionWaitingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_invoke_optional.scxml:49 :: _machine
     override fun onEntry(state: StaticInvokeOptionalSceSynthInvokeGivenState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticInvokeOptionalSceSynthInvokeGivenState.Leaf -> {
+            is StaticInvokeOptionalSceSynthInvokeGivenState.Leaf -> onEntryOfLeaf()
+            is StaticInvokeOptionalSceSynthInvokeGivenState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfLeaf() {
                 // SCE-MAP: static_invoke_optional.scxml:58 :: leaf :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticInvokeOptionalSceSynthInvokeGivenState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: static_invoke_optional.scxml:55 :: waiting :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_invoke_optional.scxml:49 :: _machine
     override fun onExit(state: StaticInvokeOptionalSceSynthInvokeGivenState) {
         when (state) {
-            is StaticInvokeOptionalSceSynthInvokeGivenState.Leaf -> {
-                // SCE-MAP: static_invoke_optional.scxml:58 :: leaf :: _state_body
-            }
-            is StaticInvokeOptionalSceSynthInvokeGivenState.Waiting -> {
-                // SCE-MAP: static_invoke_optional.scxml:55 :: waiting :: _state_body
-            }
+            is StaticInvokeOptionalSceSynthInvokeGivenState.Leaf -> onExitOfLeaf()
+            is StaticInvokeOptionalSceSynthInvokeGivenState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfLeaf() {
+                // SCE-MAP: static_invoke_optional.scxml:58 :: leaf :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: static_invoke_optional.scxml:55 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_invoke_optional.scxml:49 :: _machine
     override fun executeTransitionContent(source: StaticInvokeOptionalSceSynthInvokeGivenState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

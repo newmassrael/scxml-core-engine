@@ -97,6 +97,7 @@ class SessionIdsAreDistinctStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: SessionIdsAreDistinctState): Boolean = when (state) {
@@ -104,11 +105,14 @@ class SessionIdsAreDistinctStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: SessionIdsAreDistinctState): Boolean = when (state) {
-        is SessionIdsAreDistinctState.Fail, is SessionIdsAreDistinctState.Pass -> true
+        is SessionIdsAreDistinctState.Fail -> true
+        is SessionIdsAreDistinctState.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -125,16 +129,29 @@ class SessionIdsAreDistinctStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<SessionIdsAreDistinctState, List<SessionIdsAreDistinctState>> = mapOf(
-            SessionIdsAreDistinctState.Phase to listOf(SessionIdsAreDistinctState.Waiting, SessionIdsAreDistinctState.OneSeen),
-        )
+        val childStates: Map<SessionIdsAreDistinctState, List<SessionIdsAreDistinctState>> = LinkedHashMap<SessionIdsAreDistinctState, List<SessionIdsAreDistinctState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<SessionIdsAreDistinctState, List<EntryTarget<SessionIdsAreDistinctState, HistoryId>>> = mapOf(
-            SessionIdsAreDistinctState.Phase to listOf(StateTarget(SessionIdsAreDistinctState.Waiting)),
-        )
+        private fun childStatesPart0(table: MutableMap<SessionIdsAreDistinctState, List<SessionIdsAreDistinctState>>) {
+            table[SessionIdsAreDistinctState.Phase] = listOf(SessionIdsAreDistinctState.Waiting, SessionIdsAreDistinctState.OneSeen)
+        }
+
+
+        val initialTargets: Map<SessionIdsAreDistinctState, List<EntryTarget<SessionIdsAreDistinctState, HistoryId>>> = LinkedHashMap<SessionIdsAreDistinctState, List<EntryTarget<SessionIdsAreDistinctState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<SessionIdsAreDistinctState, List<EntryTarget<SessionIdsAreDistinctState, HistoryId>>>) {
+            table[SessionIdsAreDistinctState.Phase] = listOf(StateTarget(SessionIdsAreDistinctState.Waiting))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<SessionIdsAreDistinctState, HistoryId>> =
             listOf(StateTarget(SessionIdsAreDistinctState.Phase))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: one_seen's transition 0, as the microstep reads it.
         val transitionOneSeenAt0 = EnabledTransition<SessionIdsAreDistinctState, HistoryId>(
@@ -164,6 +181,7 @@ class SessionIdsAreDistinctStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): SessionIdsAreDistinctState? = when (stateId) {
         "fail" -> SessionIdsAreDistinctState.Fail
@@ -174,6 +192,7 @@ class SessionIdsAreDistinctStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: SessionIdsAreDistinctState): String = when (state) {
         is SessionIdsAreDistinctState.Fail -> "fail"
@@ -182,6 +201,7 @@ class SessionIdsAreDistinctStateMachine(
         is SessionIdsAreDistinctState.Phase -> "phase"
         is SessionIdsAreDistinctState.Waiting -> "waiting"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: SessionIdsAreDistinctState): Int = when (state) {
@@ -192,6 +212,7 @@ class SessionIdsAreDistinctStateMachine(
         is SessionIdsAreDistinctState.Waiting -> 1
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SessionIdsAreDistinctEvent? = when (name) {
         "done.invoke" -> SessionIdsAreDistinctEvent.Done.Invoke
@@ -200,12 +221,14 @@ class SessionIdsAreDistinctStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SessionIdsAreDistinctEvent): String? = when (event) {
         is SessionIdsAreDistinctEvent.Done.Invoke -> "done.invoke"
         is SessionIdsAreDistinctEvent.Error.Execution -> "error.execution"
         is SessionIdsAreDistinctEvent.FromChild -> "fromChild"
     }
+
 
 
 
@@ -235,20 +258,7 @@ class SessionIdsAreDistinctStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'firstSid' with expr
-        try {
-            val initResult_firstSid = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
-            engine.setVariable(sid, "firstSid", initResult_firstSid)
-        } catch (e: Exception) {
-            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<data id='firstSid'> expr failed to evaluate")
-        }
-        // W3C SCXML 5.3: Initialize variable 'readBackProbe' with expr
-        try {
-            val initResult_readBackProbe = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{{[\"name\"] = \"first\", [\"keys\"] = \"Escape\"}, {[\"name\"] = \"second\"}}", "[{ name: 'first', keys: 'Escape' }, { name: 'second' }]"))
-            engine.setVariable(sid, "readBackProbe", initResult_readBackProbe)
-        } catch (e: Exception) {
-            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<data id='readBackProbe'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -265,6 +275,24 @@ class SessionIdsAreDistinctStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'firstSid' with expr
+        try {
+            val initResult_firstSid = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
+            engine.setVariable(sid, "firstSid", initResult_firstSid)
+        } catch (e: Exception) {
+            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<data id='firstSid'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'readBackProbe' with expr
+        try {
+            val initResult_readBackProbe = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{{[\"name\"] = \"first\", [\"keys\"] = \"Escape\"}, {[\"name\"] = \"second\"}}", "[{ name: 'first', keys: 'Escape' }, { name: 'second' }]"))
+            engine.setVariable(sid, "readBackProbe", initResult_readBackProbe)
+        } catch (e: Exception) {
+            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<data id='readBackProbe'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -454,51 +482,70 @@ class SessionIdsAreDistinctStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: SessionIdsAreDistinctState,
-        event: SessionIdsAreDistinctEvent?
-    ): EnabledTransition<SessionIdsAreDistinctState, HistoryId>? = when (state) {
-        is SessionIdsAreDistinctState.OneSeen -> when {
-            event is SessionIdsAreDistinctEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(_event.data.sid, firstSid))", "_event.data.sid != firstSid")) -> transitionOneSeenAt0
-            event is SessionIdsAreDistinctEvent.FromChild -> transitionOneSeenAt1
-            else -> null
-        }
-        is SessionIdsAreDistinctState.Waiting -> when {
-            event is SessionIdsAreDistinctEvent.FromChild -> transitionWaitingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: SessionIdsAreDistinctState, event: SessionIdsAreDistinctEvent?): EnabledTransition<SessionIdsAreDistinctState, HistoryId>? = when (state) {
+        is SessionIdsAreDistinctState.OneSeen -> firstEnabledTransitionOfOneSeen(state, event)
+        is SessionIdsAreDistinctState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // one_seen's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOneSeen(state: SessionIdsAreDistinctState, event: SessionIdsAreDistinctEvent?): EnabledTransition<SessionIdsAreDistinctState, HistoryId>? = when {
+        event is SessionIdsAreDistinctEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(_event.data.sid, firstSid))", "_event.data.sid != firstSid")) -> TransitionsPart0.transitionOneSeenAt0
+        event is SessionIdsAreDistinctEvent.FromChild -> TransitionsPart0.transitionOneSeenAt1
+        else -> null
+    }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: SessionIdsAreDistinctState, event: SessionIdsAreDistinctEvent?): EnabledTransition<SessionIdsAreDistinctState, HistoryId>? = when {
+        event is SessionIdsAreDistinctEvent.FromChild -> TransitionsPart0.transitionWaitingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: session_ids_are_distinct.scxml:38 :: _machine
     override fun onEntry(state: SessionIdsAreDistinctState, isDefaultEntry: Boolean) {
         when (state) {
-            is SessionIdsAreDistinctState.Fail -> {
+            is SessionIdsAreDistinctState.Fail -> onEntryOfFail()
+            is SessionIdsAreDistinctState.OneSeen -> onEntryOfOneSeen()
+            is SessionIdsAreDistinctState.Pass -> onEntryOfPass()
+            is SessionIdsAreDistinctState.Phase -> onEntryOfPhase()
+            is SessionIdsAreDistinctState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: session_ids_are_distinct.scxml:116 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is SessionIdsAreDistinctState.OneSeen -> {
+    }
+
+    private fun onEntryOfOneSeen() {
                 // SCE-MAP: session_ids_are_distinct.scxml:109 :: one_seen :: _state_body
-            }
-            is SessionIdsAreDistinctState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: session_ids_are_distinct.scxml:115 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is SessionIdsAreDistinctState.Phase -> {
+    }
+
+    private fun onEntryOfPhase() {
                 // SCE-MAP: session_ids_are_distinct.scxml:70 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_a", state)
+                deferStaticInvoke("inv_a", SessionIdsAreDistinctState.Phase)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_b", state)
-            }
-            is SessionIdsAreDistinctState.Waiting -> {
+                deferStaticInvoke("inv_b", SessionIdsAreDistinctState.Phase)
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: session_ids_are_distinct.scxml:100 :: waiting :: _state_body
-            }
-        }
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -511,9 +558,21 @@ class SessionIdsAreDistinctStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: SessionIdsAreDistinctState) {
         when (invokeId) {
-            "inv_a" -> run {
+            "inv_a" -> startInvokeOfPhaseAt0(state)
+            "inv_b" -> startInvokeOfPhaseAt1(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfPhaseAt0(state: SessionIdsAreDistinctState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_a")}.inv_a"
@@ -524,7 +583,10 @@ class SessionIdsAreDistinctStateMachine(
                     startInvoke("inv_a", childSM, false, SessionIdsAreDistinctEvent.Done.Invoke, "", generatedInvokeId, "", "session_ids_are_distinct__sce_synth_invoke__inv_a", "inv_a")
                 }
             }
-            "inv_b" -> run {
+    }
+
+    private fun startInvokeOfPhaseAt1(state: SessionIdsAreDistinctState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_b")}.inv_b"
@@ -535,55 +597,78 @@ class SessionIdsAreDistinctStateMachine(
                     startInvoke("inv_b", childSM, false, SessionIdsAreDistinctEvent.Done.Invoke, "", generatedInvokeId, "", "session_ids_are_distinct__sce_synth_invoke__inv_b", "inv_b")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: session_ids_are_distinct.scxml:38 :: _machine
     override fun onExit(state: SessionIdsAreDistinctState) {
         when (state) {
-            is SessionIdsAreDistinctState.Fail -> {
+            is SessionIdsAreDistinctState.Fail -> onExitOfFail()
+            is SessionIdsAreDistinctState.OneSeen -> onExitOfOneSeen()
+            is SessionIdsAreDistinctState.Pass -> onExitOfPass()
+            is SessionIdsAreDistinctState.Phase -> onExitOfPhase()
+            is SessionIdsAreDistinctState.Waiting -> onExitOfWaiting()
+        }
+    }
+
+
+    private fun onExitOfFail() {
                 // SCE-MAP: session_ids_are_distinct.scxml:116 :: fail :: _state_body
-            }
-            is SessionIdsAreDistinctState.OneSeen -> {
+    }
+
+    private fun onExitOfOneSeen() {
                 // SCE-MAP: session_ids_are_distinct.scxml:109 :: one_seen :: _state_body
-            }
-            is SessionIdsAreDistinctState.Pass -> {
+    }
+
+    private fun onExitOfPass() {
                 // SCE-MAP: session_ids_are_distinct.scxml:115 :: pass :: _state_body
-            }
-            is SessionIdsAreDistinctState.Phase -> {
+    }
+
+    private fun onExitOfPhase() {
                 // SCE-MAP: session_ids_are_distinct.scxml:70 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(SessionIdsAreDistinctState.Phase)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_a")
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_b")
-            }
-            is SessionIdsAreDistinctState.Waiting -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:100 :: waiting :: _state_body
-            }
-        }
     }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: session_ids_are_distinct.scxml:100 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: session_ids_are_distinct.scxml:38 :: _machine
     override fun executeTransitionContent(source: SessionIdsAreDistinctState, transitionIndex: Int) {
         when (source) {
-        is SessionIdsAreDistinctState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is SessionIdsAreDistinctState.Waiting -> transitionContentOfWaiting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: session_ids_are_distinct.scxml:101 :: waiting :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("firstSid", "firstSid"), com.sce.runtime.ScriptSource.lua("_event.data.sid", "_event.data.sid"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

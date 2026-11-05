@@ -129,6 +129,10 @@ class StaticPayloadRelayStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.zoom?.let { vZoom = it }
         params.relays?.let { vRelays = it }
         params.refusals?.let { vRefusals = it }
@@ -220,16 +224,18 @@ class StaticPayloadRelayStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "layout" to vLayout.toSaved(),
-            "zoom" to SavedValues.of(vZoom),
-            "relays" to SavedValues.of(vRelays),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "layout" to vLayout.toSaved()
+        variables += "zoom" to SavedValues.of(vZoom)
+        variables += "relays" to SavedValues.of(vRelays)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -254,15 +260,25 @@ class StaticPayloadRelayStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticPayloadRelayViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         val saved2 = SavedValues.uint8(savedGrown.variable("zoom"), "zoom")
         val saved3 = SavedValues.uint32(savedGrown.variable("relays"), "relays")
         val saved4 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vLayout = saved1
-        vZoom = saved2
-        vRelays = saved3
-        vRefusals = saved4
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLayout = saved1
+            vZoom = saved2
+            vRelays = saved3
+            vRefusals = saved4
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -275,6 +291,10 @@ class StaticPayloadRelayStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticPayloadRelayViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         SavedValues.uint8(savedGrown.variable("zoom"), "zoom")
         SavedValues.uint32(savedGrown.variable("relays"), "relays")
@@ -377,6 +397,9 @@ class StaticPayloadRelayStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticPayloadRelayState, HistoryId>> =
             listOf(StateTarget(StaticPayloadRelayState.Relaying))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: relaying's transition 0, as the microstep reads it.
         val transitionRelayingAt0 = EnabledTransition<StaticPayloadRelayState, HistoryId>(
@@ -406,21 +429,25 @@ class StaticPayloadRelayStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticPayloadRelayState? = when (stateId) {
         "relaying" -> StaticPayloadRelayState.Relaying
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticPayloadRelayState): String = when (state) {
         is StaticPayloadRelayState.Relaying -> "relaying"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticPayloadRelayState): Int = when (state) {
         is StaticPayloadRelayState.Relaying -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticPayloadRelayEvent? = when (name) {
@@ -429,6 +456,7 @@ class StaticPayloadRelayStateMachine(
         "view.shown" -> StaticPayloadRelayEvent.View.Shown
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticPayloadRelayEvent): String? = when (event) {
@@ -441,51 +469,82 @@ class StaticPayloadRelayStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticPayloadRelayState,
-        event: StaticPayloadRelayEvent?
-    ): EnabledTransition<StaticPayloadRelayState, HistoryId>? = when (state) {
-        is StaticPayloadRelayState.Relaying -> when {
-            event is StaticPayloadRelayEvent.View.Shown -> transitionRelayingAt0
-            event is StaticPayloadRelayEvent.View.Relayed -> transitionRelayingAt1
-            event is StaticPayloadRelayEvent.Error.Execution -> transitionRelayingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticPayloadRelayState, event: StaticPayloadRelayEvent?): EnabledTransition<StaticPayloadRelayState, HistoryId>? = when (state) {
+        is StaticPayloadRelayState.Relaying -> firstEnabledTransitionOfRelaying(state, event)
     }
+
+
+    // relaying's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRelaying(state: StaticPayloadRelayState, event: StaticPayloadRelayEvent?): EnabledTransition<StaticPayloadRelayState, HistoryId>? = when {
+        event is StaticPayloadRelayEvent.View.Shown -> TransitionsPart0.transitionRelayingAt0
+        event is StaticPayloadRelayEvent.View.Relayed -> TransitionsPart0.transitionRelayingAt1
+        event is StaticPayloadRelayEvent.Error.Execution -> TransitionsPart0.transitionRelayingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_payload_relay.scxml:18 :: _machine
     override fun onEntry(state: StaticPayloadRelayState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticPayloadRelayState.Relaying -> {
-                // SCE-MAP: static_payload_relay.scxml:29 :: relaying :: _state_body
-            }
+            is StaticPayloadRelayState.Relaying -> onEntryOfRelaying()
         }
+    }
+
+
+    private fun onEntryOfRelaying() {
+                // SCE-MAP: static_payload_relay.scxml:29 :: relaying :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_payload_relay.scxml:18 :: _machine
     override fun onExit(state: StaticPayloadRelayState) {
         when (state) {
-            is StaticPayloadRelayState.Relaying -> {
-                // SCE-MAP: static_payload_relay.scxml:29 :: relaying :: _state_body
-            }
+            is StaticPayloadRelayState.Relaying -> onExitOfRelaying()
         }
     }
+
+
+    private fun onExitOfRelaying() {
+                // SCE-MAP: static_payload_relay.scxml:29 :: relaying :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_payload_relay.scxml:18 :: _machine
     override fun executeTransitionContent(source: StaticPayloadRelayState, transitionIndex: Int) {
         when (source) {
-        is StaticPayloadRelayState.Relaying -> when (transitionIndex) {
-            0 -> {
+            is StaticPayloadRelayState.Relaying -> transitionContentOfRelaying(transitionIndex)
+        }
+    }
+
+
+    // The content of `relaying`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRelaying(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRelayingAt0()
+            1 -> transitionContentOfRelayingAt1()
+            2 -> transitionContentOfRelayingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRelayingAt0() {
                 // SCE-MAP: static_payload_relay.scxml:30 :: relaying :: _transition_0
                 if (pendingViewShownPayload == null) {
                     return
@@ -513,8 +572,9 @@ class StaticPayloadRelayStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRelayingAt1() {
                 // SCE-MAP: static_payload_relay.scxml:36 :: relaying :: _transition_1
                 if (pendingViewRelayedPayload == null) {
                     return
@@ -527,16 +587,13 @@ class StaticPayloadRelayStateMachine(
             if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRelayingAt2() {
                 // SCE-MAP: static_payload_relay.scxml:41 :: relaying :: _transition_2
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

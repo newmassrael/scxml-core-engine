@@ -75,12 +75,16 @@ class Test417StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: Test417State): Boolean = when (state) {
-        is Test417State.S1, is Test417State.S1p11, is Test417State.S1p12 -> true
+        is Test417State.S1 -> true
+        is Test417State.S1p11 -> true
+        is Test417State.S1p12 -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: Test417State): Boolean = when (state) {
@@ -88,11 +92,16 @@ class Test417StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test417State): Boolean = when (state) {
-        is Test417State.Fail, is Test417State.Pass, is Test417State.S1p11final, is Test417State.S1p12final -> true
+        is Test417State.Fail -> true
+        is Test417State.Pass -> true
+        is Test417State.S1p11final -> true
+        is Test417State.S1p12final -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -109,21 +118,34 @@ class Test417StateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<Test417State, List<Test417State>> = mapOf(
-            Test417State.S1 to listOf(Test417State.S1p1),
-            Test417State.S1p1 to listOf(Test417State.S1p11, Test417State.S1p12),
-            Test417State.S1p11 to listOf(Test417State.S1p111, Test417State.S1p11final),
-            Test417State.S1p12 to listOf(Test417State.S1p121, Test417State.S1p12final),
-        )
+        val childStates: Map<Test417State, List<Test417State>> = LinkedHashMap<Test417State, List<Test417State>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<Test417State, List<EntryTarget<Test417State, HistoryId>>> = mapOf(
-            Test417State.S1 to listOf(StateTarget(Test417State.S1p1)),
-            Test417State.S1p11 to listOf(StateTarget(Test417State.S1p111)),
-            Test417State.S1p12 to listOf(StateTarget(Test417State.S1p121)),
-        )
+        private fun childStatesPart0(table: MutableMap<Test417State, List<Test417State>>) {
+            table[Test417State.S1] = listOf(Test417State.S1p1)
+            table[Test417State.S1p1] = listOf(Test417State.S1p11, Test417State.S1p12)
+            table[Test417State.S1p11] = listOf(Test417State.S1p111, Test417State.S1p11final)
+            table[Test417State.S1p12] = listOf(Test417State.S1p121, Test417State.S1p12final)
+        }
+
+
+        val initialTargets: Map<Test417State, List<EntryTarget<Test417State, HistoryId>>> = LinkedHashMap<Test417State, List<EntryTarget<Test417State, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<Test417State, List<EntryTarget<Test417State, HistoryId>>>) {
+            table[Test417State.S1] = listOf(StateTarget(Test417State.S1p1))
+            table[Test417State.S1p11] = listOf(StateTarget(Test417State.S1p111))
+            table[Test417State.S1p12] = listOf(StateTarget(Test417State.S1p121))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test417State, HistoryId>> =
             listOf(StateTarget(Test417State.S1))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s1's transition 0, as the microstep reads it.
         val transitionS1At0 = EnabledTransition<Test417State, HistoryId>(
@@ -162,6 +184,7 @@ class Test417StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test417State? = when (stateId) {
         "fail" -> Test417State.Fail
@@ -177,6 +200,7 @@ class Test417StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test417State): String = when (state) {
         is Test417State.Fail -> "fail"
@@ -190,6 +214,7 @@ class Test417StateMachine(
         is Test417State.S1p121 -> "s1p121"
         is Test417State.S1p12final -> "s1p12final"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test417State): Int = when (state) {
@@ -205,6 +230,7 @@ class Test417StateMachine(
         is Test417State.S1p12final -> 7
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test417Event? = when (name) {
         "done.state.s1p1" -> Test417Event.Done.State.S1p1
@@ -214,6 +240,7 @@ class Test417StateMachine(
         "timeout" -> Test417Event.Timeout
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test417Event): String? = when (event) {
@@ -228,50 +255,83 @@ class Test417StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test417State,
-        event: Test417Event?
-    ): EnabledTransition<Test417State, HistoryId>? = when (state) {
-        is Test417State.S1 -> when {
-            event is Test417Event.Timeout -> transitionS1At0
-            else -> null
-        }
-        is Test417State.S1p1 -> when {
-            event is Test417Event.Done.State.S1p1 -> transitionS1p1At0
-            else -> null
-        }
-        is Test417State.S1p111 -> when {
-            event == null -> transitionS1p111At0
-            else -> null
-        }
-        is Test417State.S1p121 -> when {
-            event == null -> transitionS1p121At0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test417State, event: Test417Event?): EnabledTransition<Test417State, HistoryId>? = when (state) {
+        is Test417State.S1 -> firstEnabledTransitionOfS1(state, event)
+        is Test417State.S1p1 -> firstEnabledTransitionOfS1p1(state, event)
+        is Test417State.S1p111 -> firstEnabledTransitionOfS1p111(state, event)
+        is Test417State.S1p121 -> firstEnabledTransitionOfS1p121(state, event)
         else -> null
     }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test417State, event: Test417Event?): EnabledTransition<Test417State, HistoryId>? = when {
+        event is Test417Event.Timeout -> TransitionsPart0.transitionS1At0
+        else -> null
+    }
+
+
+    // s1p1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1p1(state: Test417State, event: Test417Event?): EnabledTransition<Test417State, HistoryId>? = when {
+        event is Test417Event.Done.State.S1p1 -> TransitionsPart0.transitionS1p1At0
+        else -> null
+    }
+
+
+    // s1p111's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1p111(state: Test417State, event: Test417Event?): EnabledTransition<Test417State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS1p111At0
+        else -> null
+    }
+
+
+    // s1p121's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1p121(state: Test417State, event: Test417Event?): EnabledTransition<Test417State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS1p121At0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test417.scxml:7 :: _machine
     override fun onEntry(state: Test417State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test417State.Fail -> {
+            is Test417State.Fail -> onEntryOfFail()
+            is Test417State.Pass -> onEntryOfPass()
+            is Test417State.S1 -> onEntryOfS1()
+            is Test417State.S1p1 -> onEntryOfS1p1()
+            is Test417State.S1p11 -> onEntryOfS1p11()
+            is Test417State.S1p111 -> onEntryOfS1p111()
+            is Test417State.S1p11final -> onEntryOfS1p11final()
+            is Test417State.S1p12 -> onEntryOfS1p12()
+            is Test417State.S1p121 -> onEntryOfS1p121()
+            is Test417State.S1p12final -> onEntryOfS1p12final()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test417.scxml:37 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test417State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test417.scxml:36 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test417State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test417.scxml:9 :: s1 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -288,17 +348,21 @@ class Test417StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is Test417State.S1p1 -> {
+    }
+
+    private fun onEntryOfS1p1() {
                 // SCE-MAP: test417.scxml:15 :: s1p1 :: _state_body
-            }
-            is Test417State.S1p11 -> {
+    }
+
+    private fun onEntryOfS1p11() {
                 // SCE-MAP: test417.scxml:18 :: s1p11 :: _state_body
-            }
-            is Test417State.S1p111 -> {
+    }
+
+    private fun onEntryOfS1p111() {
                 // SCE-MAP: test417.scxml:19 :: s1p111 :: _state_body
-            }
-            is Test417State.S1p11final -> {
+    }
+
+    private fun onEntryOfS1p11final() {
                 // SCE-MAP: test417.scxml:22 :: s1p11final :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test417Event.Done.State.S1p11, EventMetadata.platform())
@@ -309,14 +373,17 @@ class Test417StateMachine(
                 if (isStateInFinalState(Test417State.S1p1)) {
                     raiseInternal(Test417Event.Done.State.S1p1)
                 }
-            }
-            is Test417State.S1p12 -> {
+    }
+
+    private fun onEntryOfS1p12() {
                 // SCE-MAP: test417.scxml:25 :: s1p12 :: _state_body
-            }
-            is Test417State.S1p121 -> {
+    }
+
+    private fun onEntryOfS1p121() {
                 // SCE-MAP: test417.scxml:26 :: s1p121 :: _state_body
-            }
-            is Test417State.S1p12final -> {
+    }
+
+    private fun onEntryOfS1p12final() {
                 // SCE-MAP: test417.scxml:29 :: s1p12final :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test417Event.Done.State.S1p12, EventMetadata.platform())
@@ -327,53 +394,73 @@ class Test417StateMachine(
                 if (isStateInFinalState(Test417State.S1p1)) {
                     raiseInternal(Test417Event.Done.State.S1p1)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test417.scxml:7 :: _machine
     override fun onExit(state: Test417State) {
         when (state) {
-            is Test417State.Fail -> {
-                // SCE-MAP: test417.scxml:37 :: fail :: _state_body
-            }
-            is Test417State.Pass -> {
-                // SCE-MAP: test417.scxml:36 :: pass :: _state_body
-            }
-            is Test417State.S1 -> {
-                // SCE-MAP: test417.scxml:9 :: s1 :: _state_body
-            }
-            is Test417State.S1p1 -> {
-                // SCE-MAP: test417.scxml:15 :: s1p1 :: _state_body
-            }
-            is Test417State.S1p11 -> {
-                // SCE-MAP: test417.scxml:18 :: s1p11 :: _state_body
-            }
-            is Test417State.S1p111 -> {
-                // SCE-MAP: test417.scxml:19 :: s1p111 :: _state_body
-            }
-            is Test417State.S1p11final -> {
-                // SCE-MAP: test417.scxml:22 :: s1p11final :: _state_body
-            }
-            is Test417State.S1p12 -> {
-                // SCE-MAP: test417.scxml:25 :: s1p12 :: _state_body
-            }
-            is Test417State.S1p121 -> {
-                // SCE-MAP: test417.scxml:26 :: s1p121 :: _state_body
-            }
-            is Test417State.S1p12final -> {
-                // SCE-MAP: test417.scxml:29 :: s1p12final :: _state_body
-            }
+            is Test417State.Fail -> onExitOfFail()
+            is Test417State.Pass -> onExitOfPass()
+            is Test417State.S1 -> onExitOfS1()
+            is Test417State.S1p1 -> onExitOfS1p1()
+            is Test417State.S1p11 -> onExitOfS1p11()
+            is Test417State.S1p111 -> onExitOfS1p111()
+            is Test417State.S1p11final -> onExitOfS1p11final()
+            is Test417State.S1p12 -> onExitOfS1p12()
+            is Test417State.S1p121 -> onExitOfS1p121()
+            is Test417State.S1p12final -> onExitOfS1p12final()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test417.scxml:37 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test417.scxml:36 :: pass :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test417.scxml:9 :: s1 :: _state_body
+    }
+
+    private fun onExitOfS1p1() {
+                // SCE-MAP: test417.scxml:15 :: s1p1 :: _state_body
+    }
+
+    private fun onExitOfS1p11() {
+                // SCE-MAP: test417.scxml:18 :: s1p11 :: _state_body
+    }
+
+    private fun onExitOfS1p111() {
+                // SCE-MAP: test417.scxml:19 :: s1p111 :: _state_body
+    }
+
+    private fun onExitOfS1p11final() {
+                // SCE-MAP: test417.scxml:22 :: s1p11final :: _state_body
+    }
+
+    private fun onExitOfS1p12() {
+                // SCE-MAP: test417.scxml:25 :: s1p12 :: _state_body
+    }
+
+    private fun onExitOfS1p121() {
+                // SCE-MAP: test417.scxml:26 :: s1p121 :: _state_body
+    }
+
+    private fun onExitOfS1p12final() {
+                // SCE-MAP: test417.scxml:29 :: s1p12final :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test417.scxml:7 :: _machine
     override fun executeTransitionContent(source: Test417State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

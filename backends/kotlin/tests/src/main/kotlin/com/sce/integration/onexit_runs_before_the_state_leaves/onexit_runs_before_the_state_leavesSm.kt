@@ -130,6 +130,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: OnexitRunsBeforeTheStateLeavesState): Boolean = when (state) {
@@ -137,11 +138,18 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: OnexitRunsBeforeTheStateLeavesState): Boolean = when (state) {
-        is OnexitRunsBeforeTheStateLeavesState.FailChildInOuter, is OnexitRunsBeforeTheStateLeavesState.FailExits, is OnexitRunsBeforeTheStateLeavesState.FailParentInInner, is OnexitRunsBeforeTheStateLeavesState.FailSelfInInner, is OnexitRunsBeforeTheStateLeavesState.FailSelfInOuter, is OnexitRunsBeforeTheStateLeavesState.Settled -> true
+        is OnexitRunsBeforeTheStateLeavesState.FailChildInOuter -> true
+        is OnexitRunsBeforeTheStateLeavesState.FailExits -> true
+        is OnexitRunsBeforeTheStateLeavesState.FailParentInInner -> true
+        is OnexitRunsBeforeTheStateLeavesState.FailSelfInInner -> true
+        is OnexitRunsBeforeTheStateLeavesState.FailSelfInOuter -> true
+        is OnexitRunsBeforeTheStateLeavesState.Settled -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -158,16 +166,29 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<OnexitRunsBeforeTheStateLeavesState, List<OnexitRunsBeforeTheStateLeavesState>> = mapOf(
-            OnexitRunsBeforeTheStateLeavesState.Outer to listOf(OnexitRunsBeforeTheStateLeavesState.Inner),
-        )
+        val childStates: Map<OnexitRunsBeforeTheStateLeavesState, List<OnexitRunsBeforeTheStateLeavesState>> = LinkedHashMap<OnexitRunsBeforeTheStateLeavesState, List<OnexitRunsBeforeTheStateLeavesState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<OnexitRunsBeforeTheStateLeavesState, List<EntryTarget<OnexitRunsBeforeTheStateLeavesState, HistoryId>>> = mapOf(
-            OnexitRunsBeforeTheStateLeavesState.Outer to listOf(StateTarget(OnexitRunsBeforeTheStateLeavesState.Inner)),
-        )
+        private fun childStatesPart0(table: MutableMap<OnexitRunsBeforeTheStateLeavesState, List<OnexitRunsBeforeTheStateLeavesState>>) {
+            table[OnexitRunsBeforeTheStateLeavesState.Outer] = listOf(OnexitRunsBeforeTheStateLeavesState.Inner)
+        }
+
+
+        val initialTargets: Map<OnexitRunsBeforeTheStateLeavesState, List<EntryTarget<OnexitRunsBeforeTheStateLeavesState, HistoryId>>> = LinkedHashMap<OnexitRunsBeforeTheStateLeavesState, List<EntryTarget<OnexitRunsBeforeTheStateLeavesState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<OnexitRunsBeforeTheStateLeavesState, List<EntryTarget<OnexitRunsBeforeTheStateLeavesState, HistoryId>>>) {
+            table[OnexitRunsBeforeTheStateLeavesState.Outer] = listOf(StateTarget(OnexitRunsBeforeTheStateLeavesState.Inner))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<OnexitRunsBeforeTheStateLeavesState, HistoryId>> =
             listOf(StateTarget(OnexitRunsBeforeTheStateLeavesState.Outer))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: check's transition 0, as the microstep reads it.
         val transitionCheckAt0 = EnabledTransition<OnexitRunsBeforeTheStateLeavesState, HistoryId>(
@@ -233,6 +254,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): OnexitRunsBeforeTheStateLeavesState? = when (stateId) {
         "check" -> OnexitRunsBeforeTheStateLeavesState.Check
@@ -247,6 +269,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: OnexitRunsBeforeTheStateLeavesState): String = when (state) {
         is OnexitRunsBeforeTheStateLeavesState.Check -> "check"
@@ -259,6 +282,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         is OnexitRunsBeforeTheStateLeavesState.Outer -> "outer"
         is OnexitRunsBeforeTheStateLeavesState.Settled -> "settled"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: OnexitRunsBeforeTheStateLeavesState): Int = when (state) {
@@ -273,6 +297,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         is OnexitRunsBeforeTheStateLeavesState.Settled -> 3
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): OnexitRunsBeforeTheStateLeavesEvent? = when (name) {
         "error.execution" -> OnexitRunsBeforeTheStateLeavesEvent.Error.Execution
@@ -280,11 +305,13 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: OnexitRunsBeforeTheStateLeavesEvent): String? = when (event) {
         is OnexitRunsBeforeTheStateLeavesEvent.Error.Execution -> "error.execution"
         is OnexitRunsBeforeTheStateLeavesEvent.Leave -> "leave"
     }
+
 
 
 
@@ -314,6 +341,29 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+        // W3C SCXML 5.9.2: Register In() predicate callback
+        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'selfInInner' with expr
         try {
             val initResult_selfInInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -349,24 +399,6 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         } catch (e: Exception) {
             raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='exits'> expr failed to evaluate")
         }
-
-
-
-        // W3C SCXML 5.9.2: Register In() predicate callback
-        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -556,96 +588,142 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: OnexitRunsBeforeTheStateLeavesState,
-        event: OnexitRunsBeforeTheStateLeavesEvent?
-    ): EnabledTransition<OnexitRunsBeforeTheStateLeavesState, HistoryId>? = when (state) {
-        is OnexitRunsBeforeTheStateLeavesState.Check -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(exits, 2))", "exits != 2")) -> transitionCheckAt0
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(selfInInner, 1))", "selfInInner != 1")) -> transitionCheckAt1
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(parentInInner, 1))", "parentInInner != 1")) -> transitionCheckAt2
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(selfInOuter, 1))", "selfInOuter != 1")) -> transitionCheckAt3
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(childInOuter, 0))", "childInOuter != 0")) -> transitionCheckAt4
-            event == null -> transitionCheckAt5
-            else -> null
-        }
-        is OnexitRunsBeforeTheStateLeavesState.Inner -> when {
-            event is OnexitRunsBeforeTheStateLeavesEvent.Leave -> transitionInnerAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: OnexitRunsBeforeTheStateLeavesState, event: OnexitRunsBeforeTheStateLeavesEvent?): EnabledTransition<OnexitRunsBeforeTheStateLeavesState, HistoryId>? = when (state) {
+        is OnexitRunsBeforeTheStateLeavesState.Check -> firstEnabledTransitionOfCheck(state, event)
+        is OnexitRunsBeforeTheStateLeavesState.Inner -> firstEnabledTransitionOfInner(state, event)
         else -> null
     }
+
+
+    // check's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCheck(state: OnexitRunsBeforeTheStateLeavesState, event: OnexitRunsBeforeTheStateLeavesEvent?): EnabledTransition<OnexitRunsBeforeTheStateLeavesState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(exits, 2))", "exits != 2")) -> TransitionsPart0.transitionCheckAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(selfInInner, 1))", "selfInInner != 1")) -> TransitionsPart0.transitionCheckAt1
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(parentInInner, 1))", "parentInInner != 1")) -> TransitionsPart0.transitionCheckAt2
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(selfInOuter, 1))", "selfInOuter != 1")) -> TransitionsPart0.transitionCheckAt3
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(childInOuter, 0))", "childInOuter != 0")) -> TransitionsPart0.transitionCheckAt4
+        event == null -> TransitionsPart0.transitionCheckAt5
+        else -> null
+    }
+
+
+    // inner's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfInner(state: OnexitRunsBeforeTheStateLeavesState, event: OnexitRunsBeforeTheStateLeavesEvent?): EnabledTransition<OnexitRunsBeforeTheStateLeavesState, HistoryId>? = when {
+        event is OnexitRunsBeforeTheStateLeavesEvent.Leave -> TransitionsPart0.transitionInnerAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:33 :: _machine
     override fun onEntry(state: OnexitRunsBeforeTheStateLeavesState, isDefaultEntry: Boolean) {
         when (state) {
-            is OnexitRunsBeforeTheStateLeavesState.Check -> {
+            is OnexitRunsBeforeTheStateLeavesState.Check -> onEntryOfCheck()
+            is OnexitRunsBeforeTheStateLeavesState.FailChildInOuter -> onEntryOfFailChildInOuter()
+            is OnexitRunsBeforeTheStateLeavesState.FailExits -> onEntryOfFailExits()
+            is OnexitRunsBeforeTheStateLeavesState.FailParentInInner -> onEntryOfFailParentInInner()
+            is OnexitRunsBeforeTheStateLeavesState.FailSelfInInner -> onEntryOfFailSelfInInner()
+            is OnexitRunsBeforeTheStateLeavesState.FailSelfInOuter -> onEntryOfFailSelfInOuter()
+            is OnexitRunsBeforeTheStateLeavesState.Inner -> onEntryOfInner()
+            is OnexitRunsBeforeTheStateLeavesState.Outer -> onEntryOfOuter()
+            is OnexitRunsBeforeTheStateLeavesState.Settled -> onEntryOfSettled()
+        }
+    }
+
+
+    private fun onEntryOfCheck() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:71 :: check :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailChildInOuter -> {
+    }
+
+    private fun onEntryOfFailChildInOuter() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:86 :: failChildInOuter :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailExits -> {
+    }
+
+    private fun onEntryOfFailExits() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:82 :: failExits :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailParentInInner -> {
+    }
+
+    private fun onEntryOfFailParentInInner() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:84 :: failParentInInner :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailSelfInInner -> {
+    }
+
+    private fun onEntryOfFailSelfInInner() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:83 :: failSelfInInner :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailSelfInOuter -> {
+    }
+
+    private fun onEntryOfFailSelfInOuter() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:85 :: failSelfInOuter :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is OnexitRunsBeforeTheStateLeavesState.Inner -> {
+    }
+
+    private fun onEntryOfInner() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:56 :: inner :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.Outer -> {
+    }
+
+    private fun onEntryOfOuter() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:45 :: outer :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.Settled -> {
+    }
+
+    private fun onEntryOfSettled() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:81 :: settled :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:33 :: _machine
     override fun onExit(state: OnexitRunsBeforeTheStateLeavesState) {
         when (state) {
-            is OnexitRunsBeforeTheStateLeavesState.Check -> {
+            is OnexitRunsBeforeTheStateLeavesState.Check -> onExitOfCheck()
+            is OnexitRunsBeforeTheStateLeavesState.FailChildInOuter -> onExitOfFailChildInOuter()
+            is OnexitRunsBeforeTheStateLeavesState.FailExits -> onExitOfFailExits()
+            is OnexitRunsBeforeTheStateLeavesState.FailParentInInner -> onExitOfFailParentInInner()
+            is OnexitRunsBeforeTheStateLeavesState.FailSelfInInner -> onExitOfFailSelfInInner()
+            is OnexitRunsBeforeTheStateLeavesState.FailSelfInOuter -> onExitOfFailSelfInOuter()
+            is OnexitRunsBeforeTheStateLeavesState.Inner -> onExitOfInner()
+            is OnexitRunsBeforeTheStateLeavesState.Outer -> onExitOfOuter()
+            is OnexitRunsBeforeTheStateLeavesState.Settled -> onExitOfSettled()
+        }
+    }
+
+
+    private fun onExitOfCheck() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:71 :: check :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailChildInOuter -> {
+    }
+
+    private fun onExitOfFailChildInOuter() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:86 :: failChildInOuter :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailExits -> {
+    }
+
+    private fun onExitOfFailExits() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:82 :: failExits :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailParentInInner -> {
+    }
+
+    private fun onExitOfFailParentInInner() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:84 :: failParentInInner :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailSelfInInner -> {
+    }
+
+    private fun onExitOfFailSelfInInner() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:83 :: failSelfInInner :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.FailSelfInOuter -> {
+    }
+
+    private fun onExitOfFailSelfInOuter() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:85 :: failSelfInOuter :: _state_body
-            }
-            is OnexitRunsBeforeTheStateLeavesState.Inner -> {
+    }
+
+    private fun onExitOfInner() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:56 :: inner :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -673,8 +751,9 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             }
             }
                 }
-            }
-            is OnexitRunsBeforeTheStateLeavesState.Outer -> {
+    }
+
+    private fun onExitOfOuter() {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:45 :: outer :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -702,19 +781,19 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             }
             }
                 }
-            }
-            is OnexitRunsBeforeTheStateLeavesState.Settled -> {
-                // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:81 :: settled :: _state_body
-            }
-        }
     }
+
+    private fun onExitOfSettled() {
+                // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:81 :: settled :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:33 :: _machine
     override fun executeTransitionContent(source: OnexitRunsBeforeTheStateLeavesState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

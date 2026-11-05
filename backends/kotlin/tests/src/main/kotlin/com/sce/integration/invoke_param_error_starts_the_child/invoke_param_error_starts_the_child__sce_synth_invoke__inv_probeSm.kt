@@ -62,6 +62,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>>
@@ -70,6 +71,9 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>> =
             listOf(StateTarget(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: report's transition 0, as the microstep reads it.
         val transitionReportAt0 = EnabledTransition<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>(
@@ -81,6 +85,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState? = when (stateId) {
         "done" -> InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done
@@ -88,17 +93,20 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState): String = when (state) {
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> "done"
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> "report"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState): Int = when (state) {
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> 1
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent? = when (name) {
@@ -108,12 +116,14 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent): String? = when (event) {
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.ChildUp -> "childUp"
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Communication -> "error.communication"
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -143,16 +153,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.2: Runtime variable 'kept' (late binding, undefined)
-        try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "kept", null)
-        } catch (_: Exception) {}
-        // W3C SCXML 5.2: Runtime variable 'broken' (late binding, undefined)
-        try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "broken", null)
-        } catch (_: Exception) {}
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -169,6 +170,20 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.2: Runtime variable 'kept' (late binding, undefined)
+        try {
+            engine.evaluateExpr(sid, "undefined")
+            engine.setVariable(sid, "kept", null)
+        } catch (_: Exception) {}
+        // W3C SCXML 5.2: Runtime variable 'broken' (late binding, undefined)
+        try {
+            engine.evaluateExpr(sid, "undefined")
+            engine.setVariable(sid, "broken", null)
+        } catch (_: Exception) {}
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -358,53 +373,86 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState,
-        event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent?
-    ): EnabledTransition<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>? = when (state) {
-        is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> when {
-            event == null -> transitionReportAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent?): EnabledTransition<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>? = when (state) {
+        is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> firstEnabledTransitionOfReport(state, event)
         else -> null
     }
+
+
+    // report's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReport(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent?): EnabledTransition<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionReportAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
     override fun onEntry(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> {
+            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> onEntryOfDone()
+            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> onEntryOfReport()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:33 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> {
+    }
+
+    private fun onEntryOfReport() {
                 // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:25 :: report :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
     override fun onExit(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState) {
         when (state) {
-            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> {
-                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:33 :: done :: _state_body
-            }
-            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> {
-                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:25 :: report :: _state_body
-            }
+            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> onExitOfDone()
+            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> onExitOfReport()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:33 :: done :: _state_body
+    }
+
+    private fun onExitOfReport() {
+                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:25 :: report :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
     override fun executeTransitionContent(source: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, transitionIndex: Int) {
         when (source) {
-        is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> when (transitionIndex) {
-            0 -> {
+            is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> transitionContentOfReport(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `report`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfReport(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfReportAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfReportAt0() {
                 // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:26 :: report :: _transition_0
 
 
@@ -444,10 +492,5 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

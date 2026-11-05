@@ -56,6 +56,7 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, HistoryId>>
@@ -64,6 +65,9 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, HistoryId>> =
             listOf(StateTarget(AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: first's transition 0, as the microstep reads it.
         val transitionFirstAt0 = EnabledTransition<AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, HistoryId>(
@@ -84,6 +88,7 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState? = when (stateId) {
         "first" -> AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First
@@ -92,12 +97,14 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState): String = when (state) {
         is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> "first"
         is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Second -> "second"
         is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Spoke -> "spoke"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState): Int = when (state) {
@@ -106,6 +113,7 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
         is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Spoke -> 2
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent? = when (name) {
         "error.execution" -> AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent.Error.Execution
@@ -113,6 +121,7 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
         "two" -> AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent.Two
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent): String? = when (event) {
@@ -125,32 +134,48 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState,
-        event: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent?
-    ): EnabledTransition<AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, HistoryId>? = when (state) {
-        is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> when {
-            event is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent.One -> transitionFirstAt0
-            else -> null
-        }
-        is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Second -> when {
-            event is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent.Two -> transitionSecondAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, event: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent?): EnabledTransition<AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, HistoryId>? = when (state) {
+        is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> firstEnabledTransitionOfFirst(state, event)
+        is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Second -> firstEnabledTransitionOfSecond(state, event)
         else -> null
     }
+
+
+    // first's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfFirst(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, event: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent?): EnabledTransition<AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, HistoryId>? = when {
+        event is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent.One -> TransitionsPart0.transitionFirstAt0
+        else -> null
+    }
+
+
+    // second's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSecond(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, event: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent?): EnabledTransition<AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, HistoryId>? = when {
+        event is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent.Two -> TransitionsPart0.transitionSecondAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:3 :: _machine
     override fun onEntry(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
-            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> {
+            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> onEntryOfFirst()
+            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Second -> onEntryOfSecond()
+            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Spoke -> onEntryOfSpoke()
+        }
+    }
+
+
+    private fun onEntryOfFirst() {
                 // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:5 :: first :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -167,8 +192,9 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Second -> {
+    }
+
+    private fun onEntryOfSecond() {
                 // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:11 :: second :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -185,37 +211,44 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Spoke -> {
+    }
+
+    private fun onEntryOfSpoke() {
                 // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:17 :: spoke :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:3 :: _machine
     override fun onExit(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState) {
         when (state) {
-            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:5 :: first :: _state_body
-            }
-            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Second -> {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:11 :: second :: _state_body
-            }
-            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Spoke -> {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:17 :: spoke :: _state_body
-            }
+            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> onExitOfFirst()
+            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Second -> onExitOfSecond()
+            is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.Spoke -> onExitOfSpoke()
         }
     }
+
+
+    private fun onExitOfFirst() {
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:5 :: first :: _state_body
+    }
+
+    private fun onExitOfSecond() {
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:11 :: second :: _state_body
+    }
+
+    private fun onExitOfSpoke() {
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:17 :: spoke :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:3 :: _machine
     override fun executeTransitionContent(source: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

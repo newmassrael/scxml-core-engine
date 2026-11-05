@@ -75,12 +75,10 @@ class StaticMeshRelayStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        return savedState(savedShape, variables, wallNowMs)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -159,21 +157,25 @@ class StaticMeshRelayStateMachine(
             listOf(StateTarget(StaticMeshRelayState.Relaying))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticMeshRelayState? = when (stateId) {
         "relaying" -> StaticMeshRelayState.Relaying
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticMeshRelayState): String = when (state) {
         is StaticMeshRelayState.Relaying -> "relaying"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticMeshRelayState): Int = when (state) {
         is StaticMeshRelayState.Relaying -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticMeshRelayEvent? = when (name) {
@@ -181,6 +183,7 @@ class StaticMeshRelayStateMachine(
         "error.execution" -> StaticMeshRelayEvent.Error.Execution
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticMeshRelayEvent): String? = when (event) {
@@ -192,29 +195,33 @@ class StaticMeshRelayStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticMeshRelayState,
-        event: StaticMeshRelayEvent?
-    ): EnabledTransition<StaticMeshRelayState, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: StaticMeshRelayState, event: StaticMeshRelayEvent?): EnabledTransition<StaticMeshRelayState, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_mesh_relay.scxml:12 :: _machine
     override fun onEntry(state: StaticMeshRelayState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticMeshRelayState.Relaying -> {
+            is StaticMeshRelayState.Relaying -> onEntryOfRelaying()
+        }
+    }
+
+
+    private fun onEntryOfRelaying() {
                 // SCE-MAP: static_mesh_relay.scxml:14 :: relaying :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inner", state)
-            }
-        }
+                deferStaticInvoke("inner", StaticMeshRelayState.Relaying)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -227,9 +234,20 @@ class StaticMeshRelayStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: StaticMeshRelayState) {
         when (invokeId) {
-            "inner" -> run {
+            "inner" -> startInvokeOfRelayingAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfRelayingAt0(state: StaticMeshRelayState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "relaying.${nextInvokeStart("inner")}.inner"
@@ -240,8 +258,6 @@ class StaticMeshRelayStateMachine(
                     startInvoke("inner", childSM, false, StaticMeshRelayEvent.Done.Invoke, "", generatedInvokeId, "", "static_mesh_relay__sce_synth_invoke__inner", "inner")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -250,8 +266,18 @@ class StaticMeshRelayStateMachine(
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
     override fun buildSavedChild(child: SavedChild): ResumedChild<StaticMeshRelayEvent> = when (child.id) {
-        "inner" -> if (child.document == "static_mesh_relay__sce_synth_invoke__inner") {
+        "inner" -> savedChildOfRelayingAt0(child)
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
+    }
+
+
+    private fun savedChildOfRelayingAt0(child: SavedChild): ResumedChild<StaticMeshRelayEvent> =
+        if (child.document == "static_mesh_relay__sce_synth_invoke__inner") {
             ResumedChild(
                 StaticMeshRelaySceSynthInvokeInnerStateMachine(),
                 false, StaticMeshRelayEvent.Done.Invoke, "", "", "inner",
@@ -259,29 +285,31 @@ class StaticMeshRelayStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_mesh_relay.scxml:12 :: _machine
     override fun onExit(state: StaticMeshRelayState) {
         when (state) {
-            is StaticMeshRelayState.Relaying -> {
-                // SCE-MAP: static_mesh_relay.scxml:14 :: relaying :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inner")
-            }
+            is StaticMeshRelayState.Relaying -> onExitOfRelaying()
         }
     }
+
+
+    private fun onExitOfRelaying() {
+                // SCE-MAP: static_mesh_relay.scxml:14 :: relaying :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticMeshRelayState.Relaying)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inner")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_mesh_relay.scxml:12 :: _machine
     override fun executeTransitionContent(source: StaticMeshRelayState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

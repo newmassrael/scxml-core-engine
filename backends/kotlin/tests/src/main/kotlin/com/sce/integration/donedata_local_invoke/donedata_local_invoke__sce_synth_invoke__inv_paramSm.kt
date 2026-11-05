@@ -58,6 +58,7 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
         is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> true
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<DonedataLocalInvokeSceSynthInvokeInvParamState, HistoryId>>
@@ -68,21 +69,25 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
             listOf(StateTarget(DonedataLocalInvokeSceSynthInvokeInvParamState.Done))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): DonedataLocalInvokeSceSynthInvokeInvParamState? = when (stateId) {
         "done" -> DonedataLocalInvokeSceSynthInvokeInvParamState.Done
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: DonedataLocalInvokeSceSynthInvokeInvParamState): String = when (state) {
         is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> "done"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: DonedataLocalInvokeSceSynthInvokeInvParamState): Int = when (state) {
         is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): DonedataLocalInvokeSceSynthInvokeInvParamEvent? = when (name) {
@@ -90,10 +95,12 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: DonedataLocalInvokeSceSynthInvokeInvParamEvent): String? = when (event) {
         is DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -328,19 +335,24 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: DonedataLocalInvokeSceSynthInvokeInvParamState,
-        event: DonedataLocalInvokeSceSynthInvokeInvParamEvent?
-    ): EnabledTransition<DonedataLocalInvokeSceSynthInvokeInvParamState, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: DonedataLocalInvokeSceSynthInvokeInvParamState, event: DonedataLocalInvokeSceSynthInvokeInvParamEvent?): EnabledTransition<DonedataLocalInvokeSceSynthInvokeInvParamState, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3 :: _machine
     override fun onEntry(state: DonedataLocalInvokeSceSynthInvokeInvParamState, isDefaultEntry: Boolean) {
         when (state) {
-            is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> {
+            is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> onEntryOfDone()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:5 :: done :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
@@ -367,26 +379,28 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
                 }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3 :: _machine
     override fun onExit(state: DonedataLocalInvokeSceSynthInvokeInvParamState) {
         when (state) {
-            is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> {
-                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:5 :: done :: _state_body
-            }
+            is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> onExitOfDone()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:5 :: done :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3 :: _machine
     override fun executeTransitionContent(source: DonedataLocalInvokeSceSynthInvokeInvParamState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

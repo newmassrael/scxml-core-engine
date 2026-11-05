@@ -57,9 +57,11 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState): Boolean = when (state) {
-        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed, is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Ordered -> true
+        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> true
+        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Ordered -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -69,6 +71,9 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, HistoryId>> =
             listOf(StateTarget(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: saw's transition 0, as the microstep reads it.
         val transitionSawAt0 = EnabledTransition<InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, HistoryId>(
@@ -98,6 +103,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState? = when (stateId) {
         "missed" -> InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed
@@ -107,6 +113,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState): String = when (state) {
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> "missed"
@@ -115,6 +122,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState): Int = when (state) {
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> 2
@@ -122,6 +130,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> 1
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent? = when (name) {
@@ -134,6 +143,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
         "sawNoKick" -> InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.SawNoKick
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent): String? = when (event) {
@@ -150,46 +160,66 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState,
-        event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent?
-    ): EnabledTransition<InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, HistoryId>? = when (state) {
-        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> when {
-            event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> transitionSawAt0
-            else -> null
-        }
-        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> when {
-            event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Kick -> transitionWaitingAt0
-            event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent?): EnabledTransition<InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, HistoryId>? = when (state) {
+        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> firstEnabledTransitionOfSaw(state, event)
+        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // saw's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSaw(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent?): EnabledTransition<InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, HistoryId>? = when {
+        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> TransitionsPart0.transitionSawAt0
+        else -> null
+    }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent?): EnabledTransition<InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, HistoryId>? = when {
+        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Kick -> TransitionsPart0.transitionWaitingAt0
+        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onEntry(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> {
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> onEntryOfMissed()
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Ordered -> onEntryOfOrdered()
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> onEntryOfSaw()
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfMissed() {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Ordered -> {
+    }
+
+    private fun onEntryOfOrdered() {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> {
+    }
+
+    private fun onEntryOfSaw() {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
-            }
-            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -213,36 +243,63 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onExit(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) {
         when (state) {
-            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
-            }
-            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Ordered -> {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
-            }
-            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
-            }
-            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
-            }
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> onExitOfMissed()
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Ordered -> onExitOfOrdered()
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> onExitOfSaw()
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfMissed() {
+                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
+    }
+
+    private fun onExitOfOrdered() {
+                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
+    }
+
+    private fun onExitOfSaw() {
+                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionContent(source: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, transitionIndex: Int) {
         when (source) {
-        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> when (transitionIndex) {
-            0 -> {
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> transitionContentOfSaw(transitionIndex)
+            is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> transitionContentOfWaiting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `saw`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSaw(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSawAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfSawAt0() {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15 :: saw :: _transition_0
 
 
@@ -263,11 +320,22 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
+    }
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            1 -> transitionContentOfWaitingAt1()
             else -> {}
         }
-        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> when (transitionIndex) {
-            1 -> {
+    }
+
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10 :: waiting :: _transition_1
 
 
@@ -288,10 +356,5 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

@@ -61,9 +61,11 @@ class Test201StateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test201State): Boolean = when (state) {
-        is Test201State.Fail, is Test201State.Pass -> true
+        is Test201State.Fail -> true
+        is Test201State.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -73,6 +75,9 @@ class Test201StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test201State, HistoryId>> =
             listOf(StateTarget(Test201State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test201State, HistoryId>(
@@ -93,6 +98,7 @@ class Test201StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test201State? = when (stateId) {
         "fail" -> Test201State.Fail
@@ -101,6 +107,7 @@ class Test201StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test201State): String = when (state) {
         is Test201State.Fail -> "fail"
@@ -108,12 +115,14 @@ class Test201StateMachine(
         is Test201State.S0 -> "s0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test201State): Int = when (state) {
         is Test201State.Fail -> 2
         is Test201State.Pass -> 1
         is Test201State.S0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test201Event? = when (name) {
@@ -125,6 +134,7 @@ class Test201StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test201Event): String? = when (event) {
         is Test201Event.Error.Communication -> "error.communication"
@@ -133,6 +143,7 @@ class Test201StateMachine(
         is Test201Event.Timeout -> "timeout"
         is Test201Event.Wildcard -> "*"
     }
+
 
 
 
@@ -367,34 +378,47 @@ class Test201StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test201State,
-        event: Test201Event?
-    ): EnabledTransition<Test201State, HistoryId>? = when (state) {
-        is Test201State.S0 -> when {
-            event is Test201Event.Event1 -> transitionS0At0
-            event != null -> transitionS0At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test201State, event: Test201Event?): EnabledTransition<Test201State, HistoryId>? = when (state) {
+        is Test201State.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test201State, event: Test201Event?): EnabledTransition<Test201State, HistoryId>? = when {
+        event is Test201Event.Event1 -> TransitionsPart0.transitionS0At0
+        event != null -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test201.scxml:6 :: _machine
     override fun onEntry(state: Test201State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test201State.Fail -> {
+            is Test201State.Fail -> onEntryOfFail()
+            is Test201State.Pass -> onEntryOfPass()
+            is Test201State.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test201.scxml:23 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test201State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test201.scxml:22 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test201State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test201.scxml:8 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -452,32 +476,38 @@ class Test201StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test201.scxml:6 :: _machine
     override fun onExit(state: Test201State) {
         when (state) {
-            is Test201State.Fail -> {
-                // SCE-MAP: test201.scxml:23 :: fail :: _state_body
-            }
-            is Test201State.Pass -> {
-                // SCE-MAP: test201.scxml:22 :: pass :: _state_body
-            }
-            is Test201State.S0 -> {
-                // SCE-MAP: test201.scxml:8 :: s0 :: _state_body
-            }
+            is Test201State.Fail -> onExitOfFail()
+            is Test201State.Pass -> onExitOfPass()
+            is Test201State.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test201.scxml:23 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test201.scxml:22 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test201.scxml:8 :: s0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test201.scxml:6 :: _machine
     override fun executeTransitionContent(source: Test201State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

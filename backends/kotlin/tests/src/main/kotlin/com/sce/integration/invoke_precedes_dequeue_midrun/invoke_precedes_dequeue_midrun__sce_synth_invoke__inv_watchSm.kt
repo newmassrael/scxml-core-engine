@@ -57,9 +57,11 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState): Boolean = when (state) {
-        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed, is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> true
+        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> true
+        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -69,6 +71,9 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, HistoryId>> =
             listOf(StateTarget(InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: saw's transition 0, as the microstep reads it.
         val transitionSawAt0 = EnabledTransition<InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, HistoryId>(
@@ -98,6 +103,7 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState? = when (stateId) {
         "missed" -> InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed
@@ -107,6 +113,7 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState): String = when (state) {
         is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> "missed"
@@ -115,6 +122,7 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
         is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState): Int = when (state) {
         is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> 2
@@ -122,6 +130,7 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
         is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> 1
         is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent? = when (name) {
@@ -134,6 +143,7 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
         "sawNoKick" -> InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.SawNoKick
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent): String? = when (event) {
@@ -150,46 +160,66 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState,
-        event: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent?
-    ): EnabledTransition<InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, HistoryId>? = when (state) {
-        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> when {
-            event is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.Probe -> transitionSawAt0
-            else -> null
-        }
-        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> when {
-            event is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.Kick -> transitionWaitingAt0
-            event is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.Probe -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, event: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent?): EnabledTransition<InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, HistoryId>? = when (state) {
+        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> firstEnabledTransitionOfSaw(state, event)
+        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // saw's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSaw(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, event: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent?): EnabledTransition<InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, HistoryId>? = when {
+        event is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.Probe -> TransitionsPart0.transitionSawAt0
+        else -> null
+    }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, event: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent?): EnabledTransition<InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, HistoryId>? = when {
+        event is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.Kick -> TransitionsPart0.transitionWaitingAt0
+        event is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.Probe -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onEntry(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> {
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> onEntryOfMissed()
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> onEntryOfOrdered()
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> onEntryOfSaw()
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfMissed() {
                 // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> {
+    }
+
+    private fun onEntryOfOrdered() {
                 // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> {
+    }
+
+    private fun onEntryOfSaw() {
                 // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
-            }
-            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -213,36 +243,63 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onExit(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState) {
         when (state) {
-            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
-            }
-            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
-            }
-            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
-            }
-            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
-            }
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> onExitOfMissed()
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> onExitOfOrdered()
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> onExitOfSaw()
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfMissed() {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
+    }
+
+    private fun onExitOfOrdered() {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
+    }
+
+    private fun onExitOfSaw() {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionContent(source: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, transitionIndex: Int) {
         when (source) {
-        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> when (transitionIndex) {
-            0 -> {
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> transitionContentOfSaw(transitionIndex)
+            is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> transitionContentOfWaiting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `saw`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSaw(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSawAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfSawAt0() {
                 // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:15 :: saw :: _transition_0
 
 
@@ -263,11 +320,22 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
+    }
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            1 -> transitionContentOfWaitingAt1()
             else -> {}
         }
-        is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> when (transitionIndex) {
-            1 -> {
+    }
+
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:10 :: waiting :: _transition_1
 
 
@@ -288,10 +356,5 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

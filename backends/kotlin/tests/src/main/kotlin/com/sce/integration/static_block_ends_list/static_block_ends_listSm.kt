@@ -71,6 +71,10 @@ class StaticBlockEndsListStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.afterAppend?.let { vAfterAppend = it }
         params.errors?.let { vErrors = it }
     }
@@ -149,15 +153,17 @@ class StaticBlockEndsListStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "picked" to SavedValues.list(vPicked) { SavedValues.of(it) },
-            "afterAppend" to SavedValues.of(vAfterAppend),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "picked" to SavedValues.list(vPicked) { SavedValues.of(it) }
+        variables += "afterAppend" to SavedValues.of(vAfterAppend)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -182,13 +188,23 @@ class StaticBlockEndsListStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.list(savedGrown.variable("picked"), "picked", 2) { e, w -> SavedValues.uint8(e, w) }
         val saved2 = SavedValues.uint8(savedGrown.variable("afterAppend"), "afterAppend")
         val saved3 = SavedValues.uint8(savedGrown.variable("errors"), "errors")
-        vPicked = saved1
-        vAfterAppend = saved2
-        vErrors = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vPicked = saved1
+            vAfterAppend = saved2
+            vErrors = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -201,6 +217,10 @@ class StaticBlockEndsListStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.list(savedGrown.variable("picked"), "picked", 2) { e, w -> SavedValues.uint8(e, w) }
         SavedValues.uint8(savedGrown.variable("afterAppend"), "afterAppend")
         SavedValues.uint8(savedGrown.variable("errors"), "errors")
@@ -233,6 +253,9 @@ class StaticBlockEndsListStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticBlockEndsListState, HistoryId>> =
             listOf(StateTarget(StaticBlockEndsListState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StaticBlockEndsListState, HistoryId>(
@@ -253,21 +276,25 @@ class StaticBlockEndsListStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticBlockEndsListState? = when (stateId) {
         "waiting" -> StaticBlockEndsListState.Waiting
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticBlockEndsListState): String = when (state) {
         is StaticBlockEndsListState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticBlockEndsListState): Int = when (state) {
         is StaticBlockEndsListState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticBlockEndsListEvent? = when (name) {
@@ -275,6 +302,7 @@ class StaticBlockEndsListStateMachine(
         "pick" -> StaticBlockEndsListEvent.Pick
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticBlockEndsListEvent): String? = when (event) {
@@ -286,50 +314,80 @@ class StaticBlockEndsListStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticBlockEndsListState,
-        event: StaticBlockEndsListEvent?
-    ): EnabledTransition<StaticBlockEndsListState, HistoryId>? = when (state) {
-        is StaticBlockEndsListState.Waiting -> when {
-            event is StaticBlockEndsListEvent.Pick -> transitionWaitingAt0
-            event is StaticBlockEndsListEvent.Error.Execution -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticBlockEndsListState, event: StaticBlockEndsListEvent?): EnabledTransition<StaticBlockEndsListState, HistoryId>? = when (state) {
+        is StaticBlockEndsListState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticBlockEndsListState, event: StaticBlockEndsListEvent?): EnabledTransition<StaticBlockEndsListState, HistoryId>? = when {
+        event is StaticBlockEndsListEvent.Pick -> TransitionsPart0.transitionWaitingAt0
+        event is StaticBlockEndsListEvent.Error.Execution -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_block_ends_list.scxml:17 :: _machine
     override fun onEntry(state: StaticBlockEndsListState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticBlockEndsListState.Waiting -> {
-                // SCE-MAP: static_block_ends_list.scxml:24 :: waiting :: _state_body
-            }
+            is StaticBlockEndsListState.Waiting -> onEntryOfWaiting()
         }
+    }
+
+
+    private fun onEntryOfWaiting() {
+                // SCE-MAP: static_block_ends_list.scxml:24 :: waiting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_block_ends_list.scxml:17 :: _machine
     override fun onExit(state: StaticBlockEndsListState) {
         when (state) {
-            is StaticBlockEndsListState.Waiting -> {
-                // SCE-MAP: static_block_ends_list.scxml:24 :: waiting :: _state_body
-            }
+            is StaticBlockEndsListState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: static_block_ends_list.scxml:24 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_block_ends_list.scxml:17 :: _machine
     override fun executeTransitionContent(source: StaticBlockEndsListState, transitionIndex: Int) {
         when (source) {
-        is StaticBlockEndsListState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is StaticBlockEndsListState.Waiting -> transitionContentOfWaiting(transitionIndex)
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            1 -> transitionContentOfWaitingAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_block_ends_list.scxml:25 :: waiting :: _transition_0
 
             if (if (vPicked.size < 2) { vPicked = vPicked + (7.toUByte()); false } else { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 2"); true }) {
@@ -339,16 +397,13 @@ class StaticBlockEndsListStateMachine(
             if (try { vAfterAppend = com.sce.forge.runtime.SceChecked.add(vAfterAppend, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='afterAppend'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: static_block_ends_list.scxml:29 :: waiting :: _transition_1
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

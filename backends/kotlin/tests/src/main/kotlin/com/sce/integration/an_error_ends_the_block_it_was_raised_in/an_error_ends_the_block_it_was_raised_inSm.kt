@@ -374,6 +374,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: AnErrorEndsTheBlockItWasRaisedInState): Boolean = when (state) {
@@ -381,11 +382,13 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: AnErrorEndsTheBlockItWasRaisedInState): Boolean = when (state) {
         is AnErrorEndsTheBlockItWasRaisedInState.Done -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -402,16 +405,29 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<AnErrorEndsTheBlockItWasRaisedInState, List<AnErrorEndsTheBlockItWasRaisedInState>> = mapOf(
-            AnErrorEndsTheBlockItWasRaisedInState.P to listOf(AnErrorEndsTheBlockItWasRaisedInState.Q),
-        )
+        val childStates: Map<AnErrorEndsTheBlockItWasRaisedInState, List<AnErrorEndsTheBlockItWasRaisedInState>> = LinkedHashMap<AnErrorEndsTheBlockItWasRaisedInState, List<AnErrorEndsTheBlockItWasRaisedInState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<AnErrorEndsTheBlockItWasRaisedInState, List<EntryTarget<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>>> = mapOf(
-            AnErrorEndsTheBlockItWasRaisedInState.P to listOf(StateTarget(AnErrorEndsTheBlockItWasRaisedInState.Q)),
-        )
+        private fun childStatesPart0(table: MutableMap<AnErrorEndsTheBlockItWasRaisedInState, List<AnErrorEndsTheBlockItWasRaisedInState>>) {
+            table[AnErrorEndsTheBlockItWasRaisedInState.P] = listOf(AnErrorEndsTheBlockItWasRaisedInState.Q)
+        }
+
+
+        val initialTargets: Map<AnErrorEndsTheBlockItWasRaisedInState, List<EntryTarget<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>>> = LinkedHashMap<AnErrorEndsTheBlockItWasRaisedInState, List<EntryTarget<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<AnErrorEndsTheBlockItWasRaisedInState, List<EntryTarget<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>>>) {
+            table[AnErrorEndsTheBlockItWasRaisedInState.P] = listOf(StateTarget(AnErrorEndsTheBlockItWasRaisedInState.Q))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>> =
             listOf(StateTarget(AnErrorEndsTheBlockItWasRaisedInState.P))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: p's transition 0, as the microstep reads it.
         val transitionPAt0 = EnabledTransition<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>(
@@ -441,6 +457,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AnErrorEndsTheBlockItWasRaisedInState? = when (stateId) {
         "done" -> AnErrorEndsTheBlockItWasRaisedInState.Done
@@ -449,6 +466,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AnErrorEndsTheBlockItWasRaisedInState): String = when (state) {
         is AnErrorEndsTheBlockItWasRaisedInState.Done -> "done"
@@ -456,12 +474,14 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         is AnErrorEndsTheBlockItWasRaisedInState.Q -> "q"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AnErrorEndsTheBlockItWasRaisedInState): Int = when (state) {
         is AnErrorEndsTheBlockItWasRaisedInState.Done -> 2
         is AnErrorEndsTheBlockItWasRaisedInState.P -> 0
         is AnErrorEndsTheBlockItWasRaisedInState.Q -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AnErrorEndsTheBlockItWasRaisedInEvent? = when (name) {
@@ -471,12 +491,14 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AnErrorEndsTheBlockItWasRaisedInEvent): String? = when (event) {
         is AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution -> "error.execution"
         is AnErrorEndsTheBlockItWasRaisedInEvent.Finish -> "finish"
         is AnErrorEndsTheBlockItWasRaisedInEvent.T -> "t"
     }
+
 
 
 
@@ -506,6 +528,27 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
             val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -681,22 +724,6 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -886,30 +913,42 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AnErrorEndsTheBlockItWasRaisedInState,
-        event: AnErrorEndsTheBlockItWasRaisedInEvent?
-    ): EnabledTransition<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>? = when (state) {
-        is AnErrorEndsTheBlockItWasRaisedInState.P -> when {
-            event is AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution -> transitionPAt0
-            event is AnErrorEndsTheBlockItWasRaisedInEvent.T -> transitionPAt1
-            event is AnErrorEndsTheBlockItWasRaisedInEvent.Finish -> transitionPAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AnErrorEndsTheBlockItWasRaisedInState, event: AnErrorEndsTheBlockItWasRaisedInEvent?): EnabledTransition<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>? = when (state) {
+        is AnErrorEndsTheBlockItWasRaisedInState.P -> firstEnabledTransitionOfP(state, event)
         else -> null
     }
+
+
+    // p's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP(state: AnErrorEndsTheBlockItWasRaisedInState, event: AnErrorEndsTheBlockItWasRaisedInEvent?): EnabledTransition<AnErrorEndsTheBlockItWasRaisedInState, HistoryId>? = when {
+        event is AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution -> TransitionsPart0.transitionPAt0
+        event is AnErrorEndsTheBlockItWasRaisedInEvent.T -> TransitionsPart0.transitionPAt1
+        event is AnErrorEndsTheBlockItWasRaisedInEvent.Finish -> TransitionsPart0.transitionPAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     override fun onEntry(state: AnErrorEndsTheBlockItWasRaisedInState, isDefaultEntry: Boolean) {
         when (state) {
-            is AnErrorEndsTheBlockItWasRaisedInState.Done -> {
+            is AnErrorEndsTheBlockItWasRaisedInState.Done -> onEntryOfDone()
+            is AnErrorEndsTheBlockItWasRaisedInState.P -> onEntryOfP(isDefaultEntry)
+            is AnErrorEndsTheBlockItWasRaisedInState.Q -> onEntryOfQ()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:156 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AnErrorEndsTheBlockItWasRaisedInState.P -> {
+    }
+
+    private fun onEntryOfP(isDefaultEntry: Boolean) {
                 // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:74 :: p :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -938,8 +977,9 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
                     }
                 }
-            }
-            is AnErrorEndsTheBlockItWasRaisedInState.Q -> {
+    }
+
+    private fun onEntryOfQ() {
                 // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:94 :: q :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/9
                 run {
@@ -1194,41 +1234,67 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 return@run
             } // end of run foreach@
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     override fun onExit(state: AnErrorEndsTheBlockItWasRaisedInState) {
         when (state) {
-            is AnErrorEndsTheBlockItWasRaisedInState.Done -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:156 :: done :: _state_body
-            }
-            is AnErrorEndsTheBlockItWasRaisedInState.P -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:74 :: p :: _state_body
-            }
-            is AnErrorEndsTheBlockItWasRaisedInState.Q -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:94 :: q :: _state_body
-            }
+            is AnErrorEndsTheBlockItWasRaisedInState.Done -> onExitOfDone()
+            is AnErrorEndsTheBlockItWasRaisedInState.P -> onExitOfP()
+            is AnErrorEndsTheBlockItWasRaisedInState.Q -> onExitOfQ()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:156 :: done :: _state_body
+    }
+
+    private fun onExitOfP() {
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:74 :: p :: _state_body
+    }
+
+    private fun onExitOfQ() {
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:94 :: q :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     override fun executeTransitionContent(source: AnErrorEndsTheBlockItWasRaisedInState, transitionIndex: Int) {
         when (source) {
-        is AnErrorEndsTheBlockItWasRaisedInState.P -> when (transitionIndex) {
-            0 -> {
+            is AnErrorEndsTheBlockItWasRaisedInState.P -> transitionContentOfP(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `p`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfP(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPAt0()
+            1 -> transitionContentOfPAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfPAt0() {
                 // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:85 :: p :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfPAt1() {
                 // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:88 :: p :: _transition_1
 
 
@@ -1240,10 +1306,5 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterTrans", "afterTrans"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

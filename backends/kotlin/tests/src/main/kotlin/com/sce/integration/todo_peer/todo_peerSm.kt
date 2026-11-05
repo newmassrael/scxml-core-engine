@@ -564,6 +564,10 @@ class TodoPeerStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.node?.let { vNode = it }
         params.hub?.let { vHub = it }
         params.typed?.let { vTyped = it }
@@ -804,74 +808,76 @@ class TodoPeerStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "node" to SavedValues.of(vNode),
-            "hub" to SavedValues.of(vHub),
-            "clock" to vClock.toSaved(),
-            "stamp" to vStamp.toSaved(),
-            "adds" to SavedValues.list(vAdds) { it.toSaved() },
-            "tombstones" to SavedValues.list(vTombstones) { it.toSaved() },
-            "one" to SavedValues.list(vOne) { it.toSaved() },
-            "stable" to SavedValues.list(vStable) { it.toSaved() },
-            "entry" to vEntry.toSaved(),
-            "values" to SavedValues.list(vValues) { it.toSaved() },
-            "typed" to SavedValues.of(vTyped),
-            "held" to vHeld.toSaved(),
-            "digest" to SavedValues.list(vDigest) { it.toSaved() },
-            "mine" to SavedValues.of(vMine),
-            "shareId" to SavedValues.of(vShareId),
-            "shareField" to SavedValues.of(vShareField),
-            "known" to SavedValues.of(vKnown),
-            "wasLive" to SavedValues.of(vWasLive),
-            "isLive" to SavedValues.of(vIsLive),
-            "present" to SavedValues.of(vPresent),
-            "refusals" to SavedValues.of(vRefusals),
-            "agenda" to SavedValues.list(vAgenda) { it.toSaved() },
-            "local" to SavedValues.list(vLocal) { it.toSaved() },
-            "occ" to vOcc.toSaved(),
-            "agendaNext" to SavedValues.of(vAgendaNext),
-            "zoneStarts1" to SavedValues.list(vZoneStarts1) { SavedValues.of(it) },
-            "zoneOffsets1" to SavedValues.list(vZoneOffsets1) { SavedValues.of(it) },
-            "zoneStarts2" to SavedValues.list(vZoneStarts2) { SavedValues.of(it) },
-            "zoneOffsets2" to SavedValues.list(vZoneOffsets2) { SavedValues.of(it) },
-            "zoneStarts3" to SavedValues.list(vZoneStarts3) { SavedValues.of(it) },
-            "zoneOffsets3" to SavedValues.list(vZoneOffsets3) { SavedValues.of(it) },
-            "zoneStarts4" to SavedValues.list(vZoneStarts4) { SavedValues.of(it) },
-            "zoneOffsets4" to SavedValues.list(vZoneOffsets4) { SavedValues.of(it) },
-            "zoneStarts" to SavedValues.list(vZoneStarts) { SavedValues.of(it) },
-            "zoneOffsets" to SavedValues.list(vZoneOffsets) { SavedValues.of(it) },
-            "zoneRows" to SavedValues.of(vZoneRows),
-            "split" to SavedValues.of(vSplit),
-            "sched" to vSched.toSaved(),
-            "rawCount" to SavedValues.of(vRawCount),
-            "rawLast" to SavedValues.of(vRawLast),
-            "utcSec" to SavedValues.of(vUtcSec),
-            "floor" to SavedValues.of(vFloor),
-            "stale" to SavedValues.of(vStale),
-            "late" to SavedValues.of(vLate),
-            "frozenFor" to SavedValues.of(vFrozenFor),
-            "frozenHash" to SavedValues.of(vFrozenHash),
-            "pending" to SavedValues.of(vPending),
-            "members" to SavedValues.of(vMembers),
-            "agreeing" to SavedValues.of(vAgreeing),
-            "answers" to SavedValues.list(vAnswers) { it.toSaved() },
-            "answer" to vAnswer.toSaved(),
-            "agreed" to SavedValues.of(vAgreed),
-            "roomValues" to SavedValues.of(vRoomValues),
-            "roomHistory" to SavedValues.of(vRoomHistory),
-            "roomDigest" to SavedValues.of(vRoomDigest),
-            "full" to SavedValues.of(vFull),
-            "fresh" to SavedValues.of(vFresh),
-            "blocked" to SavedValues.of(vBlocked),
-            "roster" to SavedValues.list(vRoster) { it.toSaved() },
-            "denied" to SavedValues.of(vDenied),
-            "forbidden" to SavedValues.of(vForbidden),
-            "authorized" to SavedValues.of(vAuthorized),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "node" to SavedValues.of(vNode)
+        variables += "hub" to SavedValues.of(vHub)
+        variables += "clock" to vClock.toSaved()
+        variables += "stamp" to vStamp.toSaved()
+        variables += "adds" to SavedValues.list(vAdds) { it.toSaved() }
+        variables += "tombstones" to SavedValues.list(vTombstones) { it.toSaved() }
+        variables += "one" to SavedValues.list(vOne) { it.toSaved() }
+        variables += "stable" to SavedValues.list(vStable) { it.toSaved() }
+        variables += "entry" to vEntry.toSaved()
+        variables += "values" to SavedValues.list(vValues) { it.toSaved() }
+        variables += "typed" to SavedValues.of(vTyped)
+        variables += "held" to vHeld.toSaved()
+        variables += "digest" to SavedValues.list(vDigest) { it.toSaved() }
+        variables += "mine" to SavedValues.of(vMine)
+        variables += "shareId" to SavedValues.of(vShareId)
+        variables += "shareField" to SavedValues.of(vShareField)
+        variables += "known" to SavedValues.of(vKnown)
+        variables += "wasLive" to SavedValues.of(vWasLive)
+        variables += "isLive" to SavedValues.of(vIsLive)
+        variables += "present" to SavedValues.of(vPresent)
+        variables += "refusals" to SavedValues.of(vRefusals)
+        variables += "agenda" to SavedValues.list(vAgenda) { it.toSaved() }
+        variables += "local" to SavedValues.list(vLocal) { it.toSaved() }
+        variables += "occ" to vOcc.toSaved()
+        variables += "agendaNext" to SavedValues.of(vAgendaNext)
+        variables += "zoneStarts1" to SavedValues.list(vZoneStarts1) { SavedValues.of(it) }
+        variables += "zoneOffsets1" to SavedValues.list(vZoneOffsets1) { SavedValues.of(it) }
+        variables += "zoneStarts2" to SavedValues.list(vZoneStarts2) { SavedValues.of(it) }
+        variables += "zoneOffsets2" to SavedValues.list(vZoneOffsets2) { SavedValues.of(it) }
+        variables += "zoneStarts3" to SavedValues.list(vZoneStarts3) { SavedValues.of(it) }
+        variables += "zoneOffsets3" to SavedValues.list(vZoneOffsets3) { SavedValues.of(it) }
+        variables += "zoneStarts4" to SavedValues.list(vZoneStarts4) { SavedValues.of(it) }
+        variables += "zoneOffsets4" to SavedValues.list(vZoneOffsets4) { SavedValues.of(it) }
+        variables += "zoneStarts" to SavedValues.list(vZoneStarts) { SavedValues.of(it) }
+        variables += "zoneOffsets" to SavedValues.list(vZoneOffsets) { SavedValues.of(it) }
+        variables += "zoneRows" to SavedValues.of(vZoneRows)
+        variables += "split" to SavedValues.of(vSplit)
+        variables += "sched" to vSched.toSaved()
+        variables += "rawCount" to SavedValues.of(vRawCount)
+        variables += "rawLast" to SavedValues.of(vRawLast)
+        variables += "utcSec" to SavedValues.of(vUtcSec)
+        variables += "floor" to SavedValues.of(vFloor)
+        variables += "stale" to SavedValues.of(vStale)
+        variables += "late" to SavedValues.of(vLate)
+        variables += "frozenFor" to SavedValues.of(vFrozenFor)
+        variables += "frozenHash" to SavedValues.of(vFrozenHash)
+        variables += "pending" to SavedValues.of(vPending)
+        variables += "members" to SavedValues.of(vMembers)
+        variables += "agreeing" to SavedValues.of(vAgreeing)
+        variables += "answers" to SavedValues.list(vAnswers) { it.toSaved() }
+        variables += "answer" to vAnswer.toSaved()
+        variables += "agreed" to SavedValues.of(vAgreed)
+        variables += "roomValues" to SavedValues.of(vRoomValues)
+        variables += "roomHistory" to SavedValues.of(vRoomHistory)
+        variables += "roomDigest" to SavedValues.of(vRoomDigest)
+        variables += "full" to SavedValues.of(vFull)
+        variables += "fresh" to SavedValues.of(vFresh)
+        variables += "blocked" to SavedValues.of(vBlocked)
+        variables += "roster" to SavedValues.list(vRoster) { it.toSaved() }
+        variables += "denied" to SavedValues.of(vDenied)
+        variables += "forbidden" to SavedValues.of(vForbidden)
+        variables += "authorized" to SavedValues.of(vAuthorized)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -896,6 +902,15 @@ class TodoPeerStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint64(savedGrown.variable("node"), "node")
         val saved2 = SavedValues.bool(savedGrown.variable("hub"), "hub")
         val saved3 = TodoPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
@@ -958,69 +973,70 @@ class TodoPeerStateMachine(
         val saved60 = SavedValues.uint32(savedGrown.variable("denied"), "denied")
         val saved61 = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
         val saved62 = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
-        vNode = saved1
-        vHub = saved2
-        vClock = saved3
-        vStamp = saved4
-        vAdds = saved5
-        vTombstones = saved6
-        vOne = saved7
-        vStable = saved8
-        vEntry = saved9
-        vValues = saved10
-        vTyped = saved11
-        vHeld = saved12
-        vDigest = saved13
-        vMine = saved14
-        vShareId = saved15
-        vShareField = saved16
-        vKnown = saved17
-        vWasLive = saved18
-        vIsLive = saved19
-        vPresent = saved20
-        vRefusals = saved21
-        vAgenda = saved22
-        vLocal = saved23
-        vOcc = saved24
-        vAgendaNext = saved25
-        vZoneStarts1 = saved26
-        vZoneOffsets1 = saved27
-        vZoneStarts2 = saved28
-        vZoneOffsets2 = saved29
-        vZoneStarts3 = saved30
-        vZoneOffsets3 = saved31
-        vZoneStarts4 = saved32
-        vZoneOffsets4 = saved33
-        vZoneStarts = saved34
-        vZoneOffsets = saved35
-        vZoneRows = saved36
-        vSplit = saved37
-        vSched = saved38
-        vRawCount = saved39
-        vRawLast = saved40
-        vUtcSec = saved41
-        vFloor = saved42
-        vStale = saved43
-        vLate = saved44
-        vFrozenFor = saved45
-        vFrozenHash = saved46
-        vPending = saved47
-        vMembers = saved48
-        vAgreeing = saved49
-        vAnswers = saved50
-        vAnswer = saved51
-        vAgreed = saved52
-        vRoomValues = saved53
-        vRoomHistory = saved54
-        vRoomDigest = saved55
-        vFull = saved56
-        vFresh = saved57
-        vBlocked = saved58
-        vRoster = saved59
-        vDenied = saved60
-        vForbidden = saved61
-        vAuthorized = saved62
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vNode = saved1
+            vHub = saved2
+            vClock = saved3
+            vStamp = saved4
+            vAdds = saved5
+            vTombstones = saved6
+            vOne = saved7
+            vStable = saved8
+            vEntry = saved9
+            vValues = saved10
+            vTyped = saved11
+            vHeld = saved12
+            vDigest = saved13
+            vMine = saved14
+            vShareId = saved15
+            vShareField = saved16
+            vKnown = saved17
+            vWasLive = saved18
+            vIsLive = saved19
+            vPresent = saved20
+            vRefusals = saved21
+            vAgenda = saved22
+            vLocal = saved23
+            vOcc = saved24
+            vAgendaNext = saved25
+            vZoneStarts1 = saved26
+            vZoneOffsets1 = saved27
+            vZoneStarts2 = saved28
+            vZoneOffsets2 = saved29
+            vZoneStarts3 = saved30
+            vZoneOffsets3 = saved31
+            vZoneStarts4 = saved32
+            vZoneOffsets4 = saved33
+            vZoneStarts = saved34
+            vZoneOffsets = saved35
+            vZoneRows = saved36
+            vSplit = saved37
+            vSched = saved38
+            vRawCount = saved39
+            vRawLast = saved40
+            vUtcSec = saved41
+            vFloor = saved42
+            vStale = saved43
+            vLate = saved44
+            vFrozenFor = saved45
+            vFrozenHash = saved46
+            vPending = saved47
+            vMembers = saved48
+            vAgreeing = saved49
+            vAnswers = saved50
+            vAnswer = saved51
+            vAgreed = saved52
+            vRoomValues = saved53
+            vRoomHistory = saved54
+            vRoomDigest = saved55
+            vFull = saved56
+            vFresh = saved57
+            vBlocked = saved58
+            vRoster = saved59
+            vDenied = saved60
+            vForbidden = saved61
+            vAuthorized = saved62
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -1033,6 +1049,10 @@ class TodoPeerStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint64(savedGrown.variable("node"), "node")
         SavedValues.bool(savedGrown.variable("hub"), "hub")
         TodoPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
@@ -1523,6 +1543,9 @@ class TodoPeerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<TodoPeerState, HistoryId>> =
             listOf(StateTarget(TodoPeerState.Open))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: open's transition 0, as the microstep reads it.
         val transitionOpenAt0 = EnabledTransition<TodoPeerState, HistoryId>(
@@ -1714,21 +1737,25 @@ class TodoPeerStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): TodoPeerState? = when (stateId) {
         "open" -> TodoPeerState.Open
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: TodoPeerState): String = when (state) {
         is TodoPeerState.Open -> "open"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: TodoPeerState): Int = when (state) {
         is TodoPeerState.Open -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): TodoPeerEvent? = when (name) {
@@ -1754,6 +1781,7 @@ class TodoPeerStateMachine(
         "todo.zone_clear" -> TodoPeerEvent.Todo.ZoneClear
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: TodoPeerEvent): String? = when (event) {
@@ -1783,69 +1811,118 @@ class TodoPeerStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: TodoPeerState,
-        event: TodoPeerEvent?
-    ): EnabledTransition<TodoPeerState, HistoryId>? = when (state) {
-        is TodoPeerState.Open -> when {
-            event is TodoPeerEvent.Todo.Join -> transitionOpenAt0
-            event is TodoPeerEvent.Todo.Room -> transitionOpenAt1
-            event is TodoPeerEvent.Todo.Role -> transitionOpenAt2
-            event is TodoPeerEvent.Todo.Edit -> transitionOpenAt3
-            event is TodoPeerEvent.Todo.Write && pendingTodoWritePayload != null && (vFloor > 0 && pendingTodoWritePayload!!.wallTime <= vFloor) -> transitionOpenAt4
-            event is TodoPeerEvent.Todo.Write -> transitionOpenAt5
-            event is TodoPeerEvent.Todo.Supersede -> transitionOpenAt6
-            event is TodoPeerEvent.Todo.Keep -> transitionOpenAt7
-            event is TodoPeerEvent.Todo.Compact -> transitionOpenAt8
-            event is TodoPeerEvent.Todo.Settle -> transitionOpenAt9
-            event is TodoPeerEvent.Todo.Propose -> transitionOpenAt10
-            event is TodoPeerEvent.Todo.Ack -> transitionOpenAt11
-            event is TodoPeerEvent.Todo.Floor -> transitionOpenAt12
-            event is TodoPeerEvent.Todo.Resync -> transitionOpenAt13
-            event is TodoPeerEvent.Todo.Visit -> transitionOpenAt14
-            event is TodoPeerEvent.Todo.Node -> transitionOpenAt15
-            event is TodoPeerEvent.Todo.Share -> transitionOpenAt16
-            event is TodoPeerEvent.Todo.Agenda -> transitionOpenAt17
-            event is TodoPeerEvent.Todo.Zone -> transitionOpenAt18
-            event is TodoPeerEvent.Todo.ZoneClear -> transitionOpenAt19
-            event is TodoPeerEvent.Error.Execution -> transitionOpenAt20
-            else -> null
-        }
+    override fun firstEnabledTransition(state: TodoPeerState, event: TodoPeerEvent?): EnabledTransition<TodoPeerState, HistoryId>? = when (state) {
+        is TodoPeerState.Open -> firstEnabledTransitionOfOpen(state, event)
     }
+
+
+    // open's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOpen(state: TodoPeerState, event: TodoPeerEvent?): EnabledTransition<TodoPeerState, HistoryId>? = when {
+        event is TodoPeerEvent.Todo.Join -> TransitionsPart0.transitionOpenAt0
+        event is TodoPeerEvent.Todo.Room -> TransitionsPart0.transitionOpenAt1
+        event is TodoPeerEvent.Todo.Role -> TransitionsPart0.transitionOpenAt2
+        event is TodoPeerEvent.Todo.Edit -> TransitionsPart0.transitionOpenAt3
+        event is TodoPeerEvent.Todo.Write && pendingTodoWritePayload != null && (vFloor > 0 && pendingTodoWritePayload!!.wallTime <= vFloor) -> TransitionsPart0.transitionOpenAt4
+        event is TodoPeerEvent.Todo.Write -> TransitionsPart0.transitionOpenAt5
+        event is TodoPeerEvent.Todo.Supersede -> TransitionsPart0.transitionOpenAt6
+        event is TodoPeerEvent.Todo.Keep -> TransitionsPart0.transitionOpenAt7
+        event is TodoPeerEvent.Todo.Compact -> TransitionsPart0.transitionOpenAt8
+        event is TodoPeerEvent.Todo.Settle -> TransitionsPart0.transitionOpenAt9
+        event is TodoPeerEvent.Todo.Propose -> TransitionsPart0.transitionOpenAt10
+        event is TodoPeerEvent.Todo.Ack -> TransitionsPart0.transitionOpenAt11
+        event is TodoPeerEvent.Todo.Floor -> TransitionsPart0.transitionOpenAt12
+        event is TodoPeerEvent.Todo.Resync -> TransitionsPart0.transitionOpenAt13
+        event is TodoPeerEvent.Todo.Visit -> TransitionsPart0.transitionOpenAt14
+        event is TodoPeerEvent.Todo.Node -> TransitionsPart0.transitionOpenAt15
+        event is TodoPeerEvent.Todo.Share -> TransitionsPart0.transitionOpenAt16
+        event is TodoPeerEvent.Todo.Agenda -> TransitionsPart0.transitionOpenAt17
+        event is TodoPeerEvent.Todo.Zone -> TransitionsPart0.transitionOpenAt18
+        event is TodoPeerEvent.Todo.ZoneClear -> TransitionsPart0.transitionOpenAt19
+        event is TodoPeerEvent.Error.Execution -> TransitionsPart0.transitionOpenAt20
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: todo_peer.scxml:99 :: _machine
     override fun onEntry(state: TodoPeerState, isDefaultEntry: Boolean) {
         when (state) {
-            is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:303 :: open :: _state_body
-            }
+            is TodoPeerState.Open -> onEntryOfOpen()
         }
+    }
+
+
+    private fun onEntryOfOpen() {
+                // SCE-MAP: todo_peer.scxml:303 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: todo_peer.scxml:99 :: _machine
     override fun onExit(state: TodoPeerState) {
         when (state) {
-            is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:303 :: open :: _state_body
-            }
+            is TodoPeerState.Open -> onExitOfOpen()
         }
     }
+
+
+    private fun onExitOfOpen() {
+                // SCE-MAP: todo_peer.scxml:303 :: open :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: todo_peer.scxml:99 :: _machine
     override fun executeTransitionContent(source: TodoPeerState, transitionIndex: Int) {
         when (source) {
-        is TodoPeerState.Open -> when (transitionIndex) {
-            0 -> {
+            is TodoPeerState.Open -> transitionContentOfOpen(transitionIndex)
+        }
+    }
+
+
+    // The content of `open`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfOpen(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfOpenAt0()
+            1 -> transitionContentOfOpenAt1()
+            2 -> transitionContentOfOpenAt2()
+            3 -> transitionContentOfOpenAt3()
+            4 -> transitionContentOfOpenAt4()
+            5 -> transitionContentOfOpenAt5()
+            6 -> transitionContentOfOpenAt6()
+            7 -> transitionContentOfOpenAt7()
+            8 -> transitionContentOfOpenAt8()
+            9 -> transitionContentOfOpenAt9()
+            10 -> transitionContentOfOpenAt10()
+            11 -> transitionContentOfOpenAt11()
+            12 -> transitionContentOfOpenAt12()
+            13 -> transitionContentOfOpenAt13()
+            14 -> transitionContentOfOpenAt14()
+            15 -> transitionContentOfOpenAt15()
+            16 -> transitionContentOfOpenAt16()
+            17 -> transitionContentOfOpenAt17()
+            18 -> transitionContentOfOpenAt18()
+            19 -> transitionContentOfOpenAt19()
+            20 -> transitionContentOfOpenAt20()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfOpenAt0() {
                 // SCE-MAP: todo_peer.scxml:304 :: open :: _transition_0
                 if (pendingTodoJoinPayload == null) {
                     return
@@ -1854,8 +1931,9 @@ class TodoPeerStateMachine(
             vNode = pendingTodoJoinPayload!!.node
 
             vHub = pendingTodoJoinPayload!!.hub
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfOpenAt1() {
                 // SCE-MAP: todo_peer.scxml:311 :: open :: _transition_1
                 if (pendingTodoRoomPayload == null) {
                     return
@@ -1866,8 +1944,9 @@ class TodoPeerStateMachine(
             vRoomHistory = pendingTodoRoomPayload!!.history
 
             vRoomDigest = pendingTodoRoomPayload!!.digest
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfOpenAt2() {
                 // SCE-MAP: todo_peer.scxml:322 :: open :: _transition_2
                 if (pendingTodoRolePayload == null) {
                     return
@@ -1876,8 +1955,9 @@ class TodoPeerStateMachine(
             if (try { vRoster = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventRoster__v(vRoster, pendingTodoRolePayload!!.node, pendingTodoRolePayload!!.role)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='roster'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfOpenAt3() {
                 // SCE-MAP: todo_peer.scxml:337 :: open :: _transition_3
                 if (pendingTodoEditPayload == null) {
                     return
@@ -2126,8 +2206,9 @@ class TodoPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfOpenAt4() {
                 // SCE-MAP: todo_peer.scxml:421 :: open :: _transition_4
                 if (pendingTodoWritePayload == null) {
                     return
@@ -2152,8 +2233,9 @@ class TodoPeerStateMachine(
                 return
             }
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfOpenAt5() {
                 // SCE-MAP: todo_peer.scxml:441 :: open :: _transition_5
                 if (pendingTodoWritePayload == null) {
                     return
@@ -2420,8 +2502,9 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfOpenAt6() {
                 // SCE-MAP: todo_peer.scxml:538 :: open :: _transition_6
                 if (pendingTodoSupersedePayload == null) {
                     return
@@ -2684,8 +2767,9 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfOpenAt7() {
                 // SCE-MAP: todo_peer.scxml:626 :: open :: _transition_7
                 if (pendingTodoKeepPayload == null) {
                     return
@@ -2706,8 +2790,9 @@ class TodoPeerStateMachine(
             if (try { vDigest = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MerkleInsert__v(vDigest, com.sce.forge.runtime.SceChecked.div(pendingTodoKeepPayload!!.wallTime, 60000), vMine)), 2048); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='digest'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfOpenAt8() {
                 // SCE-MAP: todo_peer.scxml:643 :: open :: _transition_8
                 if (pendingTodoCompactPayload == null) {
                     return
@@ -2746,8 +2831,9 @@ class TodoPeerStateMachine(
 
             vFloor = pendingTodoCompactPayload!!.before
             }
-            }
-            9 -> {
+    }
+
+    private fun transitionContentOfOpenAt9() {
                 // SCE-MAP: todo_peer.scxml:664 :: open :: _transition_9
                 if (pendingTodoSettlePayload == null) {
                     return
@@ -2862,8 +2948,9 @@ class TodoPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            10 -> {
+    }
+
+    private fun transitionContentOfOpenAt10() {
                 // SCE-MAP: todo_peer.scxml:688 :: open :: _transition_10
                 if (pendingTodoProposePayload == null) {
                     return
@@ -2951,8 +3038,9 @@ class TodoPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            11 -> {
+    }
+
+    private fun transitionContentOfOpenAt11() {
                 // SCE-MAP: todo_peer.scxml:718 :: open :: _transition_11
                 if (pendingTodoAckPayload == null) {
                     return
@@ -3237,8 +3325,9 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            12 -> {
+    }
+
+    private fun transitionContentOfOpenAt12() {
                 // SCE-MAP: todo_peer.scxml:787 :: open :: _transition_12
                 if (pendingTodoFloorPayload == null) {
                     return
@@ -3315,8 +3404,9 @@ class TodoPeerStateMachine(
             vStale = true
             }
             }
-            }
-            13 -> {
+    }
+
+    private fun transitionContentOfOpenAt13() {
                 // SCE-MAP: todo_peer.scxml:823 :: open :: _transition_13
 
 
@@ -3340,8 +3430,9 @@ class TodoPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            14 -> {
+    }
+
+    private fun transitionContentOfOpenAt14() {
                 // SCE-MAP: todo_peer.scxml:834 :: open :: _transition_14
                 if (pendingTodoVisitPayload == null) {
                     return
@@ -3535,8 +3626,9 @@ class TodoPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            15 -> {
+    }
+
+    private fun transitionContentOfOpenAt15() {
                 // SCE-MAP: todo_peer.scxml:883 :: open :: _transition_15
                 if (pendingTodoNodePayload == null) {
                     return
@@ -3708,8 +3800,9 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            16 -> {
+    }
+
+    private fun transitionContentOfOpenAt16() {
                 // SCE-MAP: todo_peer.scxml:932 :: open :: _transition_16
                 if (pendingTodoSharePayload == null) {
                     return
@@ -4114,8 +4207,9 @@ class TodoPeerStateMachine(
                 return
             }
             }
-            }
-            17 -> {
+    }
+
+    private fun transitionContentOfOpenAt17() {
                 // SCE-MAP: todo_peer.scxml:1014 :: open :: _transition_17
                 if (pendingTodoAgendaPayload == null) {
                     return
@@ -4398,8 +4492,9 @@ class TodoPeerStateMachine(
                 return
             }
             }
-            }
-            18 -> {
+    }
+
+    private fun transitionContentOfOpenAt18() {
                 // SCE-MAP: todo_peer.scxml:1134 :: open :: _transition_18
                 if (pendingTodoZonePayload == null) {
                     return
@@ -4452,8 +4547,9 @@ class TodoPeerStateMachine(
                 return
             }
             }
-            }
-            19 -> {
+    }
+
+    private fun transitionContentOfOpenAt19() {
                 // SCE-MAP: todo_peer.scxml:1153 :: open :: _transition_19
 
             vZoneStarts1 = emptyList()
@@ -4471,16 +4567,13 @@ class TodoPeerStateMachine(
             vZoneStarts4 = emptyList()
 
             vZoneOffsets4 = emptyList()
-            }
-            20 -> {
+    }
+
+    private fun transitionContentOfOpenAt20() {
                 // SCE-MAP: todo_peer.scxml:1164 :: open :: _transition_20
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

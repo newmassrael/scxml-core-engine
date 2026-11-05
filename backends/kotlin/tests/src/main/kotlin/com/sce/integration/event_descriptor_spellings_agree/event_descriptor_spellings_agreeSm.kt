@@ -62,9 +62,14 @@ class EventDescriptorSpellingsAgreeStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: EventDescriptorSpellingsAgreeState): Boolean = when (state) {
-        is EventDescriptorSpellingsAgreeState.FailBounded, is EventDescriptorSpellingsAgreeState.FailDotted, is EventDescriptorSpellingsAgreeState.FailSuffixed, is EventDescriptorSpellingsAgreeState.FailUniversal, is EventDescriptorSpellingsAgreeState.Pass -> true
+        is EventDescriptorSpellingsAgreeState.FailBounded -> true
+        is EventDescriptorSpellingsAgreeState.FailDotted -> true
+        is EventDescriptorSpellingsAgreeState.FailSuffixed -> true
+        is EventDescriptorSpellingsAgreeState.FailUniversal -> true
+        is EventDescriptorSpellingsAgreeState.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -74,6 +79,9 @@ class EventDescriptorSpellingsAgreeStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<EventDescriptorSpellingsAgreeState, HistoryId>> =
             listOf(StateTarget(EventDescriptorSpellingsAgreeState.Suffixed))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: bounded's transition 0, as the microstep reads it.
         val transitionBoundedAt0 = EnabledTransition<EventDescriptorSpellingsAgreeState, HistoryId>(
@@ -148,6 +156,7 @@ class EventDescriptorSpellingsAgreeStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EventDescriptorSpellingsAgreeState? = when (stateId) {
         "bounded" -> EventDescriptorSpellingsAgreeState.Bounded
@@ -162,6 +171,7 @@ class EventDescriptorSpellingsAgreeStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: EventDescriptorSpellingsAgreeState): String = when (state) {
         is EventDescriptorSpellingsAgreeState.Bounded -> "bounded"
@@ -174,6 +184,7 @@ class EventDescriptorSpellingsAgreeStateMachine(
         is EventDescriptorSpellingsAgreeState.Suffixed -> "suffixed"
         is EventDescriptorSpellingsAgreeState.Universal -> "universal"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: EventDescriptorSpellingsAgreeState): Int = when (state) {
@@ -188,6 +199,7 @@ class EventDescriptorSpellingsAgreeStateMachine(
         is EventDescriptorSpellingsAgreeState.Universal -> 3
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EventDescriptorSpellingsAgreeEvent? = when (name) {
         "any.token.sequence" -> EventDescriptorSpellingsAgreeEvent.Any.Token.Sequence
@@ -197,6 +209,7 @@ class EventDescriptorSpellingsAgreeStateMachine(
         "wilder" -> EventDescriptorSpellingsAgreeEvent.Wilder
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EventDescriptorSpellingsAgreeEvent): String? = when (event) {
@@ -211,142 +224,198 @@ class EventDescriptorSpellingsAgreeStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: EventDescriptorSpellingsAgreeState,
-        event: EventDescriptorSpellingsAgreeEvent?
-    ): EnabledTransition<EventDescriptorSpellingsAgreeState, HistoryId>? = when (state) {
-        is EventDescriptorSpellingsAgreeState.Bounded -> when {
-            event is EventDescriptorSpellingsAgreeEvent.Wild -> transitionBoundedAt0
-            event is EventDescriptorSpellingsAgreeEvent.Wilder -> transitionBoundedAt1
-            else -> null
-        }
-        is EventDescriptorSpellingsAgreeState.Dotted -> when {
-            event is EventDescriptorSpellingsAgreeEvent.Dot -> transitionDottedAt0
-            event is EventDescriptorSpellingsAgreeEvent.Dot -> transitionDottedAt1
-            else -> null
-        }
-        is EventDescriptorSpellingsAgreeState.Suffixed -> when {
-            event is EventDescriptorSpellingsAgreeEvent.Wild -> transitionSuffixedAt0
-            event is EventDescriptorSpellingsAgreeEvent.Wild -> transitionSuffixedAt1
-            else -> null
-        }
-        is EventDescriptorSpellingsAgreeState.Universal -> when {
-            event != null -> transitionUniversalAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: EventDescriptorSpellingsAgreeState, event: EventDescriptorSpellingsAgreeEvent?): EnabledTransition<EventDescriptorSpellingsAgreeState, HistoryId>? = when (state) {
+        is EventDescriptorSpellingsAgreeState.Bounded -> firstEnabledTransitionOfBounded(state, event)
+        is EventDescriptorSpellingsAgreeState.Dotted -> firstEnabledTransitionOfDotted(state, event)
+        is EventDescriptorSpellingsAgreeState.Suffixed -> firstEnabledTransitionOfSuffixed(state, event)
+        is EventDescriptorSpellingsAgreeState.Universal -> firstEnabledTransitionOfUniversal(state, event)
         else -> null
     }
+
+
+    // bounded's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBounded(state: EventDescriptorSpellingsAgreeState, event: EventDescriptorSpellingsAgreeEvent?): EnabledTransition<EventDescriptorSpellingsAgreeState, HistoryId>? = when {
+        event is EventDescriptorSpellingsAgreeEvent.Wild -> TransitionsPart0.transitionBoundedAt0
+        event is EventDescriptorSpellingsAgreeEvent.Wilder -> TransitionsPart0.transitionBoundedAt1
+        else -> null
+    }
+
+
+    // dotted's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfDotted(state: EventDescriptorSpellingsAgreeState, event: EventDescriptorSpellingsAgreeEvent?): EnabledTransition<EventDescriptorSpellingsAgreeState, HistoryId>? = when {
+        event is EventDescriptorSpellingsAgreeEvent.Dot -> TransitionsPart0.transitionDottedAt0
+        event is EventDescriptorSpellingsAgreeEvent.Dot -> TransitionsPart0.transitionDottedAt1
+        else -> null
+    }
+
+
+    // suffixed's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSuffixed(state: EventDescriptorSpellingsAgreeState, event: EventDescriptorSpellingsAgreeEvent?): EnabledTransition<EventDescriptorSpellingsAgreeState, HistoryId>? = when {
+        event is EventDescriptorSpellingsAgreeEvent.Wild -> TransitionsPart0.transitionSuffixedAt0
+        event is EventDescriptorSpellingsAgreeEvent.Wild -> TransitionsPart0.transitionSuffixedAt1
+        else -> null
+    }
+
+
+    // universal's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfUniversal(state: EventDescriptorSpellingsAgreeState, event: EventDescriptorSpellingsAgreeEvent?): EnabledTransition<EventDescriptorSpellingsAgreeState, HistoryId>? = when {
+        event != null -> TransitionsPart0.transitionUniversalAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: event_descriptor_spellings_agree.scxml:56 :: _machine
     override fun onEntry(state: EventDescriptorSpellingsAgreeState, isDefaultEntry: Boolean) {
         when (state) {
-            is EventDescriptorSpellingsAgreeState.Bounded -> {
+            is EventDescriptorSpellingsAgreeState.Bounded -> onEntryOfBounded()
+            is EventDescriptorSpellingsAgreeState.Dotted -> onEntryOfDotted()
+            is EventDescriptorSpellingsAgreeState.FailBounded -> onEntryOfFailBounded()
+            is EventDescriptorSpellingsAgreeState.FailDotted -> onEntryOfFailDotted()
+            is EventDescriptorSpellingsAgreeState.FailSuffixed -> onEntryOfFailSuffixed()
+            is EventDescriptorSpellingsAgreeState.FailUniversal -> onEntryOfFailUniversal()
+            is EventDescriptorSpellingsAgreeState.Pass -> onEntryOfPass()
+            is EventDescriptorSpellingsAgreeState.Suffixed -> onEntryOfSuffixed()
+            is EventDescriptorSpellingsAgreeState.Universal -> onEntryOfUniversal()
+        }
+    }
+
+
+    private fun onEntryOfBounded() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:76 :: bounded :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(EventDescriptorSpellingsAgreeEvent.Wilder)
                 }
-            }
-            is EventDescriptorSpellingsAgreeState.Dotted -> {
+    }
+
+    private fun onEntryOfDotted() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:68 :: dotted :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(EventDescriptorSpellingsAgreeEvent.Dot)
                 }
-            }
-            is EventDescriptorSpellingsAgreeState.FailBounded -> {
+    }
+
+    private fun onEntryOfFailBounded() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:95 :: failBounded :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDescriptorSpellingsAgreeState.FailDotted -> {
+    }
+
+    private fun onEntryOfFailDotted() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:94 :: failDotted :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDescriptorSpellingsAgreeState.FailSuffixed -> {
+    }
+
+    private fun onEntryOfFailSuffixed() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:93 :: failSuffixed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDescriptorSpellingsAgreeState.FailUniversal -> {
+    }
+
+    private fun onEntryOfFailUniversal() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:96 :: failUniversal :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDescriptorSpellingsAgreeState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:92 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventDescriptorSpellingsAgreeState.Suffixed -> {
+    }
+
+    private fun onEntryOfSuffixed() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:60 :: suffixed :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(EventDescriptorSpellingsAgreeEvent.Wild)
                 }
-            }
-            is EventDescriptorSpellingsAgreeState.Universal -> {
+    }
+
+    private fun onEntryOfUniversal() {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:84 :: universal :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(EventDescriptorSpellingsAgreeEvent.Any.Token.Sequence)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: event_descriptor_spellings_agree.scxml:56 :: _machine
     override fun onExit(state: EventDescriptorSpellingsAgreeState) {
         when (state) {
-            is EventDescriptorSpellingsAgreeState.Bounded -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:76 :: bounded :: _state_body
-            }
-            is EventDescriptorSpellingsAgreeState.Dotted -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:68 :: dotted :: _state_body
-            }
-            is EventDescriptorSpellingsAgreeState.FailBounded -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:95 :: failBounded :: _state_body
-            }
-            is EventDescriptorSpellingsAgreeState.FailDotted -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:94 :: failDotted :: _state_body
-            }
-            is EventDescriptorSpellingsAgreeState.FailSuffixed -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:93 :: failSuffixed :: _state_body
-            }
-            is EventDescriptorSpellingsAgreeState.FailUniversal -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:96 :: failUniversal :: _state_body
-            }
-            is EventDescriptorSpellingsAgreeState.Pass -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:92 :: pass :: _state_body
-            }
-            is EventDescriptorSpellingsAgreeState.Suffixed -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:60 :: suffixed :: _state_body
-            }
-            is EventDescriptorSpellingsAgreeState.Universal -> {
-                // SCE-MAP: event_descriptor_spellings_agree.scxml:84 :: universal :: _state_body
-            }
+            is EventDescriptorSpellingsAgreeState.Bounded -> onExitOfBounded()
+            is EventDescriptorSpellingsAgreeState.Dotted -> onExitOfDotted()
+            is EventDescriptorSpellingsAgreeState.FailBounded -> onExitOfFailBounded()
+            is EventDescriptorSpellingsAgreeState.FailDotted -> onExitOfFailDotted()
+            is EventDescriptorSpellingsAgreeState.FailSuffixed -> onExitOfFailSuffixed()
+            is EventDescriptorSpellingsAgreeState.FailUniversal -> onExitOfFailUniversal()
+            is EventDescriptorSpellingsAgreeState.Pass -> onExitOfPass()
+            is EventDescriptorSpellingsAgreeState.Suffixed -> onExitOfSuffixed()
+            is EventDescriptorSpellingsAgreeState.Universal -> onExitOfUniversal()
         }
     }
+
+
+    private fun onExitOfBounded() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:76 :: bounded :: _state_body
+    }
+
+    private fun onExitOfDotted() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:68 :: dotted :: _state_body
+    }
+
+    private fun onExitOfFailBounded() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:95 :: failBounded :: _state_body
+    }
+
+    private fun onExitOfFailDotted() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:94 :: failDotted :: _state_body
+    }
+
+    private fun onExitOfFailSuffixed() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:93 :: failSuffixed :: _state_body
+    }
+
+    private fun onExitOfFailUniversal() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:96 :: failUniversal :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:92 :: pass :: _state_body
+    }
+
+    private fun onExitOfSuffixed() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:60 :: suffixed :: _state_body
+    }
+
+    private fun onExitOfUniversal() {
+                // SCE-MAP: event_descriptor_spellings_agree.scxml:84 :: universal :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: event_descriptor_spellings_agree.scxml:56 :: _machine
     override fun executeTransitionContent(source: EventDescriptorSpellingsAgreeState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

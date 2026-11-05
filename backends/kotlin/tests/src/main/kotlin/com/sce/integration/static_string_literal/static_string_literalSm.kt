@@ -71,6 +71,10 @@ class StaticStringLiteralStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.held?.let { vHeld = it }
         params.measured?.let { vMeasured = it }
     }
@@ -147,14 +151,16 @@ class StaticStringLiteralStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "held" to SavedValues.of(vHeld),
-            "measured" to SavedValues.of(vMeasured),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "held" to SavedValues.of(vHeld)
+        variables += "measured" to SavedValues.of(vMeasured)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -179,11 +185,21 @@ class StaticStringLiteralStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("held"), "held", 32)
         val saved2 = SavedValues.uint32(savedGrown.variable("measured"), "measured")
-        vHeld = saved1
-        vMeasured = saved2
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vHeld = saved1
+            vMeasured = saved2
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -196,6 +212,10 @@ class StaticStringLiteralStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("held"), "held", 32)
         SavedValues.uint32(savedGrown.variable("measured"), "measured")
     }
@@ -227,6 +247,9 @@ class StaticStringLiteralStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticStringLiteralState, HistoryId>> =
             listOf(StateTarget(StaticStringLiteralState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticStringLiteralState, HistoryId>(
@@ -310,21 +333,25 @@ class StaticStringLiteralStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticStringLiteralState? = when (stateId) {
         "idle" -> StaticStringLiteralState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticStringLiteralState): String = when (state) {
         is StaticStringLiteralState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticStringLiteralState): Int = when (state) {
         is StaticStringLiteralState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticStringLiteralEvent? = when (name) {
@@ -339,6 +366,7 @@ class StaticStringLiteralStateMachine(
         "trigraph" -> StaticStringLiteralEvent.Trigraph
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticStringLiteralEvent): String? = when (event) {
@@ -357,119 +385,160 @@ class StaticStringLiteralStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticStringLiteralState,
-        event: StaticStringLiteralEvent?
-    ): EnabledTransition<StaticStringLiteralState, HistoryId>? = when (state) {
-        is StaticStringLiteralState.Idle -> when {
-            event is StaticStringLiteralEvent.Quote -> transitionIdleAt0
-            event is StaticStringLiteralEvent.Backslash -> transitionIdleAt1
-            event is StaticStringLiteralEvent.Template -> transitionIdleAt2
-            event is StaticStringLiteralEvent.Interpolation -> transitionIdleAt3
-            event is StaticStringLiteralEvent.Controls -> transitionIdleAt4
-            event is StaticStringLiteralEvent.Hex -> transitionIdleAt5
-            event is StaticStringLiteralEvent.Astral -> transitionIdleAt6
-            event is StaticStringLiteralEvent.Trigraph -> transitionIdleAt7
-            event is StaticStringLiteralEvent.Measure -> transitionIdleAt8
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticStringLiteralState, event: StaticStringLiteralEvent?): EnabledTransition<StaticStringLiteralState, HistoryId>? = when (state) {
+        is StaticStringLiteralState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticStringLiteralState, event: StaticStringLiteralEvent?): EnabledTransition<StaticStringLiteralState, HistoryId>? = when {
+        event is StaticStringLiteralEvent.Quote -> TransitionsPart0.transitionIdleAt0
+        event is StaticStringLiteralEvent.Backslash -> TransitionsPart0.transitionIdleAt1
+        event is StaticStringLiteralEvent.Template -> TransitionsPart0.transitionIdleAt2
+        event is StaticStringLiteralEvent.Interpolation -> TransitionsPart0.transitionIdleAt3
+        event is StaticStringLiteralEvent.Controls -> TransitionsPart0.transitionIdleAt4
+        event is StaticStringLiteralEvent.Hex -> TransitionsPart0.transitionIdleAt5
+        event is StaticStringLiteralEvent.Astral -> TransitionsPart0.transitionIdleAt6
+        event is StaticStringLiteralEvent.Trigraph -> TransitionsPart0.transitionIdleAt7
+        event is StaticStringLiteralEvent.Measure -> TransitionsPart0.transitionIdleAt8
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_string_literal.scxml:19 :: _machine
     override fun onEntry(state: StaticStringLiteralState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticStringLiteralState.Idle -> {
-                // SCE-MAP: static_string_literal.scxml:25 :: idle :: _state_body
-            }
+            is StaticStringLiteralState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_string_literal.scxml:25 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_string_literal.scxml:19 :: _machine
     override fun onExit(state: StaticStringLiteralState) {
         when (state) {
-            is StaticStringLiteralState.Idle -> {
-                // SCE-MAP: static_string_literal.scxml:25 :: idle :: _state_body
-            }
+            is StaticStringLiteralState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_string_literal.scxml:25 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_string_literal.scxml:19 :: _machine
     override fun executeTransitionContent(source: StaticStringLiteralState, transitionIndex: Int) {
         when (source) {
-        is StaticStringLiteralState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticStringLiteralState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            7 -> transitionContentOfIdleAt7()
+            8 -> transitionContentOfIdleAt8()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_string_literal.scxml:26 :: idle :: _transition_0
 
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("it's", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_string_literal.scxml:29 :: idle :: _transition_1
 
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("a\\b", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_string_literal.scxml:32 :: idle :: _transition_2
 
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("\$name \${x}", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_string_literal.scxml:35 :: idle :: _transition_3
 
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("\\(x)", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_string_literal.scxml:38 :: idle :: _transition_4
 
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("a\nb\tc", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_string_literal.scxml:42 :: idle :: _transition_5
 
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("Aé€", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_string_literal.scxml:46 :: idle :: _transition_6
 
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("𐍈𐍈", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfIdleAt7() {
                 // SCE-MAP: static_string_literal.scxml:49 :: idle :: _transition_7
 
             if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded("a??=b", 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfIdleAt8() {
                 // SCE-MAP: static_string_literal.scxml:52 :: idle :: _transition_8
 
             vMeasured = (vHeld).encodeToByteArray().size.toUInt()
-            }
-            else -> {}
-        }
-        }
     }
 }

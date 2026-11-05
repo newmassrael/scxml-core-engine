@@ -76,6 +76,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, HistoryId>>
@@ -84,6 +85,9 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, HistoryId>> =
             listOf(StateTarget(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: up's transition 0, as the microstep reads it.
         val transitionUpAt0 = EnabledTransition<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, HistoryId>(
@@ -95,6 +99,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State? = when (stateId) {
         "gone" -> ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone
@@ -102,17 +107,20 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State): String = when (state) {
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone -> "gone"
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> "up"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State): Int = when (state) {
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone -> 1
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event? = when (name) {
@@ -122,12 +130,14 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event): String? = when (event) {
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.ChildUp -> "childUp"
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Communication -> "error.communication"
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -157,13 +167,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'alsoBroken' with expr
-        try {
-            val initResult_alsoBroken = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
-            engine.setVariable(sid, "alsoBroken", initResult_alsoBroken)
-        } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, "<data id='alsoBroken'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -180,6 +184,17 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'alsoBroken' with expr
+        try {
+            val initResult_alsoBroken = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
+            engine.setVariable(sid, "alsoBroken", initResult_alsoBroken)
+        } catch (e: Exception) {
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, "<data id='alsoBroken'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -369,53 +384,86 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State,
-        event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event?
-    ): EnabledTransition<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, HistoryId>? = when (state) {
-        is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> when {
-            event == null -> transitionUpAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event?): EnabledTransition<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, HistoryId>? = when (state) {
+        is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> firstEnabledTransitionOfUp(state, event)
         else -> null
     }
+
+
+    // up's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfUp(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event?): EnabledTransition<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionUpAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:3 :: _machine
     override fun onEntry(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, isDefaultEntry: Boolean) {
         when (state) {
-            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone -> {
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone -> onEntryOfGone()
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> onEntryOfUp()
+        }
+    }
+
+
+    private fun onEntryOfGone() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:13 :: gone :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> {
+    }
+
+    private fun onEntryOfUp() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:8 :: up :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:3 :: _machine
     override fun onExit(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State) {
         when (state) {
-            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone -> {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:13 :: gone :: _state_body
-            }
-            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:8 :: up :: _state_body
-            }
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone -> onExitOfGone()
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> onExitOfUp()
         }
     }
+
+
+    private fun onExitOfGone() {
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:13 :: gone :: _state_body
+    }
+
+    private fun onExitOfUp() {
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:8 :: up :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:3 :: _machine
     override fun executeTransitionContent(source: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, transitionIndex: Int) {
         when (source) {
-        is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> when (transitionIndex) {
-            0 -> {
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> transitionContentOfUp(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `up`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfUp(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfUpAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfUpAt0() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:9 :: up :: _transition_0
 
 
@@ -436,10 +484,5 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

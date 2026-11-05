@@ -63,9 +63,11 @@ class Test223StateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test223State): Boolean = when (state) {
-        is Test223State.Fail, is Test223State.Pass -> true
+        is Test223State.Fail -> true
+        is Test223State.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -75,6 +77,9 @@ class Test223StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test223State, HistoryId>> =
             listOf(StateTarget(Test223State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test223State, HistoryId>(
@@ -104,6 +109,7 @@ class Test223StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test223State? = when (stateId) {
         "fail" -> Test223State.Fail
@@ -113,6 +119,7 @@ class Test223StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test223State): String = when (state) {
         is Test223State.Fail -> "fail"
@@ -121,6 +128,7 @@ class Test223StateMachine(
         is Test223State.S1 -> "s1"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test223State): Int = when (state) {
         is Test223State.Fail -> 3
@@ -128,6 +136,7 @@ class Test223StateMachine(
         is Test223State.S0 -> 0
         is Test223State.S1 -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test223Event? = when (name) {
@@ -138,6 +147,7 @@ class Test223StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test223Event): String? = when (event) {
         is Test223Event.Done.Invoke -> "done.invoke"
@@ -145,6 +155,7 @@ class Test223StateMachine(
         is Test223Event.Timeout -> "timeout"
         is Test223Event.Wildcard -> "*"
     }
+
 
 
 
@@ -174,11 +185,7 @@ class Test223StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.2: Runtime variable 'Var1' (late binding, undefined)
-        try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "Var1", null)
-        } catch (_: Exception) {}
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -195,6 +202,15 @@ class Test223StateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.2: Runtime variable 'Var1' (late binding, undefined)
+        try {
+            engine.evaluateExpr(sid, "undefined")
+            engine.setVariable(sid, "Var1", null)
+        } catch (_: Exception) {}
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -404,38 +420,56 @@ class Test223StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test223State,
-        event: Test223Event?
-    ): EnabledTransition<Test223State, HistoryId>? = when (state) {
-        is Test223State.S0 -> when {
-            event != null -> transitionS0At0
-            else -> null
-        }
-        is Test223State.S1 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var1) ~= \"undefined\")", "typeof Var1 !== 'undefined'")) -> transitionS1At0
-            event == null -> transitionS1At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test223State, event: Test223Event?): EnabledTransition<Test223State, HistoryId>? = when (state) {
+        is Test223State.S0 -> firstEnabledTransitionOfS0(state, event)
+        is Test223State.S1 -> firstEnabledTransitionOfS1(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test223State, event: Test223Event?): EnabledTransition<Test223State, HistoryId>? = when {
+        event != null -> TransitionsPart0.transitionS0At0
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test223State, event: Test223Event?): EnabledTransition<Test223State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var1) ~= \"undefined\")", "typeof Var1 !== 'undefined'")) -> TransitionsPart0.transitionS1At0
+        event == null -> TransitionsPart0.transitionS1At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test223.scxml:5 :: _machine
     override fun onEntry(state: Test223State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test223State.Fail -> {
+            is Test223State.Fail -> onEntryOfFail()
+            is Test223State.Pass -> onEntryOfPass()
+            is Test223State.S0 -> onEntryOfS0()
+            is Test223State.S1 -> onEntryOfS1()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test223.scxml:31 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test223State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test223.scxml:30 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test223State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test223.scxml:10 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -453,12 +487,11 @@ class Test223StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("_invoke_0", state)
-            }
-            is Test223State.S1 -> {
+                deferStaticInvoke("_invoke_0", Test223State.S0)
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test223.scxml:25 :: s1 :: _state_body
-            }
-        }
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -471,9 +504,20 @@ class Test223StateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: Test223State) {
         when (invokeId) {
-            "_invoke_0" -> run {
+            "_invoke_0" -> startInvokeOfS0At0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfS0At0(state: Test223State) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "s0.${nextInvokeStart("_invoke_0")}._invoke_0"
@@ -489,39 +533,47 @@ class Test223StateMachine(
                     startInvoke("_invoke_0", childSM, false, Test223Event.Done.Invoke, "", generatedInvokeId, "", "test223__sce_synth_invoke__invoke_0", generatedInvokeId)
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test223.scxml:5 :: _machine
     override fun onExit(state: Test223State) {
         when (state) {
-            is Test223State.Fail -> {
-                // SCE-MAP: test223.scxml:31 :: fail :: _state_body
-            }
-            is Test223State.Pass -> {
-                // SCE-MAP: test223.scxml:30 :: pass :: _state_body
-            }
-            is Test223State.S0 -> {
-                // SCE-MAP: test223.scxml:10 :: s0 :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("_invoke_0")
-            }
-            is Test223State.S1 -> {
-                // SCE-MAP: test223.scxml:25 :: s1 :: _state_body
-            }
+            is Test223State.Fail -> onExitOfFail()
+            is Test223State.Pass -> onExitOfPass()
+            is Test223State.S0 -> onExitOfS0()
+            is Test223State.S1 -> onExitOfS1()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test223.scxml:31 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test223.scxml:30 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test223.scxml:10 :: s0 :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(Test223State.S0)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("_invoke_0")
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test223.scxml:25 :: s1 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test223.scxml:5 :: _machine
     override fun executeTransitionContent(source: Test223State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

@@ -78,6 +78,10 @@ class StaticSendHttpStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.count?.let { vCount = it }
         params.ready?.let { vReady = it }
         params.label?.let { vLabel = it }
@@ -156,18 +160,20 @@ class StaticSendHttpStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "count" to SavedValues.of(vCount),
-            "ready" to SavedValues.of(vReady),
-            "label" to SavedValues.of(vLabel),
-            "delta" to SavedValues.of(vDelta),
-            "ratio" to SavedValues.of(vRatio),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "count" to SavedValues.of(vCount)
+        variables += "ready" to SavedValues.of(vReady)
+        variables += "label" to SavedValues.of(vLabel)
+        variables += "delta" to SavedValues.of(vDelta)
+        variables += "ratio" to SavedValues.of(vRatio)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -192,19 +198,29 @@ class StaticSendHttpStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("count"), "count")
         val saved2 = SavedValues.bool(savedGrown.variable("ready"), "ready")
         val saved3 = SavedValues.string(savedGrown.variable("label"), "label", 16)
         val saved4 = SavedValues.int16(savedGrown.variable("delta"), "delta")
         val saved5 = SavedValues.float64(savedGrown.variable("ratio"), "ratio")
         val saved6 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vCount = saved1
-        vReady = saved2
-        vLabel = saved3
-        vDelta = saved4
-        vRatio = saved5
-        vErrors = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vCount = saved1
+            vReady = saved2
+            vLabel = saved3
+            vDelta = saved4
+            vRatio = saved5
+            vErrors = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -217,6 +233,10 @@ class StaticSendHttpStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("count"), "count")
         SavedValues.bool(savedGrown.variable("ready"), "ready")
         SavedValues.string(savedGrown.variable("label"), "label", 16)
@@ -252,6 +272,9 @@ class StaticSendHttpStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticSendHttpState, HistoryId>> =
             listOf(StateTarget(StaticSendHttpState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticSendHttpState, HistoryId>(
@@ -290,21 +313,25 @@ class StaticSendHttpStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticSendHttpState? = when (stateId) {
         "idle" -> StaticSendHttpState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticSendHttpState): String = when (state) {
         is StaticSendHttpState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticSendHttpState): Int = when (state) {
         is StaticSendHttpState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticSendHttpEvent? = when (name) {
@@ -315,6 +342,7 @@ class StaticSendHttpStateMachine(
         "note" -> StaticSendHttpEvent.Note
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticSendHttpEvent): String? = when (event) {
@@ -329,52 +357,84 @@ class StaticSendHttpStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticSendHttpState,
-        event: StaticSendHttpEvent?
-    ): EnabledTransition<StaticSendHttpState, HistoryId>? = when (state) {
-        is StaticSendHttpState.Idle -> when {
-            event is StaticSendHttpEvent.Bump -> transitionIdleAt0
-            event is StaticSendHttpEvent.Go -> transitionIdleAt1
-            event is StaticSendHttpEvent.Boom -> transitionIdleAt2
-            event is StaticSendHttpEvent.Error.Execution -> transitionIdleAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticSendHttpState, event: StaticSendHttpEvent?): EnabledTransition<StaticSendHttpState, HistoryId>? = when (state) {
+        is StaticSendHttpState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticSendHttpState, event: StaticSendHttpEvent?): EnabledTransition<StaticSendHttpState, HistoryId>? = when {
+        event is StaticSendHttpEvent.Bump -> TransitionsPart0.transitionIdleAt0
+        event is StaticSendHttpEvent.Go -> TransitionsPart0.transitionIdleAt1
+        event is StaticSendHttpEvent.Boom -> TransitionsPart0.transitionIdleAt2
+        event is StaticSendHttpEvent.Error.Execution -> TransitionsPart0.transitionIdleAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_send_http.scxml:34 :: _machine
     override fun onEntry(state: StaticSendHttpState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticSendHttpState.Idle -> {
-                // SCE-MAP: static_send_http.scxml:44 :: idle :: _state_body
-            }
+            is StaticSendHttpState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_send_http.scxml:44 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_send_http.scxml:34 :: _machine
     override fun onExit(state: StaticSendHttpState) {
         when (state) {
-            is StaticSendHttpState.Idle -> {
-                // SCE-MAP: static_send_http.scxml:44 :: idle :: _state_body
-            }
+            is StaticSendHttpState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_send_http.scxml:44 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_send_http.scxml:34 :: _machine
     override fun executeTransitionContent(source: StaticSendHttpState, transitionIndex: Int) {
         when (source) {
-        is StaticSendHttpState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticSendHttpState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_send_http.scxml:45 :: idle :: _transition_0
 
             vCount = 4.toUInt()
@@ -384,8 +444,9 @@ class StaticSendHttpStateMachine(
             if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_send_http.scxml:50 :: idle :: _transition_1
 
 
@@ -424,8 +485,9 @@ class StaticSendHttpStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_http.scxml:60 :: idle :: _transition_2
 
 
@@ -456,16 +518,13 @@ class StaticSendHttpStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_http.scxml:66 :: idle :: _transition_3
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

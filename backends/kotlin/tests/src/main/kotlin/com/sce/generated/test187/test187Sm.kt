@@ -55,9 +55,11 @@ class Test187StateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test187State): Boolean = when (state) {
-        is Test187State.Fail, is Test187State.Pass -> true
+        is Test187State.Fail -> true
+        is Test187State.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -67,6 +69,9 @@ class Test187StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test187State, HistoryId>> =
             listOf(StateTarget(Test187State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test187State, HistoryId>(
@@ -87,6 +92,7 @@ class Test187StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test187State? = when (stateId) {
         "fail" -> Test187State.Fail
@@ -95,6 +101,7 @@ class Test187StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test187State): String = when (state) {
         is Test187State.Fail -> "fail"
@@ -102,12 +109,14 @@ class Test187StateMachine(
         is Test187State.S0 -> "s0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test187State): Int = when (state) {
         is Test187State.Fail -> 2
         is Test187State.Pass -> 1
         is Test187State.S0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test187Event? = when (name) {
@@ -117,6 +126,7 @@ class Test187StateMachine(
         "timeout" -> Test187Event.Timeout
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test187Event): String? = when (event) {
@@ -130,39 +140,53 @@ class Test187StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test187State,
-        event: Test187Event?
-    ): EnabledTransition<Test187State, HistoryId>? = when (state) {
-        is Test187State.S0 -> when {
-            event is Test187Event.ChildToParent -> transitionS0At0
-            event is Test187Event.Timeout -> transitionS0At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test187State, event: Test187Event?): EnabledTransition<Test187State, HistoryId>? = when (state) {
+        is Test187State.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test187State, event: Test187Event?): EnabledTransition<Test187State, HistoryId>? = when {
+        event is Test187Event.ChildToParent -> TransitionsPart0.transitionS0At0
+        event is Test187Event.Timeout -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test187.scxml:7 :: _machine
     override fun onEntry(state: Test187State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test187State.Fail -> {
+            is Test187State.Fail -> onEntryOfFail()
+            is Test187State.Pass -> onEntryOfPass()
+            is Test187State.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test187.scxml:34 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test187State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test187.scxml:33 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test187State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test187.scxml:10 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -180,9 +204,7 @@ class Test187StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("_invoke_0", state)
-            }
-        }
+                deferStaticInvoke("_invoke_0", Test187State.S0)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -195,9 +217,20 @@ class Test187StateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: Test187State) {
         when (invokeId) {
-            "_invoke_0" -> run {
+            "_invoke_0" -> startInvokeOfS0At0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfS0At0(state: Test187State) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "s0.${nextInvokeStart("_invoke_0")}._invoke_0"
@@ -208,36 +241,42 @@ class Test187StateMachine(
                     startInvoke("_invoke_0", childSM, false, Test187Event.Done.Invoke, "", generatedInvokeId, "", "test187__sce_synth_invoke__invoke_0", "_invoke_0")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test187.scxml:7 :: _machine
     override fun onExit(state: Test187State) {
         when (state) {
-            is Test187State.Fail -> {
-                // SCE-MAP: test187.scxml:34 :: fail :: _state_body
-            }
-            is Test187State.Pass -> {
-                // SCE-MAP: test187.scxml:33 :: pass :: _state_body
-            }
-            is Test187State.S0 -> {
-                // SCE-MAP: test187.scxml:10 :: s0 :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("_invoke_0")
-            }
+            is Test187State.Fail -> onExitOfFail()
+            is Test187State.Pass -> onExitOfPass()
+            is Test187State.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test187.scxml:34 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test187.scxml:33 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test187.scxml:10 :: s0 :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(Test187State.S0)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("_invoke_0")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test187.scxml:7 :: _machine
     override fun executeTransitionContent(source: Test187State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

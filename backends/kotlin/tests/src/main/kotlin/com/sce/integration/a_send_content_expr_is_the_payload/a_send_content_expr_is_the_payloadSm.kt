@@ -166,6 +166,7 @@ class ASendContentExprIsThePayloadStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ASendContentExprIsThePayloadState, HistoryId>>
@@ -174,6 +175,9 @@ class ASendContentExprIsThePayloadStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ASendContentExprIsThePayloadState, HistoryId>> =
             listOf(StateTarget(ASendContentExprIsThePayloadState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
         val transitionRunAt0 = EnabledTransition<ASendContentExprIsThePayloadState, HistoryId>(
@@ -230,6 +234,7 @@ class ASendContentExprIsThePayloadStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ASendContentExprIsThePayloadState? = when (stateId) {
         "done" -> ASendContentExprIsThePayloadState.Done
@@ -237,17 +242,20 @@ class ASendContentExprIsThePayloadStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ASendContentExprIsThePayloadState): String = when (state) {
         is ASendContentExprIsThePayloadState.Done -> "done"
         is ASendContentExprIsThePayloadState.Run -> "run"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ASendContentExprIsThePayloadState): Int = when (state) {
         is ASendContentExprIsThePayloadState.Done -> 1
         is ASendContentExprIsThePayloadState.Run -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ASendContentExprIsThePayloadEvent? = when (name) {
@@ -260,6 +268,7 @@ class ASendContentExprIsThePayloadStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ASendContentExprIsThePayloadEvent): String? = when (event) {
         is ASendContentExprIsThePayloadEvent.Bad -> "bad"
@@ -269,6 +278,7 @@ class ASendContentExprIsThePayloadStateMachine(
         is ASendContentExprIsThePayloadEvent.Settle -> "settle"
         is ASendContentExprIsThePayloadEvent.Text -> "text"
     }
+
 
 
 
@@ -298,6 +308,27 @@ class ASendContentExprIsThePayloadStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
             val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
@@ -354,22 +385,6 @@ class ASendContentExprIsThePayloadStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='afterBad'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -559,33 +574,44 @@ class ASendContentExprIsThePayloadStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ASendContentExprIsThePayloadState,
-        event: ASendContentExprIsThePayloadEvent?
-    ): EnabledTransition<ASendContentExprIsThePayloadState, HistoryId>? = when (state) {
-        is ASendContentExprIsThePayloadState.Run -> when {
-            event is ASendContentExprIsThePayloadEvent.Error.Execution -> transitionRunAt0
-            event is ASendContentExprIsThePayloadEvent.Number && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == 42)", "_event.data === 42")) -> transitionRunAt1
-            event is ASendContentExprIsThePayloadEvent.Object && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.a == 1)", "_event.data.a === 1")) -> transitionRunAt2
-            event is ASendContentExprIsThePayloadEvent.Text && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"hi\")", "_event.data === 'hi'")) -> transitionRunAt3
-            event is ASendContentExprIsThePayloadEvent.Bad -> transitionRunAt4
-            event is ASendContentExprIsThePayloadEvent.Settle -> transitionRunAt5
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ASendContentExprIsThePayloadState, event: ASendContentExprIsThePayloadEvent?): EnabledTransition<ASendContentExprIsThePayloadState, HistoryId>? = when (state) {
+        is ASendContentExprIsThePayloadState.Run -> firstEnabledTransitionOfRun(state, event)
         else -> null
     }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ASendContentExprIsThePayloadState, event: ASendContentExprIsThePayloadEvent?): EnabledTransition<ASendContentExprIsThePayloadState, HistoryId>? = when {
+        event is ASendContentExprIsThePayloadEvent.Error.Execution -> TransitionsPart0.transitionRunAt0
+        event is ASendContentExprIsThePayloadEvent.Number && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == 42)", "_event.data === 42")) -> TransitionsPart0.transitionRunAt1
+        event is ASendContentExprIsThePayloadEvent.Object && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.a == 1)", "_event.data.a === 1")) -> TransitionsPart0.transitionRunAt2
+        event is ASendContentExprIsThePayloadEvent.Text && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"hi\")", "_event.data === 'hi'")) -> TransitionsPart0.transitionRunAt3
+        event is ASendContentExprIsThePayloadEvent.Bad -> TransitionsPart0.transitionRunAt4
+        event is ASendContentExprIsThePayloadEvent.Settle -> TransitionsPart0.transitionRunAt5
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_send_content_expr_is_the_payload.scxml:36 :: _machine
     override fun onEntry(state: ASendContentExprIsThePayloadState, isDefaultEntry: Boolean) {
         when (state) {
-            is ASendContentExprIsThePayloadState.Done -> {
+            is ASendContentExprIsThePayloadState.Done -> onEntryOfDone()
+            is ASendContentExprIsThePayloadState.Run -> onEntryOfRun()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:85 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ASendContentExprIsThePayloadState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:50 :: run :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/3
                 run {
@@ -725,62 +751,92 @@ class ASendContentExprIsThePayloadStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_send_content_expr_is_the_payload.scxml:36 :: _machine
     override fun onExit(state: ASendContentExprIsThePayloadState) {
         when (state) {
-            is ASendContentExprIsThePayloadState.Done -> {
-                // SCE-MAP: a_send_content_expr_is_the_payload.scxml:85 :: done :: _state_body
-            }
-            is ASendContentExprIsThePayloadState.Run -> {
-                // SCE-MAP: a_send_content_expr_is_the_payload.scxml:50 :: run :: _state_body
-            }
+            is ASendContentExprIsThePayloadState.Done -> onExitOfDone()
+            is ASendContentExprIsThePayloadState.Run -> onExitOfRun()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_send_content_expr_is_the_payload.scxml:85 :: done :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: a_send_content_expr_is_the_payload.scxml:50 :: run :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_send_content_expr_is_the_payload.scxml:36 :: _machine
     override fun executeTransitionContent(source: ASendContentExprIsThePayloadState, transitionIndex: Int) {
         when (source) {
-        is ASendContentExprIsThePayloadState.Run -> when (transitionIndex) {
-            0 -> {
+            is ASendContentExprIsThePayloadState.Run -> transitionContentOfRun(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
+            1 -> transitionContentOfRunAt1()
+            2 -> transitionContentOfRunAt2()
+            3 -> transitionContentOfRunAt3()
+            4 -> transitionContentOfRunAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:64 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunAt1() {
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:67 :: run :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("numberOk", "numberOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRunAt2() {
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:70 :: run :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("objectOk", "objectOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfRunAt3() {
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:73 :: run :: _transition_3
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("textOk", "textOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfRunAt4() {
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:76 :: run :: _transition_4
 
 
@@ -800,10 +856,5 @@ class ASendContentExprIsThePayloadStateMachine(
             if (ifCondFailed1) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

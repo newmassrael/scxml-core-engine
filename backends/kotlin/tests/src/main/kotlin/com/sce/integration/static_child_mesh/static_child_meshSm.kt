@@ -74,6 +74,10 @@ class StaticChildMeshStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.pick?.let { vPick = it }
         params.refusals?.let { vRefusals = it }
     }
@@ -148,14 +152,16 @@ class StaticChildMeshStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "pick" to SavedValues.of(vPick),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "pick" to SavedValues.of(vPick)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -180,11 +186,21 @@ class StaticChildMeshStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("pick"), "pick", 48)
         val saved2 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vPick = saved1
-        vRefusals = saved2
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vPick = saved1
+            vRefusals = saved2
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -197,6 +213,10 @@ class StaticChildMeshStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("pick"), "pick", 48)
         SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
     }
@@ -238,12 +258,14 @@ class StaticChildMeshStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: StaticChildMeshState): Boolean = when (state) {
         is StaticChildMeshState.Working -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -260,16 +282,29 @@ class StaticChildMeshStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<StaticChildMeshState, List<StaticChildMeshState>> = mapOf(
-            StaticChildMeshState.Working to listOf(StaticChildMeshState.Alone, StaticChildMeshState.Joined),
-        )
+        val childStates: Map<StaticChildMeshState, List<StaticChildMeshState>> = LinkedHashMap<StaticChildMeshState, List<StaticChildMeshState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<StaticChildMeshState, List<EntryTarget<StaticChildMeshState, HistoryId>>> = mapOf(
-            StaticChildMeshState.Working to listOf(StateTarget(StaticChildMeshState.Alone)),
-        )
+        private fun childStatesPart0(table: MutableMap<StaticChildMeshState, List<StaticChildMeshState>>) {
+            table[StaticChildMeshState.Working] = listOf(StaticChildMeshState.Alone, StaticChildMeshState.Joined)
+        }
+
+
+        val initialTargets: Map<StaticChildMeshState, List<EntryTarget<StaticChildMeshState, HistoryId>>> = LinkedHashMap<StaticChildMeshState, List<EntryTarget<StaticChildMeshState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<StaticChildMeshState, List<EntryTarget<StaticChildMeshState, HistoryId>>>) {
+            table[StaticChildMeshState.Working] = listOf(StateTarget(StaticChildMeshState.Alone))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<StaticChildMeshState, HistoryId>> =
             listOf(StateTarget(StaticChildMeshState.Working))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: alone's transition 0, as the microstep reads it.
         val transitionAloneAt0 = EnabledTransition<StaticChildMeshState, HistoryId>(
@@ -308,6 +343,7 @@ class StaticChildMeshStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticChildMeshState? = when (stateId) {
         "alone" -> StaticChildMeshState.Alone
@@ -317,6 +353,7 @@ class StaticChildMeshStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticChildMeshState): String = when (state) {
         is StaticChildMeshState.Alone -> "alone"
@@ -325,6 +362,7 @@ class StaticChildMeshStateMachine(
         is StaticChildMeshState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticChildMeshState): Int = when (state) {
         is StaticChildMeshState.Alone -> 1
@@ -332,6 +370,7 @@ class StaticChildMeshStateMachine(
         is StaticChildMeshState.Joined -> 2
         is StaticChildMeshState.Working -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticChildMeshEvent? = when (name) {
@@ -343,6 +382,7 @@ class StaticChildMeshStateMachine(
         "open" -> StaticChildMeshEvent.Open
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticChildMeshEvent): String? = when (event) {
@@ -358,55 +398,77 @@ class StaticChildMeshStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticChildMeshState,
-        event: StaticChildMeshEvent?
-    ): EnabledTransition<StaticChildMeshState, HistoryId>? = when (state) {
-        is StaticChildMeshState.Alone -> when {
-            event is StaticChildMeshEvent.Open -> transitionAloneAt0
-            else -> null
-        }
-        is StaticChildMeshState.Idle -> when {
-            event is StaticChildMeshEvent.Back -> transitionIdleAt0
-            else -> null
-        }
-        is StaticChildMeshState.Working -> when {
-            event is StaticChildMeshEvent.Done.Invoke.List -> transitionWorkingAt0
-            event is StaticChildMeshEvent.Again -> transitionWorkingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticChildMeshState, event: StaticChildMeshEvent?): EnabledTransition<StaticChildMeshState, HistoryId>? = when (state) {
+        is StaticChildMeshState.Alone -> firstEnabledTransitionOfAlone(state, event)
+        is StaticChildMeshState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is StaticChildMeshState.Working -> firstEnabledTransitionOfWorking(state, event)
         else -> null
     }
+
+
+    // alone's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAlone(state: StaticChildMeshState, event: StaticChildMeshEvent?): EnabledTransition<StaticChildMeshState, HistoryId>? = when {
+        event is StaticChildMeshEvent.Open -> TransitionsPart0.transitionAloneAt0
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticChildMeshState, event: StaticChildMeshEvent?): EnabledTransition<StaticChildMeshState, HistoryId>? = when {
+        event is StaticChildMeshEvent.Back -> TransitionsPart0.transitionIdleAt0
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: StaticChildMeshState, event: StaticChildMeshEvent?): EnabledTransition<StaticChildMeshState, HistoryId>? = when {
+        event is StaticChildMeshEvent.Done.Invoke.List -> TransitionsPart0.transitionWorkingAt0
+        event is StaticChildMeshEvent.Again -> TransitionsPart0.transitionWorkingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_child_mesh.scxml:29 :: _machine
     override fun onEntry(state: StaticChildMeshState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticChildMeshState.Alone -> {
+            is StaticChildMeshState.Alone -> onEntryOfAlone()
+            is StaticChildMeshState.Idle -> onEntryOfIdle()
+            is StaticChildMeshState.Joined -> onEntryOfJoined()
+            is StaticChildMeshState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfAlone() {
                 // SCE-MAP: static_child_mesh.scxml:58 :: alone :: _state_body
-            }
-            is StaticChildMeshState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: static_child_mesh.scxml:65 :: idle :: _state_body
-            }
-            is StaticChildMeshState.Joined -> {
+    }
+
+    private fun onEntryOfJoined() {
                 // SCE-MAP: static_child_mesh.scxml:61 :: joined :: _state_body
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("peer", state)
-            }
-            is StaticChildMeshState.Working -> {
+                deferStaticInvoke("peer", StaticChildMeshState.Joined)
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: static_child_mesh.scxml:35 :: working :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("list", state)
-            }
-        }
+                deferStaticInvoke("list", StaticChildMeshState.Working)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -419,9 +481,20 @@ class StaticChildMeshStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: StaticChildMeshState) {
         when (invokeId) {
-            "peer" -> {
+            "peer" -> startInvokeOfJoinedAt0(state)
+            "list" -> startInvokeOfWorkingAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfJoinedAt0(state: StaticChildMeshState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -459,8 +532,10 @@ class StaticChildMeshStateMachine(
                         }
                     }
                 }
-            }
-            "list" -> run {
+    }
+
+    private fun startInvokeOfWorkingAt0(state: StaticChildMeshState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "working.${nextInvokeStart("list")}.list"
@@ -472,8 +547,6 @@ class StaticChildMeshStateMachine(
                     startInvoke("list", childSM, false, StaticChildMeshEvent.Done.Invoke.List, "", generatedInvokeId, "", "static_child_mesh__sce_synth_invoke__list", "list")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -482,15 +555,28 @@ class StaticChildMeshStateMachine(
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
     override fun buildSavedChild(child: SavedChild): ResumedChild<StaticChildMeshEvent> = when (child.id) {
-        "peer" -> when (child.document) {
+        "peer" -> savedChildOfJoinedAt0(child)
+        "list" -> savedChildOfWorkingAt0(child)
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
+    }
+
+
+    private fun savedChildOfJoinedAt0(child: SavedChild): ResumedChild<StaticChildMeshEvent> =
+        when (child.document) {
             "static_mesh_relay" -> ResumedChild(
                 StaticMeshRelayStateMachine(),
                 false, StaticChildMeshEvent.Done.Invoke.Self, "", "static_mesh_relay", "peer",
             )
             else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "list" -> if (child.document == "static_child_mesh__sce_synth_invoke__list") {
+
+    private fun savedChildOfWorkingAt0(child: SavedChild): ResumedChild<StaticChildMeshEvent> =
+        if (child.document == "static_child_mesh__sce_synth_invoke__list") {
             ResumedChild(
                 StaticChildMeshSceSynthInvokeListStateMachine(),
                 false, StaticChildMeshEvent.Done.Invoke.List, "", "", "list",
@@ -498,52 +584,73 @@ class StaticChildMeshStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_child_mesh.scxml:29 :: _machine
     override fun onExit(state: StaticChildMeshState) {
         when (state) {
-            is StaticChildMeshState.Alone -> {
-                // SCE-MAP: static_child_mesh.scxml:58 :: alone :: _state_body
-            }
-            is StaticChildMeshState.Idle -> {
-                // SCE-MAP: static_child_mesh.scxml:65 :: idle :: _state_body
-            }
-            is StaticChildMeshState.Joined -> {
-                // SCE-MAP: static_child_mesh.scxml:61 :: joined :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("peer")
-            }
-            is StaticChildMeshState.Working -> {
-                // SCE-MAP: static_child_mesh.scxml:35 :: working :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("list")
-            }
+            is StaticChildMeshState.Alone -> onExitOfAlone()
+            is StaticChildMeshState.Idle -> onExitOfIdle()
+            is StaticChildMeshState.Joined -> onExitOfJoined()
+            is StaticChildMeshState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfAlone() {
+                // SCE-MAP: static_child_mesh.scxml:58 :: alone :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_child_mesh.scxml:65 :: idle :: _state_body
+    }
+
+    private fun onExitOfJoined() {
+                // SCE-MAP: static_child_mesh.scxml:61 :: joined :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticChildMeshState.Joined)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("peer")
+    }
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: static_child_mesh.scxml:35 :: working :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticChildMeshState.Working)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("list")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_child_mesh.scxml:29 :: _machine
     override fun executeTransitionContent(source: StaticChildMeshState, transitionIndex: Int) {
         when (source) {
-        is StaticChildMeshState.Working -> when (transitionIndex) {
-            0 -> {
+            is StaticChildMeshState.Working -> transitionContentOfWorking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWorkingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: static_child_mesh.scxml:54 :: working :: _transition_0
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticChildMeshEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

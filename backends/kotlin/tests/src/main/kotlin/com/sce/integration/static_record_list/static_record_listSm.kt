@@ -117,6 +117,10 @@ class StaticRecordListStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.total?.let { vTotal = it }
         params.errors?.let { vErrors = it }
     }
@@ -216,18 +220,20 @@ class StaticRecordListStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "draft" to vDraft.toSaved(),
-            "last" to vLast.toSaved(),
-            "days" to SavedValues.list(vDays) { it.toSaved() },
-            "copies" to SavedValues.list(vCopies) { it.toSaved() },
-            "total" to SavedValues.of(vTotal),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "draft" to vDraft.toSaved()
+        variables += "last" to vLast.toSaved()
+        variables += "days" to SavedValues.list(vDays) { it.toSaved() }
+        variables += "copies" to SavedValues.list(vCopies) { it.toSaved() }
+        variables += "total" to SavedValues.of(vTotal)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -252,19 +258,29 @@ class StaticRecordListStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticRecordListDayRecord.fromSaved(savedGrown.variable("draft"), "draft")
         val saved2 = StaticRecordListDayRecord.fromSaved(savedGrown.variable("last"), "last")
         val saved3 = SavedValues.list(savedGrown.variable("days"), "days", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
         val saved4 = SavedValues.list(savedGrown.variable("copies"), "copies", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
         val saved5 = SavedValues.uint32(savedGrown.variable("total"), "total")
         val saved6 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vDraft = saved1
-        vLast = saved2
-        vDays = saved3
-        vCopies = saved4
-        vTotal = saved5
-        vErrors = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vDraft = saved1
+            vLast = saved2
+            vDays = saved3
+            vCopies = saved4
+            vTotal = saved5
+            vErrors = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -277,6 +293,10 @@ class StaticRecordListStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticRecordListDayRecord.fromSaved(savedGrown.variable("draft"), "draft")
         StaticRecordListDayRecord.fromSaved(savedGrown.variable("last"), "last")
         SavedValues.list(savedGrown.variable("days"), "days", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
@@ -359,6 +379,9 @@ class StaticRecordListStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticRecordListState, HistoryId>> =
             listOf(StateTarget(StaticRecordListState.Collecting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: collecting's transition 0, as the microstep reads it.
         val transitionCollectingAt0 = EnabledTransition<StaticRecordListState, HistoryId>(
@@ -424,21 +447,25 @@ class StaticRecordListStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticRecordListState? = when (stateId) {
         "collecting" -> StaticRecordListState.Collecting
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticRecordListState): String = when (state) {
         is StaticRecordListState.Collecting -> "collecting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticRecordListState): Int = when (state) {
         is StaticRecordListState.Collecting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticRecordListEvent? = when (name) {
@@ -451,6 +478,7 @@ class StaticRecordListStateMachine(
         "sum" -> StaticRecordListEvent.Sum
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticRecordListEvent): String? = when (event) {
@@ -467,55 +495,90 @@ class StaticRecordListStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticRecordListState,
-        event: StaticRecordListEvent?
-    ): EnabledTransition<StaticRecordListState, HistoryId>? = when (state) {
-        is StaticRecordListState.Collecting -> when {
-            event is StaticRecordListEvent.Day.Picked -> transitionCollectingAt0
-            event is StaticRecordListEvent.Sum -> transitionCollectingAt1
-            event is StaticRecordListEvent.Copy -> transitionCollectingAt2
-            event is StaticRecordListEvent.Latest -> transitionCollectingAt3
-            event is StaticRecordListEvent.Reuse -> transitionCollectingAt4
-            event is StaticRecordListEvent.Clear -> transitionCollectingAt5
-            event is StaticRecordListEvent.Error.Execution -> transitionCollectingAt6
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticRecordListState, event: StaticRecordListEvent?): EnabledTransition<StaticRecordListState, HistoryId>? = when (state) {
+        is StaticRecordListState.Collecting -> firstEnabledTransitionOfCollecting(state, event)
     }
+
+
+    // collecting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCollecting(state: StaticRecordListState, event: StaticRecordListEvent?): EnabledTransition<StaticRecordListState, HistoryId>? = when {
+        event is StaticRecordListEvent.Day.Picked -> TransitionsPart0.transitionCollectingAt0
+        event is StaticRecordListEvent.Sum -> TransitionsPart0.transitionCollectingAt1
+        event is StaticRecordListEvent.Copy -> TransitionsPart0.transitionCollectingAt2
+        event is StaticRecordListEvent.Latest -> TransitionsPart0.transitionCollectingAt3
+        event is StaticRecordListEvent.Reuse -> TransitionsPart0.transitionCollectingAt4
+        event is StaticRecordListEvent.Clear -> TransitionsPart0.transitionCollectingAt5
+        event is StaticRecordListEvent.Error.Execution -> TransitionsPart0.transitionCollectingAt6
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_record_list.scxml:16 :: _machine
     override fun onEntry(state: StaticRecordListState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticRecordListState.Collecting -> {
-                // SCE-MAP: static_record_list.scxml:35 :: collecting :: _state_body
-            }
+            is StaticRecordListState.Collecting -> onEntryOfCollecting()
         }
+    }
+
+
+    private fun onEntryOfCollecting() {
+                // SCE-MAP: static_record_list.scxml:35 :: collecting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_record_list.scxml:16 :: _machine
     override fun onExit(state: StaticRecordListState) {
         when (state) {
-            is StaticRecordListState.Collecting -> {
-                // SCE-MAP: static_record_list.scxml:35 :: collecting :: _state_body
-            }
+            is StaticRecordListState.Collecting -> onExitOfCollecting()
         }
     }
+
+
+    private fun onExitOfCollecting() {
+                // SCE-MAP: static_record_list.scxml:35 :: collecting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_record_list.scxml:16 :: _machine
     override fun executeTransitionContent(source: StaticRecordListState, transitionIndex: Int) {
         when (source) {
-        is StaticRecordListState.Collecting -> when (transitionIndex) {
-            0 -> {
+            is StaticRecordListState.Collecting -> transitionContentOfCollecting(transitionIndex)
+        }
+    }
+
+
+    // The content of `collecting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfCollecting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfCollectingAt0()
+            1 -> transitionContentOfCollectingAt1()
+            2 -> transitionContentOfCollectingAt2()
+            3 -> transitionContentOfCollectingAt3()
+            4 -> transitionContentOfCollectingAt4()
+            5 -> transitionContentOfCollectingAt5()
+            6 -> transitionContentOfCollectingAt6()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfCollectingAt0() {
                 // SCE-MAP: static_record_list.scxml:38 :: collecting :: _transition_0
                 if (pendingDayPickedPayload == null) {
                     return
@@ -530,8 +593,9 @@ class StaticRecordListStateMachine(
             if (if (vDays.size < 3) { vDays = vDays + (vDraft); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, "<sce:append target='days'>: the list already holds its capacity of 3"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfCollectingAt1() {
                 // SCE-MAP: static_record_list.scxml:45 :: collecting :: _transition_1
 
             vTotal = 0.toUInt()
@@ -543,8 +607,9 @@ class StaticRecordListStateMachine(
                 return
             }
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfCollectingAt2() {
                 // SCE-MAP: static_record_list.scxml:52 :: collecting :: _transition_2
 
             vCopies = emptyList()
@@ -557,8 +622,9 @@ class StaticRecordListStateMachine(
                 return
             }
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfCollectingAt3() {
                 // SCE-MAP: static_record_list.scxml:60 :: collecting :: _transition_3
 
 
@@ -566,26 +632,25 @@ class StaticRecordListStateMachine(
 
             vLast = d
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfCollectingAt4() {
                 // SCE-MAP: static_record_list.scxml:66 :: collecting :: _transition_4
 
             vDraft = vLast
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfCollectingAt5() {
                 // SCE-MAP: static_record_list.scxml:69 :: collecting :: _transition_5
 
             vDays = emptyList()
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfCollectingAt6() {
                 // SCE-MAP: static_record_list.scxml:72 :: collecting :: _transition_6
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

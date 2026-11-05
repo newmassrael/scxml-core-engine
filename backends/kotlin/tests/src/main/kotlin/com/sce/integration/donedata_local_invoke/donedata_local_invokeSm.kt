@@ -79,9 +79,11 @@ class DonedataLocalInvokeStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: DonedataLocalInvokeState): Boolean = when (state) {
-        is DonedataLocalInvokeState.Fail, is DonedataLocalInvokeState.Pass -> true
+        is DonedataLocalInvokeState.Fail -> true
+        is DonedataLocalInvokeState.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -91,6 +93,9 @@ class DonedataLocalInvokeStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<DonedataLocalInvokeState, HistoryId>> =
             listOf(StateTarget(DonedataLocalInvokeState.PhaseParam))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: phase_content's transition 0, as the microstep reads it.
         val transitionPhaseContentAt0 = EnabledTransition<DonedataLocalInvokeState, HistoryId>(
@@ -147,6 +152,7 @@ class DonedataLocalInvokeStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): DonedataLocalInvokeState? = when (stateId) {
         "fail" -> DonedataLocalInvokeState.Fail
@@ -156,6 +162,7 @@ class DonedataLocalInvokeStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: DonedataLocalInvokeState): String = when (state) {
         is DonedataLocalInvokeState.Fail -> "fail"
@@ -164,6 +171,7 @@ class DonedataLocalInvokeStateMachine(
         is DonedataLocalInvokeState.PhaseParam -> "phase_param"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: DonedataLocalInvokeState): Int = when (state) {
         is DonedataLocalInvokeState.Fail -> 3
@@ -171,6 +179,7 @@ class DonedataLocalInvokeStateMachine(
         is DonedataLocalInvokeState.PhaseContent -> 1
         is DonedataLocalInvokeState.PhaseParam -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): DonedataLocalInvokeEvent? = when (name) {
@@ -181,6 +190,7 @@ class DonedataLocalInvokeStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: DonedataLocalInvokeEvent): String? = when (event) {
         is DonedataLocalInvokeEvent.Done.Invoke.Self -> "done.invoke"
@@ -188,6 +198,7 @@ class DonedataLocalInvokeStateMachine(
         is DonedataLocalInvokeEvent.Done.Invoke.InvParam -> "done.invoke.inv_param"
         is DonedataLocalInvokeEvent.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -217,13 +228,7 @@ class DonedataLocalInvokeStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'param_ok' with expr
-        try {
-            val initResult_paramOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false"))
-            engine.setVariable(sid, "param_ok", initResult_paramOk)
-        } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeEvent.Error.Execution, "<data id='param_ok'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -240,6 +245,17 @@ class DonedataLocalInvokeStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'param_ok' with expr
+        try {
+            val initResult_paramOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false"))
+            engine.setVariable(sid, "param_ok", initResult_paramOk)
+        } catch (e: Exception) {
+            raisePlatformError(DonedataLocalInvokeEvent.Error.Execution, "<data id='param_ok'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -429,51 +445,68 @@ class DonedataLocalInvokeStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: DonedataLocalInvokeState,
-        event: DonedataLocalInvokeEvent?
-    ): EnabledTransition<DonedataLocalInvokeState, HistoryId>? = when (state) {
-        is DonedataLocalInvokeState.PhaseContent -> when {
-            event is DonedataLocalInvokeEvent.Done.Invoke.InvContent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(param_ok) and (_event.data == \"hello_content\"))", "param_ok && _event.data === 'hello_content'")) -> transitionPhaseContentAt0
-            event is DonedataLocalInvokeEvent.Done.Invoke.InvContent -> transitionPhaseContentAt1
-            event is DonedataLocalInvokeEvent.Error.Execution -> transitionPhaseContentAt2
-            else -> null
-        }
-        is DonedataLocalInvokeState.PhaseParam -> when {
-            event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.result == 42))", "_event.data && _event.data.result === 42")) -> transitionPhaseParamAt0
-            event is DonedataLocalInvokeEvent.Done.Invoke.InvParam -> transitionPhaseParamAt1
-            event is DonedataLocalInvokeEvent.Error.Execution -> transitionPhaseParamAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: DonedataLocalInvokeState, event: DonedataLocalInvokeEvent?): EnabledTransition<DonedataLocalInvokeState, HistoryId>? = when (state) {
+        is DonedataLocalInvokeState.PhaseContent -> firstEnabledTransitionOfPhaseContent(state, event)
+        is DonedataLocalInvokeState.PhaseParam -> firstEnabledTransitionOfPhaseParam(state, event)
         else -> null
     }
+
+
+    // phase_content's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPhaseContent(state: DonedataLocalInvokeState, event: DonedataLocalInvokeEvent?): EnabledTransition<DonedataLocalInvokeState, HistoryId>? = when {
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(param_ok) and (_event.data == \"hello_content\"))", "param_ok && _event.data === 'hello_content'")) -> TransitionsPart0.transitionPhaseContentAt0
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent -> TransitionsPart0.transitionPhaseContentAt1
+        event is DonedataLocalInvokeEvent.Error.Execution -> TransitionsPart0.transitionPhaseContentAt2
+        else -> null
+    }
+
+
+    // phase_param's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPhaseParam(state: DonedataLocalInvokeState, event: DonedataLocalInvokeEvent?): EnabledTransition<DonedataLocalInvokeState, HistoryId>? = when {
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.result == 42))", "_event.data && _event.data.result === 42")) -> TransitionsPart0.transitionPhaseParamAt0
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam -> TransitionsPart0.transitionPhaseParamAt1
+        event is DonedataLocalInvokeEvent.Error.Execution -> TransitionsPart0.transitionPhaseParamAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: donedata_local_invoke.scxml:28 :: _machine
     override fun onEntry(state: DonedataLocalInvokeState, isDefaultEntry: Boolean) {
         when (state) {
-            is DonedataLocalInvokeState.Fail -> {
+            is DonedataLocalInvokeState.Fail -> onEntryOfFail()
+            is DonedataLocalInvokeState.Pass -> onEntryOfPass()
+            is DonedataLocalInvokeState.PhaseContent -> onEntryOfPhaseContent()
+            is DonedataLocalInvokeState.PhaseParam -> onEntryOfPhaseParam()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: donedata_local_invoke.scxml:75 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is DonedataLocalInvokeState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: donedata_local_invoke.scxml:74 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is DonedataLocalInvokeState.PhaseContent -> {
+    }
+
+    private fun onEntryOfPhaseContent() {
                 // SCE-MAP: donedata_local_invoke.scxml:55 :: phase_content :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_content", state)
-            }
-            is DonedataLocalInvokeState.PhaseParam -> {
+                deferStaticInvoke("inv_content", DonedataLocalInvokeState.PhaseContent)
+    }
+
+    private fun onEntryOfPhaseParam() {
                 // SCE-MAP: donedata_local_invoke.scxml:34 :: phase_param :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_param", state)
-            }
-        }
+                deferStaticInvoke("inv_param", DonedataLocalInvokeState.PhaseParam)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -486,9 +519,21 @@ class DonedataLocalInvokeStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: DonedataLocalInvokeState) {
         when (invokeId) {
-            "inv_content" -> run {
+            "inv_content" -> startInvokeOfPhaseContentAt0(state)
+            "inv_param" -> startInvokeOfPhaseParamAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfPhaseContentAt0(state: DonedataLocalInvokeState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "phase_content.${nextInvokeStart("inv_content")}.inv_content"
@@ -499,7 +544,10 @@ class DonedataLocalInvokeStateMachine(
                     startInvoke("inv_content", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvContent, "", generatedInvokeId, "", "donedata_local_invoke__sce_synth_invoke__inv_content", "inv_content")
                 }
             }
-            "inv_param" -> run {
+    }
+
+    private fun startInvokeOfPhaseParamAt0(state: DonedataLocalInvokeState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "phase_param.${nextInvokeStart("inv_param")}.inv_param"
@@ -510,54 +558,75 @@ class DonedataLocalInvokeStateMachine(
                     startInvoke("inv_param", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvParam, "", generatedInvokeId, "", "donedata_local_invoke__sce_synth_invoke__inv_param", "inv_param")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: donedata_local_invoke.scxml:28 :: _machine
     override fun onExit(state: DonedataLocalInvokeState) {
         when (state) {
-            is DonedataLocalInvokeState.Fail -> {
-                // SCE-MAP: donedata_local_invoke.scxml:75 :: fail :: _state_body
-            }
-            is DonedataLocalInvokeState.Pass -> {
-                // SCE-MAP: donedata_local_invoke.scxml:74 :: pass :: _state_body
-            }
-            is DonedataLocalInvokeState.PhaseContent -> {
-                // SCE-MAP: donedata_local_invoke.scxml:55 :: phase_content :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_content")
-            }
-            is DonedataLocalInvokeState.PhaseParam -> {
-                // SCE-MAP: donedata_local_invoke.scxml:34 :: phase_param :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_param")
-            }
+            is DonedataLocalInvokeState.Fail -> onExitOfFail()
+            is DonedataLocalInvokeState.Pass -> onExitOfPass()
+            is DonedataLocalInvokeState.PhaseContent -> onExitOfPhaseContent()
+            is DonedataLocalInvokeState.PhaseParam -> onExitOfPhaseParam()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: donedata_local_invoke.scxml:75 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: donedata_local_invoke.scxml:74 :: pass :: _state_body
+    }
+
+    private fun onExitOfPhaseContent() {
+                // SCE-MAP: donedata_local_invoke.scxml:55 :: phase_content :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(DonedataLocalInvokeState.PhaseContent)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_content")
+    }
+
+    private fun onExitOfPhaseParam() {
+                // SCE-MAP: donedata_local_invoke.scxml:34 :: phase_param :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(DonedataLocalInvokeState.PhaseParam)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_param")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: donedata_local_invoke.scxml:28 :: _machine
     override fun executeTransitionContent(source: DonedataLocalInvokeState, transitionIndex: Int) {
         when (source) {
-        is DonedataLocalInvokeState.PhaseParam -> when (transitionIndex) {
-            0 -> {
+            is DonedataLocalInvokeState.PhaseParam -> transitionContentOfPhaseParam(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `phase_param`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPhaseParam(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPhaseParamAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfPhaseParamAt0() {
                 // SCE-MAP: donedata_local_invoke.scxml:47 :: phase_param :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("param_ok", "param_ok"), com.sce.runtime.ScriptSource.lua("true", "true"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

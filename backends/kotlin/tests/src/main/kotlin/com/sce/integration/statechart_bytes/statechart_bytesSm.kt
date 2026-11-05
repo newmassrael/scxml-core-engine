@@ -115,6 +115,9 @@ class StatechartBytesStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StatechartBytesState, HistoryId>> =
             listOf(StateTarget(StatechartBytesState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StatechartBytesState, HistoryId>(
@@ -126,6 +129,7 @@ class StatechartBytesStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartBytesState? = when (stateId) {
         "done" -> StatechartBytesState.Done
@@ -133,11 +137,13 @@ class StatechartBytesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StatechartBytesState): String = when (state) {
         is StatechartBytesState.Done -> "done"
         is StatechartBytesState.Waiting -> "waiting"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartBytesState): Int = when (state) {
@@ -145,11 +151,13 @@ class StatechartBytesStateMachine(
         is StatechartBytesState.Waiting -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StatechartBytesEvent? = when (name) {
         "signal.received" -> StatechartBytesEvent.Signal.Received
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StatechartBytesEvent): String? = when (event) {
@@ -160,55 +168,71 @@ class StatechartBytesStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StatechartBytesState,
-        event: StatechartBytesEvent?
-    ): EnabledTransition<StatechartBytesState, HistoryId>? = when (state) {
-        is StatechartBytesState.Waiting -> when {
-            event is StatechartBytesEvent.Signal.Received && pendingSignalReceivedPayload != null && (pendingSignalReceivedPayload!!.raw.contentEquals("ack".toByteArray())) -> transitionWaitingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StatechartBytesState, event: StatechartBytesEvent?): EnabledTransition<StatechartBytesState, HistoryId>? = when (state) {
+        is StatechartBytesState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StatechartBytesState, event: StatechartBytesEvent?): EnabledTransition<StatechartBytesState, HistoryId>? = when {
+        event is StatechartBytesEvent.Signal.Received && pendingSignalReceivedPayload != null && (pendingSignalReceivedPayload!!.raw.contentEquals("ack".toByteArray())) -> TransitionsPart0.transitionWaitingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_bytes.scxml:13 :: _machine
     override fun onEntry(state: StatechartBytesState, isDefaultEntry: Boolean) {
         when (state) {
-            is StatechartBytesState.Done -> {
-                // SCE-MAP: statechart_bytes.scxml:23 :: done :: _state_body
-            }
-            is StatechartBytesState.Waiting -> {
-                // SCE-MAP: statechart_bytes.scxml:20 :: waiting :: _state_body
-            }
+            is StatechartBytesState.Done -> onEntryOfDone()
+            is StatechartBytesState.Waiting -> onEntryOfWaiting()
         }
+    }
+
+
+    private fun onEntryOfDone() {
+                // SCE-MAP: statechart_bytes.scxml:23 :: done :: _state_body
+    }
+
+    private fun onEntryOfWaiting() {
+                // SCE-MAP: statechart_bytes.scxml:20 :: waiting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: statechart_bytes.scxml:13 :: _machine
     override fun onExit(state: StatechartBytesState) {
         when (state) {
-            is StatechartBytesState.Done -> {
-                // SCE-MAP: statechart_bytes.scxml:23 :: done :: _state_body
-            }
-            is StatechartBytesState.Waiting -> {
-                // SCE-MAP: statechart_bytes.scxml:20 :: waiting :: _state_body
-            }
+            is StatechartBytesState.Done -> onExitOfDone()
+            is StatechartBytesState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: statechart_bytes.scxml:23 :: done :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: statechart_bytes.scxml:20 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: statechart_bytes.scxml:13 :: _machine
     override fun executeTransitionContent(source: StatechartBytesState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

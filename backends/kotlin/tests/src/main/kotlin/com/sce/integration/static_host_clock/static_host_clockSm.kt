@@ -178,6 +178,10 @@ class StaticHostClockStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.outcome?.let { vOutcome = it }
         params.utcMs?.let { vUtcMs = it }
         params.monotonicMs?.let { vMonotonicMs = it }
@@ -263,17 +267,19 @@ class StaticHostClockStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "outcome" to SavedValues.of(vOutcome),
-            "utc_ms" to SavedValues.of(vUtcMs),
-            "monotonic_ms" to SavedValues.of(vMonotonicMs),
-            "zone_id" to SavedValues.of(vZoneId),
-            "utc_offset_s" to SavedValues.of(vUtcOffsetS),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "outcome" to SavedValues.of(vOutcome)
+        variables += "utc_ms" to SavedValues.of(vUtcMs)
+        variables += "monotonic_ms" to SavedValues.of(vMonotonicMs)
+        variables += "zone_id" to SavedValues.of(vZoneId)
+        variables += "utc_offset_s" to SavedValues.of(vUtcOffsetS)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -298,17 +304,27 @@ class StaticHostClockStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
         val saved2 = SavedValues.int64(savedGrown.variable("utc_ms"), "utc_ms")
         val saved3 = SavedValues.int64(savedGrown.variable("monotonic_ms"), "monotonic_ms")
         val saved4 = SavedValues.string(savedGrown.variable("zone_id"), "zone_id", 64)
         val saved5 = SavedValues.int32(savedGrown.variable("utc_offset_s"), "utc_offset_s")
-        vOutcome = saved1
-        vUtcMs = saved2
-        vMonotonicMs = saved3
-        vZoneId = saved4
-        vUtcOffsetS = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vOutcome = saved1
+            vUtcMs = saved2
+            vMonotonicMs = saved3
+            vZoneId = saved4
+            vUtcOffsetS = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -321,6 +337,10 @@ class StaticHostClockStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
         SavedValues.int64(savedGrown.variable("utc_ms"), "utc_ms")
         SavedValues.int64(savedGrown.variable("monotonic_ms"), "monotonic_ms")
@@ -514,6 +534,9 @@ class StaticHostClockStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticHostClockState, HistoryId>> =
             listOf(StateTarget(StaticHostClockState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticHostClockState, HistoryId>(
@@ -606,6 +629,7 @@ class StaticHostClockStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticHostClockState? = when (stateId) {
         "idle" -> StaticHostClockState.Idle
@@ -614,6 +638,7 @@ class StaticHostClockStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticHostClockState): String = when (state) {
         is StaticHostClockState.Idle -> "idle"
@@ -621,12 +646,14 @@ class StaticHostClockStateMachine(
         is StaticHostClockState.Reading -> "reading"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticHostClockState): Int = when (state) {
         is StaticHostClockState.Idle -> 0
         is StaticHostClockState.Locating -> 2
         is StaticHostClockState.Reading -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticHostClockEvent? = when (name) {
@@ -641,6 +668,7 @@ class StaticHostClockStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticHostClockEvent): String? = when (event) {
         is StaticHostClockEvent.Done.Invoke.Self -> "done.invoke"
@@ -652,6 +680,7 @@ class StaticHostClockStateMachine(
         is StaticHostClockEvent.Host.Clock.Now.Request -> "host.clock.now.request"
         is StaticHostClockEvent.Host.Clock.Zone.Request -> "host.clock.zone.request"
     }
+
 
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `completeHostInvoke`.
@@ -669,40 +698,60 @@ class StaticHostClockStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticHostClockState,
-        event: StaticHostClockEvent?
-    ): EnabledTransition<StaticHostClockState, HistoryId>? = when (state) {
-        is StaticHostClockState.Idle -> when {
-            event is StaticHostClockEvent.Host.Clock.Now.Request -> transitionIdleAt0
-            event is StaticHostClockEvent.Host.Clock.Zone.Request -> transitionIdleAt1
-            else -> null
-        }
-        is StaticHostClockState.Locating -> when {
-            event is StaticHostClockEvent.Done.Invoke.Zone && pendingDoneInvokeZonePayload != null && (pendingDoneInvokeZonePayload!!.error == "") -> transitionLocatingAt0
-            event is StaticHostClockEvent.Done.Invoke.Zone -> transitionLocatingAt1
-            event is StaticHostClockEvent.Error.Invoke.Zone -> transitionLocatingAt2
-            event is StaticHostClockEvent.Error.Execution -> transitionLocatingAt3
-            else -> null
-        }
-        is StaticHostClockState.Reading -> when {
-            event is StaticHostClockEvent.Done.Invoke.Now && pendingDoneInvokeNowPayload != null && (pendingDoneInvokeNowPayload!!.error == "") -> transitionReadingAt0
-            event is StaticHostClockEvent.Done.Invoke.Now -> transitionReadingAt1
-            event is StaticHostClockEvent.Error.Invoke.Now -> transitionReadingAt2
-            event is StaticHostClockEvent.Error.Execution -> transitionReadingAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticHostClockState, event: StaticHostClockEvent?): EnabledTransition<StaticHostClockState, HistoryId>? = when (state) {
+        is StaticHostClockState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is StaticHostClockState.Locating -> firstEnabledTransitionOfLocating(state, event)
+        is StaticHostClockState.Reading -> firstEnabledTransitionOfReading(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticHostClockState, event: StaticHostClockEvent?): EnabledTransition<StaticHostClockState, HistoryId>? = when {
+        event is StaticHostClockEvent.Host.Clock.Now.Request -> TransitionsPart0.transitionIdleAt0
+        event is StaticHostClockEvent.Host.Clock.Zone.Request -> TransitionsPart0.transitionIdleAt1
+        else -> null
+    }
+
+
+    // locating's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfLocating(state: StaticHostClockState, event: StaticHostClockEvent?): EnabledTransition<StaticHostClockState, HistoryId>? = when {
+        event is StaticHostClockEvent.Done.Invoke.Zone && pendingDoneInvokeZonePayload != null && (pendingDoneInvokeZonePayload!!.error == "") -> TransitionsPart0.transitionLocatingAt0
+        event is StaticHostClockEvent.Done.Invoke.Zone -> TransitionsPart0.transitionLocatingAt1
+        event is StaticHostClockEvent.Error.Invoke.Zone -> TransitionsPart0.transitionLocatingAt2
+        event is StaticHostClockEvent.Error.Execution -> TransitionsPart0.transitionLocatingAt3
+        else -> null
+    }
+
+
+    // reading's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReading(state: StaticHostClockState, event: StaticHostClockEvent?): EnabledTransition<StaticHostClockState, HistoryId>? = when {
+        event is StaticHostClockEvent.Done.Invoke.Now && pendingDoneInvokeNowPayload != null && (pendingDoneInvokeNowPayload!!.error == "") -> TransitionsPart0.transitionReadingAt0
+        event is StaticHostClockEvent.Done.Invoke.Now -> TransitionsPart0.transitionReadingAt1
+        event is StaticHostClockEvent.Error.Invoke.Now -> TransitionsPart0.transitionReadingAt2
+        event is StaticHostClockEvent.Error.Execution -> TransitionsPart0.transitionReadingAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_host_clock.scxml:24 :: _machine
     override fun onEntry(state: StaticHostClockState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticHostClockState.Idle -> {
+            is StaticHostClockState.Idle -> onEntryOfIdle()
+            is StaticHostClockState.Locating -> onEntryOfLocating()
+            is StaticHostClockState.Reading -> onEntryOfReading()
+        }
+    }
+
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: static_host_clock.scxml:36 :: idle :: _state_body
-            }
-            is StaticHostClockState.Locating -> {
+    }
+
+    private fun onEntryOfLocating() {
                 // SCE-MAP: static_host_clock.scxml:59 :: locating :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -716,7 +765,7 @@ class StaticHostClockStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "locating.${System.identityHashCode(this)}.zone"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostClockState.Locating, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -741,8 +790,9 @@ class StaticHostClockStateMachine(
                         }
                     }
                 }
-            }
-            is StaticHostClockState.Reading -> {
+    }
+
+    private fun onEntryOfReading() {
                 // SCE-MAP: static_host_clock.scxml:41 :: reading :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -756,7 +806,7 @@ class StaticHostClockStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "reading.${System.identityHashCode(this)}.now"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostClockState.Reading, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -781,47 +831,75 @@ class StaticHostClockStateMachine(
                         }
                     }
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_host_clock.scxml:24 :: _machine
     override fun onExit(state: StaticHostClockState) {
         when (state) {
-            is StaticHostClockState.Idle -> {
+            is StaticHostClockState.Idle -> onExitOfIdle()
+            is StaticHostClockState.Locating -> onExitOfLocating()
+            is StaticHostClockState.Reading -> onExitOfReading()
+        }
+    }
+
+
+    private fun onExitOfIdle() {
                 // SCE-MAP: static_host_clock.scxml:36 :: idle :: _state_body
-            }
-            is StaticHostClockState.Locating -> {
+    }
+
+    private fun onExitOfLocating() {
                 // SCE-MAP: static_host_clock.scxml:59 :: locating :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostClockState.Locating)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-clock-zone", "zone")
-            }
-            is StaticHostClockState.Reading -> {
+    }
+
+    private fun onExitOfReading() {
                 // SCE-MAP: static_host_clock.scxml:41 :: reading :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostClockState.Reading)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-clock-now", "now")
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_host_clock.scxml:24 :: _machine
     override fun executeTransitionContent(source: StaticHostClockState, transitionIndex: Int) {
         when (source) {
-        is StaticHostClockState.Locating -> when (transitionIndex) {
-            0 -> {
+            is StaticHostClockState.Locating -> transitionContentOfLocating(transitionIndex)
+            is StaticHostClockState.Reading -> transitionContentOfReading(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `locating`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfLocating(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfLocatingAt0()
+            1 -> transitionContentOfLocatingAt1()
+            2 -> transitionContentOfLocatingAt2()
+            3 -> transitionContentOfLocatingAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfLocatingAt0() {
                 // SCE-MAP: static_host_clock.scxml:61 :: locating :: _transition_0
                 if (pendingDoneInvokeZonePayload == null) {
                     return
@@ -836,8 +914,9 @@ class StaticHostClockStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostClockEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfLocatingAt1() {
                 // SCE-MAP: static_host_clock.scxml:66 :: locating :: _transition_1
                 if (pendingDoneInvokeZonePayload == null) {
                     return
@@ -846,25 +925,41 @@ class StaticHostClockStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeZonePayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostClockEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfLocatingAt2() {
                 // SCE-MAP: static_host_clock.scxml:69 :: locating :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostClockEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfLocatingAt3() {
                 // SCE-MAP: static_host_clock.scxml:72 :: locating :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostClockEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `reading`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfReading(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfReadingAt0()
+            1 -> transitionContentOfReadingAt1()
+            2 -> transitionContentOfReadingAt2()
+            3 -> transitionContentOfReadingAt3()
             else -> {}
         }
-        is StaticHostClockState.Reading -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfReadingAt0() {
                 // SCE-MAP: static_host_clock.scxml:43 :: reading :: _transition_0
                 if (pendingDoneInvokeNowPayload == null) {
                     return
@@ -877,8 +972,9 @@ class StaticHostClockStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostClockEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfReadingAt1() {
                 // SCE-MAP: static_host_clock.scxml:48 :: reading :: _transition_1
                 if (pendingDoneInvokeNowPayload == null) {
                     return
@@ -887,24 +983,21 @@ class StaticHostClockStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeNowPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostClockEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfReadingAt2() {
                 // SCE-MAP: static_host_clock.scxml:51 :: reading :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostClockEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfReadingAt3() {
                 // SCE-MAP: static_host_clock.scxml:54 :: reading :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostClockEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

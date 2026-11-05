@@ -184,6 +184,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ADelayedSendReachesWhatItsTargetNamesState, HistoryId>>
@@ -192,6 +193,9 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ADelayedSendReachesWhatItsTargetNamesState, HistoryId>> =
             listOf(StateTarget(ADelayedSendReachesWhatItsTargetNamesState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
         val transitionRunAt0 = EnabledTransition<ADelayedSendReachesWhatItsTargetNamesState, HistoryId>(
@@ -275,6 +279,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ADelayedSendReachesWhatItsTargetNamesState? = when (stateId) {
         "done" -> ADelayedSendReachesWhatItsTargetNamesState.Done
@@ -282,17 +287,20 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ADelayedSendReachesWhatItsTargetNamesState): String = when (state) {
         is ADelayedSendReachesWhatItsTargetNamesState.Done -> "done"
         is ADelayedSendReachesWhatItsTargetNamesState.Run -> "run"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ADelayedSendReachesWhatItsTargetNamesState): Int = when (state) {
         is ADelayedSendReachesWhatItsTargetNamesState.Done -> 1
         is ADelayedSendReachesWhatItsTargetNamesState.Run -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ADelayedSendReachesWhatItsTargetNamesEvent? = when (name) {
@@ -312,6 +320,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ADelayedSendReachesWhatItsTargetNamesEvent): String? = when (event) {
         is ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke -> "done.invoke"
@@ -328,6 +337,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
         is ADelayedSendReachesWhatItsTargetNamesEvent.Settle -> "settle"
         is ADelayedSendReachesWhatItsTargetNamesEvent.Stop -> "stop"
     }
+
 
 
 
@@ -357,6 +367,27 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'order' with expr
         try {
             val initResult_order = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -420,22 +451,6 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='hellos'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -625,36 +640,47 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ADelayedSendReachesWhatItsTargetNamesState,
-        event: ADelayedSendReachesWhatItsTargetNamesEvent?
-    ): EnabledTransition<ADelayedSendReachesWhatItsTargetNamesState, HistoryId>? = when (state) {
-        is ADelayedSendReachesWhatItsTargetNamesState.Run -> when {
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.Error.Communication -> transitionRunAt0
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.Inner -> transitionRunAt1
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.Early -> transitionRunAt2
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.Late -> transitionRunAt3
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.Hello && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(hellos == 1)", "hellos === 1")) -> transitionRunAt4
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.Hello -> transitionRunAt5
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.LostReached -> transitionRunAt6
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.Pong -> transitionRunAt7
-            event is ADelayedSendReachesWhatItsTargetNamesEvent.Settle -> transitionRunAt8
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ADelayedSendReachesWhatItsTargetNamesState, event: ADelayedSendReachesWhatItsTargetNamesEvent?): EnabledTransition<ADelayedSendReachesWhatItsTargetNamesState, HistoryId>? = when (state) {
+        is ADelayedSendReachesWhatItsTargetNamesState.Run -> firstEnabledTransitionOfRun(state, event)
         else -> null
     }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ADelayedSendReachesWhatItsTargetNamesState, event: ADelayedSendReachesWhatItsTargetNamesEvent?): EnabledTransition<ADelayedSendReachesWhatItsTargetNamesState, HistoryId>? = when {
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Error.Communication -> TransitionsPart0.transitionRunAt0
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Inner -> TransitionsPart0.transitionRunAt1
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Early -> TransitionsPart0.transitionRunAt2
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Late -> TransitionsPart0.transitionRunAt3
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Hello && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(hellos == 1)", "hellos === 1")) -> TransitionsPart0.transitionRunAt4
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Hello -> TransitionsPart0.transitionRunAt5
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.LostReached -> TransitionsPart0.transitionRunAt6
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Pong -> TransitionsPart0.transitionRunAt7
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Settle -> TransitionsPart0.transitionRunAt8
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     override fun onEntry(state: ADelayedSendReachesWhatItsTargetNamesState, isDefaultEntry: Boolean) {
         when (state) {
-            is ADelayedSendReachesWhatItsTargetNamesState.Done -> {
+            is ADelayedSendReachesWhatItsTargetNamesState.Done -> onEntryOfDone()
+            is ADelayedSendReachesWhatItsTargetNamesState.Run -> onEntryOfRun()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:155 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ADelayedSendReachesWhatItsTargetNamesState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:66 :: run :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/2
                 run {
@@ -715,11 +741,9 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             }
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("kid", state)
+                deferStaticInvoke("kid", ADelayedSendReachesWhatItsTargetNamesState.Run)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("gone", state)
-            }
-        }
+                deferStaticInvoke("gone", ADelayedSendReachesWhatItsTargetNamesState.Run)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -732,9 +756,21 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: ADelayedSendReachesWhatItsTargetNamesState) {
         when (invokeId) {
-            "kid" -> run {
+            "kid" -> startInvokeOfRunAt0(state)
+            "gone" -> startInvokeOfRunAt1(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfRunAt0(state: ADelayedSendReachesWhatItsTargetNamesState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "run.${nextInvokeStart("kid")}.kid"
@@ -745,7 +781,10 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                     startInvoke("kid", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "", "a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid", "kid")
                 }
             }
-            "gone" -> run {
+    }
+
+    private fun startInvokeOfRunAt1(state: ADelayedSendReachesWhatItsTargetNamesState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "run.${nextInvokeStart("gone")}.gone"
@@ -756,44 +795,74 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                     startInvoke("gone", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "", "a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone", "gone")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     override fun onExit(state: ADelayedSendReachesWhatItsTargetNamesState) {
         when (state) {
-            is ADelayedSendReachesWhatItsTargetNamesState.Done -> {
+            is ADelayedSendReachesWhatItsTargetNamesState.Done -> onExitOfDone()
+            is ADelayedSendReachesWhatItsTargetNamesState.Run -> onExitOfRun()
+        }
+    }
+
+
+    private fun onExitOfDone() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:155 :: done :: _state_body
-            }
-            is ADelayedSendReachesWhatItsTargetNamesState.Run -> {
+    }
+
+    private fun onExitOfRun() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:66 :: run :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(ADelayedSendReachesWhatItsTargetNamesState.Run)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("kid")
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("gone")
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     override fun executeTransitionContent(source: ADelayedSendReachesWhatItsTargetNamesState, transitionIndex: Int) {
         when (source) {
-        is ADelayedSendReachesWhatItsTargetNamesState.Run -> when (transitionIndex) {
-            0 -> {
+            is ADelayedSendReachesWhatItsTargetNamesState.Run -> transitionContentOfRun(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
+            1 -> transitionContentOfRunAt1()
+            2 -> transitionContentOfRunAt2()
+            3 -> transitionContentOfRunAt3()
+            4 -> transitionContentOfRunAt4()
+            5 -> transitionContentOfRunAt5()
+            6 -> transitionContentOfRunAt6()
+            7 -> transitionContentOfRunAt7()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:114 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("commErrors", "commErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(commErrors, 1)", "commErrors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunAt1() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:117 :: run :: _transition_1
 
 
@@ -813,16 +882,18 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             if (ifCondFailed1) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRunAt2() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:123 :: run :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 3)", "order * 10 + 3"))) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfRunAt3() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:126 :: run :: _transition_3
 
 
@@ -842,8 +913,9 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             if (ifCondFailed2) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfRunAt4() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:132 :: run :: _transition_4
 
 
@@ -911,24 +983,27 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfRunAt5() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:140 :: run :: _transition_5
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("hellos", "hellos"), com.sce.runtime.ScriptSource.lua("_scxml_add(hellos, 1)", "hellos + 1"))) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfRunAt6() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:143 :: run :: _transition_6
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("lostArrived", "lostArrived"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfRunAt7() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:146 :: run :: _transition_7
 
 
@@ -955,10 +1030,5 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

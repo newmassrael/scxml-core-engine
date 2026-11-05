@@ -158,6 +158,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: ABadInvokeArgumentIsReportedOnceState): Boolean = when (state) {
@@ -165,11 +166,13 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: ABadInvokeArgumentIsReportedOnceState): Boolean = when (state) {
         is ABadInvokeArgumentIsReportedOnceState.Done -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -186,16 +189,29 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<ABadInvokeArgumentIsReportedOnceState, List<ABadInvokeArgumentIsReportedOnceState>> = mapOf(
-            ABadInvokeArgumentIsReportedOnceState.Run to listOf(ABadInvokeArgumentIsReportedOnceState.S0, ABadInvokeArgumentIsReportedOnceState.S1),
-        )
+        val childStates: Map<ABadInvokeArgumentIsReportedOnceState, List<ABadInvokeArgumentIsReportedOnceState>> = LinkedHashMap<ABadInvokeArgumentIsReportedOnceState, List<ABadInvokeArgumentIsReportedOnceState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<ABadInvokeArgumentIsReportedOnceState, List<EntryTarget<ABadInvokeArgumentIsReportedOnceState, HistoryId>>> = mapOf(
-            ABadInvokeArgumentIsReportedOnceState.Run to listOf(StateTarget(ABadInvokeArgumentIsReportedOnceState.S0)),
-        )
+        private fun childStatesPart0(table: MutableMap<ABadInvokeArgumentIsReportedOnceState, List<ABadInvokeArgumentIsReportedOnceState>>) {
+            table[ABadInvokeArgumentIsReportedOnceState.Run] = listOf(ABadInvokeArgumentIsReportedOnceState.S0, ABadInvokeArgumentIsReportedOnceState.S1)
+        }
+
+
+        val initialTargets: Map<ABadInvokeArgumentIsReportedOnceState, List<EntryTarget<ABadInvokeArgumentIsReportedOnceState, HistoryId>>> = LinkedHashMap<ABadInvokeArgumentIsReportedOnceState, List<EntryTarget<ABadInvokeArgumentIsReportedOnceState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<ABadInvokeArgumentIsReportedOnceState, List<EntryTarget<ABadInvokeArgumentIsReportedOnceState, HistoryId>>>) {
+            table[ABadInvokeArgumentIsReportedOnceState.Run] = listOf(StateTarget(ABadInvokeArgumentIsReportedOnceState.S0))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<ABadInvokeArgumentIsReportedOnceState, HistoryId>> =
             listOf(StateTarget(ABadInvokeArgumentIsReportedOnceState.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
         val transitionRunAt0 = EnabledTransition<ABadInvokeArgumentIsReportedOnceState, HistoryId>(
@@ -243,6 +259,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ABadInvokeArgumentIsReportedOnceState? = when (stateId) {
         "done" -> ABadInvokeArgumentIsReportedOnceState.Done
@@ -252,6 +269,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ABadInvokeArgumentIsReportedOnceState): String = when (state) {
         is ABadInvokeArgumentIsReportedOnceState.Done -> "done"
@@ -260,6 +278,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         is ABadInvokeArgumentIsReportedOnceState.S1 -> "s1"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ABadInvokeArgumentIsReportedOnceState): Int = when (state) {
         is ABadInvokeArgumentIsReportedOnceState.Done -> 3
@@ -267,6 +286,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         is ABadInvokeArgumentIsReportedOnceState.S0 -> 1
         is ABadInvokeArgumentIsReportedOnceState.S1 -> 2
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ABadInvokeArgumentIsReportedOnceEvent? = when (name) {
@@ -278,6 +298,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ABadInvokeArgumentIsReportedOnceEvent): String? = when (event) {
         is ABadInvokeArgumentIsReportedOnceEvent.ChildUp -> "childUp"
@@ -286,6 +307,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         is ABadInvokeArgumentIsReportedOnceEvent.Finish -> "finish"
         is ABadInvokeArgumentIsReportedOnceEvent.Go -> "go"
     }
+
 
 
 
@@ -315,6 +337,27 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'v' with expr
         try {
             val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
@@ -364,22 +407,6 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='brokenLeftOut'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -569,50 +596,67 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ABadInvokeArgumentIsReportedOnceState,
-        event: ABadInvokeArgumentIsReportedOnceEvent?
-    ): EnabledTransition<ABadInvokeArgumentIsReportedOnceState, HistoryId>? = when (state) {
-        is ABadInvokeArgumentIsReportedOnceState.Run -> when {
-            event is ABadInvokeArgumentIsReportedOnceEvent.Error.Execution -> transitionRunAt0
-            event is ABadInvokeArgumentIsReportedOnceEvent.ChildUp -> transitionRunAt1
-            event is ABadInvokeArgumentIsReportedOnceEvent.Finish -> transitionRunAt2
-            else -> null
-        }
-        is ABadInvokeArgumentIsReportedOnceState.S0 -> when {
-            event is ABadInvokeArgumentIsReportedOnceEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.fromLoc == 7)", "_event.data.fromLoc === 7")) -> transitionS0At0
-            event is ABadInvokeArgumentIsReportedOnceEvent.Go -> transitionS0At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ABadInvokeArgumentIsReportedOnceState, event: ABadInvokeArgumentIsReportedOnceEvent?): EnabledTransition<ABadInvokeArgumentIsReportedOnceState, HistoryId>? = when (state) {
+        is ABadInvokeArgumentIsReportedOnceState.Run -> firstEnabledTransitionOfRun(state, event)
+        is ABadInvokeArgumentIsReportedOnceState.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ABadInvokeArgumentIsReportedOnceState, event: ABadInvokeArgumentIsReportedOnceEvent?): EnabledTransition<ABadInvokeArgumentIsReportedOnceState, HistoryId>? = when {
+        event is ABadInvokeArgumentIsReportedOnceEvent.Error.Execution -> TransitionsPart0.transitionRunAt0
+        event is ABadInvokeArgumentIsReportedOnceEvent.ChildUp -> TransitionsPart0.transitionRunAt1
+        event is ABadInvokeArgumentIsReportedOnceEvent.Finish -> TransitionsPart0.transitionRunAt2
+        else -> null
+    }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: ABadInvokeArgumentIsReportedOnceState, event: ABadInvokeArgumentIsReportedOnceEvent?): EnabledTransition<ABadInvokeArgumentIsReportedOnceState, HistoryId>? = when {
+        event is ABadInvokeArgumentIsReportedOnceEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.fromLoc == 7)", "_event.data.fromLoc === 7")) -> TransitionsPart0.transitionS0At0
+        event is ABadInvokeArgumentIsReportedOnceEvent.Go -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:42 :: _machine
     override fun onEntry(state: ABadInvokeArgumentIsReportedOnceState, isDefaultEntry: Boolean) {
         when (state) {
-            is ABadInvokeArgumentIsReportedOnceState.Done -> {
+            is ABadInvokeArgumentIsReportedOnceState.Done -> onEntryOfDone()
+            is ABadInvokeArgumentIsReportedOnceState.Run -> onEntryOfRun()
+            is ABadInvokeArgumentIsReportedOnceState.S0 -> onEntryOfS0()
+            is ABadInvokeArgumentIsReportedOnceState.S1 -> onEntryOfS1()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:139 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ABadInvokeArgumentIsReportedOnceState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:56 :: run :: _state_body
-            }
-            is ABadInvokeArgumentIsReportedOnceState.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:65 :: s0 :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv1", state)
-            }
-            is ABadInvokeArgumentIsReportedOnceState.S1 -> {
+                deferStaticInvoke("inv1", ABadInvokeArgumentIsReportedOnceState.S0)
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:105 :: s1 :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv2", state)
+                deferStaticInvoke("inv2", ABadInvokeArgumentIsReportedOnceState.S1)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv3", state)
-            }
-        }
+                deferStaticInvoke("inv3", ABadInvokeArgumentIsReportedOnceState.S1)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -625,9 +669,22 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: ABadInvokeArgumentIsReportedOnceState) {
         when (invokeId) {
-            "inv1" -> run {
+            "inv1" -> startInvokeOfS0At0(state)
+            "inv2" -> startInvokeOfS1At0(state)
+            "inv3" -> startInvokeOfS1At1(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfS0At0(state: ABadInvokeArgumentIsReportedOnceState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "s0.${nextInvokeStart("inv1")}.inv1"
@@ -674,7 +731,10 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     startInvoke("inv1", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "", "a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1", "inv1")
                 }
             }
-            "inv2" -> run {
+    }
+
+    private fun startInvokeOfS1At0(state: ABadInvokeArgumentIsReportedOnceState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "s1.${nextInvokeStart("inv2")}.inv2"
@@ -699,7 +759,10 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     startInvoke("inv2", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "", "a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv2", "inv2")
                 }
             }
-            "inv3" -> run {
+    }
+
+    private fun startInvokeOfS1At1(state: ABadInvokeArgumentIsReportedOnceState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "s1.${nextInvokeStart("inv3")}.inv3"
@@ -732,65 +795,105 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     startInvoke("inv3", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "", "a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3", "inv3")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:42 :: _machine
     override fun onExit(state: ABadInvokeArgumentIsReportedOnceState) {
         when (state) {
-            is ABadInvokeArgumentIsReportedOnceState.Done -> {
+            is ABadInvokeArgumentIsReportedOnceState.Done -> onExitOfDone()
+            is ABadInvokeArgumentIsReportedOnceState.Run -> onExitOfRun()
+            is ABadInvokeArgumentIsReportedOnceState.S0 -> onExitOfS0()
+            is ABadInvokeArgumentIsReportedOnceState.S1 -> onExitOfS1()
+        }
+    }
+
+
+    private fun onExitOfDone() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:139 :: done :: _state_body
-            }
-            is ABadInvokeArgumentIsReportedOnceState.Run -> {
+    }
+
+    private fun onExitOfRun() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:56 :: run :: _state_body
-            }
-            is ABadInvokeArgumentIsReportedOnceState.S0 -> {
+    }
+
+    private fun onExitOfS0() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:65 :: s0 :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(ABadInvokeArgumentIsReportedOnceState.S0)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv1")
-            }
-            is ABadInvokeArgumentIsReportedOnceState.S1 -> {
+    }
+
+    private fun onExitOfS1() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:105 :: s1 :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(ABadInvokeArgumentIsReportedOnceState.S1)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv2")
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv3")
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:42 :: _machine
     override fun executeTransitionContent(source: ABadInvokeArgumentIsReportedOnceState, transitionIndex: Int) {
         when (source) {
-        is ABadInvokeArgumentIsReportedOnceState.Run -> when (transitionIndex) {
-            0 -> {
+            is ABadInvokeArgumentIsReportedOnceState.Run -> transitionContentOfRun(transitionIndex)
+            is ABadInvokeArgumentIsReportedOnceState.S0 -> transitionContentOfS0(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `run`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRun(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunAt0()
+            1 -> transitionContentOfRunAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunAt0() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:57 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunAt1() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:60 :: run :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
             else -> {}
         }
-        is ABadInvokeArgumentIsReportedOnceState.S0 -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:92 :: s0 :: _transition_0
 
 
@@ -828,10 +931,5 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             if (ifCondFailed2) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

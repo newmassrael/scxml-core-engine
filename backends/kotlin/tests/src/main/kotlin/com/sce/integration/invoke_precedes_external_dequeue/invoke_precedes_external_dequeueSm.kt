@@ -59,9 +59,11 @@ class InvokePrecedesExternalDequeueStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: InvokePrecedesExternalDequeueState): Boolean = when (state) {
-        is InvokePrecedesExternalDequeueState.Fail, is InvokePrecedesExternalDequeueState.Pass -> true
+        is InvokePrecedesExternalDequeueState.Fail -> true
+        is InvokePrecedesExternalDequeueState.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -71,6 +73,9 @@ class InvokePrecedesExternalDequeueStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokePrecedesExternalDequeueState, HistoryId>> =
             listOf(StateTarget(InvokePrecedesExternalDequeueState.Phase))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: phase's transition 0, as the microstep reads it.
         val transitionPhaseAt0 = EnabledTransition<InvokePrecedesExternalDequeueState, HistoryId>(
@@ -109,6 +114,7 @@ class InvokePrecedesExternalDequeueStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokePrecedesExternalDequeueState? = when (stateId) {
         "fail" -> InvokePrecedesExternalDequeueState.Fail
@@ -117,6 +123,7 @@ class InvokePrecedesExternalDequeueStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokePrecedesExternalDequeueState): String = when (state) {
         is InvokePrecedesExternalDequeueState.Fail -> "fail"
@@ -124,12 +131,14 @@ class InvokePrecedesExternalDequeueStateMachine(
         is InvokePrecedesExternalDequeueState.Phase -> "phase"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokePrecedesExternalDequeueState): Int = when (state) {
         is InvokePrecedesExternalDequeueState.Fail -> 2
         is InvokePrecedesExternalDequeueState.Pass -> 1
         is InvokePrecedesExternalDequeueState.Phase -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokePrecedesExternalDequeueEvent? = when (name) {
@@ -143,6 +152,7 @@ class InvokePrecedesExternalDequeueStateMachine(
         "sawNoKick" -> InvokePrecedesExternalDequeueEvent.SawNoKick
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokePrecedesExternalDequeueEvent): String? = when (event) {
@@ -160,41 +170,55 @@ class InvokePrecedesExternalDequeueStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokePrecedesExternalDequeueState,
-        event: InvokePrecedesExternalDequeueEvent?
-    ): EnabledTransition<InvokePrecedesExternalDequeueState, HistoryId>? = when (state) {
-        is InvokePrecedesExternalDequeueState.Phase -> when {
-            event is InvokePrecedesExternalDequeueEvent.Kick -> transitionPhaseAt0
-            event is InvokePrecedesExternalDequeueEvent.Ready -> transitionPhaseAt1
-            event is InvokePrecedesExternalDequeueEvent.SawKick -> transitionPhaseAt2
-            event is InvokePrecedesExternalDequeueEvent.SawNoKick -> transitionPhaseAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokePrecedesExternalDequeueState, event: InvokePrecedesExternalDequeueEvent?): EnabledTransition<InvokePrecedesExternalDequeueState, HistoryId>? = when (state) {
+        is InvokePrecedesExternalDequeueState.Phase -> firstEnabledTransitionOfPhase(state, event)
         else -> null
     }
+
+
+    // phase's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPhase(state: InvokePrecedesExternalDequeueState, event: InvokePrecedesExternalDequeueEvent?): EnabledTransition<InvokePrecedesExternalDequeueState, HistoryId>? = when {
+        event is InvokePrecedesExternalDequeueEvent.Kick -> TransitionsPart0.transitionPhaseAt0
+        event is InvokePrecedesExternalDequeueEvent.Ready -> TransitionsPart0.transitionPhaseAt1
+        event is InvokePrecedesExternalDequeueEvent.SawKick -> TransitionsPart0.transitionPhaseAt2
+        event is InvokePrecedesExternalDequeueEvent.SawNoKick -> TransitionsPart0.transitionPhaseAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     override fun onEntry(state: InvokePrecedesExternalDequeueState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokePrecedesExternalDequeueState.Fail -> {
+            is InvokePrecedesExternalDequeueState.Fail -> onEntryOfFail()
+            is InvokePrecedesExternalDequeueState.Pass -> onEntryOfPass()
+            is InvokePrecedesExternalDequeueState.Phase -> onEntryOfPhase()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: invoke_precedes_external_dequeue.scxml:92 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokePrecedesExternalDequeueState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: invoke_precedes_external_dequeue.scxml:91 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokePrecedesExternalDequeueState.Phase -> {
+    }
+
+    private fun onEntryOfPhase() {
                 // SCE-MAP: invoke_precedes_external_dequeue.scxml:55 :: phase :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -212,9 +236,7 @@ class InvokePrecedesExternalDequeueStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_watch", state)
-            }
-        }
+                deferStaticInvoke("inv_watch", InvokePrecedesExternalDequeueState.Phase)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -227,9 +249,20 @@ class InvokePrecedesExternalDequeueStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: InvokePrecedesExternalDequeueState) {
         when (invokeId) {
-            "inv_watch" -> run {
+            "inv_watch" -> startInvokeOfPhaseAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfPhaseAt0(state: InvokePrecedesExternalDequeueState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_watch")}.inv_watch"
@@ -240,37 +273,61 @@ class InvokePrecedesExternalDequeueStateMachine(
                     startInvoke("inv_watch", childSM, true, InvokePrecedesExternalDequeueEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch", "inv_watch")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     override fun onExit(state: InvokePrecedesExternalDequeueState) {
         when (state) {
-            is InvokePrecedesExternalDequeueState.Fail -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:92 :: fail :: _state_body
-            }
-            is InvokePrecedesExternalDequeueState.Pass -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:91 :: pass :: _state_body
-            }
-            is InvokePrecedesExternalDequeueState.Phase -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55 :: phase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_watch")
-            }
+            is InvokePrecedesExternalDequeueState.Fail -> onExitOfFail()
+            is InvokePrecedesExternalDequeueState.Pass -> onExitOfPass()
+            is InvokePrecedesExternalDequeueState.Phase -> onExitOfPhase()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:92 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:91 :: pass :: _state_body
+    }
+
+    private fun onExitOfPhase() {
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55 :: phase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokePrecedesExternalDequeueState.Phase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_watch")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     override fun executeTransitionContent(source: InvokePrecedesExternalDequeueState, transitionIndex: Int) {
         when (source) {
-        is InvokePrecedesExternalDequeueState.Phase -> when (transitionIndex) {
-            1 -> {
+            is InvokePrecedesExternalDequeueState.Phase -> transitionContentOfPhase(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `phase`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPhase(transitionIndex: Int) {
+        when (transitionIndex) {
+            1 -> transitionContentOfPhaseAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfPhaseAt1() {
                 // SCE-MAP: invoke_precedes_external_dequeue.scxml:85 :: phase :: _transition_1
 
 
@@ -289,10 +346,5 @@ class InvokePrecedesExternalDequeueStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

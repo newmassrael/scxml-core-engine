@@ -55,6 +55,7 @@ class Test422SceSynthInvokeInvoke2StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<Test422SceSynthInvokeInvoke2State, HistoryId>>
@@ -63,6 +64,9 @@ class Test422SceSynthInvokeInvoke2StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test422SceSynthInvokeInvoke2State, HistoryId>> =
             listOf(StateTarget(Test422SceSynthInvokeInvoke2State.Sub2))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: sub2's transition 0, as the microstep reads it.
         val transitionSub2At0 = EnabledTransition<Test422SceSynthInvokeInvoke2State, HistoryId>(
@@ -74,6 +78,7 @@ class Test422SceSynthInvokeInvoke2StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test422SceSynthInvokeInvoke2State? = when (stateId) {
         "sub2" -> Test422SceSynthInvokeInvoke2State.Sub2
@@ -81,17 +86,20 @@ class Test422SceSynthInvokeInvoke2StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test422SceSynthInvokeInvoke2State): String = when (state) {
         is Test422SceSynthInvokeInvoke2State.Sub2 -> "sub2"
         is Test422SceSynthInvokeInvoke2State.SubFinal2 -> "subFinal2"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test422SceSynthInvokeInvoke2State): Int = when (state) {
         is Test422SceSynthInvokeInvoke2State.Sub2 -> 0
         is Test422SceSynthInvokeInvoke2State.SubFinal2 -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test422SceSynthInvokeInvoke2Event? = when (name) {
@@ -100,6 +108,7 @@ class Test422SceSynthInvokeInvoke2StateMachine(
         "invokeS12" -> Test422SceSynthInvokeInvoke2Event.InvokeS12
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test422SceSynthInvokeInvoke2Event): String? = when (event) {
@@ -112,28 +121,39 @@ class Test422SceSynthInvokeInvoke2StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test422SceSynthInvokeInvoke2State,
-        event: Test422SceSynthInvokeInvoke2Event?
-    ): EnabledTransition<Test422SceSynthInvokeInvoke2State, HistoryId>? = when (state) {
-        is Test422SceSynthInvokeInvoke2State.Sub2 -> when {
-            event == null -> transitionSub2At0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test422SceSynthInvokeInvoke2State, event: Test422SceSynthInvokeInvoke2Event?): EnabledTransition<Test422SceSynthInvokeInvoke2State, HistoryId>? = when (state) {
+        is Test422SceSynthInvokeInvoke2State.Sub2 -> firstEnabledTransitionOfSub2(state, event)
         else -> null
     }
+
+
+    // sub2's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSub2(state: Test422SceSynthInvokeInvoke2State, event: Test422SceSynthInvokeInvoke2Event?): EnabledTransition<Test422SceSynthInvokeInvoke2State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionSub2At0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test422.scxml:61 :: _machine
     override fun onEntry(state: Test422SceSynthInvokeInvoke2State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test422SceSynthInvokeInvoke2State.Sub2 -> {
+            is Test422SceSynthInvokeInvoke2State.Sub2 -> onEntryOfSub2()
+            is Test422SceSynthInvokeInvoke2State.SubFinal2 -> onEntryOfSubFinal2()
+        }
+    }
+
+
+    private fun onEntryOfSub2() {
                 // SCE-MAP: test422.scxml:62 :: sub2 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -157,34 +177,39 @@ class Test422SceSynthInvokeInvoke2StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is Test422SceSynthInvokeInvoke2State.SubFinal2 -> {
+    }
+
+    private fun onEntryOfSubFinal2() {
                 // SCE-MAP: test422.scxml:68 :: subFinal2 :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test422.scxml:61 :: _machine
     override fun onExit(state: Test422SceSynthInvokeInvoke2State) {
         when (state) {
-            is Test422SceSynthInvokeInvoke2State.Sub2 -> {
-                // SCE-MAP: test422.scxml:62 :: sub2 :: _state_body
-            }
-            is Test422SceSynthInvokeInvoke2State.SubFinal2 -> {
-                // SCE-MAP: test422.scxml:68 :: subFinal2 :: _state_body
-            }
+            is Test422SceSynthInvokeInvoke2State.Sub2 -> onExitOfSub2()
+            is Test422SceSynthInvokeInvoke2State.SubFinal2 -> onExitOfSubFinal2()
         }
     }
+
+
+    private fun onExitOfSub2() {
+                // SCE-MAP: test422.scxml:62 :: sub2 :: _state_body
+    }
+
+    private fun onExitOfSubFinal2() {
+                // SCE-MAP: test422.scxml:68 :: subFinal2 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test422.scxml:61 :: _machine
     override fun executeTransitionContent(source: Test422SceSynthInvokeInvoke2State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

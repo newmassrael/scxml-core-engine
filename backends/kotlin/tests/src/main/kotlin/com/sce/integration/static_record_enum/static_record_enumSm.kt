@@ -132,6 +132,10 @@ class StaticRecordEnumStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.weeks?.let { vWeeks = it }
         params.flips?.let { vFlips = it }
         params.leads?.let { vLeads = it }
@@ -239,17 +243,19 @@ class StaticRecordEnumStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "shown" to vShown.toSaved(),
-            "seen" to SavedValues.list(vSeen) { it.toSaved() },
-            "weeks" to SavedValues.of(vWeeks),
-            "flips" to SavedValues.of(vFlips),
-            "leads" to SavedValues.of(vLeads),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "shown" to vShown.toSaved()
+        variables += "seen" to SavedValues.list(vSeen) { it.toSaved() }
+        variables += "weeks" to SavedValues.of(vWeeks)
+        variables += "flips" to SavedValues.of(vFlips)
+        variables += "leads" to SavedValues.of(vLeads)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -274,17 +280,27 @@ class StaticRecordEnumStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticRecordEnumViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
         val saved2 = SavedValues.list(savedGrown.variable("seen"), "seen", 4) { e, w -> StaticRecordEnumViewRecord.fromSaved(e, w) }
         val saved3 = SavedValues.uint32(savedGrown.variable("weeks"), "weeks")
         val saved4 = SavedValues.uint32(savedGrown.variable("flips"), "flips")
         val saved5 = SavedValues.uint32(savedGrown.variable("leads"), "leads")
-        vShown = saved1
-        vSeen = saved2
-        vWeeks = saved3
-        vFlips = saved4
-        vLeads = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vShown = saved1
+            vSeen = saved2
+            vWeeks = saved3
+            vFlips = saved4
+            vLeads = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -297,6 +313,10 @@ class StaticRecordEnumStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticRecordEnumViewRecord.fromSaved(savedGrown.variable("shown"), "shown")
         SavedValues.list(savedGrown.variable("seen"), "seen", 4) { e, w -> StaticRecordEnumViewRecord.fromSaved(e, w) }
         SavedValues.uint32(savedGrown.variable("weeks"), "weeks")
@@ -331,6 +351,9 @@ class StaticRecordEnumStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticRecordEnumState, HistoryId>> =
             listOf(StateTarget(StaticRecordEnumState.Viewing))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: viewing's transition 0, as the microstep reads it.
         val transitionViewingAt0 = EnabledTransition<StaticRecordEnumState, HistoryId>(
@@ -459,21 +482,25 @@ class StaticRecordEnumStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticRecordEnumState? = when (stateId) {
         "viewing" -> StaticRecordEnumState.Viewing
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticRecordEnumState): String = when (state) {
         is StaticRecordEnumState.Viewing -> "viewing"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticRecordEnumState): Int = when (state) {
         is StaticRecordEnumState.Viewing -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticRecordEnumEvent? = when (name) {
@@ -492,6 +519,7 @@ class StaticRecordEnumStateMachine(
         "zoom" -> StaticRecordEnumEvent.Zoom
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticRecordEnumEvent): String? = when (event) {
@@ -514,62 +542,104 @@ class StaticRecordEnumStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticRecordEnumState,
-        event: StaticRecordEnumEvent?
-    ): EnabledTransition<StaticRecordEnumState, HistoryId>? = when (state) {
-        is StaticRecordEnumState.Viewing -> when {
-            event is StaticRecordEnumEvent.Toggle && vShown.layout == StaticRecordEnumViewModeEnum.MONTH -> transitionViewingAt0
-            event is StaticRecordEnumEvent.Toggle && vShown.layout == StaticRecordEnumViewModeEnum.WEEK -> transitionViewingAt1
-            event is StaticRecordEnumEvent.Agenda -> transitionViewingAt2
-            event is StaticRecordEnumEvent.Month -> transitionViewingAt3
-            event is StaticRecordEnumEvent.Zoom -> transitionViewingAt4
-            event is StaticRecordEnumEvent.Remember -> transitionViewingAt5
-            event is StaticRecordEnumEvent.Count -> transitionViewingAt6
-            event is StaticRecordEnumEvent.Recall -> transitionViewingAt7
-            event is StaticRecordEnumEvent.Peek -> transitionViewingAt8
-            event is StaticRecordEnumEvent.Peeklast -> transitionViewingAt9
-            event is StaticRecordEnumEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout == StaticRecordEnumViewModeEnum.WEEK } catch (_: com.sce.forge.runtime.AlgorithmFailure) { false }) -> transitionViewingAt10
-            event is StaticRecordEnumEvent.Take -> transitionViewingAt11
-            event is StaticRecordEnumEvent.Takelast -> transitionViewingAt12
-            event is StaticRecordEnumEvent.Forget -> transitionViewingAt13
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticRecordEnumState, event: StaticRecordEnumEvent?): EnabledTransition<StaticRecordEnumState, HistoryId>? = when (state) {
+        is StaticRecordEnumState.Viewing -> firstEnabledTransitionOfViewing(state, event)
     }
+
+
+    // viewing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfViewing(state: StaticRecordEnumState, event: StaticRecordEnumEvent?): EnabledTransition<StaticRecordEnumState, HistoryId>? = when {
+        event is StaticRecordEnumEvent.Toggle && vShown.layout == StaticRecordEnumViewModeEnum.MONTH -> TransitionsPart0.transitionViewingAt0
+        event is StaticRecordEnumEvent.Toggle && vShown.layout == StaticRecordEnumViewModeEnum.WEEK -> TransitionsPart0.transitionViewingAt1
+        event is StaticRecordEnumEvent.Agenda -> TransitionsPart0.transitionViewingAt2
+        event is StaticRecordEnumEvent.Month -> TransitionsPart0.transitionViewingAt3
+        event is StaticRecordEnumEvent.Zoom -> TransitionsPart0.transitionViewingAt4
+        event is StaticRecordEnumEvent.Remember -> TransitionsPart0.transitionViewingAt5
+        event is StaticRecordEnumEvent.Count -> TransitionsPart0.transitionViewingAt6
+        event is StaticRecordEnumEvent.Recall -> TransitionsPart0.transitionViewingAt7
+        event is StaticRecordEnumEvent.Peek -> TransitionsPart0.transitionViewingAt8
+        event is StaticRecordEnumEvent.Peeklast -> TransitionsPart0.transitionViewingAt9
+        event is StaticRecordEnumEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout == StaticRecordEnumViewModeEnum.WEEK } catch (_: com.sce.forge.runtime.AlgorithmFailure) { false }) -> TransitionsPart0.transitionViewingAt10
+        event is StaticRecordEnumEvent.Take -> TransitionsPart0.transitionViewingAt11
+        event is StaticRecordEnumEvent.Takelast -> TransitionsPart0.transitionViewingAt12
+        event is StaticRecordEnumEvent.Forget -> TransitionsPart0.transitionViewingAt13
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_record_enum.scxml:13 :: _machine
     override fun onEntry(state: StaticRecordEnumState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticRecordEnumState.Viewing -> {
-                // SCE-MAP: static_record_enum.scxml:27 :: viewing :: _state_body
-            }
+            is StaticRecordEnumState.Viewing -> onEntryOfViewing()
         }
+    }
+
+
+    private fun onEntryOfViewing() {
+                // SCE-MAP: static_record_enum.scxml:27 :: viewing :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_record_enum.scxml:13 :: _machine
     override fun onExit(state: StaticRecordEnumState) {
         when (state) {
-            is StaticRecordEnumState.Viewing -> {
-                // SCE-MAP: static_record_enum.scxml:27 :: viewing :: _state_body
-            }
+            is StaticRecordEnumState.Viewing -> onExitOfViewing()
         }
     }
+
+
+    private fun onExitOfViewing() {
+                // SCE-MAP: static_record_enum.scxml:27 :: viewing :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_record_enum.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticRecordEnumState, transitionIndex: Int) {
         when (source) {
-        is StaticRecordEnumState.Viewing -> when (transitionIndex) {
-            0 -> {
+            is StaticRecordEnumState.Viewing -> transitionContentOfViewing(transitionIndex)
+        }
+    }
+
+
+    // The content of `viewing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfViewing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfViewingAt0()
+            1 -> transitionContentOfViewingAt1()
+            2 -> transitionContentOfViewingAt2()
+            3 -> transitionContentOfViewingAt3()
+            4 -> transitionContentOfViewingAt4()
+            5 -> transitionContentOfViewingAt5()
+            6 -> transitionContentOfViewingAt6()
+            7 -> transitionContentOfViewingAt7()
+            8 -> transitionContentOfViewingAt8()
+            9 -> transitionContentOfViewingAt9()
+            10 -> transitionContentOfViewingAt10()
+            11 -> transitionContentOfViewingAt11()
+            12 -> transitionContentOfViewingAt12()
+            13 -> transitionContentOfViewingAt13()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfViewingAt0() {
                 // SCE-MAP: static_record_enum.scxml:30 :: viewing :: _transition_0
 
             vShown = vShown.copy(layout = StaticRecordEnumViewModeEnum.WEEK)
@@ -577,8 +647,9 @@ class StaticRecordEnumStateMachine(
             if (try { vFlips = com.sce.forge.runtime.SceChecked.add(vFlips, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfViewingAt1() {
                 // SCE-MAP: static_record_enum.scxml:34 :: viewing :: _transition_1
 
             vShown = vShown.copy(layout = StaticRecordEnumViewModeEnum.MONTH)
@@ -586,32 +657,37 @@ class StaticRecordEnumStateMachine(
             if (try { vFlips = com.sce.forge.runtime.SceChecked.add(vFlips, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfViewingAt2() {
                 // SCE-MAP: static_record_enum.scxml:38 :: viewing :: _transition_2
 
             vShown = vShown.copy(layout = StaticRecordEnumViewModeEnum.AGENDA_LIST)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfViewingAt3() {
                 // SCE-MAP: static_record_enum.scxml:41 :: viewing :: _transition_3
 
             vShown = vShown.copy(layout = StaticRecordEnumViewModeEnum.MONTH)
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfViewingAt4() {
                 // SCE-MAP: static_record_enum.scxml:44 :: viewing :: _transition_4
 
             if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfViewingAt5() {
                 // SCE-MAP: static_record_enum.scxml:48 :: viewing :: _transition_5
 
             if (if (vSeen.size < 4) { vSeen = vSeen + (vShown); false } else { true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfViewingAt6() {
                 // SCE-MAP: static_record_enum.scxml:52 :: viewing :: _transition_6
 
             vWeeks = 0.toUInt()
@@ -627,8 +703,9 @@ class StaticRecordEnumStateMachine(
             }
             }
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfViewingAt7() {
                 // SCE-MAP: static_record_enum.scxml:61 :: viewing :: _transition_7
 
 
@@ -636,49 +713,51 @@ class StaticRecordEnumStateMachine(
 
             vShown = v
             }
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfViewingAt8() {
                 // SCE-MAP: static_record_enum.scxml:71 :: viewing :: _transition_8
 
             if (try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            9 -> {
+    }
+
+    private fun transitionContentOfViewingAt9() {
                 // SCE-MAP: static_record_enum.scxml:74 :: viewing :: _transition_9
 
             if (try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            10 -> {
+    }
+
+    private fun transitionContentOfViewingAt10() {
                 // SCE-MAP: static_record_enum.scxml:77 :: viewing :: _transition_10
 
             if (try { vLeads = com.sce.forge.runtime.SceChecked.add(vLeads, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            11 -> {
+    }
+
+    private fun transitionContentOfViewingAt11() {
                 // SCE-MAP: static_record_enum.scxml:84 :: viewing :: _transition_11
 
             if (try { vShown = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            12 -> {
+    }
+
+    private fun transitionContentOfViewingAt12() {
                 // SCE-MAP: static_record_enum.scxml:87 :: viewing :: _transition_12
 
             if (try { vShown = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            13 -> {
+    }
+
+    private fun transitionContentOfViewingAt13() {
                 // SCE-MAP: static_record_enum.scxml:90 :: viewing :: _transition_13
 
             vSeen = emptyList()
-            }
-            else -> {}
-        }
-        }
     }
 }

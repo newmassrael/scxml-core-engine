@@ -146,6 +146,10 @@ class SyncClientStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.byToken?.let { vByToken = it }
         params.fullListing?.let { vFullListing = it }
         params.outcome?.let { vOutcome = it }
@@ -243,21 +247,23 @@ class SyncClientStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "byToken" to SavedValues.of(vByToken),
-            "fullListing" to SavedValues.of(vFullListing),
-            "outcome" to SavedValues.of(vOutcome),
-            "retryAt" to SavedValues.of(vRetryAt),
-            "deleted" to SavedValues.of(vDeleted),
-            "uploaded" to SavedValues.of(vUploaded),
-            "discarded" to SavedValues.of(vDiscarded),
-            "pages" to SavedValues.of(vPages),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "byToken" to SavedValues.of(vByToken)
+        variables += "fullListing" to SavedValues.of(vFullListing)
+        variables += "outcome" to SavedValues.of(vOutcome)
+        variables += "retryAt" to SavedValues.of(vRetryAt)
+        variables += "deleted" to SavedValues.of(vDeleted)
+        variables += "uploaded" to SavedValues.of(vUploaded)
+        variables += "discarded" to SavedValues.of(vDiscarded)
+        variables += "pages" to SavedValues.of(vPages)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -282,6 +288,15 @@ class SyncClientStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.bool(savedGrown.variable("byToken"), "byToken")
         val saved2 = SavedValues.bool(savedGrown.variable("fullListing"), "fullListing")
         val saved3 = SavedValues.uint8(savedGrown.variable("outcome"), "outcome")
@@ -291,16 +306,17 @@ class SyncClientStateMachine(
         val saved7 = SavedValues.uint32(savedGrown.variable("discarded"), "discarded")
         val saved8 = SavedValues.uint32(savedGrown.variable("pages"), "pages")
         val saved9 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vByToken = saved1
-        vFullListing = saved2
-        vOutcome = saved3
-        vRetryAt = saved4
-        vDeleted = saved5
-        vUploaded = saved6
-        vDiscarded = saved7
-        vPages = saved8
-        vRefusals = saved9
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vByToken = saved1
+            vFullListing = saved2
+            vOutcome = saved3
+            vRetryAt = saved4
+            vDeleted = saved5
+            vUploaded = saved6
+            vDiscarded = saved7
+            vPages = saved8
+            vRefusals = saved9
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -313,6 +329,10 @@ class SyncClientStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.bool(savedGrown.variable("byToken"), "byToken")
         SavedValues.bool(savedGrown.variable("fullListing"), "fullListing")
         SavedValues.uint8(savedGrown.variable("outcome"), "outcome")
@@ -443,12 +463,14 @@ class SyncClientStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: SyncClientState): Boolean = when (state) {
         is SyncClientState.Client -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -465,16 +487,29 @@ class SyncClientStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<SyncClientState, List<SyncClientState>> = mapOf(
-            SyncClientState.Client to listOf(SyncClientState.Idle, SyncClientState.Deleting, SyncClientState.Uploading, SyncClientState.Listing),
-        )
+        val childStates: Map<SyncClientState, List<SyncClientState>> = LinkedHashMap<SyncClientState, List<SyncClientState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<SyncClientState, List<EntryTarget<SyncClientState, HistoryId>>> = mapOf(
-            SyncClientState.Client to listOf(StateTarget(SyncClientState.Idle)),
-        )
+        private fun childStatesPart0(table: MutableMap<SyncClientState, List<SyncClientState>>) {
+            table[SyncClientState.Client] = listOf(SyncClientState.Idle, SyncClientState.Deleting, SyncClientState.Uploading, SyncClientState.Listing)
+        }
+
+
+        val initialTargets: Map<SyncClientState, List<EntryTarget<SyncClientState, HistoryId>>> = LinkedHashMap<SyncClientState, List<EntryTarget<SyncClientState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<SyncClientState, List<EntryTarget<SyncClientState, HistoryId>>>) {
+            table[SyncClientState.Client] = listOf(StateTarget(SyncClientState.Idle))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<SyncClientState, HistoryId>> =
             listOf(StateTarget(SyncClientState.Client))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: client's transition 0, as the microstep reads it.
         val transitionClientAt0 = EnabledTransition<SyncClientState, HistoryId>(
@@ -612,6 +647,7 @@ class SyncClientStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): SyncClientState? = when (stateId) {
         "client" -> SyncClientState.Client
@@ -622,6 +658,7 @@ class SyncClientStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: SyncClientState): String = when (state) {
         is SyncClientState.Client -> "client"
@@ -630,6 +667,7 @@ class SyncClientStateMachine(
         is SyncClientState.Listing -> "listing"
         is SyncClientState.Uploading -> "uploading"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: SyncClientState): Int = when (state) {
@@ -640,6 +678,7 @@ class SyncClientStateMachine(
         is SyncClientState.Uploading -> 3
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SyncClientEvent? = when (name) {
         "error.execution" -> SyncClientEvent.Error.Execution
@@ -649,6 +688,7 @@ class SyncClientStateMachine(
         "sync.start" -> SyncClientEvent.Sync.Start
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SyncClientEvent): String? = when (event) {
@@ -663,123 +703,203 @@ class SyncClientStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: SyncClientState,
-        event: SyncClientEvent?
-    ): EnabledTransition<SyncClientState, HistoryId>? = when (state) {
-        is SyncClientState.Client -> when {
-            event is SyncClientEvent.Error.Execution -> transitionClientAt0
-            else -> null
-        }
-        is SyncClientState.Deleting -> when {
-            event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && ((try { com.sce.forge.runtime.SceChecked.take(syncDeleteOutcome(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)) == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 0'>: an integer operation overflowed or failed"); false })) -> transitionDeletingAt0
-            event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && ((try { com.sce.forge.runtime.SceChecked.take(syncDeleteOutcome(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)) == 1.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 1'>: an integer operation overflowed or failed"); false })) -> transitionDeletingAt1
-            event is SyncClientEvent.Sync.Response -> transitionDeletingAt2
-            event is SyncClientEvent.Sync.Phase.Done -> transitionDeletingAt3
-            else -> null
-        }
-        is SyncClientState.Idle -> when {
-            event is SyncClientEvent.Sync.Start -> transitionIdleAt0
-            else -> null
-        }
-        is SyncClientState.Listing -> when {
-            event is SyncClientEvent.Sync.Page && pendingSyncPagePayload != null && (pendingSyncPagePayload!!.more) -> transitionListingAt0
-            event is SyncClientEvent.Sync.Page -> transitionListingAt1
-            event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && (vByToken && pendingSyncResponsePayload!!.kind == 4.toUByte() && pendingSyncResponsePayload!!.davError && (pendingSyncResponsePayload!!.status == 403 || pendingSyncResponsePayload!!.status == 409)) -> transitionListingAt2
-            event is SyncClientEvent.Sync.Response -> transitionListingAt3
-            else -> null
-        }
-        is SyncClientState.Uploading -> when {
-            event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && (pendingSyncResponsePayload!!.kind != 4.toUByte()) -> transitionUploadingAt0
-            event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && ((try { com.sce.forge.runtime.SceChecked.take(syncUploadOutcome(pendingSyncResponsePayload!!.create, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.davError)) == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0'>: an integer operation overflowed or failed"); false })) -> transitionUploadingAt1
-            event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && ((try { com.sce.forge.runtime.SceChecked.take(syncUploadOutcome(pendingSyncResponsePayload!!.create, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.davError)) == 1.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1'>: an integer operation overflowed or failed"); false })) -> transitionUploadingAt2
-            event is SyncClientEvent.Sync.Response -> transitionUploadingAt3
-            event is SyncClientEvent.Sync.Phase.Done -> transitionUploadingAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: SyncClientState, event: SyncClientEvent?): EnabledTransition<SyncClientState, HistoryId>? = when (state) {
+        is SyncClientState.Client -> firstEnabledTransitionOfClient(state, event)
+        is SyncClientState.Deleting -> firstEnabledTransitionOfDeleting(state, event)
+        is SyncClientState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is SyncClientState.Listing -> firstEnabledTransitionOfListing(state, event)
+        is SyncClientState.Uploading -> firstEnabledTransitionOfUploading(state, event)
     }
+
+
+    // client's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfClient(state: SyncClientState, event: SyncClientEvent?): EnabledTransition<SyncClientState, HistoryId>? = when {
+        event is SyncClientEvent.Error.Execution -> TransitionsPart0.transitionClientAt0
+        else -> null
+    }
+
+
+    // deleting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfDeleting(state: SyncClientState, event: SyncClientEvent?): EnabledTransition<SyncClientState, HistoryId>? = when {
+        event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && ((try { com.sce.forge.runtime.SceChecked.take(syncDeleteOutcome(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)) == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 0'>: an integer operation overflowed or failed"); false })) -> TransitionsPart0.transitionDeletingAt0
+        event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && ((try { com.sce.forge.runtime.SceChecked.take(syncDeleteOutcome(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)) == 1.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 1'>: an integer operation overflowed or failed"); false })) -> TransitionsPart0.transitionDeletingAt1
+        event is SyncClientEvent.Sync.Response -> TransitionsPart0.transitionDeletingAt2
+        event is SyncClientEvent.Sync.Phase.Done -> TransitionsPart0.transitionDeletingAt3
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: SyncClientState, event: SyncClientEvent?): EnabledTransition<SyncClientState, HistoryId>? = when {
+        event is SyncClientEvent.Sync.Start -> TransitionsPart0.transitionIdleAt0
+        else -> null
+    }
+
+
+    // listing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfListing(state: SyncClientState, event: SyncClientEvent?): EnabledTransition<SyncClientState, HistoryId>? = when {
+        event is SyncClientEvent.Sync.Page && pendingSyncPagePayload != null && (pendingSyncPagePayload!!.more) -> TransitionsPart0.transitionListingAt0
+        event is SyncClientEvent.Sync.Page -> TransitionsPart0.transitionListingAt1
+        event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && (vByToken && pendingSyncResponsePayload!!.kind == 4.toUByte() && pendingSyncResponsePayload!!.davError && (pendingSyncResponsePayload!!.status == 403 || pendingSyncResponsePayload!!.status == 409)) -> TransitionsPart0.transitionListingAt2
+        event is SyncClientEvent.Sync.Response -> TransitionsPart0.transitionListingAt3
+        else -> null
+    }
+
+
+    // uploading's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfUploading(state: SyncClientState, event: SyncClientEvent?): EnabledTransition<SyncClientState, HistoryId>? = when {
+        event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && (pendingSyncResponsePayload!!.kind != 4.toUByte()) -> TransitionsPart0.transitionUploadingAt0
+        event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && ((try { com.sce.forge.runtime.SceChecked.take(syncUploadOutcome(pendingSyncResponsePayload!!.create, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.davError)) == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0'>: an integer operation overflowed or failed"); false })) -> TransitionsPart0.transitionUploadingAt1
+        event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && ((try { com.sce.forge.runtime.SceChecked.take(syncUploadOutcome(pendingSyncResponsePayload!!.create, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.davError)) == 1.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1'>: an integer operation overflowed or failed"); false })) -> TransitionsPart0.transitionUploadingAt2
+        event is SyncClientEvent.Sync.Response -> TransitionsPart0.transitionUploadingAt3
+        event is SyncClientEvent.Sync.Phase.Done -> TransitionsPart0.transitionUploadingAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: sync_client.scxml:35 :: _machine
     override fun onEntry(state: SyncClientState, isDefaultEntry: Boolean) {
         when (state) {
-            is SyncClientState.Client -> {
-                // SCE-MAP: sync_client.scxml:56 :: client :: _state_body
-            }
-            is SyncClientState.Deleting -> {
-                // SCE-MAP: sync_client.scxml:68 :: deleting :: _state_body
-            }
-            is SyncClientState.Idle -> {
-                // SCE-MAP: sync_client.scxml:57 :: idle :: _state_body
-            }
-            is SyncClientState.Listing -> {
-                // SCE-MAP: sync_client.scxml:116 :: listing :: _state_body
-            }
-            is SyncClientState.Uploading -> {
-                // SCE-MAP: sync_client.scxml:88 :: uploading :: _state_body
-            }
+            is SyncClientState.Client -> onEntryOfClient()
+            is SyncClientState.Deleting -> onEntryOfDeleting()
+            is SyncClientState.Idle -> onEntryOfIdle()
+            is SyncClientState.Listing -> onEntryOfListing()
+            is SyncClientState.Uploading -> onEntryOfUploading()
         }
+    }
+
+
+    private fun onEntryOfClient() {
+                // SCE-MAP: sync_client.scxml:56 :: client :: _state_body
+    }
+
+    private fun onEntryOfDeleting() {
+                // SCE-MAP: sync_client.scxml:68 :: deleting :: _state_body
+    }
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: sync_client.scxml:57 :: idle :: _state_body
+    }
+
+    private fun onEntryOfListing() {
+                // SCE-MAP: sync_client.scxml:116 :: listing :: _state_body
+    }
+
+    private fun onEntryOfUploading() {
+                // SCE-MAP: sync_client.scxml:88 :: uploading :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: sync_client.scxml:35 :: _machine
     override fun onExit(state: SyncClientState) {
         when (state) {
-            is SyncClientState.Client -> {
-                // SCE-MAP: sync_client.scxml:56 :: client :: _state_body
-            }
-            is SyncClientState.Deleting -> {
-                // SCE-MAP: sync_client.scxml:68 :: deleting :: _state_body
-            }
-            is SyncClientState.Idle -> {
-                // SCE-MAP: sync_client.scxml:57 :: idle :: _state_body
-            }
-            is SyncClientState.Listing -> {
-                // SCE-MAP: sync_client.scxml:116 :: listing :: _state_body
-            }
-            is SyncClientState.Uploading -> {
-                // SCE-MAP: sync_client.scxml:88 :: uploading :: _state_body
-            }
+            is SyncClientState.Client -> onExitOfClient()
+            is SyncClientState.Deleting -> onExitOfDeleting()
+            is SyncClientState.Idle -> onExitOfIdle()
+            is SyncClientState.Listing -> onExitOfListing()
+            is SyncClientState.Uploading -> onExitOfUploading()
         }
     }
+
+
+    private fun onExitOfClient() {
+                // SCE-MAP: sync_client.scxml:56 :: client :: _state_body
+    }
+
+    private fun onExitOfDeleting() {
+                // SCE-MAP: sync_client.scxml:68 :: deleting :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: sync_client.scxml:57 :: idle :: _state_body
+    }
+
+    private fun onExitOfListing() {
+                // SCE-MAP: sync_client.scxml:116 :: listing :: _state_body
+    }
+
+    private fun onExitOfUploading() {
+                // SCE-MAP: sync_client.scxml:88 :: uploading :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: sync_client.scxml:35 :: _machine
     override fun executeTransitionContent(source: SyncClientState, transitionIndex: Int) {
         when (source) {
-        is SyncClientState.Client -> when (transitionIndex) {
-            0 -> {
+            is SyncClientState.Client -> transitionContentOfClient(transitionIndex)
+            is SyncClientState.Deleting -> transitionContentOfDeleting(transitionIndex)
+            is SyncClientState.Idle -> transitionContentOfIdle(transitionIndex)
+            is SyncClientState.Listing -> transitionContentOfListing(transitionIndex)
+            is SyncClientState.Uploading -> transitionContentOfUploading(transitionIndex)
+        }
+    }
+
+
+    // The content of `client`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfClient(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfClientAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfClientAt0() {
                 // SCE-MAP: sync_client.scxml:141 :: client :: _transition_0
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `deleting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfDeleting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfDeletingAt0()
+            1 -> transitionContentOfDeletingAt1()
+            2 -> transitionContentOfDeletingAt2()
             else -> {}
         }
-        is SyncClientState.Deleting -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfDeletingAt0() {
                 // SCE-MAP: sync_client.scxml:69 :: deleting :: _transition_0
 
             if (try { vDeleted = com.sce.forge.runtime.SceChecked.add(vDeleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='deleted'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfDeletingAt1() {
                 // SCE-MAP: sync_client.scxml:75 :: deleting :: _transition_1
 
             vFullListing = true
 
             vByToken = false
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfDeletingAt2() {
                 // SCE-MAP: sync_client.scxml:80 :: deleting :: _transition_2
                 if (pendingSyncResponsePayload == null) {
                     return
@@ -792,11 +912,22 @@ class SyncClientStateMachine(
             if (try { vRetryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(vRetryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
             else -> {}
         }
-        is SyncClientState.Idle -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: sync_client.scxml:58 :: idle :: _transition_0
                 if (pendingSyncStartPayload == null) {
                     return
@@ -813,18 +944,33 @@ class SyncClientStateMachine(
             vDiscarded = 0.toUInt()
 
             vPages = 0.toUInt()
-            }
+    }
+
+    // The content of `listing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfListing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfListingAt0()
+            1 -> transitionContentOfListingAt1()
+            2 -> transitionContentOfListingAt2()
+            3 -> transitionContentOfListingAt3()
             else -> {}
         }
-        is SyncClientState.Listing -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfListingAt0() {
                 // SCE-MAP: sync_client.scxml:117 :: listing :: _transition_0
 
             if (try { vPages = com.sce.forge.runtime.SceChecked.add(vPages, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='pages'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfListingAt1() {
                 // SCE-MAP: sync_client.scxml:122 :: listing :: _transition_1
 
             if (try { vPages = com.sce.forge.runtime.SceChecked.add(vPages, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='pages'>: an integer operation overflowed or failed"); true }) {
@@ -832,13 +978,15 @@ class SyncClientStateMachine(
             }
 
             vFullListing = false
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfListingAt2() {
                 // SCE-MAP: sync_client.scxml:127 :: listing :: _transition_2
 
             vByToken = false
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfListingAt3() {
                 // SCE-MAP: sync_client.scxml:132 :: listing :: _transition_3
                 if (pendingSyncResponsePayload == null) {
                     return
@@ -851,11 +999,25 @@ class SyncClientStateMachine(
             if (try { vRetryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(vRetryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `uploading`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfUploading(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfUploadingAt0()
+            1 -> transitionContentOfUploadingAt1()
+            2 -> transitionContentOfUploadingAt2()
+            3 -> transitionContentOfUploadingAt3()
             else -> {}
         }
-        is SyncClientState.Uploading -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfUploadingAt0() {
                 // SCE-MAP: sync_client.scxml:91 :: uploading :: _transition_0
                 if (pendingSyncResponsePayload == null) {
                     return
@@ -868,15 +1030,17 @@ class SyncClientStateMachine(
             if (try { vRetryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(vRetryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfUploadingAt1() {
                 // SCE-MAP: sync_client.scxml:96 :: uploading :: _transition_1
 
             if (try { vUploaded = com.sce.forge.runtime.SceChecked.add(vUploaded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='uploaded'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfUploadingAt2() {
                 // SCE-MAP: sync_client.scxml:101 :: uploading :: _transition_2
 
             if (try { vDiscarded = com.sce.forge.runtime.SceChecked.add(vDiscarded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='discarded'>: an integer operation overflowed or failed"); true }) {
@@ -886,8 +1050,9 @@ class SyncClientStateMachine(
             vFullListing = true
 
             vByToken = false
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfUploadingAt3() {
                 // SCE-MAP: sync_client.scxml:108 :: uploading :: _transition_3
                 if (pendingSyncResponsePayload == null) {
                     return
@@ -900,9 +1065,5 @@ class SyncClientStateMachine(
             if (try { vRetryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(vRetryAt, 4.toUByte(), pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

@@ -75,6 +75,10 @@ class StaticInvokeParamsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.base?.let { vBase = it }
         params.enabled?.let { vEnabled = it }
         params.completed?.let { vCompleted = it }
@@ -150,15 +154,17 @@ class StaticInvokeParamsStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "base" to SavedValues.of(vBase),
-            "enabled" to SavedValues.of(vEnabled),
-            "completed" to SavedValues.of(vCompleted),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "base" to SavedValues.of(vBase)
+        variables += "enabled" to SavedValues.of(vEnabled)
+        variables += "completed" to SavedValues.of(vCompleted)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -183,13 +189,23 @@ class StaticInvokeParamsStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("base"), "base")
         val saved2 = SavedValues.bool(savedGrown.variable("enabled"), "enabled")
         val saved3 = SavedValues.uint32(savedGrown.variable("completed"), "completed")
-        vBase = saved1
-        vEnabled = saved2
-        vCompleted = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vBase = saved1
+            vEnabled = saved2
+            vCompleted = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -202,6 +218,10 @@ class StaticInvokeParamsStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("base"), "base")
         SavedValues.bool(savedGrown.variable("enabled"), "enabled")
         SavedValues.uint32(savedGrown.variable("completed"), "completed")
@@ -246,6 +266,9 @@ class StaticInvokeParamsStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticInvokeParamsState, HistoryId>> =
             listOf(StateTarget(StaticInvokeParamsState.Working))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: plain's transition 0, as the microstep reads it.
         val transitionPlainAt0 = EnabledTransition<StaticInvokeParamsState, HistoryId>(
@@ -284,6 +307,7 @@ class StaticInvokeParamsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticInvokeParamsState? = when (stateId) {
         "plain" -> StaticInvokeParamsState.Plain
@@ -291,17 +315,20 @@ class StaticInvokeParamsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticInvokeParamsState): String = when (state) {
         is StaticInvokeParamsState.Plain -> "plain"
         is StaticInvokeParamsState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticInvokeParamsState): Int = when (state) {
         is StaticInvokeParamsState.Plain -> 1
         is StaticInvokeParamsState.Working -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticInvokeParamsEvent? = when (name) {
@@ -313,6 +340,7 @@ class StaticInvokeParamsStateMachine(
         "error.execution" -> StaticInvokeParamsEvent.Error.Execution
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticInvokeParamsEvent): String? = when (event) {
@@ -328,40 +356,56 @@ class StaticInvokeParamsStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticInvokeParamsState,
-        event: StaticInvokeParamsEvent?
-    ): EnabledTransition<StaticInvokeParamsState, HistoryId>? = when (state) {
-        is StaticInvokeParamsState.Plain -> when {
-            event is StaticInvokeParamsEvent.Done.Invoke.Control -> transitionPlainAt0
-            event is StaticInvokeParamsEvent.Bump -> transitionPlainAt1
-            event is StaticInvokeParamsEvent.Done.Invoke.Watcher -> transitionPlainAt2
-            else -> null
-        }
-        is StaticInvokeParamsState.Working -> when {
-            event is StaticInvokeParamsEvent.Done.Invoke.Worker -> transitionWorkingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticInvokeParamsState, event: StaticInvokeParamsEvent?): EnabledTransition<StaticInvokeParamsState, HistoryId>? = when (state) {
+        is StaticInvokeParamsState.Plain -> firstEnabledTransitionOfPlain(state, event)
+        is StaticInvokeParamsState.Working -> firstEnabledTransitionOfWorking(state, event)
     }
+
+
+    // plain's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPlain(state: StaticInvokeParamsState, event: StaticInvokeParamsEvent?): EnabledTransition<StaticInvokeParamsState, HistoryId>? = when {
+        event is StaticInvokeParamsEvent.Done.Invoke.Control -> TransitionsPart0.transitionPlainAt0
+        event is StaticInvokeParamsEvent.Bump -> TransitionsPart0.transitionPlainAt1
+        event is StaticInvokeParamsEvent.Done.Invoke.Watcher -> TransitionsPart0.transitionPlainAt2
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: StaticInvokeParamsState, event: StaticInvokeParamsEvent?): EnabledTransition<StaticInvokeParamsState, HistoryId>? = when {
+        event is StaticInvokeParamsEvent.Done.Invoke.Worker -> TransitionsPart0.transitionWorkingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_invoke_params.scxml:33 :: _machine
     override fun onEntry(state: StaticInvokeParamsState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticInvokeParamsState.Plain -> {
+            is StaticInvokeParamsState.Plain -> onEntryOfPlain()
+            is StaticInvokeParamsState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfPlain() {
                 // SCE-MAP: static_invoke_params.scxml:64 :: plain :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("control", state)
+                deferStaticInvoke("control", StaticInvokeParamsState.Plain)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("watcher", state)
-            }
-            is StaticInvokeParamsState.Working -> {
+                deferStaticInvoke("watcher", StaticInvokeParamsState.Plain)
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: static_invoke_params.scxml:40 :: working :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -371,9 +415,7 @@ class StaticInvokeParamsStateMachine(
             }
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("worker", state)
-            }
-        }
+                deferStaticInvoke("worker", StaticInvokeParamsState.Working)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -386,9 +428,22 @@ class StaticInvokeParamsStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: StaticInvokeParamsState) {
         when (invokeId) {
-            "control" -> run {
+            "control" -> startInvokeOfPlainAt0(state)
+            "watcher" -> startInvokeOfPlainAt1(state)
+            "worker" -> startInvokeOfWorkingAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfPlainAt0(state: StaticInvokeParamsState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "plain.${nextInvokeStart("control")}.control"
@@ -400,7 +455,10 @@ class StaticInvokeParamsStateMachine(
                     startInvoke("control", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Control, "", generatedInvokeId, "", "static_invoke_params__sce_synth_invoke__control", "control")
                 }
             }
-            "watcher" -> run {
+    }
+
+    private fun startInvokeOfPlainAt1(state: StaticInvokeParamsState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "plain.${nextInvokeStart("watcher")}.watcher"
@@ -416,7 +474,10 @@ class StaticInvokeParamsStateMachine(
                     startInvoke("watcher", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Watcher, "", generatedInvokeId, "", "static_invoke_params__sce_synth_invoke__watcher", "watcher")
                 }
             }
-            "worker" -> run {
+    }
+
+    private fun startInvokeOfWorkingAt0(state: StaticInvokeParamsState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "working.${nextInvokeStart("worker")}.worker"
@@ -433,8 +494,6 @@ class StaticInvokeParamsStateMachine(
                     startInvoke("worker", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Worker, "", generatedInvokeId, "", "static_invoke_params__sce_synth_invoke__worker", "worker")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -443,8 +502,20 @@ class StaticInvokeParamsStateMachine(
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
     override fun buildSavedChild(child: SavedChild): ResumedChild<StaticInvokeParamsEvent> = when (child.id) {
-        "control" -> if (child.document == "static_invoke_params__sce_synth_invoke__control") {
+        "control" -> savedChildOfPlainAt0(child)
+        "watcher" -> savedChildOfPlainAt1(child)
+        "worker" -> savedChildOfWorkingAt0(child)
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
+    }
+
+
+    private fun savedChildOfPlainAt0(child: SavedChild): ResumedChild<StaticInvokeParamsEvent> =
+        if (child.document == "static_invoke_params__sce_synth_invoke__control") {
             ResumedChild(
                 StaticInvokeParamsSceSynthInvokeControlStateMachine(),
                 false, StaticInvokeParamsEvent.Done.Invoke.Control, "", "", "control",
@@ -452,7 +523,9 @@ class StaticInvokeParamsStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "watcher" -> if (child.document == "static_invoke_params__sce_synth_invoke__watcher") {
+
+    private fun savedChildOfPlainAt1(child: SavedChild): ResumedChild<StaticInvokeParamsEvent> =
+        if (child.document == "static_invoke_params__sce_synth_invoke__watcher") {
             ResumedChild(
                 StaticInvokeParamsSceSynthInvokeWatcherStateMachine(),
                 false, StaticInvokeParamsEvent.Done.Invoke.Watcher, "", "", "watcher",
@@ -460,7 +533,9 @@ class StaticInvokeParamsStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        "worker" -> if (child.document == "static_invoke_params__sce_synth_invoke__worker") {
+
+    private fun savedChildOfWorkingAt0(child: SavedChild): ResumedChild<StaticInvokeParamsEvent> =
+        if (child.document == "static_invoke_params__sce_synth_invoke__worker") {
             ResumedChild(
                 StaticInvokeParamsSceSynthInvokeWorkerStateMachine(),
                 false, StaticInvokeParamsEvent.Done.Invoke.Worker, "", "", "worker",
@@ -468,71 +543,104 @@ class StaticInvokeParamsStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_invoke_params.scxml:33 :: _machine
     override fun onExit(state: StaticInvokeParamsState) {
         when (state) {
-            is StaticInvokeParamsState.Plain -> {
+            is StaticInvokeParamsState.Plain -> onExitOfPlain()
+            is StaticInvokeParamsState.Working -> onExitOfWorking()
+        }
+    }
+
+
+    private fun onExitOfPlain() {
                 // SCE-MAP: static_invoke_params.scxml:64 :: plain :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticInvokeParamsState.Plain)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("control")
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("watcher")
-            }
-            is StaticInvokeParamsState.Working -> {
+    }
+
+    private fun onExitOfWorking() {
                 // SCE-MAP: static_invoke_params.scxml:40 :: working :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticInvokeParamsState.Working)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("worker")
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_invoke_params.scxml:33 :: _machine
     override fun executeTransitionContent(source: StaticInvokeParamsState, transitionIndex: Int) {
         when (source) {
-        is StaticInvokeParamsState.Plain -> when (transitionIndex) {
-            0 -> {
+            is StaticInvokeParamsState.Plain -> transitionContentOfPlain(transitionIndex)
+            is StaticInvokeParamsState.Working -> transitionContentOfWorking(transitionIndex)
+        }
+    }
+
+
+    // The content of `plain`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPlain(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPlainAt0()
+            1 -> transitionContentOfPlainAt1()
+            2 -> transitionContentOfPlainAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfPlainAt0() {
                 // SCE-MAP: static_invoke_params.scxml:80 :: plain :: _transition_0
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfPlainAt1() {
                 // SCE-MAP: static_invoke_params.scxml:98 :: plain :: _transition_1
 
             if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfPlainAt2() {
                 // SCE-MAP: static_invoke_params.scxml:101 :: plain :: _transition_2
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWorkingAt0()
             else -> {}
         }
-        is StaticInvokeParamsState.Working -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: static_invoke_params.scxml:60 :: working :: _transition_0
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

@@ -91,6 +91,7 @@ class DiscardedEventIsObservableStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<DiscardedEventIsObservableState, HistoryId>>
@@ -99,6 +100,9 @@ class DiscardedEventIsObservableStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<DiscardedEventIsObservableState, HistoryId>> =
             listOf(StateTarget(DiscardedEventIsObservableState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: busy's transition 0, as the microstep reads it.
         val transitionBusyAt0 = EnabledTransition<DiscardedEventIsObservableState, HistoryId>(
@@ -137,6 +141,7 @@ class DiscardedEventIsObservableStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): DiscardedEventIsObservableState? = when (stateId) {
         "busy" -> DiscardedEventIsObservableState.Busy
@@ -145,6 +150,7 @@ class DiscardedEventIsObservableStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: DiscardedEventIsObservableState): String = when (state) {
         is DiscardedEventIsObservableState.Busy -> "busy"
@@ -152,12 +158,14 @@ class DiscardedEventIsObservableStateMachine(
         is DiscardedEventIsObservableState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: DiscardedEventIsObservableState): Int = when (state) {
         is DiscardedEventIsObservableState.Busy -> 1
         is DiscardedEventIsObservableState.Done -> 2
         is DiscardedEventIsObservableState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): DiscardedEventIsObservableEvent? = when (name) {
@@ -169,6 +177,7 @@ class DiscardedEventIsObservableStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: DiscardedEventIsObservableEvent): String? = when (event) {
         is DiscardedEventIsObservableEvent.Error.Execution -> "error.execution"
@@ -177,6 +186,7 @@ class DiscardedEventIsObservableStateMachine(
         is DiscardedEventIsObservableEvent.Poke -> "poke"
         is DiscardedEventIsObservableEvent.Settle -> "settle"
     }
+
 
 
 
@@ -206,20 +216,7 @@ class DiscardedEventIsObservableStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'pokes' with expr
-        try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "pokes", initResult_pokes)
-        } catch (e: Exception) {
-            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
-        }
-        // W3C SCXML 5.3: Initialize variable 'nudges' with expr
-        try {
-            val initResult_nudges = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "nudges", initResult_nudges)
-        } catch (e: Exception) {
-            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<data id='nudges'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -236,6 +233,24 @@ class DiscardedEventIsObservableStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'pokes' with expr
+        try {
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "pokes", initResult_pokes)
+        } catch (e: Exception) {
+            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'nudges' with expr
+        try {
+            val initResult_nudges = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "nudges", initResult_nudges)
+        } catch (e: Exception) {
+            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<data id='nudges'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -425,83 +440,121 @@ class DiscardedEventIsObservableStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: DiscardedEventIsObservableState,
-        event: DiscardedEventIsObservableEvent?
-    ): EnabledTransition<DiscardedEventIsObservableState, HistoryId>? = when (state) {
-        is DiscardedEventIsObservableState.Busy -> when {
-            event is DiscardedEventIsObservableEvent.Settle -> transitionBusyAt0
-            else -> null
-        }
-        is DiscardedEventIsObservableState.Idle -> when {
-            event is DiscardedEventIsObservableEvent.Poke -> transitionIdleAt0
-            event is DiscardedEventIsObservableEvent.Nudge -> transitionIdleAt1
-            event is DiscardedEventIsObservableEvent.Go -> transitionIdleAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: DiscardedEventIsObservableState, event: DiscardedEventIsObservableEvent?): EnabledTransition<DiscardedEventIsObservableState, HistoryId>? = when (state) {
+        is DiscardedEventIsObservableState.Busy -> firstEnabledTransitionOfBusy(state, event)
+        is DiscardedEventIsObservableState.Idle -> firstEnabledTransitionOfIdle(state, event)
         else -> null
     }
+
+
+    // busy's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBusy(state: DiscardedEventIsObservableState, event: DiscardedEventIsObservableEvent?): EnabledTransition<DiscardedEventIsObservableState, HistoryId>? = when {
+        event is DiscardedEventIsObservableEvent.Settle -> TransitionsPart0.transitionBusyAt0
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: DiscardedEventIsObservableState, event: DiscardedEventIsObservableEvent?): EnabledTransition<DiscardedEventIsObservableState, HistoryId>? = when {
+        event is DiscardedEventIsObservableEvent.Poke -> TransitionsPart0.transitionIdleAt0
+        event is DiscardedEventIsObservableEvent.Nudge -> TransitionsPart0.transitionIdleAt1
+        event is DiscardedEventIsObservableEvent.Go -> TransitionsPart0.transitionIdleAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: discarded_event_is_observable.scxml:30 :: _machine
     override fun onEntry(state: DiscardedEventIsObservableState, isDefaultEntry: Boolean) {
         when (state) {
-            is DiscardedEventIsObservableState.Busy -> {
+            is DiscardedEventIsObservableState.Busy -> onEntryOfBusy()
+            is DiscardedEventIsObservableState.Done -> onEntryOfDone()
+            is DiscardedEventIsObservableState.Idle -> onEntryOfIdle()
+        }
+    }
+
+
+    private fun onEntryOfBusy() {
                 // SCE-MAP: discarded_event_is_observable.scxml:46 :: busy :: _state_body
-            }
-            is DiscardedEventIsObservableState.Done -> {
+    }
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: discarded_event_is_observable.scxml:49 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is DiscardedEventIsObservableState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: discarded_event_is_observable.scxml:37 :: idle :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: discarded_event_is_observable.scxml:30 :: _machine
     override fun onExit(state: DiscardedEventIsObservableState) {
         when (state) {
-            is DiscardedEventIsObservableState.Busy -> {
-                // SCE-MAP: discarded_event_is_observable.scxml:46 :: busy :: _state_body
-            }
-            is DiscardedEventIsObservableState.Done -> {
-                // SCE-MAP: discarded_event_is_observable.scxml:49 :: done :: _state_body
-            }
-            is DiscardedEventIsObservableState.Idle -> {
-                // SCE-MAP: discarded_event_is_observable.scxml:37 :: idle :: _state_body
-            }
+            is DiscardedEventIsObservableState.Busy -> onExitOfBusy()
+            is DiscardedEventIsObservableState.Done -> onExitOfDone()
+            is DiscardedEventIsObservableState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfBusy() {
+                // SCE-MAP: discarded_event_is_observable.scxml:46 :: busy :: _state_body
+    }
+
+    private fun onExitOfDone() {
+                // SCE-MAP: discarded_event_is_observable.scxml:49 :: done :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: discarded_event_is_observable.scxml:37 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: discarded_event_is_observable.scxml:30 :: _machine
     override fun executeTransitionContent(source: DiscardedEventIsObservableState, transitionIndex: Int) {
         when (source) {
-        is DiscardedEventIsObservableState.Idle -> when (transitionIndex) {
-            0 -> {
+            is DiscardedEventIsObservableState.Idle -> transitionContentOfIdle(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: discarded_event_is_observable.scxml:38 :: idle :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: discarded_event_is_observable.scxml:41 :: idle :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("nudges", "nudges"), com.sce.runtime.ScriptSource.lua("_scxml_add(nudges, 1)", "nudges + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

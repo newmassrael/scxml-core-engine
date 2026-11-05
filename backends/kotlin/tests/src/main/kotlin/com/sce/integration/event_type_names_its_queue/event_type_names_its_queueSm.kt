@@ -101,6 +101,7 @@ class EventTypeNamesItsQueueStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<EventTypeNamesItsQueueState, HistoryId>>
@@ -109,6 +110,9 @@ class EventTypeNamesItsQueueStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<EventTypeNamesItsQueueState, HistoryId>> =
             listOf(StateTarget(EventTypeNamesItsQueueState.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<EventTypeNamesItsQueueState, HistoryId>(
@@ -138,6 +142,7 @@ class EventTypeNamesItsQueueStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EventTypeNamesItsQueueState? = when (stateId) {
         "done" -> EventTypeNamesItsQueueState.Done
@@ -145,17 +150,20 @@ class EventTypeNamesItsQueueStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: EventTypeNamesItsQueueState): String = when (state) {
         is EventTypeNamesItsQueueState.Done -> "done"
         is EventTypeNamesItsQueueState.S0 -> "s0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: EventTypeNamesItsQueueState): Int = when (state) {
         is EventTypeNamesItsQueueState.Done -> 1
         is EventTypeNamesItsQueueState.S0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EventTypeNamesItsQueueEvent? = when (name) {
@@ -166,6 +174,7 @@ class EventTypeNamesItsQueueStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EventTypeNamesItsQueueEvent): String? = when (event) {
         is EventTypeNamesItsQueueEvent.Error.Execution -> "error.execution"
@@ -173,6 +182,7 @@ class EventTypeNamesItsQueueStateMachine(
         is EventTypeNamesItsQueueEvent.Int -> "int"
         is EventTypeNamesItsQueueEvent.ViaInternalSend -> "viaInternalSend"
     }
+
 
 
 
@@ -202,6 +212,27 @@ class EventTypeNamesItsQueueStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'intCode' with expr
         try {
             val initResult_intCode = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -223,22 +254,6 @@ class EventTypeNamesItsQueueStateMachine(
         } catch (e: Exception) {
             raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<data id='extCode'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -428,30 +443,41 @@ class EventTypeNamesItsQueueStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: EventTypeNamesItsQueueState,
-        event: EventTypeNamesItsQueueEvent?
-    ): EnabledTransition<EventTypeNamesItsQueueState, HistoryId>? = when (state) {
-        is EventTypeNamesItsQueueState.S0 -> when {
-            event is EventTypeNamesItsQueueEvent.Int -> transitionS0At0
-            event is EventTypeNamesItsQueueEvent.ViaInternalSend -> transitionS0At1
-            event is EventTypeNamesItsQueueEvent.Ext -> transitionS0At2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: EventTypeNamesItsQueueState, event: EventTypeNamesItsQueueEvent?): EnabledTransition<EventTypeNamesItsQueueState, HistoryId>? = when (state) {
+        is EventTypeNamesItsQueueState.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: EventTypeNamesItsQueueState, event: EventTypeNamesItsQueueEvent?): EnabledTransition<EventTypeNamesItsQueueState, HistoryId>? = when {
+        event is EventTypeNamesItsQueueEvent.Int -> TransitionsPart0.transitionS0At0
+        event is EventTypeNamesItsQueueEvent.ViaInternalSend -> TransitionsPart0.transitionS0At1
+        event is EventTypeNamesItsQueueEvent.Ext -> TransitionsPart0.transitionS0At2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: event_type_names_its_queue.scxml:29 :: _machine
     override fun onEntry(state: EventTypeNamesItsQueueState, isDefaultEntry: Boolean) {
         when (state) {
-            is EventTypeNamesItsQueueState.Done -> {
+            is EventTypeNamesItsQueueState.Done -> onEntryOfDone()
+            is EventTypeNamesItsQueueState.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: event_type_names_its_queue.scxml:79 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventTypeNamesItsQueueState.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: event_type_names_its_queue.scxml:39 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -495,30 +521,54 @@ class EventTypeNamesItsQueueStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: event_type_names_its_queue.scxml:29 :: _machine
     override fun onExit(state: EventTypeNamesItsQueueState) {
         when (state) {
-            is EventTypeNamesItsQueueState.Done -> {
-                // SCE-MAP: event_type_names_its_queue.scxml:79 :: done :: _state_body
-            }
-            is EventTypeNamesItsQueueState.S0 -> {
-                // SCE-MAP: event_type_names_its_queue.scxml:39 :: s0 :: _state_body
-            }
+            is EventTypeNamesItsQueueState.Done -> onExitOfDone()
+            is EventTypeNamesItsQueueState.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: event_type_names_its_queue.scxml:79 :: done :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: event_type_names_its_queue.scxml:39 :: s0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: event_type_names_its_queue.scxml:29 :: _machine
     override fun executeTransitionContent(source: EventTypeNamesItsQueueState, transitionIndex: Int) {
         when (source) {
-        is EventTypeNamesItsQueueState.S0 -> when (transitionIndex) {
-            0 -> {
+            is EventTypeNamesItsQueueState.S0 -> transitionContentOfS0(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
+            1 -> transitionContentOfS0At1()
+            2 -> transitionContentOfS0At2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: event_type_names_its_queue.scxml:48 :: s0 :: _transition_0
 
 
@@ -545,8 +595,9 @@ class EventTypeNamesItsQueueStateMachine(
             if (ifCondFailed1) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfS0At1() {
                 // SCE-MAP: event_type_names_its_queue.scxml:58 :: s0 :: _transition_1
 
 
@@ -573,8 +624,9 @@ class EventTypeNamesItsQueueStateMachine(
             if (ifCondFailed2) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfS0At2() {
                 // SCE-MAP: event_type_names_its_queue.scxml:68 :: s0 :: _transition_2
 
 
@@ -601,10 +653,5 @@ class EventTypeNamesItsQueueStateMachine(
             if (ifCondFailed3) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

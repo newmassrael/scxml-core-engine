@@ -65,6 +65,10 @@ class StaticTimersStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.trace?.let { vTrace = it }
     }
 
@@ -138,13 +142,15 @@ class StaticTimersStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "trace" to SavedValues.of(vTrace),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "trace" to SavedValues.of(vTrace)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -169,9 +175,19 @@ class StaticTimersStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(savedGrown.variable("trace"), "trace")
-        vTrace = saved1
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
         enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
+        val saved1 = SavedValues.uint32(savedGrown.variable("trace"), "trace")
+        return {
+            vTrace = saved1
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -184,6 +200,10 @@ class StaticTimersStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("trace"), "trace")
     }
 
@@ -212,6 +232,7 @@ class StaticTimersStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticTimersState, HistoryId>>
@@ -220,6 +241,9 @@ class StaticTimersStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticTimersState, HistoryId>> =
             listOf(StateTarget(StaticTimersState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StaticTimersState, HistoryId>(
@@ -267,6 +291,7 @@ class StaticTimersStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticTimersState? = when (stateId) {
         "done" -> StaticTimersState.Done
@@ -274,17 +299,20 @@ class StaticTimersStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticTimersState): String = when (state) {
         is StaticTimersState.Done -> "done"
         is StaticTimersState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticTimersState): Int = when (state) {
         is StaticTimersState.Done -> 1
         is StaticTimersState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticTimersEvent? = when (name) {
@@ -296,6 +324,7 @@ class StaticTimersStateMachine(
         "timeout" -> StaticTimersEvent.Timeout
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticTimersEvent): String? = when (event) {
@@ -311,37 +340,49 @@ class StaticTimersStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticTimersState,
-        event: StaticTimersEvent?
-    ): EnabledTransition<StaticTimersState, HistoryId>? = when (state) {
-        is StaticTimersState.Waiting -> when {
-            event is StaticTimersEvent.Inner -> transitionWaitingAt0
-            event is StaticTimersEvent.Beat -> transitionWaitingAt1
-            event is StaticTimersEvent.Echo -> transitionWaitingAt2
-            event is StaticTimersEvent.Timeout -> transitionWaitingAt3
-            event is StaticTimersEvent.Stop -> transitionWaitingAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticTimersState, event: StaticTimersEvent?): EnabledTransition<StaticTimersState, HistoryId>? = when (state) {
+        is StaticTimersState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticTimersState, event: StaticTimersEvent?): EnabledTransition<StaticTimersState, HistoryId>? = when {
+        event is StaticTimersEvent.Inner -> TransitionsPart0.transitionWaitingAt0
+        event is StaticTimersEvent.Beat -> TransitionsPart0.transitionWaitingAt1
+        event is StaticTimersEvent.Echo -> TransitionsPart0.transitionWaitingAt2
+        event is StaticTimersEvent.Timeout -> TransitionsPart0.transitionWaitingAt3
+        event is StaticTimersEvent.Stop -> TransitionsPart0.transitionWaitingAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_timers.scxml:22 :: _machine
     override fun onEntry(state: StaticTimersState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticTimersState.Done -> {
+            is StaticTimersState.Done -> onEntryOfDone()
+            is StaticTimersState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: static_timers.scxml:50 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticTimersState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: static_timers.scxml:27 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -397,66 +438,91 @@ class StaticTimersStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_timers.scxml:22 :: _machine
     override fun onExit(state: StaticTimersState) {
         when (state) {
-            is StaticTimersState.Done -> {
-                // SCE-MAP: static_timers.scxml:50 :: done :: _state_body
-            }
-            is StaticTimersState.Waiting -> {
-                // SCE-MAP: static_timers.scxml:27 :: waiting :: _state_body
-            }
+            is StaticTimersState.Done -> onExitOfDone()
+            is StaticTimersState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: static_timers.scxml:50 :: done :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: static_timers.scxml:27 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_timers.scxml:22 :: _machine
     override fun executeTransitionContent(source: StaticTimersState, transitionIndex: Int) {
         when (source) {
-        is StaticTimersState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is StaticTimersState.Waiting -> transitionContentOfWaiting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            1 -> transitionContentOfWaitingAt1()
+            2 -> transitionContentOfWaitingAt2()
+            3 -> transitionContentOfWaitingAt3()
+            4 -> transitionContentOfWaitingAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_timers.scxml:34 :: waiting :: _transition_0
 
             if (try { vTrace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vTrace, 10.toUInt()), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: static_timers.scxml:37 :: waiting :: _transition_1
 
             if (try { vTrace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vTrace, 10.toUInt()), 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfWaitingAt2() {
                 // SCE-MAP: static_timers.scxml:40 :: waiting :: _transition_2
 
             if (try { vTrace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vTrace, 10.toUInt()), 4.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfWaitingAt3() {
                 // SCE-MAP: static_timers.scxml:43 :: waiting :: _transition_3
 
             if (try { vTrace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vTrace, 10.toUInt()), 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfWaitingAt4() {
                 // SCE-MAP: static_timers.scxml:46 :: waiting :: _transition_4
 
 
             cancelSend("timer")
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

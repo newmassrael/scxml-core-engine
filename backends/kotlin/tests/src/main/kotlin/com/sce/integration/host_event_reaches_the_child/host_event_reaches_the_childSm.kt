@@ -66,6 +66,7 @@ class HostEventReachesTheChildStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: HostEventReachesTheChildState): Boolean = when (state) {
@@ -73,11 +74,14 @@ class HostEventReachesTheChildStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: HostEventReachesTheChildState): Boolean = when (state) {
-        is HostEventReachesTheChildState.Fail, is HostEventReachesTheChildState.Pass -> true
+        is HostEventReachesTheChildState.Fail -> true
+        is HostEventReachesTheChildState.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -94,16 +98,29 @@ class HostEventReachesTheChildStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<HostEventReachesTheChildState, List<HostEventReachesTheChildState>> = mapOf(
-            HostEventReachesTheChildState.Phase to listOf(HostEventReachesTheChildState.Waiting, HostEventReachesTheChildState.Armed),
-        )
+        val childStates: Map<HostEventReachesTheChildState, List<HostEventReachesTheChildState>> = LinkedHashMap<HostEventReachesTheChildState, List<HostEventReachesTheChildState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<HostEventReachesTheChildState, List<EntryTarget<HostEventReachesTheChildState, HistoryId>>> = mapOf(
-            HostEventReachesTheChildState.Phase to listOf(StateTarget(HostEventReachesTheChildState.Waiting)),
-        )
+        private fun childStatesPart0(table: MutableMap<HostEventReachesTheChildState, List<HostEventReachesTheChildState>>) {
+            table[HostEventReachesTheChildState.Phase] = listOf(HostEventReachesTheChildState.Waiting, HostEventReachesTheChildState.Armed)
+        }
+
+
+        val initialTargets: Map<HostEventReachesTheChildState, List<EntryTarget<HostEventReachesTheChildState, HistoryId>>> = LinkedHashMap<HostEventReachesTheChildState, List<EntryTarget<HostEventReachesTheChildState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<HostEventReachesTheChildState, List<EntryTarget<HostEventReachesTheChildState, HistoryId>>>) {
+            table[HostEventReachesTheChildState.Phase] = listOf(StateTarget(HostEventReachesTheChildState.Waiting))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<HostEventReachesTheChildState, HistoryId>> =
             listOf(StateTarget(HostEventReachesTheChildState.Phase))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: armed's transition 0, as the microstep reads it.
         val transitionArmedAt0 = EnabledTransition<HostEventReachesTheChildState, HistoryId>(
@@ -142,6 +159,7 @@ class HostEventReachesTheChildStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): HostEventReachesTheChildState? = when (stateId) {
         "armed" -> HostEventReachesTheChildState.Armed
@@ -152,6 +170,7 @@ class HostEventReachesTheChildStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: HostEventReachesTheChildState): String = when (state) {
         is HostEventReachesTheChildState.Armed -> "armed"
@@ -161,6 +180,7 @@ class HostEventReachesTheChildStateMachine(
         is HostEventReachesTheChildState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: HostEventReachesTheChildState): Int = when (state) {
         is HostEventReachesTheChildState.Armed -> 2
@@ -169,6 +189,7 @@ class HostEventReachesTheChildStateMachine(
         is HostEventReachesTheChildState.Phase -> 0
         is HostEventReachesTheChildState.Waiting -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): HostEventReachesTheChildEvent? = when (name) {
@@ -182,6 +203,7 @@ class HostEventReachesTheChildStateMachine(
         "sawMarkerOnly" -> HostEventReachesTheChildEvent.SawMarkerOnly
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: HostEventReachesTheChildEvent): String? = when (event) {
@@ -199,58 +221,82 @@ class HostEventReachesTheChildStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: HostEventReachesTheChildState,
-        event: HostEventReachesTheChildEvent?
-    ): EnabledTransition<HostEventReachesTheChildState, HistoryId>? = when (state) {
-        is HostEventReachesTheChildState.Armed -> when {
-            event is HostEventReachesTheChildEvent.HostPing -> transitionArmedAt0
-            else -> null
-        }
-        is HostEventReachesTheChildState.Phase -> when {
-            event is HostEventReachesTheChildEvent.SawHostPing -> transitionPhaseAt0
-            event is HostEventReachesTheChildEvent.SawMarkerOnly -> transitionPhaseAt1
-            else -> null
-        }
-        is HostEventReachesTheChildState.Waiting -> when {
-            event is HostEventReachesTheChildEvent.Ready -> transitionWaitingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: HostEventReachesTheChildState, event: HostEventReachesTheChildEvent?): EnabledTransition<HostEventReachesTheChildState, HistoryId>? = when (state) {
+        is HostEventReachesTheChildState.Armed -> firstEnabledTransitionOfArmed(state, event)
+        is HostEventReachesTheChildState.Phase -> firstEnabledTransitionOfPhase(state, event)
+        is HostEventReachesTheChildState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // armed's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfArmed(state: HostEventReachesTheChildState, event: HostEventReachesTheChildEvent?): EnabledTransition<HostEventReachesTheChildState, HistoryId>? = when {
+        event is HostEventReachesTheChildEvent.HostPing -> TransitionsPart0.transitionArmedAt0
+        else -> null
+    }
+
+
+    // phase's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPhase(state: HostEventReachesTheChildState, event: HostEventReachesTheChildEvent?): EnabledTransition<HostEventReachesTheChildState, HistoryId>? = when {
+        event is HostEventReachesTheChildEvent.SawHostPing -> TransitionsPart0.transitionPhaseAt0
+        event is HostEventReachesTheChildEvent.SawMarkerOnly -> TransitionsPart0.transitionPhaseAt1
+        else -> null
+    }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: HostEventReachesTheChildState, event: HostEventReachesTheChildEvent?): EnabledTransition<HostEventReachesTheChildState, HistoryId>? = when {
+        event is HostEventReachesTheChildEvent.Ready -> TransitionsPart0.transitionWaitingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: host_event_reaches_the_child.scxml:67 :: _machine
     override fun onEntry(state: HostEventReachesTheChildState, isDefaultEntry: Boolean) {
         when (state) {
-            is HostEventReachesTheChildState.Armed -> {
+            is HostEventReachesTheChildState.Armed -> onEntryOfArmed()
+            is HostEventReachesTheChildState.Fail -> onEntryOfFail()
+            is HostEventReachesTheChildState.Pass -> onEntryOfPass()
+            is HostEventReachesTheChildState.Phase -> onEntryOfPhase()
+            is HostEventReachesTheChildState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfArmed() {
                 // SCE-MAP: host_event_reaches_the_child.scxml:94 :: armed :: _state_body
-            }
-            is HostEventReachesTheChildState.Fail -> {
+    }
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: host_event_reaches_the_child.scxml:103 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is HostEventReachesTheChildState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: host_event_reaches_the_child.scxml:102 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is HostEventReachesTheChildState.Phase -> {
+    }
+
+    private fun onEntryOfPhase() {
                 // SCE-MAP: host_event_reaches_the_child.scxml:70 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_probe", state)
-            }
-            is HostEventReachesTheChildState.Waiting -> {
+                deferStaticInvoke("inv_probe", HostEventReachesTheChildState.Phase)
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: host_event_reaches_the_child.scxml:91 :: waiting :: _state_body
-            }
-        }
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -263,9 +309,20 @@ class HostEventReachesTheChildStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: HostEventReachesTheChildState) {
         when (invokeId) {
-            "inv_probe" -> run {
+            "inv_probe" -> startInvokeOfPhaseAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfPhaseAt0(state: HostEventReachesTheChildState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_probe")}.inv_probe"
@@ -276,43 +333,71 @@ class HostEventReachesTheChildStateMachine(
                     startInvoke("inv_probe", childSM, true, HostEventReachesTheChildEvent.Done.Invoke, "", generatedInvokeId, "", "host_event_reaches_the_child__sce_synth_invoke__inv_probe", "inv_probe")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: host_event_reaches_the_child.scxml:67 :: _machine
     override fun onExit(state: HostEventReachesTheChildState) {
         when (state) {
-            is HostEventReachesTheChildState.Armed -> {
-                // SCE-MAP: host_event_reaches_the_child.scxml:94 :: armed :: _state_body
-            }
-            is HostEventReachesTheChildState.Fail -> {
-                // SCE-MAP: host_event_reaches_the_child.scxml:103 :: fail :: _state_body
-            }
-            is HostEventReachesTheChildState.Pass -> {
-                // SCE-MAP: host_event_reaches_the_child.scxml:102 :: pass :: _state_body
-            }
-            is HostEventReachesTheChildState.Phase -> {
-                // SCE-MAP: host_event_reaches_the_child.scxml:70 :: phase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_probe")
-            }
-            is HostEventReachesTheChildState.Waiting -> {
-                // SCE-MAP: host_event_reaches_the_child.scxml:91 :: waiting :: _state_body
-            }
+            is HostEventReachesTheChildState.Armed -> onExitOfArmed()
+            is HostEventReachesTheChildState.Fail -> onExitOfFail()
+            is HostEventReachesTheChildState.Pass -> onExitOfPass()
+            is HostEventReachesTheChildState.Phase -> onExitOfPhase()
+            is HostEventReachesTheChildState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfArmed() {
+                // SCE-MAP: host_event_reaches_the_child.scxml:94 :: armed :: _state_body
+    }
+
+    private fun onExitOfFail() {
+                // SCE-MAP: host_event_reaches_the_child.scxml:103 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: host_event_reaches_the_child.scxml:102 :: pass :: _state_body
+    }
+
+    private fun onExitOfPhase() {
+                // SCE-MAP: host_event_reaches_the_child.scxml:70 :: phase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(HostEventReachesTheChildState.Phase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_probe")
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: host_event_reaches_the_child.scxml:91 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: host_event_reaches_the_child.scxml:67 :: _machine
     override fun executeTransitionContent(source: HostEventReachesTheChildState, transitionIndex: Int) {
         when (source) {
-        is HostEventReachesTheChildState.Armed -> when (transitionIndex) {
-            0 -> {
+            is HostEventReachesTheChildState.Armed -> transitionContentOfArmed(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `armed`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfArmed(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfArmedAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfArmedAt0() {
                 // SCE-MAP: host_event_reaches_the_child.scxml:95 :: armed :: _transition_0
 
 
@@ -331,10 +416,5 @@ class HostEventReachesTheChildStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

@@ -228,6 +228,10 @@ class StaticOptionalUnwidenedStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.due?.let { vDue = it }
         params.other?.let { vOther = it }
         params.title?.let { vTitle = it }
@@ -390,36 +394,38 @@ class StaticOptionalUnwidenedStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "due" to SavedValues.of(vDue),
-            "other" to SavedValues.of(vOther),
-            "title" to SavedValues.of(vTitle),
-            "status" to vStatus.toSaved(),
-            "item" to vItem.toSaved(),
-            "items" to SavedValues.list(vItems) { it.toSaved() },
-            "days" to SavedValues.of(vDays),
-            "following" to SavedValues.of(vFollowing),
-            "late" to SavedValues.of(vLate),
-            "early" to SavedValues.of(vEarly),
-            "label" to SavedValues.of(vLabel),
-            "plain" to vPlain.toSaved(),
-            "kept" to SavedValues.of(vKept),
-            "listed" to SavedValues.of(vListed),
-            "missing" to SavedValues.of(vMissing),
-            "same" to SavedValues.of(vSame),
-            "absent" to SavedValues.of(vAbsent),
-            "statusDone" to SavedValues.of(vStatusDone),
-            "echoed" to SavedValues.of(vEchoed),
-            "echoTitle" to SavedValues.of(vEchoTitle),
-            "echoStatus" to vEchoStatus.toSaved(),
-            "fallbacks" to SavedValues.of(vFallbacks),
-            "errors" to SavedValues.of(vErrors),
-            "huge" to SavedValues.of(vHuge),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "due" to SavedValues.of(vDue)
+        variables += "other" to SavedValues.of(vOther)
+        variables += "title" to SavedValues.of(vTitle)
+        variables += "status" to vStatus.toSaved()
+        variables += "item" to vItem.toSaved()
+        variables += "items" to SavedValues.list(vItems) { it.toSaved() }
+        variables += "days" to SavedValues.of(vDays)
+        variables += "following" to SavedValues.of(vFollowing)
+        variables += "late" to SavedValues.of(vLate)
+        variables += "early" to SavedValues.of(vEarly)
+        variables += "label" to SavedValues.of(vLabel)
+        variables += "plain" to vPlain.toSaved()
+        variables += "kept" to SavedValues.of(vKept)
+        variables += "listed" to SavedValues.of(vListed)
+        variables += "missing" to SavedValues.of(vMissing)
+        variables += "same" to SavedValues.of(vSame)
+        variables += "absent" to SavedValues.of(vAbsent)
+        variables += "statusDone" to SavedValues.of(vStatusDone)
+        variables += "echoed" to SavedValues.of(vEchoed)
+        variables += "echoTitle" to SavedValues.of(vEchoTitle)
+        variables += "echoStatus" to vEchoStatus.toSaved()
+        variables += "fallbacks" to SavedValues.of(vFallbacks)
+        variables += "errors" to SavedValues.of(vErrors)
+        variables += "huge" to SavedValues.of(vHuge)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -444,6 +450,15 @@ class StaticOptionalUnwidenedStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.int64(savedGrown.variable("due"), "due")
         val saved2 = SavedValues.int64(savedGrown.variable("other"), "other")
         val saved3 = SavedValues.string(savedGrown.variable("title"), "title", 16)
@@ -468,31 +483,32 @@ class StaticOptionalUnwidenedStateMachine(
         val saved22 = SavedValues.uint32(savedGrown.variable("fallbacks"), "fallbacks")
         val saved23 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
         val saved24 = SavedValues.int64(savedGrown.variable("huge"), "huge")
-        vDue = saved1
-        vOther = saved2
-        vTitle = saved3
-        vStatus = saved4
-        vItem = saved5
-        vItems = saved6
-        vDays = saved7
-        vFollowing = saved8
-        vLate = saved9
-        vEarly = saved10
-        vLabel = saved11
-        vPlain = saved12
-        vKept = saved13
-        vListed = saved14
-        vMissing = saved15
-        vSame = saved16
-        vAbsent = saved17
-        vStatusDone = saved18
-        vEchoed = saved19
-        vEchoTitle = saved20
-        vEchoStatus = saved21
-        vFallbacks = saved22
-        vErrors = saved23
-        vHuge = saved24
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vDue = saved1
+            vOther = saved2
+            vTitle = saved3
+            vStatus = saved4
+            vItem = saved5
+            vItems = saved6
+            vDays = saved7
+            vFollowing = saved8
+            vLate = saved9
+            vEarly = saved10
+            vLabel = saved11
+            vPlain = saved12
+            vKept = saved13
+            vListed = saved14
+            vMissing = saved15
+            vSame = saved16
+            vAbsent = saved17
+            vStatusDone = saved18
+            vEchoed = saved19
+            vEchoTitle = saved20
+            vEchoStatus = saved21
+            vFallbacks = saved22
+            vErrors = saved23
+            vHuge = saved24
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -505,6 +521,10 @@ class StaticOptionalUnwidenedStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.int64(savedGrown.variable("due"), "due")
         SavedValues.int64(savedGrown.variable("other"), "other")
         SavedValues.string(savedGrown.variable("title"), "title", 16)
@@ -556,6 +576,7 @@ class StaticOptionalUnwidenedStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticOptionalUnwidenedState, HistoryId>>
@@ -564,6 +585,9 @@ class StaticOptionalUnwidenedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticOptionalUnwidenedState, HistoryId>> =
             listOf(StateTarget(StaticOptionalUnwidenedState.Tracking))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: tracking's transition 0, as the microstep reads it.
         val transitionTrackingAt0 = EnabledTransition<StaticOptionalUnwidenedState, HistoryId>(
@@ -584,6 +608,7 @@ class StaticOptionalUnwidenedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticOptionalUnwidenedState? = when (stateId) {
         "done" -> StaticOptionalUnwidenedState.Done
@@ -591,11 +616,13 @@ class StaticOptionalUnwidenedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticOptionalUnwidenedState): String = when (state) {
         is StaticOptionalUnwidenedState.Done -> "done"
         is StaticOptionalUnwidenedState.Tracking -> "tracking"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticOptionalUnwidenedState): Int = when (state) {
@@ -603,12 +630,14 @@ class StaticOptionalUnwidenedStateMachine(
         is StaticOptionalUnwidenedState.Tracking -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticOptionalUnwidenedEvent? = when (name) {
         "finish" -> StaticOptionalUnwidenedEvent.Finish
         "keep" -> StaticOptionalUnwidenedEvent.Keep
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticOptionalUnwidenedEvent): String? = when (event) {
@@ -620,68 +649,97 @@ class StaticOptionalUnwidenedStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticOptionalUnwidenedState,
-        event: StaticOptionalUnwidenedEvent?
-    ): EnabledTransition<StaticOptionalUnwidenedState, HistoryId>? = when (state) {
-        is StaticOptionalUnwidenedState.Tracking -> when {
-            event is StaticOptionalUnwidenedEvent.Keep -> transitionTrackingAt0
-            event is StaticOptionalUnwidenedEvent.Finish -> transitionTrackingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticOptionalUnwidenedState, event: StaticOptionalUnwidenedEvent?): EnabledTransition<StaticOptionalUnwidenedState, HistoryId>? = when (state) {
+        is StaticOptionalUnwidenedState.Tracking -> firstEnabledTransitionOfTracking(state, event)
         else -> null
     }
+
+
+    // tracking's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfTracking(state: StaticOptionalUnwidenedState, event: StaticOptionalUnwidenedEvent?): EnabledTransition<StaticOptionalUnwidenedState, HistoryId>? = when {
+        event is StaticOptionalUnwidenedEvent.Keep -> TransitionsPart0.transitionTrackingAt0
+        event is StaticOptionalUnwidenedEvent.Finish -> TransitionsPart0.transitionTrackingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_optional_unwidened.scxml:16 :: _machine
     override fun onEntry(state: StaticOptionalUnwidenedState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticOptionalUnwidenedState.Done -> {
+            is StaticOptionalUnwidenedState.Done -> onEntryOfDone()
+            is StaticOptionalUnwidenedState.Tracking -> onEntryOfTracking()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: static_optional_unwidened.scxml:57 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticOptionalUnwidenedState.Tracking -> {
+    }
+
+    private fun onEntryOfTracking() {
                 // SCE-MAP: static_optional_unwidened.scxml:51 :: tracking :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_optional_unwidened.scxml:16 :: _machine
     override fun onExit(state: StaticOptionalUnwidenedState) {
         when (state) {
-            is StaticOptionalUnwidenedState.Done -> {
-                // SCE-MAP: static_optional_unwidened.scxml:57 :: done :: _state_body
-            }
-            is StaticOptionalUnwidenedState.Tracking -> {
-                // SCE-MAP: static_optional_unwidened.scxml:51 :: tracking :: _state_body
-            }
+            is StaticOptionalUnwidenedState.Done -> onExitOfDone()
+            is StaticOptionalUnwidenedState.Tracking -> onExitOfTracking()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: static_optional_unwidened.scxml:57 :: done :: _state_body
+    }
+
+    private fun onExitOfTracking() {
+                // SCE-MAP: static_optional_unwidened.scxml:51 :: tracking :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_optional_unwidened.scxml:16 :: _machine
     override fun executeTransitionContent(source: StaticOptionalUnwidenedState, transitionIndex: Int) {
         when (source) {
-        is StaticOptionalUnwidenedState.Tracking -> when (transitionIndex) {
-            0 -> {
+            is StaticOptionalUnwidenedState.Tracking -> transitionContentOfTracking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `tracking`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfTracking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfTrackingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfTrackingAt0() {
                 // SCE-MAP: static_optional_unwidened.scxml:52 :: tracking :: _transition_0
 
             if (if (vItems.size < 3) { vItems = vItems + (vItem); false } else { true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

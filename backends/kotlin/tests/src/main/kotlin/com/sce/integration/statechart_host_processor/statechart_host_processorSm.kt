@@ -139,6 +139,9 @@ class StatechartHostProcessorStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StatechartHostProcessorState, HistoryId>> =
             listOf(StateTarget(StatechartHostProcessorState.Dispatching))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: dispatching's transition 0, as the microstep reads it.
         val transitionDispatchingAt0 = EnabledTransition<StatechartHostProcessorState, HistoryId>(
@@ -195,6 +198,7 @@ class StatechartHostProcessorStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartHostProcessorState? = when (stateId) {
         "dispatching" -> StatechartHostProcessorState.Dispatching
@@ -202,17 +206,20 @@ class StatechartHostProcessorStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StatechartHostProcessorState): String = when (state) {
         is StatechartHostProcessorState.Dispatching -> "dispatching"
         is StatechartHostProcessorState.Pairs -> "pairs"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartHostProcessorState): Int = when (state) {
         is StatechartHostProcessorState.Dispatching -> 0
         is StatechartHostProcessorState.Pairs -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StatechartHostProcessorEvent? = when (name) {
@@ -227,6 +234,7 @@ class StatechartHostProcessorStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StatechartHostProcessorEvent): String? = when (event) {
         is StatechartHostProcessorEvent.Advance -> "advance"
@@ -238,6 +246,7 @@ class StatechartHostProcessorStateMachine(
         is StatechartHostProcessorEvent.Watch.Pairs -> "watch.pairs"
         is StatechartHostProcessorEvent.Watch.Turn -> "watch.turn"
     }
+
 
 
 
@@ -267,6 +276,27 @@ class StatechartHostProcessorStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'served' with expr
         try {
             val initResult_served = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -309,22 +339,6 @@ class StatechartHostProcessorStateMachine(
         } catch (e: Exception) {
             raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -514,30 +528,44 @@ class StatechartHostProcessorStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StatechartHostProcessorState,
-        event: StatechartHostProcessorEvent?
-    ): EnabledTransition<StatechartHostProcessorState, HistoryId>? = when (state) {
-        is StatechartHostProcessorState.Dispatching -> when {
-            event is StatechartHostProcessorEvent.Plain.Arrived -> transitionDispatchingAt0
-            event is StatechartHostProcessorEvent.Turn.Done -> transitionDispatchingAt1
-            event is StatechartHostProcessorEvent.Error.Execution -> transitionDispatchingAt2
-            event is StatechartHostProcessorEvent.Advance && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(served > 0)", "served > 0")) -> transitionDispatchingAt3
-            else -> null
-        }
-        is StatechartHostProcessorState.Pairs -> when {
-            event is StatechartHostProcessorEvent.Error.Execution -> transitionPairsAt0
-            event is StatechartHostProcessorEvent.Answer.Please -> transitionPairsAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StatechartHostProcessorState, event: StatechartHostProcessorEvent?): EnabledTransition<StatechartHostProcessorState, HistoryId>? = when (state) {
+        is StatechartHostProcessorState.Dispatching -> firstEnabledTransitionOfDispatching(state, event)
+        is StatechartHostProcessorState.Pairs -> firstEnabledTransitionOfPairs(state, event)
     }
+
+
+    // dispatching's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfDispatching(state: StatechartHostProcessorState, event: StatechartHostProcessorEvent?): EnabledTransition<StatechartHostProcessorState, HistoryId>? = when {
+        event is StatechartHostProcessorEvent.Plain.Arrived -> TransitionsPart0.transitionDispatchingAt0
+        event is StatechartHostProcessorEvent.Turn.Done -> TransitionsPart0.transitionDispatchingAt1
+        event is StatechartHostProcessorEvent.Error.Execution -> TransitionsPart0.transitionDispatchingAt2
+        event is StatechartHostProcessorEvent.Advance && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(served > 0)", "served > 0")) -> TransitionsPart0.transitionDispatchingAt3
+        else -> null
+    }
+
+
+    // pairs's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPairs(state: StatechartHostProcessorState, event: StatechartHostProcessorEvent?): EnabledTransition<StatechartHostProcessorState, HistoryId>? = when {
+        event is StatechartHostProcessorEvent.Error.Execution -> TransitionsPart0.transitionPairsAt0
+        event is StatechartHostProcessorEvent.Answer.Please -> TransitionsPart0.transitionPairsAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     override fun onEntry(state: StatechartHostProcessorState, isDefaultEntry: Boolean) {
         when (state) {
-            is StatechartHostProcessorState.Dispatching -> {
+            is StatechartHostProcessorState.Dispatching -> onEntryOfDispatching()
+            is StatechartHostProcessorState.Pairs -> onEntryOfPairs()
+        }
+    }
+
+
+    private fun onEntryOfDispatching() {
                 // SCE-MAP: statechart_host_processor.scxml:59 :: dispatching :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -610,8 +638,9 @@ class StatechartHostProcessorStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is StatechartHostProcessorState.Pairs -> {
+    }
+
+    private fun onEntryOfPairs() {
                 // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -691,65 +720,104 @@ class StatechartHostProcessorStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     override fun onExit(state: StatechartHostProcessorState) {
         when (state) {
-            is StatechartHostProcessorState.Dispatching -> {
-                // SCE-MAP: statechart_host_processor.scxml:59 :: dispatching :: _state_body
-            }
-            is StatechartHostProcessorState.Pairs -> {
-                // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _state_body
-            }
+            is StatechartHostProcessorState.Dispatching -> onExitOfDispatching()
+            is StatechartHostProcessorState.Pairs -> onExitOfPairs()
         }
     }
+
+
+    private fun onExitOfDispatching() {
+                // SCE-MAP: statechart_host_processor.scxml:59 :: dispatching :: _state_body
+    }
+
+    private fun onExitOfPairs() {
+                // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     override fun executeTransitionContent(source: StatechartHostProcessorState, transitionIndex: Int) {
         when (source) {
-        is StatechartHostProcessorState.Dispatching -> when (transitionIndex) {
-            0 -> {
+            is StatechartHostProcessorState.Dispatching -> transitionContentOfDispatching(transitionIndex)
+            is StatechartHostProcessorState.Pairs -> transitionContentOfPairs(transitionIndex)
+        }
+    }
+
+
+    // The content of `dispatching`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfDispatching(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfDispatchingAt0()
+            1 -> transitionContentOfDispatchingAt1()
+            2 -> transitionContentOfDispatchingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfDispatchingAt0() {
                 // SCE-MAP: statechart_host_processor.scxml:73 :: dispatching :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("plain", "plain"), com.sce.runtime.ScriptSource.lua("_scxml_add(plain, 1)", "plain + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfDispatchingAt1() {
                 // SCE-MAP: statechart_host_processor.scxml:76 :: dispatching :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("served", "served"), com.sce.runtime.ScriptSource.lua("_scxml_add(served, 1)", "served + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfDispatchingAt2() {
                 // SCE-MAP: statechart_host_processor.scxml:79 :: dispatching :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `pairs`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPairs(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPairsAt0()
+            1 -> transitionContentOfPairsAt1()
             else -> {}
         }
-        is StatechartHostProcessorState.Pairs -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfPairsAt0() {
                 // SCE-MAP: statechart_host_processor.scxml:95 :: pairs :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("paramErrors", "paramErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(paramErrors, 1)", "paramErrors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfPairsAt1() {
                 // SCE-MAP: statechart_host_processor.scxml:103 :: pairs :: _transition_1
 
 
@@ -789,9 +857,5 @@ class StatechartHostProcessorStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        }
     }
 }

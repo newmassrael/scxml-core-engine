@@ -76,6 +76,7 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<AnInvokeLeftBeforeItStartsRaisesNothingState, HistoryId>>
@@ -84,6 +85,9 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AnInvokeLeftBeforeItStartsRaisesNothingState, HistoryId>> =
             listOf(StateTarget(AnInvokeLeftBeforeItStartsRaisesNothingState.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<AnInvokeLeftBeforeItStartsRaisesNothingState, HistoryId>(
@@ -113,6 +117,7 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AnInvokeLeftBeforeItStartsRaisesNothingState? = when (stateId) {
         "done" -> AnInvokeLeftBeforeItStartsRaisesNothingState.Done
@@ -121,12 +126,14 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AnInvokeLeftBeforeItStartsRaisesNothingState): String = when (state) {
         is AnInvokeLeftBeforeItStartsRaisesNothingState.Done -> "done"
         is AnInvokeLeftBeforeItStartsRaisesNothingState.S0 -> "s0"
         is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> "s1"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AnInvokeLeftBeforeItStartsRaisesNothingState): Int = when (state) {
@@ -135,6 +142,7 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
         is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> 1
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AnInvokeLeftBeforeItStartsRaisesNothingEvent? = when (name) {
         "error.execution" -> AnInvokeLeftBeforeItStartsRaisesNothingEvent.Error.Execution
@@ -142,11 +150,13 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AnInvokeLeftBeforeItStartsRaisesNothingEvent): String? = when (event) {
         is AnInvokeLeftBeforeItStartsRaisesNothingEvent.Error.Execution -> "error.execution"
         is AnInvokeLeftBeforeItStartsRaisesNothingEvent.Finish -> "finish"
     }
+
 
 
 
@@ -176,13 +186,7 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'errors' with expr
-        try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "errors", initResult_errors)
-        } catch (e: Exception) {
-            raisePlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -199,6 +203,17 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'errors' with expr
+        try {
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "errors", initResult_errors)
+        } catch (e: Exception) {
+            raisePlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -388,33 +403,49 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AnInvokeLeftBeforeItStartsRaisesNothingState,
-        event: AnInvokeLeftBeforeItStartsRaisesNothingEvent?
-    ): EnabledTransition<AnInvokeLeftBeforeItStartsRaisesNothingState, HistoryId>? = when (state) {
-        is AnInvokeLeftBeforeItStartsRaisesNothingState.S0 -> when {
-            event == null -> transitionS0At0
-            else -> null
-        }
-        is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> when {
-            event is AnInvokeLeftBeforeItStartsRaisesNothingEvent.Error.Execution -> transitionS1At0
-            event is AnInvokeLeftBeforeItStartsRaisesNothingEvent.Finish -> transitionS1At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AnInvokeLeftBeforeItStartsRaisesNothingState, event: AnInvokeLeftBeforeItStartsRaisesNothingEvent?): EnabledTransition<AnInvokeLeftBeforeItStartsRaisesNothingState, HistoryId>? = when (state) {
+        is AnInvokeLeftBeforeItStartsRaisesNothingState.S0 -> firstEnabledTransitionOfS0(state, event)
+        is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> firstEnabledTransitionOfS1(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: AnInvokeLeftBeforeItStartsRaisesNothingState, event: AnInvokeLeftBeforeItStartsRaisesNothingEvent?): EnabledTransition<AnInvokeLeftBeforeItStartsRaisesNothingState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionS0At0
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: AnInvokeLeftBeforeItStartsRaisesNothingState, event: AnInvokeLeftBeforeItStartsRaisesNothingEvent?): EnabledTransition<AnInvokeLeftBeforeItStartsRaisesNothingState, HistoryId>? = when {
+        event is AnInvokeLeftBeforeItStartsRaisesNothingEvent.Error.Execution -> TransitionsPart0.transitionS1At0
+        event is AnInvokeLeftBeforeItStartsRaisesNothingEvent.Finish -> TransitionsPart0.transitionS1At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:15 :: _machine
     override fun onEntry(state: AnInvokeLeftBeforeItStartsRaisesNothingState, isDefaultEntry: Boolean) {
         when (state) {
-            is AnInvokeLeftBeforeItStartsRaisesNothingState.Done -> {
+            is AnInvokeLeftBeforeItStartsRaisesNothingState.Done -> onEntryOfDone()
+            is AnInvokeLeftBeforeItStartsRaisesNothingState.S0 -> onEntryOfS0()
+            is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> onEntryOfS1()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:35 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AnInvokeLeftBeforeItStartsRaisesNothingState.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:23 :: s0 :: _state_body
                 // W3C SCXML 6.4.1: `type` names no processor this platform
                 // implements. The deferred closure runs at macrostep end and
@@ -423,52 +454,72 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
                 // pending entry `cancelPendingInvokesForState` already drops.
                 run {
                     val generatedInvokeId = "s0.${System.identityHashCode(this)}.never"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(AnInvokeLeftBeforeItStartsRaisesNothingState.S0, generatedInvokeId) {
                         raisePlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEvent.Error.Execution, "<invoke type='http://example.invalid/unsupported'> names an external service this platform does not support")
                     }
                 }
-            }
-            is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:28 :: s1 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:15 :: _machine
     override fun onExit(state: AnInvokeLeftBeforeItStartsRaisesNothingState) {
         when (state) {
-            is AnInvokeLeftBeforeItStartsRaisesNothingState.Done -> {
-                // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:35 :: done :: _state_body
-            }
-            is AnInvokeLeftBeforeItStartsRaisesNothingState.S0 -> {
-                // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:23 :: s0 :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-            }
-            is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> {
-                // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:28 :: s1 :: _state_body
-            }
+            is AnInvokeLeftBeforeItStartsRaisesNothingState.Done -> onExitOfDone()
+            is AnInvokeLeftBeforeItStartsRaisesNothingState.S0 -> onExitOfS0()
+            is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> onExitOfS1()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:35 :: done :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:23 :: s0 :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(AnInvokeLeftBeforeItStartsRaisesNothingState.S0)
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:28 :: s1 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:15 :: _machine
     override fun executeTransitionContent(source: AnInvokeLeftBeforeItStartsRaisesNothingState, transitionIndex: Int) {
         when (source) {
-        is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> when (transitionIndex) {
-            0 -> {
+            is AnInvokeLeftBeforeItStartsRaisesNothingState.S1 -> transitionContentOfS1(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s1`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS1(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS1At0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS1At0() {
                 // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:29 :: s1 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

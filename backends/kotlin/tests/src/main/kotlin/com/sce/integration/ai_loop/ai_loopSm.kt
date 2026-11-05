@@ -348,12 +348,17 @@ class AiLoopStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: AiLoopState): Boolean = when (state) {
-        is AiLoopState.Budget, is AiLoopState.Drive, is AiLoopState.Running, is AiLoopState.Watch -> true
+        is AiLoopState.Budget -> true
+        is AiLoopState.Drive -> true
+        is AiLoopState.Running -> true
+        is AiLoopState.Watch -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: AiLoopState): Boolean = when (state) {
@@ -361,11 +366,20 @@ class AiLoopStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: AiLoopState): Boolean = when (state) {
-        is AiLoopState.Abandoned, is AiLoopState.Blocked, is AiLoopState.Cancelled, is AiLoopState.Converged, is AiLoopState.Exhausted, is AiLoopState.Failed, is AiLoopState.Reported, is AiLoopState.Stuck -> true
+        is AiLoopState.Abandoned -> true
+        is AiLoopState.Blocked -> true
+        is AiLoopState.Cancelled -> true
+        is AiLoopState.Converged -> true
+        is AiLoopState.Exhausted -> true
+        is AiLoopState.Failed -> true
+        is AiLoopState.Reported -> true
+        is AiLoopState.Stuck -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -395,37 +409,65 @@ class AiLoopStateMachine(
 
     private companion object {
         /** W3C SCXML 3.10: the `where` <history> (shallow). */
-        val historyWhere = HistoryId(0)
+        val historyWhere: HistoryId get() = HistoryId(0)
 
-        val childStates: Map<AiLoopState, List<AiLoopState>> = mapOf(
-            AiLoopState.Budget to listOf(AiLoopState.Within, AiLoopState.Spent),
-            AiLoopState.Drive to listOf(AiLoopState.Running, AiLoopState.Paused, AiLoopState.Abandoned),
-            AiLoopState.Run to listOf(AiLoopState.Drive, AiLoopState.Watch, AiLoopState.Budget),
-            AiLoopState.Running to listOf(AiLoopState.Priming, AiLoopState.Working, AiLoopState.Screening, AiLoopState.Judging, AiLoopState.Reflecting, AiLoopState.Restarting, AiLoopState.Closing, AiLoopState.Reported, AiLoopState.Stuck),
-            AiLoopState.Watch to listOf(AiLoopState.Alive, AiLoopState.Rebuilding),
-        )
+        val childStates: Map<AiLoopState, List<AiLoopState>> = LinkedHashMap<AiLoopState, List<AiLoopState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<AiLoopState, List<EntryTarget<AiLoopState, HistoryId>>> = mapOf(
-            AiLoopState.Budget to listOf(StateTarget(AiLoopState.Within)),
-            AiLoopState.Drive to listOf(StateTarget(AiLoopState.Running)),
-            AiLoopState.Running to listOf(StateTarget(AiLoopState.Priming)),
-            AiLoopState.Watch to listOf(StateTarget(AiLoopState.Alive)),
-        )
+        private fun childStatesPart0(table: MutableMap<AiLoopState, List<AiLoopState>>) {
+            table[AiLoopState.Budget] = listOf(AiLoopState.Within, AiLoopState.Spent)
+            table[AiLoopState.Drive] = listOf(AiLoopState.Running, AiLoopState.Paused, AiLoopState.Abandoned)
+            table[AiLoopState.Run] = listOf(AiLoopState.Drive, AiLoopState.Watch, AiLoopState.Budget)
+            table[AiLoopState.Running] = listOf(AiLoopState.Priming, AiLoopState.Working, AiLoopState.Screening, AiLoopState.Judging, AiLoopState.Reflecting, AiLoopState.Restarting, AiLoopState.Closing, AiLoopState.Reported, AiLoopState.Stuck)
+            table[AiLoopState.Watch] = listOf(AiLoopState.Alive, AiLoopState.Rebuilding)
+        }
+
+
+        val initialTargets: Map<AiLoopState, List<EntryTarget<AiLoopState, HistoryId>>> = LinkedHashMap<AiLoopState, List<EntryTarget<AiLoopState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<AiLoopState, List<EntryTarget<AiLoopState, HistoryId>>>) {
+            table[AiLoopState.Budget] = listOf(StateTarget(AiLoopState.Within))
+            table[AiLoopState.Drive] = listOf(StateTarget(AiLoopState.Running))
+            table[AiLoopState.Running] = listOf(StateTarget(AiLoopState.Priming))
+            table[AiLoopState.Watch] = listOf(StateTarget(AiLoopState.Alive))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<AiLoopState, HistoryId>> =
             listOf(StateTarget(AiLoopState.Run))
 
-        val historyParents: Map<HistoryId, AiLoopState> = mapOf(
-            historyWhere to AiLoopState.Running,
-        )
+        val historyParents: Map<HistoryId, AiLoopState> = LinkedHashMap<HistoryId, AiLoopState>().also {
+            historyParentsPart0(it)
+        }
 
-        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<AiLoopState, HistoryId>>> = mapOf(
-            historyWhere to listOf(StateTarget(AiLoopState.Working)),
-        )
+        private fun historyParentsPart0(table: MutableMap<HistoryId, AiLoopState>) {
+            table[historyWhere] = AiLoopState.Running
+        }
 
-        val historiesByParent: Map<AiLoopState, List<Pair<HistoryId, Boolean>>> = mapOf(
-            AiLoopState.Running to listOf(historyWhere to false),
-        )
+
+        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<AiLoopState, HistoryId>>> = LinkedHashMap<HistoryId, List<EntryTarget<AiLoopState, HistoryId>>>().also {
+            historyDefaultTargetsPart0(it)
+        }
+
+        private fun historyDefaultTargetsPart0(table: MutableMap<HistoryId, List<EntryTarget<AiLoopState, HistoryId>>>) {
+            table[historyWhere] = listOf(StateTarget(AiLoopState.Working))
+        }
+
+
+        val historiesByParent: Map<AiLoopState, List<Pair<HistoryId, Boolean>>> = LinkedHashMap<AiLoopState, List<Pair<HistoryId, Boolean>>>().also {
+            historiesByParentPart0(it)
+        }
+
+        private fun historiesByParentPart0(table: MutableMap<AiLoopState, List<Pair<HistoryId, Boolean>>>) {
+            table[AiLoopState.Running] = listOf(historyWhere to false)
+        }
+
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: alive's transition 0, as the microstep reads it.
         val transitionAliveAt0 = EnabledTransition<AiLoopState, HistoryId>(
@@ -698,6 +740,7 @@ class AiLoopStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AiLoopState? = when (stateId) {
         "abandoned" -> AiLoopState.Abandoned
@@ -728,6 +771,7 @@ class AiLoopStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AiLoopState): String = when (state) {
         is AiLoopState.Abandoned -> "abandoned"
@@ -757,6 +801,7 @@ class AiLoopStateMachine(
         is AiLoopState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AiLoopState): Int = when (state) {
         is AiLoopState.Abandoned -> 13
@@ -785,6 +830,7 @@ class AiLoopStateMachine(
         is AiLoopState.Within -> 18
         is AiLoopState.Working -> 4
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AiLoopEvent? = when (name) {
@@ -821,6 +867,7 @@ class AiLoopStateMachine(
         "unattended" -> AiLoopEvent.Unattended
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AiLoopEvent): String? = when (event) {
@@ -859,6 +906,7 @@ class AiLoopStateMachine(
 
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML 5.3: the declaration hook `enterAt` reaches. Every other caller
@@ -885,6 +933,29 @@ class AiLoopStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+        // W3C SCXML 5.9.2: Register In() predicate callback
+        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'north_star' with expr
         try {
             val initResult_northStar = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the outcome this loop exists to reach\"", "'(edit me) the outcome this loop exists to reach'"))
@@ -997,24 +1068,6 @@ class AiLoopStateMachine(
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<data id='restarts'> expr failed to evaluate")
         }
-
-
-
-        // W3C SCXML 5.9.2: Register In() predicate callback
-        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -1204,88 +1257,169 @@ class AiLoopStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AiLoopState,
-        event: AiLoopEvent?
-    ): EnabledTransition<AiLoopState, HistoryId>? = when (state) {
-        is AiLoopState.Alive -> when {
-            event is AiLoopEvent.Session.Lost -> transitionAliveAt0
-            else -> null
-        }
-        is AiLoopState.Closing -> when {
-            event is AiLoopEvent.Turn.Done -> transitionClosingAt0
-            event is AiLoopEvent.Turn.Blocked -> transitionClosingAt1
-            else -> null
-        }
-        is AiLoopState.Drive -> when {
-            event is AiLoopEvent.Hold -> transitionDriveAt0
-            event is AiLoopEvent.Turn.Interrupted -> transitionDriveAt1
-            event is AiLoopEvent.Session.Lost -> transitionDriveAt2
-            else -> null
-        }
-        is AiLoopState.Judging -> when {
-            (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> transitionJudgingAt0
-            (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(turns_since_reflect >= reflect_every)", "turns_since_reflect >= reflect_every")) -> transitionJudgingAt1
-            (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> transitionJudgingAt2
-            else -> null
-        }
-        is AiLoopState.Paused -> when {
-            event is AiLoopEvent.Turn.Done -> transitionPausedAt0
-            event is AiLoopEvent.Turn.Interrupted -> transitionPausedAt1
-            event is AiLoopEvent.Resume -> transitionPausedAt2
-            event is AiLoopEvent.Unattended -> transitionPausedAt3
-            else -> null
-        }
-        is AiLoopState.Priming -> when {
-            event is AiLoopEvent.Prompt.Sent -> transitionPrimingAt0
-            else -> null
-        }
-        is AiLoopState.Rebuilding -> when {
-            event is AiLoopEvent.Session.Ready -> transitionRebuildingAt0
-            else -> null
-        }
-        is AiLoopState.Reflecting -> when {
-            event is AiLoopEvent.Reflect.Applied -> transitionReflectingAt0
-            event is AiLoopEvent.Reflect.None -> transitionReflectingAt1
-            else -> null
-        }
-        is AiLoopState.Restarting -> when {
-            event is AiLoopEvent.Session.Ready && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(restarts > max_restarts)", "restarts > max_restarts")) -> transitionRestartingAt0
-            event is AiLoopEvent.Session.Ready -> transitionRestartingAt1
-            else -> null
-        }
-        is AiLoopState.Run -> when {
-            event is AiLoopEvent.Run.Converged -> transitionRunAt0
-            event is AiLoopEvent.Run.Exhausted -> transitionRunAt1
-            event is AiLoopEvent.Run.Blocked -> transitionRunAt2
-            event is AiLoopEvent.Fail -> transitionRunAt3
-            event is AiLoopEvent.Cancel -> transitionRunAt4
-            else -> null
-        }
-        is AiLoopState.Screening -> when {
-            event is AiLoopEvent.Screen.Matched -> transitionScreeningAt0
-            event is AiLoopEvent.Screen.None -> transitionScreeningAt1
-            else -> null
-        }
-        is AiLoopState.Within -> when {
-            event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_add(turns, 1) >= max_turns)", "turns + 1 >= max_turns")) -> transitionWithinAt0
-            event is AiLoopEvent.Turn.Done -> transitionWithinAt1
-            else -> null
-        }
-        is AiLoopState.Working -> when {
-            event is AiLoopEvent.Turn.Done -> transitionWorkingAt0
-            event is AiLoopEvent.Turn.Blocked -> transitionWorkingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when (state) {
+        is AiLoopState.Alive -> firstEnabledTransitionOfAlive(state, event)
+        is AiLoopState.Closing -> firstEnabledTransitionOfClosing(state, event)
+        is AiLoopState.Drive -> firstEnabledTransitionOfDrive(state, event)
+        is AiLoopState.Judging -> firstEnabledTransitionOfJudging(state, event)
+        is AiLoopState.Paused -> firstEnabledTransitionOfPaused(state, event)
+        is AiLoopState.Priming -> firstEnabledTransitionOfPriming(state, event)
+        is AiLoopState.Rebuilding -> firstEnabledTransitionOfRebuilding(state, event)
+        is AiLoopState.Reflecting -> firstEnabledTransitionOfReflecting(state, event)
+        is AiLoopState.Restarting -> firstEnabledTransitionOfRestarting(state, event)
+        is AiLoopState.Run -> firstEnabledTransitionOfRun(state, event)
+        is AiLoopState.Screening -> firstEnabledTransitionOfScreening(state, event)
+        is AiLoopState.Within -> firstEnabledTransitionOfWithin(state, event)
+        is AiLoopState.Working -> firstEnabledTransitionOfWorking(state, event)
         else -> null
     }
+
+
+    // alive's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAlive(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Session.Lost -> TransitionsPart0.transitionAliveAt0
+        else -> null
+    }
+
+
+    // closing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfClosing(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Turn.Done -> TransitionsPart0.transitionClosingAt0
+        event is AiLoopEvent.Turn.Blocked -> TransitionsPart0.transitionClosingAt1
+        else -> null
+    }
+
+
+    // drive's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfDrive(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Hold -> TransitionsPart0.transitionDriveAt0
+        event is AiLoopEvent.Turn.Interrupted -> TransitionsPart0.transitionDriveAt1
+        event is AiLoopEvent.Session.Lost -> TransitionsPart0.transitionDriveAt2
+        else -> null
+    }
+
+
+    // judging's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfJudging(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> TransitionsPart0.transitionJudgingAt0
+        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(turns_since_reflect >= reflect_every)", "turns_since_reflect >= reflect_every")) -> TransitionsPart0.transitionJudgingAt1
+        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> TransitionsPart0.transitionJudgingAt2
+        else -> null
+    }
+
+
+    // paused's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPaused(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Turn.Done -> TransitionsPart0.transitionPausedAt0
+        event is AiLoopEvent.Turn.Interrupted -> TransitionsPart0.transitionPausedAt1
+        event is AiLoopEvent.Resume -> TransitionsPart0.transitionPausedAt2
+        event is AiLoopEvent.Unattended -> TransitionsPart0.transitionPausedAt3
+        else -> null
+    }
+
+
+    // priming's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPriming(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Prompt.Sent -> TransitionsPart0.transitionPrimingAt0
+        else -> null
+    }
+
+
+    // rebuilding's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRebuilding(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Session.Ready -> TransitionsPart0.transitionRebuildingAt0
+        else -> null
+    }
+
+
+    // reflecting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReflecting(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Reflect.Applied -> TransitionsPart0.transitionReflectingAt0
+        event is AiLoopEvent.Reflect.None -> TransitionsPart0.transitionReflectingAt1
+        else -> null
+    }
+
+
+    // restarting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRestarting(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Session.Ready && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(restarts > max_restarts)", "restarts > max_restarts")) -> TransitionsPart0.transitionRestartingAt0
+        event is AiLoopEvent.Session.Ready -> TransitionsPart0.transitionRestartingAt1
+        else -> null
+    }
+
+
+    // run's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Run.Converged -> TransitionsPart0.transitionRunAt0
+        event is AiLoopEvent.Run.Exhausted -> TransitionsPart0.transitionRunAt1
+        event is AiLoopEvent.Run.Blocked -> TransitionsPart0.transitionRunAt2
+        event is AiLoopEvent.Fail -> TransitionsPart0.transitionRunAt3
+        event is AiLoopEvent.Cancel -> TransitionsPart0.transitionRunAt4
+        else -> null
+    }
+
+
+    // screening's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfScreening(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Screen.Matched -> TransitionsPart0.transitionScreeningAt0
+        event is AiLoopEvent.Screen.None -> TransitionsPart0.transitionScreeningAt1
+        else -> null
+    }
+
+
+    // within's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWithin(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_add(turns, 1) >= max_turns)", "turns + 1 >= max_turns")) -> TransitionsPart0.transitionWithinAt0
+        event is AiLoopEvent.Turn.Done -> TransitionsPart0.transitionWithinAt1
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: AiLoopState, event: AiLoopEvent?): EnabledTransition<AiLoopState, HistoryId>? = when {
+        event is AiLoopEvent.Turn.Done -> TransitionsPart0.transitionWorkingAt0
+        event is AiLoopEvent.Turn.Blocked -> TransitionsPart0.transitionWorkingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: ai_loop.scxml:155 :: _machine
     override fun onEntry(state: AiLoopState, isDefaultEntry: Boolean) {
         when (state) {
-            is AiLoopState.Abandoned -> {
+            is AiLoopState.Abandoned -> onEntryOfAbandoned()
+            is AiLoopState.Alive -> onEntryOfAlive()
+            is AiLoopState.Blocked -> onEntryOfBlocked()
+            is AiLoopState.Budget -> onEntryOfBudget()
+            is AiLoopState.Cancelled -> onEntryOfCancelled()
+            is AiLoopState.Closing -> onEntryOfClosing()
+            is AiLoopState.Converged -> onEntryOfConverged()
+            is AiLoopState.Drive -> onEntryOfDrive()
+            is AiLoopState.Exhausted -> onEntryOfExhausted()
+            is AiLoopState.Failed -> onEntryOfFailed()
+            is AiLoopState.Judging -> onEntryOfJudging()
+            is AiLoopState.Paused -> onEntryOfPaused()
+            is AiLoopState.Priming -> onEntryOfPriming()
+            is AiLoopState.Rebuilding -> onEntryOfRebuilding()
+            is AiLoopState.Reflecting -> onEntryOfReflecting()
+            is AiLoopState.Reported -> onEntryOfReported()
+            is AiLoopState.Restarting -> onEntryOfRestarting()
+            is AiLoopState.Run -> onEntryOfRun()
+            is AiLoopState.Running -> onEntryOfRunning()
+            is AiLoopState.Screening -> onEntryOfScreening()
+            is AiLoopState.Spent -> onEntryOfSpent()
+            is AiLoopState.Stuck -> onEntryOfStuck()
+            is AiLoopState.Watch -> onEntryOfWatch()
+            is AiLoopState.Within -> onEntryOfWithin()
+            is AiLoopState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfAbandoned() {
                 // SCE-MAP: ai_loop.scxml:493 :: abandoned :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1301,24 +1435,29 @@ class AiLoopStateMachine(
                 if (isStateInFinalState(AiLoopState.Run)) {
                     raiseInternal(AiLoopEvent.Done.State.Run)
                 }
-            }
-            is AiLoopState.Alive -> {
+    }
+
+    private fun onEntryOfAlive() {
                 // SCE-MAP: ai_loop.scxml:506 :: alive :: _state_body
-            }
-            is AiLoopState.Blocked -> {
+    }
+
+    private fun onEntryOfBlocked() {
                 // SCE-MAP: ai_loop.scxml:548 :: blocked :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AiLoopState.Budget -> {
+    }
+
+    private fun onEntryOfBudget() {
                 // SCE-MAP: ai_loop.scxml:520 :: budget :: _state_body
-            }
-            is AiLoopState.Cancelled -> {
+    }
+
+    private fun onEntryOfCancelled() {
                 // SCE-MAP: ai_loop.scxml:547 :: cancelled :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AiLoopState.Closing -> {
+    }
+
+    private fun onEntryOfClosing() {
                 // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1377,26 +1516,31 @@ class AiLoopStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AiLoopState.Converged -> {
+    }
+
+    private fun onEntryOfConverged() {
                 // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AiLoopState.Drive -> {
+    }
+
+    private fun onEntryOfDrive() {
                 // SCE-MAP: ai_loop.scxml:236 :: drive :: _state_body
-            }
-            is AiLoopState.Exhausted -> {
+    }
+
+    private fun onEntryOfExhausted() {
                 // SCE-MAP: ai_loop.scxml:545 :: exhausted :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AiLoopState.Failed -> {
+    }
+
+    private fun onEntryOfFailed() {
                 // SCE-MAP: ai_loop.scxml:546 :: failed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AiLoopState.Judging -> {
+    }
+
+    private fun onEntryOfJudging() {
                 // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1455,8 +1599,9 @@ class AiLoopStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AiLoopState.Paused -> {
+    }
+
+    private fun onEntryOfPaused() {
                 // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1499,8 +1644,9 @@ class AiLoopStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AiLoopState.Priming -> {
+    }
+
+    private fun onEntryOfPriming() {
                 // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1559,11 +1705,13 @@ class AiLoopStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AiLoopState.Rebuilding -> {
+    }
+
+    private fun onEntryOfRebuilding() {
                 // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
-            }
-            is AiLoopState.Reflecting -> {
+    }
+
+    private fun onEntryOfReflecting() {
                 // SCE-MAP: ai_loop.scxml:374 :: reflecting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1611,8 +1759,9 @@ class AiLoopStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AiLoopState.Reported -> {
+    }
+
+    private fun onEntryOfReported() {
                 // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1621,8 +1770,9 @@ class AiLoopStateMachine(
                 }
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(AiLoopEvent.Done.State.Running, EventMetadata.platform())
-            }
-            is AiLoopState.Restarting -> {
+    }
+
+    private fun onEntryOfRestarting() {
                 // SCE-MAP: ai_loop.scxml:394 :: restarting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1670,14 +1820,17 @@ class AiLoopStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AiLoopState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
-            }
-            is AiLoopState.Running -> {
+    }
+
+    private fun onEntryOfRunning() {
                 // SCE-MAP: ai_loop.scxml:274 :: running :: _state_body
-            }
-            is AiLoopState.Screening -> {
+    }
+
+    private fun onEntryOfScreening() {
                 // SCE-MAP: ai_loop.scxml:327 :: screening :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1725,16 +1878,18 @@ class AiLoopStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is AiLoopState.Spent -> {
+    }
+
+    private fun onEntryOfSpent() {
                 // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(AiLoopEvent.Run.Exhausted)
                 }
-            }
-            is AiLoopState.Stuck -> {
+    }
+
+    private fun onEntryOfStuck() {
                 // SCE-MAP: ai_loop.scxml:434 :: stuck :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -1743,108 +1898,183 @@ class AiLoopStateMachine(
                 }
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(AiLoopEvent.Done.State.Running, EventMetadata.platform())
-            }
-            is AiLoopState.Watch -> {
+    }
+
+    private fun onEntryOfWatch() {
                 // SCE-MAP: ai_loop.scxml:505 :: watch :: _state_body
-            }
-            is AiLoopState.Within -> {
+    }
+
+    private fun onEntryOfWithin() {
                 // SCE-MAP: ai_loop.scxml:521 :: within :: _state_body
-            }
-            is AiLoopState.Working -> {
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: ai_loop.scxml:310 :: working :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: ai_loop.scxml:155 :: _machine
     override fun onExit(state: AiLoopState) {
         when (state) {
-            is AiLoopState.Abandoned -> {
-                // SCE-MAP: ai_loop.scxml:493 :: abandoned :: _state_body
-            }
-            is AiLoopState.Alive -> {
-                // SCE-MAP: ai_loop.scxml:506 :: alive :: _state_body
-            }
-            is AiLoopState.Blocked -> {
-                // SCE-MAP: ai_loop.scxml:548 :: blocked :: _state_body
-            }
-            is AiLoopState.Budget -> {
-                // SCE-MAP: ai_loop.scxml:520 :: budget :: _state_body
-            }
-            is AiLoopState.Cancelled -> {
-                // SCE-MAP: ai_loop.scxml:547 :: cancelled :: _state_body
-            }
-            is AiLoopState.Closing -> {
-                // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
-            }
-            is AiLoopState.Converged -> {
-                // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
-            }
-            is AiLoopState.Drive -> {
-                // SCE-MAP: ai_loop.scxml:236 :: drive :: _state_body
-            }
-            is AiLoopState.Exhausted -> {
-                // SCE-MAP: ai_loop.scxml:545 :: exhausted :: _state_body
-            }
-            is AiLoopState.Failed -> {
-                // SCE-MAP: ai_loop.scxml:546 :: failed :: _state_body
-            }
-            is AiLoopState.Judging -> {
-                // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
-            }
-            is AiLoopState.Paused -> {
-                // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
-            }
-            is AiLoopState.Priming -> {
-                // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
-            }
-            is AiLoopState.Rebuilding -> {
-                // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
-            }
-            is AiLoopState.Reflecting -> {
-                // SCE-MAP: ai_loop.scxml:374 :: reflecting :: _state_body
-            }
-            is AiLoopState.Reported -> {
-                // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
-            }
-            is AiLoopState.Restarting -> {
-                // SCE-MAP: ai_loop.scxml:394 :: restarting :: _state_body
-            }
-            is AiLoopState.Run -> {
-                // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
-            }
-            is AiLoopState.Running -> {
-                // SCE-MAP: ai_loop.scxml:274 :: running :: _state_body
-            }
-            is AiLoopState.Screening -> {
-                // SCE-MAP: ai_loop.scxml:327 :: screening :: _state_body
-            }
-            is AiLoopState.Spent -> {
-                // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
-            }
-            is AiLoopState.Stuck -> {
-                // SCE-MAP: ai_loop.scxml:434 :: stuck :: _state_body
-            }
-            is AiLoopState.Watch -> {
-                // SCE-MAP: ai_loop.scxml:505 :: watch :: _state_body
-            }
-            is AiLoopState.Within -> {
-                // SCE-MAP: ai_loop.scxml:521 :: within :: _state_body
-            }
-            is AiLoopState.Working -> {
-                // SCE-MAP: ai_loop.scxml:310 :: working :: _state_body
-            }
+            is AiLoopState.Abandoned -> onExitOfAbandoned()
+            is AiLoopState.Alive -> onExitOfAlive()
+            is AiLoopState.Blocked -> onExitOfBlocked()
+            is AiLoopState.Budget -> onExitOfBudget()
+            is AiLoopState.Cancelled -> onExitOfCancelled()
+            is AiLoopState.Closing -> onExitOfClosing()
+            is AiLoopState.Converged -> onExitOfConverged()
+            is AiLoopState.Drive -> onExitOfDrive()
+            is AiLoopState.Exhausted -> onExitOfExhausted()
+            is AiLoopState.Failed -> onExitOfFailed()
+            is AiLoopState.Judging -> onExitOfJudging()
+            is AiLoopState.Paused -> onExitOfPaused()
+            is AiLoopState.Priming -> onExitOfPriming()
+            is AiLoopState.Rebuilding -> onExitOfRebuilding()
+            is AiLoopState.Reflecting -> onExitOfReflecting()
+            is AiLoopState.Reported -> onExitOfReported()
+            is AiLoopState.Restarting -> onExitOfRestarting()
+            is AiLoopState.Run -> onExitOfRun()
+            is AiLoopState.Running -> onExitOfRunning()
+            is AiLoopState.Screening -> onExitOfScreening()
+            is AiLoopState.Spent -> onExitOfSpent()
+            is AiLoopState.Stuck -> onExitOfStuck()
+            is AiLoopState.Watch -> onExitOfWatch()
+            is AiLoopState.Within -> onExitOfWithin()
+            is AiLoopState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfAbandoned() {
+                // SCE-MAP: ai_loop.scxml:493 :: abandoned :: _state_body
+    }
+
+    private fun onExitOfAlive() {
+                // SCE-MAP: ai_loop.scxml:506 :: alive :: _state_body
+    }
+
+    private fun onExitOfBlocked() {
+                // SCE-MAP: ai_loop.scxml:548 :: blocked :: _state_body
+    }
+
+    private fun onExitOfBudget() {
+                // SCE-MAP: ai_loop.scxml:520 :: budget :: _state_body
+    }
+
+    private fun onExitOfCancelled() {
+                // SCE-MAP: ai_loop.scxml:547 :: cancelled :: _state_body
+    }
+
+    private fun onExitOfClosing() {
+                // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
+    }
+
+    private fun onExitOfConverged() {
+                // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
+    }
+
+    private fun onExitOfDrive() {
+                // SCE-MAP: ai_loop.scxml:236 :: drive :: _state_body
+    }
+
+    private fun onExitOfExhausted() {
+                // SCE-MAP: ai_loop.scxml:545 :: exhausted :: _state_body
+    }
+
+    private fun onExitOfFailed() {
+                // SCE-MAP: ai_loop.scxml:546 :: failed :: _state_body
+    }
+
+    private fun onExitOfJudging() {
+                // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
+    }
+
+    private fun onExitOfPaused() {
+                // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
+    }
+
+    private fun onExitOfPriming() {
+                // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
+    }
+
+    private fun onExitOfRebuilding() {
+                // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
+    }
+
+    private fun onExitOfReflecting() {
+                // SCE-MAP: ai_loop.scxml:374 :: reflecting :: _state_body
+    }
+
+    private fun onExitOfReported() {
+                // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
+    }
+
+    private fun onExitOfRestarting() {
+                // SCE-MAP: ai_loop.scxml:394 :: restarting :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
+    }
+
+    private fun onExitOfRunning() {
+                // SCE-MAP: ai_loop.scxml:274 :: running :: _state_body
+    }
+
+    private fun onExitOfScreening() {
+                // SCE-MAP: ai_loop.scxml:327 :: screening :: _state_body
+    }
+
+    private fun onExitOfSpent() {
+                // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
+    }
+
+    private fun onExitOfStuck() {
+                // SCE-MAP: ai_loop.scxml:434 :: stuck :: _state_body
+    }
+
+    private fun onExitOfWatch() {
+                // SCE-MAP: ai_loop.scxml:505 :: watch :: _state_body
+    }
+
+    private fun onExitOfWithin() {
+                // SCE-MAP: ai_loop.scxml:521 :: within :: _state_body
+    }
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: ai_loop.scxml:310 :: working :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: ai_loop.scxml:155 :: _machine
     override fun executeTransitionContent(source: AiLoopState, transitionIndex: Int) {
         when (source) {
-        is AiLoopState.Judging -> when (transitionIndex) {
-            2 -> {
+            is AiLoopState.Judging -> transitionContentOfJudging(transitionIndex)
+            is AiLoopState.Paused -> transitionContentOfPaused(transitionIndex)
+            is AiLoopState.Reflecting -> transitionContentOfReflecting(transitionIndex)
+            is AiLoopState.Within -> transitionContentOfWithin(transitionIndex)
+            is AiLoopState.Working -> transitionContentOfWorking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `judging`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfJudging(transitionIndex: Int) {
+        when (transitionIndex) {
+            2 -> transitionContentOfJudgingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfJudgingAt2() {
                 // SCE-MAP: ai_loop.scxml:362 :: judging :: _transition_2
 
 
@@ -1900,22 +2130,45 @@ class AiLoopStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
+    }
+
+    // The content of `paused`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPaused(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPausedAt0()
             else -> {}
         }
-        is AiLoopState.Paused -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfPausedAt0() {
                 // SCE-MAP: ai_loop.scxml:468 :: paused :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns_since_reflect, 1)", "turns_since_reflect + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `reflecting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfReflecting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfReflectingAt0()
+            1 -> transitionContentOfReflectingAt1()
             else -> {}
         }
-        is AiLoopState.Reflecting -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfReflectingAt0() {
                 // SCE-MAP: ai_loop.scxml:379 :: reflecting :: _transition_0
 
 
@@ -1932,8 +2185,9 @@ class AiLoopStateMachine(
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("milestone", "milestone"), com.sce.runtime.ScriptSource.lua("_event.data.milestone", "_event.data.milestone"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfReflectingAt1() {
                 // SCE-MAP: ai_loop.scxml:385 :: reflecting :: _transition_1
 
 
@@ -1989,40 +2243,59 @@ class AiLoopStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
+    }
+
+    // The content of `within`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWithin(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWithinAt0()
+            1 -> transitionContentOfWithinAt1()
             else -> {}
         }
-        is AiLoopState.Within -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfWithinAt0() {
                 // SCE-MAP: ai_loop.scxml:522 :: within :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWithinAt1() {
                 // SCE-MAP: ai_loop.scxml:525 :: within :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWorkingAt0()
             else -> {}
         }
-        is AiLoopState.Working -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: ai_loop.scxml:311 :: working :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns_since_reflect, 1)", "turns_since_reflect + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

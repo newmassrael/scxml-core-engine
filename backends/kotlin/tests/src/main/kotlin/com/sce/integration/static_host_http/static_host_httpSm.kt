@@ -162,6 +162,10 @@ class StaticHostHttpStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.method?.let { vMethod = it }
         params.url?.let { vUrl = it }
         params.requestHeaders?.let { vRequestHeaders = it }
@@ -248,20 +252,22 @@ class StaticHostHttpStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "method" to SavedValues.of(vMethod),
-            "url" to SavedValues.of(vUrl),
-            "request_headers" to SavedValues.of(vRequestHeaders),
-            "request_body" to SavedValues.of(vRequestBody),
-            "outcome" to SavedValues.of(vOutcome),
-            "status" to SavedValues.of(vStatus),
-            "response_headers" to SavedValues.of(vResponseHeaders),
-            "response_body" to SavedValues.of(vResponseBody),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "method" to SavedValues.of(vMethod)
+        variables += "url" to SavedValues.of(vUrl)
+        variables += "request_headers" to SavedValues.of(vRequestHeaders)
+        variables += "request_body" to SavedValues.of(vRequestBody)
+        variables += "outcome" to SavedValues.of(vOutcome)
+        variables += "status" to SavedValues.of(vStatus)
+        variables += "response_headers" to SavedValues.of(vResponseHeaders)
+        variables += "response_body" to SavedValues.of(vResponseBody)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -286,6 +292,15 @@ class StaticHostHttpStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("method"), "method", 8)
         val saved2 = SavedValues.string(savedGrown.variable("url"), "url", 2048)
         val saved3 = SavedValues.string(savedGrown.variable("request_headers"), "request_headers", 2048)
@@ -294,15 +309,16 @@ class StaticHostHttpStateMachine(
         val saved6 = SavedValues.uint16(savedGrown.variable("status"), "status")
         val saved7 = SavedValues.string(savedGrown.variable("response_headers"), "response_headers", 4096)
         val saved8 = SavedValues.string(savedGrown.variable("response_body"), "response_body", 16384)
-        vMethod = saved1
-        vUrl = saved2
-        vRequestHeaders = saved3
-        vRequestBody = saved4
-        vOutcome = saved5
-        vStatus = saved6
-        vResponseHeaders = saved7
-        vResponseBody = saved8
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vMethod = saved1
+            vUrl = saved2
+            vRequestHeaders = saved3
+            vRequestBody = saved4
+            vOutcome = saved5
+            vStatus = saved6
+            vResponseHeaders = saved7
+            vResponseBody = saved8
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -315,6 +331,10 @@ class StaticHostHttpStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("method"), "method", 8)
         SavedValues.string(savedGrown.variable("url"), "url", 2048)
         SavedValues.string(savedGrown.variable("request_headers"), "request_headers", 2048)
@@ -477,6 +497,9 @@ class StaticHostHttpStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticHostHttpState, HistoryId>> =
             listOf(StateTarget(StaticHostHttpState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: fetching's transition 0, as the microstep reads it.
         val transitionFetchingAt0 = EnabledTransition<StaticHostHttpState, HistoryId>(
@@ -524,6 +547,7 @@ class StaticHostHttpStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticHostHttpState? = when (stateId) {
         "fetching" -> StaticHostHttpState.Fetching
@@ -531,17 +555,20 @@ class StaticHostHttpStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticHostHttpState): String = when (state) {
         is StaticHostHttpState.Fetching -> "fetching"
         is StaticHostHttpState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticHostHttpState): Int = when (state) {
         is StaticHostHttpState.Fetching -> 1
         is StaticHostHttpState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticHostHttpEvent? = when (name) {
@@ -554,6 +581,7 @@ class StaticHostHttpStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticHostHttpEvent): String? = when (event) {
         is StaticHostHttpEvent.Done.Invoke.Self -> "done.invoke"
@@ -563,6 +591,7 @@ class StaticHostHttpStateMachine(
         is StaticHostHttpEvent.Error.Invoke.Fetch -> "error.invoke.fetch"
         is StaticHostHttpEvent.Host.Http.Fetch.Request -> "host.http.fetch.request"
     }
+
 
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `completeHostInvoke`.
@@ -579,29 +608,43 @@ class StaticHostHttpStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticHostHttpState,
-        event: StaticHostHttpEvent?
-    ): EnabledTransition<StaticHostHttpState, HistoryId>? = when (state) {
-        is StaticHostHttpState.Fetching -> when {
-            event is StaticHostHttpEvent.Done.Invoke.Fetch && pendingDoneInvokeFetchPayload != null && (pendingDoneInvokeFetchPayload!!.error == "") -> transitionFetchingAt0
-            event is StaticHostHttpEvent.Done.Invoke.Fetch -> transitionFetchingAt1
-            event is StaticHostHttpEvent.Error.Invoke.Fetch -> transitionFetchingAt2
-            event is StaticHostHttpEvent.Error.Execution -> transitionFetchingAt3
-            else -> null
-        }
-        is StaticHostHttpState.Idle -> when {
-            event is StaticHostHttpEvent.Host.Http.Fetch.Request -> transitionIdleAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticHostHttpState, event: StaticHostHttpEvent?): EnabledTransition<StaticHostHttpState, HistoryId>? = when (state) {
+        is StaticHostHttpState.Fetching -> firstEnabledTransitionOfFetching(state, event)
+        is StaticHostHttpState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // fetching's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfFetching(state: StaticHostHttpState, event: StaticHostHttpEvent?): EnabledTransition<StaticHostHttpState, HistoryId>? = when {
+        event is StaticHostHttpEvent.Done.Invoke.Fetch && pendingDoneInvokeFetchPayload != null && (pendingDoneInvokeFetchPayload!!.error == "") -> TransitionsPart0.transitionFetchingAt0
+        event is StaticHostHttpEvent.Done.Invoke.Fetch -> TransitionsPart0.transitionFetchingAt1
+        event is StaticHostHttpEvent.Error.Invoke.Fetch -> TransitionsPart0.transitionFetchingAt2
+        event is StaticHostHttpEvent.Error.Execution -> TransitionsPart0.transitionFetchingAt3
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticHostHttpState, event: StaticHostHttpEvent?): EnabledTransition<StaticHostHttpState, HistoryId>? = when {
+        event is StaticHostHttpEvent.Host.Http.Fetch.Request -> TransitionsPart0.transitionIdleAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_host_http.scxml:22 :: _machine
     override fun onEntry(state: StaticHostHttpState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticHostHttpState.Fetching -> {
+            is StaticHostHttpState.Fetching -> onEntryOfFetching()
+            is StaticHostHttpState.Idle -> onEntryOfIdle()
+        }
+    }
+
+
+    private fun onEntryOfFetching() {
                 // SCE-MAP: static_host_http.scxml:46 :: fetching :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -615,7 +658,7 @@ class StaticHostHttpStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "fetching.${System.identityHashCode(this)}.fetch"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StaticHostHttpState.Fetching, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -674,40 +717,66 @@ class StaticHostHttpStateMachine(
                         }
                     }
                 }
-            }
-            is StaticHostHttpState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: static_host_http.scxml:37 :: idle :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_host_http.scxml:22 :: _machine
     override fun onExit(state: StaticHostHttpState) {
         when (state) {
-            is StaticHostHttpState.Fetching -> {
+            is StaticHostHttpState.Fetching -> onExitOfFetching()
+            is StaticHostHttpState.Idle -> onExitOfIdle()
+        }
+    }
+
+
+    private fun onExitOfFetching() {
                 // SCE-MAP: static_host_http.scxml:46 :: fetching :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StaticHostHttpState.Fetching)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce-host-http-fetch", "fetch")
-            }
-            is StaticHostHttpState.Idle -> {
-                // SCE-MAP: static_host_http.scxml:37 :: idle :: _state_body
-            }
-        }
     }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_host_http.scxml:37 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_host_http.scxml:22 :: _machine
     override fun executeTransitionContent(source: StaticHostHttpState, transitionIndex: Int) {
         when (source) {
-        is StaticHostHttpState.Fetching -> when (transitionIndex) {
-            0 -> {
+            is StaticHostHttpState.Fetching -> transitionContentOfFetching(transitionIndex)
+            is StaticHostHttpState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `fetching`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfFetching(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfFetchingAt0()
+            1 -> transitionContentOfFetchingAt1()
+            2 -> transitionContentOfFetchingAt2()
+            3 -> transitionContentOfFetchingAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfFetchingAt0() {
                 // SCE-MAP: static_host_http.scxml:54 :: fetching :: _transition_0
                 if (pendingDoneInvokeFetchPayload == null) {
                     return
@@ -726,8 +795,9 @@ class StaticHostHttpStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostHttpEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfFetchingAt1() {
                 // SCE-MAP: static_host_http.scxml:60 :: fetching :: _transition_1
                 if (pendingDoneInvokeFetchPayload == null) {
                     return
@@ -736,25 +806,38 @@ class StaticHostHttpStateMachine(
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeFetchPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostHttpEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfFetchingAt2() {
                 // SCE-MAP: static_host_http.scxml:63 :: fetching :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostHttpEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfFetchingAt3() {
                 // SCE-MAP: static_host_http.scxml:66 :: fetching :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostHttpEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
             else -> {}
         }
-        is StaticHostHttpState.Idle -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_host_http.scxml:38 :: idle :: _transition_0
                 if (pendingHostHttpFetchRequestPayload == null) {
                     return
@@ -775,9 +858,5 @@ class StaticHostHttpStateMachine(
             if (try { vRequestBody = com.sce.forge.runtime.SceChecked.bounded(pendingHostHttpFetchRequestPayload!!.body, 16384); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostHttpEvent.Error.Execution, "<assign location='request_body'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

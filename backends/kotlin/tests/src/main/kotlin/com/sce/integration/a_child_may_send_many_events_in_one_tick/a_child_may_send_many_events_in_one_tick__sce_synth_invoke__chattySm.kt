@@ -94,21 +94,25 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
             listOf(StateTarget(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState? = when (stateId) {
         "c0" -> AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState): String = when (state) {
         is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0 -> "c0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState): Int = when (state) {
         is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent? = when (name) {
@@ -118,12 +122,14 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent): String? = when (event) {
         is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Communication -> "error.communication"
         is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution -> "error.execution"
         is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Tick -> "tick"
     }
+
 
 
 
@@ -153,20 +159,7 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'items' with expr
-        try {
-            val initResult_items = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}", "[1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"))
-            engine.setVariable(sid, "items", initResult_items)
-        } catch (e: Exception) {
-            raisePlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution, "<data id='items'> expr failed to evaluate")
-        }
-        // W3C SCXML 5.3: Initialize variable 'item' with expr
-        try {
-            val initResult_item = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "item", initResult_item)
-        } catch (e: Exception) {
-            raisePlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution, "<data id='item'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -183,6 +176,24 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'items' with expr
+        try {
+            val initResult_items = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}", "[1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"))
+            engine.setVariable(sid, "items", initResult_items)
+        } catch (e: Exception) {
+            raisePlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution, "<data id='items'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'item' with expr
+        try {
+            val initResult_item = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "item", initResult_item)
+        } catch (e: Exception) {
+            raisePlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution, "<data id='item'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -372,19 +383,24 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState,
-        event: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent?
-    ): EnabledTransition<AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, event: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent?): EnabledTransition<AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:3 :: _machine
     override fun onEntry(state: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, isDefaultEntry: Boolean) {
         when (state) {
-            is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0 -> {
+            is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0 -> onEntryOfC0()
+        }
+    }
+
+
+    private fun onEntryOfC0() {
                 // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:19 :: c0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -430,26 +446,28 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
                 return@run
             } // end of run foreach@
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:3 :: _machine
     override fun onExit(state: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState) {
         when (state) {
-            is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0 -> {
-                // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:19 :: c0 :: _state_body
-            }
+            is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0 -> onExitOfC0()
         }
     }
+
+
+    private fun onExitOfC0() {
+                // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:19 :: c0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:3 :: _machine
     override fun executeTransitionContent(source: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

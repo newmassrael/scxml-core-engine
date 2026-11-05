@@ -110,6 +110,10 @@ class StaticForeachStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.total?.let { vTotal = it }
         params.weighted?.let { vWeighted = it }
         params.small?.let { vSmall = it }
@@ -203,20 +207,22 @@ class StaticForeachStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "picked" to SavedValues.list(vPicked) { SavedValues.of(it) },
-            "total" to SavedValues.of(vTotal),
-            "weighted" to SavedValues.of(vWeighted),
-            "small" to SavedValues.of(vSmall),
-            "crossings" to SavedValues.of(vCrossings),
-            "visited" to SavedValues.of(vVisited),
-            "finished" to SavedValues.of(vFinished),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "picked" to SavedValues.list(vPicked) { SavedValues.of(it) }
+        variables += "total" to SavedValues.of(vTotal)
+        variables += "weighted" to SavedValues.of(vWeighted)
+        variables += "small" to SavedValues.of(vSmall)
+        variables += "crossings" to SavedValues.of(vCrossings)
+        variables += "visited" to SavedValues.of(vVisited)
+        variables += "finished" to SavedValues.of(vFinished)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -241,6 +247,15 @@ class StaticForeachStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.list(savedGrown.variable("picked"), "picked", 4) { e, w -> SavedValues.uint8(e, w) }
         val saved2 = SavedValues.uint32(savedGrown.variable("total"), "total")
         val saved3 = SavedValues.uint32(savedGrown.variable("weighted"), "weighted")
@@ -249,15 +264,16 @@ class StaticForeachStateMachine(
         val saved6 = SavedValues.uint32(savedGrown.variable("visited"), "visited")
         val saved7 = SavedValues.uint32(savedGrown.variable("finished"), "finished")
         val saved8 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vPicked = saved1
-        vTotal = saved2
-        vWeighted = saved3
-        vSmall = saved4
-        vCrossings = saved5
-        vVisited = saved6
-        vFinished = saved7
-        vErrors = saved8
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vPicked = saved1
+            vTotal = saved2
+            vWeighted = saved3
+            vSmall = saved4
+            vCrossings = saved5
+            vVisited = saved6
+            vFinished = saved7
+            vErrors = saved8
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -270,6 +286,10 @@ class StaticForeachStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.list(savedGrown.variable("picked"), "picked", 4) { e, w -> SavedValues.uint8(e, w) }
         SavedValues.uint32(savedGrown.variable("total"), "total")
         SavedValues.uint32(savedGrown.variable("weighted"), "weighted")
@@ -307,6 +327,9 @@ class StaticForeachStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticForeachState, HistoryId>> =
             listOf(StateTarget(StaticForeachState.Working))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: working's transition 0, as the microstep reads it.
         val transitionWorkingAt0 = EnabledTransition<StaticForeachState, HistoryId>(
@@ -408,21 +431,25 @@ class StaticForeachStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticForeachState? = when (stateId) {
         "working" -> StaticForeachState.Working
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticForeachState): String = when (state) {
         is StaticForeachState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticForeachState): Int = when (state) {
         is StaticForeachState.Working -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticForeachEvent? = when (name) {
@@ -439,6 +466,7 @@ class StaticForeachStateMachine(
         "weigh" -> StaticForeachEvent.Weigh
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticForeachEvent): String? = when (event) {
@@ -459,85 +487,128 @@ class StaticForeachStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticForeachState,
-        event: StaticForeachEvent?
-    ): EnabledTransition<StaticForeachState, HistoryId>? = when (state) {
-        is StaticForeachState.Working -> when {
-            event is StaticForeachEvent.A -> transitionWorkingAt0
-            event is StaticForeachEvent.B -> transitionWorkingAt1
-            event is StaticForeachEvent.C -> transitionWorkingAt2
-            event is StaticForeachEvent.Clear -> transitionWorkingAt3
-            event is StaticForeachEvent.Sum -> transitionWorkingAt4
-            event is StaticForeachEvent.Weigh -> transitionWorkingAt5
-            event is StaticForeachEvent.Squeeze -> transitionWorkingAt6
-            event is StaticForeachEvent.Double -> transitionWorkingAt7
-            event is StaticForeachEvent.Cross -> transitionWorkingAt8
-            event is StaticForeachEvent.Count -> transitionWorkingAt9
-            event is StaticForeachEvent.Error.Execution -> transitionWorkingAt10
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticForeachState, event: StaticForeachEvent?): EnabledTransition<StaticForeachState, HistoryId>? = when (state) {
+        is StaticForeachState.Working -> firstEnabledTransitionOfWorking(state, event)
     }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: StaticForeachState, event: StaticForeachEvent?): EnabledTransition<StaticForeachState, HistoryId>? = when {
+        event is StaticForeachEvent.A -> TransitionsPart0.transitionWorkingAt0
+        event is StaticForeachEvent.B -> TransitionsPart0.transitionWorkingAt1
+        event is StaticForeachEvent.C -> TransitionsPart0.transitionWorkingAt2
+        event is StaticForeachEvent.Clear -> TransitionsPart0.transitionWorkingAt3
+        event is StaticForeachEvent.Sum -> TransitionsPart0.transitionWorkingAt4
+        event is StaticForeachEvent.Weigh -> TransitionsPart0.transitionWorkingAt5
+        event is StaticForeachEvent.Squeeze -> TransitionsPart0.transitionWorkingAt6
+        event is StaticForeachEvent.Double -> TransitionsPart0.transitionWorkingAt7
+        event is StaticForeachEvent.Cross -> TransitionsPart0.transitionWorkingAt8
+        event is StaticForeachEvent.Count -> TransitionsPart0.transitionWorkingAt9
+        event is StaticForeachEvent.Error.Execution -> TransitionsPart0.transitionWorkingAt10
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_foreach.scxml:13 :: _machine
     override fun onEntry(state: StaticForeachState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticForeachState.Working -> {
-                // SCE-MAP: static_foreach.scxml:25 :: working :: _state_body
-            }
+            is StaticForeachState.Working -> onEntryOfWorking()
         }
+    }
+
+
+    private fun onEntryOfWorking() {
+                // SCE-MAP: static_foreach.scxml:25 :: working :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_foreach.scxml:13 :: _machine
     override fun onExit(state: StaticForeachState) {
         when (state) {
-            is StaticForeachState.Working -> {
-                // SCE-MAP: static_foreach.scxml:25 :: working :: _state_body
-            }
+            is StaticForeachState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: static_foreach.scxml:25 :: working :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_foreach.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticForeachState, transitionIndex: Int) {
         when (source) {
-        is StaticForeachState.Working -> when (transitionIndex) {
-            0 -> {
+            is StaticForeachState.Working -> transitionContentOfWorking(transitionIndex)
+        }
+    }
+
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWorkingAt0()
+            1 -> transitionContentOfWorkingAt1()
+            2 -> transitionContentOfWorkingAt2()
+            3 -> transitionContentOfWorkingAt3()
+            4 -> transitionContentOfWorkingAt4()
+            5 -> transitionContentOfWorkingAt5()
+            6 -> transitionContentOfWorkingAt6()
+            7 -> transitionContentOfWorkingAt7()
+            8 -> transitionContentOfWorkingAt8()
+            9 -> transitionContentOfWorkingAt9()
+            10 -> transitionContentOfWorkingAt10()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: static_foreach.scxml:26 :: working :: _transition_0
 
             if (if (vPicked.size < 4) { vPicked = vPicked + (100.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWorkingAt1() {
                 // SCE-MAP: static_foreach.scxml:27 :: working :: _transition_1
 
             if (if (vPicked.size < 4) { vPicked = vPicked + (200.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfWorkingAt2() {
                 // SCE-MAP: static_foreach.scxml:28 :: working :: _transition_2
 
             if (if (vPicked.size < 4) { vPicked = vPicked + (5.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfWorkingAt3() {
                 // SCE-MAP: static_foreach.scxml:29 :: working :: _transition_3
 
             vPicked = emptyList()
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfWorkingAt4() {
                 // SCE-MAP: static_foreach.scxml:31 :: working :: _transition_4
 
             vTotal = 0.toUInt()
@@ -553,8 +624,9 @@ class StaticForeachStateMachine(
             if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfWorkingAt5() {
                 // SCE-MAP: static_foreach.scxml:39 :: working :: _transition_5
 
             vWeighted = 0.toUInt()
@@ -571,8 +643,9 @@ class StaticForeachStateMachine(
             if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfWorkingAt6() {
                 // SCE-MAP: static_foreach.scxml:49 :: working :: _transition_6
 
             vSmall = 0.toUByte()
@@ -588,8 +661,9 @@ class StaticForeachStateMachine(
             if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfWorkingAt7() {
                 // SCE-MAP: static_foreach.scxml:58 :: working :: _transition_7
 
 
@@ -603,8 +677,9 @@ class StaticForeachStateMachine(
             if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfWorkingAt8() {
                 // SCE-MAP: static_foreach.scxml:65 :: working :: _transition_8
 
             vCrossings = 0.toUInt()
@@ -621,8 +696,9 @@ class StaticForeachStateMachine(
             }
             }
             }
-            }
-            9 -> {
+    }
+
+    private fun transitionContentOfWorkingAt9() {
                 // SCE-MAP: static_foreach.scxml:74 :: working :: _transition_9
 
             vVisited = 0.toUInt()
@@ -635,16 +711,13 @@ class StaticForeachStateMachine(
                 return
             }
             }
-            }
-            10 -> {
+    }
+
+    private fun transitionContentOfWorkingAt10() {
                 // SCE-MAP: static_foreach.scxml:80 :: working :: _transition_10
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

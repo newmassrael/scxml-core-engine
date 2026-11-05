@@ -77,6 +77,10 @@ class StaticSendTargetStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.route?.let { vRoute = it }
         params.landed?.let { vLanded = it }
         params.refused?.let { vRefused = it }
@@ -154,15 +158,17 @@ class StaticSendTargetStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "route" to SavedValues.of(vRoute),
-            "landed" to SavedValues.of(vLanded),
-            "refused" to SavedValues.of(vRefused),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "route" to SavedValues.of(vRoute)
+        variables += "landed" to SavedValues.of(vLanded)
+        variables += "refused" to SavedValues.of(vRefused)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -187,13 +193,23 @@ class StaticSendTargetStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("route"), "route", 24)
         val saved2 = SavedValues.uint32(savedGrown.variable("landed"), "landed")
         val saved3 = SavedValues.uint32(savedGrown.variable("refused"), "refused")
-        vRoute = saved1
-        vLanded = saved2
-        vRefused = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vRoute = saved1
+            vLanded = saved2
+            vRefused = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -206,6 +222,10 @@ class StaticSendTargetStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("route"), "route", 24)
         SavedValues.uint32(savedGrown.variable("landed"), "landed")
         SavedValues.uint32(savedGrown.variable("refused"), "refused")
@@ -238,6 +258,9 @@ class StaticSendTargetStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticSendTargetState, HistoryId>> =
             listOf(StateTarget(StaticSendTargetState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticSendTargetState, HistoryId>(
@@ -303,21 +326,25 @@ class StaticSendTargetStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticSendTargetState? = when (stateId) {
         "idle" -> StaticSendTargetState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticSendTargetState): String = when (state) {
         is StaticSendTargetState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticSendTargetState): Int = when (state) {
         is StaticSendTargetState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticSendTargetEvent? = when (name) {
@@ -331,6 +358,7 @@ class StaticSendTargetStateMachine(
         "narrow" -> StaticSendTargetEvent.Narrow
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticSendTargetEvent): String? = when (event) {
@@ -348,55 +376,90 @@ class StaticSendTargetStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticSendTargetState,
-        event: StaticSendTargetEvent?
-    ): EnabledTransition<StaticSendTargetState, HistoryId>? = when (state) {
-        is StaticSendTargetState.Idle -> when {
-            event is StaticSendTargetEvent.Fire -> transitionIdleAt0
-            event is StaticSendTargetEvent.Narrow -> transitionIdleAt1
-            event is StaticSendTargetEvent.Aim.Internal -> transitionIdleAt2
-            event is StaticSendTargetEvent.Aim.Parent -> transitionIdleAt3
-            event is StaticSendTargetEvent.Aim.Stranger -> transitionIdleAt4
-            event is StaticSendTargetEvent.Landed -> transitionIdleAt5
-            event is StaticSendTargetEvent.Error.Communication -> transitionIdleAt6
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticSendTargetState, event: StaticSendTargetEvent?): EnabledTransition<StaticSendTargetState, HistoryId>? = when (state) {
+        is StaticSendTargetState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticSendTargetState, event: StaticSendTargetEvent?): EnabledTransition<StaticSendTargetState, HistoryId>? = when {
+        event is StaticSendTargetEvent.Fire -> TransitionsPart0.transitionIdleAt0
+        event is StaticSendTargetEvent.Narrow -> TransitionsPart0.transitionIdleAt1
+        event is StaticSendTargetEvent.Aim.Internal -> TransitionsPart0.transitionIdleAt2
+        event is StaticSendTargetEvent.Aim.Parent -> TransitionsPart0.transitionIdleAt3
+        event is StaticSendTargetEvent.Aim.Stranger -> TransitionsPart0.transitionIdleAt4
+        event is StaticSendTargetEvent.Landed -> TransitionsPart0.transitionIdleAt5
+        event is StaticSendTargetEvent.Error.Communication -> TransitionsPart0.transitionIdleAt6
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_send_target.scxml:18 :: _machine
     override fun onEntry(state: StaticSendTargetState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticSendTargetState.Idle -> {
-                // SCE-MAP: static_send_target.scxml:25 :: idle :: _state_body
-            }
+            is StaticSendTargetState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_send_target.scxml:25 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_send_target.scxml:18 :: _machine
     override fun onExit(state: StaticSendTargetState) {
         when (state) {
-            is StaticSendTargetState.Idle -> {
-                // SCE-MAP: static_send_target.scxml:25 :: idle :: _state_body
-            }
+            is StaticSendTargetState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_send_target.scxml:25 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_send_target.scxml:18 :: _machine
     override fun executeTransitionContent(source: StaticSendTargetState, transitionIndex: Int) {
         when (source) {
-        is StaticSendTargetState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticSendTargetState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_send_target.scxml:26 :: idle :: _transition_0
 
 
@@ -446,8 +509,9 @@ StaticSendTargetEvent.Landed,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_send_target.scxml:29 :: idle :: _transition_1
 
 
@@ -497,44 +561,45 @@ StaticSendTargetEvent.Landed,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_target.scxml:32 :: idle :: _transition_2
 
             if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_internal", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_target.scxml:35 :: idle :: _transition_3
 
             if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_parent", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_target.scxml:38 :: idle :: _transition_4
 
             if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_scxml_stranger", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_send_target.scxml:41 :: idle :: _transition_5
 
             if (try { vLanded = com.sce.forge.runtime.SceChecked.add(vLanded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_send_target.scxml:44 :: idle :: _transition_6
 
             if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

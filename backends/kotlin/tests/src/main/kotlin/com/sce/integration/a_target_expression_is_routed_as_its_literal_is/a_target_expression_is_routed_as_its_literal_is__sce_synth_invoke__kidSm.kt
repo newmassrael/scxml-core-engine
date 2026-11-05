@@ -85,6 +85,9 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, HistoryId>> =
             listOf(StateTarget(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: wait's transition 0, as the microstep reads it.
         val transitionWaitAt0 = EnabledTransition<ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, HistoryId>(
@@ -123,21 +126,25 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState? = when (stateId) {
         "wait" -> ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState): String = when (state) {
         is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> "wait"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState): Int = when (state) {
         is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent? = when (name) {
@@ -155,6 +162,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent): String? = when (event) {
         is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication -> "error.communication"
@@ -169,6 +177,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
         is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SLater -> "sLater"
         is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SNow -> "sNow"
     }
+
 
 
 
@@ -198,13 +207,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'tParent' with expr
-        try {
-            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_parent\"", "'#_parent'"))
-            engine.setVariable(sid, "tParent", initResult_tParent)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<data id='tParent'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -221,6 +224,17 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'tParent' with expr
+        try {
+            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_parent\"", "'#_parent'"))
+            engine.setVariable(sid, "tParent", initResult_tParent)
+        } catch (e: Exception) {
+            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<data id='tParent'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -410,25 +424,34 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState,
-        event: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent?
-    ): EnabledTransition<ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, HistoryId>? = when (state) {
-        is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> when {
-            event is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KNow -> transitionWaitAt0
-            event is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KLater -> transitionWaitAt1
-            event is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SNow -> transitionWaitAt2
-            event is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SLater -> transitionWaitAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, event: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent?): EnabledTransition<ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, HistoryId>? = when (state) {
+        is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> firstEnabledTransitionOfWait(state, event)
     }
+
+
+    // wait's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWait(state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, event: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent?): EnabledTransition<ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, HistoryId>? = when {
+        event is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KNow -> TransitionsPart0.transitionWaitAt0
+        event is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KLater -> TransitionsPart0.transitionWaitAt1
+        event is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SNow -> TransitionsPart0.transitionWaitAt2
+        event is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SLater -> TransitionsPart0.transitionWaitAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:3 :: _machine
     override fun onEntry(state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
-            is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> {
+            is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> onEntryOfWait()
+        }
+    }
+
+
+    private fun onEntryOfWait() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:8 :: wait :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -452,27 +475,49 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:3 :: _machine
     override fun onExit(state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState) {
         when (state) {
-            is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:8 :: wait :: _state_body
-            }
+            is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> onExitOfWait()
         }
     }
+
+
+    private fun onExitOfWait() {
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:8 :: wait :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:3 :: _machine
     override fun executeTransitionContent(source: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
-        is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> when (transitionIndex) {
-            0 -> {
+            is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> transitionContentOfWait(transitionIndex)
+        }
+    }
+
+
+    // The content of `wait`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWait(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitAt0()
+            1 -> transitionContentOfWaitAt1()
+            2 -> transitionContentOfWaitAt2()
+            3 -> transitionContentOfWaitAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitAt0() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:12 :: wait :: _transition_0
 
 
@@ -561,8 +606,9 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckNow,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWaitAt1() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:15 :: wait :: _transition_1
 
 
@@ -649,8 +695,9 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckLater,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfWaitAt2() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:18 :: wait :: _transition_2
 
 
@@ -739,8 +786,9 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SAckNow,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfWaitAt3() {
                 // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:21 :: wait :: _transition_3
 
 
@@ -827,9 +875,5 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SAckLater,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        }
     }
 }

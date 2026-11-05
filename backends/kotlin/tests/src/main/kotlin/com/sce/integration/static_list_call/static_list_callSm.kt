@@ -118,6 +118,10 @@ class StaticListCallStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.repeats?.let { vRepeats = it }
         params.high?.let { vHigh = it }
     }
@@ -213,17 +217,19 @@ class StaticListCallStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "entries" to SavedValues.list(vEntries) { it.toSaved() },
-            "ids" to SavedValues.list(vIds) { SavedValues.of(it) },
-            "line" to vLine.toSaved(),
-            "repeats" to SavedValues.of(vRepeats),
-            "high" to SavedValues.of(vHigh),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "entries" to SavedValues.list(vEntries) { it.toSaved() }
+        variables += "ids" to SavedValues.list(vIds) { SavedValues.of(it) }
+        variables += "line" to vLine.toSaved()
+        variables += "repeats" to SavedValues.of(vRepeats)
+        variables += "high" to SavedValues.of(vHigh)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -248,17 +254,27 @@ class StaticListCallStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.list(savedGrown.variable("entries"), "entries", 8) { e, w -> StaticListCallEntryRecord.fromSaved(e, w) }
         val saved2 = SavedValues.list(savedGrown.variable("ids"), "ids", 8) { e, w -> SavedValues.uint32(e, w) }
         val saved3 = StaticListCallEntryRecord.fromSaved(savedGrown.variable("line"), "line")
         val saved4 = SavedValues.uint32(savedGrown.variable("repeats"), "repeats")
         val saved5 = SavedValues.uint32(savedGrown.variable("high"), "high")
-        vEntries = saved1
-        vIds = saved2
-        vLine = saved3
-        vRepeats = saved4
-        vHigh = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vEntries = saved1
+            vIds = saved2
+            vLine = saved3
+            vRepeats = saved4
+            vHigh = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -271,6 +287,10 @@ class StaticListCallStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.list(savedGrown.variable("entries"), "entries", 8) { e, w -> StaticListCallEntryRecord.fromSaved(e, w) }
         SavedValues.list(savedGrown.variable("ids"), "ids", 8) { e, w -> SavedValues.uint32(e, w) }
         StaticListCallEntryRecord.fromSaved(savedGrown.variable("line"), "line")
@@ -352,6 +372,9 @@ class StaticListCallStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticListCallState, HistoryId>> =
             listOf(StateTarget(StaticListCallState.Open))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: open's transition 0, as the microstep reads it.
         val transitionOpenAt0 = EnabledTransition<StaticListCallState, HistoryId>(
@@ -363,27 +386,32 @@ class StaticListCallStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticListCallState? = when (stateId) {
         "open" -> StaticListCallState.Open
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticListCallState): String = when (state) {
         is StaticListCallState.Open -> "open"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticListCallState): Int = when (state) {
         is StaticListCallState.Open -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticListCallEvent? = when (name) {
         "ledger.entry" -> StaticListCallEvent.Ledger.Entry
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticListCallEvent): String? = when (event) {
@@ -394,49 +422,78 @@ class StaticListCallStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticListCallState,
-        event: StaticListCallEvent?
-    ): EnabledTransition<StaticListCallState, HistoryId>? = when (state) {
-        is StaticListCallState.Open -> when {
-            event is StaticListCallEvent.Ledger.Entry -> transitionOpenAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticListCallState, event: StaticListCallEvent?): EnabledTransition<StaticListCallState, HistoryId>? = when (state) {
+        is StaticListCallState.Open -> firstEnabledTransitionOfOpen(state, event)
     }
+
+
+    // open's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOpen(state: StaticListCallState, event: StaticListCallEvent?): EnabledTransition<StaticListCallState, HistoryId>? = when {
+        event is StaticListCallEvent.Ledger.Entry -> TransitionsPart0.transitionOpenAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_list_call.scxml:13 :: _machine
     override fun onEntry(state: StaticListCallState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticListCallState.Open -> {
-                // SCE-MAP: static_list_call.scxml:28 :: open :: _state_body
-            }
+            is StaticListCallState.Open -> onEntryOfOpen()
         }
+    }
+
+
+    private fun onEntryOfOpen() {
+                // SCE-MAP: static_list_call.scxml:28 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_list_call.scxml:13 :: _machine
     override fun onExit(state: StaticListCallState) {
         when (state) {
-            is StaticListCallState.Open -> {
-                // SCE-MAP: static_list_call.scxml:28 :: open :: _state_body
-            }
+            is StaticListCallState.Open -> onExitOfOpen()
         }
     }
+
+
+    private fun onExitOfOpen() {
+                // SCE-MAP: static_list_call.scxml:28 :: open :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_list_call.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticListCallState, transitionIndex: Int) {
         when (source) {
-        is StaticListCallState.Open -> when (transitionIndex) {
-            0 -> {
+            is StaticListCallState.Open -> transitionContentOfOpen(transitionIndex)
+        }
+    }
+
+
+    // The content of `open`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfOpen(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfOpenAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfOpenAt0() {
                 // SCE-MAP: static_list_call.scxml:29 :: open :: _transition_0
                 if (pendingLedgerEntryPayload == null) {
                     return
@@ -467,9 +524,5 @@ class StaticListCallStateMachine(
                 return
             }
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

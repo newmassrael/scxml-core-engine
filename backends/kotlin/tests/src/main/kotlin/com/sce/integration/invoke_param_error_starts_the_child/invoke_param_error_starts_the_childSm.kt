@@ -79,9 +79,14 @@ class InvokeParamErrorStartsTheChildStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: InvokeParamErrorStartsTheChildState): Boolean = when (state) {
-        is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded, is InvokeParamErrorStartsTheChildState.FailGoodParamLost, is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted, is InvokeParamErrorStartsTheChildState.FailNoParamError, is InvokeParamErrorStartsTheChildState.Pass -> true
+        is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> true
+        is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> true
+        is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> true
+        is InvokeParamErrorStartsTheChildState.FailNoParamError -> true
+        is InvokeParamErrorStartsTheChildState.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -91,6 +96,9 @@ class InvokeParamErrorStartsTheChildStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokeParamErrorStartsTheChildState, HistoryId>> =
             listOf(StateTarget(InvokeParamErrorStartsTheChildState.ParamPhase))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: paramPhase's transition 0, as the microstep reads it.
         val transitionParamPhaseAt0 = EnabledTransition<InvokeParamErrorStartsTheChildState, HistoryId>(
@@ -147,6 +155,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeParamErrorStartsTheChildState? = when (stateId) {
         "failBrokenParamSeeded" -> InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded
@@ -158,6 +167,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokeParamErrorStartsTheChildState): String = when (state) {
         is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> "failBrokenParamSeeded"
@@ -167,6 +177,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
         is InvokeParamErrorStartsTheChildState.ParamPhase -> "paramPhase"
         is InvokeParamErrorStartsTheChildState.Pass -> "pass"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeParamErrorStartsTheChildState): Int = when (state) {
@@ -178,6 +189,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
         is InvokeParamErrorStartsTheChildState.Pass -> 1
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeParamErrorStartsTheChildEvent? = when (name) {
         "childUp" -> InvokeParamErrorStartsTheChildEvent.ChildUp
@@ -187,6 +199,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeParamErrorStartsTheChildEvent): String? = when (event) {
         is InvokeParamErrorStartsTheChildEvent.ChildUp -> "childUp"
@@ -194,6 +207,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
         is InvokeParamErrorStartsTheChildEvent.Error.Execution -> "error.execution"
         is InvokeParamErrorStartsTheChildEvent.Timeout -> "timeout"
     }
+
 
 
 
@@ -223,20 +237,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'nothing' with expr
-        try {
-            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
-            engine.setVariable(sid, "nothing", initResult_nothing)
-        } catch (e: Exception) {
-            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
-        }
-        // W3C SCXML 5.3: Initialize variable 'sawParamError' with expr
-        try {
-            val initResult_sawParamError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "sawParamError", initResult_sawParamError)
-        } catch (e: Exception) {
-            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='sawParamError'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -253,6 +254,24 @@ class InvokeParamErrorStartsTheChildStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'nothing' with expr
+        try {
+            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
+            engine.setVariable(sid, "nothing", initResult_nothing)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'sawParamError' with expr
+        try {
+            val initResult_sawParamError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "sawParamError", initResult_sawParamError)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='sawParamError'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -442,48 +461,66 @@ class InvokeParamErrorStartsTheChildStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokeParamErrorStartsTheChildState,
-        event: InvokeParamErrorStartsTheChildEvent?
-    ): EnabledTransition<InvokeParamErrorStartsTheChildState, HistoryId>? = when (state) {
-        is InvokeParamErrorStartsTheChildState.ParamPhase -> when {
-            event is InvokeParamErrorStartsTheChildEvent.Error.Execution -> transitionParamPhaseAt0
-            event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawParamError ~= 1)", "sawParamError !== 1")) -> transitionParamPhaseAt1
-            event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.kept ~= \"here\")", "_event.data.kept !== 'here'")) -> transitionParamPhaseAt2
-            event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.brokenPlaceholder == true)", "_event.data.brokenPlaceholder === true")) -> transitionParamPhaseAt3
-            event is InvokeParamErrorStartsTheChildEvent.ChildUp -> transitionParamPhaseAt4
-            event is InvokeParamErrorStartsTheChildEvent.Timeout -> transitionParamPhaseAt5
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokeParamErrorStartsTheChildState, event: InvokeParamErrorStartsTheChildEvent?): EnabledTransition<InvokeParamErrorStartsTheChildState, HistoryId>? = when (state) {
+        is InvokeParamErrorStartsTheChildState.ParamPhase -> firstEnabledTransitionOfParamPhase(state, event)
         else -> null
     }
+
+
+    // paramPhase's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfParamPhase(state: InvokeParamErrorStartsTheChildState, event: InvokeParamErrorStartsTheChildEvent?): EnabledTransition<InvokeParamErrorStartsTheChildState, HistoryId>? = when {
+        event is InvokeParamErrorStartsTheChildEvent.Error.Execution -> TransitionsPart0.transitionParamPhaseAt0
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawParamError ~= 1)", "sawParamError !== 1")) -> TransitionsPart0.transitionParamPhaseAt1
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.kept ~= \"here\")", "_event.data.kept !== 'here'")) -> TransitionsPart0.transitionParamPhaseAt2
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.brokenPlaceholder == true)", "_event.data.brokenPlaceholder === true")) -> TransitionsPart0.transitionParamPhaseAt3
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp -> TransitionsPart0.transitionParamPhaseAt4
+        event is InvokeParamErrorStartsTheChildEvent.Timeout -> TransitionsPart0.transitionParamPhaseAt5
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_param_error_starts_the_child.scxml:52 :: _machine
     override fun onEntry(state: InvokeParamErrorStartsTheChildState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> {
+            is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> onEntryOfFailBrokenParamSeeded()
+            is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> onEntryOfFailGoodParamLost()
+            is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> onEntryOfFailInvokeNotStarted()
+            is InvokeParamErrorStartsTheChildState.FailNoParamError -> onEntryOfFailNoParamError()
+            is InvokeParamErrorStartsTheChildState.ParamPhase -> onEntryOfParamPhase()
+            is InvokeParamErrorStartsTheChildState.Pass -> onEntryOfPass()
+        }
+    }
+
+
+    private fun onEntryOfFailBrokenParamSeeded() {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:132 :: failBrokenParamSeeded :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> {
+    }
+
+    private fun onEntryOfFailGoodParamLost() {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:131 :: failGoodParamLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> {
+    }
+
+    private fun onEntryOfFailInvokeNotStarted() {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:130 :: failInvokeNotStarted :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamErrorStartsTheChildState.FailNoParamError -> {
+    }
+
+    private fun onEntryOfFailNoParamError() {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:129 :: failNoParamError :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeParamErrorStartsTheChildState.ParamPhase -> {
+    }
+
+    private fun onEntryOfParamPhase() {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:70 :: paramPhase :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -501,14 +538,13 @@ class InvokeParamErrorStartsTheChildStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("inv_probe", state)
-            }
-            is InvokeParamErrorStartsTheChildState.Pass -> {
+                deferStaticInvoke("inv_probe", InvokeParamErrorStartsTheChildState.ParamPhase)
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:128 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -521,9 +557,20 @@ class InvokeParamErrorStartsTheChildStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: InvokeParamErrorStartsTheChildState) {
         when (invokeId) {
-            "inv_probe" -> run {
+            "inv_probe" -> startInvokeOfParamPhaseAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfParamPhaseAt0(state: InvokeParamErrorStartsTheChildState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "paramPhase.${nextInvokeStart("inv_probe")}.inv_probe"
@@ -560,56 +607,81 @@ class InvokeParamErrorStartsTheChildStateMachine(
                     startInvoke("inv_probe", childSM, false, InvokeParamErrorStartsTheChildEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe", "inv_probe")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_param_error_starts_the_child.scxml:52 :: _machine
     override fun onExit(state: InvokeParamErrorStartsTheChildState) {
         when (state) {
-            is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> {
-                // SCE-MAP: invoke_param_error_starts_the_child.scxml:132 :: failBrokenParamSeeded :: _state_body
-            }
-            is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> {
-                // SCE-MAP: invoke_param_error_starts_the_child.scxml:131 :: failGoodParamLost :: _state_body
-            }
-            is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> {
-                // SCE-MAP: invoke_param_error_starts_the_child.scxml:130 :: failInvokeNotStarted :: _state_body
-            }
-            is InvokeParamErrorStartsTheChildState.FailNoParamError -> {
-                // SCE-MAP: invoke_param_error_starts_the_child.scxml:129 :: failNoParamError :: _state_body
-            }
-            is InvokeParamErrorStartsTheChildState.ParamPhase -> {
-                // SCE-MAP: invoke_param_error_starts_the_child.scxml:70 :: paramPhase :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("inv_probe")
-            }
-            is InvokeParamErrorStartsTheChildState.Pass -> {
-                // SCE-MAP: invoke_param_error_starts_the_child.scxml:128 :: pass :: _state_body
-            }
+            is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> onExitOfFailBrokenParamSeeded()
+            is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> onExitOfFailGoodParamLost()
+            is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> onExitOfFailInvokeNotStarted()
+            is InvokeParamErrorStartsTheChildState.FailNoParamError -> onExitOfFailNoParamError()
+            is InvokeParamErrorStartsTheChildState.ParamPhase -> onExitOfParamPhase()
+            is InvokeParamErrorStartsTheChildState.Pass -> onExitOfPass()
         }
     }
+
+
+    private fun onExitOfFailBrokenParamSeeded() {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:132 :: failBrokenParamSeeded :: _state_body
+    }
+
+    private fun onExitOfFailGoodParamLost() {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:131 :: failGoodParamLost :: _state_body
+    }
+
+    private fun onExitOfFailInvokeNotStarted() {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:130 :: failInvokeNotStarted :: _state_body
+    }
+
+    private fun onExitOfFailNoParamError() {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:129 :: failNoParamError :: _state_body
+    }
+
+    private fun onExitOfParamPhase() {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:70 :: paramPhase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokeParamErrorStartsTheChildState.ParamPhase)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_probe")
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:128 :: pass :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_param_error_starts_the_child.scxml:52 :: _machine
     override fun executeTransitionContent(source: InvokeParamErrorStartsTheChildState, transitionIndex: Int) {
         when (source) {
-        is InvokeParamErrorStartsTheChildState.ParamPhase -> when (transitionIndex) {
-            0 -> {
+            is InvokeParamErrorStartsTheChildState.ParamPhase -> transitionContentOfParamPhase(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `paramPhase`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfParamPhase(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfParamPhaseAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfParamPhaseAt0() {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:117 :: paramPhase :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("sawParamError", "sawParamError"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

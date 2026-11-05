@@ -211,6 +211,10 @@ class StaticLiftStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.said?.let { vSaid = it }
         params.lifts?.let { vLifts = it }
         params.errors?.let { vErrors = it }
@@ -339,17 +343,19 @@ class StaticLiftStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "answer" to SavedValues.optional(vAnswer) { it.toSaved() },
-            "why" to SavedValues.optional(vWhy) { it.toSaved() },
-            "said" to SavedValues.of(vSaid),
-            "lifts" to SavedValues.of(vLifts),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "answer" to SavedValues.optional(vAnswer) { it.toSaved() }
+        variables += "why" to SavedValues.optional(vWhy) { it.toSaved() }
+        variables += "said" to SavedValues.of(vSaid)
+        variables += "lifts" to SavedValues.of(vLifts)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -374,17 +380,27 @@ class StaticLiftStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.optional(savedGrown.variable("answer"), "answer") { e, w -> StaticLiftAnswerRecord.fromSaved(e, w) }
         val saved2 = SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticLiftLiftRefusalRecord.fromSaved(e, w) }
         val saved3 = SavedValues.string(savedGrown.variable("said"), "said", 512)
         val saved4 = SavedValues.uint32(savedGrown.variable("lifts"), "lifts")
         val saved5 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vAnswer = saved1
-        vWhy = saved2
-        vSaid = saved3
-        vLifts = saved4
-        vErrors = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vAnswer = saved1
+            vWhy = saved2
+            vSaid = saved3
+            vLifts = saved4
+            vErrors = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -397,6 +413,10 @@ class StaticLiftStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.optional(savedGrown.variable("answer"), "answer") { e, w -> StaticLiftAnswerRecord.fromSaved(e, w) }
         SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticLiftLiftRefusalRecord.fromSaved(e, w) }
         SavedValues.string(savedGrown.variable("said"), "said", 512)
@@ -500,6 +520,9 @@ class StaticLiftStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticLiftState, HistoryId>> =
             listOf(StateTarget(StaticLiftState.Lifting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: lifting's transition 0, as the microstep reads it.
         val transitionLiftingAt0 = EnabledTransition<StaticLiftState, HistoryId>(
@@ -529,21 +552,25 @@ class StaticLiftStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticLiftState? = when (stateId) {
         "lifting" -> StaticLiftState.Lifting
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticLiftState): String = when (state) {
         is StaticLiftState.Lifting -> "lifting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticLiftState): Int = when (state) {
         is StaticLiftState.Lifting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticLiftEvent? = when (name) {
@@ -552,6 +579,7 @@ class StaticLiftStateMachine(
         "text.kept" -> StaticLiftEvent.Text.Kept
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticLiftEvent): String? = when (event) {
@@ -564,51 +592,82 @@ class StaticLiftStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticLiftState,
-        event: StaticLiftEvent?
-    ): EnabledTransition<StaticLiftState, HistoryId>? = when (state) {
-        is StaticLiftState.Lifting -> when {
-            event is StaticLiftEvent.Text.Given -> transitionLiftingAt0
-            event is StaticLiftEvent.Text.Kept -> transitionLiftingAt1
-            event is StaticLiftEvent.Error.Execution -> transitionLiftingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticLiftState, event: StaticLiftEvent?): EnabledTransition<StaticLiftState, HistoryId>? = when (state) {
+        is StaticLiftState.Lifting -> firstEnabledTransitionOfLifting(state, event)
     }
+
+
+    // lifting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfLifting(state: StaticLiftState, event: StaticLiftEvent?): EnabledTransition<StaticLiftState, HistoryId>? = when {
+        event is StaticLiftEvent.Text.Given -> TransitionsPart0.transitionLiftingAt0
+        event is StaticLiftEvent.Text.Kept -> TransitionsPart0.transitionLiftingAt1
+        event is StaticLiftEvent.Error.Execution -> TransitionsPart0.transitionLiftingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_lift.scxml:19 :: _machine
     override fun onEntry(state: StaticLiftState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticLiftState.Lifting -> {
-                // SCE-MAP: static_lift.scxml:32 :: lifting :: _state_body
-            }
+            is StaticLiftState.Lifting -> onEntryOfLifting()
         }
+    }
+
+
+    private fun onEntryOfLifting() {
+                // SCE-MAP: static_lift.scxml:32 :: lifting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_lift.scxml:19 :: _machine
     override fun onExit(state: StaticLiftState) {
         when (state) {
-            is StaticLiftState.Lifting -> {
-                // SCE-MAP: static_lift.scxml:32 :: lifting :: _state_body
-            }
+            is StaticLiftState.Lifting -> onExitOfLifting()
         }
     }
+
+
+    private fun onExitOfLifting() {
+                // SCE-MAP: static_lift.scxml:32 :: lifting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_lift.scxml:19 :: _machine
     override fun executeTransitionContent(source: StaticLiftState, transitionIndex: Int) {
         when (source) {
-        is StaticLiftState.Lifting -> when (transitionIndex) {
-            0 -> {
+            is StaticLiftState.Lifting -> transitionContentOfLifting(transitionIndex)
+        }
+    }
+
+
+    // The content of `lifting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfLifting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfLiftingAt0()
+            1 -> transitionContentOfLiftingAt1()
+            2 -> transitionContentOfLiftingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfLiftingAt0() {
                 // SCE-MAP: static_lift.scxml:33 :: lifting :: _transition_0
                 if (pendingTextGivenPayload == null) {
                     return
@@ -619,8 +678,9 @@ class StaticLiftStateMachine(
             if (try { vLifts = com.sce.forge.runtime.SceChecked.add(vLifts, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftEvent.Error.Execution, "<assign location='lifts'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfLiftingAt1() {
                 // SCE-MAP: static_lift.scxml:37 :: lifting :: _transition_1
                 if (pendingTextKeptPayload == null) {
                     return
@@ -635,16 +695,13 @@ class StaticLiftStateMachine(
             if (try { vLifts = com.sce.forge.runtime.SceChecked.add(vLifts, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftEvent.Error.Execution, "<assign location='lifts'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfLiftingAt2() {
                 // SCE-MAP: static_lift.scxml:42 :: lifting :: _transition_2
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

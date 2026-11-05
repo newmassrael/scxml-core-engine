@@ -98,6 +98,10 @@ class StaticEnumStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.changes?.let { vChanges = it }
     }
 
@@ -184,15 +188,17 @@ class StaticEnumStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "layout" to vLayout.toSaved(),
-            "previous" to vPrevious.toSaved(),
-            "changes" to SavedValues.of(vChanges),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "layout" to vLayout.toSaved()
+        variables += "previous" to vPrevious.toSaved()
+        variables += "changes" to SavedValues.of(vChanges)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -217,13 +223,23 @@ class StaticEnumStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticEnumViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         val saved2 = StaticEnumViewModeEnum.fromSaved(savedGrown.variable("previous"), "previous")
         val saved3 = SavedValues.uint32(savedGrown.variable("changes"), "changes")
-        vLayout = saved1
-        vPrevious = saved2
-        vChanges = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLayout = saved1
+            vPrevious = saved2
+            vChanges = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -236,6 +252,10 @@ class StaticEnumStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticEnumViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         StaticEnumViewModeEnum.fromSaved(savedGrown.variable("previous"), "previous")
         SavedValues.uint32(savedGrown.variable("changes"), "changes")
@@ -268,6 +288,9 @@ class StaticEnumStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticEnumState, HistoryId>> =
             listOf(StateTarget(StaticEnumState.Browsing))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: browsing's transition 0, as the microstep reads it.
         val transitionBrowsingAt0 = EnabledTransition<StaticEnumState, HistoryId>(
@@ -315,21 +338,25 @@ class StaticEnumStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticEnumState? = when (stateId) {
         "browsing" -> StaticEnumState.Browsing
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticEnumState): String = when (state) {
         is StaticEnumState.Browsing -> "browsing"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticEnumState): Int = when (state) {
         is StaticEnumState.Browsing -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticEnumEvent? = when (name) {
@@ -339,6 +366,7 @@ class StaticEnumStateMachine(
         "zoom" -> StaticEnumEvent.Zoom
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticEnumEvent): String? = when (event) {
@@ -352,53 +380,86 @@ class StaticEnumStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticEnumState,
-        event: StaticEnumEvent?
-    ): EnabledTransition<StaticEnumState, HistoryId>? = when (state) {
-        is StaticEnumState.Browsing -> when {
-            event is StaticEnumEvent.Zoom && vLayout == StaticEnumViewModeEnum.MONTH -> transitionBrowsingAt0
-            event is StaticEnumEvent.Zoom && vLayout == StaticEnumViewModeEnum.WEEK -> transitionBrowsingAt1
-            event is StaticEnumEvent.Back && vLayout != vPrevious -> transitionBrowsingAt2
-            event is StaticEnumEvent.Swap -> transitionBrowsingAt3
-            event is StaticEnumEvent.Agenda -> transitionBrowsingAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticEnumState, event: StaticEnumEvent?): EnabledTransition<StaticEnumState, HistoryId>? = when (state) {
+        is StaticEnumState.Browsing -> firstEnabledTransitionOfBrowsing(state, event)
     }
+
+
+    // browsing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBrowsing(state: StaticEnumState, event: StaticEnumEvent?): EnabledTransition<StaticEnumState, HistoryId>? = when {
+        event is StaticEnumEvent.Zoom && vLayout == StaticEnumViewModeEnum.MONTH -> TransitionsPart0.transitionBrowsingAt0
+        event is StaticEnumEvent.Zoom && vLayout == StaticEnumViewModeEnum.WEEK -> TransitionsPart0.transitionBrowsingAt1
+        event is StaticEnumEvent.Back && vLayout != vPrevious -> TransitionsPart0.transitionBrowsingAt2
+        event is StaticEnumEvent.Swap -> TransitionsPart0.transitionBrowsingAt3
+        event is StaticEnumEvent.Agenda -> TransitionsPart0.transitionBrowsingAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_enum.scxml:12 :: _machine
     override fun onEntry(state: StaticEnumState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticEnumState.Browsing -> {
-                // SCE-MAP: static_enum.scxml:20 :: browsing :: _state_body
-            }
+            is StaticEnumState.Browsing -> onEntryOfBrowsing()
         }
+    }
+
+
+    private fun onEntryOfBrowsing() {
+                // SCE-MAP: static_enum.scxml:20 :: browsing :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_enum.scxml:12 :: _machine
     override fun onExit(state: StaticEnumState) {
         when (state) {
-            is StaticEnumState.Browsing -> {
-                // SCE-MAP: static_enum.scxml:20 :: browsing :: _state_body
-            }
+            is StaticEnumState.Browsing -> onExitOfBrowsing()
         }
     }
+
+
+    private fun onExitOfBrowsing() {
+                // SCE-MAP: static_enum.scxml:20 :: browsing :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_enum.scxml:12 :: _machine
     override fun executeTransitionContent(source: StaticEnumState, transitionIndex: Int) {
         when (source) {
-        is StaticEnumState.Browsing -> when (transitionIndex) {
-            0 -> {
+            is StaticEnumState.Browsing -> transitionContentOfBrowsing(transitionIndex)
+        }
+    }
+
+
+    // The content of `browsing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfBrowsing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfBrowsingAt0()
+            1 -> transitionContentOfBrowsingAt1()
+            2 -> transitionContentOfBrowsingAt2()
+            3 -> transitionContentOfBrowsingAt3()
+            4 -> transitionContentOfBrowsingAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfBrowsingAt0() {
                 // SCE-MAP: static_enum.scxml:22 :: browsing :: _transition_0
 
             vPrevious = vLayout
@@ -408,8 +469,9 @@ class StaticEnumStateMachine(
             if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfBrowsingAt1() {
                 // SCE-MAP: static_enum.scxml:27 :: browsing :: _transition_1
 
             vPrevious = vLayout
@@ -419,8 +481,9 @@ class StaticEnumStateMachine(
             if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfBrowsingAt2() {
                 // SCE-MAP: static_enum.scxml:33 :: browsing :: _transition_2
 
             vLayout = vPrevious
@@ -428,8 +491,9 @@ class StaticEnumStateMachine(
             if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfBrowsingAt3() {
                 // SCE-MAP: static_enum.scxml:38 :: browsing :: _transition_3
 
             vPrevious = vLayout
@@ -439,8 +503,9 @@ class StaticEnumStateMachine(
             if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfBrowsingAt4() {
                 // SCE-MAP: static_enum.scxml:43 :: browsing :: _transition_4
 
             vPrevious = vLayout
@@ -452,9 +517,5 @@ class StaticEnumStateMachine(
             }
 
             println("layout: " + vLayout)
-            }
-            else -> {}
-        }
-        }
     }
 }

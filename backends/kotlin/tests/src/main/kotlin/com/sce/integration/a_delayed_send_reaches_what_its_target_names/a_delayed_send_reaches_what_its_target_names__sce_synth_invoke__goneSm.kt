@@ -58,6 +58,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, HistoryId>>
@@ -66,6 +67,9 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, HistoryId>> =
             listOf(StateTarget(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, HistoryId>(
@@ -86,6 +90,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState? = when (stateId) {
         "idle" -> ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle
@@ -93,17 +98,20 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState): String = when (state) {
         is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> "idle"
         is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Over -> "over"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState): Int = when (state) {
         is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> 0
         is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Over -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent? = when (name) {
@@ -115,6 +123,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
         "stop" -> ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Stop
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent): String? = when (event) {
@@ -130,29 +139,40 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState,
-        event: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent?
-    ): EnabledTransition<ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, HistoryId>? = when (state) {
-        is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> when {
-            event is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Lost -> transitionIdleAt0
-            event is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Stop -> transitionIdleAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, event: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent?): EnabledTransition<ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, HistoryId>? = when (state) {
+        is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> firstEnabledTransitionOfIdle(state, event)
         else -> null
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, event: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent?): EnabledTransition<ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, HistoryId>? = when {
+        event is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Lost -> TransitionsPart0.transitionIdleAt0
+        event is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Stop -> TransitionsPart0.transitionIdleAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:3 :: _machine
     override fun onEntry(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, isDefaultEntry: Boolean) {
         when (state) {
-            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> {
+            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> onEntryOfIdle()
+            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Over -> onEntryOfOver()
+        }
+    }
+
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:5 :: idle :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -176,35 +196,58 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Over -> {
+    }
+
+    private fun onEntryOfOver() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:14 :: over :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:3 :: _machine
     override fun onExit(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState) {
         when (state) {
-            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:5 :: idle :: _state_body
-            }
-            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Over -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:14 :: over :: _state_body
-            }
+            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> onExitOfIdle()
+            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Over -> onExitOfOver()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:5 :: idle :: _state_body
+    }
+
+    private fun onExitOfOver() {
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:14 :: over :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:3 :: _machine
     override fun executeTransitionContent(source: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, transitionIndex: Int) {
         when (source) {
-        is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> when (transitionIndex) {
-            0 -> {
+            is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState.Idle -> transitionContentOfIdle(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:9 :: idle :: _transition_0
 
 
@@ -225,10 +268,5 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

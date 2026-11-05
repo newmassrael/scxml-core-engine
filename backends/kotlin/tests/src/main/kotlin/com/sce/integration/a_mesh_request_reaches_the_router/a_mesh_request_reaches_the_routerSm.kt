@@ -108,6 +108,7 @@ class AMeshRequestReachesTheRouterStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<AMeshRequestReachesTheRouterState, HistoryId>>
@@ -116,6 +117,9 @@ class AMeshRequestReachesTheRouterStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AMeshRequestReachesTheRouterState, HistoryId>> =
             listOf(StateTarget(AMeshRequestReachesTheRouterState.Asking))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: asking's transition 0, as the microstep reads it.
         val transitionAskingAt0 = EnabledTransition<AMeshRequestReachesTheRouterState, HistoryId>(
@@ -145,6 +149,7 @@ class AMeshRequestReachesTheRouterStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AMeshRequestReachesTheRouterState? = when (stateId) {
         "asking" -> AMeshRequestReachesTheRouterState.Asking
@@ -152,17 +157,20 @@ class AMeshRequestReachesTheRouterStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AMeshRequestReachesTheRouterState): String = when (state) {
         is AMeshRequestReachesTheRouterState.Asking -> "asking"
         is AMeshRequestReachesTheRouterState.Done -> "done"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AMeshRequestReachesTheRouterState): Int = when (state) {
         is AMeshRequestReachesTheRouterState.Asking -> 0
         is AMeshRequestReachesTheRouterState.Done -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AMeshRequestReachesTheRouterEvent? = when (name) {
@@ -174,6 +182,7 @@ class AMeshRequestReachesTheRouterStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AMeshRequestReachesTheRouterEvent): String? = when (event) {
         is AMeshRequestReachesTheRouterEvent.Done.Invoke.Self -> "done.invoke"
@@ -182,6 +191,7 @@ class AMeshRequestReachesTheRouterStateMachine(
         is AMeshRequestReachesTheRouterEvent.Error.Invoke.Self -> "error.invoke"
         is AMeshRequestReachesTheRouterEvent.Error.Invoke.Ask -> "error.invoke.ask"
     }
+
 
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `completeHostInvoke`.
@@ -217,6 +227,27 @@ class AMeshRequestReachesTheRouterStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'answered' with expr
         try {
             val initResult_answered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -238,22 +269,6 @@ class AMeshRequestReachesTheRouterStateMachine(
         } catch (e: Exception) {
             raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -443,25 +458,35 @@ class AMeshRequestReachesTheRouterStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AMeshRequestReachesTheRouterState,
-        event: AMeshRequestReachesTheRouterEvent?
-    ): EnabledTransition<AMeshRequestReachesTheRouterState, HistoryId>? = when (state) {
-        is AMeshRequestReachesTheRouterState.Asking -> when {
-            event is AMeshRequestReachesTheRouterEvent.Done.Invoke.Ask && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == \"ask\")", "_event.invokeid === 'ask'")) -> transitionAskingAt0
-            event is AMeshRequestReachesTheRouterEvent.Error.Invoke.Ask && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_event.invokeid == \"ask\") and (_event.data == \"unreachable\"))", "_event.invokeid === 'ask' && _event.data === 'unreachable'")) -> transitionAskingAt1
-            event is AMeshRequestReachesTheRouterEvent.Error.Execution -> transitionAskingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AMeshRequestReachesTheRouterState, event: AMeshRequestReachesTheRouterEvent?): EnabledTransition<AMeshRequestReachesTheRouterState, HistoryId>? = when (state) {
+        is AMeshRequestReachesTheRouterState.Asking -> firstEnabledTransitionOfAsking(state, event)
         else -> null
     }
+
+
+    // asking's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAsking(state: AMeshRequestReachesTheRouterState, event: AMeshRequestReachesTheRouterEvent?): EnabledTransition<AMeshRequestReachesTheRouterState, HistoryId>? = when {
+        event is AMeshRequestReachesTheRouterEvent.Done.Invoke.Ask && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == \"ask\")", "_event.invokeid === 'ask'")) -> TransitionsPart0.transitionAskingAt0
+        event is AMeshRequestReachesTheRouterEvent.Error.Invoke.Ask && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_event.invokeid == \"ask\") and (_event.data == \"unreachable\"))", "_event.invokeid === 'ask' && _event.data === 'unreachable'")) -> TransitionsPart0.transitionAskingAt1
+        event is AMeshRequestReachesTheRouterEvent.Error.Execution -> TransitionsPart0.transitionAskingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     override fun onEntry(state: AMeshRequestReachesTheRouterState, isDefaultEntry: Boolean) {
         when (state) {
-            is AMeshRequestReachesTheRouterState.Asking -> {
+            is AMeshRequestReachesTheRouterState.Asking -> onEntryOfAsking()
+            is AMeshRequestReachesTheRouterState.Done -> onEntryOfDone()
+        }
+    }
+
+
+    private fun onEntryOfAsking() {
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:40 :: asking :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -475,7 +500,7 @@ class AMeshRequestReachesTheRouterStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "asking.${System.identityHashCode(this)}.ask"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(AMeshRequestReachesTheRouterState.Asking, generatedInvokeId) {
                         // W3C SCXML 6.4.1: what the request says is evaluated
                         // now, when the invocation starts. An attribute that
                         // cannot be evaluated raises error.execution and starts
@@ -528,68 +553,90 @@ class AMeshRequestReachesTheRouterStateMachine(
                         }
                     }
                 }
-            }
-            is AMeshRequestReachesTheRouterState.Done -> {
+    }
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:61 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     override fun onExit(state: AMeshRequestReachesTheRouterState) {
         when (state) {
-            is AMeshRequestReachesTheRouterState.Asking -> {
+            is AMeshRequestReachesTheRouterState.Asking -> onExitOfAsking()
+            is AMeshRequestReachesTheRouterState.Done -> onExitOfDone()
+        }
+    }
+
+
+    private fun onExitOfAsking() {
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:40 :: asking :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(AMeshRequestReachesTheRouterState.Asking)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce:mesh-rpc", "ask")
-            }
-            is AMeshRequestReachesTheRouterState.Done -> {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:61 :: done :: _state_body
-            }
-        }
     }
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:61 :: done :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     override fun executeTransitionContent(source: AMeshRequestReachesTheRouterState, transitionIndex: Int) {
         when (source) {
-        is AMeshRequestReachesTheRouterState.Asking -> when (transitionIndex) {
-            0 -> {
+            is AMeshRequestReachesTheRouterState.Asking -> transitionContentOfAsking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `asking`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfAsking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfAskingAt0()
+            1 -> transitionContentOfAskingAt1()
+            2 -> transitionContentOfAskingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfAskingAt0() {
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:48 :: asking :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("answered", "answered"), com.sce.runtime.ScriptSource.lua("_scxml_add(answered, 1)", "answered + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfAskingAt1() {
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:51 :: asking :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("failed", "failed"), com.sce.runtime.ScriptSource.lua("_scxml_add(failed, 1)", "failed + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfAskingAt2() {
                 // SCE-MAP: a_mesh_request_reaches_the_router.scxml:56 :: asking :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

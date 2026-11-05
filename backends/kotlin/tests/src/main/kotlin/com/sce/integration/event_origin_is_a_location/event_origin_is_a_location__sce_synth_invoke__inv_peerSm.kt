@@ -64,6 +64,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<EventOriginIsALocationSceSynthInvokeInvPeerState, HistoryId>>
@@ -72,6 +73,9 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<EventOriginIsALocationSceSynthInvokeInvPeerState, HistoryId>> =
             listOf(StateTarget(EventOriginIsALocationSceSynthInvokeInvPeerState.Emit))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: emit's transition 0, as the microstep reads it.
         val transitionEmitAt0 = EnabledTransition<EventOriginIsALocationSceSynthInvokeInvPeerState, HistoryId>(
@@ -83,6 +87,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EventOriginIsALocationSceSynthInvokeInvPeerState? = when (stateId) {
         "acked" -> EventOriginIsALocationSceSynthInvokeInvPeerState.Acked
@@ -90,17 +95,20 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: EventOriginIsALocationSceSynthInvokeInvPeerState): String = when (state) {
         is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> "acked"
         is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> "emit"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: EventOriginIsALocationSceSynthInvokeInvPeerState): Int = when (state) {
         is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> 1
         is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EventOriginIsALocationSceSynthInvokeInvPeerEvent? = when (name) {
@@ -112,6 +120,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EventOriginIsALocationSceSynthInvokeInvPeerEvent): String? = when (event) {
         is EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Communication -> "error.communication"
@@ -120,6 +129,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         is EventOriginIsALocationSceSynthInvokeInvPeerEvent.Reply -> "reply"
         is EventOriginIsALocationSceSynthInvokeInvPeerEvent.ReplyArrived -> "replyArrived"
     }
+
 
 
 
@@ -354,28 +364,39 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: EventOriginIsALocationSceSynthInvokeInvPeerState,
-        event: EventOriginIsALocationSceSynthInvokeInvPeerEvent?
-    ): EnabledTransition<EventOriginIsALocationSceSynthInvokeInvPeerState, HistoryId>? = when (state) {
-        is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> when {
-            event is EventOriginIsALocationSceSynthInvokeInvPeerEvent.Reply -> transitionEmitAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: EventOriginIsALocationSceSynthInvokeInvPeerState, event: EventOriginIsALocationSceSynthInvokeInvPeerEvent?): EnabledTransition<EventOriginIsALocationSceSynthInvokeInvPeerState, HistoryId>? = when (state) {
+        is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> firstEnabledTransitionOfEmit(state, event)
         else -> null
     }
+
+
+    // emit's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfEmit(state: EventOriginIsALocationSceSynthInvokeInvPeerState, event: EventOriginIsALocationSceSynthInvokeInvPeerEvent?): EnabledTransition<EventOriginIsALocationSceSynthInvokeInvPeerState, HistoryId>? = when {
+        event is EventOriginIsALocationSceSynthInvokeInvPeerEvent.Reply -> TransitionsPart0.transitionEmitAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
     override fun onEntry(state: EventOriginIsALocationSceSynthInvokeInvPeerState, isDefaultEntry: Boolean) {
         when (state) {
-            is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> {
+            is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> onEntryOfAcked()
+            is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> onEntryOfEmit()
+        }
+    }
+
+
+    private fun onEntryOfAcked() {
                 // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:16 :: acked :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> {
+    }
+
+    private fun onEntryOfEmit() {
                 // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5 :: emit :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -411,30 +432,52 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
     override fun onExit(state: EventOriginIsALocationSceSynthInvokeInvPeerState) {
         when (state) {
-            is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> {
-                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:16 :: acked :: _state_body
-            }
-            is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> {
-                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5 :: emit :: _state_body
-            }
+            is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> onExitOfAcked()
+            is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> onExitOfEmit()
         }
     }
+
+
+    private fun onExitOfAcked() {
+                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:16 :: acked :: _state_body
+    }
+
+    private fun onExitOfEmit() {
+                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5 :: emit :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
     override fun executeTransitionContent(source: EventOriginIsALocationSceSynthInvokeInvPeerState, transitionIndex: Int) {
         when (source) {
-        is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> when (transitionIndex) {
-            0 -> {
+            is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> transitionContentOfEmit(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `emit`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfEmit(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfEmitAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfEmitAt0() {
                 // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:12 :: emit :: _transition_0
 
 
@@ -455,10 +498,5 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

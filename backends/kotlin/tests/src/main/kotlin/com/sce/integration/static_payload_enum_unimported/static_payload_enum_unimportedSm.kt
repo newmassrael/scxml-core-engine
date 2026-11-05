@@ -165,6 +165,10 @@ class StaticPayloadEnumUnimportedStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.row?.let { vRow = it }
         params.refusals?.let { vRefusals = it }
     }
@@ -278,16 +282,18 @@ class StaticPayloadEnumUnimportedStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "last" to SavedValues.optional(vLast) { it.toSaved() },
-            "kept" to SavedValues.list(vKept) { it.toSaved() },
-            "row" to SavedValues.of(vRow),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "last" to SavedValues.optional(vLast) { it.toSaved() }
+        variables += "kept" to SavedValues.list(vKept) { it.toSaved() }
+        variables += "row" to SavedValues.of(vRow)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -312,15 +318,25 @@ class StaticPayloadEnumUnimportedStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.optional(savedGrown.variable("last"), "last") { e, w -> StaticPayloadEnumUnimportedWhyEnum.fromSaved(e, w) }
         val saved2 = SavedValues.list(savedGrown.variable("kept"), "kept", 2) { e, w -> StaticPayloadEnumUnimportedRefusedRecord.fromSaved(e, w) }
         val saved3 = SavedValues.uint32(savedGrown.variable("row"), "row")
         val saved4 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vLast = saved1
-        vKept = saved2
-        vRow = saved3
-        vRefusals = saved4
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLast = saved1
+            vKept = saved2
+            vRow = saved3
+            vRefusals = saved4
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -333,6 +349,10 @@ class StaticPayloadEnumUnimportedStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.optional(savedGrown.variable("last"), "last") { e, w -> StaticPayloadEnumUnimportedWhyEnum.fromSaved(e, w) }
         SavedValues.list(savedGrown.variable("kept"), "kept", 2) { e, w -> StaticPayloadEnumUnimportedRefusedRecord.fromSaved(e, w) }
         SavedValues.uint32(savedGrown.variable("row"), "row")
@@ -413,6 +433,9 @@ class StaticPayloadEnumUnimportedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticPayloadEnumUnimportedState, HistoryId>> =
             listOf(StateTarget(StaticPayloadEnumUnimportedState.Listening))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: listening's transition 0, as the microstep reads it.
         val transitionListeningAt0 = EnabledTransition<StaticPayloadEnumUnimportedState, HistoryId>(
@@ -424,27 +447,32 @@ class StaticPayloadEnumUnimportedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticPayloadEnumUnimportedState? = when (stateId) {
         "listening" -> StaticPayloadEnumUnimportedState.Listening
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticPayloadEnumUnimportedState): String = when (state) {
         is StaticPayloadEnumUnimportedState.Listening -> "listening"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticPayloadEnumUnimportedState): Int = when (state) {
         is StaticPayloadEnumUnimportedState.Listening -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticPayloadEnumUnimportedEvent? = when (name) {
         "record_list.refused" -> StaticPayloadEnumUnimportedEvent.RecordList.Refused
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticPayloadEnumUnimportedEvent): String? = when (event) {
@@ -455,49 +483,78 @@ class StaticPayloadEnumUnimportedStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticPayloadEnumUnimportedState,
-        event: StaticPayloadEnumUnimportedEvent?
-    ): EnabledTransition<StaticPayloadEnumUnimportedState, HistoryId>? = when (state) {
-        is StaticPayloadEnumUnimportedState.Listening -> when {
-            event is StaticPayloadEnumUnimportedEvent.RecordList.Refused -> transitionListeningAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticPayloadEnumUnimportedState, event: StaticPayloadEnumUnimportedEvent?): EnabledTransition<StaticPayloadEnumUnimportedState, HistoryId>? = when (state) {
+        is StaticPayloadEnumUnimportedState.Listening -> firstEnabledTransitionOfListening(state, event)
     }
+
+
+    // listening's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfListening(state: StaticPayloadEnumUnimportedState, event: StaticPayloadEnumUnimportedEvent?): EnabledTransition<StaticPayloadEnumUnimportedState, HistoryId>? = when {
+        event is StaticPayloadEnumUnimportedEvent.RecordList.Refused -> TransitionsPart0.transitionListeningAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     override fun onEntry(state: StaticPayloadEnumUnimportedState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticPayloadEnumUnimportedState.Listening -> {
-                // SCE-MAP: static_payload_enum_unimported.scxml:28 :: listening :: _state_body
-            }
+            is StaticPayloadEnumUnimportedState.Listening -> onEntryOfListening()
         }
+    }
+
+
+    private fun onEntryOfListening() {
+                // SCE-MAP: static_payload_enum_unimported.scxml:28 :: listening :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     override fun onExit(state: StaticPayloadEnumUnimportedState) {
         when (state) {
-            is StaticPayloadEnumUnimportedState.Listening -> {
-                // SCE-MAP: static_payload_enum_unimported.scxml:28 :: listening :: _state_body
-            }
+            is StaticPayloadEnumUnimportedState.Listening -> onExitOfListening()
         }
     }
+
+
+    private fun onExitOfListening() {
+                // SCE-MAP: static_payload_enum_unimported.scxml:28 :: listening :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     override fun executeTransitionContent(source: StaticPayloadEnumUnimportedState, transitionIndex: Int) {
         when (source) {
-        is StaticPayloadEnumUnimportedState.Listening -> when (transitionIndex) {
-            0 -> {
+            is StaticPayloadEnumUnimportedState.Listening -> transitionContentOfListening(transitionIndex)
+        }
+    }
+
+
+    // The content of `listening`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfListening(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfListeningAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfListeningAt0() {
                 // SCE-MAP: static_payload_enum_unimported.scxml:29 :: listening :: _transition_0
                 if (pendingRecordListRefusedPayload == null) {
                     return
@@ -514,9 +571,5 @@ class StaticPayloadEnumUnimportedStateMachine(
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

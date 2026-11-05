@@ -65,21 +65,25 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
             listOf(StateTarget(SessionIdsAreDistinctSceSynthInvokeInvAState.Emit))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): SessionIdsAreDistinctSceSynthInvokeInvAState? = when (stateId) {
         "emit" -> SessionIdsAreDistinctSceSynthInvokeInvAState.Emit
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: SessionIdsAreDistinctSceSynthInvokeInvAState): String = when (state) {
         is SessionIdsAreDistinctSceSynthInvokeInvAState.Emit -> "emit"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: SessionIdsAreDistinctSceSynthInvokeInvAState): Int = when (state) {
         is SessionIdsAreDistinctSceSynthInvokeInvAState.Emit -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SessionIdsAreDistinctSceSynthInvokeInvAEvent? = when (name) {
@@ -89,12 +93,14 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SessionIdsAreDistinctSceSynthInvokeInvAEvent): String? = when (event) {
         is SessionIdsAreDistinctSceSynthInvokeInvAEvent.Error.Communication -> "error.communication"
         is SessionIdsAreDistinctSceSynthInvokeInvAEvent.Error.Execution -> "error.execution"
         is SessionIdsAreDistinctSceSynthInvokeInvAEvent.FromChild -> "fromChild"
     }
+
 
 
 
@@ -329,19 +335,24 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: SessionIdsAreDistinctSceSynthInvokeInvAState,
-        event: SessionIdsAreDistinctSceSynthInvokeInvAEvent?
-    ): EnabledTransition<SessionIdsAreDistinctSceSynthInvokeInvAState, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: SessionIdsAreDistinctSceSynthInvokeInvAState, event: SessionIdsAreDistinctSceSynthInvokeInvAEvent?): EnabledTransition<SessionIdsAreDistinctSceSynthInvokeInvAState, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:3 :: _machine
     override fun onEntry(state: SessionIdsAreDistinctSceSynthInvokeInvAState, isDefaultEntry: Boolean) {
         when (state) {
-            is SessionIdsAreDistinctSceSynthInvokeInvAState.Emit -> {
+            is SessionIdsAreDistinctSceSynthInvokeInvAState.Emit -> onEntryOfEmit()
+        }
+    }
+
+
+    private fun onEntryOfEmit() {
                 // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:5 :: emit :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -377,26 +388,28 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:3 :: _machine
     override fun onExit(state: SessionIdsAreDistinctSceSynthInvokeInvAState) {
         when (state) {
-            is SessionIdsAreDistinctSceSynthInvokeInvAState.Emit -> {
-                // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:5 :: emit :: _state_body
-            }
+            is SessionIdsAreDistinctSceSynthInvokeInvAState.Emit -> onExitOfEmit()
         }
     }
+
+
+    private fun onExitOfEmit() {
+                // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:5 :: emit :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:3 :: _machine
     override fun executeTransitionContent(source: SessionIdsAreDistinctSceSynthInvokeInvAState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

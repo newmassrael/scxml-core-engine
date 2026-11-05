@@ -86,6 +86,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<CancellingAnInvokeRaisesNothingState, HistoryId>>
@@ -94,6 +95,9 @@ class CancellingAnInvokeRaisesNothingStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<CancellingAnInvokeRaisesNothingState, HistoryId>> =
             listOf(StateTarget(CancellingAnInvokeRaisesNothingState.P))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: p's transition 0, as the microstep reads it.
         val transitionPAt0 = EnabledTransition<CancellingAnInvokeRaisesNothingState, HistoryId>(
@@ -132,6 +136,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): CancellingAnInvokeRaisesNothingState? = when (stateId) {
         "done" -> CancellingAnInvokeRaisesNothingState.Done
@@ -140,6 +145,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: CancellingAnInvokeRaisesNothingState): String = when (state) {
         is CancellingAnInvokeRaisesNothingState.Done -> "done"
@@ -147,12 +153,14 @@ class CancellingAnInvokeRaisesNothingStateMachine(
         is CancellingAnInvokeRaisesNothingState.S2 -> "s2"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: CancellingAnInvokeRaisesNothingState): Int = when (state) {
         is CancellingAnInvokeRaisesNothingState.Done -> 2
         is CancellingAnInvokeRaisesNothingState.P -> 0
         is CancellingAnInvokeRaisesNothingState.S2 -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): CancellingAnInvokeRaisesNothingEvent? = when (name) {
@@ -165,6 +173,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: CancellingAnInvokeRaisesNothingEvent): String? = when (event) {
         is CancellingAnInvokeRaisesNothingEvent.Cancel.Invoke.Self -> "cancel.invoke"
@@ -174,6 +183,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
         is CancellingAnInvokeRaisesNothingEvent.Finish -> "finish"
         is CancellingAnInvokeRaisesNothingEvent.Leave -> "leave"
     }
+
 
 
 
@@ -203,13 +213,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'spurious' with expr
-        try {
-            val initResult_spurious = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "spurious", initResult_spurious)
-        } catch (e: Exception) {
-            raisePlatformError(CancellingAnInvokeRaisesNothingEvent.Error.Execution, "<data id='spurious'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -226,6 +230,17 @@ class CancellingAnInvokeRaisesNothingStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'spurious' with expr
+        try {
+            val initResult_spurious = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "spurious", initResult_spurious)
+        } catch (e: Exception) {
+            raisePlatformError(CancellingAnInvokeRaisesNothingEvent.Error.Execution, "<data id='spurious'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -415,42 +430,57 @@ class CancellingAnInvokeRaisesNothingStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: CancellingAnInvokeRaisesNothingState,
-        event: CancellingAnInvokeRaisesNothingEvent?
-    ): EnabledTransition<CancellingAnInvokeRaisesNothingState, HistoryId>? = when (state) {
-        is CancellingAnInvokeRaisesNothingState.P -> when {
-            event is CancellingAnInvokeRaisesNothingEvent.Leave -> transitionPAt0
-            else -> null
-        }
-        is CancellingAnInvokeRaisesNothingState.S2 -> when {
-            (event is CancellingAnInvokeRaisesNothingEvent.Cancel.Invoke || event is CancellingAnInvokeRaisesNothingEvent.Cancel.Invoke.Child) -> transitionS2At0
-            event is CancellingAnInvokeRaisesNothingEvent.Cancel.Invoke.Child -> transitionS2At1
-            event is CancellingAnInvokeRaisesNothingEvent.Finish -> transitionS2At2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: CancellingAnInvokeRaisesNothingState, event: CancellingAnInvokeRaisesNothingEvent?): EnabledTransition<CancellingAnInvokeRaisesNothingState, HistoryId>? = when (state) {
+        is CancellingAnInvokeRaisesNothingState.P -> firstEnabledTransitionOfP(state, event)
+        is CancellingAnInvokeRaisesNothingState.S2 -> firstEnabledTransitionOfS2(state, event)
         else -> null
     }
+
+
+    // p's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP(state: CancellingAnInvokeRaisesNothingState, event: CancellingAnInvokeRaisesNothingEvent?): EnabledTransition<CancellingAnInvokeRaisesNothingState, HistoryId>? = when {
+        event is CancellingAnInvokeRaisesNothingEvent.Leave -> TransitionsPart0.transitionPAt0
+        else -> null
+    }
+
+
+    // s2's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: CancellingAnInvokeRaisesNothingState, event: CancellingAnInvokeRaisesNothingEvent?): EnabledTransition<CancellingAnInvokeRaisesNothingState, HistoryId>? = when {
+        (event is CancellingAnInvokeRaisesNothingEvent.Cancel.Invoke || event is CancellingAnInvokeRaisesNothingEvent.Cancel.Invoke.Child) -> TransitionsPart0.transitionS2At0
+        event is CancellingAnInvokeRaisesNothingEvent.Cancel.Invoke.Child -> TransitionsPart0.transitionS2At1
+        event is CancellingAnInvokeRaisesNothingEvent.Finish -> TransitionsPart0.transitionS2At2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:13 :: _machine
     override fun onEntry(state: CancellingAnInvokeRaisesNothingState, isDefaultEntry: Boolean) {
         when (state) {
-            is CancellingAnInvokeRaisesNothingState.Done -> {
+            is CancellingAnInvokeRaisesNothingState.Done -> onEntryOfDone()
+            is CancellingAnInvokeRaisesNothingState.P -> onEntryOfP()
+            is CancellingAnInvokeRaisesNothingState.S2 -> onEntryOfS2()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:42 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is CancellingAnInvokeRaisesNothingState.P -> {
+    }
+
+    private fun onEntryOfP() {
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:21 :: p :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("child", state)
-            }
-            is CancellingAnInvokeRaisesNothingState.S2 -> {
+                deferStaticInvoke("child", CancellingAnInvokeRaisesNothingState.P)
+    }
+
+    private fun onEntryOfS2() {
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:32 :: s2 :: _state_body
-            }
-        }
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -463,9 +493,20 @@ class CancellingAnInvokeRaisesNothingStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: CancellingAnInvokeRaisesNothingState) {
         when (invokeId) {
-            "child" -> run {
+            "child" -> startInvokeOfPAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfPAt0(state: CancellingAnInvokeRaisesNothingState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "p.${nextInvokeStart("child")}.child"
@@ -476,55 +517,76 @@ class CancellingAnInvokeRaisesNothingStateMachine(
                     startInvoke("child", childSM, false, CancellingAnInvokeRaisesNothingEvent.Done.Invoke, "", generatedInvokeId, "", "cancelling_an_invoke_raises_nothing__sce_synth_invoke__child", "child")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:13 :: _machine
     override fun onExit(state: CancellingAnInvokeRaisesNothingState) {
         when (state) {
-            is CancellingAnInvokeRaisesNothingState.Done -> {
-                // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:42 :: done :: _state_body
-            }
-            is CancellingAnInvokeRaisesNothingState.P -> {
-                // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:21 :: p :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("child")
-            }
-            is CancellingAnInvokeRaisesNothingState.S2 -> {
-                // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:32 :: s2 :: _state_body
-            }
+            is CancellingAnInvokeRaisesNothingState.Done -> onExitOfDone()
+            is CancellingAnInvokeRaisesNothingState.P -> onExitOfP()
+            is CancellingAnInvokeRaisesNothingState.S2 -> onExitOfS2()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:42 :: done :: _state_body
+    }
+
+    private fun onExitOfP() {
+                // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:21 :: p :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(CancellingAnInvokeRaisesNothingState.P)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("child")
+    }
+
+    private fun onExitOfS2() {
+                // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:32 :: s2 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:13 :: _machine
     override fun executeTransitionContent(source: CancellingAnInvokeRaisesNothingState, transitionIndex: Int) {
         when (source) {
-        is CancellingAnInvokeRaisesNothingState.S2 -> when (transitionIndex) {
-            0 -> {
+            is CancellingAnInvokeRaisesNothingState.S2 -> transitionContentOfS2(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s2`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS2(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS2At0()
+            1 -> transitionContentOfS2At1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS2At0() {
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:33 :: s2 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("spurious", "spurious"), com.sce.runtime.ScriptSource.lua("_scxml_add(spurious, 1)", "spurious + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfS2At1() {
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:36 :: s2 :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("spurious", "spurious"), com.sce.runtime.ScriptSource.lua("_scxml_add(spurious, 1)", "spurious + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

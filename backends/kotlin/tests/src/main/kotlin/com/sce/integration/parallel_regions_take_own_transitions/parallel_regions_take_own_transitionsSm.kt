@@ -99,12 +99,16 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: ParallelRegionsTakeOwnTransitionsState): Boolean = when (state) {
-        is ParallelRegionsTakeOwnTransitionsState.Budget, is ParallelRegionsTakeOwnTransitionsState.Drive, is ParallelRegionsTakeOwnTransitionsState.Running -> true
+        is ParallelRegionsTakeOwnTransitionsState.Budget -> true
+        is ParallelRegionsTakeOwnTransitionsState.Drive -> true
+        is ParallelRegionsTakeOwnTransitionsState.Running -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: ParallelRegionsTakeOwnTransitionsState): Boolean = when (state) {
@@ -112,11 +116,13 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: ParallelRegionsTakeOwnTransitionsState): Boolean = when (state) {
         is ParallelRegionsTakeOwnTransitionsState.Settled -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -133,21 +139,34 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<ParallelRegionsTakeOwnTransitionsState, List<ParallelRegionsTakeOwnTransitionsState>> = mapOf(
-            ParallelRegionsTakeOwnTransitionsState.Budget to listOf(ParallelRegionsTakeOwnTransitionsState.Within),
-            ParallelRegionsTakeOwnTransitionsState.Drive to listOf(ParallelRegionsTakeOwnTransitionsState.Running),
-            ParallelRegionsTakeOwnTransitionsState.Run to listOf(ParallelRegionsTakeOwnTransitionsState.Drive, ParallelRegionsTakeOwnTransitionsState.Budget),
-            ParallelRegionsTakeOwnTransitionsState.Running to listOf(ParallelRegionsTakeOwnTransitionsState.Working, ParallelRegionsTakeOwnTransitionsState.Judging),
-        )
+        val childStates: Map<ParallelRegionsTakeOwnTransitionsState, List<ParallelRegionsTakeOwnTransitionsState>> = LinkedHashMap<ParallelRegionsTakeOwnTransitionsState, List<ParallelRegionsTakeOwnTransitionsState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<ParallelRegionsTakeOwnTransitionsState, List<EntryTarget<ParallelRegionsTakeOwnTransitionsState, HistoryId>>> = mapOf(
-            ParallelRegionsTakeOwnTransitionsState.Budget to listOf(StateTarget(ParallelRegionsTakeOwnTransitionsState.Within)),
-            ParallelRegionsTakeOwnTransitionsState.Drive to listOf(StateTarget(ParallelRegionsTakeOwnTransitionsState.Running)),
-            ParallelRegionsTakeOwnTransitionsState.Running to listOf(StateTarget(ParallelRegionsTakeOwnTransitionsState.Working)),
-        )
+        private fun childStatesPart0(table: MutableMap<ParallelRegionsTakeOwnTransitionsState, List<ParallelRegionsTakeOwnTransitionsState>>) {
+            table[ParallelRegionsTakeOwnTransitionsState.Budget] = listOf(ParallelRegionsTakeOwnTransitionsState.Within)
+            table[ParallelRegionsTakeOwnTransitionsState.Drive] = listOf(ParallelRegionsTakeOwnTransitionsState.Running)
+            table[ParallelRegionsTakeOwnTransitionsState.Run] = listOf(ParallelRegionsTakeOwnTransitionsState.Drive, ParallelRegionsTakeOwnTransitionsState.Budget)
+            table[ParallelRegionsTakeOwnTransitionsState.Running] = listOf(ParallelRegionsTakeOwnTransitionsState.Working, ParallelRegionsTakeOwnTransitionsState.Judging)
+        }
+
+
+        val initialTargets: Map<ParallelRegionsTakeOwnTransitionsState, List<EntryTarget<ParallelRegionsTakeOwnTransitionsState, HistoryId>>> = LinkedHashMap<ParallelRegionsTakeOwnTransitionsState, List<EntryTarget<ParallelRegionsTakeOwnTransitionsState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<ParallelRegionsTakeOwnTransitionsState, List<EntryTarget<ParallelRegionsTakeOwnTransitionsState, HistoryId>>>) {
+            table[ParallelRegionsTakeOwnTransitionsState.Budget] = listOf(StateTarget(ParallelRegionsTakeOwnTransitionsState.Within))
+            table[ParallelRegionsTakeOwnTransitionsState.Drive] = listOf(StateTarget(ParallelRegionsTakeOwnTransitionsState.Running))
+            table[ParallelRegionsTakeOwnTransitionsState.Running] = listOf(StateTarget(ParallelRegionsTakeOwnTransitionsState.Working))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<ParallelRegionsTakeOwnTransitionsState, HistoryId>> =
             listOf(StateTarget(ParallelRegionsTakeOwnTransitionsState.Run))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: judging's transition 0, as the microstep reads it.
         val transitionJudgingAt0 = EnabledTransition<ParallelRegionsTakeOwnTransitionsState, HistoryId>(
@@ -177,6 +196,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ParallelRegionsTakeOwnTransitionsState? = when (stateId) {
         "budget" -> ParallelRegionsTakeOwnTransitionsState.Budget
@@ -190,6 +210,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ParallelRegionsTakeOwnTransitionsState): String = when (state) {
         is ParallelRegionsTakeOwnTransitionsState.Budget -> "budget"
@@ -201,6 +222,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         is ParallelRegionsTakeOwnTransitionsState.Within -> "within"
         is ParallelRegionsTakeOwnTransitionsState.Working -> "working"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ParallelRegionsTakeOwnTransitionsState): Int = when (state) {
@@ -214,6 +236,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         is ParallelRegionsTakeOwnTransitionsState.Working -> 3
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ParallelRegionsTakeOwnTransitionsEvent? = when (name) {
         "check" -> ParallelRegionsTakeOwnTransitionsEvent.Check
@@ -222,12 +245,14 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ParallelRegionsTakeOwnTransitionsEvent): String? = when (event) {
         is ParallelRegionsTakeOwnTransitionsEvent.Check -> "check"
         is ParallelRegionsTakeOwnTransitionsEvent.E -> "e"
         is ParallelRegionsTakeOwnTransitionsEvent.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -257,20 +282,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'n' with expr
-        try {
-            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "n", initResult_n)
-        } catch (e: Exception) {
-            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
-        }
-        // W3C SCXML 5.3: Initialize variable 'm' with expr
-        try {
-            val initResult_m = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "m", initResult_m)
-        } catch (e: Exception) {
-            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<data id='m'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -289,6 +301,24 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'n' with expr
+        try {
+            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "n", initResult_n)
+        } catch (e: Exception) {
+            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'm' with expr
+        try {
+            val initResult_m = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "m", initResult_m)
+        } catch (e: Exception) {
+            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<data id='m'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -478,118 +508,190 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ParallelRegionsTakeOwnTransitionsState,
-        event: ParallelRegionsTakeOwnTransitionsEvent?
-    ): EnabledTransition<ParallelRegionsTakeOwnTransitionsState, HistoryId>? = when (state) {
-        is ParallelRegionsTakeOwnTransitionsState.Judging -> when {
-            event is ParallelRegionsTakeOwnTransitionsEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_eq(n, 1) and _scxml_eq(m, 1))", "n == 1 && m == 1")) -> transitionJudgingAt0
-            else -> null
-        }
-        is ParallelRegionsTakeOwnTransitionsState.Within -> when {
-            event is ParallelRegionsTakeOwnTransitionsEvent.E -> transitionWithinAt0
-            else -> null
-        }
-        is ParallelRegionsTakeOwnTransitionsState.Working -> when {
-            event is ParallelRegionsTakeOwnTransitionsEvent.E -> transitionWorkingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ParallelRegionsTakeOwnTransitionsState, event: ParallelRegionsTakeOwnTransitionsEvent?): EnabledTransition<ParallelRegionsTakeOwnTransitionsState, HistoryId>? = when (state) {
+        is ParallelRegionsTakeOwnTransitionsState.Judging -> firstEnabledTransitionOfJudging(state, event)
+        is ParallelRegionsTakeOwnTransitionsState.Within -> firstEnabledTransitionOfWithin(state, event)
+        is ParallelRegionsTakeOwnTransitionsState.Working -> firstEnabledTransitionOfWorking(state, event)
         else -> null
     }
+
+
+    // judging's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfJudging(state: ParallelRegionsTakeOwnTransitionsState, event: ParallelRegionsTakeOwnTransitionsEvent?): EnabledTransition<ParallelRegionsTakeOwnTransitionsState, HistoryId>? = when {
+        event is ParallelRegionsTakeOwnTransitionsEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_eq(n, 1) and _scxml_eq(m, 1))", "n == 1 && m == 1")) -> TransitionsPart0.transitionJudgingAt0
+        else -> null
+    }
+
+
+    // within's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWithin(state: ParallelRegionsTakeOwnTransitionsState, event: ParallelRegionsTakeOwnTransitionsEvent?): EnabledTransition<ParallelRegionsTakeOwnTransitionsState, HistoryId>? = when {
+        event is ParallelRegionsTakeOwnTransitionsEvent.E -> TransitionsPart0.transitionWithinAt0
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: ParallelRegionsTakeOwnTransitionsState, event: ParallelRegionsTakeOwnTransitionsEvent?): EnabledTransition<ParallelRegionsTakeOwnTransitionsState, HistoryId>? = when {
+        event is ParallelRegionsTakeOwnTransitionsEvent.E -> TransitionsPart0.transitionWorkingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: parallel_regions_take_own_transitions.scxml:24 :: _machine
     override fun onEntry(state: ParallelRegionsTakeOwnTransitionsState, isDefaultEntry: Boolean) {
         when (state) {
-            is ParallelRegionsTakeOwnTransitionsState.Budget -> {
+            is ParallelRegionsTakeOwnTransitionsState.Budget -> onEntryOfBudget()
+            is ParallelRegionsTakeOwnTransitionsState.Drive -> onEntryOfDrive()
+            is ParallelRegionsTakeOwnTransitionsState.Judging -> onEntryOfJudging()
+            is ParallelRegionsTakeOwnTransitionsState.Run -> onEntryOfRun()
+            is ParallelRegionsTakeOwnTransitionsState.Running -> onEntryOfRunning()
+            is ParallelRegionsTakeOwnTransitionsState.Settled -> onEntryOfSettled()
+            is ParallelRegionsTakeOwnTransitionsState.Within -> onEntryOfWithin()
+            is ParallelRegionsTakeOwnTransitionsState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfBudget() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:60 :: budget :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Drive -> {
+    }
+
+    private fun onEntryOfDrive() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:35 :: drive :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Judging -> {
+    }
+
+    private fun onEntryOfJudging() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:42 :: judging :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Run -> {
+    }
+
+    private fun onEntryOfRun() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:32 :: run :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Running -> {
+    }
+
+    private fun onEntryOfRunning() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:36 :: running :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Settled -> {
+    }
+
+    private fun onEntryOfSettled() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:70 :: settled :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Within -> {
+    }
+
+    private fun onEntryOfWithin() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:61 :: within :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Working -> {
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:37 :: working :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: parallel_regions_take_own_transitions.scxml:24 :: _machine
     override fun onExit(state: ParallelRegionsTakeOwnTransitionsState) {
         when (state) {
-            is ParallelRegionsTakeOwnTransitionsState.Budget -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:60 :: budget :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Drive -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:35 :: drive :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Judging -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:42 :: judging :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Run -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:32 :: run :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Running -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:36 :: running :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Settled -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:70 :: settled :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Within -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:61 :: within :: _state_body
-            }
-            is ParallelRegionsTakeOwnTransitionsState.Working -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:37 :: working :: _state_body
-            }
+            is ParallelRegionsTakeOwnTransitionsState.Budget -> onExitOfBudget()
+            is ParallelRegionsTakeOwnTransitionsState.Drive -> onExitOfDrive()
+            is ParallelRegionsTakeOwnTransitionsState.Judging -> onExitOfJudging()
+            is ParallelRegionsTakeOwnTransitionsState.Run -> onExitOfRun()
+            is ParallelRegionsTakeOwnTransitionsState.Running -> onExitOfRunning()
+            is ParallelRegionsTakeOwnTransitionsState.Settled -> onExitOfSettled()
+            is ParallelRegionsTakeOwnTransitionsState.Within -> onExitOfWithin()
+            is ParallelRegionsTakeOwnTransitionsState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfBudget() {
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:60 :: budget :: _state_body
+    }
+
+    private fun onExitOfDrive() {
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:35 :: drive :: _state_body
+    }
+
+    private fun onExitOfJudging() {
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:42 :: judging :: _state_body
+    }
+
+    private fun onExitOfRun() {
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:32 :: run :: _state_body
+    }
+
+    private fun onExitOfRunning() {
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:36 :: running :: _state_body
+    }
+
+    private fun onExitOfSettled() {
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:70 :: settled :: _state_body
+    }
+
+    private fun onExitOfWithin() {
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:61 :: within :: _state_body
+    }
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:37 :: working :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: parallel_regions_take_own_transitions.scxml:24 :: _machine
     override fun executeTransitionContent(source: ParallelRegionsTakeOwnTransitionsState, transitionIndex: Int) {
         when (source) {
-        is ParallelRegionsTakeOwnTransitionsState.Within -> when (transitionIndex) {
-            0 -> {
+            is ParallelRegionsTakeOwnTransitionsState.Within -> transitionContentOfWithin(transitionIndex)
+            is ParallelRegionsTakeOwnTransitionsState.Working -> transitionContentOfWorking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `within`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWithin(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWithinAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWithinAt0() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:62 :: within :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("m", "m"), com.sce.runtime.ScriptSource.lua("_scxml_add(m, 1)", "m + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWorkingAt0()
             else -> {}
         }
-        is ParallelRegionsTakeOwnTransitionsState.Working -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:38 :: working :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("n", "n"), com.sce.runtime.ScriptSource.lua("_scxml_add(n, 1)", "n + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

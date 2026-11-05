@@ -89,6 +89,10 @@ class StaticListStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.refusals?.let { vRefusals = it }
         params.count?.let { vCount = it }
     }
@@ -167,15 +171,17 @@ class StaticListStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "picked" to SavedValues.list(vPicked) { SavedValues.of(it) },
-            "refusals" to SavedValues.of(vRefusals),
-            "count" to SavedValues.of(vCount),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "picked" to SavedValues.list(vPicked) { SavedValues.of(it) }
+        variables += "refusals" to SavedValues.of(vRefusals)
+        variables += "count" to SavedValues.of(vCount)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -200,13 +206,23 @@ class StaticListStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.list(savedGrown.variable("picked"), "picked", 3) { e, w -> SavedValues.uint8(e, w) }
         val saved2 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         val saved3 = SavedValues.uint32(savedGrown.variable("count"), "count")
-        vPicked = saved1
-        vRefusals = saved2
-        vCount = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vPicked = saved1
+            vRefusals = saved2
+            vCount = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -219,6 +235,10 @@ class StaticListStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.list(savedGrown.variable("picked"), "picked", 3) { e, w -> SavedValues.uint8(e, w) }
         SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         SavedValues.uint32(savedGrown.variable("count"), "count")
@@ -296,6 +316,7 @@ class StaticListStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticListState, HistoryId>>
@@ -304,6 +325,9 @@ class StaticListStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticListState, HistoryId>> =
             listOf(StateTarget(StaticListState.Collecting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: collecting's transition 0, as the microstep reads it.
         val transitionCollectingAt0 = EnabledTransition<StaticListState, HistoryId>(
@@ -342,6 +366,7 @@ class StaticListStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticListState? = when (stateId) {
         "collecting" -> StaticListState.Collecting
@@ -349,17 +374,20 @@ class StaticListStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticListState): String = when (state) {
         is StaticListState.Collecting -> "collecting"
         is StaticListState.Done -> "done"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticListState): Int = when (state) {
         is StaticListState.Collecting -> 0
         is StaticListState.Done -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticListEvent? = when (name) {
@@ -369,6 +397,7 @@ class StaticListStateMachine(
         "reset" -> StaticListEvent.Reset
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticListEvent): String? = when (event) {
@@ -382,61 +411,97 @@ class StaticListStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticListState,
-        event: StaticListEvent?
-    ): EnabledTransition<StaticListState, HistoryId>? = when (state) {
-        is StaticListState.Collecting -> when {
-            event is StaticListEvent.Day.Picked -> transitionCollectingAt0
-            event is StaticListEvent.Full && (vPicked).size.toUInt() == 3.toUInt() -> transitionCollectingAt1
-            event is StaticListEvent.Reset -> transitionCollectingAt2
-            event is StaticListEvent.Error.Execution -> transitionCollectingAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticListState, event: StaticListEvent?): EnabledTransition<StaticListState, HistoryId>? = when (state) {
+        is StaticListState.Collecting -> firstEnabledTransitionOfCollecting(state, event)
         else -> null
     }
+
+
+    // collecting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCollecting(state: StaticListState, event: StaticListEvent?): EnabledTransition<StaticListState, HistoryId>? = when {
+        event is StaticListEvent.Day.Picked -> TransitionsPart0.transitionCollectingAt0
+        event is StaticListEvent.Full && (vPicked).size.toUInt() == 3.toUInt() -> TransitionsPart0.transitionCollectingAt1
+        event is StaticListEvent.Reset -> TransitionsPart0.transitionCollectingAt2
+        event is StaticListEvent.Error.Execution -> TransitionsPart0.transitionCollectingAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_list.scxml:13 :: _machine
     override fun onEntry(state: StaticListState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticListState.Collecting -> {
+            is StaticListState.Collecting -> onEntryOfCollecting()
+            is StaticListState.Done -> onEntryOfDone()
+        }
+    }
+
+
+    private fun onEntryOfCollecting() {
                 // SCE-MAP: static_list.scxml:21 :: collecting :: _state_body
-            }
-            is StaticListState.Done -> {
+    }
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: static_list.scxml:34 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_list.scxml:13 :: _machine
     override fun onExit(state: StaticListState) {
         when (state) {
-            is StaticListState.Collecting -> {
-                // SCE-MAP: static_list.scxml:21 :: collecting :: _state_body
-            }
-            is StaticListState.Done -> {
-                // SCE-MAP: static_list.scxml:34 :: done :: _state_body
-            }
+            is StaticListState.Collecting -> onExitOfCollecting()
+            is StaticListState.Done -> onExitOfDone()
         }
     }
+
+
+    private fun onExitOfCollecting() {
+                // SCE-MAP: static_list.scxml:21 :: collecting :: _state_body
+    }
+
+    private fun onExitOfDone() {
+                // SCE-MAP: static_list.scxml:34 :: done :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_list.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticListState, transitionIndex: Int) {
         when (source) {
-        is StaticListState.Collecting -> when (transitionIndex) {
-            0 -> {
+            is StaticListState.Collecting -> transitionContentOfCollecting(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `collecting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfCollecting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfCollectingAt0()
+            2 -> transitionContentOfCollectingAt2()
+            3 -> transitionContentOfCollectingAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfCollectingAt0() {
                 // SCE-MAP: static_list.scxml:22 :: collecting :: _transition_0
                 if (pendingDayPickedPayload == null) {
                     return
@@ -447,22 +512,19 @@ class StaticListStateMachine(
             }
 
             vCount = (vPicked).size.toUInt()
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfCollectingAt2() {
                 // SCE-MAP: static_list.scxml:27 :: collecting :: _transition_2
 
             vPicked = emptyList()
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfCollectingAt3() {
                 // SCE-MAP: static_list.scxml:30 :: collecting :: _transition_3
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

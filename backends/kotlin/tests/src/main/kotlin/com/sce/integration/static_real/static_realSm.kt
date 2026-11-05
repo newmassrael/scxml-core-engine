@@ -95,6 +95,10 @@ class StaticRealStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.level?.let { vLevel = it }
         params.rate?.let { vRate = it }
         params.total?.let { vTotal = it }
@@ -181,19 +185,21 @@ class StaticRealStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "level" to SavedValues.of(vLevel),
-            "rate" to SavedValues.of(vRate),
-            "total" to SavedValues.of(vTotal),
-            "tenth" to SavedValues.of(vTenth),
-            "drift" to SavedValues.of(vDrift),
-            "samples" to SavedValues.list(vSamples) { SavedValues.of(it) },
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "level" to SavedValues.of(vLevel)
+        variables += "rate" to SavedValues.of(vRate)
+        variables += "total" to SavedValues.of(vTotal)
+        variables += "tenth" to SavedValues.of(vTenth)
+        variables += "drift" to SavedValues.of(vDrift)
+        variables += "samples" to SavedValues.list(vSamples) { SavedValues.of(it) }
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -218,6 +224,15 @@ class StaticRealStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.float64(savedGrown.variable("level"), "level")
         val saved2 = SavedValues.float64(savedGrown.variable("rate"), "rate")
         val saved3 = SavedValues.float64(savedGrown.variable("total"), "total")
@@ -225,14 +240,15 @@ class StaticRealStateMachine(
         val saved5 = SavedValues.float64(savedGrown.variable("drift"), "drift")
         val saved6 = SavedValues.list(savedGrown.variable("samples"), "samples", 3) { e, w -> SavedValues.float64(e, w) }
         val saved7 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vLevel = saved1
-        vRate = saved2
-        vTotal = saved3
-        vTenth = saved4
-        vDrift = saved5
-        vSamples = saved6
-        vErrors = saved7
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLevel = saved1
+            vRate = saved2
+            vTotal = saved3
+            vTenth = saved4
+            vDrift = saved5
+            vSamples = saved6
+            vErrors = saved7
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -245,6 +261,10 @@ class StaticRealStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.float64(savedGrown.variable("level"), "level")
         SavedValues.float64(savedGrown.variable("rate"), "rate")
         SavedValues.float64(savedGrown.variable("total"), "total")
@@ -281,6 +301,9 @@ class StaticRealStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticRealState, HistoryId>> =
             listOf(StateTarget(StaticRealState.Low))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: high's transition 0, as the microstep reads it.
         val transitionHighAt0 = EnabledTransition<StaticRealState, HistoryId>(
@@ -355,6 +378,7 @@ class StaticRealStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticRealState? = when (stateId) {
         "high" -> StaticRealState.High
@@ -362,17 +386,20 @@ class StaticRealStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticRealState): String = when (state) {
         is StaticRealState.High -> "high"
         is StaticRealState.Low -> "low"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticRealState): Int = when (state) {
         is StaticRealState.High -> 1
         is StaticRealState.Low -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticRealEvent? = when (name) {
@@ -385,6 +412,7 @@ class StaticRealStateMachine(
         "sum" -> StaticRealEvent.Sum
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticRealEvent): String? = when (event) {
@@ -401,73 +429,126 @@ class StaticRealStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticRealState,
-        event: StaticRealEvent?
-    ): EnabledTransition<StaticRealState, HistoryId>? = when (state) {
-        is StaticRealState.High -> when {
-            event is StaticRealEvent.Shrink -> transitionHighAt0
-            event is StaticRealEvent.Drop && vLevel < 1.0 -> transitionHighAt1
-            else -> null
-        }
-        is StaticRealState.Low -> when {
-            event is StaticRealEvent.Grow -> transitionLowAt0
-            event is StaticRealEvent.Shrink -> transitionLowAt1
-            event is StaticRealEvent.Sum -> transitionLowAt2
-            event is StaticRealEvent.Drift -> transitionLowAt3
-            event is StaticRealEvent.Rise && vLevel > 7.0 -> transitionLowAt4
-            event is StaticRealEvent.Error.Execution -> transitionLowAt5
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticRealState, event: StaticRealEvent?): EnabledTransition<StaticRealState, HistoryId>? = when (state) {
+        is StaticRealState.High -> firstEnabledTransitionOfHigh(state, event)
+        is StaticRealState.Low -> firstEnabledTransitionOfLow(state, event)
     }
+
+
+    // high's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfHigh(state: StaticRealState, event: StaticRealEvent?): EnabledTransition<StaticRealState, HistoryId>? = when {
+        event is StaticRealEvent.Shrink -> TransitionsPart0.transitionHighAt0
+        event is StaticRealEvent.Drop && vLevel < 1.0 -> TransitionsPart0.transitionHighAt1
+        else -> null
+    }
+
+
+    // low's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfLow(state: StaticRealState, event: StaticRealEvent?): EnabledTransition<StaticRealState, HistoryId>? = when {
+        event is StaticRealEvent.Grow -> TransitionsPart0.transitionLowAt0
+        event is StaticRealEvent.Shrink -> TransitionsPart0.transitionLowAt1
+        event is StaticRealEvent.Sum -> TransitionsPart0.transitionLowAt2
+        event is StaticRealEvent.Drift -> TransitionsPart0.transitionLowAt3
+        event is StaticRealEvent.Rise && vLevel > 7.0 -> TransitionsPart0.transitionLowAt4
+        event is StaticRealEvent.Error.Execution -> TransitionsPart0.transitionLowAt5
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_real.scxml:18 :: _machine
     override fun onEntry(state: StaticRealState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticRealState.High -> {
-                // SCE-MAP: static_real.scxml:57 :: high :: _state_body
-            }
-            is StaticRealState.Low -> {
-                // SCE-MAP: static_real.scxml:29 :: low :: _state_body
-            }
+            is StaticRealState.High -> onEntryOfHigh()
+            is StaticRealState.Low -> onEntryOfLow()
         }
+    }
+
+
+    private fun onEntryOfHigh() {
+                // SCE-MAP: static_real.scxml:57 :: high :: _state_body
+    }
+
+    private fun onEntryOfLow() {
+                // SCE-MAP: static_real.scxml:29 :: low :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_real.scxml:18 :: _machine
     override fun onExit(state: StaticRealState) {
         when (state) {
-            is StaticRealState.High -> {
-                // SCE-MAP: static_real.scxml:57 :: high :: _state_body
-            }
-            is StaticRealState.Low -> {
-                // SCE-MAP: static_real.scxml:29 :: low :: _state_body
-            }
+            is StaticRealState.High -> onExitOfHigh()
+            is StaticRealState.Low -> onExitOfLow()
         }
     }
+
+
+    private fun onExitOfHigh() {
+                // SCE-MAP: static_real.scxml:57 :: high :: _state_body
+    }
+
+    private fun onExitOfLow() {
+                // SCE-MAP: static_real.scxml:29 :: low :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_real.scxml:18 :: _machine
     override fun executeTransitionContent(source: StaticRealState, transitionIndex: Int) {
         when (source) {
-        is StaticRealState.High -> when (transitionIndex) {
-            0 -> {
+            is StaticRealState.High -> transitionContentOfHigh(transitionIndex)
+            is StaticRealState.Low -> transitionContentOfLow(transitionIndex)
+        }
+    }
+
+
+    // The content of `high`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfHigh(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfHighAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfHighAt0() {
                 // SCE-MAP: static_real.scxml:58 :: high :: _transition_0
 
             vLevel = vLevel / 4.0
-            }
+    }
+
+    // The content of `low`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfLow(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfLowAt0()
+            1 -> transitionContentOfLowAt1()
+            2 -> transitionContentOfLowAt2()
+            3 -> transitionContentOfLowAt3()
+            5 -> transitionContentOfLowAt5()
             else -> {}
         }
-        is StaticRealState.Low -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfLowAt0() {
                 // SCE-MAP: static_real.scxml:32 :: low :: _transition_0
 
             vLevel = vLevel * 2.0 + vRate
@@ -475,13 +556,15 @@ class StaticRealStateMachine(
             if (if (vSamples.size < 3) { vSamples = vSamples + (vLevel); false } else { raisePlatformError(StaticRealEvent.Error.Execution, "<sce:append target='samples'>: the list already holds its capacity of 3"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfLowAt1() {
                 // SCE-MAP: static_real.scxml:37 :: low :: _transition_1
 
             vLevel = vLevel / 4.0
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfLowAt2() {
                 // SCE-MAP: static_real.scxml:41 :: low :: _transition_2
 
             vTotal = 0.0
@@ -491,21 +574,19 @@ class StaticRealStateMachine(
 
             vTotal = vTotal + v
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfLowAt3() {
                 // SCE-MAP: static_real.scxml:48 :: low :: _transition_3
 
             vDrift = vTenth + 0.2
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfLowAt5() {
                 // SCE-MAP: static_real.scxml:53 :: low :: _transition_5
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRealEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

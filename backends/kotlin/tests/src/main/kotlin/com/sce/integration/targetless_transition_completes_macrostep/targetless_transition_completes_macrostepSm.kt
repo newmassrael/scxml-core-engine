@@ -142,6 +142,9 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<TargetlessTransitionCompletesMacrostepState, HistoryId>> =
             listOf(StateTarget(TargetlessTransitionCompletesMacrostepState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<TargetlessTransitionCompletesMacrostepState, HistoryId>(
@@ -216,6 +219,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): TargetlessTransitionCompletesMacrostepState? = when (stateId) {
         "idle" -> TargetlessTransitionCompletesMacrostepState.Idle
@@ -224,6 +228,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: TargetlessTransitionCompletesMacrostepState): String = when (state) {
         is TargetlessTransitionCompletesMacrostepState.Idle -> "idle"
@@ -231,12 +236,14 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
         is TargetlessTransitionCompletesMacrostepState.Settled -> "settled"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: TargetlessTransitionCompletesMacrostepState): Int = when (state) {
         is TargetlessTransitionCompletesMacrostepState.Idle -> 0
         is TargetlessTransitionCompletesMacrostepState.Recycled -> 2
         is TargetlessTransitionCompletesMacrostepState.Settled -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): TargetlessTransitionCompletesMacrostepEvent? = when (name) {
@@ -249,6 +256,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: TargetlessTransitionCompletesMacrostepEvent): String? = when (event) {
         is TargetlessTransitionCompletesMacrostepEvent.Arm -> "arm"
@@ -258,6 +266,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
         is TargetlessTransitionCompletesMacrostepEvent.Quiet -> "quiet"
         is TargetlessTransitionCompletesMacrostepEvent.Recycle -> "recycle"
     }
+
 
 
 
@@ -287,6 +296,27 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'quiet' with expr
         try {
             val initResult_quiet = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -329,22 +359,6 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='entries'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -534,38 +548,58 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: TargetlessTransitionCompletesMacrostepState,
-        event: TargetlessTransitionCompletesMacrostepEvent?
-    ): EnabledTransition<TargetlessTransitionCompletesMacrostepState, HistoryId>? = when (state) {
-        is TargetlessTransitionCompletesMacrostepState.Idle -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(armed, 1)", "armed == 1")) -> transitionIdleAt0
-            event is TargetlessTransitionCompletesMacrostepEvent.Quiet -> transitionIdleAt1
-            event is TargetlessTransitionCompletesMacrostepEvent.Arm -> transitionIdleAt2
-            event is TargetlessTransitionCompletesMacrostepEvent.Ping -> transitionIdleAt3
-            event is TargetlessTransitionCompletesMacrostepEvent.Pong -> transitionIdleAt4
-            event is TargetlessTransitionCompletesMacrostepEvent.Recycle -> transitionIdleAt5
-            else -> null
-        }
-        is TargetlessTransitionCompletesMacrostepState.Recycled -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(entries < 2)", "entries < 2")) -> transitionRecycledAt0
-            else -> null
-        }
-        is TargetlessTransitionCompletesMacrostepState.Settled -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(polished, 0)", "polished == 0")) -> transitionSettledAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: TargetlessTransitionCompletesMacrostepState, event: TargetlessTransitionCompletesMacrostepEvent?): EnabledTransition<TargetlessTransitionCompletesMacrostepState, HistoryId>? = when (state) {
+        is TargetlessTransitionCompletesMacrostepState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is TargetlessTransitionCompletesMacrostepState.Recycled -> firstEnabledTransitionOfRecycled(state, event)
+        is TargetlessTransitionCompletesMacrostepState.Settled -> firstEnabledTransitionOfSettled(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: TargetlessTransitionCompletesMacrostepState, event: TargetlessTransitionCompletesMacrostepEvent?): EnabledTransition<TargetlessTransitionCompletesMacrostepState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(armed, 1)", "armed == 1")) -> TransitionsPart0.transitionIdleAt0
+        event is TargetlessTransitionCompletesMacrostepEvent.Quiet -> TransitionsPart0.transitionIdleAt1
+        event is TargetlessTransitionCompletesMacrostepEvent.Arm -> TransitionsPart0.transitionIdleAt2
+        event is TargetlessTransitionCompletesMacrostepEvent.Ping -> TransitionsPart0.transitionIdleAt3
+        event is TargetlessTransitionCompletesMacrostepEvent.Pong -> TransitionsPart0.transitionIdleAt4
+        event is TargetlessTransitionCompletesMacrostepEvent.Recycle -> TransitionsPart0.transitionIdleAt5
+        else -> null
+    }
+
+
+    // recycled's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRecycled(state: TargetlessTransitionCompletesMacrostepState, event: TargetlessTransitionCompletesMacrostepEvent?): EnabledTransition<TargetlessTransitionCompletesMacrostepState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(entries < 2)", "entries < 2")) -> TransitionsPart0.transitionRecycledAt0
+        else -> null
+    }
+
+
+    // settled's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSettled(state: TargetlessTransitionCompletesMacrostepState, event: TargetlessTransitionCompletesMacrostepEvent?): EnabledTransition<TargetlessTransitionCompletesMacrostepState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(polished, 0)", "polished == 0")) -> TransitionsPart0.transitionSettledAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: targetless_transition_completes_macrostep.scxml:51 :: _machine
     override fun onEntry(state: TargetlessTransitionCompletesMacrostepState, isDefaultEntry: Boolean) {
         when (state) {
-            is TargetlessTransitionCompletesMacrostepState.Idle -> {
+            is TargetlessTransitionCompletesMacrostepState.Idle -> onEntryOfIdle()
+            is TargetlessTransitionCompletesMacrostepState.Recycled -> onEntryOfRecycled()
+            is TargetlessTransitionCompletesMacrostepState.Settled -> onEntryOfSettled()
+        }
+    }
+
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:81 :: idle :: _state_body
-            }
-            is TargetlessTransitionCompletesMacrostepState.Recycled -> {
+    }
+
+    private fun onEntryOfRecycled() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:147 :: recycled :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -575,86 +609,126 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 return@run
             }
                 }
-            }
-            is TargetlessTransitionCompletesMacrostepState.Settled -> {
+    }
+
+    private fun onEntryOfSettled() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:125 :: settled :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: targetless_transition_completes_macrostep.scxml:51 :: _machine
     override fun onExit(state: TargetlessTransitionCompletesMacrostepState) {
         when (state) {
-            is TargetlessTransitionCompletesMacrostepState.Idle -> {
-                // SCE-MAP: targetless_transition_completes_macrostep.scxml:81 :: idle :: _state_body
-            }
-            is TargetlessTransitionCompletesMacrostepState.Recycled -> {
-                // SCE-MAP: targetless_transition_completes_macrostep.scxml:147 :: recycled :: _state_body
-            }
-            is TargetlessTransitionCompletesMacrostepState.Settled -> {
-                // SCE-MAP: targetless_transition_completes_macrostep.scxml:125 :: settled :: _state_body
-            }
+            is TargetlessTransitionCompletesMacrostepState.Idle -> onExitOfIdle()
+            is TargetlessTransitionCompletesMacrostepState.Recycled -> onExitOfRecycled()
+            is TargetlessTransitionCompletesMacrostepState.Settled -> onExitOfSettled()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: targetless_transition_completes_macrostep.scxml:81 :: idle :: _state_body
+    }
+
+    private fun onExitOfRecycled() {
+                // SCE-MAP: targetless_transition_completes_macrostep.scxml:147 :: recycled :: _state_body
+    }
+
+    private fun onExitOfSettled() {
+                // SCE-MAP: targetless_transition_completes_macrostep.scxml:125 :: settled :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: targetless_transition_completes_macrostep.scxml:51 :: _machine
     override fun executeTransitionContent(source: TargetlessTransitionCompletesMacrostepState, transitionIndex: Int) {
         when (source) {
-        is TargetlessTransitionCompletesMacrostepState.Idle -> when (transitionIndex) {
-            0 -> {
+            is TargetlessTransitionCompletesMacrostepState.Idle -> transitionContentOfIdle(transitionIndex)
+            is TargetlessTransitionCompletesMacrostepState.Settled -> transitionContentOfSettled(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:86 :: idle :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("chained", "chained"), com.sce.runtime.ScriptSource.lua("_scxml_add(chained, 1)", "chained + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:93 :: idle :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("quiet", "quiet"), com.sce.runtime.ScriptSource.lua("_scxml_add(quiet, 1)", "quiet + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:100 :: idle :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("armed", "armed"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:107 :: idle :: _transition_3
 
             raiseInternal(TargetlessTransitionCompletesMacrostepEvent.Pong)
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:111 :: idle :: _transition_4
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("answered", "answered"), com.sce.runtime.ScriptSource.lua("_scxml_add(answered, 1)", "answered + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `settled`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSettled(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSettledAt0()
             else -> {}
         }
-        is TargetlessTransitionCompletesMacrostepState.Settled -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfSettledAt0() {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:126 :: settled :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("polished", "polished"), com.sce.runtime.ScriptSource.lua("_scxml_add(polished, 1)", "polished + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

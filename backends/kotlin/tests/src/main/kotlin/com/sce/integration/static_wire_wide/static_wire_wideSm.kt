@@ -111,6 +111,10 @@ class StaticWireWideStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.low?.let { vLow = it }
         params.smallLow?.let { vSmallLow = it }
         params.large?.let { vLarge = it }
@@ -199,18 +203,20 @@ class StaticWireWideStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "low" to SavedValues.of(vLow),
-            "smallLow" to SavedValues.of(vSmallLow),
-            "large" to SavedValues.of(vLarge),
-            "negative" to SavedValues.of(vNegative),
-            "relays" to SavedValues.of(vRelays),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "low" to SavedValues.of(vLow)
+        variables += "smallLow" to SavedValues.of(vSmallLow)
+        variables += "large" to SavedValues.of(vLarge)
+        variables += "negative" to SavedValues.of(vNegative)
+        variables += "relays" to SavedValues.of(vRelays)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -235,19 +241,29 @@ class StaticWireWideStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint64(savedGrown.variable("low"), "low")
         val saved2 = SavedValues.int64(savedGrown.variable("smallLow"), "smallLow")
         val saved3 = SavedValues.bool(savedGrown.variable("large"), "large")
         val saved4 = SavedValues.bool(savedGrown.variable("negative"), "negative")
         val saved5 = SavedValues.uint32(savedGrown.variable("relays"), "relays")
         val saved6 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vLow = saved1
-        vSmallLow = saved2
-        vLarge = saved3
-        vNegative = saved4
-        vRelays = saved5
-        vRefusals = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLow = saved1
+            vSmallLow = saved2
+            vLarge = saved3
+            vNegative = saved4
+            vRelays = saved5
+            vRefusals = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -260,6 +276,10 @@ class StaticWireWideStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint64(savedGrown.variable("low"), "low")
         SavedValues.int64(savedGrown.variable("smallLow"), "smallLow")
         SavedValues.bool(savedGrown.variable("large"), "large")
@@ -364,6 +384,9 @@ class StaticWireWideStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticWireWideState, HistoryId>> =
             listOf(StateTarget(StaticWireWideState.Relaying))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: relaying's transition 0, as the microstep reads it.
         val transitionRelayingAt0 = EnabledTransition<StaticWireWideState, HistoryId>(
@@ -393,21 +416,25 @@ class StaticWireWideStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticWireWideState? = when (stateId) {
         "relaying" -> StaticWireWideState.Relaying
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticWireWideState): String = when (state) {
         is StaticWireWideState.Relaying -> "relaying"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticWireWideState): Int = when (state) {
         is StaticWireWideState.Relaying -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticWireWideEvent? = when (name) {
@@ -416,6 +443,7 @@ class StaticWireWideStateMachine(
         "wide.relayed" -> StaticWireWideEvent.Wide.Relayed
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticWireWideEvent): String? = when (event) {
@@ -428,51 +456,82 @@ class StaticWireWideStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticWireWideState,
-        event: StaticWireWideEvent?
-    ): EnabledTransition<StaticWireWideState, HistoryId>? = when (state) {
-        is StaticWireWideState.Relaying -> when {
-            event is StaticWireWideEvent.Wide.In -> transitionRelayingAt0
-            event is StaticWireWideEvent.Wide.Relayed -> transitionRelayingAt1
-            event is StaticWireWideEvent.Error.Execution -> transitionRelayingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticWireWideState, event: StaticWireWideEvent?): EnabledTransition<StaticWireWideState, HistoryId>? = when (state) {
+        is StaticWireWideState.Relaying -> firstEnabledTransitionOfRelaying(state, event)
     }
+
+
+    // relaying's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRelaying(state: StaticWireWideState, event: StaticWireWideEvent?): EnabledTransition<StaticWireWideState, HistoryId>? = when {
+        event is StaticWireWideEvent.Wide.In -> TransitionsPart0.transitionRelayingAt0
+        event is StaticWireWideEvent.Wide.Relayed -> TransitionsPart0.transitionRelayingAt1
+        event is StaticWireWideEvent.Error.Execution -> TransitionsPart0.transitionRelayingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     override fun onEntry(state: StaticWireWideState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticWireWideState.Relaying -> {
-                // SCE-MAP: static_wire_wide.scxml:40 :: relaying :: _state_body
-            }
+            is StaticWireWideState.Relaying -> onEntryOfRelaying()
         }
+    }
+
+
+    private fun onEntryOfRelaying() {
+                // SCE-MAP: static_wire_wide.scxml:40 :: relaying :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     override fun onExit(state: StaticWireWideState) {
         when (state) {
-            is StaticWireWideState.Relaying -> {
-                // SCE-MAP: static_wire_wide.scxml:40 :: relaying :: _state_body
-            }
+            is StaticWireWideState.Relaying -> onExitOfRelaying()
         }
     }
+
+
+    private fun onExitOfRelaying() {
+                // SCE-MAP: static_wire_wide.scxml:40 :: relaying :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     override fun executeTransitionContent(source: StaticWireWideState, transitionIndex: Int) {
         when (source) {
-        is StaticWireWideState.Relaying -> when (transitionIndex) {
-            0 -> {
+            is StaticWireWideState.Relaying -> transitionContentOfRelaying(transitionIndex)
+        }
+    }
+
+
+    // The content of `relaying`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRelaying(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRelayingAt0()
+            1 -> transitionContentOfRelayingAt1()
+            2 -> transitionContentOfRelayingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRelayingAt0() {
                 // SCE-MAP: static_wire_wide.scxml:41 :: relaying :: _transition_0
                 if (pendingWideInPayload == null) {
                     return
@@ -500,8 +559,9 @@ class StaticWireWideStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRelayingAt1() {
                 // SCE-MAP: static_wire_wide.scxml:47 :: relaying :: _transition_1
                 if (pendingWideRelayedPayload == null) {
                     return
@@ -522,16 +582,13 @@ class StaticWireWideStateMachine(
             if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRelayingAt2() {
                 // SCE-MAP: static_wire_wide.scxml:54 :: relaying :: _transition_2
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

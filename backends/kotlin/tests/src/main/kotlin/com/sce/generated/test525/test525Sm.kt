@@ -71,9 +71,11 @@ class Test525StateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test525State): Boolean = when (state) {
-        is Test525State.Fail, is Test525State.Pass -> true
+        is Test525State.Fail -> true
+        is Test525State.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -83,6 +85,9 @@ class Test525StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test525State, HistoryId>> =
             listOf(StateTarget(Test525State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test525State, HistoryId>(
@@ -103,6 +108,7 @@ class Test525StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test525State? = when (stateId) {
         "fail" -> Test525State.Fail
@@ -111,12 +117,14 @@ class Test525StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test525State): String = when (state) {
         is Test525State.Fail -> "fail"
         is Test525State.Pass -> "pass"
         is Test525State.S0 -> "s0"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test525State): Int = when (state) {
@@ -125,16 +133,19 @@ class Test525StateMachine(
         is Test525State.S0 -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test525Event? = when (name) {
         "error.execution" -> Test525Event.Error.Execution
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test525Event): String? = when (event) {
         is Test525Event.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -164,20 +175,7 @@ class Test525StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML B.2: Initialize variable 'Var1' with inline content (C++ parseEventData pattern)
-        try {
-            val initResult_Var1 = engine.parseDataValue(sid, "[1,2,3]")
-            engine.setVariable(sid, "Var1", initResult_Var1)
-        } catch (e: Exception) {
-            raisePlatformError(Test525Event.Error.Execution, "<data id='Var1'> content failed to initialise")
-        }
-        // W3C SCXML 5.3: Initialize variable 'Var2' with expr
-        try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "Var2", initResult_Var2)
-        } catch (e: Exception) {
-            raisePlatformError(Test525Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -194,6 +192,24 @@ class Test525StateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML B.2: Initialize variable 'Var1' with inline content (C++ parseEventData pattern)
+        try {
+            val initResult_Var1 = engine.parseDataValue(sid, "[1,2,3]")
+            engine.setVariable(sid, "Var1", initResult_Var1)
+        } catch (e: Exception) {
+            raisePlatformError(Test525Event.Error.Execution, "<data id='Var1'> content failed to initialise")
+        }
+        // W3C SCXML 5.3: Initialize variable 'Var2' with expr
+        try {
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "Var2", initResult_Var2)
+        } catch (e: Exception) {
+            raisePlatformError(Test525Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -383,34 +399,47 @@ class Test525StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test525State,
-        event: Test525Event?
-    ): EnabledTransition<Test525State, HistoryId>? = when (state) {
-        is Test525State.S0 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 3)", "Var2 == 3")) -> transitionS0At0
-            event == null -> transitionS0At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test525State, event: Test525Event?): EnabledTransition<Test525State, HistoryId>? = when (state) {
+        is Test525State.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test525State, event: Test525Event?): EnabledTransition<Test525State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 3)", "Var2 == 3")) -> TransitionsPart0.transitionS0At0
+        event == null -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test525.scxml:6 :: _machine
     override fun onEntry(state: Test525State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test525State.Fail -> {
+            is Test525State.Fail -> onEntryOfFail()
+            is Test525State.Pass -> onEntryOfPass()
+            is Test525State.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test525.scxml:29 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test525State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test525.scxml:28 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test525State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test525.scxml:14 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -440,32 +469,38 @@ class Test525StateMachine(
                 return@run
             } // end of run foreach@
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test525.scxml:6 :: _machine
     override fun onExit(state: Test525State) {
         when (state) {
-            is Test525State.Fail -> {
-                // SCE-MAP: test525.scxml:29 :: fail :: _state_body
-            }
-            is Test525State.Pass -> {
-                // SCE-MAP: test525.scxml:28 :: pass :: _state_body
-            }
-            is Test525State.S0 -> {
-                // SCE-MAP: test525.scxml:14 :: s0 :: _state_body
-            }
+            is Test525State.Fail -> onExitOfFail()
+            is Test525State.Pass -> onExitOfPass()
+            is Test525State.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test525.scxml:29 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test525.scxml:28 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test525.scxml:14 :: s0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test525.scxml:6 :: _machine
     override fun executeTransitionContent(source: Test525State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

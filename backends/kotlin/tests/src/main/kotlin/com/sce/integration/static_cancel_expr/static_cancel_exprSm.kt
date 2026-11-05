@@ -90,6 +90,10 @@ class StaticCancelExprStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.which?.let { vWhich = it }
         params.scale?.let { vScale = it }
         params.aFired?.let { vAFired = it }
@@ -171,17 +175,19 @@ class StaticCancelExprStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "which" to SavedValues.of(vWhich),
-            "scale" to SavedValues.of(vScale),
-            "a_fired" to SavedValues.of(vAFired),
-            "b_fired" to SavedValues.of(vBFired),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "which" to SavedValues.of(vWhich)
+        variables += "scale" to SavedValues.of(vScale)
+        variables += "a_fired" to SavedValues.of(vAFired)
+        variables += "b_fired" to SavedValues.of(vBFired)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -206,17 +212,27 @@ class StaticCancelExprStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("which"), "which", 8)
         val saved2 = SavedValues.uint32(savedGrown.variable("scale"), "scale")
         val saved3 = SavedValues.uint32(savedGrown.variable("a_fired"), "a_fired")
         val saved4 = SavedValues.uint32(savedGrown.variable("b_fired"), "b_fired")
         val saved5 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vWhich = saved1
-        vScale = saved2
-        vAFired = saved3
-        vBFired = saved4
-        vRefusals = saved5
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vWhich = saved1
+            vScale = saved2
+            vAFired = saved3
+            vBFired = saved4
+            vRefusals = saved5
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -229,6 +245,10 @@ class StaticCancelExprStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("which"), "which", 8)
         SavedValues.uint32(savedGrown.variable("scale"), "scale")
         SavedValues.uint32(savedGrown.variable("a_fired"), "a_fired")
@@ -263,6 +283,9 @@ class StaticCancelExprStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticCancelExprState, HistoryId>> =
             listOf(StateTarget(StaticCancelExprState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticCancelExprState, HistoryId>(
@@ -337,21 +360,25 @@ class StaticCancelExprStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticCancelExprState? = when (stateId) {
         "idle" -> StaticCancelExprState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticCancelExprState): String = when (state) {
         is StaticCancelExprState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticCancelExprState): Int = when (state) {
         is StaticCancelExprState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticCancelExprEvent? = when (name) {
@@ -365,6 +392,7 @@ class StaticCancelExprStateMachine(
         "pick.none" -> StaticCancelExprEvent.Pick.None
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticCancelExprEvent): String? = when (event) {
@@ -382,56 +410,92 @@ class StaticCancelExprStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticCancelExprState,
-        event: StaticCancelExprEvent?
-    ): EnabledTransition<StaticCancelExprState, HistoryId>? = when (state) {
-        is StaticCancelExprState.Idle -> when {
-            event is StaticCancelExprEvent.Arm -> transitionIdleAt0
-            event is StaticCancelExprEvent.Cancel -> transitionIdleAt1
-            event is StaticCancelExprEvent.Overflow -> transitionIdleAt2
-            event is StaticCancelExprEvent.Pick.B -> transitionIdleAt3
-            event is StaticCancelExprEvent.Pick.None -> transitionIdleAt4
-            event is StaticCancelExprEvent.A.Due -> transitionIdleAt5
-            event is StaticCancelExprEvent.B.Due -> transitionIdleAt6
-            event is StaticCancelExprEvent.Error.Execution -> transitionIdleAt7
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticCancelExprState, event: StaticCancelExprEvent?): EnabledTransition<StaticCancelExprState, HistoryId>? = when (state) {
+        is StaticCancelExprState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticCancelExprState, event: StaticCancelExprEvent?): EnabledTransition<StaticCancelExprState, HistoryId>? = when {
+        event is StaticCancelExprEvent.Arm -> TransitionsPart0.transitionIdleAt0
+        event is StaticCancelExprEvent.Cancel -> TransitionsPart0.transitionIdleAt1
+        event is StaticCancelExprEvent.Overflow -> TransitionsPart0.transitionIdleAt2
+        event is StaticCancelExprEvent.Pick.B -> TransitionsPart0.transitionIdleAt3
+        event is StaticCancelExprEvent.Pick.None -> TransitionsPart0.transitionIdleAt4
+        event is StaticCancelExprEvent.A.Due -> TransitionsPart0.transitionIdleAt5
+        event is StaticCancelExprEvent.B.Due -> TransitionsPart0.transitionIdleAt6
+        event is StaticCancelExprEvent.Error.Execution -> TransitionsPart0.transitionIdleAt7
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_cancel_expr.scxml:19 :: _machine
     override fun onEntry(state: StaticCancelExprState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticCancelExprState.Idle -> {
-                // SCE-MAP: static_cancel_expr.scxml:28 :: idle :: _state_body
-            }
+            is StaticCancelExprState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_cancel_expr.scxml:28 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_cancel_expr.scxml:19 :: _machine
     override fun onExit(state: StaticCancelExprState) {
         when (state) {
-            is StaticCancelExprState.Idle -> {
-                // SCE-MAP: static_cancel_expr.scxml:28 :: idle :: _state_body
-            }
+            is StaticCancelExprState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_cancel_expr.scxml:28 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_cancel_expr.scxml:19 :: _machine
     override fun executeTransitionContent(source: StaticCancelExprState, transitionIndex: Int) {
         when (source) {
-        is StaticCancelExprState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticCancelExprState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            7 -> transitionContentOfIdleAt7()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_cancel_expr.scxml:29 :: idle :: _transition_0
 
 
@@ -457,8 +521,9 @@ class StaticCancelExprStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_cancel_expr.scxml:33 :: idle :: _transition_1
 
 
@@ -467,8 +532,9 @@ class StaticCancelExprStateMachine(
             // asked. An id no send holds cancels nothing; an operation that fails
             // cannot be evaluated, which raises error.execution and ends the block.
             cancelSend(vWhich)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_cancel_expr.scxml:36 :: idle :: _transition_2
 
 
@@ -492,44 +558,45 @@ class StaticCancelExprStateMachine(
             }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_cancel_expr.scxml:39 :: idle :: _transition_3
 
             if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("b", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_cancel_expr.scxml:42 :: idle :: _transition_4
 
             if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_cancel_expr.scxml:45 :: idle :: _transition_5
 
             if (try { vAFired = com.sce.forge.runtime.SceChecked.add(vAFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='a_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_cancel_expr.scxml:48 :: idle :: _transition_6
 
             if (try { vBFired = com.sce.forge.runtime.SceChecked.add(vBFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='b_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfIdleAt7() {
                 // SCE-MAP: static_cancel_expr.scxml:51 :: idle :: _transition_7
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

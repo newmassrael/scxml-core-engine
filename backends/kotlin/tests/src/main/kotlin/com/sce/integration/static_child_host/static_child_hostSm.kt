@@ -125,6 +125,10 @@ class StaticChildHostStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.completed?.let { vCompleted = it }
     }
 
@@ -198,13 +202,15 @@ class StaticChildHostStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "completed" to SavedValues.of(vCompleted),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "completed" to SavedValues.of(vCompleted)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -229,9 +235,19 @@ class StaticChildHostStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(savedGrown.variable("completed"), "completed")
-        vCompleted = saved1
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
         enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
+        val saved1 = SavedValues.uint32(savedGrown.variable("completed"), "completed")
+        return {
+            vCompleted = saved1
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -244,6 +260,10 @@ class StaticChildHostStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("completed"), "completed")
     }
 
@@ -282,6 +302,7 @@ class StaticChildHostStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticChildHostState, HistoryId>>
@@ -290,6 +311,9 @@ class StaticChildHostStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticChildHostState, HistoryId>> =
             listOf(StateTarget(StaticChildHostState.Working))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticChildHostState, HistoryId>(
@@ -346,6 +370,7 @@ class StaticChildHostStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticChildHostState? = when (stateId) {
         "finished" -> StaticChildHostState.Finished
@@ -354,6 +379,7 @@ class StaticChildHostStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticChildHostState): String = when (state) {
         is StaticChildHostState.Finished -> "finished"
@@ -361,12 +387,14 @@ class StaticChildHostStateMachine(
         is StaticChildHostState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticChildHostState): Int = when (state) {
         is StaticChildHostState.Finished -> 2
         is StaticChildHostState.Idle -> 1
         is StaticChildHostState.Working -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticChildHostEvent? = when (name) {
@@ -380,6 +408,7 @@ class StaticChildHostStateMachine(
         "finish" -> StaticChildHostEvent.Finish
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticChildHostEvent): String? = when (event) {
@@ -397,49 +426,65 @@ class StaticChildHostStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticChildHostState,
-        event: StaticChildHostEvent?
-    ): EnabledTransition<StaticChildHostState, HistoryId>? = when (state) {
-        is StaticChildHostState.Idle -> when {
-            event is StaticChildHostEvent.Back -> transitionIdleAt0
-            else -> null
-        }
-        is StaticChildHostState.Working -> when {
-            event is StaticChildHostEvent.A -> transitionWorkingAt0
-            event is StaticChildHostEvent.B -> transitionWorkingAt1
-            event is StaticChildHostEvent.Done.Invoke.Worker -> transitionWorkingAt2
-            event is StaticChildHostEvent.Again -> transitionWorkingAt3
-            event is StaticChildHostEvent.Finish -> transitionWorkingAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticChildHostState, event: StaticChildHostEvent?): EnabledTransition<StaticChildHostState, HistoryId>? = when (state) {
+        is StaticChildHostState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is StaticChildHostState.Working -> firstEnabledTransitionOfWorking(state, event)
         else -> null
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticChildHostState, event: StaticChildHostEvent?): EnabledTransition<StaticChildHostState, HistoryId>? = when {
+        event is StaticChildHostEvent.Back -> TransitionsPart0.transitionIdleAt0
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: StaticChildHostState, event: StaticChildHostEvent?): EnabledTransition<StaticChildHostState, HistoryId>? = when {
+        event is StaticChildHostEvent.A -> TransitionsPart0.transitionWorkingAt0
+        event is StaticChildHostEvent.B -> TransitionsPart0.transitionWorkingAt1
+        event is StaticChildHostEvent.Done.Invoke.Worker -> TransitionsPart0.transitionWorkingAt2
+        event is StaticChildHostEvent.Again -> TransitionsPart0.transitionWorkingAt3
+        event is StaticChildHostEvent.Finish -> TransitionsPart0.transitionWorkingAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_child_host.scxml:24 :: _machine
     override fun onEntry(state: StaticChildHostState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticChildHostState.Finished -> {
+            is StaticChildHostState.Finished -> onEntryOfFinished()
+            is StaticChildHostState.Idle -> onEntryOfIdle()
+            is StaticChildHostState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfFinished() {
                 // SCE-MAP: static_child_host.scxml:71 :: finished :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StaticChildHostState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: static_child_host.scxml:68 :: idle :: _state_body
-            }
-            is StaticChildHostState.Working -> {
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: static_child_host.scxml:29 :: working :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                deferStaticInvoke("worker", state)
-            }
-        }
+                deferStaticInvoke("worker", StaticChildHostState.Working)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -452,9 +497,20 @@ class StaticChildHostStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: StaticChildHostState) {
         when (invokeId) {
-            "worker" -> run {
+            "worker" -> startInvokeOfWorkingAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfWorkingAt0(state: StaticChildHostState) {
+            run {
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
                 // the platform part is the number of this start (docs/adr/0045).
                 val generatedInvokeId = "working.${nextInvokeStart("worker")}.worker"
@@ -466,8 +522,6 @@ class StaticChildHostStateMachine(
                     startInvoke("worker", childSM, true, StaticChildHostEvent.Done.Invoke.Worker, "", generatedInvokeId, "", "static_child_host__sce_synth_invoke__worker", "worker")
                 }
             }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
@@ -476,8 +530,18 @@ class StaticChildHostStateMachine(
     // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
     // stood, and a hybrid child is the candidate its saved `document` names,
     // whatever the `srcexpr` reads now.
+    //
+    // Each invoke's child is built by a method of its own
+    // (`savedChildOf<State>At<n>`), and this dispatches to it with one
+    // call an arm, for the reason `onEntry` does.
     override fun buildSavedChild(child: SavedChild): ResumedChild<StaticChildHostEvent> = when (child.id) {
-        "worker" -> if (child.document == "static_child_host__sce_synth_invoke__worker") {
+        "worker" -> savedChildOfWorkingAt0(child)
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
+    }
+
+
+    private fun savedChildOfWorkingAt0(child: SavedChild): ResumedChild<StaticChildHostEvent> =
+        if (child.document == "static_child_host__sce_synth_invoke__worker") {
             ResumedChild(
                 StaticChildHostSceSynthInvokeWorkerStateMachine(actions.actionsForWorker()),
                 true, StaticChildHostEvent.Done.Invoke.Worker, "", "", "worker",
@@ -485,45 +549,64 @@ class StaticChildHostStateMachine(
         } else {
             throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
         }
-        else -> throw StateRefusal("the document has no child session '${child.id}'")
-    }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_child_host.scxml:24 :: _machine
     override fun onExit(state: StaticChildHostState) {
         when (state) {
-            is StaticChildHostState.Finished -> {
-                // SCE-MAP: static_child_host.scxml:71 :: finished :: _state_body
-            }
-            is StaticChildHostState.Idle -> {
-                // SCE-MAP: static_child_host.scxml:68 :: idle :: _state_body
-            }
-            is StaticChildHostState.Working -> {
-                // SCE-MAP: static_child_host.scxml:29 :: working :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("worker")
-            }
+            is StaticChildHostState.Finished -> onExitOfFinished()
+            is StaticChildHostState.Idle -> onExitOfIdle()
+            is StaticChildHostState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfFinished() {
+                // SCE-MAP: static_child_host.scxml:71 :: finished :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_child_host.scxml:68 :: idle :: _state_body
+    }
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: static_child_host.scxml:29 :: working :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticChildHostState.Working)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("worker")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_child_host.scxml:24 :: _machine
     override fun executeTransitionContent(source: StaticChildHostState, transitionIndex: Int) {
         when (source) {
-        is StaticChildHostState.Working -> when (transitionIndex) {
-            2 -> {
+            is StaticChildHostState.Working -> transitionContentOfWorking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            2 -> transitionContentOfWorkingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWorkingAt2() {
                 // SCE-MAP: static_child_host.scxml:62 :: working :: _transition_2
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticChildHostEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

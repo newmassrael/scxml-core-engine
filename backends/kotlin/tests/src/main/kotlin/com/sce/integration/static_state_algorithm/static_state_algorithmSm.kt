@@ -164,6 +164,10 @@ class StaticStateAlgorithmStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.idsum?.let { vIdsum = it }
         params.large?.let { vLarge = it }
         params.refusals?.let { vRefusals = it }
@@ -276,19 +280,21 @@ class StaticStateAlgorithmStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "entries" to SavedValues.list(vEntries) { it.toSaved() },
-            "total" to vTotal.toSaved(),
-            "last" to vLast.toSaved(),
-            "ids" to SavedValues.list(vIds) { SavedValues.of(it) },
-            "idsum" to SavedValues.of(vIdsum),
-            "large" to SavedValues.of(vLarge),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "entries" to SavedValues.list(vEntries) { it.toSaved() }
+        variables += "total" to vTotal.toSaved()
+        variables += "last" to vLast.toSaved()
+        variables += "ids" to SavedValues.list(vIds) { SavedValues.of(it) }
+        variables += "idsum" to SavedValues.of(vIdsum)
+        variables += "large" to SavedValues.of(vLarge)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -313,6 +319,15 @@ class StaticStateAlgorithmStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.list(savedGrown.variable("entries"), "entries", 8) { e, w -> StaticStateAlgorithmEntryRecord.fromSaved(e, w) }
         val saved2 = StaticStateAlgorithmTotalRecord.fromSaved(savedGrown.variable("total"), "total")
         val saved3 = StaticStateAlgorithmEntryRecord.fromSaved(savedGrown.variable("last"), "last")
@@ -320,14 +335,15 @@ class StaticStateAlgorithmStateMachine(
         val saved5 = SavedValues.uint32(savedGrown.variable("idsum"), "idsum")
         val saved6 = SavedValues.uint32(savedGrown.variable("large"), "large")
         val saved7 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vEntries = saved1
-        vTotal = saved2
-        vLast = saved3
-        vIds = saved4
-        vIdsum = saved5
-        vLarge = saved6
-        vRefusals = saved7
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vEntries = saved1
+            vTotal = saved2
+            vLast = saved3
+            vIds = saved4
+            vIdsum = saved5
+            vLarge = saved6
+            vRefusals = saved7
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -340,6 +356,10 @@ class StaticStateAlgorithmStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.list(savedGrown.variable("entries"), "entries", 8) { e, w -> StaticStateAlgorithmEntryRecord.fromSaved(e, w) }
         StaticStateAlgorithmTotalRecord.fromSaved(savedGrown.variable("total"), "total")
         StaticStateAlgorithmEntryRecord.fromSaved(savedGrown.variable("last"), "last")
@@ -423,6 +443,9 @@ class StaticStateAlgorithmStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticStateAlgorithmState, HistoryId>> =
             listOf(StateTarget(StaticStateAlgorithmState.Open))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: open's transition 0, as the microstep reads it.
         val transitionOpenAt0 = EnabledTransition<StaticStateAlgorithmState, HistoryId>(
@@ -461,21 +484,25 @@ class StaticStateAlgorithmStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticStateAlgorithmState? = when (stateId) {
         "open" -> StaticStateAlgorithmState.Open
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticStateAlgorithmState): String = when (state) {
         is StaticStateAlgorithmState.Open -> "open"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticStateAlgorithmState): Int = when (state) {
         is StaticStateAlgorithmState.Open -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticStateAlgorithmEvent? = when (name) {
@@ -485,6 +512,7 @@ class StaticStateAlgorithmStateMachine(
         "track" -> StaticStateAlgorithmEvent.Track
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticStateAlgorithmEvent): String? = when (event) {
@@ -498,52 +526,84 @@ class StaticStateAlgorithmStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticStateAlgorithmState,
-        event: StaticStateAlgorithmEvent?
-    ): EnabledTransition<StaticStateAlgorithmState, HistoryId>? = when (state) {
-        is StaticStateAlgorithmState.Open -> when {
-            event is StaticStateAlgorithmEvent.Ledger.Entry -> transitionOpenAt0
-            event is StaticStateAlgorithmEvent.Bump -> transitionOpenAt1
-            event is StaticStateAlgorithmEvent.Track -> transitionOpenAt2
-            event is StaticStateAlgorithmEvent.Error.Execution -> transitionOpenAt3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticStateAlgorithmState, event: StaticStateAlgorithmEvent?): EnabledTransition<StaticStateAlgorithmState, HistoryId>? = when (state) {
+        is StaticStateAlgorithmState.Open -> firstEnabledTransitionOfOpen(state, event)
     }
+
+
+    // open's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOpen(state: StaticStateAlgorithmState, event: StaticStateAlgorithmEvent?): EnabledTransition<StaticStateAlgorithmState, HistoryId>? = when {
+        event is StaticStateAlgorithmEvent.Ledger.Entry -> TransitionsPart0.transitionOpenAt0
+        event is StaticStateAlgorithmEvent.Bump -> TransitionsPart0.transitionOpenAt1
+        event is StaticStateAlgorithmEvent.Track -> TransitionsPart0.transitionOpenAt2
+        event is StaticStateAlgorithmEvent.Error.Execution -> TransitionsPart0.transitionOpenAt3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_state_algorithm.scxml:20 :: _machine
     override fun onEntry(state: StaticStateAlgorithmState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticStateAlgorithmState.Open -> {
-                // SCE-MAP: static_state_algorithm.scxml:44 :: open :: _state_body
-            }
+            is StaticStateAlgorithmState.Open -> onEntryOfOpen()
         }
+    }
+
+
+    private fun onEntryOfOpen() {
+                // SCE-MAP: static_state_algorithm.scxml:44 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_state_algorithm.scxml:20 :: _machine
     override fun onExit(state: StaticStateAlgorithmState) {
         when (state) {
-            is StaticStateAlgorithmState.Open -> {
-                // SCE-MAP: static_state_algorithm.scxml:44 :: open :: _state_body
-            }
+            is StaticStateAlgorithmState.Open -> onExitOfOpen()
         }
     }
+
+
+    private fun onExitOfOpen() {
+                // SCE-MAP: static_state_algorithm.scxml:44 :: open :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_state_algorithm.scxml:20 :: _machine
     override fun executeTransitionContent(source: StaticStateAlgorithmState, transitionIndex: Int) {
         when (source) {
-        is StaticStateAlgorithmState.Open -> when (transitionIndex) {
-            0 -> {
+            is StaticStateAlgorithmState.Open -> transitionContentOfOpen(transitionIndex)
+        }
+    }
+
+
+    // The content of `open`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfOpen(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfOpenAt0()
+            1 -> transitionContentOfOpenAt1()
+            2 -> transitionContentOfOpenAt2()
+            3 -> transitionContentOfOpenAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfOpenAt0() {
                 // SCE-MAP: static_state_algorithm.scxml:45 :: open :: _transition_0
                 if (pendingLedgerEntryPayload == null) {
                     return
@@ -566,15 +626,17 @@ class StaticStateAlgorithmStateMachine(
                 return
             }
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfOpenAt1() {
                 // SCE-MAP: static_state_algorithm.scxml:53 :: open :: _transition_1
 
             if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_Bump__v(vTotal, 1)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfOpenAt2() {
                 // SCE-MAP: static_state_algorithm.scxml:56 :: open :: _transition_2
 
             if (if (vIds.size < 8) { vIds = vIds + (vLast.id); false } else { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<sce:append target='ids'>: the list already holds its capacity of 8"); true }) {
@@ -584,16 +646,13 @@ class StaticStateAlgorithmStateMachine(
             if (try { vIdsum = com.sce.forge.runtime.SceChecked.take(call_IdSum__v(vIds)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='idsum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfOpenAt3() {
                 // SCE-MAP: static_state_algorithm.scxml:60 :: open :: _transition_3
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

@@ -119,18 +119,28 @@ class WildcardInDocumentOrderStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: WildcardInDocumentOrderState): Boolean = when (state) {
-        is WildcardInDocumentOrderState.GuardClosed, is WildcardInDocumentOrderState.GuardedInternal, is WildcardInDocumentOrderState.GuardOpen, is WildcardInDocumentOrderState.SealedInternal -> true
+        is WildcardInDocumentOrderState.GuardClosed -> true
+        is WildcardInDocumentOrderState.GuardedInternal -> true
+        is WildcardInDocumentOrderState.GuardOpen -> true
+        is WildcardInDocumentOrderState.SealedInternal -> true
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: WildcardInDocumentOrderState): Boolean = when (state) {
-        is WildcardInDocumentOrderState.FailGuardedInternalReentered, is WildcardInDocumentOrderState.FailGuardIgnored, is WildcardInDocumentOrderState.FailGuardNeverFired, is WildcardInDocumentOrderState.FailSealedInternalReentered, is WildcardInDocumentOrderState.Pass -> true
+        is WildcardInDocumentOrderState.FailGuardedInternalReentered -> true
+        is WildcardInDocumentOrderState.FailGuardIgnored -> true
+        is WildcardInDocumentOrderState.FailGuardNeverFired -> true
+        is WildcardInDocumentOrderState.FailSealedInternalReentered -> true
+        is WildcardInDocumentOrderState.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -147,22 +157,35 @@ class WildcardInDocumentOrderStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<WildcardInDocumentOrderState, List<WildcardInDocumentOrderState>> = mapOf(
-            WildcardInDocumentOrderState.GuardClosed to listOf(WildcardInDocumentOrderState.GuardClosedLeaf),
-            WildcardInDocumentOrderState.GuardedInternal to listOf(WildcardInDocumentOrderState.GuardedFrom, WildcardInDocumentOrderState.GuardedTo),
-            WildcardInDocumentOrderState.GuardOpen to listOf(WildcardInDocumentOrderState.GuardOpenLeaf),
-            WildcardInDocumentOrderState.SealedInternal to listOf(WildcardInDocumentOrderState.SealedFrom, WildcardInDocumentOrderState.SealedTo),
-        )
+        val childStates: Map<WildcardInDocumentOrderState, List<WildcardInDocumentOrderState>> = LinkedHashMap<WildcardInDocumentOrderState, List<WildcardInDocumentOrderState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<WildcardInDocumentOrderState, List<EntryTarget<WildcardInDocumentOrderState, HistoryId>>> = mapOf(
-            WildcardInDocumentOrderState.GuardClosed to listOf(StateTarget(WildcardInDocumentOrderState.GuardClosedLeaf)),
-            WildcardInDocumentOrderState.GuardedInternal to listOf(StateTarget(WildcardInDocumentOrderState.GuardedFrom)),
-            WildcardInDocumentOrderState.GuardOpen to listOf(StateTarget(WildcardInDocumentOrderState.GuardOpenLeaf)),
-            WildcardInDocumentOrderState.SealedInternal to listOf(StateTarget(WildcardInDocumentOrderState.SealedFrom)),
-        )
+        private fun childStatesPart0(table: MutableMap<WildcardInDocumentOrderState, List<WildcardInDocumentOrderState>>) {
+            table[WildcardInDocumentOrderState.GuardClosed] = listOf(WildcardInDocumentOrderState.GuardClosedLeaf)
+            table[WildcardInDocumentOrderState.GuardedInternal] = listOf(WildcardInDocumentOrderState.GuardedFrom, WildcardInDocumentOrderState.GuardedTo)
+            table[WildcardInDocumentOrderState.GuardOpen] = listOf(WildcardInDocumentOrderState.GuardOpenLeaf)
+            table[WildcardInDocumentOrderState.SealedInternal] = listOf(WildcardInDocumentOrderState.SealedFrom, WildcardInDocumentOrderState.SealedTo)
+        }
+
+
+        val initialTargets: Map<WildcardInDocumentOrderState, List<EntryTarget<WildcardInDocumentOrderState, HistoryId>>> = LinkedHashMap<WildcardInDocumentOrderState, List<EntryTarget<WildcardInDocumentOrderState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<WildcardInDocumentOrderState, List<EntryTarget<WildcardInDocumentOrderState, HistoryId>>>) {
+            table[WildcardInDocumentOrderState.GuardClosed] = listOf(StateTarget(WildcardInDocumentOrderState.GuardClosedLeaf))
+            table[WildcardInDocumentOrderState.GuardedInternal] = listOf(StateTarget(WildcardInDocumentOrderState.GuardedFrom))
+            table[WildcardInDocumentOrderState.GuardOpen] = listOf(StateTarget(WildcardInDocumentOrderState.GuardOpenLeaf))
+            table[WildcardInDocumentOrderState.SealedInternal] = listOf(StateTarget(WildcardInDocumentOrderState.SealedFrom))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<WildcardInDocumentOrderState, HistoryId>> =
             listOf(StateTarget(WildcardInDocumentOrderState.GuardClosed))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: guardClosed's transition 0, as the microstep reads it.
         val transitionGuardClosedAt0 = EnabledTransition<WildcardInDocumentOrderState, HistoryId>(
@@ -177,6 +200,24 @@ class WildcardInDocumentOrderStateMachine(
         val transitionGuardClosedLeafAt0 = EnabledTransition<WildcardInDocumentOrderState, HistoryId>(
             WildcardInDocumentOrderState.GuardClosedLeaf,
             listOf(StateTarget(WildcardInDocumentOrderState.FailGuardIgnored)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: guardOpen's transition 0, as the microstep reads it.
+        val transitionGuardOpenAt0 = EnabledTransition<WildcardInDocumentOrderState, HistoryId>(
+            WildcardInDocumentOrderState.GuardOpen,
+            listOf(StateTarget(WildcardInDocumentOrderState.FailGuardNeverFired)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: guardOpenLeaf's transition 0, as the microstep reads it.
+        val transitionGuardOpenLeafAt0 = EnabledTransition<WildcardInDocumentOrderState, HistoryId>(
+            WildcardInDocumentOrderState.GuardOpenLeaf,
+            listOf(StateTarget(WildcardInDocumentOrderState.GuardedInternal)),
             0,
             hasActions = false,
             isInternal = false,
@@ -209,24 +250,6 @@ class WildcardInDocumentOrderStateMachine(
             isInternal = false,
         )
 
-        // W3C SCXML 3.13: guardOpen's transition 0, as the microstep reads it.
-        val transitionGuardOpenAt0 = EnabledTransition<WildcardInDocumentOrderState, HistoryId>(
-            WildcardInDocumentOrderState.GuardOpen,
-            listOf(StateTarget(WildcardInDocumentOrderState.FailGuardNeverFired)),
-            0,
-            hasActions = false,
-            isInternal = false,
-        )
-
-        // W3C SCXML 3.13: guardOpenLeaf's transition 0, as the microstep reads it.
-        val transitionGuardOpenLeafAt0 = EnabledTransition<WildcardInDocumentOrderState, HistoryId>(
-            WildcardInDocumentOrderState.GuardOpenLeaf,
-            listOf(StateTarget(WildcardInDocumentOrderState.GuardedInternal)),
-            0,
-            hasActions = false,
-            isInternal = false,
-        )
-
         // W3C SCXML 3.13: sealedInternal's transition 0, as the microstep reads it.
         val transitionSealedInternalAt0 = EnabledTransition<WildcardInDocumentOrderState, HistoryId>(
             WildcardInDocumentOrderState.SealedInternal,
@@ -255,6 +278,7 @@ class WildcardInDocumentOrderStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): WildcardInDocumentOrderState? = when (stateId) {
         "failGuardedInternalReentered" -> WildcardInDocumentOrderState.FailGuardedInternalReentered
@@ -275,6 +299,7 @@ class WildcardInDocumentOrderStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: WildcardInDocumentOrderState): String = when (state) {
         is WildcardInDocumentOrderState.FailGuardedInternalReentered -> "failGuardedInternalReentered"
@@ -293,6 +318,7 @@ class WildcardInDocumentOrderStateMachine(
         is WildcardInDocumentOrderState.SealedInternal -> "sealedInternal"
         is WildcardInDocumentOrderState.SealedTo -> "sealedTo"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: WildcardInDocumentOrderState): Int = when (state) {
@@ -313,6 +339,7 @@ class WildcardInDocumentOrderStateMachine(
         is WildcardInDocumentOrderState.SealedTo -> 9
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): WildcardInDocumentOrderEvent? = when (name) {
         "error.execution" -> WildcardInDocumentOrderEvent.Error.Execution
@@ -322,6 +349,7 @@ class WildcardInDocumentOrderStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: WildcardInDocumentOrderEvent): String? = when (event) {
         is WildcardInDocumentOrderEvent.Error.Execution -> "error.execution"
@@ -329,6 +357,7 @@ class WildcardInDocumentOrderStateMachine(
         is WildcardInDocumentOrderEvent.Probe -> "probe"
         is WildcardInDocumentOrderEvent.Wildcard -> "*"
     }
+
 
 
 
@@ -358,6 +387,27 @@ class WildcardInDocumentOrderStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'armed' with expr
         try {
             val initResult_armed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false"))
@@ -379,22 +429,6 @@ class WildcardInDocumentOrderStateMachine(
         } catch (e: Exception) {
             raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<data id='sealedEntries'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -584,87 +618,145 @@ class WildcardInDocumentOrderStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: WildcardInDocumentOrderState,
-        event: WildcardInDocumentOrderEvent?
-    ): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when (state) {
-        is WildcardInDocumentOrderState.GuardClosed -> when {
-            event is WildcardInDocumentOrderEvent.Probe -> transitionGuardClosedAt0
-            else -> null
-        }
-        is WildcardInDocumentOrderState.GuardClosedLeaf -> when {
-            event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> transitionGuardClosedLeafAt0
-            else -> null
-        }
-        is WildcardInDocumentOrderState.GuardedInternal -> when {
-            event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> transitionGuardedInternalAt0
-            else -> null
-        }
-        is WildcardInDocumentOrderState.GuardedTo -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(guardedEntries, 1)", "guardedEntries == 1")) -> transitionGuardedToAt0
-            event == null -> transitionGuardedToAt1
-            else -> null
-        }
-        is WildcardInDocumentOrderState.GuardOpen -> when {
-            event is WildcardInDocumentOrderEvent.Probe -> transitionGuardOpenAt0
-            else -> null
-        }
-        is WildcardInDocumentOrderState.GuardOpenLeaf -> when {
-            event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> transitionGuardOpenLeafAt0
-            else -> null
-        }
-        is WildcardInDocumentOrderState.SealedInternal -> when {
-            event != null -> transitionSealedInternalAt0
-            else -> null
-        }
-        is WildcardInDocumentOrderState.SealedTo -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(sealedEntries, 1)", "sealedEntries == 1")) -> transitionSealedToAt0
-            event == null -> transitionSealedToAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when (state) {
+        is WildcardInDocumentOrderState.GuardClosed -> firstEnabledTransitionOfGuardClosed(state, event)
+        is WildcardInDocumentOrderState.GuardClosedLeaf -> firstEnabledTransitionOfGuardClosedLeaf(state, event)
+        is WildcardInDocumentOrderState.GuardedInternal -> firstEnabledTransitionOfGuardedInternal(state, event)
+        is WildcardInDocumentOrderState.GuardedTo -> firstEnabledTransitionOfGuardedTo(state, event)
+        is WildcardInDocumentOrderState.GuardOpen -> firstEnabledTransitionOfGuardOpen(state, event)
+        is WildcardInDocumentOrderState.GuardOpenLeaf -> firstEnabledTransitionOfGuardOpenLeaf(state, event)
+        is WildcardInDocumentOrderState.SealedInternal -> firstEnabledTransitionOfSealedInternal(state, event)
+        is WildcardInDocumentOrderState.SealedTo -> firstEnabledTransitionOfSealedTo(state, event)
         else -> null
     }
+
+
+    // guardClosed's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardClosed(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
+        event is WildcardInDocumentOrderEvent.Probe -> TransitionsPart0.transitionGuardClosedAt0
+        else -> null
+    }
+
+
+    // guardClosedLeaf's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardClosedLeaf(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> TransitionsPart0.transitionGuardClosedLeafAt0
+        else -> null
+    }
+
+
+    // guardedInternal's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardedInternal(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> TransitionsPart0.transitionGuardedInternalAt0
+        else -> null
+    }
+
+
+    // guardedTo's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardedTo(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(guardedEntries, 1)", "guardedEntries == 1")) -> TransitionsPart0.transitionGuardedToAt0
+        event == null -> TransitionsPart0.transitionGuardedToAt1
+        else -> null
+    }
+
+
+    // guardOpen's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardOpen(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
+        event is WildcardInDocumentOrderEvent.Probe -> TransitionsPart0.transitionGuardOpenAt0
+        else -> null
+    }
+
+
+    // guardOpenLeaf's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardOpenLeaf(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> TransitionsPart0.transitionGuardOpenLeafAt0
+        else -> null
+    }
+
+
+    // sealedInternal's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSealedInternal(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
+        event != null -> TransitionsPart0.transitionSealedInternalAt0
+        else -> null
+    }
+
+
+    // sealedTo's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSealedTo(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(sealedEntries, 1)", "sealedEntries == 1")) -> TransitionsPart0.transitionSealedToAt0
+        event == null -> TransitionsPart0.transitionSealedToAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: wildcard_in_document_order.scxml:48 :: _machine
     override fun onEntry(state: WildcardInDocumentOrderState, isDefaultEntry: Boolean) {
         when (state) {
-            is WildcardInDocumentOrderState.FailGuardedInternalReentered -> {
+            is WildcardInDocumentOrderState.FailGuardedInternalReentered -> onEntryOfFailGuardedInternalReentered()
+            is WildcardInDocumentOrderState.FailGuardIgnored -> onEntryOfFailGuardIgnored()
+            is WildcardInDocumentOrderState.FailGuardNeverFired -> onEntryOfFailGuardNeverFired()
+            is WildcardInDocumentOrderState.FailSealedInternalReentered -> onEntryOfFailSealedInternalReentered()
+            is WildcardInDocumentOrderState.GuardClosed -> onEntryOfGuardClosed()
+            is WildcardInDocumentOrderState.GuardClosedLeaf -> onEntryOfGuardClosedLeaf()
+            is WildcardInDocumentOrderState.GuardedFrom -> onEntryOfGuardedFrom()
+            is WildcardInDocumentOrderState.GuardedInternal -> onEntryOfGuardedInternal()
+            is WildcardInDocumentOrderState.GuardedTo -> onEntryOfGuardedTo()
+            is WildcardInDocumentOrderState.GuardOpen -> onEntryOfGuardOpen()
+            is WildcardInDocumentOrderState.GuardOpenLeaf -> onEntryOfGuardOpenLeaf()
+            is WildcardInDocumentOrderState.Pass -> onEntryOfPass()
+            is WildcardInDocumentOrderState.SealedFrom -> onEntryOfSealedFrom()
+            is WildcardInDocumentOrderState.SealedInternal -> onEntryOfSealedInternal()
+            is WildcardInDocumentOrderState.SealedTo -> onEntryOfSealedTo()
+        }
+    }
+
+
+    private fun onEntryOfFailGuardedInternalReentered() {
                 // SCE-MAP: wildcard_in_document_order.scxml:114 :: failGuardedInternalReentered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is WildcardInDocumentOrderState.FailGuardIgnored -> {
+    }
+
+    private fun onEntryOfFailGuardIgnored() {
                 // SCE-MAP: wildcard_in_document_order.scxml:112 :: failGuardIgnored :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is WildcardInDocumentOrderState.FailGuardNeverFired -> {
+    }
+
+    private fun onEntryOfFailGuardNeverFired() {
                 // SCE-MAP: wildcard_in_document_order.scxml:113 :: failGuardNeverFired :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is WildcardInDocumentOrderState.FailSealedInternalReentered -> {
+    }
+
+    private fun onEntryOfFailSealedInternalReentered() {
                 // SCE-MAP: wildcard_in_document_order.scxml:115 :: failSealedInternalReentered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is WildcardInDocumentOrderState.GuardClosed -> {
+    }
+
+    private fun onEntryOfGuardClosed() {
                 // SCE-MAP: wildcard_in_document_order.scxml:64 :: guardClosed :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
             raiseInternal(WildcardInDocumentOrderEvent.Probe)
                 }
-            }
-            is WildcardInDocumentOrderState.GuardClosedLeaf -> {
+    }
+
+    private fun onEntryOfGuardClosedLeaf() {
                 // SCE-MAP: wildcard_in_document_order.scxml:69 :: guardClosedLeaf :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardedFrom -> {
+    }
+
+    private fun onEntryOfGuardedFrom() {
                 // SCE-MAP: wildcard_in_document_order.scxml:91 :: guardedFrom :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardedInternal -> {
+    }
+
+    private fun onEntryOfGuardedInternal() {
                 // SCE-MAP: wildcard_in_document_order.scxml:85 :: guardedInternal :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -676,11 +768,13 @@ class WildcardInDocumentOrderStateMachine(
 
             raiseInternal(WildcardInDocumentOrderEvent.Hop)
                 }
-            }
-            is WildcardInDocumentOrderState.GuardedTo -> {
+    }
+
+    private fun onEntryOfGuardedTo() {
                 // SCE-MAP: wildcard_in_document_order.scxml:92 :: guardedTo :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardOpen -> {
+    }
+
+    private fun onEntryOfGuardOpen() {
                 // SCE-MAP: wildcard_in_document_order.scxml:74 :: guardOpen :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -692,19 +786,23 @@ class WildcardInDocumentOrderStateMachine(
 
             raiseInternal(WildcardInDocumentOrderEvent.Probe)
                 }
-            }
-            is WildcardInDocumentOrderState.GuardOpenLeaf -> {
+    }
+
+    private fun onEntryOfGuardOpenLeaf() {
                 // SCE-MAP: wildcard_in_document_order.scxml:80 :: guardOpenLeaf :: _state_body
-            }
-            is WildcardInDocumentOrderState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: wildcard_in_document_order.scxml:111 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is WildcardInDocumentOrderState.SealedFrom -> {
+    }
+
+    private fun onEntryOfSealedFrom() {
                 // SCE-MAP: wildcard_in_document_order.scxml:104 :: sealedFrom :: _state_body
-            }
-            is WildcardInDocumentOrderState.SealedInternal -> {
+    }
+
+    private fun onEntryOfSealedInternal() {
                 // SCE-MAP: wildcard_in_document_order.scxml:98 :: sealedInternal :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -716,71 +814,102 @@ class WildcardInDocumentOrderStateMachine(
 
             raiseInternal(WildcardInDocumentOrderEvent.Hop)
                 }
-            }
-            is WildcardInDocumentOrderState.SealedTo -> {
+    }
+
+    private fun onEntryOfSealedTo() {
                 // SCE-MAP: wildcard_in_document_order.scxml:105 :: sealedTo :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: wildcard_in_document_order.scxml:48 :: _machine
     override fun onExit(state: WildcardInDocumentOrderState) {
         when (state) {
-            is WildcardInDocumentOrderState.FailGuardedInternalReentered -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:114 :: failGuardedInternalReentered :: _state_body
-            }
-            is WildcardInDocumentOrderState.FailGuardIgnored -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:112 :: failGuardIgnored :: _state_body
-            }
-            is WildcardInDocumentOrderState.FailGuardNeverFired -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:113 :: failGuardNeverFired :: _state_body
-            }
-            is WildcardInDocumentOrderState.FailSealedInternalReentered -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:115 :: failSealedInternalReentered :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardClosed -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:64 :: guardClosed :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardClosedLeaf -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:69 :: guardClosedLeaf :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardedFrom -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:91 :: guardedFrom :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardedInternal -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:85 :: guardedInternal :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardedTo -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:92 :: guardedTo :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardOpen -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:74 :: guardOpen :: _state_body
-            }
-            is WildcardInDocumentOrderState.GuardOpenLeaf -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:80 :: guardOpenLeaf :: _state_body
-            }
-            is WildcardInDocumentOrderState.Pass -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:111 :: pass :: _state_body
-            }
-            is WildcardInDocumentOrderState.SealedFrom -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:104 :: sealedFrom :: _state_body
-            }
-            is WildcardInDocumentOrderState.SealedInternal -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:98 :: sealedInternal :: _state_body
-            }
-            is WildcardInDocumentOrderState.SealedTo -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:105 :: sealedTo :: _state_body
-            }
+            is WildcardInDocumentOrderState.FailGuardedInternalReentered -> onExitOfFailGuardedInternalReentered()
+            is WildcardInDocumentOrderState.FailGuardIgnored -> onExitOfFailGuardIgnored()
+            is WildcardInDocumentOrderState.FailGuardNeverFired -> onExitOfFailGuardNeverFired()
+            is WildcardInDocumentOrderState.FailSealedInternalReentered -> onExitOfFailSealedInternalReentered()
+            is WildcardInDocumentOrderState.GuardClosed -> onExitOfGuardClosed()
+            is WildcardInDocumentOrderState.GuardClosedLeaf -> onExitOfGuardClosedLeaf()
+            is WildcardInDocumentOrderState.GuardedFrom -> onExitOfGuardedFrom()
+            is WildcardInDocumentOrderState.GuardedInternal -> onExitOfGuardedInternal()
+            is WildcardInDocumentOrderState.GuardedTo -> onExitOfGuardedTo()
+            is WildcardInDocumentOrderState.GuardOpen -> onExitOfGuardOpen()
+            is WildcardInDocumentOrderState.GuardOpenLeaf -> onExitOfGuardOpenLeaf()
+            is WildcardInDocumentOrderState.Pass -> onExitOfPass()
+            is WildcardInDocumentOrderState.SealedFrom -> onExitOfSealedFrom()
+            is WildcardInDocumentOrderState.SealedInternal -> onExitOfSealedInternal()
+            is WildcardInDocumentOrderState.SealedTo -> onExitOfSealedTo()
         }
     }
+
+
+    private fun onExitOfFailGuardedInternalReentered() {
+                // SCE-MAP: wildcard_in_document_order.scxml:114 :: failGuardedInternalReentered :: _state_body
+    }
+
+    private fun onExitOfFailGuardIgnored() {
+                // SCE-MAP: wildcard_in_document_order.scxml:112 :: failGuardIgnored :: _state_body
+    }
+
+    private fun onExitOfFailGuardNeverFired() {
+                // SCE-MAP: wildcard_in_document_order.scxml:113 :: failGuardNeverFired :: _state_body
+    }
+
+    private fun onExitOfFailSealedInternalReentered() {
+                // SCE-MAP: wildcard_in_document_order.scxml:115 :: failSealedInternalReentered :: _state_body
+    }
+
+    private fun onExitOfGuardClosed() {
+                // SCE-MAP: wildcard_in_document_order.scxml:64 :: guardClosed :: _state_body
+    }
+
+    private fun onExitOfGuardClosedLeaf() {
+                // SCE-MAP: wildcard_in_document_order.scxml:69 :: guardClosedLeaf :: _state_body
+    }
+
+    private fun onExitOfGuardedFrom() {
+                // SCE-MAP: wildcard_in_document_order.scxml:91 :: guardedFrom :: _state_body
+    }
+
+    private fun onExitOfGuardedInternal() {
+                // SCE-MAP: wildcard_in_document_order.scxml:85 :: guardedInternal :: _state_body
+    }
+
+    private fun onExitOfGuardedTo() {
+                // SCE-MAP: wildcard_in_document_order.scxml:92 :: guardedTo :: _state_body
+    }
+
+    private fun onExitOfGuardOpen() {
+                // SCE-MAP: wildcard_in_document_order.scxml:74 :: guardOpen :: _state_body
+    }
+
+    private fun onExitOfGuardOpenLeaf() {
+                // SCE-MAP: wildcard_in_document_order.scxml:80 :: guardOpenLeaf :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: wildcard_in_document_order.scxml:111 :: pass :: _state_body
+    }
+
+    private fun onExitOfSealedFrom() {
+                // SCE-MAP: wildcard_in_document_order.scxml:104 :: sealedFrom :: _state_body
+    }
+
+    private fun onExitOfSealedInternal() {
+                // SCE-MAP: wildcard_in_document_order.scxml:98 :: sealedInternal :: _state_body
+    }
+
+    private fun onExitOfSealedTo() {
+                // SCE-MAP: wildcard_in_document_order.scxml:105 :: sealedTo :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: wildcard_in_document_order.scxml:48 :: _machine
     override fun executeTransitionContent(source: WildcardInDocumentOrderState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

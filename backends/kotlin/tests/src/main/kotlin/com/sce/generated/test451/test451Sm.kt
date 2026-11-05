@@ -55,17 +55,21 @@ class Test451StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: Test451State): Boolean = when (state) {
         is Test451State.P -> true
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test451State): Boolean = when (state) {
-        is Test451State.Fail, is Test451State.Pass -> true
+        is Test451State.Fail -> true
+        is Test451State.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -78,12 +82,20 @@ class Test451StateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<Test451State, List<Test451State>> = mapOf(
-            Test451State.P to listOf(Test451State.S0, Test451State.S1),
-        )
+        val childStates: Map<Test451State, List<Test451State>> = LinkedHashMap<Test451State, List<Test451State>>().also {
+            childStatesPart0(it)
+        }
+
+        private fun childStatesPart0(table: MutableMap<Test451State, List<Test451State>>) {
+            table[Test451State.P] = listOf(Test451State.S0, Test451State.S1)
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test451State, HistoryId>> =
             listOf(StateTarget(Test451State.P))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test451State, HistoryId>(
@@ -104,6 +116,7 @@ class Test451StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test451State? = when (stateId) {
         "fail" -> Test451State.Fail
@@ -114,6 +127,7 @@ class Test451StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test451State): String = when (state) {
         is Test451State.Fail -> "fail"
@@ -122,6 +136,7 @@ class Test451StateMachine(
         is Test451State.S0 -> "s0"
         is Test451State.S1 -> "s1"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test451State): Int = when (state) {
@@ -132,10 +147,12 @@ class Test451StateMachine(
         is Test451State.S1 -> 2
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test451Event? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -156,73 +173,100 @@ class Test451StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test451State,
-        event: Test451Event?
-    ): EnabledTransition<Test451State, HistoryId>? = when (state) {
-        is Test451State.S0 -> when {
-            event == null && isStateActive("s1") -> transitionS0At0
-            event == null -> transitionS0At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test451State, event: Test451Event?): EnabledTransition<Test451State, HistoryId>? = when (state) {
+        is Test451State.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test451State, event: Test451Event?): EnabledTransition<Test451State, HistoryId>? = when {
+        event == null && isStateActive("s1") -> TransitionsPart0.transitionS0At0
+        event == null -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test451.scxml:5 :: _machine
     override fun onEntry(state: Test451State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test451State.Fail -> {
+            is Test451State.Fail -> onEntryOfFail()
+            is Test451State.P -> onEntryOfP()
+            is Test451State.Pass -> onEntryOfPass()
+            is Test451State.S0 -> onEntryOfS0()
+            is Test451State.S1 -> onEntryOfS1()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test451.scxml:19 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test451State.P -> {
+    }
+
+    private fun onEntryOfP() {
                 // SCE-MAP: test451.scxml:8 :: p :: _state_body
-            }
-            is Test451State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test451.scxml:18 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test451State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test451.scxml:10 :: s0 :: _state_body
-            }
-            is Test451State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test451.scxml:15 :: s1 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test451.scxml:5 :: _machine
     override fun onExit(state: Test451State) {
         when (state) {
-            is Test451State.Fail -> {
-                // SCE-MAP: test451.scxml:19 :: fail :: _state_body
-            }
-            is Test451State.P -> {
-                // SCE-MAP: test451.scxml:8 :: p :: _state_body
-            }
-            is Test451State.Pass -> {
-                // SCE-MAP: test451.scxml:18 :: pass :: _state_body
-            }
-            is Test451State.S0 -> {
-                // SCE-MAP: test451.scxml:10 :: s0 :: _state_body
-            }
-            is Test451State.S1 -> {
-                // SCE-MAP: test451.scxml:15 :: s1 :: _state_body
-            }
+            is Test451State.Fail -> onExitOfFail()
+            is Test451State.P -> onExitOfP()
+            is Test451State.Pass -> onExitOfPass()
+            is Test451State.S0 -> onExitOfS0()
+            is Test451State.S1 -> onExitOfS1()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test451.scxml:19 :: fail :: _state_body
+    }
+
+    private fun onExitOfP() {
+                // SCE-MAP: test451.scxml:8 :: p :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test451.scxml:18 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test451.scxml:10 :: s0 :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test451.scxml:15 :: s1 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test451.scxml:5 :: _machine
     override fun executeTransitionContent(source: Test451State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

@@ -79,6 +79,10 @@ class StaticHistoryStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.resumed?.let { vResumed = it }
     }
 
@@ -152,13 +156,15 @@ class StaticHistoryStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "resumed" to SavedValues.of(vResumed),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "resumed" to SavedValues.of(vResumed)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -183,9 +189,19 @@ class StaticHistoryStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint8(savedGrown.variable("resumed"), "resumed")
-        vResumed = saved1
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
         enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
+        val saved1 = SavedValues.uint8(savedGrown.variable("resumed"), "resumed")
+        return {
+            vResumed = saved1
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -198,6 +214,10 @@ class StaticHistoryStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint8(savedGrown.variable("resumed"), "resumed")
     }
 
@@ -236,18 +256,25 @@ class StaticHistoryStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: StaticHistoryState): Boolean = when (state) {
-        is StaticHistoryState.Fast, is StaticHistoryState.Left, is StaticHistoryState.Right, is StaticHistoryState.Running, is StaticHistoryState.Working -> true
+        is StaticHistoryState.Fast -> true
+        is StaticHistoryState.Left -> true
+        is StaticHistoryState.Right -> true
+        is StaticHistoryState.Running -> true
+        is StaticHistoryState.Working -> true
         else -> false
     }
+
 
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: StaticHistoryState): Boolean = when (state) {
         is StaticHistoryState.Crew -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -284,6 +311,7 @@ class StaticHistoryStateMachine(
         else -> error("no <history> of this document is $history")
     }
 
+
     override fun resolveHistory(historyId: String): HistoryId? = when (historyId) {
         "crew_all" -> historyCrewAll
         "deepest" -> historyDeepest
@@ -291,52 +319,81 @@ class StaticHistoryStateMachine(
         else -> null
     }
 
+
     private companion object {
         /** W3C SCXML 3.10: the `crew_all` <history> (deep). */
-        val historyCrewAll = HistoryId(0)
+        val historyCrewAll: HistoryId get() = HistoryId(0)
 
         /** W3C SCXML 3.10: the `deepest` <history> (deep). */
-        val historyDeepest = HistoryId(1)
+        val historyDeepest: HistoryId get() = HistoryId(1)
 
         /** W3C SCXML 3.10: the `last` <history> (shallow). */
-        val historyLast = HistoryId(2)
+        val historyLast: HistoryId get() = HistoryId(2)
 
-        val childStates: Map<StaticHistoryState, List<StaticHistoryState>> = mapOf(
-            StaticHistoryState.Crew to listOf(StaticHistoryState.Left, StaticHistoryState.Right),
-            StaticHistoryState.Fast to listOf(StaticHistoryState.Cruise, StaticHistoryState.Burst),
-            StaticHistoryState.Left to listOf(StaticHistoryState.L1, StaticHistoryState.L2),
-            StaticHistoryState.Right to listOf(StaticHistoryState.R1, StaticHistoryState.R2),
-            StaticHistoryState.Running to listOf(StaticHistoryState.Slow, StaticHistoryState.Fast),
-            StaticHistoryState.Working to listOf(StaticHistoryState.Crew),
-        )
+        val childStates: Map<StaticHistoryState, List<StaticHistoryState>> = LinkedHashMap<StaticHistoryState, List<StaticHistoryState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<StaticHistoryState, List<EntryTarget<StaticHistoryState, HistoryId>>> = mapOf(
-            StaticHistoryState.Fast to listOf(StateTarget(StaticHistoryState.Cruise)),
-            StaticHistoryState.Left to listOf(StateTarget(StaticHistoryState.L1)),
-            StaticHistoryState.Right to listOf(StateTarget(StaticHistoryState.R1)),
-            StaticHistoryState.Running to listOf(StateTarget(StaticHistoryState.Slow)),
-            StaticHistoryState.Working to listOf(StateTarget(StaticHistoryState.Crew)),
-        )
+        private fun childStatesPart0(table: MutableMap<StaticHistoryState, List<StaticHistoryState>>) {
+            table[StaticHistoryState.Crew] = listOf(StaticHistoryState.Left, StaticHistoryState.Right)
+            table[StaticHistoryState.Fast] = listOf(StaticHistoryState.Cruise, StaticHistoryState.Burst)
+            table[StaticHistoryState.Left] = listOf(StaticHistoryState.L1, StaticHistoryState.L2)
+            table[StaticHistoryState.Right] = listOf(StaticHistoryState.R1, StaticHistoryState.R2)
+            table[StaticHistoryState.Running] = listOf(StaticHistoryState.Slow, StaticHistoryState.Fast)
+            table[StaticHistoryState.Working] = listOf(StaticHistoryState.Crew)
+        }
+
+
+        val initialTargets: Map<StaticHistoryState, List<EntryTarget<StaticHistoryState, HistoryId>>> = LinkedHashMap<StaticHistoryState, List<EntryTarget<StaticHistoryState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<StaticHistoryState, List<EntryTarget<StaticHistoryState, HistoryId>>>) {
+            table[StaticHistoryState.Fast] = listOf(StateTarget(StaticHistoryState.Cruise))
+            table[StaticHistoryState.Left] = listOf(StateTarget(StaticHistoryState.L1))
+            table[StaticHistoryState.Right] = listOf(StateTarget(StaticHistoryState.R1))
+            table[StaticHistoryState.Running] = listOf(StateTarget(StaticHistoryState.Slow))
+            table[StaticHistoryState.Working] = listOf(StateTarget(StaticHistoryState.Crew))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<StaticHistoryState, HistoryId>> =
             listOf(StateTarget(StaticHistoryState.Running))
 
-        val historyParents: Map<HistoryId, StaticHistoryState> = mapOf(
-            historyCrewAll to StaticHistoryState.Working,
-            historyDeepest to StaticHistoryState.Running,
-            historyLast to StaticHistoryState.Running,
-        )
+        val historyParents: Map<HistoryId, StaticHistoryState> = LinkedHashMap<HistoryId, StaticHistoryState>().also {
+            historyParentsPart0(it)
+        }
 
-        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<StaticHistoryState, HistoryId>>> = mapOf(
-            historyCrewAll to listOf(StateTarget(StaticHistoryState.Crew)),
-            historyDeepest to listOf(StateTarget(StaticHistoryState.Slow)),
-            historyLast to listOf(StateTarget(StaticHistoryState.Slow)),
-        )
+        private fun historyParentsPart0(table: MutableMap<HistoryId, StaticHistoryState>) {
+            table[historyCrewAll] = StaticHistoryState.Working
+            table[historyDeepest] = StaticHistoryState.Running
+            table[historyLast] = StaticHistoryState.Running
+        }
 
-        val historiesByParent: Map<StaticHistoryState, List<Pair<HistoryId, Boolean>>> = mapOf(
-            StaticHistoryState.Running to listOf(historyDeepest to true, historyLast to false),
-            StaticHistoryState.Working to listOf(historyCrewAll to true),
-        )
+
+        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<StaticHistoryState, HistoryId>>> = LinkedHashMap<HistoryId, List<EntryTarget<StaticHistoryState, HistoryId>>>().also {
+            historyDefaultTargetsPart0(it)
+        }
+
+        private fun historyDefaultTargetsPart0(table: MutableMap<HistoryId, List<EntryTarget<StaticHistoryState, HistoryId>>>) {
+            table[historyCrewAll] = listOf(StateTarget(StaticHistoryState.Crew))
+            table[historyDeepest] = listOf(StateTarget(StaticHistoryState.Slow))
+            table[historyLast] = listOf(StateTarget(StaticHistoryState.Slow))
+        }
+
+
+        val historiesByParent: Map<StaticHistoryState, List<Pair<HistoryId, Boolean>>> = LinkedHashMap<StaticHistoryState, List<Pair<HistoryId, Boolean>>>().also {
+            historiesByParentPart0(it)
+        }
+
+        private fun historiesByParentPart0(table: MutableMap<StaticHistoryState, List<Pair<HistoryId, Boolean>>>) {
+            table[StaticHistoryState.Running] = listOf(historyDeepest to true, historyLast to false)
+            table[StaticHistoryState.Working] = listOf(historyCrewAll to true)
+        }
+
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: cruise's transition 0, as the microstep reads it.
         val transitionCruiseAt0 = EnabledTransition<StaticHistoryState, HistoryId>(
@@ -429,6 +486,7 @@ class StaticHistoryStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticHistoryState? = when (stateId) {
         "burst" -> StaticHistoryState.Burst
@@ -448,6 +506,7 @@ class StaticHistoryStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticHistoryState): String = when (state) {
         is StaticHistoryState.Burst -> "burst"
@@ -465,6 +524,7 @@ class StaticHistoryStateMachine(
         is StaticHistoryState.Slow -> "slow"
         is StaticHistoryState.Working -> "working"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticHistoryState): Int = when (state) {
@@ -484,6 +544,7 @@ class StaticHistoryStateMachine(
         is StaticHistoryState.Working -> 5
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticHistoryEvent? = when (name) {
         "boost" -> StaticHistoryEvent.Boost
@@ -498,6 +559,7 @@ class StaticHistoryStateMachine(
         "work" -> StaticHistoryEvent.Work
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticHistoryEvent): String? = when (event) {
@@ -517,164 +579,265 @@ class StaticHistoryStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticHistoryState,
-        event: StaticHistoryEvent?
-    ): EnabledTransition<StaticHistoryState, HistoryId>? = when (state) {
-        is StaticHistoryState.Cruise -> when {
-            event is StaticHistoryEvent.Boost -> transitionCruiseAt0
-            else -> null
-        }
-        is StaticHistoryState.L1 -> when {
-            event is StaticHistoryEvent.LeftNext -> transitionL1At0
-            else -> null
-        }
-        is StaticHistoryState.Paused -> when {
-            event is StaticHistoryEvent.Work -> transitionPausedAt0
-            event is StaticHistoryEvent.ResumeLast -> transitionPausedAt1
-            event is StaticHistoryEvent.ResumeDeep -> transitionPausedAt2
-            event is StaticHistoryEvent.ResumeCrew -> transitionPausedAt3
-            else -> null
-        }
-        is StaticHistoryState.R1 -> when {
-            event is StaticHistoryEvent.RightNext -> transitionR1At0
-            else -> null
-        }
-        is StaticHistoryState.Running -> when {
-            event is StaticHistoryEvent.Pause -> transitionRunningAt0
-            else -> null
-        }
-        is StaticHistoryState.Slow -> when {
-            event is StaticHistoryEvent.Faster -> transitionSlowAt0
-            else -> null
-        }
-        is StaticHistoryState.Working -> when {
-            event is StaticHistoryEvent.Break -> transitionWorkingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticHistoryState, event: StaticHistoryEvent?): EnabledTransition<StaticHistoryState, HistoryId>? = when (state) {
+        is StaticHistoryState.Cruise -> firstEnabledTransitionOfCruise(state, event)
+        is StaticHistoryState.L1 -> firstEnabledTransitionOfL1(state, event)
+        is StaticHistoryState.Paused -> firstEnabledTransitionOfPaused(state, event)
+        is StaticHistoryState.R1 -> firstEnabledTransitionOfR1(state, event)
+        is StaticHistoryState.Running -> firstEnabledTransitionOfRunning(state, event)
+        is StaticHistoryState.Slow -> firstEnabledTransitionOfSlow(state, event)
+        is StaticHistoryState.Working -> firstEnabledTransitionOfWorking(state, event)
         else -> null
     }
+
+
+    // cruise's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfCruise(state: StaticHistoryState, event: StaticHistoryEvent?): EnabledTransition<StaticHistoryState, HistoryId>? = when {
+        event is StaticHistoryEvent.Boost -> TransitionsPart0.transitionCruiseAt0
+        else -> null
+    }
+
+
+    // l1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfL1(state: StaticHistoryState, event: StaticHistoryEvent?): EnabledTransition<StaticHistoryState, HistoryId>? = when {
+        event is StaticHistoryEvent.LeftNext -> TransitionsPart0.transitionL1At0
+        else -> null
+    }
+
+
+    // paused's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPaused(state: StaticHistoryState, event: StaticHistoryEvent?): EnabledTransition<StaticHistoryState, HistoryId>? = when {
+        event is StaticHistoryEvent.Work -> TransitionsPart0.transitionPausedAt0
+        event is StaticHistoryEvent.ResumeLast -> TransitionsPart0.transitionPausedAt1
+        event is StaticHistoryEvent.ResumeDeep -> TransitionsPart0.transitionPausedAt2
+        event is StaticHistoryEvent.ResumeCrew -> TransitionsPart0.transitionPausedAt3
+        else -> null
+    }
+
+
+    // r1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfR1(state: StaticHistoryState, event: StaticHistoryEvent?): EnabledTransition<StaticHistoryState, HistoryId>? = when {
+        event is StaticHistoryEvent.RightNext -> TransitionsPart0.transitionR1At0
+        else -> null
+    }
+
+
+    // running's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRunning(state: StaticHistoryState, event: StaticHistoryEvent?): EnabledTransition<StaticHistoryState, HistoryId>? = when {
+        event is StaticHistoryEvent.Pause -> TransitionsPart0.transitionRunningAt0
+        else -> null
+    }
+
+
+    // slow's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSlow(state: StaticHistoryState, event: StaticHistoryEvent?): EnabledTransition<StaticHistoryState, HistoryId>? = when {
+        event is StaticHistoryEvent.Faster -> TransitionsPart0.transitionSlowAt0
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: StaticHistoryState, event: StaticHistoryEvent?): EnabledTransition<StaticHistoryState, HistoryId>? = when {
+        event is StaticHistoryEvent.Break -> TransitionsPart0.transitionWorkingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_history.scxml:33 :: _machine
     override fun onEntry(state: StaticHistoryState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticHistoryState.Burst -> {
-                // SCE-MAP: static_history.scxml:52 :: burst :: _state_body
-            }
-            is StaticHistoryState.Crew -> {
-                // SCE-MAP: static_history.scxml:60 :: crew :: _state_body
-            }
-            is StaticHistoryState.Cruise -> {
-                // SCE-MAP: static_history.scxml:49 :: cruise :: _state_body
-            }
-            is StaticHistoryState.Fast -> {
-                // SCE-MAP: static_history.scxml:48 :: fast :: _state_body
-            }
-            is StaticHistoryState.L1 -> {
-                // SCE-MAP: static_history.scxml:62 :: l1 :: _state_body
-            }
-            is StaticHistoryState.L2 -> {
-                // SCE-MAP: static_history.scxml:65 :: l2 :: _state_body
-            }
-            is StaticHistoryState.Left -> {
-                // SCE-MAP: static_history.scxml:61 :: left :: _state_body
-            }
-            is StaticHistoryState.Paused -> {
-                // SCE-MAP: static_history.scxml:76 :: paused :: _state_body
-            }
-            is StaticHistoryState.R1 -> {
-                // SCE-MAP: static_history.scxml:68 :: r1 :: _state_body
-            }
-            is StaticHistoryState.R2 -> {
-                // SCE-MAP: static_history.scxml:71 :: r2 :: _state_body
-            }
-            is StaticHistoryState.Right -> {
-                // SCE-MAP: static_history.scxml:67 :: right :: _state_body
-            }
-            is StaticHistoryState.Running -> {
-                // SCE-MAP: static_history.scxml:38 :: running :: _state_body
-            }
-            is StaticHistoryState.Slow -> {
-                // SCE-MAP: static_history.scxml:45 :: slow :: _state_body
-            }
-            is StaticHistoryState.Working -> {
-                // SCE-MAP: static_history.scxml:56 :: working :: _state_body
-            }
+            is StaticHistoryState.Burst -> onEntryOfBurst()
+            is StaticHistoryState.Crew -> onEntryOfCrew()
+            is StaticHistoryState.Cruise -> onEntryOfCruise()
+            is StaticHistoryState.Fast -> onEntryOfFast()
+            is StaticHistoryState.L1 -> onEntryOfL1()
+            is StaticHistoryState.L2 -> onEntryOfL2()
+            is StaticHistoryState.Left -> onEntryOfLeft()
+            is StaticHistoryState.Paused -> onEntryOfPaused()
+            is StaticHistoryState.R1 -> onEntryOfR1()
+            is StaticHistoryState.R2 -> onEntryOfR2()
+            is StaticHistoryState.Right -> onEntryOfRight()
+            is StaticHistoryState.Running -> onEntryOfRunning()
+            is StaticHistoryState.Slow -> onEntryOfSlow()
+            is StaticHistoryState.Working -> onEntryOfWorking()
         }
+    }
+
+
+    private fun onEntryOfBurst() {
+                // SCE-MAP: static_history.scxml:52 :: burst :: _state_body
+    }
+
+    private fun onEntryOfCrew() {
+                // SCE-MAP: static_history.scxml:60 :: crew :: _state_body
+    }
+
+    private fun onEntryOfCruise() {
+                // SCE-MAP: static_history.scxml:49 :: cruise :: _state_body
+    }
+
+    private fun onEntryOfFast() {
+                // SCE-MAP: static_history.scxml:48 :: fast :: _state_body
+    }
+
+    private fun onEntryOfL1() {
+                // SCE-MAP: static_history.scxml:62 :: l1 :: _state_body
+    }
+
+    private fun onEntryOfL2() {
+                // SCE-MAP: static_history.scxml:65 :: l2 :: _state_body
+    }
+
+    private fun onEntryOfLeft() {
+                // SCE-MAP: static_history.scxml:61 :: left :: _state_body
+    }
+
+    private fun onEntryOfPaused() {
+                // SCE-MAP: static_history.scxml:76 :: paused :: _state_body
+    }
+
+    private fun onEntryOfR1() {
+                // SCE-MAP: static_history.scxml:68 :: r1 :: _state_body
+    }
+
+    private fun onEntryOfR2() {
+                // SCE-MAP: static_history.scxml:71 :: r2 :: _state_body
+    }
+
+    private fun onEntryOfRight() {
+                // SCE-MAP: static_history.scxml:67 :: right :: _state_body
+    }
+
+    private fun onEntryOfRunning() {
+                // SCE-MAP: static_history.scxml:38 :: running :: _state_body
+    }
+
+    private fun onEntryOfSlow() {
+                // SCE-MAP: static_history.scxml:45 :: slow :: _state_body
+    }
+
+    private fun onEntryOfWorking() {
+                // SCE-MAP: static_history.scxml:56 :: working :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_history.scxml:33 :: _machine
     override fun onExit(state: StaticHistoryState) {
         when (state) {
-            is StaticHistoryState.Burst -> {
-                // SCE-MAP: static_history.scxml:52 :: burst :: _state_body
-            }
-            is StaticHistoryState.Crew -> {
-                // SCE-MAP: static_history.scxml:60 :: crew :: _state_body
-            }
-            is StaticHistoryState.Cruise -> {
-                // SCE-MAP: static_history.scxml:49 :: cruise :: _state_body
-            }
-            is StaticHistoryState.Fast -> {
-                // SCE-MAP: static_history.scxml:48 :: fast :: _state_body
-            }
-            is StaticHistoryState.L1 -> {
-                // SCE-MAP: static_history.scxml:62 :: l1 :: _state_body
-            }
-            is StaticHistoryState.L2 -> {
-                // SCE-MAP: static_history.scxml:65 :: l2 :: _state_body
-            }
-            is StaticHistoryState.Left -> {
-                // SCE-MAP: static_history.scxml:61 :: left :: _state_body
-            }
-            is StaticHistoryState.Paused -> {
-                // SCE-MAP: static_history.scxml:76 :: paused :: _state_body
-            }
-            is StaticHistoryState.R1 -> {
-                // SCE-MAP: static_history.scxml:68 :: r1 :: _state_body
-            }
-            is StaticHistoryState.R2 -> {
-                // SCE-MAP: static_history.scxml:71 :: r2 :: _state_body
-            }
-            is StaticHistoryState.Right -> {
-                // SCE-MAP: static_history.scxml:67 :: right :: _state_body
-            }
-            is StaticHistoryState.Running -> {
-                // SCE-MAP: static_history.scxml:38 :: running :: _state_body
-            }
-            is StaticHistoryState.Slow -> {
-                // SCE-MAP: static_history.scxml:45 :: slow :: _state_body
-            }
-            is StaticHistoryState.Working -> {
-                // SCE-MAP: static_history.scxml:56 :: working :: _state_body
-            }
+            is StaticHistoryState.Burst -> onExitOfBurst()
+            is StaticHistoryState.Crew -> onExitOfCrew()
+            is StaticHistoryState.Cruise -> onExitOfCruise()
+            is StaticHistoryState.Fast -> onExitOfFast()
+            is StaticHistoryState.L1 -> onExitOfL1()
+            is StaticHistoryState.L2 -> onExitOfL2()
+            is StaticHistoryState.Left -> onExitOfLeft()
+            is StaticHistoryState.Paused -> onExitOfPaused()
+            is StaticHistoryState.R1 -> onExitOfR1()
+            is StaticHistoryState.R2 -> onExitOfR2()
+            is StaticHistoryState.Right -> onExitOfRight()
+            is StaticHistoryState.Running -> onExitOfRunning()
+            is StaticHistoryState.Slow -> onExitOfSlow()
+            is StaticHistoryState.Working -> onExitOfWorking()
         }
     }
+
+
+    private fun onExitOfBurst() {
+                // SCE-MAP: static_history.scxml:52 :: burst :: _state_body
+    }
+
+    private fun onExitOfCrew() {
+                // SCE-MAP: static_history.scxml:60 :: crew :: _state_body
+    }
+
+    private fun onExitOfCruise() {
+                // SCE-MAP: static_history.scxml:49 :: cruise :: _state_body
+    }
+
+    private fun onExitOfFast() {
+                // SCE-MAP: static_history.scxml:48 :: fast :: _state_body
+    }
+
+    private fun onExitOfL1() {
+                // SCE-MAP: static_history.scxml:62 :: l1 :: _state_body
+    }
+
+    private fun onExitOfL2() {
+                // SCE-MAP: static_history.scxml:65 :: l2 :: _state_body
+    }
+
+    private fun onExitOfLeft() {
+                // SCE-MAP: static_history.scxml:61 :: left :: _state_body
+    }
+
+    private fun onExitOfPaused() {
+                // SCE-MAP: static_history.scxml:76 :: paused :: _state_body
+    }
+
+    private fun onExitOfR1() {
+                // SCE-MAP: static_history.scxml:68 :: r1 :: _state_body
+    }
+
+    private fun onExitOfR2() {
+                // SCE-MAP: static_history.scxml:71 :: r2 :: _state_body
+    }
+
+    private fun onExitOfRight() {
+                // SCE-MAP: static_history.scxml:67 :: right :: _state_body
+    }
+
+    private fun onExitOfRunning() {
+                // SCE-MAP: static_history.scxml:38 :: running :: _state_body
+    }
+
+    private fun onExitOfSlow() {
+                // SCE-MAP: static_history.scxml:45 :: slow :: _state_body
+    }
+
+    private fun onExitOfWorking() {
+                // SCE-MAP: static_history.scxml:56 :: working :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_history.scxml:33 :: _machine
     override fun executeTransitionContent(source: StaticHistoryState, transitionIndex: Int) {
         when (source) {
-        is StaticHistoryState.Paused -> when (transitionIndex) {
-            1 -> {
+            is StaticHistoryState.Paused -> transitionContentOfPaused(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `paused`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPaused(transitionIndex: Int) {
+        when (transitionIndex) {
+            1 -> transitionContentOfPausedAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfPausedAt1() {
                 // SCE-MAP: static_history.scxml:78 :: paused :: _transition_1
 
             if (try { vResumed = com.sce.forge.runtime.SceChecked.add(vResumed, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

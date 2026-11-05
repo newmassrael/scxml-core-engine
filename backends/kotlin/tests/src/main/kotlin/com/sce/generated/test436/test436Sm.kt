@@ -56,17 +56,21 @@ class Test436StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: Test436State): Boolean = when (state) {
         is Test436State.P -> true
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test436State): Boolean = when (state) {
-        is Test436State.Fail, is Test436State.Pass -> true
+        is Test436State.Fail -> true
+        is Test436State.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -79,12 +83,20 @@ class Test436StateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<Test436State, List<Test436State>> = mapOf(
-            Test436State.P to listOf(Test436State.Ps0, Test436State.Ps1),
-        )
+        val childStates: Map<Test436State, List<Test436State>> = LinkedHashMap<Test436State, List<Test436State>>().also {
+            childStatesPart0(it)
+        }
+
+        private fun childStatesPart0(table: MutableMap<Test436State, List<Test436State>>) {
+            table[Test436State.P] = listOf(Test436State.Ps0, Test436State.Ps1)
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test436State, HistoryId>> =
             listOf(StateTarget(Test436State.P))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: ps0's transition 0, as the microstep reads it.
         val transitionPs0At0 = EnabledTransition<Test436State, HistoryId>(
@@ -114,6 +126,7 @@ class Test436StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test436State? = when (stateId) {
         "fail" -> Test436State.Fail
@@ -125,6 +138,7 @@ class Test436StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test436State): String = when (state) {
         is Test436State.Fail -> "fail"
@@ -134,6 +148,7 @@ class Test436StateMachine(
         is Test436State.Ps1 -> "ps1"
         is Test436State.S1 -> "s1"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test436State): Int = when (state) {
@@ -145,10 +160,12 @@ class Test436StateMachine(
         is Test436State.S1 -> 3
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test436Event? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -169,80 +186,111 @@ class Test436StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test436State,
-        event: Test436Event?
-    ): EnabledTransition<Test436State, HistoryId>? = when (state) {
-        is Test436State.Ps0 -> when {
-            event == null && isStateActive("s1") -> transitionPs0At0
-            event == null && isStateActive("ps1") -> transitionPs0At1
-            event == null -> transitionPs0At2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test436State, event: Test436Event?): EnabledTransition<Test436State, HistoryId>? = when (state) {
+        is Test436State.Ps0 -> firstEnabledTransitionOfPs0(state, event)
         else -> null
     }
+
+
+    // ps0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPs0(state: Test436State, event: Test436Event?): EnabledTransition<Test436State, HistoryId>? = when {
+        event == null && isStateActive("s1") -> TransitionsPart0.transitionPs0At0
+        event == null && isStateActive("ps1") -> TransitionsPart0.transitionPs0At1
+        event == null -> TransitionsPart0.transitionPs0At2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test436.scxml:3 :: _machine
     override fun onEntry(state: Test436State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test436State.Fail -> {
+            is Test436State.Fail -> onEntryOfFail()
+            is Test436State.P -> onEntryOfP()
+            is Test436State.Pass -> onEntryOfPass()
+            is Test436State.Ps0 -> onEntryOfPs0()
+            is Test436State.Ps1 -> onEntryOfPs1()
+            is Test436State.S1 -> onEntryOfS1()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test436.scxml:20 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test436State.P -> {
+    }
+
+    private fun onEntryOfP() {
                 // SCE-MAP: test436.scxml:6 :: p :: _state_body
-            }
-            is Test436State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test436.scxml:19 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test436State.Ps0 -> {
+    }
+
+    private fun onEntryOfPs0() {
                 // SCE-MAP: test436.scxml:8 :: ps0 :: _state_body
-            }
-            is Test436State.Ps1 -> {
+    }
+
+    private fun onEntryOfPs1() {
                 // SCE-MAP: test436.scxml:14 :: ps1 :: _state_body
-            }
-            is Test436State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test436.scxml:17 :: s1 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test436.scxml:3 :: _machine
     override fun onExit(state: Test436State) {
         when (state) {
-            is Test436State.Fail -> {
-                // SCE-MAP: test436.scxml:20 :: fail :: _state_body
-            }
-            is Test436State.P -> {
-                // SCE-MAP: test436.scxml:6 :: p :: _state_body
-            }
-            is Test436State.Pass -> {
-                // SCE-MAP: test436.scxml:19 :: pass :: _state_body
-            }
-            is Test436State.Ps0 -> {
-                // SCE-MAP: test436.scxml:8 :: ps0 :: _state_body
-            }
-            is Test436State.Ps1 -> {
-                // SCE-MAP: test436.scxml:14 :: ps1 :: _state_body
-            }
-            is Test436State.S1 -> {
-                // SCE-MAP: test436.scxml:17 :: s1 :: _state_body
-            }
+            is Test436State.Fail -> onExitOfFail()
+            is Test436State.P -> onExitOfP()
+            is Test436State.Pass -> onExitOfPass()
+            is Test436State.Ps0 -> onExitOfPs0()
+            is Test436State.Ps1 -> onExitOfPs1()
+            is Test436State.S1 -> onExitOfS1()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test436.scxml:20 :: fail :: _state_body
+    }
+
+    private fun onExitOfP() {
+                // SCE-MAP: test436.scxml:6 :: p :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test436.scxml:19 :: pass :: _state_body
+    }
+
+    private fun onExitOfPs0() {
+                // SCE-MAP: test436.scxml:8 :: ps0 :: _state_body
+    }
+
+    private fun onExitOfPs1() {
+                // SCE-MAP: test436.scxml:14 :: ps1 :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test436.scxml:17 :: s1 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test436.scxml:3 :: _machine
     override fun executeTransitionContent(source: Test436State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

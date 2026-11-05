@@ -135,6 +135,9 @@ class UnhandledErrorIsObservableStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<UnhandledErrorIsObservableState, HistoryId>> =
             listOf(StateTarget(UnhandledErrorIsObservableState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: guarded's transition 0, as the microstep reads it.
         val transitionGuardedAt0 = EnabledTransition<UnhandledErrorIsObservableState, HistoryId>(
@@ -200,6 +203,7 @@ class UnhandledErrorIsObservableStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): UnhandledErrorIsObservableState? = when (stateId) {
         "guarded" -> UnhandledErrorIsObservableState.Guarded
@@ -207,17 +211,20 @@ class UnhandledErrorIsObservableStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: UnhandledErrorIsObservableState): String = when (state) {
         is UnhandledErrorIsObservableState.Guarded -> "guarded"
         is UnhandledErrorIsObservableState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: UnhandledErrorIsObservableState): Int = when (state) {
         is UnhandledErrorIsObservableState.Guarded -> 1
         is UnhandledErrorIsObservableState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): UnhandledErrorIsObservableEvent? = when (name) {
@@ -232,6 +239,7 @@ class UnhandledErrorIsObservableStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: UnhandledErrorIsObservableEvent): String? = when (event) {
         is UnhandledErrorIsObservableEvent.Boom -> "boom"
@@ -243,6 +251,7 @@ class UnhandledErrorIsObservableStateMachine(
         is UnhandledErrorIsObservableEvent.Unheard -> "unheard"
         is UnhandledErrorIsObservableEvent.Whisper -> "whisper"
     }
+
 
 
 
@@ -272,6 +281,27 @@ class UnhandledErrorIsObservableStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
             val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -307,22 +337,6 @@ class UnhandledErrorIsObservableStateMachine(
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='heards'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -512,59 +526,97 @@ class UnhandledErrorIsObservableStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: UnhandledErrorIsObservableState,
-        event: UnhandledErrorIsObservableEvent?
-    ): EnabledTransition<UnhandledErrorIsObservableState, HistoryId>? = when (state) {
-        is UnhandledErrorIsObservableState.Guarded -> when {
-            event is UnhandledErrorIsObservableEvent.Boom -> transitionGuardedAt0
-            event is UnhandledErrorIsObservableEvent.Error.Execution -> transitionGuardedAt1
-            else -> null
-        }
-        is UnhandledErrorIsObservableState.Idle -> when {
-            event is UnhandledErrorIsObservableEvent.Poke -> transitionIdleAt0
-            event is UnhandledErrorIsObservableEvent.Whisper -> transitionIdleAt1
-            event is UnhandledErrorIsObservableEvent.Heard -> transitionIdleAt2
-            event is UnhandledErrorIsObservableEvent.Boom -> transitionIdleAt3
-            event is UnhandledErrorIsObservableEvent.Go -> transitionIdleAt4
-            else -> null
-        }
+    override fun firstEnabledTransition(state: UnhandledErrorIsObservableState, event: UnhandledErrorIsObservableEvent?): EnabledTransition<UnhandledErrorIsObservableState, HistoryId>? = when (state) {
+        is UnhandledErrorIsObservableState.Guarded -> firstEnabledTransitionOfGuarded(state, event)
+        is UnhandledErrorIsObservableState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // guarded's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuarded(state: UnhandledErrorIsObservableState, event: UnhandledErrorIsObservableEvent?): EnabledTransition<UnhandledErrorIsObservableState, HistoryId>? = when {
+        event is UnhandledErrorIsObservableEvent.Boom -> TransitionsPart0.transitionGuardedAt0
+        event is UnhandledErrorIsObservableEvent.Error.Execution -> TransitionsPart0.transitionGuardedAt1
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: UnhandledErrorIsObservableState, event: UnhandledErrorIsObservableEvent?): EnabledTransition<UnhandledErrorIsObservableState, HistoryId>? = when {
+        event is UnhandledErrorIsObservableEvent.Poke -> TransitionsPart0.transitionIdleAt0
+        event is UnhandledErrorIsObservableEvent.Whisper -> TransitionsPart0.transitionIdleAt1
+        event is UnhandledErrorIsObservableEvent.Heard -> TransitionsPart0.transitionIdleAt2
+        event is UnhandledErrorIsObservableEvent.Boom -> TransitionsPart0.transitionIdleAt3
+        event is UnhandledErrorIsObservableEvent.Go -> TransitionsPart0.transitionIdleAt4
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: unhandled_error_is_observable.scxml:40 :: _machine
     override fun onEntry(state: UnhandledErrorIsObservableState, isDefaultEntry: Boolean) {
         when (state) {
-            is UnhandledErrorIsObservableState.Guarded -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:89 :: guarded :: _state_body
-            }
-            is UnhandledErrorIsObservableState.Idle -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _state_body
-            }
+            is UnhandledErrorIsObservableState.Guarded -> onEntryOfGuarded()
+            is UnhandledErrorIsObservableState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfGuarded() {
+                // SCE-MAP: unhandled_error_is_observable.scxml:89 :: guarded :: _state_body
+    }
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: unhandled_error_is_observable.scxml:40 :: _machine
     override fun onExit(state: UnhandledErrorIsObservableState) {
         when (state) {
-            is UnhandledErrorIsObservableState.Guarded -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:89 :: guarded :: _state_body
-            }
-            is UnhandledErrorIsObservableState.Idle -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _state_body
-            }
+            is UnhandledErrorIsObservableState.Guarded -> onExitOfGuarded()
+            is UnhandledErrorIsObservableState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfGuarded() {
+                // SCE-MAP: unhandled_error_is_observable.scxml:89 :: guarded :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: unhandled_error_is_observable.scxml:40 :: _machine
     override fun executeTransitionContent(source: UnhandledErrorIsObservableState, transitionIndex: Int) {
         when (source) {
-        is UnhandledErrorIsObservableState.Guarded -> when (transitionIndex) {
-            0 -> {
+            is UnhandledErrorIsObservableState.Guarded -> transitionContentOfGuarded(transitionIndex)
+            is UnhandledErrorIsObservableState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `guarded`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfGuarded(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfGuardedAt0()
+            1 -> transitionContentOfGuardedAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfGuardedAt0() {
                 // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_0
 
 
@@ -582,8 +634,9 @@ class UnhandledErrorIsObservableStateMachine(
             }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfGuardedAt1() {
                 // SCE-MAP: unhandled_error_is_observable.scxml:94 :: guarded :: _transition_1
 
 
@@ -595,19 +648,34 @@ class UnhandledErrorIsObservableStateMachine(
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("detail", "detail"), com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
             else -> {}
         }
-        is UnhandledErrorIsObservableState.Idle -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: unhandled_error_is_observable.scxml:55 :: idle :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: unhandled_error_is_observable.scxml:58 :: idle :: _transition_1
 
             raiseInternal(UnhandledErrorIsObservableEvent.Unheard)
@@ -615,16 +683,18 @@ class UnhandledErrorIsObservableStateMachine(
             raiseInternal(UnhandledErrorIsObservableEvent.Retry.Error.Execution)
 
             raiseInternal(UnhandledErrorIsObservableEvent.Heard)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: unhandled_error_is_observable.scxml:80 :: idle :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("heards", "heards"), com.sce.runtime.ScriptSource.lua("_scxml_add(heards, 1)", "heards + 1"))) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: unhandled_error_is_observable.scxml:83 :: idle :: _transition_3
 
 
@@ -642,9 +712,5 @@ class UnhandledErrorIsObservableStateMachine(
             }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

@@ -53,6 +53,7 @@ class Test338SceSynthInvokeInvoke0StateMachine(
         is Test338SceSynthInvokeInvoke0State.Sub0 -> true
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<Test338SceSynthInvokeInvoke0State, HistoryId>>
@@ -63,21 +64,25 @@ class Test338SceSynthInvokeInvoke0StateMachine(
             listOf(StateTarget(Test338SceSynthInvokeInvoke0State.Sub0))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test338SceSynthInvokeInvoke0State? = when (stateId) {
         "sub0" -> Test338SceSynthInvokeInvoke0State.Sub0
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test338SceSynthInvokeInvoke0State): String = when (state) {
         is Test338SceSynthInvokeInvoke0State.Sub0 -> "sub0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test338SceSynthInvokeInvoke0State): Int = when (state) {
         is Test338SceSynthInvokeInvoke0State.Sub0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test338SceSynthInvokeInvoke0Event? = when (name) {
@@ -86,6 +91,7 @@ class Test338SceSynthInvokeInvoke0StateMachine(
         "event1" -> Test338SceSynthInvokeInvoke0Event.Event1
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test338SceSynthInvokeInvoke0Event): String? = when (event) {
@@ -98,24 +104,30 @@ class Test338SceSynthInvokeInvoke0StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test338SceSynthInvokeInvoke0State,
-        event: Test338SceSynthInvokeInvoke0Event?
-    ): EnabledTransition<Test338SceSynthInvokeInvoke0State, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: Test338SceSynthInvokeInvoke0State, event: Test338SceSynthInvokeInvoke0Event?): EnabledTransition<Test338SceSynthInvokeInvoke0State, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test338.scxml:18 :: _machine
     override fun onEntry(state: Test338SceSynthInvokeInvoke0State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test338SceSynthInvokeInvoke0State.Sub0 -> {
+            is Test338SceSynthInvokeInvoke0State.Sub0 -> onEntryOfSub0()
+        }
+    }
+
+
+    private fun onEntryOfSub0() {
                 // SCE-MAP: test338.scxml:19 :: sub0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -141,26 +153,28 @@ class Test338SceSynthInvokeInvoke0StateMachine(
                 }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test338.scxml:18 :: _machine
     override fun onExit(state: Test338SceSynthInvokeInvoke0State) {
         when (state) {
-            is Test338SceSynthInvokeInvoke0State.Sub0 -> {
-                // SCE-MAP: test338.scxml:19 :: sub0 :: _state_body
-            }
+            is Test338SceSynthInvokeInvoke0State.Sub0 -> onExitOfSub0()
         }
     }
+
+
+    private fun onExitOfSub0() {
+                // SCE-MAP: test338.scxml:19 :: sub0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test338.scxml:18 :: _machine
     override fun executeTransitionContent(source: Test338SceSynthInvokeInvoke0State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

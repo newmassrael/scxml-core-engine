@@ -95,6 +95,10 @@ class StatechartStaticMeshRequestStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.load?.let { vLoad = it }
         params.label?.let { vLabel = it }
         params.peer?.let { vPeer = it }
@@ -177,18 +181,20 @@ class StatechartStaticMeshRequestStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "load" to SavedValues.of(vLoad),
-            "label" to SavedValues.of(vLabel),
-            "peer" to SavedValues.of(vPeer),
-            "answered" to SavedValues.of(vAnswered),
-            "failed" to SavedValues.of(vFailed),
-            "refused" to SavedValues.of(vRefused),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "load" to SavedValues.of(vLoad)
+        variables += "label" to SavedValues.of(vLabel)
+        variables += "peer" to SavedValues.of(vPeer)
+        variables += "answered" to SavedValues.of(vAnswered)
+        variables += "failed" to SavedValues.of(vFailed)
+        variables += "refused" to SavedValues.of(vRefused)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -213,19 +219,29 @@ class StatechartStaticMeshRequestStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("load"), "load")
         val saved2 = SavedValues.string(savedGrown.variable("label"), "label", 16)
         val saved3 = SavedValues.string(savedGrown.variable("peer"), "peer", 16)
         val saved4 = SavedValues.uint32(savedGrown.variable("answered"), "answered")
         val saved5 = SavedValues.uint32(savedGrown.variable("failed"), "failed")
         val saved6 = SavedValues.uint32(savedGrown.variable("refused"), "refused")
-        vLoad = saved1
-        vLabel = saved2
-        vPeer = saved3
-        vAnswered = saved4
-        vFailed = saved5
-        vRefused = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLoad = saved1
+            vLabel = saved2
+            vPeer = saved3
+            vAnswered = saved4
+            vFailed = saved5
+            vRefused = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -238,6 +254,10 @@ class StatechartStaticMeshRequestStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("load"), "load")
         SavedValues.string(savedGrown.variable("label"), "label", 16)
         SavedValues.string(savedGrown.variable("peer"), "peer", 16)
@@ -278,6 +298,7 @@ class StatechartStaticMeshRequestStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StatechartStaticMeshRequestState, HistoryId>>
@@ -286,6 +307,9 @@ class StatechartStaticMeshRequestStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StatechartStaticMeshRequestState, HistoryId>> =
             listOf(StateTarget(StatechartStaticMeshRequestState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: asking's transition 0, as the microstep reads it.
         val transitionAskingAt0 = EnabledTransition<StatechartStaticMeshRequestState, HistoryId>(
@@ -342,6 +366,7 @@ class StatechartStaticMeshRequestStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartStaticMeshRequestState? = when (stateId) {
         "asking" -> StatechartStaticMeshRequestState.Asking
@@ -350,6 +375,7 @@ class StatechartStaticMeshRequestStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StatechartStaticMeshRequestState): String = when (state) {
         is StatechartStaticMeshRequestState.Asking -> "asking"
@@ -357,12 +383,14 @@ class StatechartStaticMeshRequestStateMachine(
         is StatechartStaticMeshRequestState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartStaticMeshRequestState): Int = when (state) {
         is StatechartStaticMeshRequestState.Asking -> 1
         is StatechartStaticMeshRequestState.Done -> 2
         is StatechartStaticMeshRequestState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StatechartStaticMeshRequestEvent? = when (name) {
@@ -377,6 +405,7 @@ class StatechartStaticMeshRequestStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StatechartStaticMeshRequestEvent): String? = when (event) {
         is StatechartStaticMeshRequestEvent.Bump -> "bump"
@@ -388,6 +417,7 @@ class StatechartStaticMeshRequestStateMachine(
         is StatechartStaticMeshRequestEvent.Ghost -> "ghost"
         is StatechartStaticMeshRequestEvent.Go -> "go"
     }
+
 
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `completeHostInvoke`.
@@ -404,31 +434,46 @@ class StatechartStaticMeshRequestStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StatechartStaticMeshRequestState,
-        event: StatechartStaticMeshRequestEvent?
-    ): EnabledTransition<StatechartStaticMeshRequestState, HistoryId>? = when (state) {
-        is StatechartStaticMeshRequestState.Asking -> when {
-            event is StatechartStaticMeshRequestEvent.Done.Invoke.Ask -> transitionAskingAt0
-            event is StatechartStaticMeshRequestEvent.Error.Invoke.Ask -> transitionAskingAt1
-            event is StatechartStaticMeshRequestEvent.Error.Execution -> transitionAskingAt2
-            else -> null
-        }
-        is StatechartStaticMeshRequestState.Idle -> when {
-            event is StatechartStaticMeshRequestEvent.Bump -> transitionIdleAt0
-            event is StatechartStaticMeshRequestEvent.Ghost -> transitionIdleAt1
-            event is StatechartStaticMeshRequestEvent.Go -> transitionIdleAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StatechartStaticMeshRequestState, event: StatechartStaticMeshRequestEvent?): EnabledTransition<StatechartStaticMeshRequestState, HistoryId>? = when (state) {
+        is StatechartStaticMeshRequestState.Asking -> firstEnabledTransitionOfAsking(state, event)
+        is StatechartStaticMeshRequestState.Idle -> firstEnabledTransitionOfIdle(state, event)
         else -> null
     }
+
+
+    // asking's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAsking(state: StatechartStaticMeshRequestState, event: StatechartStaticMeshRequestEvent?): EnabledTransition<StatechartStaticMeshRequestState, HistoryId>? = when {
+        event is StatechartStaticMeshRequestEvent.Done.Invoke.Ask -> TransitionsPart0.transitionAskingAt0
+        event is StatechartStaticMeshRequestEvent.Error.Invoke.Ask -> TransitionsPart0.transitionAskingAt1
+        event is StatechartStaticMeshRequestEvent.Error.Execution -> TransitionsPart0.transitionAskingAt2
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StatechartStaticMeshRequestState, event: StatechartStaticMeshRequestEvent?): EnabledTransition<StatechartStaticMeshRequestState, HistoryId>? = when {
+        event is StatechartStaticMeshRequestEvent.Bump -> TransitionsPart0.transitionIdleAt0
+        event is StatechartStaticMeshRequestEvent.Ghost -> TransitionsPart0.transitionIdleAt1
+        event is StatechartStaticMeshRequestEvent.Go -> TransitionsPart0.transitionIdleAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
     override fun onEntry(state: StatechartStaticMeshRequestState, isDefaultEntry: Boolean) {
         when (state) {
-            is StatechartStaticMeshRequestState.Asking -> {
+            is StatechartStaticMeshRequestState.Asking -> onEntryOfAsking()
+            is StatechartStaticMeshRequestState.Done -> onEntryOfDone()
+            is StatechartStaticMeshRequestState.Idle -> onEntryOfIdle()
+        }
+    }
+
+
+    private fun onEntryOfAsking() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:68 :: asking :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
@@ -442,7 +487,7 @@ class StatechartStaticMeshRequestStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "asking.${System.identityHashCode(this)}.ask"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StatechartStaticMeshRequestState.Asking, generatedInvokeId) {
                         val hostInvokeSrc: String = vPeer
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
@@ -487,72 +532,115 @@ class StatechartStaticMeshRequestStateMachine(
                         }
                     }
                 }
-            }
-            is StatechartStaticMeshRequestState.Done -> {
+    }
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:87 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StatechartStaticMeshRequestState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:57 :: idle :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
     override fun onExit(state: StatechartStaticMeshRequestState) {
         when (state) {
-            is StatechartStaticMeshRequestState.Asking -> {
+            is StatechartStaticMeshRequestState.Asking -> onExitOfAsking()
+            is StatechartStaticMeshRequestState.Done -> onExitOfDone()
+            is StatechartStaticMeshRequestState.Idle -> onExitOfIdle()
+        }
+    }
+
+
+    private fun onExitOfAsking() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:68 :: asking :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StatechartStaticMeshRequestState.Asking)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("sce:mesh-rpc", "ask")
-            }
-            is StatechartStaticMeshRequestState.Done -> {
-                // SCE-MAP: statechart_static_mesh_request.scxml:87 :: done :: _state_body
-            }
-            is StatechartStaticMeshRequestState.Idle -> {
-                // SCE-MAP: statechart_static_mesh_request.scxml:57 :: idle :: _state_body
-            }
-        }
     }
+
+    private fun onExitOfDone() {
+                // SCE-MAP: statechart_static_mesh_request.scxml:87 :: done :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: statechart_static_mesh_request.scxml:57 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
     override fun executeTransitionContent(source: StatechartStaticMeshRequestState, transitionIndex: Int) {
         when (source) {
-        is StatechartStaticMeshRequestState.Asking -> when (transitionIndex) {
-            0 -> {
+            is StatechartStaticMeshRequestState.Asking -> transitionContentOfAsking(transitionIndex)
+            is StatechartStaticMeshRequestState.Idle -> transitionContentOfIdle(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `asking`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfAsking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfAskingAt0()
+            1 -> transitionContentOfAskingAt1()
+            2 -> transitionContentOfAskingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfAskingAt0() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:76 :: asking :: _transition_0
 
             if (try { vAnswered = com.sce.forge.runtime.SceChecked.add(vAnswered, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='answered'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfAskingAt1() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:79 :: asking :: _transition_1
 
             if (try { vFailed = com.sce.forge.runtime.SceChecked.add(vFailed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='failed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfAskingAt2() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:82 :: asking :: _transition_2
 
             if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
             else -> {}
         }
-        is StatechartStaticMeshRequestState.Idle -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:58 :: idle :: _transition_0
 
             if (try { vLoad = com.sce.forge.runtime.SceChecked.add(vLoad, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='load'>: an integer operation overflowed or failed"); true }) {
@@ -562,17 +650,13 @@ class StatechartStaticMeshRequestStateMachine(
             if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:62 :: idle :: _transition_1
 
             if (try { vPeer = com.sce.forge.runtime.SceChecked.bounded("#ghost", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='peer'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

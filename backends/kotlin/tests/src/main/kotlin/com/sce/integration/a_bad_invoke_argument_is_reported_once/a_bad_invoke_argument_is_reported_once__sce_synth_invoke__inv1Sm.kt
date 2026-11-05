@@ -100,6 +100,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, HistoryId>>
@@ -108,6 +109,9 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, HistoryId>> =
             listOf(StateTarget(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: report's transition 0, as the microstep reads it.
         val transitionReportAt0 = EnabledTransition<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, HistoryId>(
@@ -119,6 +123,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State? = when (stateId) {
         "report" -> ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report
@@ -126,17 +131,20 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State): String = when (state) {
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> "report"
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Reported -> "reported"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State): Int = when (state) {
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> 0
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Reported -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event? = when (name) {
@@ -146,12 +154,14 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event): String? = when (event) {
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event.ChildUp -> "childUp"
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event.Error.Communication -> "error.communication"
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -181,6 +191,27 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'fromLoc' with expr
         try {
             val initResult_fromLoc = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
@@ -202,22 +233,6 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event.Error.Execution, "<data id='broken'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -407,53 +422,86 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State,
-        event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event?
-    ): EnabledTransition<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, HistoryId>? = when (state) {
-        is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> when {
-            event == null -> transitionReportAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event?): EnabledTransition<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, HistoryId>? = when (state) {
+        is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> firstEnabledTransitionOfReport(state, event)
         else -> null
     }
+
+
+    // report's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReport(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event?): EnabledTransition<ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionReportAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:3 :: _machine
     override fun onEntry(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, isDefaultEntry: Boolean) {
         when (state) {
-            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> {
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> onEntryOfReport()
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Reported -> onEntryOfReported()
+        }
+    }
+
+
+    private fun onEntryOfReport() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:10 :: report :: _state_body
-            }
-            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Reported -> {
+    }
+
+    private fun onEntryOfReported() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:19 :: reported :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:3 :: _machine
     override fun onExit(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State) {
         when (state) {
-            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:10 :: report :: _state_body
-            }
-            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Reported -> {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:19 :: reported :: _state_body
-            }
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> onExitOfReport()
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Reported -> onExitOfReported()
         }
     }
+
+
+    private fun onExitOfReport() {
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:10 :: report :: _state_body
+    }
+
+    private fun onExitOfReported() {
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:19 :: reported :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:3 :: _machine
     override fun executeTransitionContent(source: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, transitionIndex: Int) {
         when (source) {
-        is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> when (transitionIndex) {
-            0 -> {
+            is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> transitionContentOfReport(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `report`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfReport(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfReportAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfReportAt0() {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:11 :: report :: _transition_0
 
 
@@ -500,10 +548,5 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

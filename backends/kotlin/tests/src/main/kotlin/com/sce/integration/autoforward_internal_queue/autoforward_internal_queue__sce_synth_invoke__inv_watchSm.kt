@@ -55,9 +55,11 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState): Boolean = when (state) {
-        is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean, is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> true
+        is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> true
+        is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -67,6 +69,9 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<AutoforwardInternalQueueSceSynthInvokeInvWatchState, HistoryId>> =
             listOf(StateTarget(AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: watch's transition 0, as the microstep reads it.
         val transitionWatchAt0 = EnabledTransition<AutoforwardInternalQueueSceSynthInvokeInvWatchState, HistoryId>(
@@ -87,6 +92,7 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AutoforwardInternalQueueSceSynthInvokeInvWatchState? = when (stateId) {
         "clean" -> AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean
@@ -95,6 +101,7 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState): String = when (state) {
         is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> "clean"
@@ -102,12 +109,14 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
         is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> "watch"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState): Int = when (state) {
         is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> 2
         is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> 1
         is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AutoforwardInternalQueueSceSynthInvokeInvWatchEvent? = when (name) {
@@ -119,6 +128,7 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
         "sawProbeOnly" -> AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.SawProbeOnly
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AutoforwardInternalQueueSceSynthInvokeInvWatchEvent): String? = when (event) {
@@ -134,39 +144,53 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: AutoforwardInternalQueueSceSynthInvokeInvWatchState,
-        event: AutoforwardInternalQueueSceSynthInvokeInvWatchEvent?
-    ): EnabledTransition<AutoforwardInternalQueueSceSynthInvokeInvWatchState, HistoryId>? = when (state) {
-        is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> when {
-            event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Execution -> transitionWatchAt0
-            event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Probe -> transitionWatchAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState, event: AutoforwardInternalQueueSceSynthInvokeInvWatchEvent?): EnabledTransition<AutoforwardInternalQueueSceSynthInvokeInvWatchState, HistoryId>? = when (state) {
+        is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> firstEnabledTransitionOfWatch(state, event)
         else -> null
     }
+
+
+    // watch's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWatch(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState, event: AutoforwardInternalQueueSceSynthInvokeInvWatchEvent?): EnabledTransition<AutoforwardInternalQueueSceSynthInvokeInvWatchState, HistoryId>? = when {
+        event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Execution -> TransitionsPart0.transitionWatchAt0
+        event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Probe -> TransitionsPart0.transitionWatchAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onEntry(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState, isDefaultEntry: Boolean) {
         when (state) {
-            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> {
+            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> onEntryOfClean()
+            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> onEntryOfLeaked()
+            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> onEntryOfWatch()
+        }
+    }
+
+
+    private fun onEntryOfClean() {
                 // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17 :: clean :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> {
+    }
+
+    private fun onEntryOfLeaked() {
                 // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16 :: leaked :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> {
+    }
+
+    private fun onEntryOfWatch() {
                 // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -190,33 +214,58 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onExit(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState) {
         when (state) {
-            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17 :: clean :: _state_body
-            }
-            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16 :: leaked :: _state_body
-            }
-            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
-            }
+            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> onExitOfClean()
+            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> onExitOfLeaked()
+            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> onExitOfWatch()
         }
     }
+
+
+    private fun onExitOfClean() {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17 :: clean :: _state_body
+    }
+
+    private fun onExitOfLeaked() {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16 :: leaked :: _state_body
+    }
+
+    private fun onExitOfWatch() {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionContent(source: AutoforwardInternalQueueSceSynthInvokeInvWatchState, transitionIndex: Int) {
         when (source) {
-        is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> when (transitionIndex) {
-            0 -> {
+            is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> transitionContentOfWatch(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `watch`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWatch(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWatchAt0()
+            1 -> transitionContentOfWatchAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWatchAt0() {
                 // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:9 :: watch :: _transition_0
 
 
@@ -237,8 +286,9 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfWatchAt1() {
                 // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:12 :: watch :: _transition_1
 
 
@@ -259,10 +309,5 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

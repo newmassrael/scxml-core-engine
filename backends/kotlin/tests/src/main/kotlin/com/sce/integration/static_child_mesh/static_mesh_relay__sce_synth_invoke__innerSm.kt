@@ -76,12 +76,10 @@ class StaticMeshRelaySceSynthInvokeInnerStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        return savedState(savedShape, variables, wallNowMs)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -148,6 +146,9 @@ class StaticMeshRelaySceSynthInvokeInnerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticMeshRelaySceSynthInvokeInnerState, HistoryId>> =
             listOf(StateTarget(StaticMeshRelaySceSynthInvokeInnerState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<StaticMeshRelaySceSynthInvokeInnerState, HistoryId>(
@@ -159,21 +160,25 @@ class StaticMeshRelaySceSynthInvokeInnerStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticMeshRelaySceSynthInvokeInnerState? = when (stateId) {
         "waiting" -> StaticMeshRelaySceSynthInvokeInnerState.Waiting
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticMeshRelaySceSynthInvokeInnerState): String = when (state) {
         is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticMeshRelaySceSynthInvokeInnerState): Int = when (state) {
         is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticMeshRelaySceSynthInvokeInnerEvent? = when (name) {
@@ -182,6 +187,7 @@ class StaticMeshRelaySceSynthInvokeInnerStateMachine(
         "inner.pong" -> StaticMeshRelaySceSynthInvokeInnerEvent.Inner.Pong
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticMeshRelaySceSynthInvokeInnerEvent): String? = when (event) {
@@ -194,49 +200,78 @@ class StaticMeshRelaySceSynthInvokeInnerStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticMeshRelaySceSynthInvokeInnerState,
-        event: StaticMeshRelaySceSynthInvokeInnerEvent?
-    ): EnabledTransition<StaticMeshRelaySceSynthInvokeInnerState, HistoryId>? = when (state) {
-        is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> when {
-            event is StaticMeshRelaySceSynthInvokeInnerEvent.Inner.Ping -> transitionWaitingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticMeshRelaySceSynthInvokeInnerState, event: StaticMeshRelaySceSynthInvokeInnerEvent?): EnabledTransition<StaticMeshRelaySceSynthInvokeInnerState, HistoryId>? = when (state) {
+        is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticMeshRelaySceSynthInvokeInnerState, event: StaticMeshRelaySceSynthInvokeInnerEvent?): EnabledTransition<StaticMeshRelaySceSynthInvokeInnerState, HistoryId>? = when {
+        event is StaticMeshRelaySceSynthInvokeInnerEvent.Inner.Ping -> TransitionsPart0.transitionWaitingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_mesh_relay.scxml:17 :: _machine
     override fun onEntry(state: StaticMeshRelaySceSynthInvokeInnerState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> {
-                // SCE-MAP: static_mesh_relay.scxml:19 :: waiting :: _state_body
-            }
+            is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> onEntryOfWaiting()
         }
+    }
+
+
+    private fun onEntryOfWaiting() {
+                // SCE-MAP: static_mesh_relay.scxml:19 :: waiting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_mesh_relay.scxml:17 :: _machine
     override fun onExit(state: StaticMeshRelaySceSynthInvokeInnerState) {
         when (state) {
-            is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> {
-                // SCE-MAP: static_mesh_relay.scxml:19 :: waiting :: _state_body
-            }
+            is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: static_mesh_relay.scxml:19 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_mesh_relay.scxml:17 :: _machine
     override fun executeTransitionContent(source: StaticMeshRelaySceSynthInvokeInnerState, transitionIndex: Int) {
         when (source) {
-        is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> when (transitionIndex) {
-            0 -> {
+            is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> transitionContentOfWaiting(transitionIndex)
+        }
+    }
+
+
+    // The content of `waiting`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWaiting(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWaitingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_mesh_relay.scxml:20 :: waiting :: _transition_0
 
 
@@ -276,9 +311,5 @@ class StaticMeshRelaySceSynthInvokeInnerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        }
     }
 }

@@ -120,12 +120,10 @@ class StaticHostedFirstStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        return savedState(savedShape, variables, wallNowMs)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -190,6 +188,7 @@ class StaticHostedFirstStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StaticHostedFirstState, HistoryId>>
@@ -198,6 +197,9 @@ class StaticHostedFirstStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticHostedFirstState, HistoryId>> =
             listOf(StateTarget(StaticHostedFirstState.Busy))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: busy's transition 0, as the microstep reads it.
         val transitionBusyAt0 = EnabledTransition<StaticHostedFirstState, HistoryId>(
@@ -209,6 +211,7 @@ class StaticHostedFirstStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticHostedFirstState? = when (stateId) {
         "busy" -> StaticHostedFirstState.Busy
@@ -216,11 +219,13 @@ class StaticHostedFirstStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticHostedFirstState): String = when (state) {
         is StaticHostedFirstState.Busy -> "busy"
         is StaticHostedFirstState.Leaf -> "leaf"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticHostedFirstState): Int = when (state) {
@@ -228,10 +233,12 @@ class StaticHostedFirstStateMachine(
         is StaticHostedFirstState.Leaf -> 1
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticHostedFirstEvent? = when (name) {
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     // A child SM that inherits the has_parent_communication override while
@@ -252,23 +259,33 @@ class StaticHostedFirstStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticHostedFirstState,
-        event: StaticHostedFirstEvent?
-    ): EnabledTransition<StaticHostedFirstState, HistoryId>? = when (state) {
-        is StaticHostedFirstState.Busy -> when {
-            event == null -> transitionBusyAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticHostedFirstState, event: StaticHostedFirstEvent?): EnabledTransition<StaticHostedFirstState, HistoryId>? = when (state) {
+        is StaticHostedFirstState.Busy -> firstEnabledTransitionOfBusy(state, event)
         else -> null
     }
+
+
+    // busy's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBusy(state: StaticHostedFirstState, event: StaticHostedFirstEvent?): EnabledTransition<StaticHostedFirstState, HistoryId>? = when {
+        event == null -> TransitionsPart0.transitionBusyAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_hosted_first.scxml:8 :: _machine
     override fun onEntry(state: StaticHostedFirstState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticHostedFirstState.Busy -> {
+            is StaticHostedFirstState.Busy -> onEntryOfBusy()
+            is StaticHostedFirstState.Leaf -> onEntryOfLeaf()
+        }
+    }
+
+
+    private fun onEntryOfBusy() {
                 // SCE-MAP: static_hosted_first.scxml:10 :: busy :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -276,34 +293,39 @@ class StaticHostedFirstStateMachine(
             // W3C SCXML G.7: <sce:action name="first_ran">
             actions.firstRan()
                 }
-            }
-            is StaticHostedFirstState.Leaf -> {
+    }
+
+    private fun onEntryOfLeaf() {
                 // SCE-MAP: static_hosted_first.scxml:16 :: leaf :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_hosted_first.scxml:8 :: _machine
     override fun onExit(state: StaticHostedFirstState) {
         when (state) {
-            is StaticHostedFirstState.Busy -> {
-                // SCE-MAP: static_hosted_first.scxml:10 :: busy :: _state_body
-            }
-            is StaticHostedFirstState.Leaf -> {
-                // SCE-MAP: static_hosted_first.scxml:16 :: leaf :: _state_body
-            }
+            is StaticHostedFirstState.Busy -> onExitOfBusy()
+            is StaticHostedFirstState.Leaf -> onExitOfLeaf()
         }
     }
+
+
+    private fun onExitOfBusy() {
+                // SCE-MAP: static_hosted_first.scxml:10 :: busy :: _state_body
+    }
+
+    private fun onExitOfLeaf() {
+                // SCE-MAP: static_hosted_first.scxml:16 :: leaf :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_hosted_first.scxml:8 :: _machine
     override fun executeTransitionContent(source: StaticHostedFirstState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

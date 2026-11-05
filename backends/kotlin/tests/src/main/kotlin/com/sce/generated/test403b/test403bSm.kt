@@ -82,6 +82,7 @@ class Test403bStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 3.3: a <state> with child states — exactly the states that
     // have an initial transition. A <parallel> is not compound.
     override fun isCompoundState(state: Test403bState): Boolean = when (state) {
@@ -89,17 +90,21 @@ class Test403bStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.4: Check if state is a parallel state
     override fun isParallelState(state: Test403bState): Boolean = when (state) {
         is Test403bState.P0 -> true
         else -> false
     }
 
+
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test403bState): Boolean = when (state) {
-        is Test403bState.Fail, is Test403bState.Pass -> true
+        is Test403bState.Fail -> true
+        is Test403bState.Pass -> true
         else -> false
     }
+
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order — for a <parallel>, its regions.
@@ -116,17 +121,30 @@ class Test403bStateMachine(
         get() = documentInitialTargetList
 
     private companion object {
-        val childStates: Map<Test403bState, List<Test403bState>> = mapOf(
-            Test403bState.P0 to listOf(Test403bState.P0s1, Test403bState.P0s2),
-            Test403bState.S0 to listOf(Test403bState.P0),
-        )
+        val childStates: Map<Test403bState, List<Test403bState>> = LinkedHashMap<Test403bState, List<Test403bState>>().also {
+            childStatesPart0(it)
+        }
 
-        val initialTargets: Map<Test403bState, List<EntryTarget<Test403bState, HistoryId>>> = mapOf(
-            Test403bState.S0 to listOf(StateTarget(Test403bState.P0)),
-        )
+        private fun childStatesPart0(table: MutableMap<Test403bState, List<Test403bState>>) {
+            table[Test403bState.P0] = listOf(Test403bState.P0s1, Test403bState.P0s2)
+            table[Test403bState.S0] = listOf(Test403bState.P0)
+        }
+
+
+        val initialTargets: Map<Test403bState, List<EntryTarget<Test403bState, HistoryId>>> = LinkedHashMap<Test403bState, List<EntryTarget<Test403bState, HistoryId>>>().also {
+            initialTargetsPart0(it)
+        }
+
+        private fun initialTargetsPart0(table: MutableMap<Test403bState, List<EntryTarget<Test403bState, HistoryId>>>) {
+            table[Test403bState.S0] = listOf(StateTarget(Test403bState.P0))
+        }
+
 
         val documentInitialTargetList: List<EntryTarget<Test403bState, HistoryId>> =
             listOf(StateTarget(Test403bState.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: p0's transition 0, as the microstep reads it.
         val transitionP0At0 = EnabledTransition<Test403bState, HistoryId>(
@@ -165,6 +183,7 @@ class Test403bStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test403bState? = when (stateId) {
         "fail" -> Test403bState.Fail
@@ -176,6 +195,7 @@ class Test403bStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test403bState): String = when (state) {
         is Test403bState.Fail -> "fail"
@@ -185,6 +205,7 @@ class Test403bStateMachine(
         is Test403bState.Pass -> "pass"
         is Test403bState.S0 -> "s0"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test403bState): Int = when (state) {
@@ -196,6 +217,7 @@ class Test403bStateMachine(
         is Test403bState.S0 -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test403bEvent? = when (name) {
         "error.execution" -> Test403bEvent.Error.Execution
@@ -204,12 +226,14 @@ class Test403bStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test403bEvent): String? = when (event) {
         is Test403bEvent.Error.Execution -> "error.execution"
         is Test403bEvent.Event1 -> "event1"
         is Test403bEvent.Event2 -> "event2"
     }
+
 
 
 
@@ -239,13 +263,7 @@ class Test403bStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
-        try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "Var1", initResult_Var1)
-        } catch (e: Exception) {
-            raisePlatformError(Test403bEvent.Error.Execution, "<data id='Var1'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -264,6 +282,17 @@ class Test403bStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
+        try {
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "Var1", initResult_Var1)
+        } catch (e: Exception) {
+            raisePlatformError(Test403bEvent.Error.Execution, "<data id='Var1'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -453,37 +482,60 @@ class Test403bStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test403bState,
-        event: Test403bEvent?
-    ): EnabledTransition<Test403bState, HistoryId>? = when (state) {
-        is Test403bState.P0 -> when {
-            event is Test403bEvent.Event1 -> transitionP0At0
-            else -> null
-        }
-        is Test403bState.P0s1 -> when {
-            event is Test403bEvent.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> transitionP0s1At0
-            event is Test403bEvent.Event2 -> transitionP0s1At1
-            else -> null
-        }
-        is Test403bState.S0 -> when {
-            event is Test403bEvent.Event1 -> transitionS0At0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test403bState, event: Test403bEvent?): EnabledTransition<Test403bState, HistoryId>? = when (state) {
+        is Test403bState.P0 -> firstEnabledTransitionOfP0(state, event)
+        is Test403bState.P0s1 -> firstEnabledTransitionOfP0s1(state, event)
+        is Test403bState.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // p0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP0(state: Test403bState, event: Test403bEvent?): EnabledTransition<Test403bState, HistoryId>? = when {
+        event is Test403bEvent.Event1 -> TransitionsPart0.transitionP0At0
+        else -> null
+    }
+
+
+    // p0s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP0s1(state: Test403bState, event: Test403bEvent?): EnabledTransition<Test403bState, HistoryId>? = when {
+        event is Test403bEvent.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionP0s1At0
+        event is Test403bEvent.Event2 -> TransitionsPart0.transitionP0s1At1
+        else -> null
+    }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test403bState, event: Test403bEvent?): EnabledTransition<Test403bState, HistoryId>? = when {
+        event is Test403bEvent.Event1 -> TransitionsPart0.transitionS0At0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test403b.scxml:6 :: _machine
     override fun onEntry(state: Test403bState, isDefaultEntry: Boolean) {
         when (state) {
-            is Test403bState.Fail -> {
+            is Test403bState.Fail -> onEntryOfFail()
+            is Test403bState.P0 -> onEntryOfP0()
+            is Test403bState.P0s1 -> onEntryOfP0s1()
+            is Test403bState.P0s2 -> onEntryOfP0s2()
+            is Test403bState.Pass -> onEntryOfPass()
+            is Test403bState.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test403b.scxml:43 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test403bState.P0 -> {
+    }
+
+    private fun onEntryOfP0() {
                 // SCE-MAP: test403b.scxml:20 :: p0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -492,77 +544,118 @@ class Test403bStateMachine(
 
             raiseInternal(Test403bEvent.Event2)
                 }
-            }
-            is Test403bState.P0s1 -> {
+    }
+
+    private fun onEntryOfP0s1() {
                 // SCE-MAP: test403b.scxml:32 :: p0s1 :: _state_body
-            }
-            is Test403bState.P0s2 -> {
+    }
+
+    private fun onEntryOfP0s2() {
                 // SCE-MAP: test403b.scxml:37 :: p0s2 :: _state_body
-            }
-            is Test403bState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test403b.scxml:42 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test403bState.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test403b.scxml:11 :: s0 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test403b.scxml:6 :: _machine
     override fun onExit(state: Test403bState) {
         when (state) {
-            is Test403bState.Fail -> {
-                // SCE-MAP: test403b.scxml:43 :: fail :: _state_body
-            }
-            is Test403bState.P0 -> {
-                // SCE-MAP: test403b.scxml:20 :: p0 :: _state_body
-            }
-            is Test403bState.P0s1 -> {
-                // SCE-MAP: test403b.scxml:32 :: p0s1 :: _state_body
-            }
-            is Test403bState.P0s2 -> {
-                // SCE-MAP: test403b.scxml:37 :: p0s2 :: _state_body
-            }
-            is Test403bState.Pass -> {
-                // SCE-MAP: test403b.scxml:42 :: pass :: _state_body
-            }
-            is Test403bState.S0 -> {
-                // SCE-MAP: test403b.scxml:11 :: s0 :: _state_body
-            }
+            is Test403bState.Fail -> onExitOfFail()
+            is Test403bState.P0 -> onExitOfP0()
+            is Test403bState.P0s1 -> onExitOfP0s1()
+            is Test403bState.P0s2 -> onExitOfP0s2()
+            is Test403bState.Pass -> onExitOfPass()
+            is Test403bState.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test403b.scxml:43 :: fail :: _state_body
+    }
+
+    private fun onExitOfP0() {
+                // SCE-MAP: test403b.scxml:20 :: p0 :: _state_body
+    }
+
+    private fun onExitOfP0s1() {
+                // SCE-MAP: test403b.scxml:32 :: p0s1 :: _state_body
+    }
+
+    private fun onExitOfP0s2() {
+                // SCE-MAP: test403b.scxml:37 :: p0s2 :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test403b.scxml:42 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test403b.scxml:11 :: s0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test403b.scxml:6 :: _machine
     override fun executeTransitionContent(source: Test403bState, transitionIndex: Int) {
         when (source) {
-        is Test403bState.P0 -> when (transitionIndex) {
-            0 -> {
+            is Test403bState.P0 -> transitionContentOfP0(transitionIndex)
+            is Test403bState.S0 -> transitionContentOfS0(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `p0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfP0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfP0At0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfP0At0() {
                 // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
             else -> {}
         }
-        is Test403bState.S0 -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

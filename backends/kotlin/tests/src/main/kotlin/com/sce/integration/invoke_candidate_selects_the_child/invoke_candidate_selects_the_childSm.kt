@@ -76,9 +76,12 @@ class InvokeCandidateSelectsTheChildStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: InvokeCandidateSelectsTheChildState): Boolean = when (state) {
-        is InvokeCandidateSelectsTheChildState.NoChild, is InvokeCandidateSelectsTheChildState.Pass, is InvokeCandidateSelectsTheChildState.WrongChild -> true
+        is InvokeCandidateSelectsTheChildState.NoChild -> true
+        is InvokeCandidateSelectsTheChildState.Pass -> true
+        is InvokeCandidateSelectsTheChildState.WrongChild -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -88,6 +91,9 @@ class InvokeCandidateSelectsTheChildStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokeCandidateSelectsTheChildState, HistoryId>> =
             listOf(StateTarget(InvokeCandidateSelectsTheChildState.Probe))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: probe's transition 0, as the microstep reads it.
         val transitionProbeAt0 = EnabledTransition<InvokeCandidateSelectsTheChildState, HistoryId>(
@@ -117,6 +123,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeCandidateSelectsTheChildState? = when (stateId) {
         "noChild" -> InvokeCandidateSelectsTheChildState.NoChild
@@ -126,6 +133,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokeCandidateSelectsTheChildState): String = when (state) {
         is InvokeCandidateSelectsTheChildState.NoChild -> "noChild"
@@ -133,6 +141,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
         is InvokeCandidateSelectsTheChildState.Probe -> "probe"
         is InvokeCandidateSelectsTheChildState.WrongChild -> "wrongChild"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeCandidateSelectsTheChildState): Int = when (state) {
@@ -142,6 +151,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
         is InvokeCandidateSelectsTheChildState.WrongChild -> 2
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeCandidateSelectsTheChildEvent? = when (name) {
         "error.execution" -> InvokeCandidateSelectsTheChildEvent.Error.Execution
@@ -150,12 +160,14 @@ class InvokeCandidateSelectsTheChildStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeCandidateSelectsTheChildEvent): String? = when (event) {
         is InvokeCandidateSelectsTheChildEvent.Error.Execution -> "error.execution"
         is InvokeCandidateSelectsTheChildEvent.From.Chosen -> "from.chosen"
         is InvokeCandidateSelectsTheChildEvent.From.Other -> "from.other"
     }
+
 
 
 
@@ -185,13 +197,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'pick' with expr
-        try {
-            val initResult_pick = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"file:chosen.scxml\"", "'file:chosen.scxml'"))
-            engine.setVariable(sid, "pick", initResult_pick)
-        } catch (e: Exception) {
-            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<data id='pick'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -208,6 +214,17 @@ class InvokeCandidateSelectsTheChildStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'pick' with expr
+        try {
+            val initResult_pick = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"file:chosen.scxml\"", "'file:chosen.scxml'"))
+            engine.setVariable(sid, "pick", initResult_pick)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<data id='pick'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -397,47 +414,60 @@ class InvokeCandidateSelectsTheChildStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokeCandidateSelectsTheChildState,
-        event: InvokeCandidateSelectsTheChildEvent?
-    ): EnabledTransition<InvokeCandidateSelectsTheChildState, HistoryId>? = when (state) {
-        is InvokeCandidateSelectsTheChildState.Probe -> when {
-            event is InvokeCandidateSelectsTheChildEvent.From.Chosen -> transitionProbeAt0
-            event is InvokeCandidateSelectsTheChildEvent.From.Other -> transitionProbeAt1
-            event is InvokeCandidateSelectsTheChildEvent.Error.Execution -> transitionProbeAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokeCandidateSelectsTheChildState, event: InvokeCandidateSelectsTheChildEvent?): EnabledTransition<InvokeCandidateSelectsTheChildState, HistoryId>? = when (state) {
+        is InvokeCandidateSelectsTheChildState.Probe -> firstEnabledTransitionOfProbe(state, event)
         else -> null
     }
+
+
+    // probe's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfProbe(state: InvokeCandidateSelectsTheChildState, event: InvokeCandidateSelectsTheChildEvent?): EnabledTransition<InvokeCandidateSelectsTheChildState, HistoryId>? = when {
+        event is InvokeCandidateSelectsTheChildEvent.From.Chosen -> TransitionsPart0.transitionProbeAt0
+        event is InvokeCandidateSelectsTheChildEvent.From.Other -> TransitionsPart0.transitionProbeAt1
+        event is InvokeCandidateSelectsTheChildEvent.Error.Execution -> TransitionsPart0.transitionProbeAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_candidate_selects_the_child.scxml:34 :: _machine
     override fun onEntry(state: InvokeCandidateSelectsTheChildState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokeCandidateSelectsTheChildState.NoChild -> {
+            is InvokeCandidateSelectsTheChildState.NoChild -> onEntryOfNoChild()
+            is InvokeCandidateSelectsTheChildState.Pass -> onEntryOfPass()
+            is InvokeCandidateSelectsTheChildState.Probe -> onEntryOfProbe()
+            is InvokeCandidateSelectsTheChildState.WrongChild -> onEntryOfWrongChild()
+        }
+    }
+
+
+    private fun onEntryOfNoChild() {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:55 :: noChild :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeCandidateSelectsTheChildState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:48 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeCandidateSelectsTheChildState.Probe -> {
+    }
+
+    private fun onEntryOfProbe() {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:41 :: probe :: _state_body
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("_invoke_0", state)
-            }
-            is InvokeCandidateSelectsTheChildState.WrongChild -> {
+                deferStaticInvoke("_invoke_0", InvokeCandidateSelectsTheChildState.Probe)
+    }
+
+    private fun onEntryOfWrongChild() {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:54 :: wrongChild :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -450,9 +480,19 @@ class InvokeCandidateSelectsTheChildStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: InvokeCandidateSelectsTheChildState) {
         when (invokeId) {
-            "_invoke_0" -> {
+            "_invoke_0" -> startInvokeOfProbeAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfProbeAt0(state: InvokeCandidateSelectsTheChildState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -507,40 +547,47 @@ class InvokeCandidateSelectsTheChildStateMachine(
                         }
                     }
                 }
-            }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_candidate_selects_the_child.scxml:34 :: _machine
     override fun onExit(state: InvokeCandidateSelectsTheChildState) {
         when (state) {
-            is InvokeCandidateSelectsTheChildState.NoChild -> {
-                // SCE-MAP: invoke_candidate_selects_the_child.scxml:55 :: noChild :: _state_body
-            }
-            is InvokeCandidateSelectsTheChildState.Pass -> {
-                // SCE-MAP: invoke_candidate_selects_the_child.scxml:48 :: pass :: _state_body
-            }
-            is InvokeCandidateSelectsTheChildState.Probe -> {
-                // SCE-MAP: invoke_candidate_selects_the_child.scxml:41 :: probe :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("_invoke_0")
-            }
-            is InvokeCandidateSelectsTheChildState.WrongChild -> {
-                // SCE-MAP: invoke_candidate_selects_the_child.scxml:54 :: wrongChild :: _state_body
-            }
+            is InvokeCandidateSelectsTheChildState.NoChild -> onExitOfNoChild()
+            is InvokeCandidateSelectsTheChildState.Pass -> onExitOfPass()
+            is InvokeCandidateSelectsTheChildState.Probe -> onExitOfProbe()
+            is InvokeCandidateSelectsTheChildState.WrongChild -> onExitOfWrongChild()
         }
     }
+
+
+    private fun onExitOfNoChild() {
+                // SCE-MAP: invoke_candidate_selects_the_child.scxml:55 :: noChild :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: invoke_candidate_selects_the_child.scxml:48 :: pass :: _state_body
+    }
+
+    private fun onExitOfProbe() {
+                // SCE-MAP: invoke_candidate_selects_the_child.scxml:41 :: probe :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokeCandidateSelectsTheChildState.Probe)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("_invoke_0")
+    }
+
+    private fun onExitOfWrongChild() {
+                // SCE-MAP: invoke_candidate_selects_the_child.scxml:54 :: wrongChild :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_candidate_selects_the_child.scxml:34 :: _machine
     override fun executeTransitionContent(source: InvokeCandidateSelectsTheChildState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

@@ -49,6 +49,7 @@ class Test415StateMachine(
         is Test415State.Final -> true
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<Test415State, HistoryId>>
@@ -59,27 +60,32 @@ class Test415StateMachine(
             listOf(StateTarget(Test415State.Final))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test415State? = when (stateId) {
         "final" -> Test415State.Final
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test415State): String = when (state) {
         is Test415State.Final -> "final"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test415State): Int = when (state) {
         is Test415State.Final -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test415Event? = when (name) {
         "event1" -> Test415Event.Event1
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test415Event): String? = when (event) {
@@ -90,24 +96,30 @@ class Test415StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test415State,
-        event: Test415Event?
-    ): EnabledTransition<Test415State, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: Test415State, event: Test415Event?): EnabledTransition<Test415State, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test415.scxml:8 :: _machine
     override fun onEntry(state: Test415State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test415State.Final -> {
+            is Test415State.Final -> onEntryOfFinal()
+        }
+    }
+
+
+    private fun onEntryOfFinal() {
                 // SCE-MAP: test415.scxml:9 :: final :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -116,26 +128,28 @@ class Test415StateMachine(
                 }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test415.scxml:8 :: _machine
     override fun onExit(state: Test415State) {
         when (state) {
-            is Test415State.Final -> {
-                // SCE-MAP: test415.scxml:9 :: final :: _state_body
-            }
+            is Test415State.Final -> onExitOfFinal()
         }
     }
+
+
+    private fun onExitOfFinal() {
+                // SCE-MAP: test415.scxml:9 :: final :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test415.scxml:8 :: _machine
     override fun executeTransitionContent(source: Test415State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

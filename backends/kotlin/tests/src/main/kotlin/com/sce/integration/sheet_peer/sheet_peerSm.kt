@@ -323,6 +323,10 @@ class SheetPeerStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.node?.let { vNode = it }
         params.hub?.let { vHub = it }
         params.lamport?.let { vLamport = it }
@@ -491,32 +495,34 @@ class SheetPeerStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "node" to SavedValues.of(vNode),
-            "hub" to SavedValues.of(vHub),
-            "clock" to vClock.toSaved(),
-            "stamp" to vStamp.toSaved(),
-            "cells" to SavedValues.list(vCells) { it.toSaved() },
-            "rows" to SavedValues.list(vRows) { it.toSaved() },
-            "gone" to SavedValues.list(vGone) { it.toSaved() },
-            "cols" to SavedValues.list(vCols) { it.toSaved() },
-            "goneCols" to SavedValues.list(vGoneCols) { it.toSaved() },
-            "trail" to SavedValues.list(vTrail) { SavedValues.of(it) },
-            "shown" to SavedValues.list(vShown) { it.toSaved() },
-            "write" to vWrite.toSaved(),
-            "placed" to vPlaced.toSaved(),
-            "removal" to vRemoval.toSaved(),
-            "lamport" to SavedValues.of(vLamport),
-            "newKey" to SavedValues.of(vNewKey),
-            "noKey" to SavedValues.of(vNoKey),
-            "noNumber" to SavedValues.of(vNoNumber),
-            "orphans" to SavedValues.of(vOrphans),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "node" to SavedValues.of(vNode)
+        variables += "hub" to SavedValues.of(vHub)
+        variables += "clock" to vClock.toSaved()
+        variables += "stamp" to vStamp.toSaved()
+        variables += "cells" to SavedValues.list(vCells) { it.toSaved() }
+        variables += "rows" to SavedValues.list(vRows) { it.toSaved() }
+        variables += "gone" to SavedValues.list(vGone) { it.toSaved() }
+        variables += "cols" to SavedValues.list(vCols) { it.toSaved() }
+        variables += "goneCols" to SavedValues.list(vGoneCols) { it.toSaved() }
+        variables += "trail" to SavedValues.list(vTrail) { SavedValues.of(it) }
+        variables += "shown" to SavedValues.list(vShown) { it.toSaved() }
+        variables += "write" to vWrite.toSaved()
+        variables += "placed" to vPlaced.toSaved()
+        variables += "removal" to vRemoval.toSaved()
+        variables += "lamport" to SavedValues.of(vLamport)
+        variables += "newKey" to SavedValues.of(vNewKey)
+        variables += "noKey" to SavedValues.of(vNoKey)
+        variables += "noNumber" to SavedValues.of(vNoNumber)
+        variables += "orphans" to SavedValues.of(vOrphans)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -541,6 +547,15 @@ class SheetPeerStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint64(savedGrown.variable("node"), "node")
         val saved2 = SavedValues.bool(savedGrown.variable("hub"), "hub")
         val saved3 = SheetPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
@@ -561,27 +576,28 @@ class SheetPeerStateMachine(
         val saved18 = SavedValues.int64(savedGrown.variable("noNumber"), "noNumber")
         val saved19 = SavedValues.uint32(savedGrown.variable("orphans"), "orphans")
         val saved20 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vNode = saved1
-        vHub = saved2
-        vClock = saved3
-        vStamp = saved4
-        vCells = saved5
-        vRows = saved6
-        vGone = saved7
-        vCols = saved8
-        vGoneCols = saved9
-        vTrail = saved10
-        vShown = saved11
-        vWrite = saved12
-        vPlaced = saved13
-        vRemoval = saved14
-        vLamport = saved15
-        vNewKey = saved16
-        vNoKey = saved17
-        vNoNumber = saved18
-        vOrphans = saved19
-        vRefusals = saved20
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vNode = saved1
+            vHub = saved2
+            vClock = saved3
+            vStamp = saved4
+            vCells = saved5
+            vRows = saved6
+            vGone = saved7
+            vCols = saved8
+            vGoneCols = saved9
+            vTrail = saved10
+            vShown = saved11
+            vWrite = saved12
+            vPlaced = saved13
+            vRemoval = saved14
+            vLamport = saved15
+            vNewKey = saved16
+            vNoKey = saved17
+            vNoNumber = saved18
+            vOrphans = saved19
+            vRefusals = saved20
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -594,6 +610,10 @@ class SheetPeerStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint64(savedGrown.variable("node"), "node")
         SavedValues.bool(savedGrown.variable("hub"), "hub")
         SheetPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
@@ -932,6 +952,9 @@ class SheetPeerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<SheetPeerState, HistoryId>> =
             listOf(StateTarget(SheetPeerState.Open))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: open's transition 0, as the microstep reads it.
         val transitionOpenAt0 = EnabledTransition<SheetPeerState, HistoryId>(
@@ -1060,21 +1083,25 @@ class SheetPeerStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): SheetPeerState? = when (stateId) {
         "open" -> SheetPeerState.Open
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: SheetPeerState): String = when (state) {
         is SheetPeerState.Open -> "open"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: SheetPeerState): Int = when (state) {
         is SheetPeerState.Open -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SheetPeerEvent? = when (name) {
@@ -1094,6 +1121,7 @@ class SheetPeerStateMachine(
         "sheet.row" -> SheetPeerEvent.Sheet.Row
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SheetPeerEvent): String? = when (event) {
@@ -1117,62 +1145,104 @@ class SheetPeerStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: SheetPeerState,
-        event: SheetPeerEvent?
-    ): EnabledTransition<SheetPeerState, HistoryId>? = when (state) {
-        is SheetPeerState.Open -> when {
-            event is SheetPeerEvent.Sheet.Join -> transitionOpenAt0
-            event is SheetPeerEvent.Sheet.Edit -> transitionOpenAt1
-            event is SheetPeerEvent.Sheet.Formula -> transitionOpenAt2
-            event is SheetPeerEvent.Sheet.Cell -> transitionOpenAt3
-            event is SheetPeerEvent.Sheet.Recompute -> transitionOpenAt4
-            event is SheetPeerEvent.Sheet.AddRow -> transitionOpenAt5
-            event is SheetPeerEvent.Sheet.Row -> transitionOpenAt6
-            event is SheetPeerEvent.Sheet.DropRow -> transitionOpenAt7
-            event is SheetPeerEvent.Sheet.Gone -> transitionOpenAt8
-            event is SheetPeerEvent.Sheet.AddCol -> transitionOpenAt9
-            event is SheetPeerEvent.Sheet.Col -> transitionOpenAt10
-            event is SheetPeerEvent.Sheet.DropCol -> transitionOpenAt11
-            event is SheetPeerEvent.Sheet.GoneCol -> transitionOpenAt12
-            event is SheetPeerEvent.Error.Execution -> transitionOpenAt13
-            else -> null
-        }
+    override fun firstEnabledTransition(state: SheetPeerState, event: SheetPeerEvent?): EnabledTransition<SheetPeerState, HistoryId>? = when (state) {
+        is SheetPeerState.Open -> firstEnabledTransitionOfOpen(state, event)
     }
+
+
+    // open's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOpen(state: SheetPeerState, event: SheetPeerEvent?): EnabledTransition<SheetPeerState, HistoryId>? = when {
+        event is SheetPeerEvent.Sheet.Join -> TransitionsPart0.transitionOpenAt0
+        event is SheetPeerEvent.Sheet.Edit -> TransitionsPart0.transitionOpenAt1
+        event is SheetPeerEvent.Sheet.Formula -> TransitionsPart0.transitionOpenAt2
+        event is SheetPeerEvent.Sheet.Cell -> TransitionsPart0.transitionOpenAt3
+        event is SheetPeerEvent.Sheet.Recompute -> TransitionsPart0.transitionOpenAt4
+        event is SheetPeerEvent.Sheet.AddRow -> TransitionsPart0.transitionOpenAt5
+        event is SheetPeerEvent.Sheet.Row -> TransitionsPart0.transitionOpenAt6
+        event is SheetPeerEvent.Sheet.DropRow -> TransitionsPart0.transitionOpenAt7
+        event is SheetPeerEvent.Sheet.Gone -> TransitionsPart0.transitionOpenAt8
+        event is SheetPeerEvent.Sheet.AddCol -> TransitionsPart0.transitionOpenAt9
+        event is SheetPeerEvent.Sheet.Col -> TransitionsPart0.transitionOpenAt10
+        event is SheetPeerEvent.Sheet.DropCol -> TransitionsPart0.transitionOpenAt11
+        event is SheetPeerEvent.Sheet.GoneCol -> TransitionsPart0.transitionOpenAt12
+        event is SheetPeerEvent.Error.Execution -> TransitionsPart0.transitionOpenAt13
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: sheet_peer.scxml:49 :: _machine
     override fun onEntry(state: SheetPeerState, isDefaultEntry: Boolean) {
         when (state) {
-            is SheetPeerState.Open -> {
-                // SCE-MAP: sheet_peer.scxml:136 :: open :: _state_body
-            }
+            is SheetPeerState.Open -> onEntryOfOpen()
         }
+    }
+
+
+    private fun onEntryOfOpen() {
+                // SCE-MAP: sheet_peer.scxml:136 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: sheet_peer.scxml:49 :: _machine
     override fun onExit(state: SheetPeerState) {
         when (state) {
-            is SheetPeerState.Open -> {
-                // SCE-MAP: sheet_peer.scxml:136 :: open :: _state_body
-            }
+            is SheetPeerState.Open -> onExitOfOpen()
         }
     }
+
+
+    private fun onExitOfOpen() {
+                // SCE-MAP: sheet_peer.scxml:136 :: open :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: sheet_peer.scxml:49 :: _machine
     override fun executeTransitionContent(source: SheetPeerState, transitionIndex: Int) {
         when (source) {
-        is SheetPeerState.Open -> when (transitionIndex) {
-            0 -> {
+            is SheetPeerState.Open -> transitionContentOfOpen(transitionIndex)
+        }
+    }
+
+
+    // The content of `open`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfOpen(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfOpenAt0()
+            1 -> transitionContentOfOpenAt1()
+            2 -> transitionContentOfOpenAt2()
+            3 -> transitionContentOfOpenAt3()
+            4 -> transitionContentOfOpenAt4()
+            5 -> transitionContentOfOpenAt5()
+            6 -> transitionContentOfOpenAt6()
+            7 -> transitionContentOfOpenAt7()
+            8 -> transitionContentOfOpenAt8()
+            9 -> transitionContentOfOpenAt9()
+            10 -> transitionContentOfOpenAt10()
+            11 -> transitionContentOfOpenAt11()
+            12 -> transitionContentOfOpenAt12()
+            13 -> transitionContentOfOpenAt13()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfOpenAt0() {
                 // SCE-MAP: sheet_peer.scxml:137 :: open :: _transition_0
                 if (pendingSheetJoinPayload == null) {
                     return
@@ -1181,8 +1251,9 @@ class SheetPeerStateMachine(
             vNode = pendingSheetJoinPayload!!.node
 
             vHub = pendingSheetJoinPayload!!.hub
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfOpenAt1() {
                 // SCE-MAP: sheet_peer.scxml:146 :: open :: _transition_1
                 if (pendingSheetEditPayload == null) {
                     return
@@ -1308,8 +1379,9 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfOpenAt2() {
                 // SCE-MAP: sheet_peer.scxml:186 :: open :: _transition_2
                 if (pendingSheetFormulaPayload == null) {
                     return
@@ -1435,8 +1507,9 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfOpenAt3() {
                 // SCE-MAP: sheet_peer.scxml:225 :: open :: _transition_3
                 if (pendingSheetCellPayload == null) {
                     return
@@ -1656,8 +1729,9 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfOpenAt4() {
                 // SCE-MAP: sheet_peer.scxml:264 :: open :: _transition_4
 
             if (try { vTrail = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SheetSettle__vvvvv(vCells, vRows, vGone, vCols, vGoneCols)), 768); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='trail'>: an integer operation overflowed or failed"); true }) {
@@ -1667,8 +1741,9 @@ class SheetPeerStateMachine(
             if (try { vShown = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SheetShow__vv(vCells, vTrail)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfOpenAt5() {
                 // SCE-MAP: sheet_peer.scxml:271 :: open :: _transition_5
                 if (pendingSheetAddRowPayload == null) {
                     return
@@ -1746,8 +1821,9 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfOpenAt6() {
                 // SCE-MAP: sheet_peer.scxml:288 :: open :: _transition_6
                 if (pendingSheetRowPayload == null) {
                     return
@@ -1903,8 +1979,9 @@ class SheetPeerStateMachine(
             if (ifCondFailed7) {
                 return
             }
-            }
-            7 -> {
+    }
+
+    private fun transitionContentOfOpenAt7() {
                 // SCE-MAP: sheet_peer.scxml:314 :: open :: _transition_7
                 if (pendingSheetDropRowPayload == null) {
                     return
@@ -1974,8 +2051,9 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            8 -> {
+    }
+
+    private fun transitionContentOfOpenAt8() {
                 // SCE-MAP: sheet_peer.scxml:327 :: open :: _transition_8
                 if (pendingSheetGonePayload == null) {
                     return
@@ -2103,8 +2181,9 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            9 -> {
+    }
+
+    private fun transitionContentOfOpenAt9() {
                 // SCE-MAP: sheet_peer.scxml:349 :: open :: _transition_9
                 if (pendingSheetAddColPayload == null) {
                     return
@@ -2182,8 +2261,9 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            10 -> {
+    }
+
+    private fun transitionContentOfOpenAt10() {
                 // SCE-MAP: sheet_peer.scxml:362 :: open :: _transition_10
                 if (pendingSheetColPayload == null) {
                     return
@@ -2339,8 +2419,9 @@ class SheetPeerStateMachine(
             if (ifCondFailed13) {
                 return
             }
-            }
-            11 -> {
+    }
+
+    private fun transitionContentOfOpenAt11() {
                 // SCE-MAP: sheet_peer.scxml:387 :: open :: _transition_11
                 if (pendingSheetDropColPayload == null) {
                     return
@@ -2410,8 +2491,9 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            12 -> {
+    }
+
+    private fun transitionContentOfOpenAt12() {
                 // SCE-MAP: sheet_peer.scxml:398 :: open :: _transition_12
                 if (pendingSheetGoneColPayload == null) {
                     return
@@ -2539,16 +2621,13 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            13 -> {
+    }
+
+    private fun transitionContentOfOpenAt13() {
                 // SCE-MAP: sheet_peer.scxml:417 :: open :: _transition_13
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

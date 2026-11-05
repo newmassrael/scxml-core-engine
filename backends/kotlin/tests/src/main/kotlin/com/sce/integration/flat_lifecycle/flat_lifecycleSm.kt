@@ -59,6 +59,9 @@ class FlatLifecycleStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<FlatLifecycleState, HistoryId>> =
             listOf(StateTarget(FlatLifecycleState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<FlatLifecycleState, HistoryId>(
@@ -124,6 +127,7 @@ class FlatLifecycleStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): FlatLifecycleState? = when (stateId) {
         "idle" -> FlatLifecycleState.Idle
@@ -132,6 +136,7 @@ class FlatLifecycleStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: FlatLifecycleState): String = when (state) {
         is FlatLifecycleState.Idle -> "idle"
@@ -139,12 +144,14 @@ class FlatLifecycleStateMachine(
         is FlatLifecycleState.Running -> "running"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: FlatLifecycleState): Int = when (state) {
         is FlatLifecycleState.Idle -> 0
         is FlatLifecycleState.Paused -> 2
         is FlatLifecycleState.Running -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): FlatLifecycleEvent? = when (name) {
@@ -156,6 +163,7 @@ class FlatLifecycleStateMachine(
         "tick" -> FlatLifecycleEvent.Tick
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: FlatLifecycleEvent): String? = when (event) {
@@ -171,72 +179,100 @@ class FlatLifecycleStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: FlatLifecycleState,
-        event: FlatLifecycleEvent?
-    ): EnabledTransition<FlatLifecycleState, HistoryId>? = when (state) {
-        is FlatLifecycleState.Idle -> when {
-            event is FlatLifecycleEvent.Start -> transitionIdleAt0
-            event is FlatLifecycleEvent.Ping -> transitionIdleAt1
-            else -> null
-        }
-        is FlatLifecycleState.Paused -> when {
-            event is FlatLifecycleEvent.Resume -> transitionPausedAt0
-            event is FlatLifecycleEvent.Stop -> transitionPausedAt1
-            else -> null
-        }
-        is FlatLifecycleState.Running -> when {
-            event is FlatLifecycleEvent.Pause -> transitionRunningAt0
-            event is FlatLifecycleEvent.Tick -> transitionRunningAt1
-            event is FlatLifecycleEvent.Ping -> transitionRunningAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: FlatLifecycleState, event: FlatLifecycleEvent?): EnabledTransition<FlatLifecycleState, HistoryId>? = when (state) {
+        is FlatLifecycleState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is FlatLifecycleState.Paused -> firstEnabledTransitionOfPaused(state, event)
+        is FlatLifecycleState.Running -> firstEnabledTransitionOfRunning(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: FlatLifecycleState, event: FlatLifecycleEvent?): EnabledTransition<FlatLifecycleState, HistoryId>? = when {
+        event is FlatLifecycleEvent.Start -> TransitionsPart0.transitionIdleAt0
+        event is FlatLifecycleEvent.Ping -> TransitionsPart0.transitionIdleAt1
+        else -> null
+    }
+
+
+    // paused's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPaused(state: FlatLifecycleState, event: FlatLifecycleEvent?): EnabledTransition<FlatLifecycleState, HistoryId>? = when {
+        event is FlatLifecycleEvent.Resume -> TransitionsPart0.transitionPausedAt0
+        event is FlatLifecycleEvent.Stop -> TransitionsPart0.transitionPausedAt1
+        else -> null
+    }
+
+
+    // running's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRunning(state: FlatLifecycleState, event: FlatLifecycleEvent?): EnabledTransition<FlatLifecycleState, HistoryId>? = when {
+        event is FlatLifecycleEvent.Pause -> TransitionsPart0.transitionRunningAt0
+        event is FlatLifecycleEvent.Tick -> TransitionsPart0.transitionRunningAt1
+        event is FlatLifecycleEvent.Ping -> TransitionsPart0.transitionRunningAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: flat_lifecycle.scxml:17 :: _machine
     override fun onEntry(state: FlatLifecycleState, isDefaultEntry: Boolean) {
         when (state) {
-            is FlatLifecycleState.Idle -> {
-                // SCE-MAP: flat_lifecycle.scxml:24 :: idle :: _state_body
-            }
-            is FlatLifecycleState.Paused -> {
-                // SCE-MAP: flat_lifecycle.scxml:33 :: paused :: _state_body
-            }
-            is FlatLifecycleState.Running -> {
-                // SCE-MAP: flat_lifecycle.scxml:28 :: running :: _state_body
-            }
+            is FlatLifecycleState.Idle -> onEntryOfIdle()
+            is FlatLifecycleState.Paused -> onEntryOfPaused()
+            is FlatLifecycleState.Running -> onEntryOfRunning()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: flat_lifecycle.scxml:24 :: idle :: _state_body
+    }
+
+    private fun onEntryOfPaused() {
+                // SCE-MAP: flat_lifecycle.scxml:33 :: paused :: _state_body
+    }
+
+    private fun onEntryOfRunning() {
+                // SCE-MAP: flat_lifecycle.scxml:28 :: running :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: flat_lifecycle.scxml:17 :: _machine
     override fun onExit(state: FlatLifecycleState) {
         when (state) {
-            is FlatLifecycleState.Idle -> {
-                // SCE-MAP: flat_lifecycle.scxml:24 :: idle :: _state_body
-            }
-            is FlatLifecycleState.Paused -> {
-                // SCE-MAP: flat_lifecycle.scxml:33 :: paused :: _state_body
-            }
-            is FlatLifecycleState.Running -> {
-                // SCE-MAP: flat_lifecycle.scxml:28 :: running :: _state_body
-            }
+            is FlatLifecycleState.Idle -> onExitOfIdle()
+            is FlatLifecycleState.Paused -> onExitOfPaused()
+            is FlatLifecycleState.Running -> onExitOfRunning()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: flat_lifecycle.scxml:24 :: idle :: _state_body
+    }
+
+    private fun onExitOfPaused() {
+                // SCE-MAP: flat_lifecycle.scxml:33 :: paused :: _state_body
+    }
+
+    private fun onExitOfRunning() {
+                // SCE-MAP: flat_lifecycle.scxml:28 :: running :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: flat_lifecycle.scxml:17 :: _machine
     override fun executeTransitionContent(source: FlatLifecycleState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

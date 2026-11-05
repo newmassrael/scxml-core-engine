@@ -165,6 +165,9 @@ class ExternalChainIsBoundedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ExternalChainIsBoundedState, HistoryId>> =
             listOf(StateTarget(ExternalChainIsBoundedState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: bounded's transition 0, as the microstep reads it.
         val transitionBoundedAt0 = EnabledTransition<ExternalChainIsBoundedState, HistoryId>(
@@ -356,6 +359,7 @@ class ExternalChainIsBoundedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ExternalChainIsBoundedState? = when (stateId) {
         "bounded" -> ExternalChainIsBoundedState.Bounded
@@ -368,6 +372,7 @@ class ExternalChainIsBoundedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ExternalChainIsBoundedState): String = when (state) {
         is ExternalChainIsBoundedState.Bounded -> "bounded"
@@ -379,6 +384,7 @@ class ExternalChainIsBoundedStateMachine(
         is ExternalChainIsBoundedState.ZeroingExpr -> "zeroing_expr"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ExternalChainIsBoundedState): Int = when (state) {
         is ExternalChainIsBoundedState.Bounded -> 2
@@ -389,6 +395,7 @@ class ExternalChainIsBoundedStateMachine(
         is ExternalChainIsBoundedState.Zeroing -> 4
         is ExternalChainIsBoundedState.ZeroingExpr -> 5
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ExternalChainIsBoundedEvent? = when (name) {
@@ -408,6 +415,7 @@ class ExternalChainIsBoundedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ExternalChainIsBoundedEvent): String? = when (event) {
         is ExternalChainIsBoundedEvent.Beat -> "beat"
@@ -424,6 +432,7 @@ class ExternalChainIsBoundedStateMachine(
         is ExternalChainIsBoundedEvent.Zero -> "zero"
         is ExternalChainIsBoundedEvent.ZeroExpr -> "zero_expr"
     }
+
 
 
 
@@ -453,6 +462,27 @@ class ExternalChainIsBoundedStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
             val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -502,22 +532,6 @@ class ExternalChainIsBoundedStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='pulses'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -707,60 +721,99 @@ class ExternalChainIsBoundedStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ExternalChainIsBoundedState,
-        event: ExternalChainIsBoundedEvent?
-    ): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when (state) {
-        is ExternalChainIsBoundedState.Bounded -> when {
-            event is ExternalChainIsBoundedEvent.Lap && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 4)", "laps < 4")) -> transitionBoundedAt0
-            event is ExternalChainIsBoundedEvent.Lap -> transitionBoundedAt1
-            event is ExternalChainIsBoundedEvent.Poke -> transitionBoundedAt2
-            else -> null
-        }
-        is ExternalChainIsBoundedState.Idle -> when {
-            event is ExternalChainIsBoundedEvent.Poke -> transitionIdleAt0
-            event is ExternalChainIsBoundedEvent.Spin -> transitionIdleAt1
-            event is ExternalChainIsBoundedEvent.Bounded -> transitionIdleAt2
-            event is ExternalChainIsBoundedEvent.Resume -> transitionIdleAt3
-            event is ExternalChainIsBoundedEvent.Zero -> transitionIdleAt4
-            event is ExternalChainIsBoundedEvent.ZeroExpr -> transitionIdleAt5
-            event is ExternalChainIsBoundedEvent.Timed -> transitionIdleAt6
-            else -> null
-        }
-        is ExternalChainIsBoundedState.Resuming -> when {
-            event is ExternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(beats < 29)", "beats < 29")) -> transitionResumingAt0
-            event is ExternalChainIsBoundedEvent.Beat -> transitionResumingAt1
-            event is ExternalChainIsBoundedEvent.Poke -> transitionResumingAt2
-            else -> null
-        }
-        is ExternalChainIsBoundedState.Spin -> when {
-            event is ExternalChainIsBoundedEvent.Link -> transitionSpinAt0
-            event is ExternalChainIsBoundedEvent.Poke -> transitionSpinAt1
-            else -> null
-        }
-        is ExternalChainIsBoundedState.Timing -> when {
-            event is ExternalChainIsBoundedEvent.Pulse -> transitionTimingAt0
-            event is ExternalChainIsBoundedEvent.Poke -> transitionTimingAt1
-            else -> null
-        }
-        is ExternalChainIsBoundedState.Zeroing -> when {
-            event is ExternalChainIsBoundedEvent.Blink -> transitionZeroingAt0
-            event is ExternalChainIsBoundedEvent.Poke -> transitionZeroingAt1
-            else -> null
-        }
-        is ExternalChainIsBoundedState.ZeroingExpr -> when {
-            event is ExternalChainIsBoundedEvent.Blink -> transitionZeroingExprAt0
-            event is ExternalChainIsBoundedEvent.Poke -> transitionZeroingExprAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when (state) {
+        is ExternalChainIsBoundedState.Bounded -> firstEnabledTransitionOfBounded(state, event)
+        is ExternalChainIsBoundedState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is ExternalChainIsBoundedState.Resuming -> firstEnabledTransitionOfResuming(state, event)
+        is ExternalChainIsBoundedState.Spin -> firstEnabledTransitionOfSpin(state, event)
+        is ExternalChainIsBoundedState.Timing -> firstEnabledTransitionOfTiming(state, event)
+        is ExternalChainIsBoundedState.Zeroing -> firstEnabledTransitionOfZeroing(state, event)
+        is ExternalChainIsBoundedState.ZeroingExpr -> firstEnabledTransitionOfZeroingExpr(state, event)
     }
+
+
+    // bounded's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBounded(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
+        event is ExternalChainIsBoundedEvent.Lap && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 4)", "laps < 4")) -> TransitionsPart0.transitionBoundedAt0
+        event is ExternalChainIsBoundedEvent.Lap -> TransitionsPart0.transitionBoundedAt1
+        event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionBoundedAt2
+        else -> null
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
+        event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionIdleAt0
+        event is ExternalChainIsBoundedEvent.Spin -> TransitionsPart0.transitionIdleAt1
+        event is ExternalChainIsBoundedEvent.Bounded -> TransitionsPart0.transitionIdleAt2
+        event is ExternalChainIsBoundedEvent.Resume -> TransitionsPart0.transitionIdleAt3
+        event is ExternalChainIsBoundedEvent.Zero -> TransitionsPart0.transitionIdleAt4
+        event is ExternalChainIsBoundedEvent.ZeroExpr -> TransitionsPart0.transitionIdleAt5
+        event is ExternalChainIsBoundedEvent.Timed -> TransitionsPart0.transitionIdleAt6
+        else -> null
+    }
+
+
+    // resuming's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfResuming(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
+        event is ExternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(beats < 29)", "beats < 29")) -> TransitionsPart0.transitionResumingAt0
+        event is ExternalChainIsBoundedEvent.Beat -> TransitionsPart0.transitionResumingAt1
+        event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionResumingAt2
+        else -> null
+    }
+
+
+    // spin's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSpin(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
+        event is ExternalChainIsBoundedEvent.Link -> TransitionsPart0.transitionSpinAt0
+        event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionSpinAt1
+        else -> null
+    }
+
+
+    // timing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfTiming(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
+        event is ExternalChainIsBoundedEvent.Pulse -> TransitionsPart0.transitionTimingAt0
+        event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionTimingAt1
+        else -> null
+    }
+
+
+    // zeroing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfZeroing(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
+        event is ExternalChainIsBoundedEvent.Blink -> TransitionsPart0.transitionZeroingAt0
+        event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionZeroingAt1
+        else -> null
+    }
+
+
+    // zeroing_expr's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfZeroingExpr(state: ExternalChainIsBoundedState, event: ExternalChainIsBoundedEvent?): EnabledTransition<ExternalChainIsBoundedState, HistoryId>? = when {
+        event is ExternalChainIsBoundedEvent.Blink -> TransitionsPart0.transitionZeroingExprAt0
+        event is ExternalChainIsBoundedEvent.Poke -> TransitionsPart0.transitionZeroingExprAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
     override fun onEntry(state: ExternalChainIsBoundedState, isDefaultEntry: Boolean) {
         when (state) {
-            is ExternalChainIsBoundedState.Bounded -> {
+            is ExternalChainIsBoundedState.Bounded -> onEntryOfBounded()
+            is ExternalChainIsBoundedState.Idle -> onEntryOfIdle()
+            is ExternalChainIsBoundedState.Resuming -> onEntryOfResuming()
+            is ExternalChainIsBoundedState.Spin -> onEntryOfSpin()
+            is ExternalChainIsBoundedState.Timing -> onEntryOfTiming()
+            is ExternalChainIsBoundedState.Zeroing -> onEntryOfZeroing()
+            is ExternalChainIsBoundedState.ZeroingExpr -> onEntryOfZeroingExpr()
+        }
+    }
+
+
+    private fun onEntryOfBounded() {
                 // SCE-MAP: external_chain_is_bounded.scxml:141 :: bounded :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -777,11 +830,13 @@ class ExternalChainIsBoundedStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is ExternalChainIsBoundedState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: external_chain_is_bounded.scxml:109 :: idle :: _state_body
-            }
-            is ExternalChainIsBoundedState.Resuming -> {
+    }
+
+    private fun onEntryOfResuming() {
                 // SCE-MAP: external_chain_is_bounded.scxml:161 :: resuming :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -798,8 +853,9 @@ class ExternalChainIsBoundedStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is ExternalChainIsBoundedState.Spin -> {
+    }
+
+    private fun onEntryOfSpin() {
                 // SCE-MAP: external_chain_is_bounded.scxml:126 :: spin :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -816,8 +872,9 @@ class ExternalChainIsBoundedStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is ExternalChainIsBoundedState.Timing -> {
+    }
+
+    private fun onEntryOfTiming() {
                 // SCE-MAP: external_chain_is_bounded.scxml:214 :: timing :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -918,8 +975,9 @@ class ExternalChainIsBoundedStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is ExternalChainIsBoundedState.Zeroing -> {
+    }
+
+    private fun onEntryOfZeroing() {
                 // SCE-MAP: external_chain_is_bounded.scxml:181 :: zeroing :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -936,8 +994,9 @@ class ExternalChainIsBoundedStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is ExternalChainIsBoundedState.ZeroingExpr -> {
+    }
+
+    private fun onEntryOfZeroingExpr() {
                 // SCE-MAP: external_chain_is_bounded.scxml:197 :: zeroing_expr :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -970,45 +1029,84 @@ class ExternalChainIsBoundedStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
     override fun onExit(state: ExternalChainIsBoundedState) {
         when (state) {
-            is ExternalChainIsBoundedState.Bounded -> {
-                // SCE-MAP: external_chain_is_bounded.scxml:141 :: bounded :: _state_body
-            }
-            is ExternalChainIsBoundedState.Idle -> {
-                // SCE-MAP: external_chain_is_bounded.scxml:109 :: idle :: _state_body
-            }
-            is ExternalChainIsBoundedState.Resuming -> {
-                // SCE-MAP: external_chain_is_bounded.scxml:161 :: resuming :: _state_body
-            }
-            is ExternalChainIsBoundedState.Spin -> {
-                // SCE-MAP: external_chain_is_bounded.scxml:126 :: spin :: _state_body
-            }
-            is ExternalChainIsBoundedState.Timing -> {
-                // SCE-MAP: external_chain_is_bounded.scxml:214 :: timing :: _state_body
-            }
-            is ExternalChainIsBoundedState.Zeroing -> {
-                // SCE-MAP: external_chain_is_bounded.scxml:181 :: zeroing :: _state_body
-            }
-            is ExternalChainIsBoundedState.ZeroingExpr -> {
-                // SCE-MAP: external_chain_is_bounded.scxml:197 :: zeroing_expr :: _state_body
-            }
+            is ExternalChainIsBoundedState.Bounded -> onExitOfBounded()
+            is ExternalChainIsBoundedState.Idle -> onExitOfIdle()
+            is ExternalChainIsBoundedState.Resuming -> onExitOfResuming()
+            is ExternalChainIsBoundedState.Spin -> onExitOfSpin()
+            is ExternalChainIsBoundedState.Timing -> onExitOfTiming()
+            is ExternalChainIsBoundedState.Zeroing -> onExitOfZeroing()
+            is ExternalChainIsBoundedState.ZeroingExpr -> onExitOfZeroingExpr()
         }
     }
+
+
+    private fun onExitOfBounded() {
+                // SCE-MAP: external_chain_is_bounded.scxml:141 :: bounded :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: external_chain_is_bounded.scxml:109 :: idle :: _state_body
+    }
+
+    private fun onExitOfResuming() {
+                // SCE-MAP: external_chain_is_bounded.scxml:161 :: resuming :: _state_body
+    }
+
+    private fun onExitOfSpin() {
+                // SCE-MAP: external_chain_is_bounded.scxml:126 :: spin :: _state_body
+    }
+
+    private fun onExitOfTiming() {
+                // SCE-MAP: external_chain_is_bounded.scxml:214 :: timing :: _state_body
+    }
+
+    private fun onExitOfZeroing() {
+                // SCE-MAP: external_chain_is_bounded.scxml:181 :: zeroing :: _state_body
+    }
+
+    private fun onExitOfZeroingExpr() {
+                // SCE-MAP: external_chain_is_bounded.scxml:197 :: zeroing_expr :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
     override fun executeTransitionContent(source: ExternalChainIsBoundedState, transitionIndex: Int) {
         when (source) {
-        is ExternalChainIsBoundedState.Bounded -> when (transitionIndex) {
-            0 -> {
+            is ExternalChainIsBoundedState.Bounded -> transitionContentOfBounded(transitionIndex)
+            is ExternalChainIsBoundedState.Idle -> transitionContentOfIdle(transitionIndex)
+            is ExternalChainIsBoundedState.Resuming -> transitionContentOfResuming(transitionIndex)
+            is ExternalChainIsBoundedState.Spin -> transitionContentOfSpin(transitionIndex)
+            is ExternalChainIsBoundedState.Timing -> transitionContentOfTiming(transitionIndex)
+            is ExternalChainIsBoundedState.Zeroing -> transitionContentOfZeroing(transitionIndex)
+            is ExternalChainIsBoundedState.ZeroingExpr -> transitionContentOfZeroingExpr(transitionIndex)
+        }
+    }
+
+
+    // The content of `bounded`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfBounded(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfBoundedAt0()
+            1 -> transitionContentOfBoundedAt1()
+            2 -> transitionContentOfBoundedAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfBoundedAt0() {
                 // SCE-MAP: external_chain_is_bounded.scxml:143 :: bounded :: _transition_0
 
 
@@ -1027,38 +1125,64 @@ class ExternalChainIsBoundedStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfBoundedAt1() {
                 // SCE-MAP: external_chain_is_bounded.scxml:147 :: bounded :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfBoundedAt2() {
                 // SCE-MAP: external_chain_is_bounded.scxml:150 :: bounded :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
             else -> {}
         }
-        is ExternalChainIsBoundedState.Idle -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: external_chain_is_bounded.scxml:110 :: idle :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `resuming`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfResuming(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfResumingAt0()
+            1 -> transitionContentOfResumingAt1()
+            2 -> transitionContentOfResumingAt2()
             else -> {}
         }
-        is ExternalChainIsBoundedState.Resuming -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfResumingAt0() {
                 // SCE-MAP: external_chain_is_bounded.scxml:163 :: resuming :: _transition_0
 
 
@@ -1077,27 +1201,41 @@ class ExternalChainIsBoundedStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfResumingAt1() {
                 // SCE-MAP: external_chain_is_bounded.scxml:167 :: resuming :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("beats", "beats"), com.sce.runtime.ScriptSource.lua("_scxml_add(beats, 1)", "beats + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfResumingAt2() {
                 // SCE-MAP: external_chain_is_bounded.scxml:170 :: resuming :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `spin`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSpin(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSpinAt0()
+            1 -> transitionContentOfSpinAt1()
             else -> {}
         }
-        is ExternalChainIsBoundedState.Spin -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfSpinAt0() {
                 // SCE-MAP: external_chain_is_bounded.scxml:128 :: spin :: _transition_0
 
 
@@ -1116,38 +1254,64 @@ class ExternalChainIsBoundedStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfSpinAt1() {
                 // SCE-MAP: external_chain_is_bounded.scxml:132 :: spin :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `timing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfTiming(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfTimingAt0()
+            1 -> transitionContentOfTimingAt1()
             else -> {}
         }
-        is ExternalChainIsBoundedState.Timing -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfTimingAt0() {
                 // SCE-MAP: external_chain_is_bounded.scxml:225 :: timing :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pulses", "pulses"), com.sce.runtime.ScriptSource.lua("_scxml_add(pulses, 1)", "pulses + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfTimingAt1() {
                 // SCE-MAP: external_chain_is_bounded.scxml:228 :: timing :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `zeroing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfZeroing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfZeroingAt0()
+            1 -> transitionContentOfZeroingAt1()
             else -> {}
         }
-        is ExternalChainIsBoundedState.Zeroing -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfZeroingAt0() {
                 // SCE-MAP: external_chain_is_bounded.scxml:183 :: zeroing :: _transition_0
 
 
@@ -1166,19 +1330,32 @@ class ExternalChainIsBoundedStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfZeroingAt1() {
                 // SCE-MAP: external_chain_is_bounded.scxml:187 :: zeroing :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `zeroing_expr`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfZeroingExpr(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfZeroingExprAt0()
+            1 -> transitionContentOfZeroingExprAt1()
             else -> {}
         }
-        is ExternalChainIsBoundedState.ZeroingExpr -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfZeroingExprAt0() {
                 // SCE-MAP: external_chain_is_bounded.scxml:199 :: zeroing_expr :: _transition_0
 
 
@@ -1213,17 +1390,14 @@ class ExternalChainIsBoundedStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfZeroingExprAt1() {
                 // SCE-MAP: external_chain_is_bounded.scxml:203 :: zeroing_expr :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

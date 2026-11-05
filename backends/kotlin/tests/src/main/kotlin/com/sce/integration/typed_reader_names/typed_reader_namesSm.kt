@@ -124,6 +124,7 @@ class TypedReaderNamesStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<TypedReaderNamesState, HistoryId>>
@@ -132,6 +133,9 @@ class TypedReaderNamesStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<TypedReaderNamesState, HistoryId>> =
             listOf(StateTarget(TypedReaderNamesState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<TypedReaderNamesState, HistoryId>(
@@ -152,6 +156,7 @@ class TypedReaderNamesStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): TypedReaderNamesState? = when (stateId) {
         "done" -> TypedReaderNamesState.Done
@@ -159,17 +164,20 @@ class TypedReaderNamesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: TypedReaderNamesState): String = when (state) {
         is TypedReaderNamesState.Done -> "done"
         is TypedReaderNamesState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: TypedReaderNamesState): Int = when (state) {
         is TypedReaderNamesState.Done -> 1
         is TypedReaderNamesState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): TypedReaderNamesEvent? = when (name) {
@@ -179,12 +187,14 @@ class TypedReaderNamesStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: TypedReaderNamesEvent): String? = when (event) {
         is TypedReaderNamesEvent.Bump -> "bump"
         is TypedReaderNamesEvent.Error.Execution -> "error.execution"
         is TypedReaderNamesEvent.Finish -> "finish"
     }
+
 
 
 
@@ -214,6 +224,27 @@ class TypedReaderNamesStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'box' with expr
         try {
             val initResult_box = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
@@ -291,22 +322,6 @@ class TypedReaderNamesStateMachine(
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='a-b'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -496,54 +511,87 @@ class TypedReaderNamesStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: TypedReaderNamesState,
-        event: TypedReaderNamesEvent?
-    ): EnabledTransition<TypedReaderNamesState, HistoryId>? = when (state) {
-        is TypedReaderNamesState.Idle -> when {
-            event is TypedReaderNamesEvent.Bump -> transitionIdleAt0
-            event is TypedReaderNamesEvent.Finish -> transitionIdleAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: TypedReaderNamesState, event: TypedReaderNamesEvent?): EnabledTransition<TypedReaderNamesState, HistoryId>? = when (state) {
+        is TypedReaderNamesState.Idle -> firstEnabledTransitionOfIdle(state, event)
         else -> null
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: TypedReaderNamesState, event: TypedReaderNamesEvent?): EnabledTransition<TypedReaderNamesState, HistoryId>? = when {
+        event is TypedReaderNamesEvent.Bump -> TransitionsPart0.transitionIdleAt0
+        event is TypedReaderNamesEvent.Finish -> TransitionsPart0.transitionIdleAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: typed_reader_names.scxml:31 :: _machine
     override fun onEntry(state: TypedReaderNamesState, isDefaultEntry: Boolean) {
         when (state) {
-            is TypedReaderNamesState.Done -> {
+            is TypedReaderNamesState.Done -> onEntryOfDone()
+            is TypedReaderNamesState.Idle -> onEntryOfIdle()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: typed_reader_names.scxml:57 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is TypedReaderNamesState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: typed_reader_names.scxml:48 :: idle :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: typed_reader_names.scxml:31 :: _machine
     override fun onExit(state: TypedReaderNamesState) {
         when (state) {
-            is TypedReaderNamesState.Done -> {
-                // SCE-MAP: typed_reader_names.scxml:57 :: done :: _state_body
-            }
-            is TypedReaderNamesState.Idle -> {
-                // SCE-MAP: typed_reader_names.scxml:48 :: idle :: _state_body
-            }
+            is TypedReaderNamesState.Done -> onExitOfDone()
+            is TypedReaderNamesState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: typed_reader_names.scxml:57 :: done :: _state_body
+    }
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: typed_reader_names.scxml:48 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: typed_reader_names.scxml:31 :: _machine
     override fun executeTransitionContent(source: TypedReaderNamesState, transitionIndex: Int) {
         when (source) {
-        is TypedReaderNamesState.Idle -> when (transitionIndex) {
-            0 -> {
+            is TypedReaderNamesState.Idle -> transitionContentOfIdle(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: typed_reader_names.scxml:49 :: idle :: _transition_0
 
 
@@ -565,10 +613,5 @@ class TypedReaderNamesStateMachine(
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("a_b", "a_b"), com.sce.runtime.ScriptSource.lua("_scxml_add(a_b, 10)", "a_b + 10"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

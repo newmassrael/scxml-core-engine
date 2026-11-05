@@ -54,9 +54,11 @@ class LateTickHonoursCancelStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: LateTickHonoursCancelState): Boolean = when (state) {
-        is LateTickHonoursCancelState.CancelLost, is LateTickHonoursCancelState.Pass -> true
+        is LateTickHonoursCancelState.CancelLost -> true
+        is LateTickHonoursCancelState.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -66,6 +68,9 @@ class LateTickHonoursCancelStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<LateTickHonoursCancelState, HistoryId>> =
             listOf(StateTarget(LateTickHonoursCancelState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: active's transition 0, as the microstep reads it.
         val transitionActiveAt0 = EnabledTransition<LateTickHonoursCancelState, HistoryId>(
@@ -104,6 +109,7 @@ class LateTickHonoursCancelStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): LateTickHonoursCancelState? = when (stateId) {
         "active" -> LateTickHonoursCancelState.Active
@@ -113,6 +119,7 @@ class LateTickHonoursCancelStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: LateTickHonoursCancelState): String = when (state) {
         is LateTickHonoursCancelState.Active -> "active"
@@ -120,6 +127,7 @@ class LateTickHonoursCancelStateMachine(
         is LateTickHonoursCancelState.Pass -> "pass"
         is LateTickHonoursCancelState.Waiting -> "waiting"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: LateTickHonoursCancelState): Int = when (state) {
@@ -129,6 +137,7 @@ class LateTickHonoursCancelStateMachine(
         is LateTickHonoursCancelState.Waiting -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): LateTickHonoursCancelEvent? = when (name) {
         "error.execution" -> LateTickHonoursCancelEvent.Error.Execution
@@ -137,6 +146,7 @@ class LateTickHonoursCancelStateMachine(
         "settle" -> LateTickHonoursCancelEvent.Settle
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: LateTickHonoursCancelEvent): String? = when (event) {
@@ -150,34 +160,51 @@ class LateTickHonoursCancelStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: LateTickHonoursCancelState,
-        event: LateTickHonoursCancelEvent?
-    ): EnabledTransition<LateTickHonoursCancelState, HistoryId>? = when (state) {
-        is LateTickHonoursCancelState.Active -> when {
-            event is LateTickHonoursCancelEvent.Settle -> transitionActiveAt0
-            event is LateTickHonoursCancelEvent.Finish -> transitionActiveAt1
-            else -> null
-        }
-        is LateTickHonoursCancelState.Waiting -> when {
-            event is LateTickHonoursCancelEvent.Poke -> transitionWaitingAt0
-            event is LateTickHonoursCancelEvent.Settle -> transitionWaitingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: LateTickHonoursCancelState, event: LateTickHonoursCancelEvent?): EnabledTransition<LateTickHonoursCancelState, HistoryId>? = when (state) {
+        is LateTickHonoursCancelState.Active -> firstEnabledTransitionOfActive(state, event)
+        is LateTickHonoursCancelState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // active's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfActive(state: LateTickHonoursCancelState, event: LateTickHonoursCancelEvent?): EnabledTransition<LateTickHonoursCancelState, HistoryId>? = when {
+        event is LateTickHonoursCancelEvent.Settle -> TransitionsPart0.transitionActiveAt0
+        event is LateTickHonoursCancelEvent.Finish -> TransitionsPart0.transitionActiveAt1
+        else -> null
+    }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: LateTickHonoursCancelState, event: LateTickHonoursCancelEvent?): EnabledTransition<LateTickHonoursCancelState, HistoryId>? = when {
+        event is LateTickHonoursCancelEvent.Poke -> TransitionsPart0.transitionWaitingAt0
+        event is LateTickHonoursCancelEvent.Settle -> TransitionsPart0.transitionWaitingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: late_tick_honours_cancel.scxml:39 :: _machine
     override fun onEntry(state: LateTickHonoursCancelState, isDefaultEntry: Boolean) {
         when (state) {
-            is LateTickHonoursCancelState.Active -> {
+            is LateTickHonoursCancelState.Active -> onEntryOfActive()
+            is LateTickHonoursCancelState.CancelLost -> onEntryOfCancelLost()
+            is LateTickHonoursCancelState.Pass -> onEntryOfPass()
+            is LateTickHonoursCancelState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfActive() {
                 // SCE-MAP: late_tick_honours_cancel.scxml:50 :: active :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -197,18 +224,21 @@ class LateTickHonoursCancelStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-            is LateTickHonoursCancelState.CancelLost -> {
+    }
+
+    private fun onEntryOfCancelLost() {
                 // SCE-MAP: late_tick_honours_cancel.scxml:59 :: cancelLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is LateTickHonoursCancelState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: late_tick_honours_cancel.scxml:58 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is LateTickHonoursCancelState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: late_tick_honours_cancel.scxml:42 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -237,35 +267,43 @@ class LateTickHonoursCancelStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: late_tick_honours_cancel.scxml:39 :: _machine
     override fun onExit(state: LateTickHonoursCancelState) {
         when (state) {
-            is LateTickHonoursCancelState.Active -> {
-                // SCE-MAP: late_tick_honours_cancel.scxml:50 :: active :: _state_body
-            }
-            is LateTickHonoursCancelState.CancelLost -> {
-                // SCE-MAP: late_tick_honours_cancel.scxml:59 :: cancelLost :: _state_body
-            }
-            is LateTickHonoursCancelState.Pass -> {
-                // SCE-MAP: late_tick_honours_cancel.scxml:58 :: pass :: _state_body
-            }
-            is LateTickHonoursCancelState.Waiting -> {
-                // SCE-MAP: late_tick_honours_cancel.scxml:42 :: waiting :: _state_body
-            }
+            is LateTickHonoursCancelState.Active -> onExitOfActive()
+            is LateTickHonoursCancelState.CancelLost -> onExitOfCancelLost()
+            is LateTickHonoursCancelState.Pass -> onExitOfPass()
+            is LateTickHonoursCancelState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfActive() {
+                // SCE-MAP: late_tick_honours_cancel.scxml:50 :: active :: _state_body
+    }
+
+    private fun onExitOfCancelLost() {
+                // SCE-MAP: late_tick_honours_cancel.scxml:59 :: cancelLost :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: late_tick_honours_cancel.scxml:58 :: pass :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: late_tick_honours_cancel.scxml:42 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: late_tick_honours_cancel.scxml:39 :: _machine
     override fun executeTransitionContent(source: LateTickHonoursCancelState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

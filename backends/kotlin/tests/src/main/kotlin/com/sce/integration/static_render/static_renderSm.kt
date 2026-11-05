@@ -126,6 +126,10 @@ class StaticRenderStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.note?.let { vNote = it }
         params.who?.let { vWho = it }
         params.count?.let { vCount = it }
@@ -223,18 +227,20 @@ class StaticRenderStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "note" to SavedValues.of(vNote),
-            "who" to SavedValues.of(vWho),
-            "count" to SavedValues.of(vCount),
-            "view" to vView.toSaved(),
-            "said" to SavedValues.of(vSaid),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "note" to SavedValues.of(vNote)
+        variables += "who" to SavedValues.of(vWho)
+        variables += "count" to SavedValues.of(vCount)
+        variables += "view" to vView.toSaved()
+        variables += "said" to SavedValues.of(vSaid)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -259,19 +265,29 @@ class StaticRenderStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.string(savedGrown.variable("note"), "note", 95)
         val saved2 = SavedValues.string(savedGrown.variable("who"), "who", 8)
         val saved3 = SavedValues.int16(savedGrown.variable("count"), "count")
         val saved4 = StaticRenderViewModeEnum.fromSaved(savedGrown.variable("view"), "view")
         val saved5 = SavedValues.string(savedGrown.variable("said"), "said", 16)
         val saved6 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vNote = saved1
-        vWho = saved2
-        vCount = saved3
-        vView = saved4
-        vSaid = saved5
-        vRefusals = saved6
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vNote = saved1
+            vWho = saved2
+            vCount = saved3
+            vView = saved4
+            vSaid = saved5
+            vRefusals = saved6
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -284,6 +300,10 @@ class StaticRenderStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.string(savedGrown.variable("note"), "note", 95)
         SavedValues.string(savedGrown.variable("who"), "who", 8)
         SavedValues.int16(savedGrown.variable("count"), "count")
@@ -319,6 +339,9 @@ class StaticRenderStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticRenderState, HistoryId>> =
             listOf(StateTarget(StaticRenderState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticRenderState, HistoryId>(
@@ -384,21 +407,25 @@ class StaticRenderStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticRenderState? = when (stateId) {
         "idle" -> StaticRenderState.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticRenderState): String = when (state) {
         is StaticRenderState.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticRenderState): Int = when (state) {
         is StaticRenderState.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticRenderEvent? = when (name) {
@@ -411,6 +438,7 @@ class StaticRenderStateMachine(
         "wide" -> StaticRenderEvent.Wide
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticRenderEvent): String? = when (event) {
@@ -427,62 +455,98 @@ class StaticRenderStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticRenderState,
-        event: StaticRenderEvent?
-    ): EnabledTransition<StaticRenderState, HistoryId>? = when (state) {
-        is StaticRenderState.Idle -> when {
-            event is StaticRenderEvent.Render -> transitionIdleAt0
-            event is StaticRenderEvent.Longest -> transitionIdleAt1
-            event is StaticRenderEvent.Markers -> transitionIdleAt2
-            event is StaticRenderEvent.Rebuilt -> transitionIdleAt3
-            event is StaticRenderEvent.Wide -> transitionIdleAt4
-            event is StaticRenderEvent.Overflow -> transitionIdleAt5
-            event is StaticRenderEvent.Error.Execution -> transitionIdleAt6
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticRenderState, event: StaticRenderEvent?): EnabledTransition<StaticRenderState, HistoryId>? = when (state) {
+        is StaticRenderState.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticRenderState, event: StaticRenderEvent?): EnabledTransition<StaticRenderState, HistoryId>? = when {
+        event is StaticRenderEvent.Render -> TransitionsPart0.transitionIdleAt0
+        event is StaticRenderEvent.Longest -> TransitionsPart0.transitionIdleAt1
+        event is StaticRenderEvent.Markers -> TransitionsPart0.transitionIdleAt2
+        event is StaticRenderEvent.Rebuilt -> TransitionsPart0.transitionIdleAt3
+        event is StaticRenderEvent.Wide -> TransitionsPart0.transitionIdleAt4
+        event is StaticRenderEvent.Overflow -> TransitionsPart0.transitionIdleAt5
+        event is StaticRenderEvent.Error.Execution -> TransitionsPart0.transitionIdleAt6
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_render.scxml:14 :: _machine
     override fun onEntry(state: StaticRenderState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticRenderState.Idle -> {
-                // SCE-MAP: static_render.scxml:26 :: idle :: _state_body
-            }
+            is StaticRenderState.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_render.scxml:26 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_render.scxml:14 :: _machine
     override fun onExit(state: StaticRenderState) {
         when (state) {
-            is StaticRenderState.Idle -> {
-                // SCE-MAP: static_render.scxml:26 :: idle :: _state_body
-            }
+            is StaticRenderState.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_render.scxml:26 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_render.scxml:14 :: _machine
     override fun executeTransitionContent(source: StaticRenderState, transitionIndex: Int) {
         when (source) {
-        is StaticRenderState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticRenderState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_render.scxml:27 :: idle :: _transition_0
 
             if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(TextNotice.render(vWho, vCount, (vView).declaredName, vSaid), 95); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<sce:render template='Notice'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_render.scxml:36 :: idle :: _transition_1
 
             if (try { vWho = com.sce.forge.runtime.SceChecked.bounded("abcdefgh", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='who'>: an integer operation overflowed or failed"); true }) {
@@ -496,29 +560,33 @@ class StaticRenderStateMachine(
             if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("0123456789abcdef", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_render.scxml:43 :: idle :: _transition_2
 
             if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("a[[TEXTbTEXT]]c", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_render.scxml:47 :: idle :: _transition_3
 
             if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("[[TE[[TEXTXT", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            4 -> {
+    }
+
+    private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_render.scxml:51 :: idle :: _transition_4
 
             if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("é[[TEXTü", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            5 -> {
+    }
+
+    private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_render.scxml:55 :: idle :: _transition_5
 
             if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(TextNotice.render(vWho, com.sce.forge.runtime.SceChecked.sub(vCount, 1), (vView).declaredName, vSaid), 95); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<sce:render template='Notice'>: an integer operation overflowed or failed"); true }) {
@@ -528,16 +596,13 @@ class StaticRenderStateMachine(
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            6 -> {
+    }
+
+    private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_render.scxml:64 :: idle :: _transition_6
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

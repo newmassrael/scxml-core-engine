@@ -60,9 +60,11 @@ class InvokeExpressionFailureIsReportedStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: InvokeExpressionFailureIsReportedState): Boolean = when (state) {
-        is InvokeExpressionFailureIsReportedState.Fail, is InvokeExpressionFailureIsReportedState.Pass -> true
+        is InvokeExpressionFailureIsReportedState.Fail -> true
+        is InvokeExpressionFailureIsReportedState.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -72,6 +74,9 @@ class InvokeExpressionFailureIsReportedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<InvokeExpressionFailureIsReportedState, HistoryId>> =
             listOf(StateTarget(InvokeExpressionFailureIsReportedState.Probe))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: probe's transition 0, as the microstep reads it.
         val transitionProbeAt0 = EnabledTransition<InvokeExpressionFailureIsReportedState, HistoryId>(
@@ -92,6 +97,7 @@ class InvokeExpressionFailureIsReportedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeExpressionFailureIsReportedState? = when (stateId) {
         "fail" -> InvokeExpressionFailureIsReportedState.Fail
@@ -100,12 +106,14 @@ class InvokeExpressionFailureIsReportedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: InvokeExpressionFailureIsReportedState): String = when (state) {
         is InvokeExpressionFailureIsReportedState.Fail -> "fail"
         is InvokeExpressionFailureIsReportedState.Pass -> "pass"
         is InvokeExpressionFailureIsReportedState.Probe -> "probe"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeExpressionFailureIsReportedState): Int = when (state) {
@@ -114,6 +122,7 @@ class InvokeExpressionFailureIsReportedStateMachine(
         is InvokeExpressionFailureIsReportedState.Probe -> 0
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeExpressionFailureIsReportedEvent? = when (name) {
         "done.invoke" -> InvokeExpressionFailureIsReportedEvent.Done.Invoke
@@ -121,11 +130,13 @@ class InvokeExpressionFailureIsReportedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeExpressionFailureIsReportedEvent): String? = when (event) {
         is InvokeExpressionFailureIsReportedEvent.Done.Invoke -> "done.invoke"
         is InvokeExpressionFailureIsReportedEvent.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -155,13 +166,7 @@ class InvokeExpressionFailureIsReportedStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'target' with expr
-        try {
-            val initResult_target = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
-            engine.setVariable(sid, "target", initResult_target)
-        } catch (e: Exception) {
-            raisePlatformError(InvokeExpressionFailureIsReportedEvent.Error.Execution, "<data id='target'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -178,6 +183,17 @@ class InvokeExpressionFailureIsReportedStateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'target' with expr
+        try {
+            val initResult_target = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
+            engine.setVariable(sid, "target", initResult_target)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeExpressionFailureIsReportedEvent.Error.Execution, "<data id='target'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -367,41 +383,52 @@ class InvokeExpressionFailureIsReportedStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: InvokeExpressionFailureIsReportedState,
-        event: InvokeExpressionFailureIsReportedEvent?
-    ): EnabledTransition<InvokeExpressionFailureIsReportedState, HistoryId>? = when (state) {
-        is InvokeExpressionFailureIsReportedState.Probe -> when {
-            event is InvokeExpressionFailureIsReportedEvent.Error.Execution -> transitionProbeAt0
-            event is InvokeExpressionFailureIsReportedEvent.Done.Invoke -> transitionProbeAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: InvokeExpressionFailureIsReportedState, event: InvokeExpressionFailureIsReportedEvent?): EnabledTransition<InvokeExpressionFailureIsReportedState, HistoryId>? = when (state) {
+        is InvokeExpressionFailureIsReportedState.Probe -> firstEnabledTransitionOfProbe(state, event)
         else -> null
     }
+
+
+    // probe's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfProbe(state: InvokeExpressionFailureIsReportedState, event: InvokeExpressionFailureIsReportedEvent?): EnabledTransition<InvokeExpressionFailureIsReportedState, HistoryId>? = when {
+        event is InvokeExpressionFailureIsReportedEvent.Error.Execution -> TransitionsPart0.transitionProbeAt0
+        event is InvokeExpressionFailureIsReportedEvent.Done.Invoke -> TransitionsPart0.transitionProbeAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_expression_failure_is_reported.scxml:38 :: _machine
     override fun onEntry(state: InvokeExpressionFailureIsReportedState, isDefaultEntry: Boolean) {
         when (state) {
-            is InvokeExpressionFailureIsReportedState.Fail -> {
+            is InvokeExpressionFailureIsReportedState.Fail -> onEntryOfFail()
+            is InvokeExpressionFailureIsReportedState.Pass -> onEntryOfPass()
+            is InvokeExpressionFailureIsReportedState.Probe -> onEntryOfProbe()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: invoke_expression_failure_is_reported.scxml:50 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeExpressionFailureIsReportedState.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: invoke_expression_failure_is_reported.scxml:49 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is InvokeExpressionFailureIsReportedState.Probe -> {
+    }
+
+    private fun onEntryOfProbe() {
                 // SCE-MAP: invoke_expression_failure_is_reported.scxml:44 :: probe :: _state_body
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
-                deferStaticInvoke("_invoke_0", state)
-            }
-        }
+                deferStaticInvoke("_invoke_0", InvokeExpressionFailureIsReportedState.Probe)
     }
 
     // W3C SCXML 6.4: defer the start of the child session of the
@@ -414,9 +441,19 @@ class InvokeExpressionFailureIsReportedStateMachine(
     // spellings of it would be two places a change to one is forgotten in the
     // other. A state that exits before the macrostep ends cancels the entry
     // (`cancelPendingInvokesForState`) in either case.
+    //
+    // Each invoke's start is a method of its own (`startInvokeOf<State>At<n>`,
+    // `n` its place among its state's invokes), and this dispatches to it with
+    // one call an arm, for the reason `onEntry` does.
     private fun deferStaticInvoke(invokeId: String, state: InvokeExpressionFailureIsReportedState) {
         when (invokeId) {
-            "_invoke_0" -> {
+            "_invoke_0" -> startInvokeOfProbeAt0(state)
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
+        }
+    }
+
+
+    private fun startInvokeOfProbeAt0(state: InvokeExpressionFailureIsReportedState) {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -461,37 +498,42 @@ class InvokeExpressionFailureIsReportedStateMachine(
                         }
                     }
                 }
-            }
-            else -> error("the document has no child session '$invokeId' (codegen invariant)")
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: invoke_expression_failure_is_reported.scxml:38 :: _machine
     override fun onExit(state: InvokeExpressionFailureIsReportedState) {
         when (state) {
-            is InvokeExpressionFailureIsReportedState.Fail -> {
-                // SCE-MAP: invoke_expression_failure_is_reported.scxml:50 :: fail :: _state_body
-            }
-            is InvokeExpressionFailureIsReportedState.Pass -> {
-                // SCE-MAP: invoke_expression_failure_is_reported.scxml:49 :: pass :: _state_body
-            }
-            is InvokeExpressionFailureIsReportedState.Probe -> {
-                // SCE-MAP: invoke_expression_failure_is_reported.scxml:44 :: probe :: _state_body
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("_invoke_0")
-            }
+            is InvokeExpressionFailureIsReportedState.Fail -> onExitOfFail()
+            is InvokeExpressionFailureIsReportedState.Pass -> onExitOfPass()
+            is InvokeExpressionFailureIsReportedState.Probe -> onExitOfProbe()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: invoke_expression_failure_is_reported.scxml:50 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: invoke_expression_failure_is_reported.scxml:49 :: pass :: _state_body
+    }
+
+    private fun onExitOfProbe() {
+                // SCE-MAP: invoke_expression_failure_is_reported.scxml:44 :: probe :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(InvokeExpressionFailureIsReportedState.Probe)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("_invoke_0")
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_expression_failure_is_reported.scxml:38 :: _machine
     override fun executeTransitionContent(source: InvokeExpressionFailureIsReportedState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

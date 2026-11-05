@@ -77,6 +77,7 @@ class Test276sub1StateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<Test276sub1State, HistoryId>>
@@ -85,6 +86,9 @@ class Test276sub1StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test276sub1State, HistoryId>> =
             listOf(StateTarget(Test276sub1State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test276sub1State, HistoryId>(
@@ -105,6 +109,7 @@ class Test276sub1StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test276sub1State? = when (stateId) {
         "final" -> Test276sub1State.Final
@@ -112,17 +117,20 @@ class Test276sub1StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test276sub1State): String = when (state) {
         is Test276sub1State.Final -> "final"
         is Test276sub1State.S0 -> "s0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test276sub1State): Int = when (state) {
         is Test276sub1State.Final -> 1
         is Test276sub1State.S0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test276sub1Event? = when (name) {
@@ -133,6 +141,7 @@ class Test276sub1StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test276sub1Event): String? = when (event) {
         is Test276sub1Event.Error.Communication -> "error.communication"
@@ -140,6 +149,7 @@ class Test276sub1StateMachine(
         is Test276sub1Event.Event0 -> "event0"
         is Test276sub1Event.Event1 -> "event1"
     }
+
 
 
 
@@ -169,13 +179,7 @@ class Test276sub1StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
-        try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "Var1", initResult_Var1)
-        } catch (e: Exception) {
-            raisePlatformError(Test276sub1Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
-        }
+        declareVariablesPart0(engine, sid)
 
 
 
@@ -192,6 +196,17 @@ class Test276sub1StateMachine(
         }
 
         scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
+        try {
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "Var1", initResult_Var1)
+        } catch (e: Exception) {
+            raisePlatformError(Test276sub1Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
+        }
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -381,54 +396,88 @@ class Test276sub1StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test276sub1State,
-        event: Test276sub1Event?
-    ): EnabledTransition<Test276sub1State, HistoryId>? = when (state) {
-        is Test276sub1State.S0 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> transitionS0At0
-            event == null -> transitionS0At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test276sub1State, event: Test276sub1Event?): EnabledTransition<Test276sub1State, HistoryId>? = when (state) {
+        is Test276sub1State.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test276sub1State, event: Test276sub1Event?): EnabledTransition<Test276sub1State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionS0At0
+        event == null -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test276sub1.scxml:2 :: _machine
     override fun onEntry(state: Test276sub1State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test276sub1State.Final -> {
+            is Test276sub1State.Final -> onEntryOfFinal()
+            is Test276sub1State.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfFinal() {
                 // SCE-MAP: test276sub1.scxml:19 :: final :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test276sub1State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test276sub1.scxml:7 :: s0 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test276sub1.scxml:2 :: _machine
     override fun onExit(state: Test276sub1State) {
         when (state) {
-            is Test276sub1State.Final -> {
-                // SCE-MAP: test276sub1.scxml:19 :: final :: _state_body
-            }
-            is Test276sub1State.S0 -> {
-                // SCE-MAP: test276sub1.scxml:7 :: s0 :: _state_body
-            }
+            is Test276sub1State.Final -> onExitOfFinal()
+            is Test276sub1State.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfFinal() {
+                // SCE-MAP: test276sub1.scxml:19 :: final :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test276sub1.scxml:7 :: s0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test276sub1.scxml:2 :: _machine
     override fun executeTransitionContent(source: Test276sub1State, transitionIndex: Int) {
         when (source) {
-        is Test276sub1State.S0 -> when (transitionIndex) {
-            0 -> {
+            is Test276sub1State.S0 -> transitionContentOfS0(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
+            1 -> transitionContentOfS0At1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: test276sub1.scxml:9 :: s0 :: _transition_0
 
 
@@ -449,8 +498,9 @@ class Test276sub1StateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfS0At1() {
                 // SCE-MAP: test276sub1.scxml:13 :: s0 :: _transition_1
 
 
@@ -471,10 +521,5 @@ class Test276sub1StateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

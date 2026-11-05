@@ -119,6 +119,9 @@ class ErrorCascadeIsBoundedStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ErrorCascadeIsBoundedState, HistoryId>> =
             listOf(StateTarget(ErrorCascadeIsBoundedState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
@@ -220,6 +223,7 @@ class ErrorCascadeIsBoundedStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ErrorCascadeIsBoundedState? = when (stateId) {
         "idle" -> ErrorCascadeIsBoundedState.Idle
@@ -228,6 +232,7 @@ class ErrorCascadeIsBoundedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ErrorCascadeIsBoundedState): String = when (state) {
         is ErrorCascadeIsBoundedState.Idle -> "idle"
@@ -235,12 +240,14 @@ class ErrorCascadeIsBoundedStateMachine(
         is ErrorCascadeIsBoundedState.Settling -> "settling"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ErrorCascadeIsBoundedState): Int = when (state) {
         is ErrorCascadeIsBoundedState.Idle -> 0
         is ErrorCascadeIsBoundedState.Runaway -> 2
         is ErrorCascadeIsBoundedState.Settling -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ErrorCascadeIsBoundedEvent? = when (name) {
@@ -254,6 +261,7 @@ class ErrorCascadeIsBoundedStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ErrorCascadeIsBoundedEvent): String? = when (event) {
         is ErrorCascadeIsBoundedEvent.Boom -> "boom"
@@ -264,6 +272,7 @@ class ErrorCascadeIsBoundedStateMachine(
         is ErrorCascadeIsBoundedEvent.Spin -> "spin"
         is ErrorCascadeIsBoundedEvent.Tick -> "tick"
     }
+
 
 
 
@@ -293,6 +302,27 @@ class ErrorCascadeIsBoundedStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
             val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -321,22 +351,6 @@ class ErrorCascadeIsBoundedStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='ticks'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -526,41 +540,61 @@ class ErrorCascadeIsBoundedStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ErrorCascadeIsBoundedState,
-        event: ErrorCascadeIsBoundedEvent?
-    ): EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>? = when (state) {
-        is ErrorCascadeIsBoundedState.Idle -> when {
-            event is ErrorCascadeIsBoundedEvent.Poke -> transitionIdleAt0
-            event is ErrorCascadeIsBoundedEvent.Boom -> transitionIdleAt1
-            event is ErrorCascadeIsBoundedEvent.Settle -> transitionIdleAt2
-            event is ErrorCascadeIsBoundedEvent.Spin -> transitionIdleAt3
-            else -> null
-        }
-        is ErrorCascadeIsBoundedState.Runaway -> when {
-            event is ErrorCascadeIsBoundedEvent.Error.Execution -> transitionRunawayAt0
-            event is ErrorCascadeIsBoundedEvent.Tick -> transitionRunawayAt1
-            event is ErrorCascadeIsBoundedEvent.Poke -> transitionRunawayAt2
-            event is ErrorCascadeIsBoundedEvent.Reset -> transitionRunawayAt3
-            else -> null
-        }
-        is ErrorCascadeIsBoundedState.Settling -> when {
-            event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(repairs < 3)", "repairs < 3")) -> transitionSettlingAt0
-            event is ErrorCascadeIsBoundedEvent.Poke -> transitionSettlingAt1
-            event is ErrorCascadeIsBoundedEvent.Reset -> transitionSettlingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ErrorCascadeIsBoundedState, event: ErrorCascadeIsBoundedEvent?): EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>? = when (state) {
+        is ErrorCascadeIsBoundedState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is ErrorCascadeIsBoundedState.Runaway -> firstEnabledTransitionOfRunaway(state, event)
+        is ErrorCascadeIsBoundedState.Settling -> firstEnabledTransitionOfSettling(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: ErrorCascadeIsBoundedState, event: ErrorCascadeIsBoundedEvent?): EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>? = when {
+        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionsPart0.transitionIdleAt0
+        event is ErrorCascadeIsBoundedEvent.Boom -> TransitionsPart0.transitionIdleAt1
+        event is ErrorCascadeIsBoundedEvent.Settle -> TransitionsPart0.transitionIdleAt2
+        event is ErrorCascadeIsBoundedEvent.Spin -> TransitionsPart0.transitionIdleAt3
+        else -> null
+    }
+
+
+    // runaway's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRunaway(state: ErrorCascadeIsBoundedState, event: ErrorCascadeIsBoundedEvent?): EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>? = when {
+        event is ErrorCascadeIsBoundedEvent.Error.Execution -> TransitionsPart0.transitionRunawayAt0
+        event is ErrorCascadeIsBoundedEvent.Tick -> TransitionsPart0.transitionRunawayAt1
+        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionsPart0.transitionRunawayAt2
+        event is ErrorCascadeIsBoundedEvent.Reset -> TransitionsPart0.transitionRunawayAt3
+        else -> null
+    }
+
+
+    // settling's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSettling(state: ErrorCascadeIsBoundedState, event: ErrorCascadeIsBoundedEvent?): EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>? = when {
+        event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(repairs < 3)", "repairs < 3")) -> TransitionsPart0.transitionSettlingAt0
+        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionsPart0.transitionSettlingAt1
+        event is ErrorCascadeIsBoundedEvent.Reset -> TransitionsPart0.transitionSettlingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: error_cascade_is_bounded.scxml:45 :: _machine
     override fun onEntry(state: ErrorCascadeIsBoundedState, isDefaultEntry: Boolean) {
         when (state) {
-            is ErrorCascadeIsBoundedState.Idle -> {
+            is ErrorCascadeIsBoundedState.Idle -> onEntryOfIdle()
+            is ErrorCascadeIsBoundedState.Runaway -> onEntryOfRunaway()
+            is ErrorCascadeIsBoundedState.Settling -> onEntryOfSettling()
+        }
+    }
+
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:67 :: idle :: _state_body
-            }
-            is ErrorCascadeIsBoundedState.Runaway -> {
+    }
+
+    private fun onEntryOfRunaway() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -576,8 +610,9 @@ class ErrorCascadeIsBoundedStateMachine(
                 return@run
             }
                 }
-            }
-            is ErrorCascadeIsBoundedState.Settling -> {
+    }
+
+    private fun onEntryOfSettling() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -593,41 +628,68 @@ class ErrorCascadeIsBoundedStateMachine(
                 return@run
             }
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: error_cascade_is_bounded.scxml:45 :: _machine
     override fun onExit(state: ErrorCascadeIsBoundedState) {
         when (state) {
-            is ErrorCascadeIsBoundedState.Idle -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:67 :: idle :: _state_body
-            }
-            is ErrorCascadeIsBoundedState.Runaway -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
-            }
-            is ErrorCascadeIsBoundedState.Settling -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
-            }
+            is ErrorCascadeIsBoundedState.Idle -> onExitOfIdle()
+            is ErrorCascadeIsBoundedState.Runaway -> onExitOfRunaway()
+            is ErrorCascadeIsBoundedState.Settling -> onExitOfSettling()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: error_cascade_is_bounded.scxml:67 :: idle :: _state_body
+    }
+
+    private fun onExitOfRunaway() {
+                // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
+    }
+
+    private fun onExitOfSettling() {
+                // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: error_cascade_is_bounded.scxml:45 :: _machine
     override fun executeTransitionContent(source: ErrorCascadeIsBoundedState, transitionIndex: Int) {
         when (source) {
-        is ErrorCascadeIsBoundedState.Idle -> when (transitionIndex) {
-            0 -> {
+            is ErrorCascadeIsBoundedState.Idle -> transitionContentOfIdle(transitionIndex)
+            is ErrorCascadeIsBoundedState.Runaway -> transitionContentOfRunaway(transitionIndex)
+            is ErrorCascadeIsBoundedState.Settling -> transitionContentOfSettling(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:68 :: idle :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:74 :: idle :: _transition_1
 
 
@@ -640,11 +702,24 @@ class ErrorCascadeIsBoundedStateMachine(
             }) {
                 return
             }
-            }
+    }
+
+    // The content of `runaway`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRunaway(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunawayAt0()
+            1 -> transitionContentOfRunawayAt1()
+            2 -> transitionContentOfRunawayAt2()
             else -> {}
         }
-        is ErrorCascadeIsBoundedState.Runaway -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfRunawayAt0() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
 
 
@@ -664,27 +739,41 @@ class ErrorCascadeIsBoundedStateMachine(
             }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfRunawayAt1() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("ticks", "ticks"), com.sce.runtime.ScriptSource.lua("_scxml_add(ticks, 1)", "ticks + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfRunawayAt2() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
+    }
+
+    // The content of `settling`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfSettling(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfSettlingAt0()
+            1 -> transitionContentOfSettlingAt1()
             else -> {}
         }
-        is ErrorCascadeIsBoundedState.Settling -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfSettlingAt0() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
 
 
@@ -702,17 +791,14 @@ class ErrorCascadeIsBoundedStateMachine(
             }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfSettlingAt1() {
                 // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

@@ -53,6 +53,7 @@ class Test236SceSynthInvokeInvoke0StateMachine(
         is Test236SceSynthInvokeInvoke0State.SubFinal -> true
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<Test236SceSynthInvokeInvoke0State, HistoryId>>
@@ -63,21 +64,25 @@ class Test236SceSynthInvokeInvoke0StateMachine(
             listOf(StateTarget(Test236SceSynthInvokeInvoke0State.SubFinal))
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test236SceSynthInvokeInvoke0State? = when (stateId) {
         "subFinal" -> Test236SceSynthInvokeInvoke0State.SubFinal
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test236SceSynthInvokeInvoke0State): String = when (state) {
         is Test236SceSynthInvokeInvoke0State.SubFinal -> "subFinal"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test236SceSynthInvokeInvoke0State): Int = when (state) {
         is Test236SceSynthInvokeInvoke0State.SubFinal -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test236SceSynthInvokeInvoke0Event? = when (name) {
@@ -86,6 +91,7 @@ class Test236SceSynthInvokeInvoke0StateMachine(
         "error.execution" -> Test236SceSynthInvokeInvoke0Event.Error.Execution
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test236SceSynthInvokeInvoke0Event): String? = when (event) {
@@ -98,36 +104,45 @@ class Test236SceSynthInvokeInvoke0StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test236SceSynthInvokeInvoke0State,
-        event: Test236SceSynthInvokeInvoke0Event?
-    ): EnabledTransition<Test236SceSynthInvokeInvoke0State, HistoryId>? = when (state) {
+    override fun firstEnabledTransition(state: Test236SceSynthInvokeInvoke0State, event: Test236SceSynthInvokeInvoke0Event?): EnabledTransition<Test236SceSynthInvokeInvoke0State, HistoryId>? = when (state) {
         else -> null
     }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test236.scxml:16 :: _machine
     override fun onEntry(state: Test236SceSynthInvokeInvoke0State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test236SceSynthInvokeInvoke0State.SubFinal -> {
+            is Test236SceSynthInvokeInvoke0State.SubFinal -> onEntryOfSubFinal()
+        }
+    }
+
+
+    private fun onEntryOfSubFinal() {
                 // SCE-MAP: test236.scxml:17 :: subFinal :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test236.scxml:16 :: _machine
     override fun onExit(state: Test236SceSynthInvokeInvoke0State) {
         when (state) {
-            is Test236SceSynthInvokeInvoke0State.SubFinal -> {
+            is Test236SceSynthInvokeInvoke0State.SubFinal -> onExitOfSubFinal()
+        }
+    }
+
+
+    private fun onExitOfSubFinal() {
                 // SCE-MAP: test236.scxml:17 :: subFinal :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
@@ -151,16 +166,15 @@ class Test236SceSynthInvokeInvoke0StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test236.scxml:16 :: _machine
     override fun executeTransitionContent(source: Test236SceSynthInvokeInvoke0State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

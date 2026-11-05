@@ -97,6 +97,10 @@ class StatechartStaticHostParamsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.count?.let { vCount = it }
         params.ready?.let { vReady = it }
         params.label?.let { vLabel = it }
@@ -177,20 +181,22 @@ class StatechartStaticHostParamsStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "count" to SavedValues.of(vCount),
-            "ready" to SavedValues.of(vReady),
-            "label" to SavedValues.of(vLabel),
-            "delta" to SavedValues.of(vDelta),
-            "ratio" to SavedValues.of(vRatio),
-            "tag" to SavedValues.of(vTag),
-            "huge" to SavedValues.of(vHuge),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "count" to SavedValues.of(vCount)
+        variables += "ready" to SavedValues.of(vReady)
+        variables += "label" to SavedValues.of(vLabel)
+        variables += "delta" to SavedValues.of(vDelta)
+        variables += "ratio" to SavedValues.of(vRatio)
+        variables += "tag" to SavedValues.of(vTag)
+        variables += "huge" to SavedValues.of(vHuge)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -215,6 +221,15 @@ class StatechartStaticHostParamsStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = SavedValues.uint32(savedGrown.variable("count"), "count")
         val saved2 = SavedValues.bool(savedGrown.variable("ready"), "ready")
         val saved3 = SavedValues.string(savedGrown.variable("label"), "label", 16)
@@ -223,15 +238,16 @@ class StatechartStaticHostParamsStateMachine(
         val saved6 = SavedValues.string(savedGrown.variable("tag"), "tag", 16)
         val saved7 = SavedValues.uint32(savedGrown.variable("huge"), "huge")
         val saved8 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vCount = saved1
-        vReady = saved2
-        vLabel = saved3
-        vDelta = saved4
-        vRatio = saved5
-        vTag = saved6
-        vHuge = saved7
-        vErrors = saved8
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vCount = saved1
+            vReady = saved2
+            vLabel = saved3
+            vDelta = saved4
+            vRatio = saved5
+            vTag = saved6
+            vHuge = saved7
+            vErrors = saved8
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -244,6 +260,10 @@ class StatechartStaticHostParamsStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         SavedValues.uint32(savedGrown.variable("count"), "count")
         SavedValues.bool(savedGrown.variable("ready"), "ready")
         SavedValues.string(savedGrown.variable("label"), "label", 16)
@@ -286,6 +306,7 @@ class StatechartStaticHostParamsStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<StatechartStaticHostParamsState, HistoryId>>
@@ -294,6 +315,9 @@ class StatechartStaticHostParamsStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StatechartStaticHostParamsState, HistoryId>> =
             listOf(StateTarget(StatechartStaticHostParamsState.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StatechartStaticHostParamsState, HistoryId>(
@@ -350,6 +374,7 @@ class StatechartStaticHostParamsStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartStaticHostParamsState? = when (stateId) {
         "done" -> StatechartStaticHostParamsState.Done
@@ -358,6 +383,7 @@ class StatechartStaticHostParamsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StatechartStaticHostParamsState): String = when (state) {
         is StatechartStaticHostParamsState.Done -> "done"
@@ -365,12 +391,14 @@ class StatechartStaticHostParamsStateMachine(
         is StatechartStaticHostParamsState.Working -> "working"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartStaticHostParamsState): Int = when (state) {
         is StatechartStaticHostParamsState.Done -> 2
         is StatechartStaticHostParamsState.Idle -> 0
         is StatechartStaticHostParamsState.Working -> 1
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StatechartStaticHostParamsEvent? = when (name) {
@@ -389,6 +417,7 @@ class StatechartStaticHostParamsStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StatechartStaticHostParamsEvent): String? = when (event) {
         is StatechartStaticHostParamsEvent.After -> "after"
@@ -405,6 +434,7 @@ class StatechartStaticHostParamsStateMachine(
         is StatechartStaticHostParamsEvent.Value -> "value"
     }
 
+
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `completeHostInvoke`.
     override val hostInvokeIds: Set<String> = setOf(
@@ -420,39 +450,56 @@ class StatechartStaticHostParamsStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StatechartStaticHostParamsState,
-        event: StatechartStaticHostParamsEvent?
-    ): EnabledTransition<StatechartStaticHostParamsState, HistoryId>? = when (state) {
-        is StatechartStaticHostParamsState.Idle -> when {
-            event is StatechartStaticHostParamsEvent.Bump -> transitionIdleAt0
-            event is StatechartStaticHostParamsEvent.Big -> transitionIdleAt1
-            event is StatechartStaticHostParamsEvent.Bloat -> transitionIdleAt2
-            event is StatechartStaticHostParamsEvent.Go -> transitionIdleAt3
-            else -> null
-        }
-        is StatechartStaticHostParamsState.Working -> when {
-            event is StatechartStaticHostParamsEvent.Error.Execution -> transitionWorkingAt0
-            event is StatechartStaticHostParamsEvent.Done.Invoke.H -> transitionWorkingAt1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StatechartStaticHostParamsState, event: StatechartStaticHostParamsEvent?): EnabledTransition<StatechartStaticHostParamsState, HistoryId>? = when (state) {
+        is StatechartStaticHostParamsState.Idle -> firstEnabledTransitionOfIdle(state, event)
+        is StatechartStaticHostParamsState.Working -> firstEnabledTransitionOfWorking(state, event)
         else -> null
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StatechartStaticHostParamsState, event: StatechartStaticHostParamsEvent?): EnabledTransition<StatechartStaticHostParamsState, HistoryId>? = when {
+        event is StatechartStaticHostParamsEvent.Bump -> TransitionsPart0.transitionIdleAt0
+        event is StatechartStaticHostParamsEvent.Big -> TransitionsPart0.transitionIdleAt1
+        event is StatechartStaticHostParamsEvent.Bloat -> TransitionsPart0.transitionIdleAt2
+        event is StatechartStaticHostParamsEvent.Go -> TransitionsPart0.transitionIdleAt3
+        else -> null
+    }
+
+
+    // working's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWorking(state: StatechartStaticHostParamsState, event: StatechartStaticHostParamsEvent?): EnabledTransition<StatechartStaticHostParamsState, HistoryId>? = when {
+        event is StatechartStaticHostParamsEvent.Error.Execution -> TransitionsPart0.transitionWorkingAt0
+        event is StatechartStaticHostParamsEvent.Done.Invoke.H -> TransitionsPart0.transitionWorkingAt1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
     override fun onEntry(state: StatechartStaticHostParamsState, isDefaultEntry: Boolean) {
         when (state) {
-            is StatechartStaticHostParamsState.Done -> {
+            is StatechartStaticHostParamsState.Done -> onEntryOfDone()
+            is StatechartStaticHostParamsState.Idle -> onEntryOfIdle()
+            is StatechartStaticHostParamsState.Working -> onEntryOfWorking()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: statechart_static_host_params.scxml:152 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is StatechartStaticHostParamsState.Idle -> {
+    }
+
+    private fun onEntryOfIdle() {
                 // SCE-MAP: statechart_static_host_params.scxml:94 :: idle :: _state_body
-            }
-            is StatechartStaticHostParamsState.Working -> {
+    }
+
+    private fun onEntryOfWorking() {
                 // SCE-MAP: statechart_static_host_params.scxml:109 :: working :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/3
                 run {
@@ -745,7 +792,7 @@ class StatechartStaticHostParamsStateMachine(
                 // for, so it is the name the host must answer on.
                 run {
                     val generatedInvokeId = "working.${System.identityHashCode(this)}.h"
-                    deferInvoke(state, generatedInvokeId) {
+                    deferInvoke(StatechartStaticHostParamsState.Working, generatedInvokeId) {
                         val hostInvokeSrc: String = try {
                             if (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt()) > 0.toUInt()) vTag else vTag
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
@@ -830,40 +877,67 @@ class StatechartStaticHostParamsStateMachine(
                         }
                     }
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
     override fun onExit(state: StatechartStaticHostParamsState) {
         when (state) {
-            is StatechartStaticHostParamsState.Done -> {
+            is StatechartStaticHostParamsState.Done -> onExitOfDone()
+            is StatechartStaticHostParamsState.Idle -> onExitOfIdle()
+            is StatechartStaticHostParamsState.Working -> onExitOfWorking()
+        }
+    }
+
+
+    private fun onExitOfDone() {
                 // SCE-MAP: statechart_static_host_params.scxml:152 :: done :: _state_body
-            }
-            is StatechartStaticHostParamsState.Idle -> {
+    }
+
+    private fun onExitOfIdle() {
                 // SCE-MAP: statechart_static_host_params.scxml:94 :: idle :: _state_body
-            }
-            is StatechartStaticHostParamsState.Working -> {
+    }
+
+    private fun onExitOfWorking() {
                 // SCE-MAP: statechart_static_host_params.scxml:109 :: working :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
+                cancelPendingInvokesForState(StatechartStaticHostParamsState.Working)
                 // W3C SCXML 6.4: the host's invocation ends with the state
                 // that started it. Unconditional here: the engine knows
                 // whether this one ever started and stays silent when it did
                 // not, so the emitted chain needs no bookkeeping of its own.
                 cancelHostInvoke("x-sce-host", "h")
-            }
-        }
     }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
     override fun executeTransitionContent(source: StatechartStaticHostParamsState, transitionIndex: Int) {
         when (source) {
-        is StatechartStaticHostParamsState.Idle -> when (transitionIndex) {
-            0 -> {
+            is StatechartStaticHostParamsState.Idle -> transitionContentOfIdle(transitionIndex)
+            is StatechartStaticHostParamsState.Working -> transitionContentOfWorking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: statechart_static_host_params.scxml:95 :: idle :: _transition_0
 
             if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
@@ -875,30 +949,38 @@ class StatechartStaticHostParamsStateMachine(
             if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: statechart_static_host_params.scxml:100 :: idle :: _transition_1
 
             vCount = 3000000000.toUInt()
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: statechart_static_host_params.scxml:103 :: idle :: _transition_2
 
             vHuge = 3000000000.toUInt()
-            }
+    }
+
+    // The content of `working`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfWorking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfWorkingAt0()
             else -> {}
         }
-        is StatechartStaticHostParamsState.Working -> when (transitionIndex) {
-            0 -> {
+    }
+
+
+    private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: statechart_static_host_params.scxml:146 :: working :: _transition_0
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

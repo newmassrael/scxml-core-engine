@@ -76,9 +76,11 @@ class Test152StateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: Test152State): Boolean = when (state) {
-        is Test152State.Fail, is Test152State.Pass -> true
+        is Test152State.Fail -> true
+        is Test152State.Pass -> true
         else -> false
     }
+
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
@@ -88,6 +90,9 @@ class Test152StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<Test152State, HistoryId>> =
             listOf(StateTarget(Test152State.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<Test152State, HistoryId>(
@@ -144,6 +149,7 @@ class Test152StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test152State? = when (stateId) {
         "fail" -> Test152State.Fail
@@ -154,6 +160,7 @@ class Test152StateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test152State): String = when (state) {
         is Test152State.Fail -> "fail"
@@ -162,6 +169,7 @@ class Test152StateMachine(
         is Test152State.S1 -> "s1"
         is Test152State.S2 -> "s2"
     }
+
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test152State): Int = when (state) {
@@ -172,6 +180,7 @@ class Test152StateMachine(
         is Test152State.S2 -> 2
     }
 
+
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test152Event? = when (name) {
         "bar" -> Test152Event.Bar
@@ -181,6 +190,7 @@ class Test152StateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test152Event): String? = when (event) {
         is Test152Event.Bar -> "bar"
@@ -188,6 +198,7 @@ class Test152StateMachine(
         is Test152Event.Foo -> "foo"
         is Test152Event.Wildcard -> "*"
     }
+
 
 
 
@@ -217,6 +228,27 @@ class Test152StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
             val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -246,22 +278,6 @@ class Test152StateMachine(
         } catch (e: Exception) {
             raisePlatformError(Test152Event.Error.Execution, "<data id='Var5'> content failed to initialise")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -451,44 +467,67 @@ class Test152StateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: Test152State,
-        event: Test152Event?
-    ): EnabledTransition<Test152State, HistoryId>? = when (state) {
-        is Test152State.S0 -> when {
-            event is Test152Event.Error.Execution -> transitionS0At0
-            event != null -> transitionS0At1
-            else -> null
-        }
-        is Test152State.S1 -> when {
-            event is Test152Event.Error.Execution -> transitionS1At0
-            event is Test152Event.Bar -> transitionS1At1
-            else -> null
-        }
-        is Test152State.S2 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 0)", "Var1 == 0")) -> transitionS2At0
-            event == null -> transitionS2At1
-            else -> null
-        }
+    override fun firstEnabledTransition(state: Test152State, event: Test152Event?): EnabledTransition<Test152State, HistoryId>? = when (state) {
+        is Test152State.S0 -> firstEnabledTransitionOfS0(state, event)
+        is Test152State.S1 -> firstEnabledTransitionOfS1(state, event)
+        is Test152State.S2 -> firstEnabledTransitionOfS2(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test152State, event: Test152Event?): EnabledTransition<Test152State, HistoryId>? = when {
+        event is Test152Event.Error.Execution -> TransitionsPart0.transitionS0At0
+        event != null -> TransitionsPart0.transitionS0At1
+        else -> null
+    }
+
+
+    // s1's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test152State, event: Test152Event?): EnabledTransition<Test152State, HistoryId>? = when {
+        event is Test152Event.Error.Execution -> TransitionsPart0.transitionS1At0
+        event is Test152Event.Bar -> TransitionsPart0.transitionS1At1
+        else -> null
+    }
+
+
+    // s2's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: Test152State, event: Test152Event?): EnabledTransition<Test152State, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 0)", "Var1 == 0")) -> TransitionsPart0.transitionS2At0
+        event == null -> TransitionsPart0.transitionS2At1
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test152.scxml:6 :: _machine
     override fun onEntry(state: Test152State, isDefaultEntry: Boolean) {
         when (state) {
-            is Test152State.Fail -> {
+            is Test152State.Fail -> onEntryOfFail()
+            is Test152State.Pass -> onEntryOfPass()
+            is Test152State.S0 -> onEntryOfS0()
+            is Test152State.S1 -> onEntryOfS1()
+            is Test152State.S2 -> onEntryOfS2()
+        }
+    }
+
+
+    private fun onEntryOfFail() {
                 // SCE-MAP: test152.scxml:48 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test152State.Pass -> {
+    }
+
+    private fun onEntryOfPass() {
                 // SCE-MAP: test152.scxml:47 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is Test152State.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: test152.scxml:17 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -499,8 +538,9 @@ class Test152StateMachine(
 
             raiseInternal(Test152Event.Foo)
                 }
-            }
-            is Test152State.S1 -> {
+    }
+
+    private fun onEntryOfS1() {
                 // SCE-MAP: test152.scxml:29 :: s1 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -511,41 +551,52 @@ class Test152StateMachine(
 
             raiseInternal(Test152Event.Bar)
                 }
-            }
-            is Test152State.S2 -> {
+    }
+
+    private fun onEntryOfS2() {
                 // SCE-MAP: test152.scxml:41 :: s2 :: _state_body
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: test152.scxml:6 :: _machine
     override fun onExit(state: Test152State) {
         when (state) {
-            is Test152State.Fail -> {
-                // SCE-MAP: test152.scxml:48 :: fail :: _state_body
-            }
-            is Test152State.Pass -> {
-                // SCE-MAP: test152.scxml:47 :: pass :: _state_body
-            }
-            is Test152State.S0 -> {
-                // SCE-MAP: test152.scxml:17 :: s0 :: _state_body
-            }
-            is Test152State.S1 -> {
-                // SCE-MAP: test152.scxml:29 :: s1 :: _state_body
-            }
-            is Test152State.S2 -> {
-                // SCE-MAP: test152.scxml:41 :: s2 :: _state_body
-            }
+            is Test152State.Fail -> onExitOfFail()
+            is Test152State.Pass -> onExitOfPass()
+            is Test152State.S0 -> onExitOfS0()
+            is Test152State.S1 -> onExitOfS1()
+            is Test152State.S2 -> onExitOfS2()
         }
     }
+
+
+    private fun onExitOfFail() {
+                // SCE-MAP: test152.scxml:48 :: fail :: _state_body
+    }
+
+    private fun onExitOfPass() {
+                // SCE-MAP: test152.scxml:47 :: pass :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: test152.scxml:17 :: s0 :: _state_body
+    }
+
+    private fun onExitOfS1() {
+                // SCE-MAP: test152.scxml:29 :: s1 :: _state_body
+    }
+
+    private fun onExitOfS2() {
+                // SCE-MAP: test152.scxml:41 :: s2 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test152.scxml:6 :: _machine
     override fun executeTransitionContent(source: Test152State, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

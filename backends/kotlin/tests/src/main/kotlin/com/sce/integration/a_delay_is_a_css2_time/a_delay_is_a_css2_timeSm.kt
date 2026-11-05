@@ -137,6 +137,7 @@ class ADelayIsACss2TimeStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<ADelayIsACss2TimeState, HistoryId>>
@@ -145,6 +146,9 @@ class ADelayIsACss2TimeStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<ADelayIsACss2TimeState, HistoryId>> =
             listOf(StateTarget(ADelayIsACss2TimeState.S0))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
         val transitionS0At0 = EnabledTransition<ADelayIsACss2TimeState, HistoryId>(
@@ -183,6 +187,7 @@ class ADelayIsACss2TimeStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ADelayIsACss2TimeState? = when (stateId) {
         "done" -> ADelayIsACss2TimeState.Done
@@ -190,17 +195,20 @@ class ADelayIsACss2TimeStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: ADelayIsACss2TimeState): String = when (state) {
         is ADelayIsACss2TimeState.Done -> "done"
         is ADelayIsACss2TimeState.S0 -> "s0"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ADelayIsACss2TimeState): Int = when (state) {
         is ADelayIsACss2TimeState.Done -> 1
         is ADelayIsACss2TimeState.S0 -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ADelayIsACss2TimeEvent? = when (name) {
@@ -211,6 +219,7 @@ class ADelayIsACss2TimeStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ADelayIsACss2TimeEvent): String? = when (event) {
         is ADelayIsACss2TimeEvent.A -> "a"
@@ -218,6 +227,7 @@ class ADelayIsACss2TimeStateMachine(
         is ADelayIsACss2TimeEvent.Bad -> "bad"
         is ADelayIsACss2TimeEvent.Error.Execution -> "error.execution"
     }
+
 
 
 
@@ -247,6 +257,27 @@ class ADelayIsACss2TimeStateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
             val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -289,22 +320,6 @@ class ADelayIsACss2TimeStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='bare'> expr failed to evaluate")
         }
-
-
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
-
-        scriptEngineInitialized = true
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
@@ -494,31 +509,42 @@ class ADelayIsACss2TimeStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: ADelayIsACss2TimeState,
-        event: ADelayIsACss2TimeEvent?
-    ): EnabledTransition<ADelayIsACss2TimeState, HistoryId>? = when (state) {
-        is ADelayIsACss2TimeState.S0 -> when {
-            event is ADelayIsACss2TimeEvent.Error.Execution -> transitionS0At0
-            event is ADelayIsACss2TimeEvent.Bad -> transitionS0At1
-            event is ADelayIsACss2TimeEvent.B -> transitionS0At2
-            event is ADelayIsACss2TimeEvent.A -> transitionS0At3
-            else -> null
-        }
+    override fun firstEnabledTransition(state: ADelayIsACss2TimeState, event: ADelayIsACss2TimeEvent?): EnabledTransition<ADelayIsACss2TimeState, HistoryId>? = when (state) {
+        is ADelayIsACss2TimeState.S0 -> firstEnabledTransitionOfS0(state, event)
         else -> null
     }
+
+
+    // s0's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: ADelayIsACss2TimeState, event: ADelayIsACss2TimeEvent?): EnabledTransition<ADelayIsACss2TimeState, HistoryId>? = when {
+        event is ADelayIsACss2TimeEvent.Error.Execution -> TransitionsPart0.transitionS0At0
+        event is ADelayIsACss2TimeEvent.Bad -> TransitionsPart0.transitionS0At1
+        event is ADelayIsACss2TimeEvent.B -> TransitionsPart0.transitionS0At2
+        event is ADelayIsACss2TimeEvent.A -> TransitionsPart0.transitionS0At3
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: a_delay_is_a_css2_time.scxml:26 :: _machine
     override fun onEntry(state: ADelayIsACss2TimeState, isDefaultEntry: Boolean) {
         when (state) {
-            is ADelayIsACss2TimeState.Done -> {
+            is ADelayIsACss2TimeState.Done -> onEntryOfDone()
+            is ADelayIsACss2TimeState.S0 -> onEntryOfS0()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:67 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is ADelayIsACss2TimeState.S0 -> {
+    }
+
+    private fun onEntryOfS0() {
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:39 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/3
                 run {
@@ -616,64 +642,87 @@ class ADelayIsACss2TimeStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: a_delay_is_a_css2_time.scxml:26 :: _machine
     override fun onExit(state: ADelayIsACss2TimeState) {
         when (state) {
-            is ADelayIsACss2TimeState.Done -> {
-                // SCE-MAP: a_delay_is_a_css2_time.scxml:67 :: done :: _state_body
-            }
-            is ADelayIsACss2TimeState.S0 -> {
-                // SCE-MAP: a_delay_is_a_css2_time.scxml:39 :: s0 :: _state_body
-            }
+            is ADelayIsACss2TimeState.Done -> onExitOfDone()
+            is ADelayIsACss2TimeState.S0 -> onExitOfS0()
         }
     }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_delay_is_a_css2_time.scxml:67 :: done :: _state_body
+    }
+
+    private fun onExitOfS0() {
+                // SCE-MAP: a_delay_is_a_css2_time.scxml:39 :: s0 :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: a_delay_is_a_css2_time.scxml:26 :: _machine
     override fun executeTransitionContent(source: ADelayIsACss2TimeState, transitionIndex: Int) {
         when (source) {
-        is ADelayIsACss2TimeState.S0 -> when (transitionIndex) {
-            0 -> {
+            is ADelayIsACss2TimeState.S0 -> transitionContentOfS0(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `s0`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfS0(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfS0At0()
+            1 -> transitionContentOfS0At1()
+            2 -> transitionContentOfS0At2()
+            3 -> transitionContentOfS0At3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfS0At0() {
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:53 :: s0 :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfS0At1() {
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:56 :: s0 :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("bad", "bad"), com.sce.runtime.ScriptSource.lua("_scxml_add(bad, 1)", "bad + 1"))) {
                 return
             }
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfS0At2() {
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:59 :: s0 :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("bSeen", "bSeen"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            }
-            3 -> {
+    }
+
+    private fun transitionContentOfS0At3() {
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:62 :: s0 :: _transition_3
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("aAfterB", "aAfterB"), com.sce.runtime.ScriptSource.lua("bSeen", "bSeen"))) {
                 return
             }
-            }
-            else -> {}
-        }
-        else -> {}
-        }
     }
 }

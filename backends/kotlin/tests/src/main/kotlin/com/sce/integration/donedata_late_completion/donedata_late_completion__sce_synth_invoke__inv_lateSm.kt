@@ -63,6 +63,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         else -> false
     }
 
+
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
     override val documentInitialTargets: List<EntryTarget<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>>
@@ -71,6 +72,9 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>> =
             listOf(StateTarget(DonedataLateCompletionSceSynthInvokeInvLateState.Waiting))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
         val transitionWaitingAt0 = EnabledTransition<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>(
@@ -82,6 +86,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): DonedataLateCompletionSceSynthInvokeInvLateState? = when (stateId) {
         "settled" -> DonedataLateCompletionSceSynthInvokeInvLateState.Settled
@@ -89,17 +94,20 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: DonedataLateCompletionSceSynthInvokeInvLateState): String = when (state) {
         is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> "settled"
         is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> "waiting"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: DonedataLateCompletionSceSynthInvokeInvLateState): Int = when (state) {
         is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> 1
         is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): DonedataLateCompletionSceSynthInvokeInvLateEvent? = when (name) {
@@ -110,6 +118,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         else -> null
     }
 
+
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: DonedataLateCompletionSceSynthInvokeInvLateEvent): String? = when (event) {
         is DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Communication -> "error.communication"
@@ -117,6 +126,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         is DonedataLateCompletionSceSynthInvokeInvLateEvent.Finish -> "finish"
         is DonedataLateCompletionSceSynthInvokeInvLateEvent.Ready -> "ready"
     }
+
 
 
 
@@ -351,23 +361,33 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: DonedataLateCompletionSceSynthInvokeInvLateState,
-        event: DonedataLateCompletionSceSynthInvokeInvLateEvent?
-    ): EnabledTransition<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>? = when (state) {
-        is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> when {
-            event is DonedataLateCompletionSceSynthInvokeInvLateEvent.Finish -> transitionWaitingAt0
-            else -> null
-        }
+    override fun firstEnabledTransition(state: DonedataLateCompletionSceSynthInvokeInvLateState, event: DonedataLateCompletionSceSynthInvokeInvLateEvent?): EnabledTransition<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>? = when (state) {
+        is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> firstEnabledTransitionOfWaiting(state, event)
         else -> null
     }
+
+
+    // waiting's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: DonedataLateCompletionSceSynthInvokeInvLateState, event: DonedataLateCompletionSceSynthInvokeInvLateEvent?): EnabledTransition<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>? = when {
+        event is DonedataLateCompletionSceSynthInvokeInvLateEvent.Finish -> TransitionsPart0.transitionWaitingAt0
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
     override fun onEntry(state: DonedataLateCompletionSceSynthInvokeInvLateState, isDefaultEntry: Boolean) {
         when (state) {
-            is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> {
+            is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> onEntryOfSettled()
+            is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> onEntryOfWaiting()
+        }
+    }
+
+
+    private fun onEntryOfSettled() {
                 // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
@@ -394,8 +414,9 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
                 }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
-            }
-            is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> {
+    }
+
+    private fun onEntryOfWaiting() {
                 // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
@@ -419,29 +440,33 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-            }
-        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
     override fun onExit(state: DonedataLateCompletionSceSynthInvokeInvLateState) {
         when (state) {
-            is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
-            }
-            is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
-            }
+            is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> onExitOfSettled()
+            is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> onExitOfWaiting()
         }
     }
+
+
+    private fun onExitOfSettled() {
+                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
+    }
+
+    private fun onExitOfWaiting() {
+                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
     override fun executeTransitionContent(source: DonedataLateCompletionSceSynthInvokeInvLateState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+            else -> {}
         }
     }
 }

@@ -98,6 +98,10 @@ class StaticRecordReal32StateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.sum?.let { vSum = it }
         params.errors?.let { vErrors = it }
     }
@@ -188,15 +192,17 @@ class StaticRecordReal32StateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "last" to vLast.toSaved(),
-            "sum" to SavedValues.of(vSum),
-            "errors" to SavedValues.of(vErrors),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "last" to vLast.toSaved()
+        variables += "sum" to SavedValues.of(vSum)
+        variables += "errors" to SavedValues.of(vErrors)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -221,13 +227,23 @@ class StaticRecordReal32StateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticRecordReal32Reading32Record.fromSaved(savedGrown.variable("last"), "last")
         val saved2 = SavedValues.float32(savedGrown.variable("sum"), "sum")
         val saved3 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        vLast = saved1
-        vSum = saved2
-        vErrors = saved3
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vLast = saved1
+            vSum = saved2
+            vErrors = saved3
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -240,6 +256,10 @@ class StaticRecordReal32StateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticRecordReal32Reading32Record.fromSaved(savedGrown.variable("last"), "last")
         SavedValues.float32(savedGrown.variable("sum"), "sum")
         SavedValues.uint32(savedGrown.variable("errors"), "errors")
@@ -319,6 +339,9 @@ class StaticRecordReal32StateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticRecordReal32State, HistoryId>> =
             listOf(StateTarget(StaticRecordReal32State.Idle))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
         val transitionIdleAt0 = EnabledTransition<StaticRecordReal32State, HistoryId>(
@@ -348,21 +371,25 @@ class StaticRecordReal32StateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticRecordReal32State? = when (stateId) {
         "idle" -> StaticRecordReal32State.Idle
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticRecordReal32State): String = when (state) {
         is StaticRecordReal32State.Idle -> "idle"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticRecordReal32State): Int = when (state) {
         is StaticRecordReal32State.Idle -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticRecordReal32Event? = when (name) {
@@ -371,6 +398,7 @@ class StaticRecordReal32StateMachine(
         "reading32.taken" -> StaticRecordReal32Event.Reading32.Taken
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticRecordReal32Event): String? = when (event) {
@@ -383,58 +411,90 @@ class StaticRecordReal32StateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticRecordReal32State,
-        event: StaticRecordReal32Event?
-    ): EnabledTransition<StaticRecordReal32State, HistoryId>? = when (state) {
-        is StaticRecordReal32State.Idle -> when {
-            event is StaticRecordReal32Event.Bump -> transitionIdleAt0
-            event is StaticRecordReal32Event.Reading32.Taken -> transitionIdleAt1
-            event is StaticRecordReal32Event.Error.Execution -> transitionIdleAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticRecordReal32State, event: StaticRecordReal32Event?): EnabledTransition<StaticRecordReal32State, HistoryId>? = when (state) {
+        is StaticRecordReal32State.Idle -> firstEnabledTransitionOfIdle(state, event)
     }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticRecordReal32State, event: StaticRecordReal32Event?): EnabledTransition<StaticRecordReal32State, HistoryId>? = when {
+        event is StaticRecordReal32Event.Bump -> TransitionsPart0.transitionIdleAt0
+        event is StaticRecordReal32Event.Reading32.Taken -> TransitionsPart0.transitionIdleAt1
+        event is StaticRecordReal32Event.Error.Execution -> TransitionsPart0.transitionIdleAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_record_real32.scxml:17 :: _machine
     override fun onEntry(state: StaticRecordReal32State, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticRecordReal32State.Idle -> {
-                // SCE-MAP: static_record_real32.scxml:28 :: idle :: _state_body
-            }
+            is StaticRecordReal32State.Idle -> onEntryOfIdle()
         }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_record_real32.scxml:28 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_record_real32.scxml:17 :: _machine
     override fun onExit(state: StaticRecordReal32State) {
         when (state) {
-            is StaticRecordReal32State.Idle -> {
-                // SCE-MAP: static_record_real32.scxml:28 :: idle :: _state_body
-            }
+            is StaticRecordReal32State.Idle -> onExitOfIdle()
         }
     }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_record_real32.scxml:28 :: idle :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_record_real32.scxml:17 :: _machine
     override fun executeTransitionContent(source: StaticRecordReal32State, transitionIndex: Int) {
         when (source) {
-        is StaticRecordReal32State.Idle -> when (transitionIndex) {
-            0 -> {
+            is StaticRecordReal32State.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_record_real32.scxml:29 :: idle :: _transition_0
 
             vLast = vLast.copy(value = vLast.value * 2.0f + 1.5f)
 
             vSum = vSum + vLast.value
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_record_real32.scxml:33 :: idle :: _transition_1
                 if (pendingReading32TakenPayload == null) {
                     return
@@ -443,16 +503,13 @@ class StaticRecordReal32StateMachine(
             vLast = vLast.copy(value = pendingReading32TakenPayload!!.value)
 
             vLast = vLast.copy(sensor = pendingReading32TakenPayload!!.sensor)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_record_real32.scxml:44 :: idle :: _transition_2
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordReal32Event.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }

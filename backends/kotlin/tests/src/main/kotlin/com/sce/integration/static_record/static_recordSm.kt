@@ -93,6 +93,10 @@ class StaticRecordStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
         params.refusals?.let { vRefusals = it }
     }
 
@@ -180,14 +184,16 @@ class StaticRecordStateMachine(
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(wallNowMs: Long): SavedState = savedState(
-        savedShape,
-        linkedMapOf(
-            "shown" to vShown.toSaved(),
-            "refusals" to SavedValues.of(vRefusals),
-        ),
-        wallNowMs,
-    )
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "shown" to vShown.toSaved()
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
 
     /** [save] at the host's wall clock now. */
     fun save(): SavedState = save(SavedState.wallClockMs())
@@ -212,11 +218,21 @@ class StaticRecordStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
         val saved1 = StaticRecordDayRecord.fromSaved(savedGrown.variable("shown"), "shown")
         val saved2 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        vShown = saved1
-        vRefusals = saved2
-        enterSaved(savedGrown, wallNowMs)
+        return {
+            vShown = saved1
+            vRefusals = saved2
+        }
     }
 
     /** [restore] at the host's wall clock now. */
@@ -229,6 +245,10 @@ class StaticRecordStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticRecordDayRecord.fromSaved(savedGrown.variable("shown"), "shown")
         SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
     }
@@ -307,6 +327,9 @@ class StaticRecordStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StaticRecordState, HistoryId>> =
             listOf(StateTarget(StaticRecordState.Showing))
+    }
+
+    private object TransitionsPart0 {
 
         // W3C SCXML 3.13: showing's transition 0, as the microstep reads it.
         val transitionShowingAt0 = EnabledTransition<StaticRecordState, HistoryId>(
@@ -336,21 +359,25 @@ class StaticRecordStateMachine(
         )
     }
 
+
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticRecordState? = when (stateId) {
         "showing" -> StaticRecordState.Showing
         else -> null
     }
 
+
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticRecordState): String = when (state) {
         is StaticRecordState.Showing -> "showing"
     }
 
+
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticRecordState): Int = when (state) {
         is StaticRecordState.Showing -> 0
     }
+
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticRecordEvent? = when (name) {
@@ -359,6 +386,7 @@ class StaticRecordStateMachine(
         "next" -> StaticRecordEvent.Next
         else -> null
     }
+
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticRecordEvent): String? = when (event) {
@@ -371,58 +399,90 @@ class StaticRecordStateMachine(
 
 
 
+
     // W3C SCXML Appendix D selectTransitions, the half only this document can
     // answer: the first of `state`'s own transitions, in document order, that
     // `event` enables and whose guard holds; for `null`, its first eventless
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
-    override fun firstEnabledTransition(
-        state: StaticRecordState,
-        event: StaticRecordEvent?
-    ): EnabledTransition<StaticRecordState, HistoryId>? = when (state) {
-        is StaticRecordState.Showing -> when {
-            event is StaticRecordEvent.Next && vShown.dayOfMonth < monthLength(vShown.year, vShown.month) -> transitionShowingAt0
-            event is StaticRecordEvent.Day.Picked -> transitionShowingAt1
-            event is StaticRecordEvent.Error.Execution -> transitionShowingAt2
-            else -> null
-        }
+    override fun firstEnabledTransition(state: StaticRecordState, event: StaticRecordEvent?): EnabledTransition<StaticRecordState, HistoryId>? = when (state) {
+        is StaticRecordState.Showing -> firstEnabledTransitionOfShowing(state, event)
     }
+
+
+    // showing's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfShowing(state: StaticRecordState, event: StaticRecordEvent?): EnabledTransition<StaticRecordState, HistoryId>? = when {
+        event is StaticRecordEvent.Next && vShown.dayOfMonth < monthLength(vShown.year, vShown.month) -> TransitionsPart0.transitionShowingAt0
+        event is StaticRecordEvent.Day.Picked -> TransitionsPart0.transitionShowingAt1
+        event is StaticRecordEvent.Error.Execution -> TransitionsPart0.transitionShowingAt2
+        else -> null
+    }
+
+
+
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_record.scxml:13 :: _machine
     override fun onEntry(state: StaticRecordState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticRecordState.Showing -> {
-                // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
-            }
+            is StaticRecordState.Showing -> onEntryOfShowing()
         }
+    }
+
+
+    private fun onEntryOfShowing() {
+                // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
     // SCE-MAP: static_record.scxml:13 :: _machine
     override fun onExit(state: StaticRecordState) {
         when (state) {
-            is StaticRecordState.Showing -> {
-                // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
-            }
+            is StaticRecordState.Showing -> onExitOfShowing()
         }
     }
+
+
+    private fun onExitOfShowing() {
+                // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
+    }
+
 
 
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_record.scxml:13 :: _machine
     override fun executeTransitionContent(source: StaticRecordState, transitionIndex: Int) {
         when (source) {
-        is StaticRecordState.Showing -> when (transitionIndex) {
-            0 -> {
+            is StaticRecordState.Showing -> transitionContentOfShowing(transitionIndex)
+        }
+    }
+
+
+    // The content of `showing`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfShowing(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfShowingAt0()
+            1 -> transitionContentOfShowingAt1()
+            2 -> transitionContentOfShowingAt2()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfShowingAt0() {
                 // SCE-MAP: static_record.scxml:26 :: showing :: _transition_0
 
             if (try { vShown = vShown.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.add(vShown.dayOfMonth, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            1 -> {
+    }
+
+    private fun transitionContentOfShowingAt1() {
                 // SCE-MAP: static_record.scxml:29 :: showing :: _transition_1
                 if (pendingDayPickedPayload == null) {
                     return
@@ -433,16 +493,13 @@ class StaticRecordStateMachine(
             vShown = vShown.copy(month = pendingDayPickedPayload!!.month)
 
             vShown = vShown.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
-            }
-            2 -> {
+    }
+
+    private fun transitionContentOfShowingAt2() {
                 // SCE-MAP: static_record.scxml:36 :: showing :: _transition_2
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-            }
-            else -> {}
-        }
-        }
     }
 }
