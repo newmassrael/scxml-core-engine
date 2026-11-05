@@ -1844,6 +1844,8 @@ add_executable(integration_tests
     integration/DonedataChildrenTakeTheInlineReadingTest.cpp
     integration/AssignChildrenTakeTheInlineReadingTest.cpp
     integration/NullDataModelContentTakesTheInlineReadingTest.cpp
+    integration/AnAssignmentKeepsTheDocumentItIsGivenTest.cpp
+    integration/AnAssignmentKeepsTheDocumentItIsGivenAotTest.cpp
     integration/AutoforwardEventFieldsTest.cpp
     integration/AutoforwardEventFieldsAotTest.cpp
     integration/AnEventKeepsTheNameItWasSentUnderTest.cpp
@@ -2555,6 +2557,11 @@ sce_generate_static_integration_test(a_send_content_expr_is_the_payload ${STATIC
 # document — from a child that needs no script engine, where the reading used
 # to follow from the engine instead.
 sce_generate_static_integration_test(inline_content_is_read_by_its_data_model ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.4 + B.2: <assign location="v" expr="_event.data"/> leaves the
+# DOM a <send>'s XML <content> arrived as in `v`, and in a member path too:
+# the engine runs the assignment, so the value never leaves it.
+sce_generate_static_integration_test(an_assignment_keeps_the_document_it_is_given ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2 + 6.4 + C.1: a <send> reaches what its target names and carries
 # its payload there; a target that names nothing is reported.

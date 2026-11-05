@@ -657,6 +657,20 @@ in a phase of its own with its own failure state (`failNumber`, `failText`,
 `failObject`, `failDocument`), all inside the state that holds the invoke so
 moving between them cancels nothing; it ends in `pass`.
 
+`an_assignment_keeps_the_document_it_is_given` covers W3C §5.4 and §B.2 on
+`<assign>` of a value that is not data: the session sends itself an event
+whose `<content>` is XML, and the transition that consumes it assigns
+`_event.data` to a bare name (`v`) and to a member path (`holder.doc`); two
+eventless states then read the DOM through each. Read on 2026-11-06, both C++
+engines lost it at the bare name: `AssignmentExecutionHelper` evaluated the
+expression to a `ScriptValue` and wrote that back with `setVariable`, and a
+`ScriptValue` has no kind for a DOM, so `v` held an empty object, while a
+member path and the exact spelling `_event` (W3C test 329) were assigned
+inside the engine. The engine now runs every assignment itself
+(`IScriptEngine::assign`). The other channels already ran it inside their
+engine for every location. Expected: `kept`; `nameLost` and `memberLost` name
+the location that lost the document.
+
 `a_send_reaches_only_what_its_target_names` covers W3C §6.2, §6.4 and C.1 on
 where a `<send>` goes. A type the platform does not support is one of the
 element's own arguments, refused before the payload is read, so a failing

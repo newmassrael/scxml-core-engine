@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 274
+engine-documents 275
 native-prefix-documents 2
-datamodel-variable-init 473
-transition-guard 256
-assign-action 410
+datamodel-variable-init 474
+transition-guard 258
+assign-action 412
 child-invoke-needs-script-engine 58
 log-expr 46
 send-param-expr 49
@@ -448,6 +448,15 @@ telling the truth, not the tree getting worse.
   ends with an inline donedata `<content>`, which still costs the child an
   engine, since a generated parent lifts a child's done data from the child's
   engine state.
+  ⚠ **2026-11-06, deliberately:**
+  `integration_resources/an_assignment_keeps_the_document_it_is_given/` (one
+  ECMAScript document: one data item with an initializer, two assigns of
+  `_event.data`, two guards that read the DOM through each location) raises
+  `engine-documents` by one (274 to 275), `datamodel-variable-init` by one
+  (473 to 474), `transition-guard` by two (256 to 258) and `assign-action` by
+  two (410 to 412). The figures were derived by reading the document against
+  `script_engine_analyzer`, not from this test's output; where the two
+  disagree the test's block is the one to carry.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

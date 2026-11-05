@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.4 and B.2: an `<assign>` replaces the value at its location with
+  the value its expression produces, and XML a `<send>` carries in `<content>`
+  arrives as a DOM. So `<assign location="v" expr="_event.data"/>`, the very
+  example B.2 gives for a value expression, leaves `v` holding that DOM.
+
+  It did not on the C++ engines. Read 2026-11-06: `AssignmentExecutionHelper`,
+  which the Interpreter and every generated C++ machine share, evaluated the
+  expression of a bare-name location to a `ScriptValue` and wrote that back
+  with `setVariable`, and a `ScriptValue` has no kind for a DOM, so `v` held
+  an empty object. A member-path location ran `<location> = (<expr>)` inside
+  the engine and kept the document, and so did the exact spelling `_event`,
+  which had been routed around the loss for W3C test 329. The other six
+  generated engines keep the value inside their engine for every location,
+  which was established only by reading them; this asks all of them.
+
+    kept        both locations hold the document
+    nameLost    the bare-name location `v` does not
+    memberLost  the member-path location `holder.doc` does not
+
+  The event is sent to this session, so it arrives on the external queue and
+  the assignments run in the transition that consumes it. Both readings are
+  eventless, in the macrostep that transition starts, so an error.execution
+  an assignment raised cannot be consumed first. Each location is tested
+  before it is read, so that one left empty is reported as lost rather than
+  as a guard that raised.
+
+  This fixture is the canonical source for every channel; see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="sending"
+       name="an_assignment_keeps_the_document_it_is_given">
+
+  <datamodel>
+    <data id="v"/>
+    <data id="holder" expr="({})"/>
+  </datamodel>
+
+  <state id="sending">
+    <onentry>
+      <!-- `xmlns=""` resets the SCXML namespace the inline children would
+           otherwise inherit, as W3C test561 writes it. -->
+      <send event="doc"><content><books xmlns=""><book title="x"/></books></content></send>
+    </onentry>
+    <transition event="doc" target="readingName">
+      <assign location="v" expr="_event.data"/>
+      <assign location="holder.doc" expr="_event.data"/>
+    </transition>
+  </state>
+
+  <state id="readingName">
+    <transition cond="v &amp;&amp; v.getElementsByTagName('book').length === 1" target="readingMember"/>
+    <transition target="nameLost"/>
+  </state>
+
+  <state id="readingMember">
+    <transition cond="holder.doc &amp;&amp; holder.doc.getElementsByTagName('book')[0].getAttribute('title') === 'x'"
+                target="kept"/>
+    <transition target="memberLost"/>
+  </state>
+
+  <final id="kept"/>
+  <final id="nameLost"/>
+  <final id="memberLost"/>
+</scxml>

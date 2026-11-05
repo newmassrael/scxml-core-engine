@@ -1762,6 +1762,31 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 5.4 + B.2: <assign location="v" expr="_event.data"/> leaves the
+    # DOM a <send>'s XML <content> arrived as in `v`, and in a member path too.
+    sce_generate_static_integration_c_test(an_assignment_keeps_the_document_it_is_given "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_an_assignment_keeps_the_document_it_is_given
+        integration/test_an_assignment_keeps_the_document_it_is_given.c
+        ${INTEGRATION_C_TEST_an_assignment_keeps_the_document_it_is_given_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_an_assignment_keeps_the_document_it_is_given)
+    target_include_directories(sce_c_integration_an_assignment_keeps_the_document_it_is_given PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_an_assignment_keeps_the_document_it_is_given PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_an_assignment_keeps_the_document_it_is_given
+        COMMAND sce_c_integration_an_assignment_keeps_the_document_it_is_given
+    )
+    set_tests_properties(c11_integration_an_assignment_keeps_the_document_it_is_given PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.2 + 6.4 + C.1: a <send> reaches what its target names and
     # carries its payload there; a target that names nothing is reported.
     sce_generate_static_integration_c_test(a_send_reaches_only_what_its_target_names "${SCE_C_INTEGRATION_GENERATED_DIR}")
