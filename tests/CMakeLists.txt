@@ -233,10 +233,10 @@ target_link_libraries(js_engine_tests
         pthread
 )
 
-# WASM: Add Emscripten-specific link options for HTTP support
+# WASM: the program's own link shape; the fetch client's -sFETCH comes from
+# sce_runtime, which states it for every program that links it.
 if(EMSCRIPTEN)
     target_link_options(js_engine_tests PRIVATE
-        -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
         -sEXIT_RUNTIME=0                # Allow async operations after main() returns
         -sENVIRONMENT=node              # Node.js environment for tests
         -sASYNCIFY                      # Enable async/await support
@@ -1968,10 +1968,10 @@ target_link_libraries(integration_tests
         pthread
 )
 
-# WASM: Add Emscripten-specific link options for HTTP support
+# WASM: the program's own link shape; the fetch client's -sFETCH comes from
+# sce_runtime, which states it for every program that links it.
 if(EMSCRIPTEN)
     target_link_options(integration_tests PRIVATE
-        -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
         -sEXIT_RUNTIME=0                # Allow async operations after main() returns
         -sENVIRONMENT=node              # Node.js environment for tests
         -sASYNCIFY                      # Enable async/await support
@@ -2039,10 +2039,10 @@ target_link_libraries(concurrency_tests
         pthread
 )
 
-# WASM: Add Emscripten-specific link options for HTTP support
+# WASM: the program's own link shape; the fetch client's -sFETCH comes from
+# sce_runtime, which states it for every program that links it.
 if(EMSCRIPTEN)
     target_link_options(concurrency_tests PRIVATE
-        -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
         -sEXIT_RUNTIME=0                # Allow async operations after main() returns
         -sENVIRONMENT=node              # Node.js environment for tests
         -sASYNCIFY                      # Enable async/await support
@@ -3161,9 +3161,10 @@ if(EMSCRIPTEN)
     # WASM: Use pre-js for XMLHttpRequest polyfill, NODEFS mount, and HTTP server auto-management
     set(POLYFILL_PRE_JS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/wasm_polyfill.js")
 
-    # WASM: Add Emscripten-specific link options (NO pthread for browser compatibility)
+    # WASM: the runner's own link options. The pthread options come from
+    # apply_sce_test_policies like every test program's, and the fetch
+    # client's -sFETCH from sce_runtime.
     target_link_options(w3c_test_cli PRIVATE
-        -sFETCH                         # Enable Fetch API for HTTP requests
         -sALLOW_TABLE_GROWTH=1          # Allow function table to grow dynamically (required for QuickJS JS_NewCFunction)
         -sEXIT_RUNTIME=0                # Keep runtime alive for async HTTP callbacks
         -sENVIRONMENT=node              # Node.js environment for wrapper script
@@ -3295,7 +3296,6 @@ if(EMSCRIPTEN)
 
     target_link_options(comprehensive_interactive_test PRIVATE
         --bind                          # Enable Emscripten embind for val objects
-        -sFETCH                         # Enable Fetch API for HTTP operations
         -sEXIT_RUNTIME=0                # Allow async operations after main() returns
         -sENVIRONMENT=node              # Node.js environment for tests
         -sASYNCIFY                      # Enable async/await support
@@ -8544,9 +8544,6 @@ if(EMSCRIPTEN)
 
         # File system (for fetch API)
         -sFORCE_FILESYSTEM=1
-
-        # Fetch API (for HTTP requests)
-        -sFETCH=1
 
         # Environment (browser and Node.js)
         -sENVIRONMENT=web,node

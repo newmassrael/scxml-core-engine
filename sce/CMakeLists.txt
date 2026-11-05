@@ -595,6 +595,13 @@ if(SCE_ENABLE_HTTP)
             src/events/HttpClientFactory.cpp
             src/events/EmscriptenFetchClient.cpp
         )
+        # The fetch client calls emscripten_fetch, which links only under
+        # -sFETCH, and waits on a Node request through EM_ASYNC_JS, which
+        # needs -sASYNCIFY. They are what this library's own code asks of the
+        # link, so the library states them for every program that links it:
+        # a program that left -sFETCH out failed to link with emscripten_fetch
+        # undefined as soon as it reached the client through the archive.
+        target_link_options(sce_runtime INTERFACE -sFETCH -sASYNCIFY)
     endif()
 endif()
 
@@ -683,21 +690,10 @@ if(EMSCRIPTEN)
     foreach(_target IN LISTS _SCE_PTHREAD_TARGETS)
         target_compile_options(${_target} PRIVATE -pthread -sUSE_PTHREADS=1)
     endforeach()
-
-    target_link_options(sce_runtime PRIVATE
-        -pthread
-        -sUSE_PTHREADS=1
-        -sPTHREAD_POOL_SIZE=15         # Worker thread pool (for EventDispatcherImpl and the scheduler)
-        -sPTHREAD_POOL_SIZE_STRICT=0   # Allow on-demand thread creation (Emscripten Issue #21959)
-        -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
-        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
-        -sENVIRONMENT=node,web          # Target Node.js and Web environments for Fetch API
-        -sASYNCIFY                       # Enable async/await support
-        -sASSERTIONS=2                   # Runtime validation for development
-        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}  # Centrally managed in root CMakeLists.txt
-        -sALLOW_MEMORY_GROWTH=0          # Disable runtime heap expansion (use fixed INITIAL_MEMORY)
-        -sSTACK_SIZE=2097152             # 2MB stack (reduced to fit within 384MB heap)
-    )
+    # The thread pool, heap, stack, environment and exit behaviour are each
+    # program's to choose at its own link; a static library is never linked,
+    # so it states only what its code requires of a link (the fetch client's
+    # options, above) and nothing of a program's shape.
     message(STATUS "WASM build: pthread enabled for EventDispatcherImpl (no PROXY_TO_PTHREAD)")
 endif()
 
