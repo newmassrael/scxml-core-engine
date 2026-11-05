@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Generic, Optional, TypeVar
 
+from .event_origin import EventOrigin
 from .scripting.i_script_engine import ScriptValue
 
 E = TypeVar("E")
@@ -19,8 +20,14 @@ class EventMetadata:
     data: Any = ""
     event_type: str = "external"
     send_id: str = ""
-    origin: str = ""
-    origin_type: str = ""
+    # §scxml-5.10: `_event.origin` and `_event.origintype`, the reply address
+    # the delivering processor wrote, as one value (docs/adr/0090); `None` for
+    # an event no processor stamped, which reads both fields as ''.
+    origin: Optional[EventOrigin] = None
+    # The id of the session that sent the event, set only by the SCXML Event
+    # I/O Processor. Not an `_event` field: it is what the lookups that find a
+    # session read, and nothing reads the origin's address to find one.
+    sender: Optional[str] = None
     invoke_id: str = ""
     # §scxml-6.4: the token of the host-run invocation this event completes,
     # set only by `Engine.complete_host_invoke` after it confirmed the

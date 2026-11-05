@@ -13,8 +13,10 @@ processor's location, which names nothing an external component can post to.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional, Tuple
 from urllib.parse import quote, unquote
+
+from .event_origin import EventOrigin, origin_address_of
 
 SCXML_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
 BASIC_HTTP_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
@@ -65,29 +67,74 @@ def session_id_from_scxml_location(uri: str) -> str:
     return unquote(uri[len(prefix):])
 
 
-def published_origin(origin_session_id: str) -> str:
-    """The ``_event.origin`` a receiver should see for an event sent by
-    ``origin_session_id``.
+def scxml_origin(sender_session_id: str) -> EventOrigin:
+    """The origin the SCXML Event I/O Processor writes for an event a session
+    sends (docs/adr/0090, section 2).
 
-    The origin of a delivered event must match the 'location' the sending
-    session published, which is what makes it an address the
-    receiver can answer. The engine carries the sender's BARE session id
-    internally — ``EventMetadata.origin`` — because its session-keyed lookups
-    (``<finalize>`` dispatch, cancelled-invoke filtering) match on the id.
-    Converting where the event is raised would make one value serve two
-    consumers that need different spellings. So the conversion belongs at the
-    boundary where the value becomes visible to the document, and this is that
-    conversion — the same rule, and the same shape, as the C++
-    ``IOProcessorHelper::publishedOrigin`` both engines already share.
-
-    A remote invoke is the case that makes this more than a rename: its child
-    session is stamped with a URI rather than an id, and wrapping a URI in
-    :func:`scxml_location` would produce an address naming nothing. An argument
-    that already carries a scheme is therefore passed through — it is already
-    an address.
+    The origin of an event raised in the receiving session must match the
+    location the sending session publishes, so the pair is the processor's
+    canonical type and :func:`scxml_location` of the sender, the one function
+    that also writes the session's ``_ioprocessors`` entry. The sender's id
+    itself travels beside the pair, as the event's ``sender``, for the lookups
+    that find a session by it. Port of the C++ ``IOProcessorHelper::scxmlOrigin``.
     """
-    # §scxml-C-1 — decides the origin a receiver sees, and it is the location
-    # the sending session published, not the bare id the engine routes on.
+    return EventOrigin(SCXML_EVENT_PROCESSOR_URI, scxml_location(sender_session_id))
+
+
+def scxml_origin_of(sender_session_id: Optional[str]) -> Optional[EventOrigin]:
+    """:func:`scxml_origin` of a sender that may be absent: a machine that holds
+    no session id has no address to publish, so an event it sends carries no
+    origin rather than the location of an empty id."""
+    if not sender_session_id:
+        return None
+    return scxml_origin(sender_session_id)
+
+
+def stored_origin_text(origin: Optional[EventOrigin], sender: Optional[str]) -> str:
+    """The ``origin`` text that stores an event's origin and sender.
+
+    docs/adr/0090, "Until step 6": the sending session's id for an event a
+    session sent, the address otherwise, and empty for none, which is what every
+    backend writes as a saved state's format-2 ``origin``. The ``origintype``
+    beside it is the pair's processor."""
+    return sender if sender else origin_address_of(origin)
+
+
+def read_stored_origin(
+    origin: str, origin_type: str
+) -> Tuple[Optional[EventOrigin], Optional[str]]:
+    """The origin and sender a stored ``origin`` and ``origintype`` are read as.
+
+    docs/adr/0090, section 7. Empty both is none. A value without a scheme
+    stored with the SCXML processor's type is a session's id, read as that
+    session's pair with the id as its sender; an SCXML location (which one
+    backend stored in place of the id) is read the same way by the id it names.
+    Anything else is the pair as stored, with no sender. Port of the C++
+    ``IOProcessorHelper::readStoredOrigin``."""
+    if not origin and not origin_type:
+        return None, None
+    located = session_id_from_scxml_location(origin)
+    if located:
+        return scxml_origin(located), located
+    bare_id = bool(origin) and "://" not in origin
+    if bare_id and origin_type == SCXML_EVENT_PROCESSOR_URI:
+        return scxml_origin(origin), origin
+    return EventOrigin(origin_type, origin), None
+
+
+def published_origin(origin_session_id: str) -> str:
+    """The ``_event.origin`` an engine that carries the sender's bare session id
+    publishes for it.
+
+    This runtime no longer calls it: an event carries the pair the delivering
+    processor wrote (:func:`scxml_origin`), so nothing converts at the read. It
+    is kept, with the C++ ``IOProcessorHelper::publishedOrigin`` and the other
+    runtimes' ports, until docs/adr/0090 removes the rule from every runtime at
+    once (its step 7). It leaves an argument that carries a scheme as it is and
+    wraps anything else as an SCXML location.
+    """
+    # §scxml-C-1 — the location the sending session published, from the bare
+    # id an engine that routes on it carried.
     if not origin_session_id:
         return ""
     if "://" in origin_session_id:

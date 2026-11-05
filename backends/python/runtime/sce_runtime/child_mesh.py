@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional, Protocol, Union
 
 from .event import EventMetadata
+from .event_origin import EventOrigin
 from .host_processor import (
     HostInvokeEvent,
     HostInvokeResponse,
@@ -28,13 +29,13 @@ def mesh_event_metadata(data: str, source: str, send_id: str) -> EventMetadata:
     SCE_MESH.md §mesh-10.7 tabulates it: external, origin ``mesh://<source>``,
     the SCXML processor as origin type, and the send id the envelope carried.
     The one place it is built, so a child cannot tell a peer's event from the
-    one its parent would have been given."""
+    one its parent would have been given. The Mesh transport writes the pair
+    and no session is its sender (docs/adr/0090, section 2)."""
     return EventMetadata(
         data=data,
         event_type="external",
         send_id=send_id,
-        origin=MESH_ORIGIN_SCHEME + source,
-        origin_type=SCXML_EVENT_PROCESSOR_URI,
+        origin=EventOrigin(SCXML_EVENT_PROCESSOR_URI, MESH_ORIGIN_SCHEME + source),
     )
 
 

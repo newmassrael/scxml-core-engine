@@ -158,12 +158,17 @@ status=0
 # A cancel used to be remembered against its id and dropped the next send that
 # carried it (W3C SCXML 6.3), which no fixture in the suite re-arms a timer
 # under the same id to ask.
+#
+# `io_processors/` is the tenth: it holds the SCXML processor's address codec
+# (`scxml_location` and its inverse) and the reading of a stored origin to the
+# answers the C++ `IOProcessorHelper` gives (docs/adr/0090, test 6), over no
+# document.
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
         backends/python/tests/microstep/ backends/python/tests/json_text/ \
         backends/python/tests/durations/ backends/python/tests/mesh/ \
-        backends/python/tests/scheduler/ \
+        backends/python/tests/scheduler/ backends/python/tests/io_processors/ \
         --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
 cat "$LOG/pytest.log"
 

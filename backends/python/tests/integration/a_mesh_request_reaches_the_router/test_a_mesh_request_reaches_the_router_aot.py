@@ -21,6 +21,7 @@ sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 
 from sce_runtime import (  # noqa: E402
     MESH_RPC_INVOKE_TYPE,
+    EventOrigin,
     HostInvokeEvent,
     HostInvokeRequest,
     HostInvokeResponse,
@@ -91,7 +92,11 @@ def test_a_mesh_request_the_router_fails_is_error_invoke() -> None:
     engine = _started(requests)
     request = _the_request(requests)
     assert engine.fail_host_invoke(
-        MESH_RPC_INVOKE_TYPE, "ask", request.token, '"unreachable"', origin="mesh://motor"
+        MESH_RPC_INVOKE_TYPE,
+        "ask",
+        request.token,
+        '"unreachable"',
+        origin=EventOrigin(MESH_RPC_INVOKE_TYPE, "mesh://motor"),
     )
     engine.advance_time(0)
     _ended(engine, answered=0, failed=1, refused=0)

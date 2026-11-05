@@ -44,6 +44,7 @@ sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 
 from sce_runtime import (  # noqa: E402
     HOST_INVOKE_DEADLINE_PARAM,
+    EventOrigin,
     HostInvokeEvent,
     HostInvokeResponse,
     parse_host_invoke_deadline_ms,
@@ -358,8 +359,9 @@ def test_a_failed_invocation_raises_error_invoke_once_with_its_origin() -> None:
     _deliver(engine, Event.FAIL)
 
     token = _token_of(starts, "job")
+    named = EventOrigin(DECLARED_TYPE, "host://job")
     assert engine.fail_host_invoke(
-        DECLARED_TYPE, "job", token, '"no"', origin="host://job", origin_type=DECLARED_TYPE
+        DECLARED_TYPE, "job", token, '"no"', origin=named
     ), "a running invocation's failure was refused"
     engine.advance_time(0)
     # Counted only when the invokeid, the data and both origin fields are
@@ -370,7 +372,7 @@ def test_a_failed_invocation_raises_error_invoke_once_with_its_origin() -> None:
         "a failed run completed afterwards"
     )
     assert not engine.fail_host_invoke(
-        DECLARED_TYPE, "job", token, '"no"', origin="host://job", origin_type=DECLARED_TYPE
+        DECLARED_TYPE, "job", token, '"no"', origin=named
     ), "the same run failed twice"
     engine.advance_time(0)
     assert _counter(engine, "failed") == 1

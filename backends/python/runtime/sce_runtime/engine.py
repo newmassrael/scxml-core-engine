@@ -46,6 +46,7 @@ from typing import (
 
 from .configuration import ConfigurationRejection, validate_configuration
 from .event import EventMetadata, EventWithMetadata, is_error_event
+from .event_origin import EventOrigin
 from .host_processor import (
     HOST_INVOKE_DEADLINE_PARAM,
     MESH_PROCESSOR_TYPE,
@@ -288,6 +289,12 @@ class Engine(Generic[S, E]):
         # backend draws (docs/adr/0045, "Questions the owner answered" 2), unless
         # the host gives it.
         self._session_id: str = session_id if session_id is not None else _draw_session_id()
+        # The id of the session that invoked this one, told by that parent when
+        # it starts or resumes this one (`share_tree_with`); `None` for a machine
+        # a host started. The location the parent publishes is a target, so a
+        # reply to the origin of an event the parent sent reaches it as
+        # `#_parent` does (docs/adr/0090; `send_to_target`).
+        self._parent_session_id: Optional[str] = None
         # Path B+ RFC Q1=(d) Python=duck-typed ref; Q5=(a) instance member;
         # Q2=(a) mandatory-when-needed: every Engine now ships with its own
         # engine instance, mirroring Kotlin's constructor-injected pattern.
@@ -1244,7 +1251,6 @@ class Engine(Generic[S, E]):
                 sendid=posted.send_id,
                 invoke_id=posted.invoke_id,
                 origin=posted.origin,
-                origin_type=posted.origin_type,
             )
         elif isinstance(posted, InboxHostInvokeEnding):
             self._apply_host_invoke_ending(posted)
@@ -1266,7 +1272,6 @@ class Engine(Generic[S, E]):
                 ending.token,
                 ending.data,
                 ending.origin,
-                ending.origin_type,
             )
         else:
             self.fail_host_invoke(
@@ -1275,7 +1280,6 @@ class Engine(Generic[S, E]):
                 ending.token,
                 ending.data,
                 ending.origin,
-                ending.origin_type,
             )
 
     def _apply_mesh_delivery(self, posted: InboxMeshDelivery) -> None:
@@ -1518,8 +1522,9 @@ class Engine(Generic[S, E]):
         event name the machine does not declare is dropped, as the engine drops
         any such event; an end the engine no longer waits for is refused by the
         token check. An answer carries ``_event.origin`` ``mesh://<source>`` and
-        origin type ``sce:mesh-rpc`` (SCE_MESH.md §mesh-9.5); a deadline the
-        requester reached itself has no peer to name, and carries neither.
+        origin type ``sce:mesh-rpc`` (SCE_MESH.md §mesh-9.5), the pair the Mesh
+        transport writes for that peer (docs/adr/0090, section 2); a deadline
+        the requester reached itself has no peer to name, and carries none.
 
         An owner-thread operation; an endpoint that receives on a thread of its
         own posts an `InboxMeshDelivery` to `inbox` instead, naming the session
@@ -1532,18 +1537,20 @@ class Engine(Generic[S, E]):
                 sendid=metadata.send_id,
                 invoke_id=metadata.invoke_id,
                 origin=metadata.origin,
-                origin_type=metadata.origin_type,
             )
             return
-        origin = MESH_ORIGIN_SCHEME + call.source if call.source is not None else ""
-        origin_type = MESH_RPC_INVOKE_TYPE if call.source is not None else ""
+        origin = (
+            EventOrigin(MESH_RPC_INVOKE_TYPE, MESH_ORIGIN_SCHEME + call.source)
+            if call.source is not None
+            else None
+        )
         if call.failed:
             self.fail_host_invoke(
-                MESH_RPC_INVOKE_TYPE, call.invoke_id, call.token, call.data, origin, origin_type
+                MESH_RPC_INVOKE_TYPE, call.invoke_id, call.token, call.data, origin
             )
         else:
             self.complete_host_invoke(
-                MESH_RPC_INVOKE_TYPE, call.invoke_id, call.token, call.data, origin, origin_type
+                MESH_RPC_INVOKE_TYPE, call.invoke_id, call.token, call.data, origin
             )
 
     def detach_mesh(self) -> None:
@@ -1584,7 +1591,9 @@ class Engine(Generic[S, E]):
         external queue, like any event the host raises — resolved by name,
         so a reply naming an event this machine does not declare is dropped
         exactly as any such event is. Raised in list order, because a
-        handler reporting two observations is reporting a sequence."""
+        handler reporting two observations is reporting a sequence. Each
+        reply carries the origin the host named for it, in its own terms, and
+        none when it named no party (docs/adr/0090, section 2)."""
         handler = self._host_processors.get(request.processor_type)
         if handler is None:
             return None
@@ -1596,6 +1605,7 @@ class Engine(Generic[S, E]):
                 reply.event_name,
                 data=reply.event_data,
                 sendid=request.send_id,
+                origin=reply.origin,
             )
         return replies
 
@@ -1656,9 +1666,15 @@ class Engine(Generic[S, E]):
         The tree's inboxes (docs/adr/0084, D2 as amended at step 10): the child
         is entered in the tree's directory under its session id, so a post
         naming it goes to its own inbox, and a post there calls the tree's one
-        waker, the one the host installed on the root."""
+        waker, the one the host installed on the root.
+
+        And who its parent is: the child is told this session's id, so a send
+        it makes to the location this session publishes, the origin of an event
+        this session sent it, reaches this session as `#_parent` does
+        (docs/adr/0090)."""
         child.adopt_host_invokers(self._tree())
         child._join_inboxes(self._inbox_state.tree())
+        child._parent_session_id = self._session_id
 
     def adopt_host_invokers(self, invokers: TreeInvokers) -> None:
         """Be served by `invokers`, the tree's, and hand them on to every child
@@ -1689,7 +1705,6 @@ class Engine(Generic[S, E]):
             else f"{ERROR_INVOKE_PREFIX}{ending.invoke_id}",
             ending.data,
             ending.origin,
-            ending.origin_type,
         ):
             return True, None
         return True, (
@@ -1743,22 +1758,18 @@ class Engine(Generic[S, E]):
         invoke_id: str,
         token: int,
         done_data: str = "",
-        origin: str = "",
-        origin_type: str = "",
+        origin: Optional[EventOrigin] = None,
     ) -> None:
         """`end_host_invoke_in` for a completion: ``done.invoke.<invoke_id>`` with
         `done_data` as ``_event.data``, in the session `session_id` names. What a
         host that serves the whole tree calls with the session id and token the
-        request carried. `origin` and `origin_type` are what
-        `complete_host_invoke` takes.
+        request carried. `origin` is what `complete_host_invoke` takes.
 
         An owner-thread operation; another thread posts an
         `InboxHostInvokeEnding` naming the session to `inbox` instead."""
         self.end_host_invoke_in(
             session_id,
-            HostInvokeEnding(
-                processor_type, invoke_id, token, True, done_data, origin, origin_type
-            ),
+            HostInvokeEnding(processor_type, invoke_id, token, True, done_data, origin),
         )
 
     def fail_host_invoke_in(
@@ -1768,17 +1779,14 @@ class Engine(Generic[S, E]):
         invoke_id: str,
         token: int,
         error_data: str = "",
-        origin: str = "",
-        origin_type: str = "",
+        origin: Optional[EventOrigin] = None,
     ) -> None:
         """`end_host_invoke_in` for a failure: ``error.invoke.<invoke_id>`` with
         `error_data` as ``_event.data``. An owner-thread operation, posted from
         another thread as `complete_host_invoke_in` is."""
         self.end_host_invoke_in(
             session_id,
-            HostInvokeEnding(
-                processor_type, invoke_id, token, False, error_data, origin, origin_type
-            ),
+            HostInvokeEnding(processor_type, invoke_id, token, False, error_data, origin),
         )
 
     def perform_host_invoke(self, request: HostInvokeRequest) -> bool:
@@ -1971,8 +1979,7 @@ class Engine(Generic[S, E]):
         invoke_id: str,
         token: int,
         done_data: str,
-        origin: str = "",
-        origin_type: str = "",
+        origin: Optional[EventOrigin] = None,
     ) -> bool:
         """W3C SCXML 6.4 — a host-run invocation finished; raise its
         ``done.invoke.<invoke_id>`` with `done_data` as ``_event.data``.
@@ -1990,11 +1997,12 @@ class Engine(Generic[S, E]):
         the document. One raised through the ordinary external-event API
         skips the check above, so the engine refuses it.
 
-        `origin` and `origin_type` are the completion's ``_event.origin`` and
-        ``_event.origintype`` (W3C SCXML 5.10.1), for a host whose invocation
-        stands for another party it can name — as a Mesh router's
-        ``sce:mesh-rpc`` stands for the peer that answered (``mesh://<peer>``).
-        Empty keeps what every host completion has carried.
+        `origin` is the completion's ``_event.origin`` and ``_event.origintype``
+        as one pair (W3C SCXML 5.10.1, docs/adr/0090), for a host whose
+        invocation stands for another party it can name, in the host's own
+        terms — as a Mesh router's ``sce:mesh-rpc`` stands for the peer that
+        answered (``mesh://<peer>``). ``None`` for a host that names no party:
+        both fields then read empty, and the engine fills in no type.
 
         An owner-thread operation: a host whose invocation finishes on a thread
         of its own posts an `InboxHostInvokeEnding` to `inbox` instead, and the
@@ -2006,7 +2014,6 @@ class Engine(Generic[S, E]):
             create_done_invoke_event_name(invoke_id),
             done_data,
             origin,
-            origin_type,
         )
 
     def fail_host_invoke(
@@ -2015,8 +2022,7 @@ class Engine(Generic[S, E]):
         invoke_id: str,
         token: int,
         error_data: str,
-        origin: str = "",
-        origin_type: str = "",
+        origin: Optional[EventOrigin] = None,
     ) -> bool:
         """W3C SCXML 6.4 — a host-run invocation failed; raise its
         ``error.invoke.<invoke_id>`` — or the generic ``error.invoke`` when the
@@ -2035,7 +2041,6 @@ class Engine(Generic[S, E]):
             f"{ERROR_INVOKE_PREFIX}{invoke_id}",
             error_data,
             origin,
-            origin_type,
         )
 
     def _end_host_invoke(
@@ -2045,8 +2050,7 @@ class Engine(Generic[S, E]):
         token: int,
         event_name: str,
         data: str,
-        origin: str,
-        origin_type: str,
+        origin: Optional[EventOrigin],
     ) -> bool:
         """The one body behind a host-run invocation's completion and
         failure: the token check, the deadline drop, and the event."""
@@ -2064,7 +2068,6 @@ class Engine(Generic[S, E]):
             data=data,
             invoke_id=invoke_id,
             origin=origin,
-            origin_type=origin_type,
             host_invoke_token=token,
         )
         return True
@@ -2182,9 +2185,9 @@ class Engine(Generic[S, E]):
         data: Any = "",
         sendid: str = "",
         invoke_id: str = "",
-        origin: str = "",
-        origin_type: str = "",
+        origin: Optional[EventOrigin] = None,
         host_invoke_token: Optional[int] = None,
+        sender: Optional[str] = None,
     ) -> None:
         """W3C SCXML 5.10 + 6.4 — enqueue an external event addressed by
         its wire name (`done.invoke.<id>`, `error.execution`, or any
@@ -2193,6 +2196,11 @@ class Engine(Generic[S, E]):
         the event is lost"). Used by the runtime to lift child-raised
         events onto the parent's external queue with the originating
         invoke's metadata intact.
+
+        `origin` is the pair the processor that delivers the event wrote, and
+        `sender` the id of the session that sent it when that processor is the
+        SCXML one (docs/adr/0090). A host that posts an event names its origin
+        in its own terms, or none; nothing here fills one in.
 
         `host_invoke_token` is `complete_host_invoke`'s to set. A host-run
         invocation's ``done.invoke`` without it is refused here, by its wire
@@ -2206,7 +2214,7 @@ class Engine(Generic[S, E]):
             data=data,
             invoke_id=invoke_id,
             origin=origin,
-            origin_type=origin_type,
+            sender=sender,
             host_invoke_token=host_invoke_token,
         )
         if self._refuses_host_invoke_completion(event_name, metadata):
@@ -2225,26 +2233,52 @@ class Engine(Generic[S, E]):
             metadata.name = event_name
         self._enqueue_external(EventWithMetadata(event=event, metadata=metadata))
 
-    def send_external(self, event: E, sendid: str = "", data: Any = "") -> None:
-        """W3C SCXML 6.2 — enqueue an external event with no delay.
-        Drained by the macrostep loop AFTER any pending internal events.
+    def send_external(
+        self,
+        event: E,
+        sendid: str = "",
+        data: Any = "",
+        origin: Optional[EventOrigin] = None,
+    ) -> None:
+        """W3C SCXML 6.2 — enqueue an external event the host posts, with no
+        delay. Drained by the macrostep loop AFTER any pending internal events.
         Unlike `raise_internal`, this does NOT immediately drive the
         loop; it queues so that the current handler can finish first.
-        `data` carries the marshalled `<param>`/`<content>`/namelist
-        payload (W3C SCXML 5.10) — a `dict` for `<param>`/namelist
-        builds, the literal/expr result for `<content>`, or `""` when
-        the send had no payload.
+        `data` carries the event's payload (W3C SCXML 5.10).
 
-        W3C SCXML C.1: this path is the SCXML Event I/O Processor's
-        own external delivery, so `_event.origintype` defaults to the
-        SCXML processor URI (test253, test352)."""
+        `origin` is the reply address the host names for the event, in its own
+        terms (docs/adr/0090, section 2): its processor's type and the address
+        a `<send>` of that type reaches the party at. ``None``, the default, is
+        a host that names no party, and the event then reads ``_event.origin``
+        and ``_event.origintype`` as ''; the engine does not fill in the SCXML
+        processor's type for an event no session sent."""
         metadata = EventMetadata(
             send_id=sendid,
             event_type="external",
             data=data,
-            origin_type=SCXML_EVENT_PROCESSOR_URI,
+            origin=origin,
         )
         self._enqueue_external(EventWithMetadata(event=event, metadata=metadata))
+
+    def sent_by_this_session(
+        self, sendid: str = "", data: Any = "", name: str = ""
+    ) -> EventMetadata:
+        """W3C SCXML C.1 — the metadata of an external event this session sends
+        through the SCXML Event I/O Processor, to itself, a child or a session
+        it names: the pair that processor writes for this session
+        (`io_processors.scxml_origin`), with this session as the event's
+        sender (docs/adr/0090, section 2). The one place the pair is built for
+        what this session sends, so an immediate, a delayed and a routed send
+        cannot name their sender apart. `name` is the name the event was sent
+        under when that is not its member's own (`arrival_name_of`)."""
+        return EventMetadata(
+            send_id=sendid,
+            event_type="external",
+            data=data,
+            origin=io_processors.scxml_origin_of(self._session_id),
+            sender=self._session_id or None,
+            name=name,
+        )
 
     def arrival_name_of(self, event: E, name: str) -> str:
         """§scxml-5.10 — what `EventMetadata.name` is for an event sent as
@@ -2265,17 +2299,10 @@ class Engine(Generic[S, E]):
         `_event.origin` one meaning for every event the SCXML Event I/O
         Processor delivers — the location the SENDER published, the address a
         reply goes back to — and a session sending to itself is such a sender.
-        `send_external` stays origin-less because a host that injects an event
-        is not this session. `name` is the name the event was sent under when
-        that is not `event`'s own (`arrival_name_of`)."""
-        metadata = EventMetadata(
-            send_id=sendid,
-            event_type="external",
-            data=data,
-            origin=self._session_id,
-            origin_type=SCXML_EVENT_PROCESSOR_URI,
-            name=name,
-        )
+        `send_external` carries what the host names because a host that injects
+        an event is not this session. `name` is the name the event was sent
+        under when that is not `event`'s own (`arrival_name_of`)."""
+        metadata = self.sent_by_this_session(sendid, data, name)
         self._enqueue_external(EventWithMetadata(event=event, metadata=metadata))
 
     def deliver_to_child_session(
@@ -2290,15 +2317,15 @@ class Engine(Generic[S, E]):
         `False` return means the address names no live child of ours and the
         event takes the normal external path — the routing half of C.1 is what
         makes the published location a usable target rather than a string that
-        merely compares equal.
+        merely compares equal. The child is found by its session id, and the
+        event carries this session's pair as its origin, so the child can answer
+        it (docs/adr/0090, section 2).
         """
         if not child_session_id:
             return False
         for invoke in self._active_invokes.values():
-            if invoke.origin() == child_session_id and not invoke.is_done():
-                invoke.forward_event(
-                    event_name, EventMetadata(event_type="external", data=data)
-                )
+            if invoke.session_id() == child_session_id and not invoke.is_done():
+                invoke.forward_event(event_name, self.sent_by_this_session(data=data))
                 return True
         return False
 
@@ -2398,16 +2425,7 @@ class Engine(Generic[S, E]):
             return self.deliver_to_child_session(route.session_id, route.event_name, data)
         invoke = self._active_invokes.get(route.invoke_id)
         if invoke is not None and not invoke.is_done():
-            invoke.forward_event(
-                route.event_name,
-                EventMetadata(
-                    event_type="external",
-                    data=data,
-                    send_id=sendid,
-                    origin=self._session_id,
-                    origin_type=SCXML_EVENT_PROCESSOR_URI,
-                ),
-            )
+            invoke.forward_event(route.event_name, self.sent_by_this_session(sendid, data))
             return True
         return False
 
@@ -2455,9 +2473,17 @@ class Engine(Generic[S, E]):
             if invoke is None or invoke.is_done():
                 return "unreachable"
             route = ScheduledRoute(kind="invocation", event_name=event_name, invoke_id=address)
+        elif kind == send_module.TARGET_SESSION and address == self._parent_session_id:
+            # §scxml-C-1: the location the session that invoked this one
+            # publishes is a target, as `#_parent` is: the address a reply to
+            # an event the parent sent goes to (docs/adr/0090).
+            if self._policy._parent_queue is None:
+                return "unreachable"
+            route = ScheduledRoute(kind="parent", event_name=event_name)
         elif kind == send_module.TARGET_SESSION:
             if not any(
-                i.origin() == address and not i.is_done() for i in self._active_invokes.values()
+                i.session_id() == address and not i.is_done()
+                for i in self._active_invokes.values()
             ):
                 return "unreachable"
             route = ScheduledRoute(kind="session", event_name=event_name, session_id=address)
@@ -2659,16 +2685,9 @@ class Engine(Generic[S, E]):
             else:
                 # §scxml-C-1: scheduler drain is the SCXML processor's
                 # delayed-delivery path for a `<send>` this session addressed
-                # to itself — origin and origintype mirror send_to_self, since
+                # to itself — its origin and sender are send_to_self's, since
                 # waiting must not cost the event its sender.
-                metadata = EventMetadata(
-                    send_id=entry.sendid,
-                    event_type="external",
-                    data=entry.data,
-                    origin=self._session_id,
-                    origin_type=SCXML_EVENT_PROCESSOR_URI,
-                    name=entry.name,
-                )
+                metadata = self.sent_by_this_session(entry.sendid, entry.data, entry.name)
                 self._enqueue_external(
                     EventWithMetadata(event=entry.event, metadata=metadata)
                 )
@@ -3230,7 +3249,7 @@ class Engine(Generic[S, E]):
                     data=data,
                     invoke_id=carried_id,
                     origin=invoke.origin(),
-                    origin_type=SCXML_EVENT_PROCESSOR_URI,
+                    sender=invoke.session_id() or None,
                 )
             # §scxml-6.3.1 — lift the child's terminal donedata onto
             # `done.invoke.<id>._event.data`. Gated on the persistent

@@ -48,8 +48,8 @@ PY
 
 mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "            origin_type=SCXML_EVENT_PROCESSOR_URI,\n            name=name,\n        )",
-     "            origin_type=SCXML_EVENT_PROCESSOR_URI,\n        )")
+     "        metadata = self.sent_by_this_session(sendid, data, name)\n",
+     "        metadata = self.sent_by_this_session(sendid, data)\n")
 PY
 
 mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'
@@ -72,8 +72,8 @@ PY
 
 mutation_case "a delayed external send is raised without the name its entry carried" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "                    origin_type=SCXML_EVENT_PROCESSOR_URI,\n                    name=entry.name,\n                )",
-     "                    origin_type=SCXML_EVENT_PROCESSOR_URI,\n                )")
+     "                metadata = self.sent_by_this_session(entry.sendid, entry.data, entry.name)\n",
+     "                metadata = self.sent_by_this_session(entry.sendid, entry.data)\n")
 PY
 
 mutation_case "a delayed internal send is raised without the name its route carried" <<'PY'

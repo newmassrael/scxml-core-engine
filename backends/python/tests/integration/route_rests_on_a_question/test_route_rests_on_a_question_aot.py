@@ -294,8 +294,8 @@ class _Invocation:
     def is_done(self) -> bool:
         return False
 
-    def origin(self) -> str:
-        return "kid-location"
+    def session_id(self) -> str:
+        return "kid-session"
 
 
 def _send_to_an_invocation_that_is_gone_by_the_deadline(engine, rests_on: tuple) -> None:

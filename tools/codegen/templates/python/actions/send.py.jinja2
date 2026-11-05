@@ -470,7 +470,9 @@
    wire-format event name on the child policy's enum and pushes into the
    child's external queue, payload included. The build refused a target that
    names no invocation above; one that is not running is not there to reach
-   (W3C SCXML C.1). #}
+   (W3C SCXML C.1). The event carries the pair the SCXML processor writes for
+   this session and this session as its sender (`sent_by_this_session`,
+   docs/adr/0090), so the child can answer it at `_event.origin`. #}
 {{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
 {{ indent }}if _inv_target is not None and not _inv_target.is_done():
 {% if has_delay %}
@@ -478,7 +480,7 @@
    then, if the invocation has ended by that time (W3C SCXML C.1). #}
 {{ indent }}    engine.schedule_routed_send(None, {{ delay_py }}, _sid, _data, "invocation", event_name=_evt_name, invoke_id={{ action.target | slice_from(2) | py_string_literal }})
 {% else %}
-{{ indent }}    _inv_target.forward_event(_evt_name, EventMetadata(event_type="external", data=_data))
+{{ indent }}    _inv_target.forward_event(_evt_name, engine.sent_by_this_session(data=_data))
 {% endif %}
 {{ indent }}else:
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))

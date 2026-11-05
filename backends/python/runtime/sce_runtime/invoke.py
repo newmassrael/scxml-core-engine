@@ -24,6 +24,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Generic, Iterable, List, Optional, Tuple, TypeVar
 
+from .event_origin import EventOrigin
+from .io_processors import scxml_origin_of
 from .saved_state import StateRefusal
 
 E = TypeVar("E")
@@ -118,13 +120,24 @@ class Invoke(ABC, Generic[E]):
         path keep the default."""
         return None
 
-    def origin(self) -> str:
-        """W3C SCXML 5.10.1 — `_event.origin` for the events this target
-        raises into the parent. An invoked session is an external entity
-        from the parent's point of view, so its parent-bound events carry
-        an origin identifying the session. Default empty for targets with
-        no session identity of their own."""
+    def session_id(self) -> str:
+        """The id of the session this target runs, which the events it raises
+        into the parent carry as their `sender` and which the parent finds the
+        invocation by when a `<send>` names that session. Default empty for
+        targets with no session identity of their own."""
         return ""
+
+    def origin(self) -> Optional[EventOrigin]:
+        """W3C SCXML 5.10.1 — `_event.origin` and `_event.origintype` of the
+        events this target raises into the parent. An invoked session is an
+        external entity from the parent's point of view, and it sends through
+        the SCXML Event I/O Processor, so its parent-bound events carry the pair
+        that processor writes for the session (docs/adr/0090, section 2).
+        ``None`` for targets with no session identity of their own."""
+        # §scxml-5.10.1: `_event.origin` and `_event.origintype` of what the
+        # invoked session sends, the location it publishes and the SCXML
+        # processor's type.
+        return scxml_origin_of(self.session_id())
 
 
 class ScxmlInvoke(Invoke):
@@ -210,9 +223,10 @@ class ScxmlInvoke(Invoke):
     def is_done(self) -> bool:
         return self._child.reached_final
 
-    def origin(self) -> str:
+    def session_id(self) -> str:
         # The child engine's policy owns the session id the parent uses to
-        # identify this invocation (§scxml-5.10.1 `_event.origin`).
+        # identify this invocation; the pair `origin` writes for the events it
+        # sends is built from it.
         return getattr(self._child.policy, "_session_id", "") or ""
 
     def drain_events(self) -> Iterable[Tuple[str, Any]]:
@@ -231,11 +245,12 @@ class ScxmlInvoke(Invoke):
         if event is None:
             return
         # §scxml-6.4: the copy is exact, so every field the parent saw
-        # travels with it. §scxml-C-1: parent→child delivery rides the
-        # SCXML Event I/O Processor, so `_event.origintype` is the SCXML
-        # processor URI (test253) when the source event carried none of its
-        # own. Imported lazily to avoid a cycle.
-        from .engine import SCXML_EVENT_PROCESSOR_URI
+        # travels with it, the origin and its sender among them. A
+        # `<send target="#_<invokeid>">` arrives with the pair the SCXML Event
+        # I/O Processor wrote for the parent where the send built the event
+        # (docs/adr/0090, section 2), so nothing is filled in here: an
+        # autoforwarded event that had no origin keeps none. Imported lazily
+        # to avoid a cycle.
         from .event import EventMetadata
         self._child.send_event(
             event,
@@ -244,7 +259,7 @@ class ScxmlInvoke(Invoke):
                 data=metadata.data,
                 send_id=metadata.send_id,
                 origin=metadata.origin,
-                origin_type=metadata.origin_type or SCXML_EVENT_PROCESSOR_URI,
+                sender=metadata.sender,
                 invoke_id=metadata.invoke_id,
                 # §scxml-5.10: the child is told the name the event arrived
                 # under, not the shorter descriptor it was matched through.

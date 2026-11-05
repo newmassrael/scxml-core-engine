@@ -23,6 +23,7 @@ from .child_mesh import (
 from .configuration import ConfigurationRejection, validate_configuration
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
+from .event_origin import EventOrigin, origin_address_of, origin_processor_of
 from .host_processor import (
     HOST_INVOKE_DEADLINE_PARAM,
     MESH_PROCESSOR_TYPE,
@@ -57,7 +58,14 @@ from .inbox import (
     InboxMeshDelivery,
     InboxWaker,
 )
-from .io_processors import published_origin, session_id_from_scxml_location
+from .io_processors import (
+    published_origin,
+    read_stored_origin,
+    scxml_location,
+    scxml_origin,
+    session_id_from_scxml_location,
+    stored_origin_text,
+)
 from .invoke import (
     ChildSession,
     Invoke,
@@ -156,6 +164,7 @@ __all__ = [
     "EntryTarget",
     "Event",
     "EventMetadata",
+    "EventOrigin",
     "EventWithMetadata",
     "HOST_INVOKE_DEADLINE_PARAM",
     "HistoryTarget",
@@ -223,8 +232,11 @@ __all__ = [
     "mesh_event_metadata",
     "mesh_peer",
     "parse_host_invoke_deadline_ms",
+    "origin_address_of",
+    "origin_processor_of",
     "parse_json",
     "published_origin",
+    "read_stored_origin",
     "refusal_within",
     "request_field",
     "request_field_wire",
@@ -237,6 +249,9 @@ __all__ = [
     "session_id",
     "session_id_from_scxml_location",
     "scripting",
+    "scxml_location",
+    "scxml_origin",
+    "stored_origin_text",
     "upgrade_saved_state",
     "validate_configuration",
     "write_json",

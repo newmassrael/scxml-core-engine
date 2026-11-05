@@ -36,6 +36,7 @@ from typing import Any, Callable, Deque, Dict, Generic, Optional, TypeVar, Union
 
 from .child_mesh import MeshCall
 from .event import EventMetadata
+from .event_origin import EventOrigin
 from .host_processor import HostInvokeEnding
 
 E = TypeVar("E")
@@ -63,8 +64,9 @@ class InboxExternalEventByName:
     data: Any = ""
     send_id: str = ""
     invoke_id: str = ""
-    origin: str = ""
-    origin_type: str = ""
+    #: The reply address the host names for the event, in its own terms
+    #: (docs/adr/0090, section 2); ``None`` for a host that names no party.
+    origin: Optional[EventOrigin] = None
 
 
 @dataclass(frozen=True)

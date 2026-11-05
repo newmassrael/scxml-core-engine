@@ -29,6 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from .event_origin import EventOrigin
 from .invoke import DONE_INVOKE_EVENT, DONE_INVOKE_PREFIX
 
 
@@ -82,6 +83,12 @@ class HostSendResponse:
 
     event_name: str = ""
     event_data: str = ""
+    #: ``_event.origin`` and ``_event.origintype`` of the reply, in the host's
+    #: own terms (docs/adr/0090, section 2): the host processor's type and the
+    #: address a ``<send>`` of that type reaches the party at. ``None`` when the
+    #: reply names no party, and then both fields read empty; the engine never
+    #: fills in the SCXML processor's type for a host.
+    origin: Optional[EventOrigin] = None
 
 
 #: What a host registers for one declared processor type.
@@ -352,11 +359,12 @@ class HostInvokeEnding:
     done: bool
     #: ``_event.data`` of the event the ending raises.
     data: str = ""
-    #: ``_event.origin`` of that event, for a host whose invocation stands for a
-    #: party it can name; empty for none.
-    origin: str = ""
-    #: ``_event.origintype`` of that event; empty for none.
-    origin_type: str = ""
+    #: ``_event.origin`` and ``_event.origintype`` of that event, for a host
+    #: whose invocation stands for a party it can name, in the host's own terms
+    #: (docs/adr/0090, section 2): its declared type and the address a
+    #: ``<send>`` of that type reaches the party at. ``None`` for a host that
+    #: names no party.
+    origin: Optional[EventOrigin] = None
 
 
 @dataclass

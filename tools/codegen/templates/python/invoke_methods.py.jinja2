@@ -465,8 +465,11 @@
                         _name,
                         data=_data,
                         invoke_id=_invoke_id_field,
+                        # docs/adr/0090: the pair the SCXML Event I/O
+                        # Processor writes for the child, and the child as
+                        # the sender, as `_drive_active_children` lifts them.
                         origin=_invoke.origin(),
-                        origin_type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                        sender=_invoke.session_id() or None,
                     )
                 # W3C SCXML 6.4 — children that reach final during their
                 # own initialise produce `done.invoke.<id>` last, after

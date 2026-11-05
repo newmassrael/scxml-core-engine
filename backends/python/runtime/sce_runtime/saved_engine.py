@@ -55,7 +55,9 @@ from .engine import (
     RESTORED_NO_DEADLINE,
 )
 from .event import EventMetadata, EventWithMetadata, event_data_text
+from .event_origin import origin_processor_of
 from .host_processor import HostInvokeRequest, HostSendRequest
+from .io_processors import read_stored_origin, stored_origin_text
 from .scheduler import ScheduledRoute
 from .saved_state import (
     ACT_CHILD,
@@ -228,7 +230,9 @@ def save_session(
     )
     for queued in engine._external_queue:
         # §scxml-5.10: a queued event is saved under the name it ARRIVED under, so a
-        # restore gives the machine the same `_event.name`.
+        # restore gives the machine the same `_event.name`. Its origin and sender
+        # are written as format 2 holds them (docs/adr/0090, "Until step 6"): the
+        # sender's id for an event a session sent, the address otherwise.
         metadata = queued.metadata
         state.external.append(
             SavedEvent(
@@ -236,8 +240,8 @@ def save_session(
                 data=event_data_text(metadata.data),
                 type=metadata.event_type,
                 send_id=metadata.send_id,
-                origin=metadata.origin,
-                origin_type=metadata.origin_type,
+                origin=stored_origin_text(metadata.origin, metadata.sender),
+                origin_type=origin_processor_of(metadata.origin),
                 invoke_id=metadata.invoke_id,
                 host_invoke_token=metadata.host_invoke_token,
             )
@@ -532,12 +536,15 @@ def _judge(policy: Any, saved: SavedState) -> _JudgedSession:
             raise StateRefusal(f"external[{at}] is '{event.name}', which the document does not name")
         if event.type not in _EVENT_TYPES:
             raise StateRefusal(f"external[{at}] has the type '{event.type}', which is not an event type")
+        # docs/adr/0090, section 7: the stored text is read back as the pair and
+        # the sender it stands for, whichever backend wrote it.
+        origin, sender = read_stored_origin(event.origin, event.origin_type)
         metadata = EventMetadata(
             data=event.data,
             event_type=event.type,
             send_id=event.send_id,
-            origin=event.origin,
-            origin_type=event.origin_type,
+            origin=origin,
+            sender=sender,
             invoke_id=event.invoke_id,
             host_invoke_token=event.host_invoke_token,
             name=event.name if policy.get_event_name(resolved) != event.name else "",

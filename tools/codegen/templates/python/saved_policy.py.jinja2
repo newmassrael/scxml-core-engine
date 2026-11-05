@@ -136,7 +136,7 @@
             children.append(sce_saved_state.SavedChild(
                 id={{ inv.invoke_id | py_string_literal }},
                 start=self._invoke_starts_{{ inv.field_suffix }},
-                invoke_id=_invoke.origin()[len(self._session_id) + 1:],
+                invoke_id=_invoke.session_id()[len(self._session_id) + 1:],
                 document=_invoke.saved_document,
                 session=_saved,
             ))

@@ -679,17 +679,14 @@
         engine_ref = getattr(self, "_engine_ref", None)
         if engine_ref is None or not self._session_id:
             return
-        # W3C SCXML C.1: `_event.origin` is the sender's published
-        # `_ioprocessors` location, not its bare session id — and this is the
-        # one place that publishes `_event` to the document, so this is where
-        # the id becomes a location. The engine keeps the bare id in
-        # `EventMetadata.origin` because its session-keyed lookups (`<finalize>`
-        # dispatch, cancelled-invoke filtering) match on it; converting at the
-        # raise would make one value serve two consumers that need different
-        # spellings. The conversion itself lives in
-        # `sce_runtime.io_processors.published_origin`, the port of the
-        # `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
-        # spelling of the rule is how the backends would stop agreeing.
+        # W3C SCXML 5.10.1 + C.1 (docs/adr/0090): `_event.origin` and
+        # `_event.origintype` are the two fields of the one pair the delivering
+        # processor wrote where it built the event, read here as they are. For
+        # an event a session sent it is the sender's published `_ioprocessors`
+        # location; nothing converts it at this read, and an event no
+        # processor stamped reads both as ''. The sender's bare id travels
+        # beside the pair, as `EventMetadata.sender`, for the lookups that find
+        # a session by it.
         # §scxml-B-2-8-1: the binding answers which rung the payload got, and
         # that answer used to end here. The ladder decided between a DOM, a
         # value and a space-normalized string, and the decision was dropped one
@@ -713,8 +710,8 @@
                 event_data=_coerce_event_data_str(metadata.data),
                 event_type=metadata.event_type,
                 send_id=metadata.send_id,
-                origin=_published_origin(metadata.origin),
-                origin_type=metadata.origin_type,
+                origin=_origin_address_of(metadata.origin),
+                origin_type=_origin_processor_of(metadata.origin),
                 invoke_id=metadata.invoke_id,
             ),
         )
