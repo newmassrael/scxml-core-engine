@@ -2130,16 +2130,16 @@ pub struct InvokeSessionCommon {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_is_static: bool,
-    /// Codegen-internal: the child holds the done data of an inline
-    /// `<donedata>` `<content>` itself, having no script engine to keep it in
-    /// ([`SCXMLModel::holds_inline_done_data`]). A backend that lifts a child's
-    /// done data from the child's engine state onto `done.invoke` (§scxml-6.4)
-    /// lifts it from the child's own buffer instead — C11. Derived beside
-    /// [`Self::child_needs_script_engine`], from the same child model, and
-    /// outside the IR contract for the reason [`Param::native_seed`] gives.
+    /// Codegen-internal: a top-level `<final>` of the child carries a
+    /// `<donedata>` ([`SCXMLModel::ends_with_done_data`]), so the parent lifts
+    /// the child's done data onto `done.invoke` (§scxml-6.4) by asking the child
+    /// for it — C11, whose child answers through one accessor wherever it holds
+    /// it. Derived beside [`Self::child_needs_script_engine`], from the same
+    /// child model, and outside the IR contract for the reason
+    /// [`Param::native_seed`] gives.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
-    pub child_holds_done_data: bool,
+    pub child_ends_with_done_data: bool,
     /// Codegen-internal: the child declares `<sce:action>`s, which only a host
     /// that supplies them can start. The parent obtains that host from its own
     /// ([`Self::child_host_call`]); a target that does not yet do so refuses the
@@ -2863,6 +2863,13 @@ pub struct InvokeCandidate {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_has_send_to_parent: bool,
+    /// Codegen-internal: a top-level `<final>` of the candidate carries a
+    /// `<donedata>` — [`InvokeSessionCommon::child_ends_with_done_data`], per
+    /// candidate, since each is a different document with its own finals.
+    /// Outside the IR contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_ends_with_done_data: bool,
     /// Codegen-internal: the candidate arms delayed sends, so it has a scheduler
     /// and a `_tick` entry point —
     /// [`InvokeSessionCommon::child_needs_event_scheduler`], per candidate.
@@ -5223,29 +5230,34 @@ impl SCXMLModel {
         crate::forge::event_schema_check::held_enums(&self.imported_enums, &self.schema_enums)
     }
 
-    /// Whether the machine holds the done data of a `<final>`'s inline
-    /// `<donedata>` `<content>` itself, rather than in a script engine's state
-    /// (§scxml-5.5).
+    /// Whether the machine holds the done data of its `<final>`s outside a
+    /// script engine (§scxml-5.5): it has a `<donedata>` and no engine to keep
+    /// what it produces in.
     ///
-    /// Inline text that is no expression of the document is finished at build
-    /// time ([`crate::filters::inline_content_reading`]) and costs no engine
-    /// ([`crate::script_engine_analyzer`]), so a document whose only use of
-    /// one was such a text has none to keep it in. The C11 backend writes it
-    /// into the buffer `_done_data` reads, which a compound final's done event
-    /// is built from and a parent lifts a child's done data from. A
-    /// `sce-static` document is not asked: everything its `<donedata>` holds
-    /// is lowered to that buffer whatever it is
-    /// ([`DoneData::native_content`]), and what a parent does with it is that
-    /// data model's.
-    pub fn holds_inline_done_data(&self) -> bool {
-        self.datamodel != Datamodel::SceStatic
-            && !self.needs_script_engine
-            && self.states.values().any(|state| {
-                state
-                    .donedata
-                    .as_ref()
-                    .is_some_and(|done| matches!(done.content, DoneDataContent::InlineText(_)))
-            })
+    /// Under every data model such a machine's done data was finished at
+    /// build time or computed natively: inline text that is no expression of
+    /// the document ([`crate::filters::inline_content_reading`], which costs no
+    /// engine, [`crate::script_engine_analyzer`]), or under `sce-static` the
+    /// pairs and values the lowering wrote ([`DoneData::native_content`]). The
+    /// C11 backend writes it into a buffer the machine holds, which a compound
+    /// final's done event is built from and its `_done_data_wire` answers.
+    pub fn holds_done_data_outside_engine(&self) -> bool {
+        !self.needs_script_engine
+            && self
+                .states
+                .values()
+                .any(|state| state.is_final && state.donedata.is_some())
+    }
+
+    /// Whether a top-level `<final>` of the machine carries a `<donedata>`,
+    /// whose data the done event that ends the session carries to the session
+    /// that invoked it (§scxml-6.4, `done.invoke`). A parent asks a child for it
+    /// through one accessor, wherever the child holds it
+    /// ([`Self::holds_done_data_outside_engine`]).
+    pub fn ends_with_done_data(&self) -> bool {
+        self.states
+            .values()
+            .any(|state| state.is_final && state.parent.is_none() && state.donedata.is_some())
     }
 
     /// Each imported event schema, by event, as a reader that holds one entry

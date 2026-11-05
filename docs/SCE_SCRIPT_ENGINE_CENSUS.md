@@ -462,9 +462,10 @@ telling the truth, not the tree getting worse.
   when it is an expression of the document, the one reading every backend's
   `<final>` template already asked (`filters::inline_content_reading`), as a
   `<send>`'s does. A C11 machine with no engine holds such a text in its own
-  `done_data` buffer, which a parent lifts a child's done data from
-  (`SCXMLModel::holds_inline_done_data`), so the reason the entry above gave no
-  longer holds. Five records of `donedata-content` were fixed readings and
+  `done_data` buffer (`SCXMLModel::holds_done_data_outside_engine`), and a
+  parent asks every child for its done data through the child's
+  `_done_data_wire`, wherever it holds it, so the reason the entry above gave
+  no longer holds. Five records of `donedata-content` were fixed readings and
   leave it (10 to 5): test294's `'foo'`, test529's `21`, the long text of
   `backends/kotlin/tests/fixtures/jvm_long_text/jvm_long_text_ecmascript.scxml`,
   and both finals of

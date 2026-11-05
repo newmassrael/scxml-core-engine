@@ -4033,10 +4033,10 @@ fn render_c11(
     // reads and a compound final's done event is built from. So is an inline
     // `<content>`, finished at build time as the text it spells, and a
     // `<content expr>` that names one value, read from the fields. Under
-    // another data model a machine with no engine holds an inline `<content>`
-    // there too, finished at build time as the text the data model reads it as
-    // (`SCXMLModel::holds_inline_done_data`).
-    let static_done_data = model_lowered.holds_inline_done_data()
+    // another data model a machine with no engine holds its done data there
+    // too, an inline `<content>` finished at build time as the text the data
+    // model reads it as (`SCXMLModel::holds_done_data_outside_engine`).
+    let static_done_data = model_lowered.holds_done_data_outside_engine()
         || model_lowered.states.values().any(|state| {
             state.donedata.as_ref().is_some_and(|done| {
                 !done.native_content.is_empty()
@@ -4044,6 +4044,11 @@ fn render_c11(
                     || done.params.iter().any(|p| !p.native_value.is_empty())
             })
         });
+    // §scxml-6.4: a machine whose session can end with done data answers it
+    // through `_done_data_wire`, from that buffer when it holds one and from
+    // its script engine's state otherwise, so a parent asks every child the
+    // same way (`SCXMLModel::ends_with_done_data`).
+    let ends_with_done_data = model_lowered.ends_with_done_data();
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
     let host_invoker = crate::forge::host_invoker_interface::render_c11(
@@ -4121,6 +4126,7 @@ fn render_c11(
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_saved_shape,
         static_done_data => static_done_data,
+        ends_with_done_data => ends_with_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
         // docs/adr/0055: the runtime's optional type, which the policy, a record
         // and a payload of a machine that holds an optional value name, included
@@ -4155,6 +4161,7 @@ fn render_c11(
         host_invoke_request_checks => &host_invoke_request_checks,
         answer_schemas => answer_schemas_context(model, Language::C11),
         static_done_data => static_done_data,
+        ends_with_done_data => ends_with_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),

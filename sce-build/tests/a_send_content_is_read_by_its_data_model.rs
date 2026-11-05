@@ -287,13 +287,29 @@ fn fixed_donedata_spelling(language: Language) -> &'static str {
     }
 }
 
-/// Where a parent reads a child's done data from a buffer the child holds,
-/// for a backend that otherwise reads it from the child's engine state: C11
-/// lifts it through the child's `_done_data`. Every other backend's child
-/// stashes its done data on its runtime whether or not it has an engine.
-fn buffered_donedata_lift(language: Language) -> Option<&'static str> {
+/// How a backend whose child is a value its parent holds lifts the child's
+/// done data: the parent asks every child through one accessor, and the
+/// child's accessor answers from its own buffer when it has no engine and from
+/// its engine's state when it has one.
+struct DoneDataLift {
+    /// The parent's call, the same for every child.
+    asked: &'static str,
+    /// The child's accessor reading its buffer.
+    from_buffer: &'static str,
+    /// The child's accessor reading its engine's state.
+    from_engine: &'static str,
+}
+
+/// The lift `language` writes, for C11; every other backend's child stashes
+/// its done data on its runtime whether or not it has an engine, and the
+/// parent's runtime lifts it from there, with nothing per child to read.
+fn donedata_lift(language: Language) -> Option<DoneDataLift> {
     match language {
-        Language::C11 => Some("_done_data(&sm->child_"),
+        Language::C11 => Some(DoneDataLift {
+            asked: "_done_data_wire(&sm->child_",
+            from_buffer: "memcpy(out, sm->done_data, _done_n);",
+            from_engine: "lua_getglobal(sm->L, \"_sce_donedata_literal\");",
+        }),
         Language::Rust
         | Language::Go
         | Language::Kotlin
@@ -330,11 +346,15 @@ fn a_child_whose_done_data_is_fixed_costs_no_engine() {
             "{language:?}: the child's done data is the value the content denotes, \
              `{line}` was not written"
         );
-        if let Some(lift) = buffered_donedata_lift(language) {
+        if let Some(lift) = donedata_lift(language) {
             assert!(
-                generated.contains(lift),
-                "{language:?}: the parent lifts the done data of a child with no engine \
-                 from the child's buffer, `{lift}` was not written"
+                generated.contains(lift.asked) && generated.contains(lift.from_buffer),
+                "{language:?}: the parent asks the child for its done data, and a child \
+                 with no engine answers from its buffer"
+            );
+            assert!(
+                !generated.contains(lift.from_engine),
+                "{language:?}: a child with no engine has no engine state to answer from"
             );
         }
     }
@@ -360,14 +380,116 @@ fn a_child_whose_done_data_is_an_expression_keeps_its_engine() {
             "{language:?}: an expression is not folded into a value at build time, \
              `{line}` was written"
         );
-        if let Some(lift) = buffered_donedata_lift(language) {
+        if let Some(lift) = donedata_lift(language) {
             assert!(
-                !generated.contains(lift),
-                "{language:?}: a child with an engine keeps its done data there, and \
-                 the parent read it from a buffer (`{lift}`)"
+                generated.contains(lift.asked) && generated.contains(lift.from_engine),
+                "{language:?}: the parent asks the child the same way, and a child with \
+                 an engine answers from its engine's state"
+            );
+            assert!(
+                !generated.contains(lift.from_buffer),
+                "{language:?}: a child with an engine keeps its done data there, not in \
+                 a buffer"
             );
         }
     }
+}
+
+/// A parent and the inline child it invokes, both under `datamodel`, the
+/// child ending at once in a `<final>` whose `<donedata>` holds `content`.
+fn same_model_invoking_document(datamodel: &str, content: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="wait" datamodel="{datamodel}">
+  <state id="wait">
+    <invoke type="scxml" id="reporter">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="{datamodel}" initial="reported">
+          <final id="reported">
+            <donedata><content>{content}</content></donedata>
+          </final>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.reporter" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#
+    )
+}
+
+/// How `language`'s child hands the done data of the top-level final it ended
+/// at to the runtime its parent lifts it from.
+fn donedata_stash(language: Language) -> &'static str {
+    match language {
+        Language::Rust => "engine.stash_donedata_at_final(done_event_data);",
+        Language::Go => "engine.StashDonedataAtFinal(doneEventData)",
+        Language::Kotlin => "stashDonedataAtFinal(doneEventData)",
+        Language::Swift => "engine.stashDonedataAtFinal(doneEventData)",
+        Language::Cpp => "engine.stashDonedataAtFinal(std::move(eventData), std::move(typedData));",
+        Language::Python => "engine.done_data = _done_data",
+        // A C11 child is a value its parent holds: the parent asks it
+        // (`donedata_lift`), and nothing is stashed.
+        Language::C11 => "_done_data_wire(",
+    }
+}
+
+/// A parent under `datamodel` that invokes a child under the same data model,
+/// whose done data is the inline `content`, generated for every backend: no
+/// machine needs a script engine, and the child's done data still reaches the
+/// parent. The text the build finished, `wire` as a backend's string literal
+/// spells it, is what the child hands on; on C11, whose parent lifted only a
+/// child that carried an engine, the parent asks the child through the one
+/// accessor every child answers, which reads the child's buffer.
+fn assert_an_engine_less_childs_done_data_reaches_its_parent(
+    datamodel: &str,
+    content: &str,
+    wire: &str,
+) {
+    let doc = same_model_invoking_document(datamodel, content);
+    for &language in Language::ALL {
+        let (ok, out, generated) = generate(language, &doc);
+        assert!(
+            ok,
+            "{language:?} {datamodel}: the machines generate:\n{out}"
+        );
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language:?} {datamodel}: neither machine needs an engine:\n{out}"
+        );
+        assert!(
+            generated.contains(wire),
+            "{language:?} {datamodel}: the child's done data is the string the content \
+             spells, finished at build time (`{wire}`)"
+        );
+        let stash = donedata_stash(language);
+        assert!(
+            generated.contains(stash),
+            "{language:?} {datamodel}: the child hands its done data on (`{stash}`)"
+        );
+        if let Some(lift) = donedata_lift(language) {
+            assert!(
+                generated.contains(lift.asked) && generated.contains(lift.from_buffer),
+                "{language:?} {datamodel}: the parent asks the child for its done data, \
+                 and the child answers from its buffer"
+            );
+        }
+    }
+}
+
+/// A `sce-static` child's inline done data is the text its lowering finished
+/// (`DoneData::native_content`), held in the machine's own buffer and in no
+/// engine; it reaches the parent as an engine child's does.
+#[test]
+fn a_static_childs_done_data_reaches_its_parent() {
+    assert_an_engine_less_childs_done_data_reaches_its_parent(
+        "sce-static",
+        "static   words",
+        "\\\"static words\\\"",
+    );
 }
 
 /// Text that is an expression of the document is evaluated when the send

@@ -912,9 +912,9 @@ fn collect_donedata_causes(
     // from the text and never the text's reading from the engine, as for a
     // `<send>`'s. Text that reads as a fixed value — XML, a literal, the
     // string it spells — is finished at build time; a machine with no engine
-    // holds it itself ([`SCXMLModel::holds_inline_done_data`]), which is
-    // where a parent lifts a child's done data from. A Null-data-model body
-    // is the string it spells and never reaches here as inline text.
+    // holds it itself ([`SCXMLModel::holds_done_data_outside_engine`]). A
+    // Null-data-model body is the string it spells and never reaches here as
+    // inline text.
     let evaluated = match &dd.content {
         DoneDataContent::Expression(_) => true,
         DoneDataContent::InlineText(text) => {
@@ -1607,7 +1607,7 @@ mod tests {
                 model.script_engine_causes
             );
             assert!(
-                model.holds_inline_done_data(),
+                model.holds_done_data_outside_engine(),
                 "{content}: a machine with no engine holds its done data itself"
             );
         }

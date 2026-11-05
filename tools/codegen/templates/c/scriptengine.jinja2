@@ -209,9 +209,9 @@
            `<donedata>` into `_sce_donedata` (string / number / table). A
            compound final serialises it onto its own done.state event's
            `data[]` and clears it; a top-level final leaves it for the
-           parent, which reads it through `lua_marshal_child_donedata` onto
-           done.invoke. No dequeue reads it: an event's data rides on the
-           event (`set_current_event`). */
+           parent, which asks for it through this machine's
+           `_done_data_wire` onto done.invoke. No dequeue reads it: an
+           event's data rides on the event (`set_current_event`). */
         (void)luaL_dostring(sm->L, "_sce_donedata = nil");
         /* W3C SCXML 5.5 + 6.3.1 + B-2-9 cross-SM donedata carry: serialise
            the `_sce_donedata` stash (populated by the child's
@@ -238,11 +238,11 @@
              - other  → `JSON.stringify`, whose object keys are sorted, so
                         equal content produces byte-equal output
                         (committed-tree-sweep §synth-6.2.6 contract).
-           Both parent and child SMs initialise this helper because
-           `lua_init_engine` runs in every SM with `needs_script_engine`;
-           the cross-SM bridge `lua_marshal_child_donedata` calls it on
-           the child's L and the resulting string lands on the
-           `done.invoke.<id>` event's `data[]` field. */
+           Every SM with `needs_script_engine` initialises this helper
+           because `lua_init_engine` runs in each; `lua_donedata_wire_into`
+           calls it on the machine's own L, for a compound final's
+           done.state and for the `_done_data_wire` a parent asks, whose
+           string lands on the `done.invoke.<id>` event's `data[]`. */
         (void)luaL_dostring(sm->L,
             "_sce_wire_text = {}\n"
             "function _sce_donedata_to_wire(v)\n"
@@ -1049,16 +1049,16 @@
         }
 {% endmacro %}
 
-{# W3C SCXML 5.5 + 6.3.1 cross-SM donedata carry (parent ← child).
+{# W3C SCXML 5.5 + 6.3.1 donedata carry out of a machine's script engine.
 
-   Called from `invoke_methods.jinja2` immediately before
-   `_raise_external(sm, &_done_evt)` at every site that synthesises a
-   `done.invoke.<id>` event for a finished invoked child. The macro
-   reads the child SM's `_sce_donedata` lua global (the stash
-   populated by the child's `<final><donedata>` entry emit in
+   Reads `L`'s `_sce_donedata` lua global (the stash populated by a
+   `<final><donedata>` entry emit in
    `state_machine.c.jinja2::execute_entry_actions`), serialises it to
-   JSON via `_sce_donedata_to_wire`, and copies the resulting bounded
-   string onto `_done_evt.data[]`.
+   JSON via `_sce_donedata_to_wire`, and copies the resulting string into
+   `out`, at most `cap - 1` bytes and then ended. A compound final asks it
+   for its own done.state event's `data[]`, and a machine's
+   `_done_data_wire` for the `done.invoke` its parent raises when the
+   machine holds its done data in its engine.
 
    The parent's `process_event_queues` external dequeue sees a non-empty
    `evt.data` and PARSES it on its own `sm->L`, producing a typed lua
@@ -1076,25 +1076,24 @@
    crosses engine-agnostic boundaries there, and this `data[]` field is
    the same kind of boundary here — an embedder writes to it too.
 
-   Caller must gate on `invoke_info.child_needs_script_engine` so the
-   child has a valid `L` to query. A child without a script engine keeps
-   its done data in its own buffer instead, which `lift_child_done_data`
-   (`invoke_methods.jinja2`) reads through the child's `_done_data`. #}
-{% macro lua_marshal_child_donedata(child_L_var, evt_var) %}
+   Only a machine that carries an engine has an `L` to ask; one that has
+   none holds its done data in its own buffer, which its `_done_data_wire`
+   reads instead, so a parent asks every child the same way. #}
+{% macro lua_donedata_wire_into(L_var, out_var, cap_expr) %}
     {
-        (void)luaL_dostring({{ child_L_var }},
+        (void)luaL_dostring({{ L_var }},
             "_sce_donedata_literal = _sce_donedata_to_wire(_sce_donedata)");
-        lua_getglobal({{ child_L_var }}, "_sce_donedata_literal");
-        if (lua_isstring({{ child_L_var }}, -1)) {
-            const char *_lit = lua_tostring({{ child_L_var }}, -1);
+        lua_getglobal({{ L_var }}, "_sce_donedata_literal");
+        if (lua_isstring({{ L_var }}, -1)) {
+            const char *_lit = lua_tostring({{ L_var }}, -1);
             size_t _lit_n = strlen(_lit);
-            if (_lit_n >= sizeof(({{ evt_var }}).data)) {
-                _lit_n = sizeof(({{ evt_var }}).data) - 1;
+            if (_lit_n >= ({{ cap_expr }})) {
+                _lit_n = ({{ cap_expr }}) - 1u;
             }
-            memcpy(({{ evt_var }}).data, _lit, _lit_n);
-            ({{ evt_var }}).data[_lit_n] = '\0';
+            memcpy({{ out_var }}, _lit, _lit_n);
+            ({{ out_var }})[_lit_n] = '\0';
         }
-        lua_pop({{ child_L_var }}, 1);
-        (void)luaL_dostring({{ child_L_var }}, "_sce_donedata_literal = nil");
+        lua_pop({{ L_var }}, 1);
+        (void)luaL_dostring({{ L_var }}, "_sce_donedata_literal = nil");
     }
 {% endmacro %}

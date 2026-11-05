@@ -3067,14 +3067,13 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% endif %}
         {% if has_donedata %}
         /* W3C SCXML 5.5: evaluate <donedata> for final state '{{ state_id }}'
-           into `_sce_donedata`, which the done event below is built from (a
-           compound final) or the parent reads (a top-level one). Mirrors cpp
-           `entry_exit_actions.jinja2:389-460` 4-shape dispatch on
+           into where this machine holds its done data: `_sce_donedata` when
+           it carries a script engine, its `done_data` buffer otherwise. The
+           done event below is built from it (a compound final), or the
+           parent asks for it through `_done_data_wire` (a top-level one).
+           Mirrors cpp `entry_exit_actions.jinja2` dispatch on
            `donedata.params` / `content.kind == "expression"` /
-           `content.kind == "literal"`. The C11 emit collapses the cpp
-           SSoT helper calls (DoneDataHelper::evaluateContent /
-           evaluateParams / emitContentLiteral) to inline lua chunks per
-           jinja2-inline contract. */
+           `content.kind == "inline_text"` / `content.kind == "literal"`. */
         {% if static_datamodel and state.donedata.params %}
         /* SCE Accepted Subset §2.15 + §scxml-5.5: under `sce-static` each
            pair's value is native code (`DoneDataParam::native_value`) read from
@@ -3206,10 +3205,10 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         /* W3C SCXML B.2: the same finished wire text in a machine with no
            engine: the reading costs none (`inline_content_reading`), so the
            analysis gave it none, and the text is copied into the buffer the
-           machine holds (`SCXMLModel::holds_inline_done_data`), which a
-           compound final's done event is built from and a parent or a host
-           reads through `_done_data`. A text too long for it is refused at
-           compile time. */
+           machine holds (`SCXMLModel::holds_done_data_outside_engine`), which
+           a compound final's done event is built from and a parent or a host
+           reads through `_done_data_wire` and `_done_data`. A text too long
+           for it is refused at compile time. */
         {
             static const char sce_lit_[] = {{ done_wire | c_char_array_init }};
             _Static_assert(sizeof(sce_lit_) <= sizeof(sm->done_data),
@@ -3275,10 +3274,14 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                     "\"{{ state.donedata.content.text | escape_json_string | escape_c }}\"",
                     (size_t)SCE_MAX_DATA_LEN - 1u);
             _done_evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
-            {% elif (static_datamodel and state.donedata and (state.donedata.params or state.donedata.native_content or state.donedata.native_content_value)) or (state.donedata and state.donedata.content.kind == "inline_text" and not model.needs_script_engine) %}
+            {% elif state.donedata and static_done_data %}
             /* §scxml-5.5: the pairs or the text written above ride on this
-               event's data, a buffer of the size `done_data` is. */
+               event's data, a buffer of the size `done_data` is. The buffer
+               is cleared once they are on it, as the engine's stash is below,
+               so a top-level final that writes nothing is not answered with
+               this final's data. */
             memcpy(_done_evt.data, sm->done_data, sizeof(_done_evt.data));
+            sm->done_data[0] = '\0';
             {% elif state.donedata and model.needs_script_engine %}
             /* W3C SCXML 5.5: the evaluated donedata rides on THIS event, as
                cpp's `EventWithMetadata::data` does — serialised to JSON onto
@@ -3289,7 +3292,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                read queues error.execution ahead of done.state (§scxml-5.7), and
                that error took the data. The stash is cleared so nothing dequeued
                before this event can read it. */
-            {{ se.lua_marshal_child_donedata('sm->L', '_done_evt') }}
+            {{ se.lua_donedata_wire_into('sm->L', '_done_evt.data', 'sizeof(_done_evt.data)') }}
             (void)luaL_dostring(sm->L, "_sce_donedata = nil");
             {% endif %}
             {{ csym_prefix }}{{ model.name }}_raise(sm, &_done_evt);
@@ -7233,6 +7236,30 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym
 
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_done_data(const {{ csym_prefix }}{{ model.name }}_t *sm) {
     return sm->done_data;
+}
+{% endif %}
+{% if ends_with_done_data %}
+
+/* §scxml-5.5 + §scxml-6.4: the done data of the top-level final this session
+   ended at, declared in the header, answered from where this machine holds it.
+   A parent asks every child it invoked through this one accessor. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_done_data_wire(const {{ csym_prefix }}{{ model.name }}_t *sm, char *out, size_t cap) {
+    out[0] = '\0';
+{% if static_done_data %}
+    /* No script engine holds it: the buffer the final's entry wrote. */
+    {
+        size_t _done_n = strlen(sm->done_data);
+        if (_done_n >= cap) {
+            _done_n = cap - 1u;
+        }
+        memcpy(out, sm->done_data, _done_n);
+        out[_done_n] = '\0';
+    }
+{% else %}
+    /* The script engine holds it: `_sce_donedata`, which the final's entry
+       stashed, as the wire text a done event carries. */
+    {{ se.lua_donedata_wire_into('sm->L', 'out', 'cap') }}
+{% endif %}
 }
 {% endif %}
 {% for field in static_published %}

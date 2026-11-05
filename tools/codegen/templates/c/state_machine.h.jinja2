@@ -2005,6 +2005,15 @@ bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}
    final with a `<donedata>` has been entered. */
 const char *{{ csym_prefix }}{{ model.name }}_done_data(const {{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
+{% if ends_with_done_data %}
+/* §scxml-5.5 + §scxml-6.4: the data the done event of the top-level final this
+   session ended at carries, as the text `done.invoke` carries it, written into
+   `out` (at most `cap - 1` bytes, then ended), or the empty string while it has
+   none. Answered from wherever the machine holds it: the buffer `_done_data`
+   reads when it holds one, its script engine's state otherwise. A parent asks a
+   child it invoked this, whatever the child's data model. `cap` is at least 1. */
+void {{ csym_prefix }}{{ model.name }}_done_data_wire(const {{ csym_prefix }}{{ model.name }}_t *sm, char *out, size_t cap);
+{% endif %}
 {% for field in static_published %}
 
 /* SCE Accepted Subset §2.15: the published variable `{{ field.id }}` (`sce:direction="out"`),
