@@ -22,15 +22,23 @@
 //     unseen, and an ending finds its invocation cancelled by the exit;
 //   * the external queue takes events in the order they arrived: a post made
 //     during a macrostep is applied before an event that macrostep sends to its
-//     own session after it (W3C test 201's shape), in both driving modes.
+//     own session after it (W3C test 201's shape), in both driving modes;
+//   * an ending posted for a child session during its parent's macrostep is on
+//     that child's queue before an event the parent sends it later in the same
+//     macrostep (docs/adr/0084, D2 as amended at step 10), in both driving modes.
 //
 // The machine is written by hand, as the smallest one with a host-run
 // invocation: `working` starts `job` on entry and cancels it on exit, and every
 // event it takes is recorded with its `_event.data`. The arrival-order cases use
-// a second one, smaller still, that sends itself an event after a callback.
+// a second one, smaller still, that sends itself an event after a callback. The
+// child-session cases run the generated `static_invoke_ending_order`
+// (sce-build/tests/fixtures/static_datamodel/static_invoke_ending_order.scxml).
 
 package com.sce.integration
 
+import com.sce.integration.static_invoke_ending_order.StaticInvokeEndingOrderActions
+import com.sce.integration.static_invoke_ending_order.StaticInvokeEndingOrderEvent
+import com.sce.integration.static_invoke_ending_order.StaticInvokeEndingOrderStateMachine
 import com.sce.runtime.EnabledTransition
 import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata
@@ -51,6 +59,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -267,6 +278,21 @@ private class ArrivalProbeMachine(
         const val GO = 0
         const val POSTED = 1
         const val OWN = 2
+    }
+}
+
+/**
+ * The host of `static_invoke_ending_order`: its one host action, `beforeQuestion`,
+ * which the parent performs inside the macrostep that takes `ask`, before it
+ * sends `question` to `worker`, runs [whileAsked]. A test sets that once it has
+ * the machine and the token of the clock's start.
+ */
+private class AskingHost : StaticInvokeEndingOrderActions {
+    @Volatile
+    var whileAsked: () -> Unit = {}
+
+    override fun beforeQuestion() {
+        whileAsked()
     }
 }
 
@@ -790,6 +816,117 @@ class WhatAnotherThreadPostsEntersThroughTheInboxTest {
                 sm.taken.toList(),
                 "the loop's own send overtook an event that arrived before it",
             )
+        } finally {
+            sm.stop()
+            scope.cancel()
+            sm.cleanup()
+        }
+    }
+
+    /** The session id the shared format-2 fixtures give their root. */
+    private val treeRoot = "fixture-root"
+
+    /** The session `worker` is: the root's id and the id its first start is started under. */
+    private val treeWorker = "fixture-root.working.1.worker"
+
+    /** The standard host type `worker` asks, and a completion its result record reads. */
+    private val clockType = "sce-host-clock-now"
+    private val clockNow = """{"error":"","utc_ms":1700000000000,"monotonic_ms":5}"""
+
+    /**
+     * `beforeQuestion`'s work: another thread posts the ending of `clock`'s start
+     * [token] to [sm]'s inbox, naming `worker`'s session, and the parent's thread
+     * joins it before the action returns, so the post is made before the parent's
+     * send of `question`. [postsTaken] counts the posts the inbox took, and the
+     * test asserts the count once the parent's macrostep is over.
+     */
+    private fun postClockEnding(sm: StaticInvokeEndingOrderStateMachine, token: Long, postsTaken: AtomicInteger) {
+        val ending = InboxInput.HostInvokeEnding(
+            sessionId = treeWorker,
+            processorType = clockType,
+            invokeId = "clock",
+            token = token,
+            done = true,
+            data = clockNow,
+        )
+        thrownOnAnotherThread { if (sm.inbox.post(ending)) postsTaken.incrementAndGet() }
+    }
+
+    /** What the parent heard, in the order it heard it: `stamped` first, then `answer`. */
+    private fun assertTheEndingWasTakenFirst(postsTaken: Int, stampedAt: UInt, answerAt: UInt) {
+        assertEquals(1, postsTaken, "the inbox refused the ending posted for `worker` while the parent took `ask`")
+        assertEquals(
+            1u,
+            stampedAt,
+            "`worker` took the `question` its parent sent after the ending of `clock` was posted for it " +
+                "before it took that ending, so the parent heard `stamped` second",
+        )
+        assertEquals(
+            2u,
+            answerAt,
+            "the parent did not hear `answer` second, after `stamped`: `worker` answered `question` " +
+                "ahead of the ending posted for it first",
+        )
+    }
+
+    @Test
+    fun anEndingPostedForAChildBeforeItsParentSendsToItIsTakenByTheChildFirst() {
+        val host = AskingHost()
+        val sm = StaticInvokeEndingOrderStateMachine(host, sessionId = treeRoot)
+        val tokens = CopyOnWriteArrayList<Long>()
+        // Records each start's token and does not answer, so `clock` keeps running.
+        sm.registerInvoker(clockType) { event ->
+            event.start?.let { tokens.add(it.token) }
+            null
+        }
+        val postsTaken = AtomicInteger(0)
+        sm.initialize()
+        try {
+            // `worker` starts with `working`, and starts `clock` as it enters `waiting`.
+            repeat(3) { if (tokens.isEmpty()) sm.tick() }
+            assertEquals(1, tokens.size, "`worker` did not start `clock` once: $tokens")
+            val token = tokens.single()
+            host.whileAsked = { postClockEnding(sm, token, postsTaken) }
+
+            sm.send(StaticInvokeEndingOrderEvent.Ask)
+            repeat(3) { sm.tick() }
+
+            assertTheEndingWasTakenFirst(postsTaken.get(), sm.stampedAt, sm.answerAt)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun anEndingPostedForAChildRunningItsOwnLoopBeforeItsParentSendsToItIsTakenByTheChildFirst() {
+        val host = AskingHost()
+        val sm = StaticInvokeEndingOrderStateMachine(host, sessionId = treeRoot)
+        val tokens = CopyOnWriteArrayList<Long>()
+        val started = CountDownLatch(1)
+        sm.registerInvoker(clockType) { event ->
+            event.start?.let {
+                tokens.add(it.token)
+                started.countDown()
+            }
+            null
+        }
+        val postsTaken = AtomicInteger(0)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            sm.start(scope)
+            assertTrue(started.await(boundSeconds, TimeUnit.SECONDS), "`worker` never started `clock` in coroutine mode")
+            val token = tokens.single()
+            host.whileAsked = { postClockEnding(sm, token, postsTaken) }
+
+            assertTrue(sm.inbox.post(InboxInput.ExternalEvent(StaticInvokeEndingOrderEvent.Ask)), "the root's inbox refused `ask`")
+            // Quiet once the parent has heard both: each is numbered as it is heard.
+            val settled = runBlocking {
+                withTimeout(boundSeconds * 1000) {
+                    sm.snapshot.first { it.data.stampedAt != 0u && it.data.answerAt != 0u }
+                }
+            }
+
+            assertTheEndingWasTakenFirst(postsTaken.get(), settled.data.stampedAt, settled.data.answerAt)
         } finally {
             sm.stop()
             scope.cancel()
