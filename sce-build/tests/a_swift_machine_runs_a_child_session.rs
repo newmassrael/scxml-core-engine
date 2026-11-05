@@ -41,6 +41,15 @@ fn fixtures() -> PathBuf {
 /// What `sce-codegen generate -l swift` made of `machine`, a document of the fixture
 /// directory: the exit status, and the text of every file written, by file name.
 fn generate(machine: &str) -> (Option<i32>, Vec<(String, String)>, String) {
+    generate_with(machine, &[])
+}
+
+/// [`generate`] with the documents `extra` (a name and its text) written beside the fixtures, for a
+/// construct no fixture holds.
+fn generate_with(
+    machine: &str,
+    extra: &[(&str, &str)],
+) -> (Option<i32>, Vec<(String, String)>, String) {
     let dir = tempdir().expect("tempdir");
     for entry in std::fs::read_dir(fixtures()).expect("the fixture directory") {
         let path = entry.expect("an entry").path();
@@ -48,6 +57,9 @@ fn generate(machine: &str) -> (Option<i32>, Vec<(String, String)>, String) {
             let name = path.file_name().expect("a file name").to_owned();
             std::fs::copy(&path, dir.path().join(name)).expect("copy a fixture");
         }
+    }
+    for (name, text) in extra {
+        std::fs::write(dir.path().join(name), text).expect("write an extra document");
     }
     let out_dir = tempdir().expect("tempdir");
     let out = Command::new(sce_codegen_bin())
@@ -287,14 +299,118 @@ fn an_argument_the_candidate_keeps_nowhere_is_evaluated_and_left_out() {
     );
 }
 
-/// What a child hands back through `<finalize>`, an `idlocation`, and every other way
-/// of running one are named in a refusal and not written wrong: exit status 7, the
-/// construct and its state in the message.
+/// A parent whose `<invoke idlocation>` names a string variable the started id fits.
+const IDLOCATION_PARENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="static_invoke_idlocation">
+  <datamodel>
+    <data id="held" sce:type="string" sce:capacity="64" expr="''"/>
+  </datamodel>
+  <state id="s">
+    <invoke type="scxml" id="kid" idlocation="held">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="a" datamodel="sce-static">
+          <final id="a"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>
+"#;
+
+/// docs/adr/0045: the id each start of a child session is started under is written to the string
+/// variable `idlocation` names, by the statement the static lowering writes, before the child is
+/// built and started: the child's events carry the id, and the parent that reads the variable sees
+/// the id the child is known by.
+#[test]
+fn an_invoke_idlocation_is_written_before_the_child_starts() {
+    let name = "static_invoke_idlocation.scxml";
+    let (status, files, said) = generate_with(name, &[(name, IDLOCATION_PARENT)]);
+    assert_eq!(status, Some(0), "{name} is written for Swift: {said}");
+    let machine = &files
+        .iter()
+        .find(|(file, _)| file == "static_invoke_idlocation_sm.swift")
+        .unwrap_or_else(|| panic!("{name} writes its machine: {files:?}"))
+        .1;
+    let write = machine
+        .find("self.vHeld = pending.invokeID")
+        .unwrap_or_else(|| panic!("the start writes the id to the variable: {machine}"));
+    let start = machine
+        .find("InvokedSession(")
+        .expect("the start builds the child's session");
+    assert!(
+        write < start,
+        "the id is written before the child is started: {machine}"
+    );
+}
+
+/// A hybrid invoke writes the id of its start whichever candidate the value chose, so each
+/// candidate's branch does, ahead of handing the child its values.
+#[test]
+fn a_hybrid_invoke_idlocation_is_written_in_each_candidate_before_it_starts() {
+    let machine = machine_of(
+        "static_invoke_tree.scxml",
+        "static_invoke_tree__sce_synth_invoke__worker_sm.swift",
+    );
+    let writes: Vec<usize> = machine
+        .match_indices("self.vHelperId = pending.invokeID")
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(
+        writes.len(),
+        2,
+        "each of the two candidates writes it: {machine}"
+    );
+    for at in writes {
+        let after = &machine[at..];
+        let seed = after
+            .find("var seed")
+            .expect("the candidate is handed its values");
+        let session = after
+            .find("InvokedSession(")
+            .expect("the candidate starts a session");
+        // Searched from the write on, so the values handed and the session built are this
+        // candidate's, and the write comes before both.
+        assert!(
+            seed < session,
+            "the id is written before the values are handed and the child started: {machine}"
+        );
+    }
+}
+
+/// A parent that invokes, in place, a child that states a duty.
+const DUTY_CHILD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="static_invoke_duty_child">
+  <state id="s">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="a" datamodel="sce-static">
+          <state id="a">
+            <onentry><sce:action name="take" effect="duty" released-by="give"/></onentry>
+            <onexit><sce:action name="give" effect="duty"/></onexit>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>
+"#;
+
+/// What a child that states a duty and every other way of running one that is not lowered are
+/// named in a refusal and not written wrong: exit status 7, the construct and its state in the
+/// message.
 #[test]
 fn what_is_not_lowered_is_refused_by_name() {
-    // One construct is left unlowered; the others it once named are lowered now.
-    let (machine, construct) = ("static_invoke_tree.scxml", "an <invoke idlocation>");
-    let (status, files, said) = generate(machine);
+    // One construct is left unlowered; the others it once named are lowered now, an `idlocation`
+    // the last of them.
+    let (machine, construct) = (
+        "static_invoke_duty_child.scxml",
+        "an <invoke> of a child that states a duty",
+    );
+    let (status, files, said) = generate_with(machine, &[(machine, DUTY_CHILD)]);
     assert_eq!(status, Some(7), "{machine} is refused, not written: {said}");
     assert!(
         said.contains(construct),

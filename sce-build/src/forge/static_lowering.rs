@@ -13665,6 +13665,12 @@ impl StaticTarget for SwiftTarget {
     fn name(&self) -> &'static str {
         "Swift"
     }
+    // The entry that defers a start mints the id (`<state>.<start>.<id>`, docs/adr/0045) and
+    // hands it to the start in the `String` `pending.invokeID`, which the start goes on to
+    // start the child under, so the variable takes it as it stands.
+    fn generated_invoke_id(&self) -> Option<&'static str> {
+        Some("pending.invokeID")
+    }
     // The send template reads the string a `delayexpr`, an `eventexpr` and a
     // `sendidexpr` compute as a CSS2 time, an event name and a send id
     // (`parseDelayToMs`, `Engine.sendNamedExternal`, `Engine.cancelEvent`).

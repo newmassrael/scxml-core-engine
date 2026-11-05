@@ -323,7 +323,15 @@ private func record(_ message: String, _ at: SourceLocation) {
 /// for the machine as started) and what it must hold afterwards. A name no event of
 /// the machine matches is a misspelt step unless the step says it expects the drop
 /// (`"dropped": true`), which is then what is held.
-func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation = #_sourceLocation) {
+///
+/// A member of a step this driver does not replay (`unreplayedStepMembers`) fails the step that
+/// carries it, unless the caller names it in `skipping`. A scenario states what it holds with the
+/// member and without it only when its author says so, so what a replay leaves out is written where
+/// the replay is asked for, and is taken off when the driver replays it.
+func replay(
+    _ name: String, _ machine: Machine, skipping: [String] = [],
+    sourceLocation: SourceLocation = #_sourceLocation
+) {
     let path = "\(scenarioDirectory)/\(name).json"
     let scenario: JSONValue
     do {
@@ -354,7 +362,7 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
         let fail = { (message: String) in
             record("\(where_): \(message)", sourceLocation)
         }
-        for member in unreplayedStepMembers where step.member(member) != nil {
+        for member in unreplayedStepMembers where step.member(member) != nil && !skipping.contains(member) {
             fail("this driver does not replay `\(member)` yet")
         }
         if case .number(let ms)? = step.member("advance_ms"), let by = Int64(ms) {

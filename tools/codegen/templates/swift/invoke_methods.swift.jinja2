@@ -20,9 +20,11 @@
 
     What an invocation hands its child (`<param>`, `namelist`) is the value the static
     lowering wrote for each (`native_seed`), given to the child's `acceptParams`
-    before it initializes. An `idlocation`, what the child hands back (`<finalize>`),
-    and every other way of running one are refused before this template runs
-    (`swift_invoke_unlowered`).
+    before it initializes. An `idlocation` is the id each start is started under, written to
+    the string variable it names by the statement the static lowering wrote
+    (`native_idlocation`, docs/adr/0045) or, for an `ecmascript` parent, by its engine. What
+    the child hands back (`<finalize>`) and every other way of running one are refused
+    before this template runs (`swift_invoke_unlowered`).
 #}
 {# W3C SCXML 6.4.1 + 6.4.3: what an invocation hands the child it starts, before the
    child initializes. `seeds` are the arguments the child declares a variable for: each
@@ -258,6 +260,12 @@
         if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
             raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
         }
+{% elif invoke_info.native_idlocation %}
+        // docs/adr/0045: under `datamodel="sce-static"` the id this start is started under, the
+        // state's, the number of this start and the `<invoke>`'s, is written to the string
+        // variable `idlocation` names before the child starts, and the build held the variable
+        // to a bound the id fits.
+        {{ invoke_info.native_idlocation }}
 {% endif %}
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
         // initializes.
@@ -385,6 +393,11 @@
 {% endif %}
 {{ ecma_seed_child(invoke_info, model, machine_name, '            ', candidate.child_needs_script_engine) }}
 {% else %}
+{% if invoke_info.native_idlocation %}
+            // docs/adr/0045: the id this start is started under goes to the string variable
+            // `idlocation` names before the child starts, whichever candidate the value chose.
+            {{ invoke_info.native_idlocation }}
+{% endif %}
 {{ seed_child(candidate.stem | to_pascal_case ~ 'Policy', candidate.seeds, candidate.unkept, model, machine_name, '            ') }}
 {% endif %}
             let session = InvokedSession(

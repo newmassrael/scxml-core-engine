@@ -1892,6 +1892,7 @@ const STATIC_INVOKE_IDLOCATION_BACKENDS: &[Language] = &[
     Language::Python,
     Language::Cpp,
     Language::C11,
+    Language::Swift,
 ];
 
 /// Refuse a `sce-static` document, or a child written in place in it at any
@@ -4493,9 +4494,9 @@ fn swift_unsupported(
 /// by a file, started when its state is entered, driven by its parent, forwarded
 /// what the parent receives when it autoforwards, and cancelled when the state exits.
 /// What the invocation hands the child (`<param>`, `namelist`) is lowered for a
-/// `sce-static` document, whose static lowering writes each value. What the child
-/// hands back through `<finalize>`, an `idlocation`, and every other way of running
-/// one are not, and each is named.
+/// `sce-static` document, whose static lowering writes each value, and so is the
+/// `idlocation` the id of each start is written to. What the child hands back through
+/// `<finalize>` and every other way of running one are not, and each is named.
 pub(crate) fn swift_invoke_unlowered(
     invoke: &crate::model::Invoke,
     statically_lowered: bool,
@@ -4526,8 +4527,11 @@ pub(crate) fn swift_invoke_unlowered(
         return Some("an <invoke> with a <param> or a namelist".to_string());
     }
     // An `ecmascript` parent writes the id of the invocation to the location `idlocation`
-    // names when the invocation starts.
-    if !is_ecma && !info.common.base.idlocation.is_empty() {
+    // names when the invocation starts; a `sce-static` one holds the id in a string variable of
+    // its own, by the statement the static lowering writes (`native_idlocation`, docs/adr/0045),
+    // which refuses by name the variable that cannot hold it. This is asked before that lowering
+    // runs, so a document under any other data model is the one named here.
+    if !is_ecma && !statically_lowered && !info.common.base.idlocation.is_empty() {
         return Some("an <invoke idlocation>".to_string());
     }
     // What the child hands back is a script an `ecmascript` parent runs in its own data model,
@@ -4684,9 +4688,9 @@ fn swift_hybrid_invoke_unlowered(
                 .to_string(),
         );
     }
-    if !is_ecma && !info.common.base.idlocation.is_empty() {
-        return Some("an <invoke srcexpr idlocation>".to_string());
-    }
+    // The `idlocation` is the id of each start, written by a `sce-static` parent to a string
+    // variable of its own (docs/adr/0045) and by an `ecmascript` one through its engine: the
+    // check above already refused every other data model.
     // A candidate that runs an engine of its own is a child an `ecmascript` parent hands its
     // values to as JSON; a `sce-static` parent has no way to give it one.
     if info

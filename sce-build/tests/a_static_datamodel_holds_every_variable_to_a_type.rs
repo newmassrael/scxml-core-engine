@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::codegen_matrix::{emitting, emitting_in_part};
 use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use tempfile::tempdir;
@@ -3718,20 +3718,16 @@ fn an_invoke_idlocation_names_a_string_variable_the_started_id_fits() {
     // that generated the document and failed on its child would stop a
     // regeneration midway. A backend that lowers `sce-static` before it writes the
     // id is refused by the construct (`reject_static_invoke_idlocation_outside`),
-    // never left to store nothing; none is in that state now, and one that does
-    // not lower `sce-static` at all is refused for that first.
+    // never left to store nothing; none is in that state now, Swift (which writes a
+    // statechart in part) among those that write it.
     let held = r#"<data id="held" sce:type="string" sce:capacity="64" expr="''"/>"#;
     for document in [invoking_into_held(held), invoking_below(held)] {
-        for written in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
+        for written in
+            emitting_in_part(ForgeKind::Statechart).map(|language| language.canonical_name())
+        {
             let (ok, out) = run(&["check", "-l", written], &document);
             assert!(ok, "{written}: the started id has a place to go:\n{out}");
         }
-        let (ok, out) = run(&["check", "-l", "swift"], &document);
-        assert!(!ok, "Swift does not lower sce-static yet:\n{out}");
-        assert!(
-            out.contains("generate/unsupported-feature") && out.contains("sce-static"),
-            "the refusal names the data model:\n{out}"
-        );
     }
 }
 

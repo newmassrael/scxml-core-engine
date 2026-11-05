@@ -340,6 +340,18 @@ private func invokeString() -> Machine {
     )
 }
 
+private func invokeTree() -> Machine {
+    let policy = StaticInvokeTreePolicy()
+    return drive(
+        policy,
+        variables: [
+            "answers": { integer(policy.answers) },
+            "reports": { integer(policy.reports) },
+            "stamps": { integer(policy.stamps) },
+        ]
+    )
+}
+
 private func sendIdLocation() -> Machine {
     let policy = StaticSendIdlocationPolicy()
     return drive(
@@ -1550,6 +1562,16 @@ private func recordBytes() -> Machine {
 
 @Test func aChildIsHandedATextHeldToTheBoundItDeclared() {
     replay("static_invoke_string", invokeString())
+}
+
+// A tree of sessions: a parent that forwards to its child, which answers at once, and whose own hybrid
+// invoke starts a grandchild and keeps the id that start is started under in a variable of the
+// child's (docs/adr/0045). The steps marked `restore` save the machine, discard it and restore it,
+// which Swift does not do yet, so they are replayed as the steps without it: the scenario states
+// that every expected value is the one a run without the restores holds. The line comes off when
+// Swift restores a saved tree.
+@Test func aTreeOfSessionsAnswersAsItsSavedFormWouldWithoutTheRestores() {
+    replay("static_invoke_tree", invokeTree(), skipping: ["restore"])
 }
 
 @Test func aSendHandsItsIdToTheVariableItNames() {
