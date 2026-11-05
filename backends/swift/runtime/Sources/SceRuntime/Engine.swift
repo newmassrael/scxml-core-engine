@@ -185,6 +185,10 @@ public final class Engine<Policy: StatePolicy> {
     /// The §scxml-6.4 callback invoked when reaching a final state.
     private var completionCallback: (() -> Void)?
 
+    /// Told each transition the engine takes, by its row of the emitted transition table
+    /// (`setTransitionObserver`, docs/adr/0089); nil until a host sets one.
+    private var transitionObserver: ((TransitionTaken<State>) -> Void)?
+
     /// The §scxml-C-2 HTTP send dispatch callback. Returns the response when real
     /// HTTP is used; nil for fire-and-forget.
     private var onHTTPSend: ((HttpSendRequest) -> HttpSendResponse?)?
@@ -1682,6 +1686,20 @@ public final class Engine<Policy: StatePolicy> {
         completionCallback = callback
     }
 
+    /// Tells `observer` each transition this engine takes from now on, by the row of its
+    /// emitted transition table; nil stops it (docs/adr/0089).
+    ///
+    /// The observer is told after the selection and before the microstep's first exit, each
+    /// transition of the optimal enabled set once and in selection order, so a run's set of
+    /// pairs is the set of rows it took: the table's coverage, measured on the engine that ran.
+    /// It reads and is asked nothing, so a machine with one set takes the same transitions as
+    /// one without. It runs on the thread that drives the engine, inside the macrostep, and
+    /// must not call back into the engine. Set it before `initialize()` to be told the
+    /// transitions the first macrostep takes.
+    public func setTransitionObserver(_ observer: ((TransitionTaken<State>) -> Void)?) {
+        transitionObserver = observer
+    }
+
     /// Registers an HTTP send dispatcher callback (§scxml-C-2).
     ///
     /// The callback returns the response when real HTTP is used. The engine injects the
@@ -2133,6 +2151,13 @@ public final class Engine<Policy: StatePolicy> {
 
     /// Appendix D's `microstep`: exit, run the transitions' content, enter.
     private func microstep(_ transitions: [EnabledTransition<State>]) {
+        // docs/adr/0089: the selected set, before the first exit, each transition once and in
+        // selection order, as the Python engine tells it.
+        if let transitionObserver {
+            for transition in transitions {
+                transitionObserver(TransitionTaken(source: transition.source, index: transition.transitionIndex))
+            }
+        }
         let entry = SceRuntime.microstep(EngineHost(engine: self), transitions: transitions)
         settleCurrentState(targets: transitions.map(\.targets), entered: entry.statesToEnter)
     }

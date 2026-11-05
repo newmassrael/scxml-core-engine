@@ -103,6 +103,11 @@ type Engine[S comparable, E comparable] struct {
 	// completionCallback is the §scxml-6.4 callback invoked when reaching a final state.
 	completionCallback func()
 
+	// transitionObserver is told each transition the engine takes, by its row
+	// of the emitted transition table (SetTransitionObserver, docs/adr/0089);
+	// nil until a host sets one.
+	transitionObserver func(TransitionTaken[S])
+
 	// onHTTPSend is the §scxml-C-2 HTTP send dispatch callback.
 	// Returns *HttpSendResponse when real HTTP is used; nil for fire-and-forget.
 	onHTTPSend func(HttpSendRequest) *HttpSendResponse
@@ -2449,6 +2454,16 @@ func (e *Engine[S, E]) selectTransitions(event E) []EnabledTransition[S, History
 // microstep is Appendix D's microstep: exit, run the transitions' content,
 // enter.
 func (e *Engine[S, E]) microstep(transitions []EnabledTransition[S, HistoryID]) {
+	// docs/adr/0089: the selected set, before the first exit, each transition
+	// once and in selection order, as the Python engine tells it.
+	if e.transitionObserver != nil {
+		for _, transition := range transitions {
+			e.transitionObserver(TransitionTaken[S]{
+				Source: transition.Source,
+				Index:  uint32(transition.TransitionIndex),
+			})
+		}
+	}
 	entry := Microstep[S, HistoryID, E](e.host(), transitions)
 	targets := make([][]EntryTarget[S, HistoryID], 0, len(transitions))
 	for _, transition := range transitions {

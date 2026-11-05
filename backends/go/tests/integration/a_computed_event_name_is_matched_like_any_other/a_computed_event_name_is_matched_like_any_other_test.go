@@ -46,3 +46,80 @@ func TestAComputedNameIsMatchedByTokenAndToldWhole(t *testing.T) {
 		t.Fatalf("the machine reached %v, want Pass", got)
 	}
 }
+
+// runObserved makes the machine, sets a transition observer (docs/adr/0089)
+// that appends each row it is told to seen, clears it again when clear, and
+// runs the machine to its end, which must be pass.
+func runObserved(t *testing.T, seen *[]sce.TransitionTaken[AComputedEventNameIsMatchedLikeAnyOtherState], clear bool) {
+	t.Helper()
+	policy := NewAComputedEventNameIsMatchedLikeAnyOtherPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	policy.ScriptEngine = scegotest.NewLuaEngine()
+	engine := sce.NewEngine[AComputedEventNameIsMatchedLikeAnyOtherState, AComputedEventNameIsMatchedLikeAnyOtherEvent](&policy)
+	engine.SetTransitionObserver(func(taken sce.TransitionTaken[AComputedEventNameIsMatchedLikeAnyOtherState]) {
+		*seen = append(*seen, taken)
+	})
+	if clear {
+		engine.SetTransitionObserver(nil)
+	}
+	engine.Initialize()
+	if !engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond) {
+		t.Fatalf("the observed run stopped before its final state")
+	}
+	if got, ended := engine.TerminalState(); !ended || got != AComputedEventNameIsMatchedLikeAnyOtherStatePass {
+		t.Fatalf("the observed run reached %v, want Pass", got)
+	}
+}
+
+// The document declares its transition table, and a run that reaches pass
+// takes each of its six transitions once, in document order: the observer is
+// told exactly those rows, each by the (From, Index) its row of the table
+// carries.
+func TestTheObserverIsToldEachRowOfTheTableTheRunTakes(t *testing.T) {
+	var seen []sce.TransitionTaken[AComputedEventNameIsMatchedLikeAnyOtherState]
+	runObserved(t, &seen, false)
+
+	want := []sce.TransitionTaken[AComputedEventNameIsMatchedLikeAnyOtherState]{
+		{Source: AComputedEventNameIsMatchedLikeAnyOtherStateS1, Index: 0},
+		{Source: AComputedEventNameIsMatchedLikeAnyOtherStateS2, Index: 0},
+		{Source: AComputedEventNameIsMatchedLikeAnyOtherStateS3, Index: 0},
+		{Source: AComputedEventNameIsMatchedLikeAnyOtherStateS4, Index: 0},
+		{Source: AComputedEventNameIsMatchedLikeAnyOtherStateS5, Index: 0},
+		{Source: AComputedEventNameIsMatchedLikeAnyOtherStateS6, Index: 0},
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("the observer was told %v, want %v", seen, want)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Fatalf("the observer was told %v, want %v", seen, want)
+		}
+	}
+
+	rows := make(map[sce.TransitionTaken[AComputedEventNameIsMatchedLikeAnyOtherState]]bool)
+	for _, row := range AComputedEventNameIsMatchedLikeAnyOtherTransitions {
+		rows[sce.TransitionTaken[AComputedEventNameIsMatchedLikeAnyOtherState]{Source: row.From, Index: row.Index}] = true
+	}
+	taken := make(map[sce.TransitionTaken[AComputedEventNameIsMatchedLikeAnyOtherState]]bool)
+	for _, pair := range seen {
+		if !rows[pair] {
+			t.Fatalf("the observer was told %v, which is no row of the table", pair)
+		}
+		taken[pair] = true
+	}
+	for row := range rows {
+		if !taken[row] {
+			t.Fatalf("the run never took row %v of the table", row)
+		}
+	}
+}
+
+// An observer set and then cleared is told nothing, and the run still reaches
+// pass, as one that never had an observer does.
+func TestAClearedObserverIsToldNothingAndTheRunIsTheSame(t *testing.T) {
+	var seen []sce.TransitionTaken[AComputedEventNameIsMatchedLikeAnyOtherState]
+	runObserved(t, &seen, true)
+	if len(seen) != 0 {
+		t.Fatalf("a cleared observer was told %v", seen)
+	}
+}

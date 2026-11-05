@@ -654,6 +654,24 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     val transitions: SharedFlow<TransitionRecord<S, E>> get() = _transitions.asSharedFlow()
 
+    /**
+     * Told each transition this engine takes, by the row of its emitted
+     * transition table; `null` tells nothing (docs/adr/0089).
+     *
+     * Unlike [transitions], which is collected later and records only a
+     * targeted transition an event took, this is called synchronously, after
+     * the selection and before the microstep's first exit, for every transition
+     * of the optimal enabled set once and in selection order: eventless and
+     * targetless ones included. A run's set of pairs is the set of rows it took,
+     * the table's coverage measured on the engine that ran. It reads and is asked
+     * nothing, so a machine with one set takes the same transitions as one
+     * without. It runs on the thread that drives the engine, inside the
+     * macrostep, and must not call back into the engine; an exception it throws
+     * is not caught. Set it before `initialize` to be told the transitions the
+     * first macrostep takes.
+     */
+    var transitionObserver: ((TransitionTaken<S>) -> Unit)? = null
+
     // --- Event Queue ---
 
     // --- Event Metadata (§scxml-5.10) ---
@@ -6155,6 +6173,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * [TransitionRecord] per transition that moved the machine.
      */
     private fun microstep(transitions: List<EnabledTransition<S, HistoryId>>, event: E?) {
+        // docs/adr/0089: the selected set, before the first exit, each
+        // transition once and in selection order, as the Python engine tells it.
+        transitionObserver?.let { observer ->
+            for (transition in transitions) {
+                observer(TransitionTaken(transition.source, transition.transitionIndex))
+            }
+        }
         Microstep.microstep(run, transitions)
         settleCurrentState()
         // §scxml-3.7 + 6.4: Single path for final state + invoke completion
