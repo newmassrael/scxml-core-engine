@@ -2049,11 +2049,10 @@ fn render_feature_model(m: &FeaturesModel) -> Vec<Node> {
 /// keeps it.
 fn render_text_template(m: &TextTemplateModel) -> Vec<Node> {
     let mut out = Out::new();
-    out.line(&format!(
-        "text-template {} revision {}",
-        text(&m.name),
-        m.revision()
-    ));
+    out.line_of(vec![
+        Part::Word(Word::TextTemplate),
+        Part::Text(format!("{} revision {}", text(&m.name), m.revision())),
+    ]);
     out.nested(|out| {
         for hole in &m.holes {
             let line = match &hole.kind {
