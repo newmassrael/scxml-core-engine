@@ -49,7 +49,10 @@ The accepted surface comprises:
   `#_internal`, `#_parent`, `#_invokeid`, delayed sends),
   `<cancel>` (W3C §6.3 — MUST carry `sendid` or `sendidexpr`; the
   both-empty shape is rejected at parse time, wire
-  `validation/require-either`), `<assign>`, `<log>`, `<script>`.
+  `validation/require-either`), `<assign>` (W3C §5.4.2 — `expr` or
+  children, exactly one: both is refused at parse time as
+  `validation/incompatible-attributes`, neither as
+  `validation/missing-attribute` naming `expr`), `<log>`, `<script>`.
 - **Datamodel**: `<datamodel>` / `<data>` with expression-language
   assignment, under the two data models SCE implements — see
   [the `datamodel` attribute](#the-datamodel-attribute) for which

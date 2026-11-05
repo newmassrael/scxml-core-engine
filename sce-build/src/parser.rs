@@ -7941,9 +7941,20 @@ fn serialize_node(node: &roxmltree::Node) -> String {
 /// - `expr` "must not occur in an <assign> element that has children".
 ///   Children are what [`inline_data_value`] would read: an element child,
 ///   or character data that is not whitespace.
+/// - One of the two is there. The table marks `expr` optional only because
+///   children may stand for it; the paragraph after the table says a
+///   conformant document "MUST specify either "expr" or children of
+///   <assign>, but not both". An `<assign>` with neither specifies no value,
+///   so it is not a document to run and raise at run time; it is refused as
+///   the missing `expr`. That is the repair the wire can carry
+///   (`add_attribute`; there is no fix variant that adds content), and
+///   writing children instead satisfies the rule as well.
 ///
 /// Until 2026-09-25 neither was checked: a document carrying both was read
-/// with the attribute winning, in silence.
+/// with the attribute winning, in silence. Until 2026-11-06 a document
+/// carrying neither was read too, and its `<assign>` evaluated an empty
+/// expression at run time: `undefined` on one engine path, error.execution
+/// on another.
 fn check_assign_attributes(
     node: &roxmltree::Node,
     source_name: &str,
@@ -7968,6 +7979,12 @@ fn check_assign_attributes(
             detail: "'expr' must not occur in an <assign> element that has children; \
                      the value is specified by one or the other"
                 .to_string(),
+        }));
+    }
+    if node.attribute("expr").is_none() && !has_children {
+        return Err(at(ValidationError::MissingAttribute {
+            element: "<assign>".to_string(),
+            attr: "expr".to_string(),
         }));
     }
     Ok(())

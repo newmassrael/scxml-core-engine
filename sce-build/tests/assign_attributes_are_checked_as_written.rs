@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 //! W3C SCXML 5.4.1: `<assign>`'s `location` is required, and its `expr`
-//! "must not occur in an <assign> element that has children".
+//! "must not occur in an <assign> element that has children"; 5.4.2: the
+//! document specifies one of the two.
 //!
 //! Neither was checked until 2026-09-25: a document with both was read with
 //! the attribute winning, and one with no `location` assigned to nowhere at
@@ -79,6 +80,37 @@ fn an_expr_beside_text_is_refused() {
         matches!(code, DiagnosticCode::ValidationIncompatibleAttributes),
         "{code:?}"
     );
+}
+
+/// W3C SCXML 5.4.2: "A conformant SCXML document MUST specify either "expr"
+/// or children of <assign>, but not both." With neither, the document
+/// specifies no value and is refused where it is read, as the missing `expr`
+/// — whitespace between the tags is no child value, so it is refused too.
+#[test]
+fn an_assign_with_neither_expr_nor_children_is_refused() {
+    for assign in [
+        "<assign location=\"v\"/>",
+        "<assign location=\"v\">\n      </assign>",
+    ] {
+        let err = SCXMLParser::new()
+            .parse_string(&document(assign), "assign.scxml")
+            .expect_err("an <assign> with neither expr nor children is refused");
+        let diagnostic = err
+            .to_diagnostics()
+            .into_iter()
+            .next()
+            .expect("the refusal reports a diagnostic");
+        assert!(
+            matches!(diagnostic.code, DiagnosticCode::ValidationMissingAttribute),
+            "`{assign}`: {:?}",
+            diagnostic.code
+        );
+        assert!(
+            diagnostic.message.contains("'expr'"),
+            "`{assign}`: the refusal does not name `expr`: {}",
+            diagnostic.message
+        );
+    }
 }
 
 /// The controls: each way of giving the value on its own, and whitespace,

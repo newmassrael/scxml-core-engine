@@ -405,6 +405,14 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
                 "'expr' must not occur in an <assign> element that has children; the value is specified by one or "
                 "the other");
         }
+        // §scxml-5.4.2: "A conformant SCXML document MUST specify either
+        // "expr" or children of <assign>, but not both." With neither the
+        // document specifies no value, so it is refused here rather than run
+        // to evaluate an empty expression; as the missing 'expr', which is the
+        // repair the diagnostic can carry, and as the frontend refuses it.
+        if (!actionElement->hasAttribute("expr") && !hasChildren) {
+            throw SCE::parsing::SemanticMissingAttribute("<assign>", "expr");
+        }
 
         // §scxml-5.4.2: the child content of <assign> is an in-line
         // specification of the value, mutually exclusive with 'expr' — so the
