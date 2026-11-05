@@ -26,10 +26,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
 #include "sce/forge/span.h"
+#include "sce/forge/utf8.h"
 
 namespace SCE::Forge {
 
@@ -60,6 +62,14 @@ template <typename L, typename M, typename = void> struct CopiesFrom : std::fals
 template <typename L, typename M>
 struct CopiesFrom<L, M, std::void_t<decltype(L(std::declval<const M &>().begin(), std::declval<const M &>().end()))>>
     : std::true_type {};
+
+/// Whether `L` is a text: a list of `char`, which a `Bounded` holds only where
+/// it is well-formed UTF-8, as a codec's `string` field is (docs/adr/0077 §3).
+/// A byte string is a list of `std::uint8_t`, and holds any bytes.
+template <typename L, typename = void> struct IsText : std::false_type {};
+
+template <typename L>
+struct IsText<L, std::void_t<typename L::value_type>> : std::is_same<std::remove_cv_t<typename L::value_type>, char> {};
 
 /// Whether a list whose bounds are `Max2` and `Min2` lies within `Max` and `Min`.
 template <std::size_t Max, std::size_t Min, std::size_t Max2, std::size_t Min2>
@@ -119,11 +129,17 @@ public:
     constexpr Bounded() noexcept(Min == 0 && std::is_nothrow_default_constructible<L>::value) : list_(fewest()) {}
 
     /// `list` held to the bounds, or nothing where it holds fewer than `Min`
-    /// elements or more than `Max`.
+    /// elements or more than `Max`, or is a text that is not well-formed
+    /// UTF-8.
     [[nodiscard]] static constexpr std::optional<Bounded>
     make(L list) noexcept(std::is_nothrow_move_constructible<L>::value) {
         if (!admits(static_cast<std::size_t>(list.size()))) {
             return std::nullopt;
+        }
+        if constexpr (Detail::IsText<L>::value) {
+            if (!is_well_formed_utf8(list.data(), static_cast<std::size_t>(list.size()))) {
+                return std::nullopt;
+            }
         }
         return Bounded(Checked{}, std::move(list));
     }
@@ -212,6 +228,13 @@ private:
 /// generated value presents a codec's `bytes` element through, and what its
 /// constructor takes (docs/adr/0077 §3, docs/adr/0081 step 4).
 template <std::size_t Max, std::size_t Min = 0> using Bytes = Bounded<Span<const std::uint8_t>, Max, Min>;
+
+/// A text of at least `Min` and at most `Max` UTF-8 bytes, viewed: what a
+/// generated value presents a codec's `string` element through, and what its
+/// constructor takes (docs/adr/0077 §3, docs/adr/0081 step 4). It holds
+/// well-formed UTF-8 only, which `make` checks with the bound; the value keeps
+/// its own copy, a `Bounded<std::string, Max, Min>`.
+template <std::size_t Max, std::size_t Min = 0> using Text = Bounded<std::string_view, Max, Min>;
 
 // A `Bounded` compares with what it holds, as a `std::vector` compares with
 // another: the bounds are a fact about the value, not more of it, so

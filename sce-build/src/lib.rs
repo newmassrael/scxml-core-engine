@@ -3843,6 +3843,9 @@ pub fn compile_forge_with_deploy(
                 index_by_field_sce_type: None,
                 index_by_imports: Vec::new(),
                 element_swift_unlowered: None,
+                // A single document: its element is not in hand, and the
+                // collection declares no index here.
+                element_cpp_printed: false,
             },
         );
         Some(map)
@@ -4353,6 +4356,14 @@ pub struct ForgeCompileOptions {
     /// existed.
     pub element_type_field_schemas: Option<std::collections::HashMap<String, ElementFieldSchema>>,
 
+    /// docs/adr/0081 step 4: the element-type candidates the C++ backend
+    /// prints from their encode plan, by the snake element name of
+    /// [`Self::element_type_field_schemas`]. Such an element presents each
+    /// field through an accessor, so an algorithm iterating a collection of
+    /// it reads `entry.<field>` as a call. Populated with the schemas, on a
+    /// C++ compile only; `None` elsewhere, where no field is read by call.
+    pub element_type_cpp_printed: Option<std::collections::HashSet<String>>,
+
     /// Whether each element-type candidate emits a `{Codec}Owned` mirror,
     /// keyed by the snake element name. Decided by the same predicate the
     /// codec emit uses, so a bounded-collection storing the element names the
@@ -4420,6 +4431,11 @@ pub struct BoundedCollectionResolution {
     /// is not a codec) leaves the collection naming a type that is not there. `None` for an element
     /// it writes, and when the element document is not in hand (a single-document compile).
     pub element_swift_unlowered: Option<String>,
+    /// docs/adr/0081 step 4: whether the C++ backend prints the element codec
+    /// from its plan, so the collection reads the `<sce:index-by>` field of an
+    /// element through its accessor. `false` on every other backend, for an
+    /// element that is no codec, and when the element document is not in hand.
+    pub element_cpp_printed: bool,
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-P — what a queue's two
@@ -5313,6 +5329,11 @@ fn compile_document_set(
     // disagree about a document.
     let mut element_type_owned_mirrors: std::collections::HashMap<String, bool> =
         std::collections::HashMap::new();
+    // The element-type candidates the C++ backend prints from their plan, by
+    // snake element name: a reader of such an element reads each field through
+    // its accessor (docs/adr/0081 step 4). Decided by the same predicate the
+    // codec emit uses, on a C++ compile only.
+    let mut element_type_cpp_printed: HashSet<String> = HashSet::new();
     let mut element_import_sources: std::collections::HashMap<
         String,
         (Vec<forge::model::ForgeImport>, PathBuf),
@@ -5458,6 +5479,11 @@ fn compile_document_set(
                     );
                     element_type_owned_mirrors
                         .insert(filters::to_snake_case(key.clone()), borrowed);
+                    if language == generator::Language::Cpp
+                        && cpp_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
+                    {
+                        element_type_cpp_printed.insert(filters::to_snake_case(key.clone()));
+                    }
                 }
                 element_type_candidates.insert(key, doc);
             }
@@ -5923,6 +5949,8 @@ fn compile_document_set(
                 index_by_field_sce_type,
                 index_by_imports,
                 element_swift_unlowered,
+                element_cpp_printed: element_type_cpp_printed
+                    .contains(&filters::to_snake_case(bc.element_type.clone())),
             },
         );
     }
@@ -6021,6 +6049,7 @@ fn compile_document_set(
     let needs_override = !bc_resolutions.is_empty()
         || listener_links_override.is_some()
         || !element_type_field_schemas.is_empty()
+        || !element_type_cpp_printed.is_empty()
         || !element_type_owned_mirrors.is_empty()
         || queue_resolutions_override.is_some()
         || broadcast_log_resolutions_override.is_some();
@@ -6042,6 +6071,9 @@ fn compile_document_set(
         }
         if !element_type_field_schemas.is_empty() {
             overridden.element_type_field_schemas = Some(element_type_field_schemas);
+        }
+        if !element_type_cpp_printed.is_empty() {
+            overridden.element_type_cpp_printed = Some(element_type_cpp_printed);
         }
         if !element_type_owned_mirrors.is_empty() {
             overridden.element_type_owned_mirrors = Some(element_type_owned_mirrors);

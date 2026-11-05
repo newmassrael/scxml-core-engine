@@ -16,6 +16,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -33,6 +35,7 @@ int failures = 0;
 
 using ::SCE::Forge::Bounded;
 using ::SCE::Forge::Bytes;
+using ::SCE::Forge::Text;
 
 using Owned = Bounded<std::vector<std::uint8_t>, 8>;
 using OwnedAtLeastTwo = Bounded<std::vector<std::uint8_t>, 8, 2>;
@@ -99,6 +102,34 @@ void a_held_list_reads_as_the_list_it_holds() {
     CHECK((*view != other && *view != std::vector<std::uint8_t>{7, 8}), "a different list differs");
 }
 
+// A text is a list of `char` and converts as a byte string does: an owned
+// text is viewed without a copy, and a view is held by an explicit copy.
+using OwnedText = Bounded<std::string, 8>;
+static_assert(std::is_convertible<OwnedText, Text<8>>::value, "an owned text is viewed implicitly");
+static_assert(!std::is_convertible<Text<8>, OwnedText>::value, "a text view is not copied implicitly");
+static_assert(std::is_constructible<OwnedText, Text<8>>::value, "a text view is copied explicitly");
+static_assert(!std::is_constructible<Text<8>, std::string_view>::value, "a bare text is checked by make");
+
+void make_admits_a_text_only_of_well_formed_utf8() {
+    CHECK(Text<8>::make(std::string_view("abc")).has_value(), "ASCII is UTF-8");
+    CHECK(Text<8>::make(std::string_view("\xC3\xA9t\xC3\xA9")).has_value(), "two-byte sequences are UTF-8");
+    CHECK(!Text<8>::make(std::string_view("\xC3")).has_value(), "a sequence cut short is not");
+    CHECK(!Text<8>::make(std::string_view("\xFF")).has_value(), "a byte no sequence begins with is not");
+    CHECK(!Text<8>::make(std::string_view("\xED\xA0\x80")).has_value(), "a surrogate is not");
+    CHECK(!Text<2>::make(std::string_view("abc")).has_value(), "a text past its bound is not made either");
+    CHECK(Text<8>::make(std::string_view()).has_value(), "an empty text is UTF-8");
+
+    const std::string held("caf\xC3\xA9");
+    const auto view = Text<8>::make(held);
+    CHECK(view.has_value() && *view == held && view->size() == 5, "a text compares with the string it views");
+    if (!view) {
+        return;
+    }
+    const OwnedText owned(*view);
+    CHECK(owned == held && owned.inner() == held && owned.data() != held.data(),
+          "an explicit copy holds the same text in a string of its own");
+}
+
 void a_default_holds_the_fewest_elements_the_bounds_admit() {
     const Bytes<8> empty{};
     CHECK(empty.empty() && empty.size() == 0, "a view of no fewest is empty");
@@ -111,6 +142,7 @@ void a_default_holds_the_fewest_elements_the_bounds_admit() {
 int main() {
     make_admits_exactly_the_lists_within_the_bounds();
     a_held_list_reads_as_the_list_it_holds();
+    make_admits_a_text_only_of_well_formed_utf8();
     a_default_holds_the_fewest_elements_the_bounds_admit();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);

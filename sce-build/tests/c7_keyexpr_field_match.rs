@@ -142,10 +142,11 @@ fn cpp_field_match_projects_string_field_to_span() {
     // `name=` attribute (`SCE::Generated::BytesEqual`), not its file stem
     // (`AlgorithmBytesEqual`) — `generate_forge` emits the definition in
     // `namespace SCE::Generated::BytesEqual` and the cross-doc call qualifies
-    // against it.
+    // against it. `keyexpr_entry` is printed from its plan (docs/adr/0081
+    // step 4), so the element presents `pattern` through its accessor.
     assert!(
         code.contains(
-            "BytesEqual::bytes_equal(SCE::Forge::Span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(entry.pattern.data()), entry.pattern.size()), target)"
+            "BytesEqual::bytes_equal(SCE::Forge::Span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(entry.pattern().data()), entry.pattern().size()), target)"
         ),
         "Cpp string-field projection missing; got:\n{code}"
     );
@@ -195,7 +196,7 @@ fn field_match_projects_on_all_six_backends() {
             Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
             Language::Rust => "entry.pattern.as_bytes()",
             Language::C11 => "(const uint8_t *)entry.pattern, entry.pattern_len",
-            Language::Cpp => "reinterpret_cast<const std::uint8_t*>(entry.pattern.data())",
+            Language::Cpp => "reinterpret_cast<const std::uint8_t*>(entry.pattern().data())",
             Language::Go => "[]byte(entry.Pattern)",
             Language::Python => "entry.pattern.encode(\"utf-8\")",
             Language::Kotlin => "entry.pattern.toByteArray(Charsets.UTF_8)",

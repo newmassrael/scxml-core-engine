@@ -230,7 +230,7 @@ public:
     std::optional<{{ pascal }}Handle> find_by_index(const {{ index_by_cpp_type }}& key) const {
         for (std::size_t slot = 0; slot < CAPACITY; ++slot) {
             if (!bitmap_.test(slot)) continue;
-            if (slots_[slot].{{ index_by_field }} == key) {
+            if (slots_[slot].{{ index_by_field }}{% if index_by_accessor %}(){% endif %} == key) {
                 return {{ pascal }}Handle::make(static_cast<std::uint32_t>(slot), generation_[slot]);
             }
         }

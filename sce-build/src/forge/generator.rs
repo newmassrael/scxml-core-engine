@@ -27959,6 +27959,13 @@ fn render_bounded_collection_cpp(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field => m.index_by.clone().unwrap_or_default(),
+        // An element the C++ backend prints from its plan presents the index
+        // field through its accessor (docs/adr/0081 step 4).
+        index_by_accessor => options
+            .bounded_collection_resolutions
+            .as_ref()
+            .and_then(|map| map.get(&m.name))
+            .is_some_and(|resolution| resolution.element_cpp_printed),
         index_by_cpp_type => inputs.index_type,
         index_imports => inputs.index_imports,
         runtime_dep => "self-contained — std::array + std::bitset only",
@@ -36670,6 +36677,19 @@ fn bounded_collection_import<'i>(
         .find(|imp| imp.alias.as_str() == source && imp.kind == "bounded-collection")
 }
 
+/// The fields of the elements an algorithm's `<sce:foreach>` items are, as
+/// [`collect_bc_foreach_member_types`] finds them.
+#[derive(Default)]
+struct ForeachMembers {
+    /// `("<item>.<field>", SceType)`.
+    types: Vec<(String, SceType)>,
+    /// `("<item>.<field>", "<len_member>")`, the C11 length sibling.
+    lens: Vec<(String, String)>,
+    /// `("<item>.<field>", item, field)`, read through the element's
+    /// accessor on the C++ backend.
+    accessors: Vec<(String, String, String)>,
+}
+
 /// RFC c7-wildcard W-project: collect `("<item>.<field>", SceType)` pairs
 /// for every `<sce:foreach item="entry" in="<bc-alias>">` whose source is
 /// a bounded-collection import with a resolved element-type schema. These
@@ -36687,15 +36707,19 @@ fn bounded_collection_import<'i>(
 /// sibling member, taken from the codec SSOT — the explicit `length_field`
 /// when present, else the `<field>_len` the codec emit auto-names for a
 /// tail/fixed `bytes` field. The projection reads this so the borrowed
-/// view carries the *actual* length sibling, never a `_len` guess. Walks
-/// the same nested-block structure as
+/// view carries the *actual* length sibling, never a `_len` guess.
+///
+/// Where the element is a codec the C++ backend prints from its plan
+/// (`printed`, docs/adr/0081 step 4), it records `(path, item, field)` in
+/// `accessors`: such an element presents each field through an accessor, so
+/// C++ reads the path as a call. Walks the same nested-block structure as
 /// [`crate::forge::model::AlgorithmModel::body_bindings`].
 fn collect_bc_foreach_member_types(
     stmts: &[AlgorithmStmt],
     imports: &[ImportContext],
     schemas: &std::collections::HashMap<String, crate::ElementFieldSchema>,
-    out: &mut Vec<(String, SceType)>,
-    out_len: &mut Vec<(String, String)>,
+    printed: Option<&std::collections::HashSet<String>>,
+    out: &mut ForeachMembers,
 ) {
     for s in stmts {
         match s {
@@ -36704,33 +36728,38 @@ fn collect_bc_foreach_member_types(
             } => {
                 if let Some(imp) = bounded_collection_import(imports, source) {
                     if let Some(elem_snake) = imp.bc_element_snake.as_ref() {
+                        let by_accessor = printed.is_some_and(|p| p.contains(elem_snake));
                         if let Some(fields) = schemas.get(elem_snake) {
                             for (fname, fty, len_field) in fields {
                                 let path = format!("{item}.{fname}");
-                                out.push((path.clone(), fty.clone()));
+                                out.types.push((path.clone(), fty.clone()));
+                                if by_accessor {
+                                    out.accessors
+                                        .push((path.clone(), item.clone(), fname.clone()));
+                                }
                                 if matches!(fty, SceType::Bytes | SceType::String) {
                                     let len_member =
                                         len_field.clone().unwrap_or_else(|| format!("{fname}_len"));
-                                    out_len.push((path, len_member));
+                                    out.lens.push((path, len_member));
                                 }
                             }
                         }
                     }
                 }
-                collect_bc_foreach_member_types(body, imports, schemas, out, out_len);
+                collect_bc_foreach_member_types(body, imports, schemas, printed, out);
             }
             AlgorithmStmt::If {
                 then_body,
                 else_body,
                 ..
             } => {
-                collect_bc_foreach_member_types(then_body, imports, schemas, out, out_len);
+                collect_bc_foreach_member_types(then_body, imports, schemas, printed, out);
                 if let Some(eb) = else_body {
-                    collect_bc_foreach_member_types(eb, imports, schemas, out, out_len);
+                    collect_bc_foreach_member_types(eb, imports, schemas, printed, out);
                 }
             }
             AlgorithmStmt::While { body, .. } => {
-                collect_bc_foreach_member_types(body, imports, schemas, out, out_len);
+                collect_bc_foreach_member_types(body, imports, schemas, printed, out);
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
@@ -40664,6 +40693,10 @@ pub(crate) struct AlgorithmTypes<'a> {
     pub(crate) borrowed_records: std::collections::HashSet<String>,
     /// `"<name>.<field>"` for a collection element's fields.
     members: Vec<(String, SceType)>,
+    /// `("<name>.<field>", name, field)` for each field of a collection
+    /// element the C++ backend prints from its plan, which C++ reads through
+    /// the element's accessor (docs/adr/0081 step 4).
+    member_accessors: Vec<(String, String, String)>,
     /// `"<name>.<field>"` for a record's fields, each typed as its schema
     /// declares it — a scalar, or an optional scalar (docs/adr/0055).
     record_members: Vec<(String, EntryType)>,
@@ -40885,17 +40918,21 @@ impl<'a> AlgorithmTypes<'a> {
         // C7 cross-algo dispatch. `member_lens` carries each field's C11
         // length sibling from the codec SSOT rather than a `<field>_len`
         // guess (borrowed-view projection fix).
-        let mut members: Vec<(String, SceType)> = Vec::new();
-        let mut member_lens: Vec<(String, String)> = Vec::new();
+        let mut foreach_members = ForeachMembers::default();
         if let Some(schemas) = options.element_type_field_schemas.as_ref() {
             collect_bc_foreach_member_types(
                 &m.body,
                 imports,
                 schemas,
-                &mut members,
-                &mut member_lens,
+                options.element_type_cpp_printed.as_ref(),
+                &mut foreach_members,
             );
         }
+        let ForeachMembers {
+            types: members,
+            lens: member_lens,
+            accessors: member_accessors,
+        } = foreach_members;
 
         // SCE_FORGE.md §4.12 records: every `record:<alias>` parameter and
         // local is a closed record whose members are the schema's fields,
@@ -41019,6 +41056,7 @@ impl<'a> AlgorithmTypes<'a> {
             optional_record_values,
             borrowed_records,
             members,
+            member_accessors,
             record_members,
             text_members,
             member_lens,
@@ -41434,6 +41472,17 @@ fn render_algorithm(
                     EntryType::Scalar(SceType::String) => record_text_operand(lang, &member),
                     _ => member,
                 },
+            ));
+        }
+    }
+    // A field of a collection element the C++ backend prints from its plan is
+    // presented through the element's accessor (docs/adr/0081 step 4), so the
+    // item's field is read as a call.
+    if matches!(lang, Language::Cpp) {
+        for (path, item, field) in &types.member_accessors {
+            record_renames.push((
+                path.clone(),
+                format!("{}.{}()", l.local_id(item), l.codec_field_id(field)),
             ));
         }
     }

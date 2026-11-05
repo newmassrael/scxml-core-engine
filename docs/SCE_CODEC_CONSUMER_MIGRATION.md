@@ -1163,6 +1163,21 @@ held in a flag (8 more codecs of the resources, 55 in all). The two sections abo
 - `encode_to_vec` returns `std::vector<std::uint8_t>`, as for the codecs moved before. `decode` is unchanged.
 - A source of the codec presents a gated element as anything that converts to the `std::optional` of its type.
 
+## A printed C++ codec holds a text to its bound and to UTF-8 as a type (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the positional codecs
+whose texts state a bound (5 more codecs of the resources, 60 in all). The sections above apply to each of them too.
+
+- A text element is `::SCE::Forge::Text<MAX>` (`sce/forge/bounded.h`), a view of at most `MAX` UTF-8 bytes. Make one
+  with `Text<MAX>::make(text)` from a `std::string` or `std::string_view`; it returns `std::nullopt` for a text past
+  the bound or one that is not well-formed UTF-8. A gated text is `std::optional<Text<MAX>>`.
+- The accessor returns the view: `size()`, `data()`, `inner()` (a `std::string_view`), a range `for`, and `==`
+  against a `std::string`. Copy it out (`std::string(t.inner())`) to keep it past the value.
+- `is_valid_utf8` moved to `sce/forge/utf8.h`, which `sce/forge/codec.h` includes; code that includes `codec.h`
+  sees no change.
+- A generated algorithm that iterates a collection of a printed element reads its fields by accessor
+  (`entry.pattern()`), and a collection indexed by a field of one finds by the accessor; both are regenerated.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

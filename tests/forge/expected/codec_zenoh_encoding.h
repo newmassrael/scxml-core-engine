@@ -13,15 +13,110 @@
 #include <optional>
 #include <vector>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecZenohEncoding {
 
+/// The elements a value of `CodecZenohEncoding` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_packed_id {
+void packed_id() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.packed_id())) -> decltype(s.packed_id()) {
+    return s.packed_id();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(packed_id(s))) -> decltype(packed_id(s)) {
+    return packed_id(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_packed_id
+/// The `packed_id` element of a source.
+inline constexpr detail_packed_id::Read packed_id{};
+namespace detail_schema {
+void schema() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.schema())) -> decltype(s.schema()) {
+    return s.schema();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(schema(s))) -> decltype(schema(s)) {
+    return schema(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_schema
+/// The `schema` element of a source.
+inline constexpr detail_schema::Read schema{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecZenohEncoding`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::packed_id(std::declval<const S&>())), decltype(source::schema(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::packed_id(std::declval<const S&>())), uint32_t>, std::is_convertible<decltype(source::schema(std::declval<const S&>())), std::optional<::SCE::Forge::Text<255>>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint32_t>(source::packed_id(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<255>>>(source::schema(std::declval<const S&>())))> {};
+
+/// The encode of `CodecZenohEncoding` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecZenohEncoding: packed_id, schema");
+        const auto& _r_schema = source::schema(src);
+        const std::optional<::SCE::Forge::Text<255>> _e_schema = _r_schema;
+        const uint64_t _d_schema_len = _e_schema.has_value() ? static_cast<uint64_t>(_e_schema->size()) : uint64_t{0};
+        std::uint64_t _f_packed_id = static_cast<std::uint64_t>(source::packed_id(src));
+        _f_packed_id = (_f_packed_id & ~0x1ull) | static_cast<std::uint64_t>(_e_schema.has_value());
+        const uint32_t _c_packed_id = static_cast<uint32_t>(_f_packed_id);
+        if (auto _e = w.write_vle_u32(static_cast<std::uint32_t>(_c_packed_id)); _e) return _e;
+        if (((static_cast<std::uint64_t>(_c_packed_id) & 0x1ull) != 0)) {
+            if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(_d_schema_len)); _e) return _e;
+        }
+        if (_e_schema) {
+            if (auto _e = w.write_bytes(reinterpret_cast<const std::uint8_t*>(_e_schema->data()), _e_schema->size()); _e) return _e;
+        }
+        return std::nullopt;
+    }
+};
+
 struct CodecZenohEncoding {
-    uint32_t packed_id{};
-    std::optional<uint64_t> schema_len{};
-    std::optional<std::string> schema{};
+    CodecZenohEncoding() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecZenohEncoding(uint32_t packed_id, std::optional<::SCE::Forge::Text<255>> schema)
+        : packed_id_(packed_id), schema_(schema) {}
+    /// The `packed_id` element.
+    [[nodiscard]] constexpr uint32_t packed_id() const noexcept { return packed_id_; }
+    /// The `schema` element, where a gate leaves it in.
+    [[nodiscard]] std::optional<::SCE::Forge::Text<255>> schema() const noexcept { if (!schema_) { return std::nullopt; } return ::SCE::Forge::Text<255>(*schema_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -64,11 +159,20 @@ struct CodecZenohEncoding {
             schema.emplace(reinterpret_cast<const char*>(raw), _n);
             if (!cursor.advance(_n)) return std::nullopt;
         }
-        return CodecZenohEncoding{
+        std::optional<::SCE::Forge::Text<255>> _b_schema;
+        if (schema) {
+            _b_schema = ::SCE::Forge::Text<255>::make(*schema);
+            if (!_b_schema) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
+                return std::nullopt;
+            }
+        }
+        (void)schema_len;
+        CodecZenohEncoding _decoded{
             /*packed_id=*/packed_id,
-            /*schema_len=*/schema_len,
-            /*schema=*/schema,
+            /*schema=*/_b_schema,
         };
+        return _decoded;
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors.
@@ -77,14 +181,14 @@ struct CodecZenohEncoding {
     // mask + shift on the way in so out-of-range callers can't corrupt
     // sibling bits. Wire layout is unchanged.
     bool has_schema() const noexcept {
-        return (this->packed_id & 0x00000001) != 0;
+        return (this->packed_id_ & 0x00000001) != 0;
     }
 
     void set_has_schema(bool v) noexcept {
         if (v) {
-            this->packed_id = static_cast<uint32_t>(this->packed_id | 0x00000001);
+            this->packed_id_ = static_cast<uint32_t>(this->packed_id_ | 0x00000001);
         } else {
-            this->packed_id = static_cast<uint32_t>(this->packed_id & static_cast<uint32_t>(~0x00000001));
+            this->packed_id_ = static_cast<uint32_t>(this->packed_id_ & static_cast<uint32_t>(~0x00000001));
         }
     }
 
@@ -99,47 +203,26 @@ struct CodecZenohEncoding {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (schema.has_value() && ((*schema).size() > 255)) return ::SCE::Forge::CodecError::LengthOutOfRange;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_vle_u32(static_cast<std::uint32_t>(packed_id)); _e) return _e;
-        if (schema_len.has_value()) {
-            auto _v = *schema_len;
-        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(_v)); _e) return _e;
-        }
-        if (schema.has_value()) {
-            if (auto _e = w.write_bytes(
-                reinterpret_cast<const std::uint8_t*>(schema->data()), schema->size()); _e) return _e;
-        }
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
-    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
-    /// refuses the value before its first byte: a gated field and the
-    /// `sce:present-if` that gates it contradict each other
-    /// (`CodecError::PresentIfMismatch`), or a byte string, text or list
-    /// lies outside its bound (`CodecError::LengthOutOfRange`,
-    /// `CodecError::TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        if (encode(_sce_sink)) {
-            return std::nullopt;
-        }
+        (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint32_t packed_id_{};
+    std::optional<::SCE::Forge::Bounded<std::string, 255>> schema_{};
 };
 
 }  // namespace SCE::Generated::CodecZenohEncoding

@@ -18430,7 +18430,9 @@ int main() {
     const std::vector<std::uint8_t> at{0, 1, 2};
     ::SCE::Forge::SceCursor at_cursor(at.data(), at.size());
     const auto value = Gated::decode(at_cursor);
-    if (!value.has_value() || value->rest.size() != 2) {
+    // The codec is printed from its plan (docs/adr/0081 step 4): its value
+    // presents the tail through its accessor, held to the bound as `Bytes<2>`.
+    if (!value.has_value() || value->rest().size() != 2) {
         std::fprintf(stderr, "two bytes at the bound decode\n");
         return 1;
     }

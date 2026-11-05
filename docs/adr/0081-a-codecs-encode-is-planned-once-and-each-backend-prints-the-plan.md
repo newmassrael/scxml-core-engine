@@ -402,6 +402,14 @@ old encode, the old encode and its templates are removed in the same landing.
    The value no longer has to set a presence flag to agree with the element it gates. The printed set is 55 codecs.
    `cpp_source::unlowered_forms` names every form that keeps each other codec, which the census test prints; text
    waits for the C++ readers of a text element to read it through its accessor.
+
+   *The fourth C++ landing, 2026-11-05:* text of a stated bound, presented as `::SCE::Forge::Text<MAX>`, a view of a
+   `std::string_view` (`sce/forge/bounded.h`). A list of `char` is a text, and `make` holds it to well-formed UTF-8
+   as well as to its bound (`sce/forge/utf8.h`), so no value holds a text the decode would refuse; the value keeps its
+   own `Bounded<std::string, MAX>`. A collection of a printed element reads its fields through the element's
+   accessor: the `<sce:index-by>` field the collection finds by, and an algorithm's `entry.<field>` over the
+   collection, which the document set threads as `element_type_cpp_printed` beside the element schemas. The printed
+   set is 60 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

@@ -135,9 +135,13 @@
                   "{{ f.name }} case %d decode {{ field.name }}: actual_size=%zu expected_size=%zu",
                   i, round_tripped->{{ field.name }}{{ acc }}.size(), input_{{ field.name }}.size());
 {% elif field.type == "string" %}
+            {# A text is shown by its size and bytes: a printed value presents it
+               as a view, which ends at its size and not at a NUL. #}
             CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
-                  "{{ f.name }} case %d decode {{ field.name }}: actual=\"%s\" expected=\"%s\"",
-                  i, round_tripped->{{ field.name }}{{ acc }}.c_str(), input_{{ field.name }}.c_str());
+                  "{{ f.name }} case %d decode {{ field.name }}: actual=\"%.*s\" expected=\"%.*s\"",
+                  i, static_cast<int>(round_tripped->{{ field.name }}{{ acc }}.size()),
+                  round_tripped->{{ field.name }}{{ acc }}.data(),
+                  static_cast<int>(input_{{ field.name }}.size()), input_{{ field.name }}.data());
 {% else %}
             CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual=%s expected=%s",

@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "bd599f3",
+  "embed_version": "803319f",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 521,
+  "symbol_count": 524,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3021,6 +3021,12 @@
       "header": "sce/forge/bounded.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Forge::Detail::IsText<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Forge::Detail::MakesCopies<T>"
     },
     {
@@ -3034,6 +3040,12 @@
       "kind": "typedef",
       "name": "SCE::Forge::Bytes",
       "type": "Bounded<Span<const std::uint8_t>, Max, Min>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Text",
+      "type": "Bounded<std::string_view, Max, Min>"
     },
     {
       "header": "sce/forge/broadcast_log.h",
@@ -3300,12 +3312,6 @@
         "LengthOutOfRange",
         "TooManyElements"
       ]
-    },
-    {
-      "header": "sce/forge/codec.h",
-      "kind": "function",
-      "name": "SCE::Forge::is_valid_utf8",
-      "signature": "bool SCE::Forge::is_valid_utf8(const std::uint8_t *, std::size_t) noexcept"
     },
     {
       "header": "sce/forge/codec.h",
@@ -3717,6 +3723,18 @@
       "kind": "typedef",
       "name": "SCE::Forge::TimerCallback",
       "type": "void (*)(void *)"
+    },
+    {
+      "header": "sce/forge/utf8.h",
+      "kind": "function",
+      "name": "SCE::Forge::is_valid_utf8",
+      "signature": "bool SCE::Forge::is_valid_utf8(const std::uint8_t *, std::size_t) noexcept"
+    },
+    {
+      "header": "sce/forge/utf8.h",
+      "kind": "function",
+      "name": "SCE::Forge::is_well_formed_utf8<T>",
+      "signature": "bool SCE::Forge::is_well_formed_utf8<T>(const Byte *, std::size_t) noexcept"
     },
     {
       "header": "scripting/ClassBinding.h",

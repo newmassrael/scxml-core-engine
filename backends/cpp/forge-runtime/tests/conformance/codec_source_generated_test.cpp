@@ -30,10 +30,13 @@
 #include "codec_little_endian.h"
 #include "codec_present_if_basic.h"
 #include "codec_simple_frame.h"
+#include "codec_zenoh_locator.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -441,6 +444,30 @@ void a_length_held_in_a_flag_is_derived_from_the_bytes() {
           "the length bits hold the payload's length beside the carrier's other bits");
 }
 
+namespace Locator = ::SCE::Generated::CodecZenohLocator;
+
+static_assert(std::is_same<decltype(std::declval<const Locator::CodecZenohLocator &>().locator()),
+                           ::SCE::Forge::Text<255>>::value,
+              "a text is presented as a view held to its bound");
+
+void a_text_is_made_of_utf8_within_its_bound_and_its_length_is_derived() {
+    using LocatorText = ::SCE::Forge::Text<255>;
+    CHECK(!LocatorText::make(std::string_view("tcp/\xFF")).has_value(), "a text that is not UTF-8 cannot be made");
+    const auto text = LocatorText::make(std::string_view("tcp/x"));
+    CHECK(text.has_value(), "five ASCII bytes lie within a bound of 255");
+    if (!text) {
+        return;
+    }
+    const Locator::CodecZenohLocator value{*text};
+    CHECK(value.encode_to_vec() == (std::vector<std::uint8_t>{0x05, 't', 'c', 'p', '/', 'x'}),
+          "the length is derived from the text, as a VLE before it");
+    CHECK(value.locator() == std::string("tcp/x"), "the accessor views the text the value holds");
+
+    const std::vector<std::uint8_t> frame{0x02, 0xC3, 0x28};
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    CHECK(!Locator::CodecZenohLocator::decode(cursor).has_value(), "a frame whose text is not UTF-8 is refused");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -458,6 +485,7 @@ int main() {
     a_payload_past_its_bound_cannot_be_made();
     a_presence_flag_is_derived_from_the_element_it_gates();
     a_length_held_in_a_flag_is_derived_from_the_bytes();
+    a_text_is_made_of_utf8_within_its_bound_and_its_length_is_derived();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

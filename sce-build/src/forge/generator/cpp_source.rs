@@ -53,7 +53,11 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
                 forms.push(format!("`{id}`, bytes of no stated bound"))
             }
             Value::Bytes(_) => {}
-            Value::Text(_) => forms.push(format!("`{id}`, a text")),
+            // A text likewise, in UTF-8 bytes.
+            Value::Text(Bound { most: None, .. }) => {
+                forms.push(format!("`{id}`, a text of no stated bound"))
+            }
+            Value::Text(_) => {}
             Value::Body { .. } => forms.push(format!("`{id}`, a body")),
             Value::List { .. } => forms.push(format!("`{id}`, a list")),
         }
@@ -317,8 +321,10 @@ struct Presented<'p> {
     view: String,
     /// What the value holds it as where it is present.
     held: String,
-    /// Whether it is a byte string, held to its bound.
+    /// Whether it is a byte string or a text, held to its bound.
     bytes: bool,
+    /// Whether it is a text, whose UTF-8 bytes are `char`s.
+    text: bool,
     /// Whether a gate decides it, so that it is presented as an optional
     /// value (docs/adr/0055).
     optional: bool,
@@ -355,21 +361,28 @@ impl<'p> Presented<'p> {
         let name = l.codec_field_id(&element.field.id);
         let optional = element.presence == Presence::Gated;
         match &element.value {
-            Value::Bytes(bound) => {
+            Value::Bytes(bound) | Value::Text(bound) => {
+                let text = matches!(element.value, Value::Text(_));
                 let most = bound
                     .most
-                    .expect("`unlowered` refuses bytes of no stated bound");
+                    .expect("`unlowered` refuses bytes or text of no stated bound");
                 let bounds = if bound.least == 0 {
                     format!("{most}")
                 } else {
                     format!("{most}, {}", bound.least)
                 };
+                let (view, list) = if text {
+                    ("Text", "std::string")
+                } else {
+                    ("Bytes", "std::vector<std::uint8_t>")
+                };
                 Presented {
                     field: element.field,
                     name,
-                    view: format!("::SCE::Forge::Bytes<{bounds}>"),
-                    held: format!("::SCE::Forge::Bounded<std::vector<std::uint8_t>, {bounds}>"),
+                    view: format!("::SCE::Forge::{view}<{bounds}>"),
+                    held: format!("::SCE::Forge::Bounded<{list}, {bounds}>"),
                     bytes: true,
+                    text,
                     optional,
                 }
             }
@@ -381,6 +394,7 @@ impl<'p> Presented<'p> {
                     view: ty.clone(),
                     held: ty,
                     bytes: false,
+                    text: false,
                     optional,
                 }
             }
@@ -653,11 +667,17 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
             format!("source::{name}(src)")
         }
     };
+    // A text's UTF-8 bytes are `char`s, written as the bytes they are.
     let bytes_write = |f: &CodecField| {
         let name = l.codec_field_id(&f.id);
         let at = if optional(f) { "->" } else { "." };
+        let data = if element(f).is_some_and(|e| e.text) {
+            format!("reinterpret_cast<const std::uint8_t*>(_e_{name}{at}data())")
+        } else {
+            format!("_e_{name}{at}data()")
+        };
         format!(
-            "        if (auto _e = w.write_bytes(_e_{name}{at}data(), _e_{name}{at}size()); _e) return _e;\n"
+            "        if (auto _e = w.write_bytes({data}, _e_{name}{at}size()); _e) return _e;\n"
         )
     };
     // A gate, tested on the carriers as the encode writes them.
