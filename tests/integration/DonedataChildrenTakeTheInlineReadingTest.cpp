@@ -46,28 +46,35 @@ protected:
     /// `<final>`, whose donedata `<content>` holds `children`. The parent's
     /// done.state.p handler keeps `_event.data` in `got` and ends in `done`;
     /// an error.execution raised while the donedata is read ends in `failed`.
-    static std::string documentWithContent(const std::string &children) {
-        return R"(<?xml version="1.0" encoding="UTF-8"?>
+    /// A `probe`, when given, is a cond read of `_event.data` where it is
+    /// bound, taken first and ending in `probed`.
+    static std::string documentWithContent(const std::string &children, const std::string &probe) {
+        const std::string probeTransition =
+            probe.empty() ? std::string()
+                          : "    <transition event=\"done.state.p\" cond=\"" + probe + "\" target=\"probed\"/>\n";
+        return R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="p">
   <datamodel>
     <data id="got"/>
   </datamodel>
   <state id="p" initial="f">
     <final id="f">
-      <donedata><content>)" +
-               children + R"(</content></donedata>
+      <donedata><content>)scxml" +
+               children + R"scxml(</content></donedata>
     </final>
     <transition event="error.execution" target="failed"/>
-    <transition event="done.state.p" target="done">
+)scxml" + probeTransition +
+               R"scxml(    <transition event="done.state.p" target="done">
       <assign location="got" expr="_event.data"/>
     </transition>
   </state>
   <final id="done"/>
+  <final id="probed"/>
   <final id="failed"/>
-</scxml>)";
+</scxml>)scxml";
     }
 
-    void run(const std::string &children) {
+    void run(const std::string &children, const std::string &probe = std::string()) {
         sm_ = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
         auto scheduler = std::make_shared<EventSchedulerImpl>(
             [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
@@ -84,7 +91,7 @@ protected:
         sm_->setEventDispatcher(
             std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(eventRaiser)));
 
-        ASSERT_TRUE(sm_->loadSCXMLFromString(documentWithContent(children)));
+        ASSERT_TRUE(sm_->loadSCXMLFromString(documentWithContent(children, probe)));
         ASSERT_TRUE(sm_->start());
         // The run needs nothing from the host; drain whatever `start` left queued.
         eventRaiser->processQueuedEvents();
@@ -124,15 +131,20 @@ TEST_F(DonedataChildrenTakeTheInlineReadingTest, AJsonValueIsThatValue) {
 }
 
 // Children that open with `<` travel as written, and the DOM is built where
-// `_event.data` is bound.
+// `_event.data` is bound: the document handle `<data>` XML gets too
+// (`DOMBinding::createDOMObject`), read where the event is bound, as W3C
+// test561 reads its `<send>`'s. It is read in the cond rather than through
+// `got`: an `<assign>` of `_event.data` to a name stores the value the engine
+// hands back (`AssignmentExecutionHelper`), a plain copy that keeps no DOM
+// handle, so `got.documentElement` is undefined there.
 TEST_F(DonedataChildrenTakeTheInlineReadingTest, XmlChildrenArriveAsTheirDocument) {
-    run(R"(<result code="7">finished</result>)");
+    run(R"(<result code="7">finished</result>)", "_event.data.documentElement.tagName === 'result' &amp;&amp; "
+                                                 "_event.data.documentElement.getAttribute('code') === '7'");
 
-    EXPECT_EQ(sm_->terminalState().value_or(""), "done")
-        << "reading the children must raise no error.execution. " << describe();
-    EXPECT_EQ(read("got.documentElement.tagName === 'result' && got.documentElement.getAttribute('code') === '7'"),
-              "true")
-        << "_event.data must be the document the children are. " << describe();
+    EXPECT_EQ(sm_->terminalState().value_or(""), "probed")
+        << "_event.data must be the document the children are (`done` means the done event arrived and was not "
+           "it; `failed` that reading the children raised error.execution). "
+        << describe();
 }
 
 }  // namespace Tests
