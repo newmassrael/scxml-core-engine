@@ -2352,9 +2352,14 @@ extension Engine {
                 processorType: request.processorType, event: request.eventName, target: request.target,
                 content: request.content, params: request.params, sendID: request.sendID, data: request.eventData,
                 invokeID: request.invokeID)
-        case .parent, .invocation:
-            throw StateRefusal(
-                "the delayed send '\(act.sendID)' is routed to a session the tree holds, which this runtime does not save yet")
+        // The session that started this one, and a running child of it: both are sessions the tree holds
+        // (docs/adr/0045).
+        case .parent:
+            return .parent(event: route.eventName, data: act.data, sendID: act.sendID, origin: act.origin)
+        case .invocation:
+            return .child(
+                invokeID: route.invokeID, event: route.eventName, data: act.data, sendID: act.sendID,
+                origin: act.origin)
         case .session:
             throw StateRefusal("the delayed send '\(act.sendID)' is routed to a child session, which a saved state does not carry")
         case .httpPost:
@@ -2375,8 +2380,9 @@ extension Engine {
     }
 
     /// Reads every delayed send `sends` holds as the entry its send site would have armed, or the refusal that
-    /// says which event this document does not name. Changes nothing.
-    func judgeSavedSends(_ sends: [SavedSend]) throws -> [SavedArm] {
+    /// says which event this document does not name, or which child it does not invoke (`invokeIDs`). Changes
+    /// nothing.
+    func judgeSavedSends(_ sends: [SavedSend], invokeIDs: [String]) throws -> [SavedArm] {
         try sends.enumerated().map { index, send in
             func resolved(_ name: String) throws -> Event {
                 guard let event = resolveEventByName(name) else {
@@ -2407,9 +2413,17 @@ extension Engine {
                 return SavedArm(
                     due: send.due, event: nil, name: "", data: data, sendID: request.sendID, origin: "",
                     route: ScheduledRoute(kind: .host, eventName: event, host: request))
-            case .parent, .child:
-                throw StateRefusal(
-                    "pending[\(index)] is a send to another session of the tree, which this runtime does not restore yet")
+            case .parent(let name, let data, let id, let origin):
+                return SavedArm(
+                    due: send.due, event: nil, name: "", data: data, sendID: try sendID(id), origin: origin,
+                    route: ScheduledRoute(kind: .parent, eventName: name))
+            case .child(let invokeID, let name, let data, let id, let origin):
+                guard invokeIDs.contains(invokeID) else {
+                    throw StateRefusal("pending[\(index)] is a send to '\(invokeID)', which the document does not invoke")
+                }
+                return SavedArm(
+                    due: send.due, event: nil, name: "", data: data, sendID: try sendID(id), origin: origin,
+                    route: ScheduledRoute(kind: .invocation, eventName: name, invokeID: invokeID))
             }
         }
     }

@@ -120,6 +120,24 @@ public protocol SavedPolicy: InvocablePolicy {
     /// text or a list. What it returns writes the values it read into the machine and cannot fail, so the
     /// restore applies it only once every other judgment has passed.
     func readSavedVariables(from saved: SavedState) throws -> () -> Void
+
+    /// The id the document gives each of its `<invoke type="scxml">`s, in document order: what a saved state names
+    /// a running child, a count of starts and a send waiting for a child by. None for a document that invokes none.
+    var savedInvokeIDs: [String] { get }
+
+    /// Every `<invoke>` whose child session is running, in document order, each with the child's whole state
+    /// (docs/adr/0045). A child that has ended is not running, though its entry may stay until its state exits.
+    func savedChildren(wallNowMs: Int64) throws -> [SavedChild]
+
+    /// How many times each `<invoke>` has started, which numbers the next start's id: by the id the document gives
+    /// the `<invoke>`, in document order, those that have started at least once.
+    func savedInvokeStarts() -> [SavedEntry<Int64>]
+
+    /// Judges the running children `saved` lists and the counts of starts it holds, and changes none: each child is
+    /// one the document starts and its session is of the shape of the document it runs, down to the last
+    /// grandchild. What it returns puts the children back, once the machine itself stands where it was saved: each
+    /// resumed where it stood in a format-2 state, each started again from its beginning in a format-1 one.
+    func readSavedChildren(from saved: SavedState, engine: Engine<Self>, wallNowMs: Int64) throws -> () -> Void
 }
 
 extension SavedPolicy {
@@ -128,6 +146,24 @@ extension SavedPolicy {
 
     public func restoreHistory(_ history: HistoryID, to states: [State]) {
         preconditionFailure("this document declares no <history>, so a saved state has none to restore")
+    }
+
+    public var savedInvokeIDs: [String] { [] }
+
+    public func savedChildren(wallNowMs: Int64) throws -> [SavedChild] { [] }
+
+    public func savedInvokeStarts() -> [SavedEntry<Int64>] { [] }
+
+    /// A document that invokes nothing holds no child, and a state that names one is not of this machine.
+    public func readSavedChildren(from saved: SavedState, engine: Engine<Self>, wallNowMs: Int64) throws -> () -> Void {
+        if let child = saved.invokes.ids.first {
+            throw StateRefusal(
+                "the saved state holds a running child session '\(child)', which this machine does not start")
+        }
+        if let counted = saved.invokeStarts.first {
+            throw StateRefusal("invokestarts counts '\(counted.key)', which the document does not invoke")
+        }
+        return {}
     }
 }
 
@@ -204,6 +240,7 @@ extension Engine where Policy: SavedPolicy {
                 "the machine is not at a macrostep boundary: its internal queue holds events a save would lose")
         }
         let pending = try savedPendingSends(wallNowMs: wallNowMs)
+        let children = try policy.savedChildren(wallNowMs: wallNowMs)
         // Document order, which is also entry order: the same text from every run that stands in the same place.
         let active = getActiveStates().sorted { policy.getDocumentOrder($0) < policy.getDocumentOrder($1) }
         // Saved under the name the event arrived under, so a restore gives the machine the same `_event.name`:
@@ -229,7 +266,8 @@ extension Engine where Policy: SavedPolicy {
             shape: revisions.isEmpty ? shape.format2First : shape.format2Revised,
             configuration: active.map { policy.getStateName($0) },
             current: policy.getStateName(getCurrentState()), variables: policy.savedVariables(), history: history,
-            pending: pending, invokes: .resumed([]), sessionID: policy.sessionID, autoSendSeq: Int64(generatedSendIDCount),
+            pending: pending, invokes: .resumed(children), sessionID: policy.sessionID,
+            invokeStarts: policy.savedInvokeStarts(), autoSendSeq: Int64(generatedSendIDCount),
             external: external, revisions: revisions, features: shape.features)
     }
 
@@ -246,16 +284,20 @@ extension Engine where Policy: SavedPolicy {
     /// time it is on the wall clock the saved `due`s were written against, and one already due comes due now,
     /// behind the ones due before it.
     public func restore(_ saved: SavedState, wallNowMs: Int64 = unixWallClockMs()) throws {
+        try prepareRestore(saved, wallNowMs: wallNowMs)()
+    }
+
+    /// Judges `saved` against this machine, every judgment a restore makes, and changes nothing; what it returns
+    /// stands the machine where `saved` left one and cannot fail. `restore` is the two in a row. A parent judges
+    /// the sessions it resumes through this before it changes anything, so one child's refusal leaves the whole
+    /// tree as it was (docs/adr/0045, section 3).
+    public func prepareRestore(_ saved: SavedState, wallNowMs: Int64) throws -> () -> Void {
         guard !isRunning else {
             throw StateRefusal("the machine has started: a saved state is restored into one that has not")
         }
         // The state as one of this machine: each record saved at an earlier revision of its schema holds the
         // defaults of the fields added since.
         let saved = try SavedState.upgrade(saved, against: Policy.savedShape)
-        if let child = saved.invokes.ids.first {
-            throw StateRefusal(
-                "the saved state holds a running child session '\(child)', which this machine does not start")
-        }
         if let hosted = saved.hostInvokes.first {
             throw StateRefusal(
                 "the saved state holds the host-run invocation '\(hosted.invokeID)', which this machine does not start")
@@ -312,26 +354,33 @@ extension Engine where Policy: SavedPolicy {
                     originType: event.originType, invokeID: event.invokeID,
                     hostInvokeToken: event.hostInvokeToken.map { UInt64(bitPattern: $0) }))
         }
-        let waiting = try judgeSavedSends(saved.pending)
+        let waiting = try judgeSavedSends(saved.pending, invokeIDs: policy.savedInvokeIDs)
         let apply = try policy.readSavedVariables(from: saved)
         guard saved.autoSendSeq >= 0 else {
             throw StateRefusal("the saved count of generated send ids is negative")
         }
-        // The one judgment left is the engine's own: it validates the configuration before it changes anything.
-        let verdict = enterAt(configuration: configuration, current: current)
+        let verdict = validateConfiguration(policy: policy, configuration: configuration, current: current)
         guard verdict == .accepted else {
             throw StateRefusal("the saved configuration is not one of this document: \(verdict)")
         }
+        // The children last: each is judged down to its last grandchild, and none is built into the tree before
+        // every judgment of this machine has passed.
+        let resumeChildren = try policy.readSavedChildren(from: saved, engine: self, wallNowMs: wallNowMs)
         // Past every judgment: what follows cannot fail.
-        if let bound = saved.boundSessionID {
-            policy.sessionID = bound
+        return { [self] in
+            let entered = enterAt(configuration: configuration, current: current)
+            precondition(entered == .accepted, "the restore judged this configuration and enterAt refused it")
+            if let bound = saved.boundSessionID {
+                policy.sessionID = bound
+            }
+            apply()
+            for recorded in histories {
+                policy.restoreHistory(recorded.history, to: recorded.states)
+            }
+            armSavedSends(waiting, wallNowMs: wallNowMs)
+            restoreSavedEngineParts(external: external, generatedSendIDCount: UInt64(saved.autoSendSeq))
+            resumeChildren()
         }
-        apply()
-        for recorded in histories {
-            policy.restoreHistory(recorded.history, to: recorded.states)
-        }
-        armSavedSends(waiting, wallNowMs: wallNowMs)
-        restoreSavedEngineParts(external: external, generatedSendIDCount: UInt64(saved.autoSendSeq))
     }
 }
 

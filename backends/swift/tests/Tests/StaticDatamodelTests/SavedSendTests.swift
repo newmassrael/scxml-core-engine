@@ -185,15 +185,33 @@ private func refusal(_ body: () throws -> Void) -> String? {
     #expect(said?.hasPrefix("pending[0] has no send id") == true, "\(said ?? "none")")
 }
 
-@Test func aSendToAnotherSessionOfTheTreeIsRefusedByNameUntilTheTreeIsRestored() throws {
+@Test func aSendWaitingForAChildThisDocumentDoesNotInvokeIsRefusedByName() throws {
     let (_, engine, _) = try startedTimers()
     var saved = try engine.save(wallNowMs: startedAt)
-    saved.pending[0].act = .parent(event: "inner", data: "", sendID: "__send_2", origin: root)
+    saved.pending[0].act = .child(
+        invokeID: "ghost", event: "inner", data: "", sendID: "__send_2", origin: root)
     let restoredEngine = Engine(policy: StaticTimersPolicy())
     restoredEngine.setClock(ManualClock())
     #expect(
         refusal { try restoredEngine.restore(saved, wallNowMs: startedAt) }
-            == "pending[0] is a send to another session of the tree, which this runtime does not restore yet")
+            == "pending[0] is a send to 'ghost', which the document does not invoke")
+}
+
+@Test func aSendWaitingForTheParentIsSavedAndRestoredAsTheSessionThatStartedThisOne() throws {
+    // A root has no parent, but the route is a session the tree holds, so the text carries it as it does any
+    // send: delivered when due, it finds no one to take it, and the sender is told (error.communication).
+    let (_, engine, _) = try startedTimers()
+    engine.scheduleRoutedEvent(
+        nil, delay: .seconds(3), sendID: "up", eventData: "", origin: root,
+        route: ScheduledRoute(kind: .parent, eventName: "up"))
+    let saved = try SavedState.fromJSON(engine.save(wallNowMs: startedAt).toJSON())
+    #expect(
+        saved.pending.first { $0.due == startedAt + 3000 }?.act
+            == .parent(event: "up", data: "", sendID: "up", origin: root))
+    let restoredEngine = Engine(policy: StaticTimersPolicy())
+    restoredEngine.setClock(ManualClock())
+    try restoredEngine.restore(saved, wallNowMs: startedAt)
+    #expect(try restoredEngine.save(wallNowMs: startedAt).toJSON() == saved.toJSON(), "the text is a fixed point")
 }
 
 @Test func aWaitingSendTheFormatCannotCarryRefusesTheSaveByName() throws {
@@ -207,11 +225,11 @@ private func refusal(_ body: () throws -> Void) -> String? {
 
     let (_, other, _) = try startedTimers()
     other.scheduleRoutedEvent(
-        nil, delay: .seconds(3), sendID: "up", eventData: "", origin: root,
-        route: ScheduledRoute(kind: .parent, eventName: "up"))
+        nil, delay: .seconds(3), sendID: "kid", eventData: "", origin: root,
+        route: ScheduledRoute(kind: .session, eventName: "up", sessionID: "elsewhere"))
     #expect(
         refusal { _ = try other.save(wallNowMs: startedAt) }
-            == "the delayed send 'up' is routed to a session the tree holds, which this runtime does not save yet")
+            == "the delayed send 'kid' is routed to a child session, which a saved state does not carry")
 }
 
 @Test func aHostServedSendWaitsAsTheRequestItMadeAndIsPerformedAfterTheRestore() throws {
