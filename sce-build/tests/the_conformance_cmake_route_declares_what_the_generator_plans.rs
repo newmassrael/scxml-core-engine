@@ -107,8 +107,14 @@ const PLAN_MODULE: &str = include_str!("../../cmake/SCECodegenPlan.cmake");
 const PLAN_MODULE_PATH: &str = "cmake/SCECodegenPlan.cmake";
 /// The test tree's build, which declares every generation it runs, the Mesh
 /// fixtures' among them, through `sce_codegen_generation`
-/// ([`test_tree_violations`]).
-const TEST_TREE: &str = include_str!("../../tests/CMakeLists.txt");
+/// ([`test_tree_violations`]): tests/CMakeLists.txt and the file it includes
+/// for the W3C programs, which the emscripten tree without threads includes
+/// alone.
+const TEST_TREE: &str = concat!(
+    include_str!("../../tests/CMakeLists.txt"),
+    "\n",
+    include_str!("../../tests/w3c/W3CPrograms.cmake")
+);
 
 /// What every line of the Mesh rule-3 override's block names: its output
 /// directory, and the prefixes of the plans it asks.
@@ -1314,6 +1320,7 @@ const FILES_THAT_ASK_A_PLAN: &[&str] = &[
     "cmake/SCEStaticW3CTest.cmake",
     "cmake/SCEStaticIntegrationFixture.cmake",
     "tests/CMakeLists.txt",
+    "tests/w3c/W3CPrograms.cmake",
     "backends/c/tests/CMakeLists.txt",
     "cmake/SCECodegen.cmake",
     "backends/c/forge-runtime/tests/round_trip/CMakeLists.txt",

@@ -536,10 +536,13 @@ sce_gate_activate_emsdk() {
 # engine it builds is threaded or host-driven accordingly
 # (sce/include/common/ThreadSupport.h):
 #
-#   build_wasm      threads: the Node programs. `w3c-wasm` builds two of
-#                   them, `cpp-suite-wasm` and `scripts/build_wasm.sh` all.
+#   build_wasm      threads: the Node programs. `cpp-suite-wasm` and
+#                   `scripts/build_wasm.sh` build all of them.
 #   build_wasm_web  no threads: the browser module, which `visualizer-wasm`
-#                   builds and the deploy publishes.
+#                   builds and the deploy publishes, and the W3C runner and
+#                   the interactive suite, which run the host-driven engine.
+#
+# `w3c-wasm` builds and runs the W3C runner and the interactive suite in both.
 #
 # Two spellings of one tree's configure would be two trees in one directory: a
 # generator chosen by one gate and refused by the next ("Does not match the

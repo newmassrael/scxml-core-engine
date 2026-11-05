@@ -67,8 +67,10 @@ struct Route {
 }
 
 const ROUTES: [Route; 2] = [
+    // The C++ route's programs and registrations, which every tree includes
+    // (tests/CMakeLists.txt, and the emscripten tree without threads).
     Route {
-        file: "tests/CMakeLists.txt",
+        file: "tests/w3c/W3CPrograms.cmake",
         registration: "sce_generate_static_w3c_test",
     },
     Route {

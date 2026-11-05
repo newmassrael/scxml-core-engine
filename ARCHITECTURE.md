@@ -1634,8 +1634,9 @@ The host-driven model is the one a target without threads has, as the Rust engin
 
 ### WASM (Emscripten)
 Two build trees, one per model, because `-pthread` is part of every object's ABI (shared memory and atomics) and so one setting of a whole tree (`SCE_WASM_THREADS`, root `CMakeLists.txt`):
-- `build_wasm` (threads): the Node programs: the engine's suites (`cpp-suite-wasm`) and the W3C runner (`w3c-wasm`)
-- `build_wasm_web` (no threads): the browser visualizer (`visualizer-wasm`, deployed), which runs in a page without cross-origin isolation and so without SharedArrayBuffer
+- `build_wasm` (threads): the Node programs: the engine's suites (`cpp-suite-wasm`), and the W3C runner and the interactive suite on the threaded engine
+- `build_wasm_web` (no threads): the browser visualizer (`visualizer-wasm`, deployed), which runs in a page without cross-origin isolation and so without SharedArrayBuffer, and the W3C runner and the interactive suite on the host-driven engine it runs
+- `w3c-wasm` runs the W3C runner and the interactive suite in both trees, so each engine is held to the 404 cases and the interactive suite (`tests/w3c/W3CPrograms.cmake` declares them for both)
 - Emscripten Fetch API for HTTP requests (`EmscriptenFetchClient`)
 - Configurable memory: `WASM_INITIAL_MEMORY`, fixed allocation (no growth)
 

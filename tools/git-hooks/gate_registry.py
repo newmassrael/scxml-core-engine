@@ -2316,12 +2316,17 @@ GATES: dict[str, dict] = {
     # is absent from COST_MEASURED. A cold configure and build of the tree was
     # about 600s wall (some 3000 cpu-s, the generator's build included) on the
     # same day. Its `peak_gb` was read off that cold build.
+    #
+    # Since 2026-11-05 it runs both programs in BOTH emscripten trees, the
+    # threaded engine's and the host-driven engine's (the browser's), so a run
+    # does that work twice and `cost_s` is twice the sum above: still a sum,
+    # still not a timing of the script.
     "w3c-wasm": {
         "workflows": ["w3c-tests.yml"],
         "runner_workflow": True,
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "what the native runner reads, plus the CMake that "
-                   "configures the emscripten tree and the Node host the "
+                   "configures the two emscripten trees and the Node host the "
                    "programs are linked with (tests/w3c/wasm_polyfill.js).",
         # What the two programs are built from and run against: the engine,
         # the runner and its Node host (tests/w3c/), the mock the runner
@@ -2333,16 +2338,18 @@ GATES: dict[str, dict] = {
                   "tools/codegen/templates/**", "sce-build/src/**",
                   "resources/**"],
         "deps": ["codegen-build"],
-        "ci_only": "113s warm, summed from three readings rather than timed "
-                   "as a script, and about 600s cold. No other gate a push "
-                   "runs builds the emscripten tree, so the cold figure is "
-                   "the state a trigger usually finds it in, and it needs "
-                   "emsdk, which a push host is not required to carry. "
-                   "w3c-tests.yml declares no `paths:` filter, so CI runs "
-                   "this arm on every push.",
-        "cost_s": 113,
+        "ci_only": "226s warm for the two trees, summed from three readings "
+                   "of one tree rather than timed as a script, and about "
+                   "1200s cold. No other gate a push runs builds both "
+                   "emscripten trees, so the cold figure is the state a "
+                   "trigger usually finds them in, and it needs emsdk, which "
+                   "a push host is not required to carry. w3c-tests.yml "
+                   "declares no `paths:` filter, so CI runs this arm on every "
+                   "push, in a job of its own (`test-cpp-wasm`).",
+        "cost_s": 226,
         "summary": "W3C conformance and the interactive suite, C++ "
-                   "Interpreter + AOT built with emscripten, under Node",
+                   "Interpreter + AOT built with emscripten, under Node, on "
+                   "the threaded and the host-driven engine",
         "cache": False,
         "no_cache_reason": "skip-capable: it exits 0 on a machine without "
                            "emsdk, which bx.toml requires by no name, and the "

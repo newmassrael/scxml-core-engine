@@ -155,8 +155,11 @@ on:
       # includer did.
       - 'cmake/SCEFindCodegen.cmake'
       # The test tree's build, whose Mesh rule-3 override and every command
-      # it declares from a plan the same suite compiles in and holds.
+      # it declares from a plan the same suite compiles in and holds, and the
+      # file it includes for the W3C programs, which the same suite holds to
+      # asking the W3C plans before declaring the fixtures.
       - 'tests/CMakeLists.txt'
+      - 'tests/w3c/W3CPrograms.cmake'
       # The C11 conformance suite's build, which the same suite compiles in
       # and holds to declaring its fixtures after their plans were asked.
       - 'backends/c/tests/CMakeLists.txt'
@@ -285,8 +288,11 @@ on:
       # includer did.
       - 'cmake/SCEFindCodegen.cmake'
       # The test tree's build, whose Mesh rule-3 override and every command
-      # it declares from a plan the same suite compiles in and holds.
+      # it declares from a plan the same suite compiles in and holds, and the
+      # file it includes for the W3C programs, which the same suite holds to
+      # asking the W3C plans before declaring the fixtures.
       - 'tests/CMakeLists.txt'
+      - 'tests/w3c/W3CPrograms.cmake'
       # The C11 conformance suite's build, which the same suite compiles in
       # and holds to declaring its fixtures after their plans were asked.
       - 'backends/c/tests/CMakeLists.txt'

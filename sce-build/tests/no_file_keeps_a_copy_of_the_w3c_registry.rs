@@ -94,10 +94,13 @@ struct DerivedOutput {
 const DERIVED_OUTPUTS: &[DerivedOutput] = &[DerivedOutput {
     path: "web/visualizer/test-list.js",
     generator: "tools/generate_test_list.py",
-    kept_current_by: "the `generate_test_list` target of tests/CMakeLists.txt, built by \
-                      default, whose command reruns the generator whenever the registry \
+    kept_current_by: "the `generate_test_list` target of tests/w3c/W3CPrograms.cmake, built \
+                      by default, whose command reruns the generator whenever the registry \
                       or the generator is newer than the file",
 }];
+
+/// The file that declares the build rerunning the derived outputs' generators.
+const DERIVED_OUTPUTS_BUILD: &str = "tests/w3c/W3CPrograms.cmake";
 
 /// A list of numbers that are not test numbers and happen to be registry ids.
 /// Keyed on the line a run starts on, so the rest of the file stays read.
@@ -347,8 +350,8 @@ fn no_file_keeps_a_copy_of_the_w3c_registry() {
 #[test]
 fn every_derived_output_names_its_generator_and_is_rebuilt() {
     let tree = cmake_code(
-        &std::fs::read_to_string(root().join("tests/CMakeLists.txt"))
-            .expect("read tests/CMakeLists.txt"),
+        &std::fs::read_to_string(root().join(DERIVED_OUTPUTS_BUILD))
+            .unwrap_or_else(|e| panic!("read {DERIVED_OUTPUTS_BUILD}: {e}")),
     );
     for output in DERIVED_OUTPUTS {
         let text = std::fs::read_to_string(root().join(output.path))
@@ -368,7 +371,7 @@ fn every_derived_output_names_its_generator_and_is_rebuilt() {
         );
         assert!(
             tree.contains(output.generator) && tree.contains(output.path),
-            "{} is said to be kept current by {}, and tests/CMakeLists.txt no longer runs \
+            "{} is said to be kept current by {}, and {DERIVED_OUTPUTS_BUILD} no longer runs \
              {} to write it",
             output.path,
             output.kept_current_by,
