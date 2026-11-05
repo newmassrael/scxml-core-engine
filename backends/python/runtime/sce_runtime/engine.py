@@ -3107,6 +3107,7 @@ class Engine(Generic[S, E]):
                 self._observe(
                     "transition",
                     source=self._policy.get_state_name(chosen.source),
+                    index=chosen.transition_index,
                     event=chosen.event,
                     targets=[self._target_name(target) for target in chosen.targets],
                     internal=chosen.is_internal,
@@ -3128,8 +3129,12 @@ class Engine(Generic[S, E]):
 
         - ``"event"`` — an event is taken for processing (``name``);
         - ``"discarded"`` — no transition of any active state matched it (``name``);
-        - ``"transition"`` — one was selected (``source``, ``event`` as the document
-          wrote it, ``targets``, ``internal``);
+        - ``"transition"`` — one was selected (``source``, ``index``, ``event`` as the
+          document wrote it, ``targets``, ``internal``). ``source`` and ``index`` name
+          its row of the emitted transition table (the row's ``from_state``, whose
+          ``str`` is that name, and its ``index``), the pair every engine's transition
+          observer names a transition by (docs/adr/0089); a run's set of pairs is the
+          share of the table it took;
         - ``"exit"`` / ``"enter"`` — a state leaves / joins the configuration (``state``).
 
         A diagnostic and nothing more. It is given names and plain values and is never

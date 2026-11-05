@@ -48,3 +48,46 @@ def test_a_computed_event_name_is_matched_like_any_other_aot() -> None:
     assert actual == "pass", (
         f"a_computed_event_name_is_matched_like_any_other reached <final id={actual!r}>; expected 'pass'"
     )
+
+
+def _run_observed(clear: bool):
+    """Run the machine to its end with an observer that keeps each transition it is
+    told as ``(source, index)``, detached again before the run when ``clear``."""
+    seen = []
+
+    def observer(kind, fields):
+        if kind == "transition":
+            seen.append((fields["source"], fields["index"]))
+
+    engine = _sm.create_engine()
+    engine.set_observer(observer)
+    if clear:
+        engine.set_observer(None)
+    engine.initialize()
+    elapsed = 0
+    while not engine.reached_final and elapsed < 200:
+        engine.advance_time(10)
+        elapsed += 10
+    assert engine.reached_final and str(engine.terminal_state) == "pass", (
+        f"the observed run did not end in `pass`; last leaf={engine.current_state}"
+    )
+    return seen
+
+
+def test_the_observer_is_told_each_row_of_the_table_the_run_takes() -> None:
+    """The document declares its transition table, and a run that reaches ``pass`` takes
+    each of its six transitions once, in document order: the observer is told exactly
+    those rows, each by the ``(from_state, index)`` its row of the table carries
+    (docs/adr/0089)."""
+    seen = _run_observed(clear=False)
+
+    assert seen == [("s1", 0), ("s2", 0), ("s3", 0), ("s4", 0), ("s5", 0), ("s6", 0)], (
+        f"the rows taken, in the order the run took them: {seen}"
+    )
+    rows = {(str(row.from_state), row.index) for row in _sm.TRANSITIONS}
+    assert set(seen) <= rows, f"every pair the observer is told is a row of the table: {seen} against {rows}"
+    assert rows <= set(seen), f"the run takes every row of the table: {rows} against {seen}"
+
+
+def test_a_detached_observer_is_told_nothing_and_the_run_is_the_same() -> None:
+    assert _run_observed(clear=True) == []

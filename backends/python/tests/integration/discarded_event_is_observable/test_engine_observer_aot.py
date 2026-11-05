@@ -22,6 +22,9 @@ The claims, each with the nearest case that must not be read the same way:
   order       the events and transitions arrive in the order the machine took them
   a name      a transition is told by the descriptor it listens for, and a targetless
               one says it has no target
+  a row       a transition is told by its source and its position among the source's
+              own transitions (``go`` is ``idle``'s third, index 2), the pair its row of
+              an emitted transition table carries (docs/adr/0089)
   a discard   an event nothing took is told apart from one that was handled
   untouched   a machine with an observer reaches the same configurations and counts as one
               without, and one detached stops being told
@@ -73,7 +76,7 @@ def test_a_move_is_told_as_the_event_the_transition_then_the_exit_and_the_entry(
 
     assert told.steps == [
         ("event", {"name": "go"}),
-        ("transition", {"source": "idle", "event": "go", "targets": ["busy"], "internal": False}),
+        ("transition", {"source": "idle", "index": 2, "event": "go", "targets": ["busy"], "internal": False}),
         ("exit", {"state": "idle"}),
         ("enter", {"state": "busy"}),
     ]
@@ -90,6 +93,7 @@ def test_a_targetless_transition_is_told_without_an_exit_or_an_entry() -> None:
     assert told.kinds() == ["event", "transition"]
     assert told.steps[1][1]["targets"] == [], "a transition with no target says so"
     assert told.steps[1][1]["event"] == "nudge"
+    assert told.steps[1][1]["index"] == 1, "`nudge` is the second transition of `idle`, its row 1"
 
 
 def test_a_self_transition_is_an_exit_and_an_entry_of_the_same_state() -> None:
