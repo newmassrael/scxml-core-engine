@@ -16,6 +16,10 @@
   conformance test holds it to W3C test 201's shape. The generated C++ engine's W3C HTTP harness posts the
   listener's event to the inbox as a host would, instead of raising it on the owner. Recorded in D2 as amended at
   step 9.
+  Step 10 opened (2026-11-05): the step-9 rule left a child session's external queue out of arrival order against
+  an input posted for it. The owner chose, with cost ignored, that an input's address is resolved when it is posted:
+  every session has its own inbox and the tree a directory of them (D2 as amended at step 10). A processor of the
+  tree owning every session's queue was the first recommendation and was set aside (Alternatives rejected).
 - Date: 2026-11-03
 - Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
   `main` first.
@@ -180,10 +184,38 @@ host is the arrangement measured above to fail.
   Restoring a saved queue pushes its events back without draining on every runtime: they arrived before anything the
   inbox holds now. The W3C HTTP harnesses of C++ and Kotlin post the listener's event to the inbox, as a host would,
   where they used to raise it on the owner.
-  Left open: the rule orders one machine's own external queue. A tree's sessions share the root's inbox, and a
-  child's queue does not drain it, so an ending posted for a child session can still be taken after a `<send>` its
-  parent makes to that child in the same macrostep (Rust holds such endings for the boundary, which is the same
-  outcome). Ordering a child's queue against the root's inbox is a follow-up for every engine.
+  Amended at step 10: the step-9 rule ordered one machine's own external queue, and a tree's sessions shared the
+  root's inbox. The root found the session an input names only when it drained, so an ending posted for a child
+  session waited in the root's inbox while the parent's `<send>` to that child went through the child's chokepoint,
+  which drains the child's own inbox: the ending was taken after a send made later. Rust held such an ending in
+  `held_child_endings` until the boundary, and Kotlin's coroutine mode forwarded it to the child's `Channel` after
+  the parent's send was already there; both give the same order. The address of a posted input is now resolved
+  when it is posted, not when it is drained:
+  - Every session has an inbox in front of its external queue (each engine already has one, the root's and a
+    child's alike). A tree keeps one owner and one waker: a post to any of its sessions' inboxes wakes the owner.
+  - The tree keeps a directory from session id to that session's inbox, safe to read from any thread. The owner
+    enters a child in it when the child starts, before the child's first macrostep, and removes it when the child
+    ends, after closing the child's inbox; what that inbox holds is applied then, as at the end of a run.
+  - An input that names a session (a host-invoke ending, a Mesh delivery for a session) is posted to that session's
+    inbox through the tree's handle, which looks the session up. A post naming a session the tree does not hold is
+    refused and says so; its outcome is the one the token check gave before, nothing raised.
+  - Each session applies its own inbox, at its own macrostep boundary and at its own chokepoint, by its own
+    owner-thread operations (D2 as amended at step 9). A child its parent drives whose inbox holds posts is driven at
+    the owner's next boundary, by the drive that already reaches the tree's children (`tick_children` and its
+    spellings).
+  Whatever enters a session's external queue therefore enters in the order its posts linearised against that
+  session's own enqueues, for every session of the tree. No posted input is applied inside an engine other than the
+  one it names, so none waits for a lent policy: Rust's `held_child_endings` goes, and so does the root's walk of the
+  tree for a drained ending. The direct owner-thread call (`endHostInvokeIn` and its spellings) keeps reaching the
+  session it names, since it is made between macrosteps, and that session applies the ending through its own
+  chokepoint; on the Interpreter, whose doors are taken from any thread, it finds the session through the directory
+  instead of walking the tree from the calling thread.
+  - Kotlin's coroutine mode: the directory holds each child loop's `Channel`, and the root's forwarding goes.
+  - A bounded inbox (C11, `no_std` Rust) is declared per session: the deployment declares a capacity for each child
+    slot the generated code fixes, as it does for the root. An interrupt posts by the slot's current session id, read
+    atomically; an ending that lands in a slot restarted since is refused by the token check, as before.
+  - Swift posts no input that names a child session (its `HostInvokeEnding` names none, and it has no
+    `endHostInvokeIn`), so nothing in it changes; an input of that kind it gains (ADR 0045) takes this route.
 - A post returns whether the inbox took it. A bounded inbox (C11 and `no_std` Rust, whose capacity the deployment
   declares) refuses a post when full and says so; nothing is dropped silently. A hosted runtime's inbox is unbounded.
 - A post wakes the owner through a waker the host installs (`wakeWith` and its spellings; a runtime with its own loop,
@@ -353,6 +385,17 @@ check, since the exit cancelled its invocation), and a later post is refused and
   mechanism would be a second meaning of the same element.
 - **Keeping the Interpreter's refusals.** Leaves the one engine the dev tools run unable to run documents the
   generated engines accept, which the lowering of §2.15 set out to end.
+- **A processor of the tree that owns every session's external queue and invocation table** (considered at step 10,
+  and recommended first). One function would admit every input of the tree. But a session's queue is typed by its
+  own document on Rust, the generated C++ engine and C11, so one owner of every queue either erases those types or
+  reaches each queue through the running engine that holds it, inside the parent's macrostep. The second is the
+  reentrancy Rust's `held_child_endings` was there to avoid.
+- **Draining the root's inbox at a child's chokepoint** (step 10). It orders the child's queue, but the root's inbox
+  also holds inputs for the parent and for other sessions, and applying them from inside the child runs them inside
+  the parent's macrostep, while its policy is lent.
+- **A sequence number taken at post and merged at dequeue** (step 10). A poster can take its number and be preempted
+  before it pushes, so the owner may take a later number first, or must wait for one that may never arrive. The order
+  is fixed by the push, and an inbox per session makes that push the order of the session's queue.
 
 ## Order of work
 
@@ -374,6 +417,17 @@ check, since the exit cancelled its invocation), and a later post is refused and
    W3C HTTP harness worked around exactly this by raising the listener's event on the owner instead of posting it
    (`tests/w3c/aot_tests/HttpAotTest.h`); it now posts it, natively from the listener's thread and under WASM from
    the owner inside the send.
+10. Owed by D2 as amended at step 10, in this order:
+    1. This amendment, and ARCHITECTURE.md "Engine Threading" item 3. Documentation only.
+    2. A test in each runtime's inbox conformance test, on `static_invoke_tree.scxml` (the shared scenario set has
+       no inbox scenario): with `worker` in `second` and its `clock` invocation started, an ending for `clock` is
+       posted naming `worker`, and then the parent takes `ask`, which sends `question` to `worker` in that
+       macrostep. The parent must take `stamped` (sent on `done.invoke.clock`) before `answer` (sent on
+       `question`). It fails on every runtime that posts an input naming a child session, before that runtime's
+       change; Swift posts none.
+    3. The runtimes, one commit each: the Interpreter, the generated C++ engine, Rust (`std` and `no_std`), C11,
+       Kotlin (both modes), Go, Python. Each removes what the amendment makes unused in it (Rust's
+       `held_child_endings`, the root's walk of the tree for a drained ending, Kotlin's forwarding).
 
 Each step lands with its tests and is pushed under the repository's push rule. A step that finds the rule wrong for a
 runtime stops and amends this ADR rather than working around it.

@@ -1267,13 +1267,19 @@ middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
    outcome. The language enforces confinement where it can (Rust `!Sync`, Swift
    non-`Sendable`), checks it where it cannot (Kotlin always, C++ in debug
    builds), and documents it otherwise (Go, Python, C11).
-3. **One inbox per loop.** The only part of an engine that is safe to use from
-   any thread is its inbox: a multi-producer, single-consumer queue. An input
-   for a session that runs a loop of its own is forwarded to that loop's inbox. What may be
-   posted is closed: an external event, a host-invoke ending, a Mesh delivery
-   for a session. A post returns whether the inbox took it. A bounded inbox
-   (C11, `no_std` Rust) refuses when full and says so; nothing is dropped
-   silently.
+3. **One inbox per session, one owner per loop.** The only part of an engine
+   that is safe to use from any thread is its inbox: a multi-producer,
+   single-consumer queue in front of the session's external queue. Every
+   session has one, a child as well as the root. A tree keeps a directory from
+   session id to inbox, safe to read from any thread, and an input that names
+   a session is posted straight to that session's inbox, so its address is
+   resolved when it is posted, not when it is drained; a post to any session of
+   the tree wakes the tree's one owner (ADR 0084, D2 as amended at step 10). What
+   may be posted is closed: an external event, a host-invoke ending, a Mesh
+   delivery for a session. A post returns whether the inbox took it; a post
+   naming a session the tree does not hold is refused. A bounded inbox (C11,
+   `no_std` Rust) is declared per session, refuses when full and says so;
+   nothing is dropped silently.
 4. **Draining.** The owner drains the inbox at each macrostep boundary, before
    the external queue is consulted, in the order the posts linearised. It
    applies each input by the owner-thread operation of the same name, so a
@@ -1291,6 +1297,9 @@ middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
    runtime does the second at the one function its external enqueue goes
    through; applying a posted event reaches that function again and pushes it
    without draining, one drain at a time (ADR 0084, D2 as amended at step 9).
+   Each session drains its own inbox, so a parent's `<send>` to a child takes
+   its place behind what was posted for the child before it; a child its parent
+   drives whose inbox holds posts is driven at the owner's next boundary.
 5. **Waking.** A post wakes the owner through a waker the host installs, or
    through the runtime's own loop where it has one.
 6. **Timers.** A clock pulled on the owner thread needs no inbox. A timer that
