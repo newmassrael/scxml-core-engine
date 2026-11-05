@@ -804,14 +804,15 @@ Landing: the commit that adds this section.
   returns `Result<(), E>` with the `E` it returned before. On the tier with no allocator the `N` elements then live
   where the caller put them, never in the algorithm's frame or its return.
 - A call `let list = f(a, b)?;` becomes `f(a, b, &mut list)?;`, with `list` a `SceOwnedList<T, N>` (or `SceBytes<N>`)
-  the caller keeps, made once with `::new()`. A caller that hands the same destination to every call stops allocating
-  on the heap tier once the destination has grown to the longest output. What the destination holds after a failed
-  call is not specified; read it only after `Ok(())`.
+  the caller keeps, made once with `::new()`. The algorithm empties the destination with `clear()` and then reserves
+  its bound in it with `reserve(N)`, as the C++ and Go algorithms reserve theirs, before it writes. On the heap tier
+  the first call into a destination allocates `N` elements once, and a caller that hands the same destination to every
+  later call allocates no more: `clear()` keeps the room, and `reserve(N)` finds it there. What the destination holds
+  after a failed call is not specified; read it only after `Ok(())`.
 - Keep the destination where the caller keeps its own state, one per writer, not in a local of the function that
-  makes the call. On the heap tier `::new()` reserves nothing and the algorithm grows the destination one push at a
-  time, as a `Vec` grows, so a destination made afresh for each call reallocates several times on every call: a COBS
-  encode of a 64-byte frame into a new `SceBytes<N>` allocates five times. The algorithm starts with `clear()`, which
-  keeps what the destination has reserved, so a kept destination reallocates only while it grows:
+  makes the call. A destination made afresh for each call allocates its bound on every call. (Before the algorithm
+  reserved its bound it grew the destination one push at a time, as a `Vec` grows: a COBS encode of a 64-byte frame
+  into a new `SceBytes<N>` allocated five times.) A kept destination allocates once:
 
   ```rust
   struct Writer { frame: SceBytes<MAX_FRAME> }
@@ -824,10 +825,18 @@ Landing: the commit that adds this section.
   }
   ```
 
-- Where the crate has an allocator, a byte destination can reserve its longest output at once:
-  `SceBytes::<N>::try_from_vec(Vec::with_capacity(max))?`, `max` at most `N` (for a COBS encode of `n` bytes,
-  `n + n / 254 + 1`). A `SceOwnedList<T, N>` has no such constructor. On the tier with no allocator the `N` elements
-  are inline and nothing is allocated.
+- The reservation is the algorithm's declared bound (`returns-max-size`), not the output's length: a destination
+  holds that many elements on the heap after its first call, however short the output was. To make the one allocation
+  where the destination is made rather than at the first call, make it with `with_capacity`:
+  `SceBytes::<N>::with_capacity(N)` or `SceOwnedList::<T, N>::with_capacity(N)`. Code that reserved through
+  `SceBytes::<N>::try_from_vec(Vec::with_capacity(max))?` can write `SceBytes::<N>::with_capacity(max)`, which names no
+  `Vec` and so is the same call on both tiers. On the tier with no allocator the `N` elements
+  are inline, and `with_capacity` and `reserve` do nothing.
+- `SceBytes<N>` (`BoundedList<T, N>`), `SceOwnedList<T, N>`, `HeapList<T, N>` and `InlineList<T, N>` gain
+  `with_capacity(n)` and `reserve(additional)`, each cut to what the bound leaves (`N` minus the length), so a
+  reservation never passes the type's bound; the heap forms reserve exactly that, the inline forms nothing.
+  `BoundedList::extend_from_slice` makes room for the whole slice before it copies, and `from_slice` and
+  `try_from_iter` make room for what they are given, so neither grows its list one element at a time.
 - An input may not be the destination: `f(list.as_slice(), &mut list)` does not borrow-check. Write into a second
   list and, on success, swap the two (`core::mem::swap`), which on the heap tier moves three words. On the inline
   tier copy the elements back instead, since a swap of two inline lists moves their whole bound.
