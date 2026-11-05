@@ -550,7 +550,7 @@ impl<'a> CodecZenohValueZbufView<'a> {
         Ok(())
     }
 
-    /// Fill `_out`, the builder form [`CodecZenohValueZbuf`] a sender fills and
+    /// Fill `_out`, the builder form [`CodecZenohValueZbufIn`] a sender fills and
     /// encodes, with what this view says: every field, each embedded body, the
     /// variant arm, and each list entry as the walk yields it, built in the
     /// destination where it will live. Fails only where the destination cannot
@@ -591,7 +591,7 @@ impl<'a> CodecZenohValueZbufView<'a> {
 
 
     /// Encode what this view says into the caller-owned sink: the bytes
-    /// [`CodecZenohValueZbuf::encode`] writes for the value [`Self::into_builder`]
+    /// [`CodecZenohValueZbufIn::encode`] writes for the value [`Self::into_builder`]
     /// fills, written straight from the view, walking each list, without the
     /// builder. It writes the canonical wire, not the frame the view was decoded
     /// from, so a frame `decode` accepted in a form that is not canonical is

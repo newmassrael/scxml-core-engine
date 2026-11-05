@@ -335,7 +335,7 @@ impl<'a> CodecZenohDeclKexprView<'a> {
     }
 
     /// Decode the next frame from `cursor`: the bytes, the bounds and the
-    /// errors of [`CodecZenohDeclKexpr::decode`], held as a view. On success the
+    /// errors of [`CodecZenohDeclKexprIn::decode`], held as a view. On success the
     /// cursor advances past the consumed bytes.
     pub fn decode(cursor: &mut SceCursor<'a>, n: u8) -> Result<Self, CodecError> {
         let mut _out = Self::default();
@@ -370,7 +370,7 @@ impl<'a> CodecZenohDeclKexprView<'a> {
         Ok(())
     }
 
-    /// Fill `_out`, the builder form [`CodecZenohDeclKexpr`] a sender fills and
+    /// Fill `_out`, the builder form [`CodecZenohDeclKexprIn`] a sender fills and
     /// encodes, with what this view says: every field, each embedded body, the
     /// variant arm, and each list entry as the walk yields it, built in the
     /// destination where it will live. Fails only where the destination cannot
@@ -387,11 +387,11 @@ impl<'a> CodecZenohDeclKexprView<'a> {
     }
 
     /// Worst-case encoded byte count for this codec, as
-    /// [`CodecZenohDeclKexpr::MAX_ENCODED_BYTES`].
+    /// [`CodecZenohDeclKexprIn::MAX_ENCODED_BYTES`].
     pub const MAX_ENCODED_BYTES: usize = 65556;
 
     /// Encode what this view says into the caller-owned sink: the bytes
-    /// [`CodecZenohDeclKexpr::encode`] writes for the value [`Self::into_builder`]
+    /// [`CodecZenohDeclKexprIn::encode`] writes for the value [`Self::into_builder`]
     /// fills, written straight from the view, walking each list, without the
     /// builder. It writes the canonical wire, not the frame the view was decoded
     /// from, so a frame `decode` accepted in a form that is not canonical is

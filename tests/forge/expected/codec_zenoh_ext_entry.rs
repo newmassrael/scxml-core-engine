@@ -601,7 +601,7 @@ impl<'a> CodecZenohExtEntryView<'a> {
     }
 
     /// Decode the next frame from `cursor`: the bytes, the bounds and the
-    /// errors of [`CodecZenohExtEntry::decode`], held as a view. On success the
+    /// errors of [`CodecZenohExtEntryIn::decode`], held as a view. On success the
     /// cursor advances past the consumed bytes.
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         let mut _out = Self::default();
@@ -658,7 +658,7 @@ impl<'a> CodecZenohExtEntryView<'a> {
         Ok(())
     }
 
-    /// Fill `_out`, the builder form [`CodecZenohExtEntry`] a sender fills and
+    /// Fill `_out`, the builder form [`CodecZenohExtEntryIn`] a sender fills and
     /// encodes, with what this view says: every field, each embedded body, the
     /// variant arm, and each list entry as the walk yields it, built in the
     /// destination where it will live. Fails only where the destination cannot
@@ -704,7 +704,7 @@ impl<'a> CodecZenohExtEntryView<'a> {
 
 
     /// Encode what this view says into the caller-owned sink: the bytes
-    /// [`CodecZenohExtEntry::encode`] writes for the value [`Self::into_builder`]
+    /// [`CodecZenohExtEntryIn::encode`] writes for the value [`Self::into_builder`]
     /// fills, written straight from the view, walking each list, without the
     /// builder. It writes the canonical wire, not the frame the view was decoded
     /// from, so a frame `decode` accepted in a form that is not canonical is
