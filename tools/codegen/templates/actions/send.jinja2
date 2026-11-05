@@ -148,12 +148,14 @@ if (!typedParams.empty()) {
     typedData = ::SCE::EventDataHelper::buildScriptValueFromParams(typedParams);
 }
 {% elif action.content %}
-// W3C SCXML B.2: the reading of inline <content> is decided at build time by
-// the same filter inline `<data>` and `<donedata>` text goes through — an
-// expression when it is one, XML when it opens with `<`, otherwise the string
-// — so one clause reaches one answer wherever `<content>` appears.
-{% set content_is_xml = (action.content | trim) is startingwith('<') %}
-{% if content_is_xml %}
+// W3C SCXML B.2: the reading of inline <content> is decided at build time from
+// the text and the data model, by the one answer every backend and the
+// script-engine analysis read (`inline_content_reading`) — an expression when
+// it is one, XML when it opens with `<`, otherwise the string, and with no
+// value expressions the text itself — so one clause reaches one answer
+// wherever `<content>` appears, whatever else the document needs an engine for.
+{% set content_reading = action.content | inline_content_reading(model.datamodel) %}
+{% if content_reading.kind == 'xml' %}
 // W3C SCXML B.2, first reading: content that opens with `<` is an XML
 // document, and the DOM node is built by whatever binds `_event.data` — so the
 // source text is what has to arrive, unevaluated. It lands in `contentData`
@@ -161,7 +163,9 @@ if (!typedParams.empty()) {
 // verbatim (`INERT_DESTINATIONS`).
 const std::string contentData = {{ action.content | cpp_text_expr }};
 eventData = contentData;
-{% elif model.needs_script_engine %}
+{% elif content_reading.kind == 'expression' %}
+// An expression of the document, evaluated now; the analysis counted it, so
+// the machine carries the engine.
 {
     this->ensureScriptEngine();
     auto& contentScriptEngine = getScriptEngine();
@@ -182,9 +186,12 @@ eventData = contentData;
 // what it is given and does not normalise it — and no engine reads it.
 ::SCE::DoneDataHelper::emitContentLiteral({{ action.content | normalize_ws | cpp_text_expr }}, eventData, &typedData);
 {% else %}
-// §scxml-B-1: a machine with no data model has no value expressions, so the
-// children *are* the value — the same arm `<donedata>` takes there.
-::SCE::DoneDataHelper::emitContentLiteral({{ action.content | cpp_text_expr }}, eventData, &typedData);
+// A value the text fixes on its own, finished at build time as the JSON the
+// event carries: a literal under ECMAScript, and with no value expressions
+// (§scxml-B-1) the space-normalized string the children spell. The typed value
+// is what that text parses as, as for a `<donedata>` finished at build time.
+eventData = {{ content_reading.wire | cpp_text_expr }};
+typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
 {% endif %}
 {% elif action.native_content_value %}
 // W3C SCXML 5.6.2: the value of <content expr> is the output of <content> —

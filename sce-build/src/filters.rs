@@ -199,6 +199,7 @@ fn register_ecmascript_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     env.add_filter("data_content_is_xml", move |content: String| {
         data_content_is_xml(content, &for_xml)
     });
+    register_inline_content_reading(env, scope);
 }
 
 /// Convert identifier to snake_case for Rust function/variable/module names.
@@ -593,24 +594,155 @@ pub fn to_lua_data_content(
     Ok(lua_string_literal(&normalize_ws(content)))
 }
 
-/// The event data a `<send>`'s inline `<content>` hands its event in a document
-/// with no script engine, as the wire text: the XML as written, or otherwise the
-/// string the text spells, whitespace-normalised and JSON-quoted.
+/// The event data a `<send>`'s inline `<content>` hands its event as the text
+/// itself, as the wire text: the XML as written, or otherwise the string the
+/// text spells, whitespace-normalised and JSON-quoted.
 ///
-/// That is the last two rungs of [`to_lua_data_content`] and the reading the Go
-/// and Rust templates already take when `needs_script_engine` is false ("no data
-/// model, so the text is the value"). The first rung, a text that reads as a
-/// value, is the one an engine would have to evaluate: a `sce-static` document
-/// has none, so its `<content>123</content>` is the string `"123"` on every
-/// backend rather than a number on the ones that happen to carry an engine.
+/// That is the last two rungs of [`to_lua_data_content`], and the whole of the
+/// reading under a data model with no value expressions to evaluate
+/// ([`inline_content_reading`]): a `sce-static` document has none, so its
+/// `<content>123</content>` is the string `"123"` on every backend.
 pub fn static_content_wire(content: &str) -> String {
-    if content.trim_start().starts_with('<') {
+    if opens_as_xml(content) {
         return content.to_string();
     }
     format!(
         "\"{}\"",
         escape_json_string(normalize_ws(content.to_string()))
     )
+}
+
+/// Whether inline text is read as an XML document: its first non-blank
+/// character is `<` (§scxml-B-2-8-1). The receiver builds the DOM from the text.
+fn opens_as_xml(content: &str) -> bool {
+    content.trim_start().starts_with('<')
+}
+
+/// What a `<send>`'s inline `<content>` text is as the event's data, decided at
+/// build time from the text and the document's data model.
+///
+/// One answer for every backend's send template and for the analysis that says
+/// whether the machine carries a script engine
+/// ([`crate::script_engine_analyzer`]), so the reading follows from the data
+/// model and the text alone. It used to follow from whether something ELSE in
+/// the document needed an engine: under `datamodel="ecmascript"`,
+/// `<content>21</content>` arrived as the number 21 in a machine that carried
+/// one for another reason and as the string "21" in a machine that did not.
+///
+/// Serialized as `{kind, wire}`, so a template branches on `reading.kind` and
+/// writes `reading.wire` into the literal the event's data is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", content = "wire", rename_all = "snake_case")]
+pub enum InlineContentReading {
+    /// An XML document, carried as the text written: the receiver builds the
+    /// DOM from it.
+    Xml(String),
+    /// A value the text fixes on its own, as the JSON the event carries: a
+    /// literal under the ECMAScript data model, the string the text spells
+    /// otherwise.
+    Value(String),
+    /// An expression the data model evaluates when the send runs, so the
+    /// machine carries a script engine to evaluate it with.
+    Expression,
+}
+
+impl InlineContentReading {
+    /// Whether the event's data is computed when the send runs.
+    pub fn is_evaluated(&self) -> bool {
+        matches!(self, Self::Expression)
+    }
+}
+
+/// How `content`, the inline text of a `<send>`'s `<content>`, becomes the
+/// event's data under `datamodel` (§scxml-B-2-8-1, with `scope` the names the
+/// document declares).
+///
+/// The ECMAScript data model reads the text first as an expression, then as
+/// XML, then as the space-normalized string, which is the order
+/// [`to_lua_data_content`] takes. An expression whose value needs nothing
+/// bound, a literal ([`crate::ecmascript::constant_value`]), is that value
+/// now; any other is evaluated when the send runs. With no value expression
+/// language to read the text in (`null`, and `sce-static`, whose expressions
+/// are not ECMAScript), the text is the value: the XML as written or the
+/// normalized string ([`static_content_wire`]).
+pub fn inline_content_reading(
+    content: &str,
+    datamodel: crate::model::Datamodel,
+    scope: &DocumentScope,
+) -> InlineContentReading {
+    if datamodel == crate::model::Datamodel::EcmaScript
+        && crate::ecmascript::to_lua_value(content, scope).is_ok()
+    {
+        return match crate::ecmascript::constant_value(content) {
+            Some(value) => InlineContentReading::Value(json_wire_text(&value)),
+            None => InlineContentReading::Expression,
+        };
+    }
+    let wire = static_content_wire(content);
+    if opens_as_xml(content) {
+        InlineContentReading::Xml(wire)
+    } else {
+        InlineContentReading::Value(wire)
+    }
+}
+
+/// A JSON value as the text every engine writes it in: members in ascending
+/// key order (`tests/json_text/object_key_order.json`), strings escaped by
+/// [`escape_json_string`] and numbers spelled by [`json_number_text`].
+fn json_wire_text(value: &serde_json::Value) -> String {
+    use serde_json::Value as J;
+    match value {
+        J::Null => "null".to_string(),
+        J::Bool(b) => b.to_string(),
+        J::Number(n) => n
+            .as_f64()
+            .map_or_else(|| "null".to_string(), json_number_text),
+        J::String(s) => format!("\"{}\"", escape_json_string(s.clone())),
+        J::Array(items) => {
+            let parts: Vec<String> = items.iter().map(json_wire_text).collect();
+            format!("[{}]", parts.join(","))
+        }
+        J::Object(members) => {
+            let mut keys: Vec<&String> = members.keys().collect();
+            keys.sort();
+            let parts: Vec<String> = keys
+                .into_iter()
+                .map(|key| {
+                    format!(
+                        "\"{}\":{}",
+                        escape_json_string(key.clone()),
+                        json_wire_text(&members[key.as_str()])
+                    )
+                })
+                .collect();
+            format!("{{{}}}", parts.join(","))
+        }
+    }
+}
+
+/// A finite double as ECMAScript's Number::toString spells it in radix 10
+/// (ARCHITECTURE.md, "JSON Number Text"; `tests/json_text/real_text.json`
+/// holds the cases): the fewest digits that read back as the same double, in
+/// decimal notation when `1e-6 <= |x| < 1e21` and as `d[.ddd]e[+-]n`
+/// otherwise, and `0` for either zero.
+///
+/// Rust writes the same fewest digits for both of its notations, `{}` without
+/// an exponent and `{:e}` with one; only the sign of a positive exponent is
+/// ECMAScript's to add.
+fn json_number_text(value: f64) -> String {
+    if value == 0.0 {
+        return "0".to_string();
+    }
+    if (1e-6..1e21).contains(&value.abs()) {
+        return format!("{value}");
+    }
+    let scientific = format!("{value:e}");
+    match scientific.split_once('e') {
+        Some((mantissa, exponent)) if !exponent.starts_with('-') => {
+            format!("{mantissa}e+{exponent}")
+        }
+        _ => scientific,
+    }
 }
 
 /// The value an `<assign>`'s in-line children specify, as an expression.
@@ -952,15 +1084,42 @@ fn keep_invokes_where(
 /// Asking the same function rather than re-deriving the test is the point:
 /// two spellings of "is this XML" would eventually disagree about a document
 /// whose first non-space character is `<` but which parses as an expression.
+/// The function is [`inline_content_reading`] under the ECMAScript data model,
+/// which is the one inline `<data>` text is read in.
 fn data_content_is_xml(content: String, scope: &DocumentScope) -> bool {
-    if content.is_empty() {
-        return false;
-    }
-    match to_lua_data_content(content.clone(), scope) {
-        // The XML arm is the one that hands the source text back unchanged.
-        Ok(lowered) => lowered == content && content.trim_start().starts_with('<'),
-        Err(_) => false,
-    }
+    matches!(
+        inline_content_reading(&content, crate::model::Datamodel::EcmaScript, scope),
+        InlineContentReading::Xml(_)
+    )
+}
+
+/// `{{ action.content | inline_content_reading(model.datamodel) }}`: the
+/// reading of a `<send>`'s inline `<content>` ([`inline_content_reading`]), as
+/// the `{kind, wire}` object a template branches on.
+///
+/// The data model is the template's argument because the scope is the one
+/// thing the environment holds about the document; an attribute spelling SCE
+/// does not accept is refused rather than read as some default.
+fn register_inline_content_reading(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    let for_reading = Arc::clone(scope);
+    env.add_filter(
+        "inline_content_reading",
+        move |content: String, datamodel: String| -> Result<Value, minijinja::Error> {
+            let datamodel = crate::model::Datamodel::from_attr(&datamodel).ok_or_else(|| {
+                minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!(
+                        "inline_content_reading: `{datamodel}` names no data model SCE accepts"
+                    ),
+                )
+            })?;
+            Ok(Value::from_serialize(inline_content_reading(
+                &content,
+                datamodel,
+                &for_reading,
+            )))
+        },
+    );
 }
 
 /// The filters that build an event payload's **wire** form.
@@ -1579,6 +1738,7 @@ pub fn register_cpp_filters_for_engine(
 }
 
 fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    register_inline_content_reading(env, scope);
     let for_content = Arc::clone(scope);
     env.add_filter("to_author_data_content", move |content: String| {
         to_author_data_content(content, &for_content)
@@ -2154,6 +2314,7 @@ pub fn register_kotlin_filters_for_engine(
 }
 
 fn register_kotlin_filters_inner(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    register_inline_content_reading(env, scope);
     let for_content = Arc::clone(scope);
     env.add_filter("to_author_data_content", move |content: String| {
         to_author_data_content(content, &for_content)
@@ -2447,6 +2608,7 @@ pub fn register_python_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("to_python_const", to_python_const);
     env.add_filter("py_string_literal", py_string_literal);
+    env.add_filter("py_json_literal", py_json_literal);
     // ECMAScript→Lua transformer filters — Python AOT now joins the
     // Rust / Go / Kotlin / C11 / C++ family that emits Lua text and
     // evaluates it through the IScriptEngine layer. The filters are
@@ -2554,6 +2716,53 @@ pub fn py_string_literal(text: String) -> String {
     }
     out.push('"');
     out
+}
+
+/// The Python value a JSON text denotes, as Python source: `None`, `True`,
+/// `False`, the number as JSON spells it, a string as [`py_string_literal`]
+/// writes it, and a list or a dict of those.
+///
+/// For a `<send>` whose inline `<content>` is a value fixed at build time
+/// ([`InlineContentReading::Value`]): the payload `_data` holds is the value
+/// itself, the thing an evaluation would have handed back, so every path that
+/// reads `_data` reads it the same way. A text that is not JSON is a defect of
+/// the caller, refused rather than written as something else.
+pub fn py_json_literal(json: String) -> Result<String, minijinja::Error> {
+    let value: serde_json::Value = serde_json::from_str(&json).map_err(|e| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            format!("py_json_literal: `{json}` is not JSON: {e}"),
+        )
+    })?;
+    Ok(py_value_literal(&value))
+}
+
+fn py_value_literal(value: &serde_json::Value) -> String {
+    use serde_json::Value as J;
+    match value {
+        J::Null => "None".to_string(),
+        J::Bool(true) => "True".to_string(),
+        J::Bool(false) => "False".to_string(),
+        J::Number(n) => n.to_string(),
+        J::String(s) => py_string_literal(s.clone()),
+        J::Array(items) => {
+            let parts: Vec<String> = items.iter().map(py_value_literal).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        J::Object(members) => {
+            let parts: Vec<String> = members
+                .iter()
+                .map(|(key, item)| {
+                    format!(
+                        "{}: {}",
+                        py_string_literal(key.clone()),
+                        py_value_literal(item)
+                    )
+                })
+                .collect();
+            format!("{{{}}}", parts.join(", "))
+        }
+    }
 }
 
 /// A Kotlin text constant past one class-file constant is built at class init
@@ -2812,5 +3021,165 @@ mod json_text_table {
                 text("name")
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod inline_content_readings {
+    use super::InlineContentReading::{Expression, Xml};
+    use super::*;
+    use crate::model::Datamodel;
+
+    fn read(content: &str, datamodel: Datamodel) -> InlineContentReading {
+        inline_content_reading(content, datamodel, &DocumentScope::installed())
+    }
+
+    fn fixed(wire: &str) -> InlineContentReading {
+        InlineContentReading::Value(wire.to_string())
+    }
+
+    /// Under ECMAScript a literal is the value it denotes, finished at build
+    /// time as the JSON the event carries, so no engine is needed to read it.
+    #[test]
+    fn a_literal_under_ecmascript_is_its_value() {
+        let ecma = Datamodel::EcmaScript;
+        assert_eq!(read("21", ecma), fixed("21"));
+        assert_eq!(read("\n  21\n", ecma), fixed("21"));
+        assert_eq!(read("-1.5", ecma), fixed("-1.5"));
+        assert_eq!(read("0x10", ecma), fixed("16"));
+        assert_eq!(read("'it'", ecma), fixed("\"it\""));
+        assert_eq!(read("true", ecma), fixed("true"));
+        assert_eq!(read("null", ecma), fixed("null"));
+        assert_eq!(
+            read("{ \"b\": [1, true, null], \"a\": 'x\"y' }", ecma),
+            fixed("{\"a\":\"x\\\"y\",\"b\":[1,true,null]}")
+        );
+    }
+
+    /// An expression whose value needs the data model is evaluated when the
+    /// send runs, which is what costs the machine a script engine.
+    #[test]
+    fn an_expression_under_ecmascript_is_evaluated() {
+        let ecma = Datamodel::EcmaScript;
+        assert_eq!(read("1 + 1", ecma), Expression);
+        assert_eq!(read("!0", ecma), Expression);
+        assert_eq!(read("[1, 1 + 1]", ecma), Expression);
+        let scope = DocumentScope::declaring(["x"]);
+        assert_eq!(inline_content_reading("x", ecma, &scope), Expression);
+        assert!(inline_content_reading("x", ecma, &scope).is_evaluated());
+        assert!(!read("21", ecma).is_evaluated());
+    }
+
+    /// Text that is not an expression of the document, a name it does not
+    /// declare among them, is the space-normalized string.
+    #[test]
+    fn text_that_is_no_expression_is_the_normalized_string() {
+        let ecma = Datamodel::EcmaScript;
+        assert_eq!(read("  two   words\n", ecma), fixed("\"two words\""));
+        assert_eq!(read("x + 1", ecma), fixed("\"x + 1\""));
+    }
+
+    /// XML travels as written whatever the data model: the receiver builds the
+    /// DOM from the text.
+    #[test]
+    fn xml_travels_as_written() {
+        for datamodel in Datamodel::ALL {
+            assert_eq!(
+                read("  <a>1</a>", datamodel),
+                Xml("  <a>1</a>".to_string()),
+                "{datamodel:?}"
+            );
+        }
+    }
+
+    /// With no value expression language to read the text in, the text is the
+    /// value: the reading is the data model's, never the rest of the document's.
+    #[test]
+    fn without_value_expressions_the_text_is_the_value() {
+        for datamodel in [Datamodel::Null, Datamodel::SceStatic] {
+            assert_eq!(read("21", datamodel), fixed("\"21\""), "{datamodel:?}");
+            assert_eq!(
+                read(" 1  + 1 ", datamodel),
+                fixed("\"1 + 1\""),
+                "{datamodel:?}"
+            );
+            assert_eq!(
+                read("21", datamodel),
+                fixed(&static_content_wire("21")),
+                "{datamodel:?}"
+            );
+        }
+    }
+
+    /// A template branches on `kind` and writes `wire`.
+    #[test]
+    fn a_template_reads_the_kind_and_the_wire() {
+        assert_eq!(
+            serde_json::to_value(fixed("21")).expect("serializes"),
+            serde_json::json!({"kind": "value", "wire": "21"})
+        );
+        assert_eq!(
+            serde_json::to_value(Xml("<a/>".to_string())).expect("serializes"),
+            serde_json::json!({"kind": "xml", "wire": "<a/>"})
+        );
+        assert_eq!(
+            serde_json::to_value(Expression).expect("serializes"),
+            serde_json::json!({"kind": "expression"})
+        );
+    }
+
+    /// `data_content_is_xml` is the ECMAScript reading's XML rung.
+    #[test]
+    fn data_content_is_xml_is_the_xml_rung() {
+        let scope = DocumentScope::installed();
+        assert!(data_content_is_xml("\n <books/>".to_string(), &scope));
+        assert!(!data_content_is_xml("21".to_string(), &scope));
+        assert!(!data_content_is_xml("two words".to_string(), &scope));
+        assert!(!data_content_is_xml(String::new(), &scope));
+    }
+
+    /// tests/json_text/real_text.json: the spelling every engine's writer is
+    /// held to, which a number finished at build time is written in too.
+    #[test]
+    fn a_number_is_spelled_as_every_engine_spells_it() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/json_text/real_text.json"
+        );
+        let table: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("the shared number table"))
+                .expect("the table is JSON");
+        let cases = table["cases"].as_array().expect("the table has cases");
+        assert!(cases.len() >= 50, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let field = |name: &str| {
+                case[name]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("a case's {name} is a string"))
+                    .to_string()
+            };
+            let bits = u64::from_str_radix(&field("bits"), 16).expect("bits are hex");
+            assert_eq!(
+                json_number_text(f64::from_bits(bits)),
+                field("text"),
+                "{}",
+                field("name")
+            );
+        }
+    }
+
+    /// The Python value a JSON text denotes.
+    #[test]
+    fn a_json_value_is_the_python_value_it_denotes() {
+        let py = |json: &str| py_json_literal(json.to_string()).expect("JSON");
+        assert_eq!(py("21"), "21");
+        assert_eq!(py("-1.5"), "-1.5");
+        assert_eq!(py("\"two words\""), "\"two words\"");
+        assert_eq!(py("null"), "None");
+        assert_eq!(
+            py("{\"a\":[true,false],\"b\":\"x\\\"y\"}"),
+            "{\"a\": [True, False], \"b\": \"x\\\"y\"}"
+        );
+        assert!(py_json_literal("two words".to_string()).is_err());
     }
 }

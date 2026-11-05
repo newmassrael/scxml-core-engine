@@ -1633,6 +1633,7 @@ nested union:
 | `send-namelist` | `<send namelist=…>`. |
 | `send-param-expr` | `<send><param expr=…>` that is not a static literal. |
 | `send-dynamic-attr` | `<send>` with `eventexpr` / `targetexpr` / `delayexpr` / `typeexpr` / `contentexpr` / `idlocation`. |
+| `send-content-expr` | `<send><content>text</content>` whose text is an expression of the document under `datamodel="ecmascript"`. A literal (`21`, `'s'`, `{"k": 7}`) is its value at build time and other text the string it spells, so neither is a cause. |
 | `if-condition`, `elseif-condition` | `<if cond=…>` / `<elseif cond=…>`. |
 | `assign-action` | `<assign>`. |
 | `log-expr` | `<log expr=…>`. |

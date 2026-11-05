@@ -720,22 +720,26 @@
     let event_data: &str = "{{ action.params | static_params_json | escape_rust }}";
 {% elif action.content %}
     // W3C SCXML B.2: inline text takes the ordered readings — an expression
-    // when it is one, XML when it opens with `<`, otherwise the string. The
-    // same filter inline `<data>` and `<donedata>` text goes through decides
-    // which, so one clause reaches one answer wherever `<content>` appears.
+    // when it is one, XML when it opens with `<`, otherwise the string — and
+    // the data model decides which apply (`inline_content_reading`, the one
+    // answer every backend and the script-engine analysis read). A literal is
+    // its value now, so `<content>21</content>` is the number 21 under
+    // ECMAScript whether or not anything else in the document needs an engine.
     //
     // Handing the author's text over unread made this line evaluate it *as
     // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
     // the datamodel reads 5, and whether the text was an expression at all
     // was discovered by an evaluation that failed.
-{% if action.content | data_content_is_xml %}
+{% set content_reading = action.content | inline_content_reading(model.datamodel) %}
+{% if content_reading.kind == 'xml' %}
     // XML travels as the document text. §scxml-B-2-8-1 has the RECEIVER build
     // the DOM — serializing a DOM into the payload would make the reading
     // depend on the sender having parsed it first (W3C test561).
-    let event_data: &str = "{{ action.content | escape_rust }}";
-{% elif model.needs_script_engine %}
+    let event_data: &str = "{{ content_reading.wire | escape_rust }}";
+{% elif content_reading.kind == 'expression' %}
     // The reading is decided at codegen time; the VALUE is produced here, at
     // send time, and serialized so the far end parses instead of evaluating.
+    // The analysis counted this text, so the machine carries the engine.
     let event_data_string: String = {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
@@ -751,9 +755,10 @@
     };
     let event_data: &str = &event_data_string;
 {% else %}
-    // No data model, so the text is the value and there is nothing to
-    // evaluate — §scxml-B-2-8-1's last rung, taken at codegen time.
-    let event_data: &str = "\"{{ action.content | normalize_ws | escape_json_string | escape_rust }}\"";
+    // A value the text fixes on its own, finished at codegen time as the JSON
+    // the event carries: a literal under ECMAScript, and otherwise the
+    // space-normalized string, §scxml-B-2-8-1's last rung.
+    let event_data: &str = "{{ content_reading.wire | escape_rust }}";
 {% endif %}
 {% elif action.native_content_value %}
     // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>,

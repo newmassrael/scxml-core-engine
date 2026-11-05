@@ -21,11 +21,12 @@
 //! extraction, tests) sees a correctly-set flag without any parse-time
 //! side effects.
 
+use crate::ecmascript::DocumentScope;
 use crate::forge::error::SourceLocation;
 use crate::forge::model::EntrySchema;
 use crate::model::{
-    Action, DoneData, DoneDataContent, Invoke, InvokeSessionCommon, MeshRpcTarget, SCXMLModel,
-    State, Variable,
+    Action, Datamodel, DoneData, DoneDataContent, Invoke, InvokeSessionCommon, MeshRpcTarget,
+    SCXMLModel, State, Variable,
 };
 use std::collections::BTreeMap;
 
@@ -68,6 +69,12 @@ pub enum ScriptEngineCauseKind {
     /// (W3C 5.10) and `idlocation` (W3C 6.2.4) entail datamodel reads/writes
     /// the script engine owns; without it the value has no carrier.
     SendDynamicAttr { state_id: String },
+    /// §scxml-B-2-8-1 — `<send><content>text</content>` whose text reads as
+    /// an expression that has to be evaluated when the send runs
+    /// ([`crate::filters::inline_content_reading`]). A literal is the value it
+    /// denotes and costs nothing, and under a data model with no value
+    /// expressions the text is the value.
+    SendContentExpr { state_id: String },
     /// §scxml-4.2 — `<if cond="...">` evaluates a non-native guard expression.
     IfCondition { state_id: String },
     /// §scxml-4.2 — `<elseif cond="...">` evaluates a non-native guard expression.
@@ -197,6 +204,10 @@ impl ScriptEngineCauseKind {
             // machine's fields, lowered to the id the scheduler is handed
             // (`Action::native_sendid`).
             | C::CancelExpr { .. }
+            // A `<send>`'s inline `<content>` is the text it spells under the
+            // model, finished at build time (`Action::native_content`), so the
+            // reading never asks for an evaluation there.
+            | C::SendContentExpr { .. }
             // A Mesh request's `<param>`s the model admits are read from the
             // machine's fields when the invocation starts, as a host-run invoke's
             // are (`static_lowering::lower_wire_param`); it stores no id, since
@@ -334,6 +345,9 @@ impl ScriptEngineCauseKind {
             C::SendDynamicAttr { state_id } => {
                 ScriptEngineCauseRecord::at_state("send-dynamic-attr", state_id)
             }
+            C::SendContentExpr { state_id } => {
+                ScriptEngineCauseRecord::at_state("send-content-expr", state_id)
+            }
             C::IfCondition { state_id } => {
                 ScriptEngineCauseRecord::at_state("if-condition", state_id)
             }
@@ -404,14 +418,15 @@ pub fn analyze(model: &SCXMLModel) -> Vec<NeedsScriptEngineCause> {
     // A guard is native only over a schema read one entry per field; one that
     // holds a composition keeps the engine.
     let schemas = model.entry_event_schemas();
+    // The names the document declares, which decide whether inline text is an
+    // expression of it: the scope every backend's environment is built with.
+    let scope = DocumentScope::from_model(model);
+    let document = DocumentFacts {
+        datamodel: model.datamodel,
+        scope: &scope,
+    };
     for (state_id, state) in &model.states {
-        collect_state_causes(
-            state_id,
-            state,
-            &schemas,
-            model.datamodel == crate::model::Datamodel::SceStatic,
-            &mut causes,
-        );
+        collect_state_causes(state_id, state, &schemas, &document, &mut causes);
     }
     if model.datamodel == crate::model::Datamodel::SceStatic {
         causes.retain(|cause| !cause.kind.is_typed_under_static());
@@ -462,11 +477,23 @@ fn collect_global_script_causes(model: &SCXMLModel, out: &mut Vec<NeedsScriptEng
     }
 }
 
+/// What a cause reads about the document beyond the element it is raised on.
+struct DocumentFacts<'a> {
+    datamodel: Datamodel,
+    scope: &'a DocumentScope,
+}
+
+impl DocumentFacts<'_> {
+    fn is_static(&self) -> bool {
+        self.datamodel == Datamodel::SceStatic
+    }
+}
+
 fn collect_state_causes(
     state_id: &str,
     state: &State,
     schemas: &BTreeMap<String, EntrySchema>,
-    static_model: bool,
+    document: &DocumentFacts<'_>,
     out: &mut Vec<NeedsScriptEngineCause>,
 ) {
     for trans in &state.transitions {
@@ -479,7 +506,7 @@ fn collect_state_causes(
             ));
         }
         for action in &trans.actions {
-            collect_action_causes(state_id, action, static_model, out);
+            collect_action_causes(state_id, action, document, out);
         }
     }
     for block in state
@@ -488,14 +515,14 @@ fn collect_state_causes(
         .chain(state.on_exit_blocks.iter())
     {
         for action in block {
-            collect_action_causes(state_id, action, static_model, out);
+            collect_action_causes(state_id, action, document, out);
         }
     }
     for action in &state.initial_transition_actions {
-        collect_action_causes(state_id, action, static_model, out);
+        collect_action_causes(state_id, action, document, out);
     }
     for action in &state.initial_history_default_actions {
-        collect_action_causes(state_id, action, static_model, out);
+        collect_action_causes(state_id, action, document, out);
     }
     for invoke in &state.invokes {
         collect_invoke_causes(invoke, out);
@@ -540,7 +567,7 @@ fn transition_guard_needs_engine(
 fn collect_action_causes(
     state_id: &str,
     action: &Action,
-    static_model: bool,
+    document: &DocumentFacts<'_>,
     out: &mut Vec<NeedsScriptEngineCause>,
 ) {
     match action.action_type.as_str() {
@@ -570,9 +597,28 @@ fn collect_action_causes(
                     ));
                 }
             }
-            if send_has_dynamic_attr(action, static_model) {
+            if send_has_dynamic_attr(action, document.is_static()) {
                 out.push(NeedsScriptEngineCause::new(
                     ScriptEngineCauseKind::SendDynamicAttr {
+                        state_id: state_id.to_string(),
+                    },
+                    action.source_location.as_ref(),
+                ));
+            }
+            // §scxml-B-2-8-1: inline text is the value it reads as, and the
+            // reading every send template takes is asked here, so the engine
+            // follows from the text and never the text's reading from the
+            // engine.
+            if !action.content.is_empty()
+                && crate::filters::inline_content_reading(
+                    &action.content,
+                    document.datamodel,
+                    document.scope,
+                )
+                .is_evaluated()
+            {
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::SendContentExpr {
                         state_id: state_id.to_string(),
                     },
                     action.source_location.as_ref(),
@@ -602,7 +648,7 @@ fn collect_action_causes(
                     ));
                 }
                 for nested in block.actions {
-                    collect_action_causes(state_id, nested, static_model, out);
+                    collect_action_causes(state_id, nested, document, out);
                 }
             }
         }
@@ -658,7 +704,7 @@ fn collect_action_causes(
                 action.source_location.as_ref(),
             ));
             for nested in &action.actions {
-                collect_action_causes(state_id, nested, static_model, out);
+                collect_action_causes(state_id, nested, document, out);
             }
         }
         "native_action" => {
@@ -1180,6 +1226,83 @@ mod tests {
                 ScriptEngineCauseKind::SendParamExpr { param_name, .. } if param_name == "p"
             )
         });
+    }
+
+    /// A `<send>` whose inline `<content>` is `content`, in a document of
+    /// `datamodel`; under ECMAScript it declares `<data id="x"/>` and
+    /// initializes nothing.
+    fn send_content_document(datamodel: &str, content: &str) -> String {
+        let declarations = if datamodel == "ecmascript" {
+            r#"<datamodel><data id="x"/></datamodel>"#
+        } else {
+            ""
+        };
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"
+                      datamodel="{datamodel}">
+                {declarations}
+                <state id="s"><onentry>
+                    <send event="e"><content>{content}</content></send>
+                </onentry></state>
+            </scxml>"#
+        )
+    }
+
+    /// §scxml-B-2-8-1: inline text that reads as an expression of the document
+    /// is evaluated when the send runs, so the machine carries the engine for
+    /// it, and for nothing else here.
+    #[test]
+    fn send_content_expression_triggers() {
+        for content in ["1 + 1", "x", "[x, 2]"] {
+            let kind = single_cause(&send_content_document("ecmascript", content));
+            assert!(
+                matches!(
+                    &kind,
+                    ScriptEngineCauseKind::SendContentExpr { state_id } if state_id == "s"
+                ),
+                "{content}: {kind:?}"
+            );
+            assert_eq!(kind.to_wire().kind, "send-content-expr");
+        }
+    }
+
+    /// A literal is the value it denotes, XML travels as written, and text
+    /// that is no expression of the document is the string it spells: none of
+    /// them is evaluated, so none costs an engine, and the reading of
+    /// `<content>21</content>` cannot follow from what else the document
+    /// holds.
+    #[test]
+    fn send_content_that_is_fixed_does_not_trigger() {
+        for content in [
+            "21",
+            "-1.5",
+            "'hi'",
+            "{\"k\": [1, true, null]}",
+            "two  words",
+            "y + 1",
+            "<a>1</a>",
+        ] {
+            let model = parse(&send_content_document("ecmascript", content));
+            assert!(
+                !model.needs_script_engine,
+                "{content}: {:?}",
+                model.script_engine_causes
+            );
+        }
+    }
+
+    /// With no value expression language the text is the value, whatever it
+    /// spells.
+    #[test]
+    fn send_content_under_null_datamodel_does_not_trigger() {
+        for content in ["1 + 1", "x"] {
+            let model = parse(&send_content_document("null", content));
+            assert!(
+                !model.needs_script_engine,
+                "{content}: {:?}",
+                model.script_engine_causes
+            );
+        }
     }
 
     #[test]

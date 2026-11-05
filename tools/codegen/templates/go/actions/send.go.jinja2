@@ -569,26 +569,30 @@
 		_ = eventDataStr
 {% elif action.content %}
 	{
-		// W3C SCXML B.2: inline text takes the ordered readings, decided by
-		// the same filter inline `<data>` and `<donedata>` text goes
-		// through — see `rust/actions/send.rs.jinja2` for what reading it
-		// at run time instead did.
-{% if action.content | data_content_is_xml %}
+		// W3C SCXML B.2: inline text takes the ordered readings the data
+		// model gives it, decided at codegen time by the one answer every
+		// backend reads (`inline_content_reading`) — see
+		// `rust/actions/send.rs.jinja2` for what reading it at run time
+		// instead did.
+{% set content_reading = action.content | inline_content_reading(model.datamodel) %}
+{% if content_reading.kind == 'xml' %}
 		// XML travels as the document text: §scxml-B-2-8-1 has the RECEIVER
 		// build the DOM (W3C test561).
-		eventDataStr := "{{ action.content | escape_go }}"
-{% elif model.needs_script_engine %}
+		eventDataStr := "{{ content_reading.wire | escape_go }}"
+{% elif content_reading.kind == 'expression' %}
 		// The reading was decided at codegen time; the VALUE is produced
-		// here, at send time, and serialized so the far end parses.
+		// here, at send time, and serialized so the far end parses. The
+		// analysis counted this text, so the machine carries the engine.
 		p.ensureScriptEngine()
 		eventDataStr := ""
 		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.content | to_lua_data_content }}`); contentErr == nil {
 			eventDataStr = sce.ScriptValueToJSON(contentVal)
 		}
 {% else %}
-		// No data model, so the text is the value — §scxml-B-2-8-1's last
-		// rung, taken at codegen time.
-		eventDataStr := "\"{{ action.content | normalize_ws | escape_json_string | escape_go }}\""
+		// A value the text fixes on its own, finished at codegen time as the
+		// JSON the event carries: a literal under ECMAScript, and otherwise
+		// the space-normalized string, §scxml-B-2-8-1's last rung.
+		eventDataStr := "{{ content_reading.wire | escape_go }}"
 {% endif %}
 		_ = eventDataStr
 {% elif action.native_content_value %}

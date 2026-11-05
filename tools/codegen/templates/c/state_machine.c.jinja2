@@ -221,10 +221,14 @@
 {% endmacro %}
 {# W3C SCXML 5.6 — the data a `<send>`'s `<content>` holds, passed on as the
    message's payload: as JSON in `_ed` (W3C SCXML 5.10 + B.2), by the
-   same rules as `send_payload_json` above. Inline text takes its reading at
-   build time (`to_lua_data_content`: an expression when it is one, otherwise
-   the string); text whose first character is `<` crosses as the XML it is,
-   because `set_current_event` builds the DOM from exactly that (W3C test561).
+   same rules as `send_payload_json` above. Inline text takes the reading its
+   data model gives it at build time (`inline_content_reading`, the one answer
+   every backend and the script-engine analysis read): only an expression of
+   the document is evaluated here, by the engine the analysis counted it for;
+   a literal is the JSON it denotes and other text the string it spells, both
+   finished at build time; text whose first character is `<` crosses as the
+   XML it is, because `set_current_event` builds the DOM from exactly that
+   (W3C test561).
    `<content expr>` is evaluated here. One that fails costs what W3C SCXML
    5.6.2 says: error.execution, and the empty string as the content's value —
    so the message still goes, carrying the JSON `""` — and, like a failing
@@ -279,6 +283,7 @@
                 }
 {% endmacro %}
 {% macro send_content_json(action, csym_prefix, machine, host_text=false) %}
+{% set content_reading = action.content | inline_content_reading(model.datamodel) %}
                 char _ed[SCE_MAX_DATA_LEN];
 {% if action.native_content_value %}
 {% if host_text %}
@@ -304,9 +309,9 @@
                 } else {
 {{ send_payload_take(csym_prefix, machine, "<content>") }}
                 }
-{% elif (action.content | trim) is startingwith('<') %}
+{% elif content_reading.kind != 'expression' %}
                 {
-                    static const char _lit[] = {{ action.content | c_char_array_init }};
+                    static const char _lit[] = {{ content_reading.wire | c_char_array_init }};
                     _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
                                    "<send>'s literal <content> does not fit SCE_MAX_DATA_LEN");
                     memcpy(_ed, _lit, sizeof(_lit));

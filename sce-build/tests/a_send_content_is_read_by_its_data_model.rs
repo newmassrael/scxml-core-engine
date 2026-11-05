@@ -1,0 +1,200 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// The reading of a `<send>`'s inline `<content>` text is the data model's.
+//
+// Read in the templates on 2026-11-04: the Rust, Go and C++ backends read the
+// text of `<send><content>21</content></send>` under `datamodel="ecmascript"`
+// by asking whether the WHOLE document needed a script engine. A document that
+// carried one for another reason evaluated the text and sent the number 21; a
+// document that carried none sent the string "21", under a comment claiming
+// there was no data model. The reading is now decided from the text and the
+// data model alone (`filters::inline_content_reading`): a literal is the value
+// it denotes, finished at build time, and only an expression of the document
+// is evaluated, which is then what costs the machine its engine.
+//
+// Each case is generated for every backend that writes a `<send>`, and the
+// generated machine is read for the event's data as the wire text the build
+// finished: the same text whether or not the document needs an engine.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use tempfile::tempdir;
+
+fn sce_codegen_bin() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build has a parent")
+        .to_path_buf()
+}
+
+/// An ECMAScript document whose state `s` sends `number`, `text` and `object`
+/// to itself, each carrying an inline `<content>`, with `data` as its
+/// `<datamodel>` body.
+fn document(data: &str, number: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"
+       datamodel="ecmascript">
+  <datamodel>{data}</datamodel>
+  <state id="s">
+    <onentry>
+      <send event="number"><content>{number}</content></send>
+      <send event="text"><content>  two
+        words  </content></send>
+      <send event="object"><content>{{"k": 7}}</content></send>
+    </onentry>
+    <transition event="number"/>
+    <transition event="text"/>
+    <transition event="object" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#
+    )
+}
+
+/// `sce-codegen generate -l <language>` of `doc`: whether it succeeded, its
+/// stdout and stderr (the manifest among them), and the text of every file it
+/// wrote.
+fn generate(language: &str, doc: &str) -> (bool, String, String) {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(&path, doc).expect("write probe");
+    let out_dir = dir.path().join("out");
+    std::fs::create_dir_all(&out_dir).expect("an output directory");
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .args(["generate", "-l", language, "-o"])
+        .arg(&out_dir)
+        .arg(&path)
+        .output()
+        .expect("invoke sce-codegen");
+    let mut generated = String::new();
+    for entry in std::fs::read_dir(&out_dir).expect("the output directory") {
+        let file = entry.expect("an entry").path();
+        if let Ok(text) = std::fs::read_to_string(&file) {
+            generated.push_str(&text);
+        }
+    }
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
+        generated,
+    )
+}
+
+/// The backends whose `<send>` writes inline `<content>`.
+const LANGUAGES: [&str; 7] = ["rust", "go", "kotlin", "swift", "cpp", "c", "python"];
+
+/// How `language` spells the event's data when the build finished it as
+/// `wire`: the string literal carrying the JSON text, or for Python the value
+/// the JSON denotes (`py_json_literal`).
+fn spell(language: &str, wire: &str) -> String {
+    let quoted = format!("\"{}\"", wire.replace('\\', "\\\\").replace('"', "\\\""));
+    match language {
+        "rust" => format!("let event_data: &str = {quoted};"),
+        "go" => format!("eventDataStr := {quoted}"),
+        "kotlin" => format!("val sendData = {quoted}"),
+        "swift" => format!("let sendEventData = {quoted}"),
+        "cpp" => format!("eventData = {quoted};"),
+        "c" => format!("static const char _lit[] = {quoted};"),
+        "python" => {
+            let value = match wire {
+                "21" => "21",
+                "\"two words\"" => "\"two words\"",
+                "{\"k\":7}" => "{\"k\": 7}",
+                other => panic!("no Python spelling written for {other}"),
+            };
+            format!("_data = {value}")
+        }
+        other => panic!("no spelling written for {other}"),
+    }
+}
+
+/// The wire texts the three sends carry: a number, the space-normalized
+/// string, and an object.
+const WIRES: [&str; 3] = ["21", "\"two words\"", "{\"k\":7}"];
+
+/// Nothing else in the document needs an engine, and the content costs none:
+/// the literals are their values and the text is the string it spells.
+#[test]
+fn a_literal_content_is_its_value_and_costs_no_engine() {
+    let doc = document("", "21");
+    for language in LANGUAGES {
+        let (ok, out, generated) = generate(language, &doc);
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: no content here is an expression, so no engine:\n{out}"
+        );
+        for wire in WIRES {
+            let line = spell(language, wire);
+            assert!(
+                generated.contains(&line),
+                "{language}: the event's data is the value the content denotes, \
+                 `{line}` was not written"
+            );
+        }
+    }
+}
+
+/// The same content in a document that needs an engine for another reason is
+/// the same value, written the same way: the reading does not follow from
+/// what else the document holds.
+#[test]
+fn the_reading_does_not_follow_from_an_engine_needed_elsewhere() {
+    let doc = document(r#"<data id="v" expr="1 + 1"/>"#, "21");
+    for language in LANGUAGES {
+        let (ok, out, generated) = generate(language, &doc);
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":true"),
+            "{language}: the `<data>` initializer needs the engine:\n{out}"
+        );
+        assert!(
+            !out.contains("\"kind\":\"send-content-expr\""),
+            "{language}: no content here is an expression:\n{out}"
+        );
+        for wire in WIRES {
+            let line = spell(language, wire);
+            assert!(
+                generated.contains(&line),
+                "{language}: with an engine in the machine the content is still the \
+                 value it denotes, `{line}` was not written"
+            );
+        }
+    }
+}
+
+/// Text that is an expression of the document is evaluated when the send
+/// runs, and that is what costs the machine its engine: the analysis names
+/// the content as the cause.
+#[test]
+fn an_expression_content_costs_the_engine() {
+    let doc = document("", "20 + 1");
+    for language in LANGUAGES {
+        let (ok, out, generated) = generate(language, &doc);
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":true")
+                && out.contains("\"kind\":\"send-content-expr\""),
+            "{language}: the expression is the engine's cause:\n{out}"
+        );
+        assert!(
+            !generated.contains(&spell(language, "21")),
+            "{language}: an expression is not folded into a value at build time"
+        );
+        assert!(
+            generated.contains(&spell(language, "\"two words\"")),
+            "{language}: the text beside it is still the string it spells"
+        );
+    }
+}

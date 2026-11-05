@@ -75,6 +75,7 @@
 {%- macro emit_send(action, indent, machine_name, model, flow=none) -%}
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {% set has_payload = action.params or has_namelist or action.content or action.contentexpr or action.native_content_value %}
+{% set content_reading = (action.content | inline_content_reading(model.datamodel)) if action.content else none %}
 {% set has_delay = action.delayexpr or action.delay_ms > 0 %}
 {% set dyn_event = action.eventexpr and not action.event %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
@@ -303,6 +304,18 @@
 {{ indent }}_data = {{ action.content | py_string_literal }}
 {% else %}
 {{ indent }}_data = {{ action.content | normalize_ws | py_string_literal }}
+{% endif %}
+{% elif action.content and content_reading.kind != 'expression' %}
+{# W3C SCXML B.2: inline `<content>` text the data model reads as a value fixed
+   by the text alone (`inline_content_reading`, the one answer every backend and
+   the script-engine analysis read) is that value now: the XML as written, a
+   literal under ECMAScript, or the space-normalized string. Only an expression
+   of the document is left to the helper below, which evaluates it with the
+   engine the analysis counted it for. #}
+{% if content_reading.kind == 'xml' %}
+{{ indent }}_data = {{ content_reading.wire | py_string_literal }}
+{% else %}
+{{ indent }}_data = {{ content_reading.wire | py_json_literal }}
 {% endif %}
 {% elif action.params and (action.params | selectattr("native_value") | list | length > 0) %}
 {# `datamodel="sce-static"`: each param's value is native code

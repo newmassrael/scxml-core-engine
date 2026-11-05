@@ -107,6 +107,7 @@ child-invoke-needs-script-engine 57
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 96
+send-content-expr 1
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -434,6 +435,15 @@ telling the truth, not the tree getting worse.
   data item, three assigns; docs/adr/0084) raised `assign-action` by three
   (403 to 406). `engine-documents` and `datamodel-variable-init` rose too and
   stayed under their ceilings.
+  ⚠ **2026-11-05, deliberately:** a `<send>`'s inline `<content>` text that is
+  an expression of the document is now a cause of its own,
+  `send-content-expr`, because the reading of the text no longer follows from
+  whether something else needs an engine (`filters::inline_content_reading`).
+  One tracked document carries one: `told` in
+  `sce-build/tests/fixtures/host_processor/statechart_host_request.scxml`
+  (`n + 1`), which needed an engine already. The figure was derived by
+  reading the corpus, not from this test's output; where the two disagree the
+  test's block is the one to carry.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

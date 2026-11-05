@@ -38,6 +38,10 @@
 {% endfor %}
 {% endif %}
 {% set ecma_content = ecmascript_datamodel and action.contentexpr %}
+{# The reading of inline `<content>` text (`inline_content_reading`): an expression of the
+   document is evaluated when the send runs, and fails as a `<content expr>` does. #}
+{% set content_reading = (action.content | inline_content_reading(model.datamodel)) if action.content else none %}
+{% set ecma_inline_content = content_reading and content_reading.kind == 'expression' %}
 {# The data of one `<param>`, or of one name of a namelist, under `datamodel="ecmascript"`: the value
    of a Lua expression the engine computes (`evaluateJSON`, which keeps its type; over BasicHTTP
    `evaluateText`, the text a form carries). W3C SCXML 5.7.1 + 4.9: one that cannot be read is
@@ -381,19 +385,31 @@
                     let sendEventData = payloadJSON(sendParts)
 {% endif %}
 {% elif action.content %}
-{% if action.content | data_content_is_xml %}
+{# W3C SCXML B.2: the reading of the text is the data model's, decided at build time by the one
+   answer every backend and the script-engine analysis read (`inline_content_reading`). #}
+{% if content_reading.kind == 'xml' %}
                     // XML travels as the document text: §scxml-B-2-8-1 has the RECEIVER build the DOM.
-                    let sendEventData = "{{ action.content | escape_swift }}"
-{% elif ecmascript_datamodel %}
-                    // W3C SCXML B.2 + §scxml-B-2-8-1: the text travels as it was written, and the
-                    // RECEIVER reads it: as JSON where it parses, else as the space-normalized
-                    // string. Taking the last rung here would hand a script engine a string where
-                    // the document wrote an object, and `_event.data.field` would read nothing.
-                    let sendEventData = "{{ action.content | escape_swift }}"
+                    let sendEventData = "{{ content_reading.wire | escape_swift }}"
+{% elif content_reading.kind == 'expression' %}
+                    // W3C SCXML B.2: the text is an expression of the document, evaluated now and kept
+                    // with its type (`evaluateJSON`); the analysis counted it, so the engine is here.
+                    // One that cannot be evaluated costs what a failed <content expr> does: the
+                    // error, and the empty string as the value.
+                    var paramFailed = false
+                    var sendEventData = "\"\""
+                    if let contentJSON = evaluateJSON("{{ action.content | to_lua_data_content | escape_swift }}") {
+                        sendEventData = contentJSON
+                    } else {
+{% if 'error.execution' in model.events %}
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <content> failed to evaluate"))
+{% endif %}
+                        paramFailed = true
+                    }
 {% else %}
-                    // W3C SCXML B.2: no data model, so the text is the value — the last rung of
-                    // §scxml-B-2-8-1, taken at codegen time.
-                    let sendEventData = "\"{{ action.content | normalize_ws | escape_json_string | escape_swift }}\""
+                    // W3C SCXML B.2: a value the text fixes on its own, finished at build time as the
+                    // JSON the event carries: a literal under ECMAScript, and otherwise the
+                    // space-normalized string, the last rung of §scxml-B-2-8-1.
+                    let sendEventData = "{{ content_reading.wire | escape_swift }}"
 {% endif %}
 {% elif ecma_content %}
                     // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>, the
@@ -648,7 +664,7 @@
 {% endif %}
                     }
 {% endif %}
-{% if sends_params or ecma_content or (action.native_content_value and action.native_content_value_fails) %}
+{% if sends_params or ecma_content or ecma_inline_content or (action.native_content_value and action.native_content_value_fails) %}
 {% if in_block %}
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.

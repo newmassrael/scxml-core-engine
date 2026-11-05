@@ -392,6 +392,59 @@ fn fold(expr: &Expr) -> Option<bool> {
     }
 }
 
+/// The value an expression has at build time when it is a literal, or
+/// `None` when it is anything that has to be evaluated.
+///
+/// The value side of [`constant_truthiness`]: what ECMA-262 can evaluate
+/// with nothing bound. A number, a string, `true`, `false`, `null` (and
+/// `undefined`, which leaves the data model as the same JSON `null` a
+/// script engine writes for it), a sign applied to a number, and an array
+/// or an object built of those. An identifier, a member read, a call or an
+/// operator other than a sign is never one, whatever it would compute: it
+/// is the data model's to evaluate.
+///
+/// An object keeps the last value written under a repeated key, as
+/// ECMA-262 11.1.5 does. A number the double cannot hold finitely is not a
+/// constant here, since JSON has no spelling for it.
+pub fn constant_value(source: &str) -> Option<serde_json::Value> {
+    constant(&parser::parse_expression(source).ok()?)
+}
+
+fn constant(expr: &Expr) -> Option<serde_json::Value> {
+    use serde_json::Value as J;
+    Some(match &expr.kind {
+        ExprKind::Nullish => J::Null,
+        ExprKind::Bool(b) => J::Bool(*b),
+        ExprKind::Str(s) => J::String(s.clone()),
+        ExprKind::Number(text) => finite_number(parse_numeric_literal(text)?)?,
+        // `-1` is an operator applied to a literal (ECMA-262 11.4.7), and the
+        // only one whose operand needs nothing bound to be read.
+        ExprKind::Unary {
+            op: op @ (UnaryOp::Neg | UnaryOp::Pos),
+            operand,
+        } => match &operand.kind {
+            ExprKind::Number(text) => {
+                let value = parse_numeric_literal(text)?;
+                finite_number(if *op == UnaryOp::Neg { -value } else { value })?
+            }
+            _ => return None,
+        },
+        ExprKind::Array(items) => J::Array(items.iter().map(constant).collect::<Option<Vec<_>>>()?),
+        ExprKind::Object(members) => {
+            let mut object = serde_json::Map::new();
+            for (key, value) in members {
+                object.insert(key.clone(), constant(value)?);
+            }
+            J::Object(object)
+        }
+        _ => return None,
+    })
+}
+
+fn finite_number(value: f64) -> Option<serde_json::Value> {
+    serde_json::Number::from_f64(value).map(serde_json::Value::Number)
+}
+
 /// The value an ECMAScript numeric literal denotes, in every radix the
 /// grammar writes it in.
 fn parse_numeric_literal(text: &str) -> Option<f64> {
