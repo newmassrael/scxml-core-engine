@@ -27,7 +27,7 @@
 //!
 //! Every session of a tree has its own `std` inbox, a child's as well as the
 //! root's, and the tree keeps one directory of them and one waker
-//! ([`TreeInboxes`]; ARCHITECTURE.md "Engine Threading", item 3). An input
+//! (`TreeInboxes`; ARCHITECTURE.md "Engine Threading", item 3). An input
 //! that names another session of the tree is posted straight to that
 //! session's inbox when it is posted, and each session applies its own inbox.
 //!
