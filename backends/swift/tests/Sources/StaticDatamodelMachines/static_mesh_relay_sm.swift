@@ -548,3 +548,192 @@ public final class StaticMeshRelayPolicy: InvocablePolicy {
     public func executeTransitionContent(source: StaticMeshRelayState, transitionIndex: Int, engine: Engine<StaticMeshRelayPolicy>) {
         // W3C SCXML 3.13: no transition in this document has content.
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticMeshRelayPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "29091e95d2e4b2df2c5e529bc91941e15de2224bf0bfd73c5823bbd35cb19aac",
+            revised: "3bba4cf36f6c537811121f0618bcdf648a685c1fe51ab027cf283e142dd5ab9f",
+            format2First: "29091e95d2e4b2df2c5e529bc91941e15de2224bf0bfd73c5823bbd35cb19aac",
+            format2Revised: "3bba4cf36f6c537811121f0618bcdf648a685c1fe51ab027cf283e142dd5ab9f")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        return {}
+    }
+
+    /// The id the document gives each of its `<invoke type="scxml">`s, in document order.
+    public var savedInvokeIDs: [String] {
+        ["inner"]
+    }
+
+    /// How many times each `<invoke>` has started, which numbers the next start's id.
+    public func savedInvokeStarts() -> [SavedEntry<Int64>] {
+        var counted: [SavedEntry<Int64>] = []
+        if sceInvokeStartsInner > 0 {
+            counted.append(SavedEntry("inner", Int64(sceInvokeStartsInner)))
+        }
+        return counted
+    }
+
+    /// Every `<invoke>` whose child session is running, each with the child's whole state
+    /// (docs/adr/0045). A child that has ended is not running, though its entry stays until its state exits.
+    public func savedChildren(wallNowMs: Int64) throws -> [SavedChild] {
+        var running: [SavedChild] = []
+        if let child = sceInvokeChildInner, !sceInvokeDoneInner,
+            let slot = activeInvokes["inner"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "inner", start: Int64(sceInvokeStartsInner),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_mesh_relay__sce_synth_invoke__inner",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        return running
+    }
+
+    /// The state that holds the `<invoke>` `id`, which a saved state's children and restarts are held to.
+    private func savedInvokeOwner(_ id: String) -> StaticMeshRelayState? {
+        switch id {
+        case "inner": return .relaying
+        default: return nil
+        }
+    }
+
+    /// Judges the children and the counts of starts `saved` holds and changes nothing; what it returns puts the
+    /// children back once this machine stands where it was saved (docs/adr/0045, section 3).
+    public func readSavedChildren(from saved: SavedState, engine: Engine<StaticMeshRelayPolicy>, wallNowMs: Int64) throws -> () -> Void {
+        for counted in saved.invokeStarts where savedInvokeOwner(counted.key) == nil {
+            throw StateRefusal("invokestarts counts '\(counted.key)', which the document does not invoke")
+        }
+        func counted(_ id: String) -> Int64 { saved.invokeStarts.first { $0.key == id }?.value ?? 0 }
+        // The state that holds an `<invoke>` is one the saved configuration stands in, and no `<invoke>` is listed twice.
+        func holder(_ id: String, _ what: String, _ seen: inout Set<String>) throws -> StaticMeshRelayState {
+            guard let owner = savedInvokeOwner(id) else {
+                throw StateRefusal("the saved state holds a running child session '\(id)', which this machine does not start")
+            }
+            guard saved.configuration.contains(getStateName(owner)) else {
+                throw StateRefusal("\(what) is '\(id)', whose state the saved configuration does not stand in")
+            }
+            guard seen.insert(id).inserted else {
+                throw StateRefusal("\(what) is '\(id)', which an earlier entry already names")
+            }
+            return owner
+        }
+        var seen: Set<String> = []
+        var resume: [() -> Void] = []
+        var restart: [String] = []
+        switch saved.invokes {
+        case .resumed(let children):
+            for (index, child) in children.enumerated() {
+                _ = try holder(child.id, "invokes[\(index)]", &seen)
+                if child.start != counted(child.id) {
+                    throw StateRefusal(
+                        "invokes[\(index)] is start \(child.start) of '\(child.id)', and the session counts \(counted(child.id)) "
+                            + "starts of it: a state re-entered cancels the earlier child before it starts the next one")
+                }
+                // The id the child would be given where it is built, derived from this session's own, which the
+                // restore is about to bind.
+                let derived = "\(saved.boundSessionID ?? sessionID).\(child.invokeID)"
+                if child.session.sessionID != derived {
+                    throw StateRefusal(
+                        "invokes[\(index)].session's id is '\(child.session.sessionID)', and a child of "
+                            + "'\(saved.boundSessionID ?? sessionID)' started under '\(child.invokeID)' is '\(derived)'")
+                }
+                switch child.id {
+                case "inner":
+                    resume.append(try sceJudgeSavedChildInner(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                default:
+                    break
+                }
+            }
+        case .restarted(let ids):
+            for (index, id) in ids.enumerated() {
+                _ = try holder(id, "invokes[\(index)]", &seen)
+                restart.append(id)
+            }
+        }
+        return { [self] in
+            sceInvokeStartsInner = Int(counted("inner"))
+            for put in resume { put() }
+            // A format-1 state holds a child by its id alone, so each is started again from its beginning, as
+            // entering its state starts it, and last, so what a child sends as it starts stands behind what was
+            // already waiting.
+            for id in restart {
+                switch id {
+                case "inner":
+                    sceInvokeStartsInner += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "relaying.\(sceInvokeStartsInner).inner",
+                        state: .relaying,
+                        documentID: "inner"))
+                default:
+                    break
+                }
+            }
+            if !restart.isEmpty {
+                executePendingInvokes(engine: engine)
+            }
+        }
+    }
+
+    /// Builds the session `<invoke>` `inner` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildInner(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticMeshRelayPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_mesh_relay__sce_synth_invoke__inner" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'inner' does not start")
+        }
+        let childPolicy = StaticMeshRelaySceSynthInvokeInnerPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "inner", document: documentStem("#static_mesh_relay__sce_synth_invoke__inner"))
+            resumeChild()
+            activeInvokes["inner"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "inner",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildInner = session
+            sceInvokeDoneInner = false
+        }
+    }
+}

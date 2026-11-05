@@ -984,3 +984,330 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeParamsPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "f9ab3ba81430cdbce450cf0b6fad5b6cee7263ce0ffd9390d2bba6fd2bba3847",
+            revised: "7e605508ff2f4284ef9bb702b856d86b91d58fa56e933f10a11e727f9553c9c2",
+            format2First: "f9ab3ba81430cdbce450cf0b6fad5b6cee7263ce0ffd9390d2bba6fd2bba3847",
+            format2Revised: "7e605508ff2f4284ef9bb702b856d86b91d58fa56e933f10a11e727f9553c9c2")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("base", SavedValues.of(vBase)),
+            SavedEntry("enabled", SavedValues.of(vEnabled)),
+            SavedEntry("completed", SavedValues.of(vCompleted)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.uint32(try saved.variable("base"), "base")
+        let value1 = try SavedValues.bool(try saved.variable("enabled"), "enabled")
+        let value2 = try SavedValues.uint32(try saved.variable("completed"), "completed")
+        return { [self] in
+            self.vBase = value0
+            self.vEnabled = value1
+            self.vCompleted = value2
+        }
+    }
+
+    /// The id the document gives each of its `<invoke type="scxml">`s, in document order.
+    public var savedInvokeIDs: [String] {
+        ["worker", "control", "watcher"]
+    }
+
+    /// How many times each `<invoke>` has started, which numbers the next start's id.
+    public func savedInvokeStarts() -> [SavedEntry<Int64>] {
+        var counted: [SavedEntry<Int64>] = []
+        if sceInvokeStartsWorker > 0 {
+            counted.append(SavedEntry("worker", Int64(sceInvokeStartsWorker)))
+        }
+        if sceInvokeStartsControl > 0 {
+            counted.append(SavedEntry("control", Int64(sceInvokeStartsControl)))
+        }
+        if sceInvokeStartsWatcher > 0 {
+            counted.append(SavedEntry("watcher", Int64(sceInvokeStartsWatcher)))
+        }
+        return counted
+    }
+
+    /// Every `<invoke>` whose child session is running, each with the child's whole state
+    /// (docs/adr/0045). A child that has ended is not running, though its entry stays until its state exits.
+    public func savedChildren(wallNowMs: Int64) throws -> [SavedChild] {
+        var running: [SavedChild] = []
+        if let child = sceInvokeChildWorker, !sceInvokeDoneWorker,
+            let slot = activeInvokes["worker"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "worker", start: Int64(sceInvokeStartsWorker),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_params__sce_synth_invoke__worker",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildControl, !sceInvokeDoneControl,
+            let slot = activeInvokes["control"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "control", start: Int64(sceInvokeStartsControl),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_params__sce_synth_invoke__control",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildWatcher, !sceInvokeDoneWatcher,
+            let slot = activeInvokes["watcher"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "watcher", start: Int64(sceInvokeStartsWatcher),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_params__sce_synth_invoke__watcher",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        return running
+    }
+
+    /// The state that holds the `<invoke>` `id`, which a saved state's children and restarts are held to.
+    private func savedInvokeOwner(_ id: String) -> StaticInvokeParamsState? {
+        switch id {
+        case "worker": return .working
+        case "control": return .plain
+        case "watcher": return .plain
+        default: return nil
+        }
+    }
+
+    /// Judges the children and the counts of starts `saved` holds and changes nothing; what it returns puts the
+    /// children back once this machine stands where it was saved (docs/adr/0045, section 3).
+    public func readSavedChildren(from saved: SavedState, engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64) throws -> () -> Void {
+        for counted in saved.invokeStarts where savedInvokeOwner(counted.key) == nil {
+            throw StateRefusal("invokestarts counts '\(counted.key)', which the document does not invoke")
+        }
+        func counted(_ id: String) -> Int64 { saved.invokeStarts.first { $0.key == id }?.value ?? 0 }
+        // The state that holds an `<invoke>` is one the saved configuration stands in, and no `<invoke>` is listed twice.
+        func holder(_ id: String, _ what: String, _ seen: inout Set<String>) throws -> StaticInvokeParamsState {
+            guard let owner = savedInvokeOwner(id) else {
+                throw StateRefusal("the saved state holds a running child session '\(id)', which this machine does not start")
+            }
+            guard saved.configuration.contains(getStateName(owner)) else {
+                throw StateRefusal("\(what) is '\(id)', whose state the saved configuration does not stand in")
+            }
+            guard seen.insert(id).inserted else {
+                throw StateRefusal("\(what) is '\(id)', which an earlier entry already names")
+            }
+            return owner
+        }
+        var seen: Set<String> = []
+        var resume: [() -> Void] = []
+        var restart: [String] = []
+        switch saved.invokes {
+        case .resumed(let children):
+            for (index, child) in children.enumerated() {
+                _ = try holder(child.id, "invokes[\(index)]", &seen)
+                if child.start != counted(child.id) {
+                    throw StateRefusal(
+                        "invokes[\(index)] is start \(child.start) of '\(child.id)', and the session counts \(counted(child.id)) "
+                            + "starts of it: a state re-entered cancels the earlier child before it starts the next one")
+                }
+                // The id the child would be given where it is built, derived from this session's own, which the
+                // restore is about to bind.
+                let derived = "\(saved.boundSessionID ?? sessionID).\(child.invokeID)"
+                if child.session.sessionID != derived {
+                    throw StateRefusal(
+                        "invokes[\(index)].session's id is '\(child.session.sessionID)', and a child of "
+                            + "'\(saved.boundSessionID ?? sessionID)' started under '\(child.invokeID)' is '\(derived)'")
+                }
+                switch child.id {
+                case "worker":
+                    resume.append(try sceJudgeSavedChildWorker(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "control":
+                    resume.append(try sceJudgeSavedChildControl(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "watcher":
+                    resume.append(try sceJudgeSavedChildWatcher(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                default:
+                    break
+                }
+            }
+        case .restarted(let ids):
+            for (index, id) in ids.enumerated() {
+                _ = try holder(id, "invokes[\(index)]", &seen)
+                restart.append(id)
+            }
+        }
+        return { [self] in
+            sceInvokeStartsWorker = Int(counted("worker"))
+            sceInvokeStartsControl = Int(counted("control"))
+            sceInvokeStartsWatcher = Int(counted("watcher"))
+            for put in resume { put() }
+            // A format-1 state holds a child by its id alone, so each is started again from its beginning, as
+            // entering its state starts it, and last, so what a child sends as it starts stands behind what was
+            // already waiting.
+            for id in restart {
+                switch id {
+                case "worker":
+                    sceInvokeStartsWorker += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "working.\(sceInvokeStartsWorker).worker",
+                        state: .working,
+                        documentID: "worker"))
+                case "control":
+                    sceInvokeStartsControl += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "plain.\(sceInvokeStartsControl).control",
+                        state: .plain,
+                        documentID: "control"))
+                case "watcher":
+                    sceInvokeStartsWatcher += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "plain.\(sceInvokeStartsWatcher).watcher",
+                        state: .plain,
+                        documentID: "watcher"))
+                default:
+                    break
+                }
+            }
+            if !restart.isEmpty {
+                executePendingInvokes(engine: engine)
+            }
+        }
+    }
+
+    /// Builds the session `<invoke>` `worker` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildWorker(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_params__sce_synth_invoke__worker" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'worker' does not start")
+        }
+        let childPolicy = StaticInvokeParamsSceSynthInvokeWorkerPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "worker", document: documentStem("#static_invoke_params__sce_synth_invoke__worker"))
+            resumeChild()
+            activeInvokes["worker"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "worker",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildWorker = session
+            sceInvokeDoneWorker = false
+        }
+    }
+
+    /// Builds the session `<invoke>` `control` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildControl(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_params__sce_synth_invoke__control" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'control' does not start")
+        }
+        let childPolicy = StaticInvokeParamsSceSynthInvokeControlPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "control", document: documentStem("#static_invoke_params__sce_synth_invoke__control"))
+            resumeChild()
+            activeInvokes["control"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "control",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildControl = session
+            sceInvokeDoneControl = false
+        }
+    }
+
+    /// Builds the session `<invoke>` `watcher` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildWatcher(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_params__sce_synth_invoke__watcher" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'watcher' does not start")
+        }
+        let childPolicy = StaticInvokeParamsSceSynthInvokeWatcherPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "watcher", document: documentStem("#static_invoke_params__sce_synth_invoke__watcher"))
+            resumeChild()
+            activeInvokes["watcher"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "watcher",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildWatcher = session
+            sceInvokeDoneWatcher = false
+        }
+    }
+}

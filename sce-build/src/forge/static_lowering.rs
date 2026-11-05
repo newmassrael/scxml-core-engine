@@ -7018,6 +7018,31 @@ pub(crate) fn a_tree_can_hold(model: &SCXMLModel) -> bool {
             })
 }
 
+/// Whether the Swift runtime saves the whole state of a machine of `model` and of
+/// every session it can start: what [`a_tree_can_hold`] says a saved state can
+/// hold, of a machine of no product line, whose every `<invoke>` is a static
+/// child session (`<invoke type="scxml">`) of a document of which the same holds.
+/// A hybrid `<invoke>`, one a host runs and one that asks a peer are not among
+/// them yet, and a machine that has one is generated without the save API.
+///
+/// A child's answer is read from what the parse recorded on its `<invoke>`
+/// ([`crate::model::InvokeSessionCommon::child_swift_saves`]), which this function
+/// computed when the child's own document was parsed.
+pub(crate) fn a_swift_tree_can_hold(model: &SCXMLModel) -> bool {
+    a_tree_can_hold(model)
+        && model.configuration.is_none()
+        && model
+            .states
+            .values()
+            .flat_map(|s| &s.invokes)
+            .all(|invoke| match invoke {
+                crate::model::Invoke::Scxml(info) => info.common.child_swift_saves,
+                // The type names no processor: the start raises one error and nothing keeps running.
+                crate::model::Invoke::Unsupported(_) => true,
+                crate::model::Invoke::Hybrid(_) | crate::model::Invoke::MeshRpc(_) => false,
+            })
+}
+
 /// Whether the document holds an optional value (docs/adr/0055): a variable of
 /// one, or a field of a schema it holds a record of or reads a payload by — the
 /// machine whose unit imports the target's optional type, on a target that

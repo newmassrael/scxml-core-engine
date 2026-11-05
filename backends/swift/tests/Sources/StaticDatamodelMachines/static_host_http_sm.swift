@@ -903,3 +903,60 @@ public func registerStaticHostHttpSceHostHttpFetchInvoker(on engine: Engine<Stat
 public func completeStaticHostHttpFetch(on engine: Engine<StaticHostHttpPolicy>, token: UInt64, result: StaticHostHttpFetchResult) -> Bool {
     engine.completeHostInvoke(processorType: "sce-host-http-fetch", invokeID: "fetch", token: token, doneData: result.wire)
 }
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticHostHttpPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "448e3c50f8d63de0f3a6240edee966889d1d15938aedd4a15fc2e2e733f46d5e",
+            revised: "4ea95f1cb7f5532c4fb84d343bb273dae3034a36d54fa2c946a9b541f7508478",
+            format2First: "448e3c50f8d63de0f3a6240edee966889d1d15938aedd4a15fc2e2e733f46d5e",
+            format2Revised: "4ea95f1cb7f5532c4fb84d343bb273dae3034a36d54fa2c946a9b541f7508478")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("method", SavedValues.of(vMethod)),
+            SavedEntry("url", SavedValues.of(vUrl)),
+            SavedEntry("request_headers", SavedValues.of(vRequestHeaders)),
+            SavedEntry("request_body", SavedValues.of(vRequestBody)),
+            SavedEntry("outcome", SavedValues.of(vOutcome)),
+            SavedEntry("status", SavedValues.of(vStatus)),
+            SavedEntry("response_headers", SavedValues.of(vResponseHeaders)),
+            SavedEntry("response_body", SavedValues.of(vResponseBody)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(try saved.variable("method"), "method", capacity: 8)
+        let value1 = try SavedValues.string(try saved.variable("url"), "url", capacity: 2048)
+        let value2 = try SavedValues.string(try saved.variable("request_headers"), "request_headers", capacity: 2048)
+        let value3 = try SavedValues.string(try saved.variable("request_body"), "request_body", capacity: 16384)
+        let value4 = try SavedValues.string(try saved.variable("outcome"), "outcome", capacity: 24)
+        let value5 = try SavedValues.uint16(try saved.variable("status"), "status")
+        let value6 = try SavedValues.string(try saved.variable("response_headers"), "response_headers", capacity: 4096)
+        let value7 = try SavedValues.string(try saved.variable("response_body"), "response_body", capacity: 16384)
+        return { [self] in
+            self.vMethod = value0
+            self.vUrl = value1
+            self.vRequestHeaders = value2
+            self.vRequestBody = value3
+            self.vOutcome = value4
+            self.vStatus = value5
+            self.vResponseHeaders = value6
+            self.vResponseBody = value7
+        }
+    }
+}

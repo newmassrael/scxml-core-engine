@@ -1467,3 +1467,531 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
             break
         }
     }}
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeOptionalPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "5d7741d7e9d3bf0f39a4d38ceac4dd1ee3516ad684e8ded44134bf4c814efb8c",
+            revised: "0c3699e9d5792b59d2b8867ecd6d350d058df394138b0605552a7c5350b7e8f0",
+            format2First: "5d7741d7e9d3bf0f39a4d38ceac4dd1ee3516ad684e8ded44134bf4c814efb8c",
+            format2Revised: "0c3699e9d5792b59d2b8867ecd6d350d058df394138b0605552a7c5350b7e8f0")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("size", SavedValues.optional(vSize) { SavedValues.of($0) }),
+            SavedEntry("label", SavedValues.optional(vLabel) { SavedValues.of($0) }),
+            SavedEntry("nosize", SavedValues.optional(vNosize) { SavedValues.of($0) }),
+            SavedEntry("lengthy", SavedValues.of(vLengthy)),
+            SavedEntry("completed", SavedValues.of(vCompleted)),
+            SavedEntry("errors", SavedValues.of(vErrors)),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.optional(try saved.variable("size"), "size") { e, w in try SavedValues.int32(e, w) }
+        let value1 = try SavedValues.optional(try saved.variable("label"), "label") { e, w in try SavedValues.string(e, w, capacity: 8) }
+        let value2 = try SavedValues.optional(try saved.variable("nosize"), "nosize") { e, w in try SavedValues.int32(e, w) }
+        let value3 = try SavedValues.string(try saved.variable("lengthy"), "lengthy", capacity: 8)
+        let value4 = try SavedValues.uint32(try saved.variable("completed"), "completed")
+        let value5 = try SavedValues.uint32(try saved.variable("errors"), "errors")
+        return { [self] in
+            self.vSize = value0
+            self.vLabel = value1
+            self.vNosize = value2
+            self.vLengthy = value3
+            self.vCompleted = value4
+            self.vErrors = value5
+        }
+    }
+
+    /// The id the document gives each of its `<invoke type="scxml">`s, in document order.
+    public var savedInvokeIDs: [String] {
+        ["given", "lifted", "absent", "replaced", "over", "fits"]
+    }
+
+    /// How many times each `<invoke>` has started, which numbers the next start's id.
+    public func savedInvokeStarts() -> [SavedEntry<Int64>] {
+        var counted: [SavedEntry<Int64>] = []
+        if sceInvokeStartsGiven > 0 {
+            counted.append(SavedEntry("given", Int64(sceInvokeStartsGiven)))
+        }
+        if sceInvokeStartsLifted > 0 {
+            counted.append(SavedEntry("lifted", Int64(sceInvokeStartsLifted)))
+        }
+        if sceInvokeStartsAbsent > 0 {
+            counted.append(SavedEntry("absent", Int64(sceInvokeStartsAbsent)))
+        }
+        if sceInvokeStartsReplaced > 0 {
+            counted.append(SavedEntry("replaced", Int64(sceInvokeStartsReplaced)))
+        }
+        if sceInvokeStartsOver > 0 {
+            counted.append(SavedEntry("over", Int64(sceInvokeStartsOver)))
+        }
+        if sceInvokeStartsFits > 0 {
+            counted.append(SavedEntry("fits", Int64(sceInvokeStartsFits)))
+        }
+        return counted
+    }
+
+    /// Every `<invoke>` whose child session is running, each with the child's whole state
+    /// (docs/adr/0045). A child that has ended is not running, though its entry stays until its state exits.
+    public func savedChildren(wallNowMs: Int64) throws -> [SavedChild] {
+        var running: [SavedChild] = []
+        if let child = sceInvokeChildGiven, !sceInvokeDoneGiven,
+            let slot = activeInvokes["given"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "given", start: Int64(sceInvokeStartsGiven),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_optional__sce_synth_invoke__given",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildLifted, !sceInvokeDoneLifted,
+            let slot = activeInvokes["lifted"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "lifted", start: Int64(sceInvokeStartsLifted),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_optional__sce_synth_invoke__lifted",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildAbsent, !sceInvokeDoneAbsent,
+            let slot = activeInvokes["absent"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "absent", start: Int64(sceInvokeStartsAbsent),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_optional__sce_synth_invoke__absent",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildReplaced, !sceInvokeDoneReplaced,
+            let slot = activeInvokes["replaced"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "replaced", start: Int64(sceInvokeStartsReplaced),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_optional__sce_synth_invoke__replaced",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildOver, !sceInvokeDoneOver,
+            let slot = activeInvokes["over"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "over", start: Int64(sceInvokeStartsOver),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_optional__sce_synth_invoke__over",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        if let child = sceInvokeChildFits, !sceInvokeDoneFits,
+            let slot = activeInvokes["fits"]
+        {
+            // The id the child was started under, which its session id derives from this one's: carried, not
+            // computed again.
+            running.append(
+                SavedChild(
+                    id: "fits", start: Int64(sceInvokeStartsFits),
+                    invokeID: String(slot.sessionID.dropFirst(sessionID.count + 1)),
+                    document: "static_invoke_optional__sce_synth_invoke__fits",
+                    session: try child.engine.save(wallNowMs: wallNowMs)))
+        }
+        return running
+    }
+
+    /// The state that holds the `<invoke>` `id`, which a saved state's children and restarts are held to.
+    private func savedInvokeOwner(_ id: String) -> StaticInvokeOptionalState? {
+        switch id {
+        case "given": return .running
+        case "lifted": return .running
+        case "absent": return .running
+        case "replaced": return .running
+        case "over": return .running
+        case "fits": return .running
+        default: return nil
+        }
+    }
+
+    /// Judges the children and the counts of starts `saved` holds and changes nothing; what it returns puts the
+    /// children back once this machine stands where it was saved (docs/adr/0045, section 3).
+    public func readSavedChildren(from saved: SavedState, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64) throws -> () -> Void {
+        for counted in saved.invokeStarts where savedInvokeOwner(counted.key) == nil {
+            throw StateRefusal("invokestarts counts '\(counted.key)', which the document does not invoke")
+        }
+        func counted(_ id: String) -> Int64 { saved.invokeStarts.first { $0.key == id }?.value ?? 0 }
+        // The state that holds an `<invoke>` is one the saved configuration stands in, and no `<invoke>` is listed twice.
+        func holder(_ id: String, _ what: String, _ seen: inout Set<String>) throws -> StaticInvokeOptionalState {
+            guard let owner = savedInvokeOwner(id) else {
+                throw StateRefusal("the saved state holds a running child session '\(id)', which this machine does not start")
+            }
+            guard saved.configuration.contains(getStateName(owner)) else {
+                throw StateRefusal("\(what) is '\(id)', whose state the saved configuration does not stand in")
+            }
+            guard seen.insert(id).inserted else {
+                throw StateRefusal("\(what) is '\(id)', which an earlier entry already names")
+            }
+            return owner
+        }
+        var seen: Set<String> = []
+        var resume: [() -> Void] = []
+        var restart: [String] = []
+        switch saved.invokes {
+        case .resumed(let children):
+            for (index, child) in children.enumerated() {
+                _ = try holder(child.id, "invokes[\(index)]", &seen)
+                if child.start != counted(child.id) {
+                    throw StateRefusal(
+                        "invokes[\(index)] is start \(child.start) of '\(child.id)', and the session counts \(counted(child.id)) "
+                            + "starts of it: a state re-entered cancels the earlier child before it starts the next one")
+                }
+                // The id the child would be given where it is built, derived from this session's own, which the
+                // restore is about to bind.
+                let derived = "\(saved.boundSessionID ?? sessionID).\(child.invokeID)"
+                if child.session.sessionID != derived {
+                    throw StateRefusal(
+                        "invokes[\(index)].session's id is '\(child.session.sessionID)', and a child of "
+                            + "'\(saved.boundSessionID ?? sessionID)' started under '\(child.invokeID)' is '\(derived)'")
+                }
+                switch child.id {
+                case "given":
+                    resume.append(try sceJudgeSavedChildGiven(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "lifted":
+                    resume.append(try sceJudgeSavedChildLifted(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "absent":
+                    resume.append(try sceJudgeSavedChildAbsent(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "replaced":
+                    resume.append(try sceJudgeSavedChildReplaced(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "over":
+                    resume.append(try sceJudgeSavedChildOver(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                case "fits":
+                    resume.append(try sceJudgeSavedChildFits(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                default:
+                    break
+                }
+            }
+        case .restarted(let ids):
+            for (index, id) in ids.enumerated() {
+                _ = try holder(id, "invokes[\(index)]", &seen)
+                restart.append(id)
+            }
+        }
+        return { [self] in
+            sceInvokeStartsGiven = Int(counted("given"))
+            sceInvokeStartsLifted = Int(counted("lifted"))
+            sceInvokeStartsAbsent = Int(counted("absent"))
+            sceInvokeStartsReplaced = Int(counted("replaced"))
+            sceInvokeStartsOver = Int(counted("over"))
+            sceInvokeStartsFits = Int(counted("fits"))
+            for put in resume { put() }
+            // A format-1 state holds a child by its id alone, so each is started again from its beginning, as
+            // entering its state starts it, and last, so what a child sends as it starts stands behind what was
+            // already waiting.
+            for id in restart {
+                switch id {
+                case "given":
+                    sceInvokeStartsGiven += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "running.\(sceInvokeStartsGiven).given",
+                        state: .running,
+                        documentID: "given"))
+                case "lifted":
+                    sceInvokeStartsLifted += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "running.\(sceInvokeStartsLifted).lifted",
+                        state: .running,
+                        documentID: "lifted"))
+                case "absent":
+                    sceInvokeStartsAbsent += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "running.\(sceInvokeStartsAbsent).absent",
+                        state: .running,
+                        documentID: "absent"))
+                case "replaced":
+                    sceInvokeStartsReplaced += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "running.\(sceInvokeStartsReplaced).replaced",
+                        state: .running,
+                        documentID: "replaced"))
+                case "over":
+                    sceInvokeStartsOver += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "running.\(sceInvokeStartsOver).over",
+                        state: .running,
+                        documentID: "over"))
+                case "fits":
+                    sceInvokeStartsFits += 1
+                    deferInvoke(&pendingInvokes, PendingInvoke(
+                        invokeID: "running.\(sceInvokeStartsFits).fits",
+                        state: .running,
+                        documentID: "fits"))
+                default:
+                    break
+                }
+            }
+            if !restart.isEmpty {
+                executePendingInvokes(engine: engine)
+            }
+        }
+    }
+
+    /// Builds the session `<invoke>` `given` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildGiven(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_optional__sce_synth_invoke__given" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'given' does not start")
+        }
+        let childPolicy = StaticInvokeOptionalSceSynthInvokeGivenPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "given", document: documentStem("#static_invoke_optional__sce_synth_invoke__given"))
+            resumeChild()
+            activeInvokes["given"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "given",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildGiven = session
+            sceInvokeDoneGiven = false
+        }
+    }
+
+    /// Builds the session `<invoke>` `lifted` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildLifted(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_optional__sce_synth_invoke__lifted" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'lifted' does not start")
+        }
+        let childPolicy = StaticInvokeOptionalSceSynthInvokeLiftedPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "lifted", document: documentStem("#static_invoke_optional__sce_synth_invoke__lifted"))
+            resumeChild()
+            activeInvokes["lifted"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "lifted",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildLifted = session
+            sceInvokeDoneLifted = false
+        }
+    }
+
+    /// Builds the session `<invoke>` `absent` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildAbsent(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_optional__sce_synth_invoke__absent" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'absent' does not start")
+        }
+        let childPolicy = StaticInvokeOptionalSceSynthInvokeAbsentPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "absent", document: documentStem("#static_invoke_optional__sce_synth_invoke__absent"))
+            resumeChild()
+            activeInvokes["absent"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "absent",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildAbsent = session
+            sceInvokeDoneAbsent = false
+        }
+    }
+
+    /// Builds the session `<invoke>` `replaced` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildReplaced(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_optional__sce_synth_invoke__replaced" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'replaced' does not start")
+        }
+        let childPolicy = StaticInvokeOptionalSceSynthInvokeReplacedPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "replaced", document: documentStem("#static_invoke_optional__sce_synth_invoke__replaced"))
+            resumeChild()
+            activeInvokes["replaced"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "replaced",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildReplaced = session
+            sceInvokeDoneReplaced = false
+        }
+    }
+
+    /// Builds the session `<invoke>` `over` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildOver(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_optional__sce_synth_invoke__over" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'over' does not start")
+        }
+        let childPolicy = StaticInvokeOptionalSceSynthInvokeOverPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "over", document: documentStem("#static_invoke_optional__sce_synth_invoke__over"))
+            resumeChild()
+            activeInvokes["over"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "over",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildOver = session
+            sceInvokeDoneOver = false
+        }
+    }
+
+    /// Builds the session `<invoke>` `fits` ran as the saved child names it and judges
+    /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
+    /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
+    private func sceJudgeSavedChildFits(
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+    ) throws -> () -> Void {
+        guard child.document == "static_invoke_optional__sce_synth_invoke__fits" else {
+            throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'fits' does not start")
+        }
+        let childPolicy = StaticInvokeOptionalSceSynthInvokeFitsPolicy()
+        let session = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        let resumeChild: () -> Void
+        do {
+            resumeChild = try session.engine.prepareRestore(child.session, wallNowMs: wallNowMs)
+        } catch let refusal as StateRefusal {
+            throw refusal.within("invokes[\(index)].session")
+        }
+        return { [self] in
+            // The child's delayed sends are measured on this machine's clock, as the start of one makes them, and
+            // before it is restored, since restoring arms them.
+            session.engine.setClock(engine.clock())
+            engine.startChildMesh(of: session, invokeID: "fits", document: documentStem("#static_invoke_optional__sce_synth_invoke__fits"))
+            resumeChild()
+            activeInvokes["fits"] = ChildSession(
+                sessionID: childSessionID,
+                invokeID: "fits",
+                parentSessionID: sessionID,
+                autoforward: false,
+                finalizeScript: ""
+            )
+            sceInvokeChildFits = session
+            sceInvokeDoneFits = false
+        }
+    }
+}

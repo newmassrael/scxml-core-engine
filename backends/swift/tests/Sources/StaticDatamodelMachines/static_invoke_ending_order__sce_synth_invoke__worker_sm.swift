@@ -560,3 +560,35 @@ public func registerStaticInvokeEndingOrderSceSynthInvokeWorkerSceHostClockNowIn
 public func completeStaticInvokeEndingOrderSceSynthInvokeWorkerClock(on engine: Engine<StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy>, token: UInt64, result: StaticInvokeEndingOrderSceSynthInvokeWorkerClockResult) -> Bool {
     engine.completeHostInvoke(processorType: "sce-host-clock-now", invokeID: "clock", token: token, doneData: result.wire)
 }
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "4139b120af2ce488ab337fea508e9741f1c720df00100a9174250f37cc3726c3",
+            revised: "8cd275f671dde4e781774717538ab697ba1f6aa6506469cdccb56dcb53a3debe",
+            format2First: "4139b120af2ce488ab337fea508e9741f1c720df00100a9174250f37cc3726c3",
+            format2Revised: "8cd275f671dde4e781774717538ab697ba1f6aa6506469cdccb56dcb53a3debe")
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        return {}
+    }
+}

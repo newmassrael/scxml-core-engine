@@ -1238,3 +1238,113 @@ public func registerStaticHostModelSceHostModelGenerateInvoker(on engine: Engine
 public func completeStaticHostModelGen(on engine: Engine<StaticHostModelPolicy>, token: UInt64, result: StaticHostModelGenResult) -> Bool {
     engine.completeHostInvoke(processorType: "sce-host-model-generate", invokeID: "gen", token: token, doneData: result.wire)
 }
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticHostModelPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "dbeae1305922e59dfa1f64bf377f0cca47774aa4ea0bcf0d11bd8f05fdd6dbe6",
+            revised: "f66696a536bd60de17eb3afb4303ac2774c8fbd9f2e28b4453716090879d8b39",
+            format2First: "d8996ec71a3c00b1285d4a592db8e7352542fee3446fdc9e5d1b743078ea5b77",
+            format2Revised: "9171aa1571f9cf0f1983e440052be5e1f76132e88b8cf94406ab93ece17f10d2",
+            records: [
+                SavedRecordLineage(
+                    event: "lift.answer", revision: 2,
+                    revisions: ["346ba2c78ac1d5e5d878a2f364be668e2f2503a0f555b1d323584dc30cd26483"],
+                    added: [
+                        SavedAddedField(id: "priority", since: 2, defaultJSON: "3"),
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "answer", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "lift.refusal", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "why", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_lift_kind.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "answer", field: "kind", list: false),
+                    ]),
+                SavedEnumLineage(
+                    key: "enum:sce:std/lift/refusal_code.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "why", field: "code", list: false),
+                    ]),
+            ])
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("prompt", SavedValues.of(vPrompt)),
+            SavedEntry("max_tokens", SavedValues.of(vMaxTokens)),
+            SavedEntry("temperature_milli", SavedValues.of(vTemperatureMilli)),
+            SavedEntry("calls", SavedValues.of(vCalls)),
+            SavedEntry("outcome", SavedValues.of(vOutcome)),
+            SavedEntry("finish", SavedValues.of(vFinish)),
+            SavedEntry("constrained", SavedValues.of(vConstrained)),
+            SavedEntry("answered_by", SavedValues.of(vAnsweredBy)),
+            SavedEntry("prompt_tokens", SavedValues.of(vPromptTokens)),
+            SavedEntry("answer_tokens", SavedValues.of(vAnswerTokens)),
+            SavedEntry("answer", SavedValues.optional(vAnswer) { $0.toSaved() }),
+            SavedEntry("why", SavedValues.optional(vWhy) { $0.toSaved() }),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try SavedValues.string(try saved.variable("prompt"), "prompt", capacity: 8192)
+        let value1 = try SavedValues.uint32(try saved.variable("max_tokens"), "max_tokens")
+        let value2 = try SavedValues.uint16(try saved.variable("temperature_milli"), "temperature_milli")
+        let value3 = try SavedValues.uint32(try saved.variable("calls"), "calls")
+        let value4 = try SavedValues.string(try saved.variable("outcome"), "outcome", capacity: 24)
+        let value5 = try SavedValues.string(try saved.variable("finish"), "finish", capacity: 16)
+        let value6 = try SavedValues.bool(try saved.variable("constrained"), "constrained")
+        let value7 = try SavedValues.string(try saved.variable("answered_by"), "answered_by", capacity: 128)
+        let value8 = try SavedValues.uint32(try saved.variable("prompt_tokens"), "prompt_tokens")
+        let value9 = try SavedValues.uint32(try saved.variable("answer_tokens"), "answer_tokens")
+        let value10 = try SavedValues.optional(try saved.variable("answer"), "answer") { e, w in try StaticHostModelAnswerRecord.fromSaved(e, w) }
+        let value11 = try SavedValues.optional(try saved.variable("why"), "why") { e, w in try StaticHostModelLiftRefusalRecord.fromSaved(e, w) }
+        return { [self] in
+            self.vPrompt = value0
+            self.vMaxTokens = value1
+            self.vTemperatureMilli = value2
+            self.vCalls = value3
+            self.vOutcome = value4
+            self.vFinish = value5
+            self.vConstrained = value6
+            self.vAnsweredBy = value7
+            self.vPromptTokens = value8
+            self.vAnswerTokens = value9
+            self.vAnswer = value10
+            self.vWhy = value11
+        }
+    }
+}

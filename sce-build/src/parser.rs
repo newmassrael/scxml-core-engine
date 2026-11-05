@@ -8821,6 +8821,8 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
     // Whether a saved state can hold the child's whole state (docs/adr/0045),
     // read the same way: its own invokes already say whether theirs can.
     common.child_saves = crate::forge::static_lowering::a_tree_can_hold(child_model);
+    // And whether the Swift runtime saves it: the same rule, held to what that runtime holds.
+    common.child_swift_saves = crate::forge::static_lowering::a_swift_tree_can_hold(child_model);
 }
 
 /// §scxml-6.4: the document a child an `<invoke>` names, by `src`

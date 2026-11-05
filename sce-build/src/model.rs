@@ -2186,6 +2186,14 @@ pub struct InvokeSessionCommon {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_saves: bool,
+    /// Codegen-internal: the child is a document whose whole state the Swift
+    /// runtime saves, its own children included: one [`Self::child_saves`] says
+    /// a saved state can hold, of no product line, whose every `<invoke>` is a
+    /// static child session of such a document too. Derived from the same
+    /// child model as [`Self::child_saves`]; not part of the IR.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_swift_saves: bool,
     /// Codegen-internal: what the child reads of each event it is sent, when it
     /// is a `datamodel="sce-static"` document this build read ([`ChildReceives`]).
     /// A static parent holds a `<param>` of a `<send>` to the child to the field
