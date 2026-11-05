@@ -488,9 +488,12 @@ def test_a_posted_ending_of_a_cancelled_or_restarted_start_is_refused_as_a_direc
     assert second != first, "a restart reused the first start's token"
 
     assert _post_from_another_thread(engine, _ending(first, False, "stale"))
-    # A session the tree does not hold takes nothing, and the drive that applies
-    # it is not refused for it.
-    assert _post_from_another_thread(engine, _ending(second, True, "astray", session="nowhere"))
+    # A post naming a session the tree does not hold is refused when it is
+    # posted, and says so (docs/adr/0084, D2 as amended at step 10).
+    assert not _post_from_another_thread(engine, _ending(second, True, "astray", session="nowhere")), (
+        "a post naming a session the tree does not hold was taken"
+    )
+    assert engine.inbox.refused_posts() == 1
     # Addressed by the session id, as a host serving a tree ends one.
     assert _post_from_another_thread(engine, _ending(second, True, "fresh", session=_SESSION))
     engine.advance_time(0)
@@ -512,9 +515,12 @@ def test_a_mesh_delivery_is_posted_and_applied_as_apply_mesh_call_applies_it() -
     # Addressed by the session id: this machine.
     addressed = MeshRaise("ping", EventMetadata(data="addressed"))
     assert _post_from_another_thread(engine, InboxMeshDelivery(addressed, session_id=_SESSION))
-    # A session the tree does not hold takes nothing.
+    # A post naming a session the tree does not hold is refused when it is posted.
     astray = MeshRaise("ping", EventMetadata(data="astray"))
-    assert _post_from_another_thread(engine, InboxMeshDelivery(astray, session_id="nowhere"))
+    assert not _post_from_another_thread(engine, InboxMeshDelivery(astray, session_id="nowhere")), (
+        "a delivery naming a session the tree does not hold was taken"
+    )
+    assert engine.inbox.refused_posts() == 1
     engine.advance_time(0)
 
     assert policy.taken == ["ping:peer", "ping:addressed"]
@@ -672,3 +678,36 @@ def test_an_ending_posted_for_a_child_before_its_parents_send_is_taken_before_th
         f"ending was posted first: the parent heard `stamped` at {stamped_at} and "
         f"`answer` at {answer_at}, where 1 and 2 were owed"
     )
+
+
+def test_an_ending_posted_for_a_child_wakes_the_roots_owner_and_its_next_drive_applies_it() -> None:
+    engine, host = _ending_order_started()
+    woken = [0]
+
+    def waker() -> None:
+        woken[0] += 1
+
+    # Installed on the root, as a host does: the tree has one waker.
+    engine.inbox.wake_with(waker)
+    request = host.starts[-1]
+    ending = InboxHostInvokeEnding(
+        HostInvokeEnding(_CLOCK, _CLOCK_ID, request.token, True, _NOW),
+        session_id=_ORDER_WORKER,
+    )
+    assert _post_from_another_thread(engine, ending), "the inbox refused an ending for a session the tree holds"
+    assert woken[0] == 1, "a post to the child's inbox did not wake the tree's owner"
+    # A host asleep on the next deadline is told the child's post is due now.
+    assert engine.time_until_next_scheduled_ms() == 0, "the child's post was not owed a drive"
+
+    # The root's own drive, which reaches the child.
+    engine.advance_time(0)
+
+    assert (engine.policy.v_stamped_at, engine.policy.v_answer_at) == (1, 0), (
+        "the drive the host made on the root did not apply the ending posted for its child"
+    )
+    # The ending ended the clock: a second one for the same start is refused by
+    # the token check when it is applied, and raises nothing.
+    assert _post_from_another_thread(engine, ending)
+    engine.advance_time(0)
+    assert engine.policy.v_heard == 1, "an ending of a start already ended was taken"
+    assert engine.inbox.refused_posts() == 0

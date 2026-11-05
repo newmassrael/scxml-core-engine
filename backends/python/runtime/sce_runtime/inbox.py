@@ -8,6 +8,11 @@ engine, which the engine's owner applies at its next macrostep boundary, each
 input by the owner-thread operation of the same name. What may be posted is a
 closed set, each input carrying what the operation that applies it takes.
 
+Every session of a tree has an inbox of its own, a child's as well as the
+root's, and the tree keeps a directory of them by session id with the tree's
+one waker (`TreeInboxes`). A post that names a session is put in that session's
+inbox when it is posted (`EngineInbox.post`), not routed when it is drained.
+
 The queue is a `collections.deque` behind one `threading.Lock`, not a
 `queue.SimpleQueue`. The inbox needs two things a bare concurrent queue does not
 give together: a post refused once the inbox is closed, decided under the same
@@ -18,15 +23,16 @@ for an append or a swap and nothing else, so a post never waits for a
 macrostep, and the waker is called after it is released. It holds on a
 free-threaded interpreter as on one with a global lock.
 
-Unbounded (docs/adr/0084, D2): a post is refused only when the inbox is closed.
+Unbounded (docs/adr/0084, D2): a post is refused only when the inbox is closed,
+or when it names a session the tree does not hold.
 """
 
 from __future__ import annotations
 
 import threading
 from collections import deque
-from dataclasses import dataclass
-from typing import Any, Callable, Deque, Generic, Optional, TypeVar, Union
+from dataclasses import dataclass, replace
+from typing import Any, Callable, Deque, Dict, Generic, Optional, TypeVar, Union
 
 from .child_mesh import MeshCall
 from .event import EventMetadata
@@ -65,12 +71,14 @@ class InboxExternalEventByName:
 class InboxHostInvokeEnding:
     """The end of a start of a host-run invocation.
 
-    `session_id` ``None`` ends an invocation of the machine whose inbox this is,
-    applied with `Engine.complete_host_invoke` or `Engine.fail_host_invoke`; a
-    session id ends one of that session of the tree, applied with the body of
-    `Engine.end_host_invoke_in`. The token check those make is made when the
-    input is applied, so an ending posted for a start that was cancelled or
-    started again by then raises nothing, as a direct one would."""
+    `session_id` ``None`` ends an invocation of the machine whose inbox it is
+    posted to; a session id ends one of that session of the tree, and the post
+    puts it in that session's own inbox, or is refused when the tree holds no
+    such session (`EngineInbox.post`). The session applies it with
+    `Engine.complete_host_invoke` or `Engine.fail_host_invoke`. The token check
+    those make is made when the input is applied, so an ending posted for a
+    start that was cancelled or started again by then raises nothing, as a
+    direct one would."""
 
     ending: HostInvokeEnding
     session_id: Optional[str] = None
@@ -79,9 +87,10 @@ class InboxHostInvokeEnding:
 @dataclass(frozen=True)
 class InboxMeshDelivery:
     """What a Mesh endpoint has for a session, applied with
-    `Engine.apply_mesh_call`: on the machine whose inbox this is when
-    `session_id` is ``None``, on that session of the tree otherwise, and on none
-    when the tree no longer holds it."""
+    `Engine.apply_mesh_call`: on the machine whose inbox it is posted to when
+    `session_id` is ``None``, and otherwise on that session of the tree, whose
+    own inbox the post puts it in; the post is refused when the tree no longer
+    holds it (`EngineInbox.post`)."""
 
     call: MeshCall
     session_id: Optional[str] = None
@@ -97,48 +106,67 @@ InboxInput = Union[
 ]
 
 #: What a host installs with `EngineInbox.wake_with`: called with no arguments
-#: on the posting thread after each post the inbox took.
+#: on the posting thread after each post an inbox of the tree took.
 InboxWaker = Callable[[], None]
 
 
+def _named_session(posted: InboxInput[E]) -> Optional[str]:
+    """The session `posted` names, ``None`` when it names none and is for the
+    machine whose inbox it is posted to."""
+    if isinstance(posted, (InboxHostInvokeEnding, InboxMeshDelivery)):
+        return posted.session_id
+    return None
+
+
 class EngineInboxState(Generic[E]):
-    """What an engine and every handle to its inbox share: the queue, the gate
-    that opens and closes it, and the waker the host installed.
+    """What a session and every handle to its inbox share: the queue, the gate
+    that opens and closes it, the count of refused posts, and the tree the
+    session belongs to, whose waker a post calls.
 
-    The posting half (`post`, `wake_with`, `refused_posts`) is safe from any
-    thread and is what `EngineInbox` hands out. The rest (`open`, `close`,
-    `take`, `holds_posts`) is the owner's, called by the engine."""
+    The posting half (`post`, `tree`, `count_refusal`, `refused_posts`) is safe
+    from any thread and is what `EngineInbox` uses. The rest (`join`, `open`,
+    `close`, `take`, `holds_posts`) is the owner's, called by the engine."""
 
-    __slots__ = ("_lock", "_held", "_closed", "_waker", "_refused")
+    __slots__ = ("_lock", "_held", "_closed", "_tree", "_refused")
 
-    def __init__(self) -> None:
+    def __init__(self, tree: "TreeInboxes[E]") -> None:
         self._lock = threading.Lock()
         self._held: Deque[InboxInput[E]] = deque()
         self._closed = False
-        self._waker: Optional[InboxWaker] = None
+        self._tree = tree
         self._refused = 0
 
     def post(self, posted: InboxInput[E]) -> bool:
-        """Post `posted`; whether the inbox took it. Refused, and counted, once
-        the inbox is closed. After a post the inbox took, the installed waker is
-        called on this thread."""
+        """Post `posted`, an input for this session; whether the inbox took it.
+        Refused once the inbox is closed. After a post the inbox took, the
+        tree's waker is called on this thread."""
         with self._lock:
             if self._closed:
-                self._refused += 1
                 return False
             self._held.append(posted)
-            waker = self._waker
-        if waker is not None:
-            waker()
+            tree = self._tree
+        tree.wake()
         return True
 
-    def wake_with(self, waker: Optional[InboxWaker]) -> None:
-        """Install `waker`; ``None`` removes it."""
+    def tree(self) -> "TreeInboxes[E]":
+        """The inboxes of the tree this session belongs to."""
         with self._lock:
-            self._waker = waker
+            return self._tree
+
+    def join(self, tree: "TreeInboxes[E]") -> None:
+        """Belong to `tree` from now on: its waker is the one a post calls. The
+        owner's, made before the session's first macrostep in that tree."""
+        with self._lock:
+            self._tree = tree
+
+    def count_refusal(self) -> None:
+        """Count one post made through a handle of this inbox and refused."""
+        with self._lock:
+            self._refused += 1
 
     def refused_posts(self) -> int:
-        """How many posts the inbox refused since it was made."""
+        """How many posts made through a handle of this inbox were refused since
+        it was made."""
         with self._lock:
             return self._refused
 
@@ -167,13 +195,65 @@ class EngineInboxState(Generic[E]):
             return bool(self._held)
 
 
+class TreeInboxes(Generic[E]):
+    """The inbox of every session of one tree, by session id, and the tree's one
+    waker (docs/adr/0084, D2 as amended at step 10): what a post naming a
+    session looks the session up in.
+
+    A machine a host builds makes it and enters itself; a parent hands it to
+    each child it starts or resumes before the child runs, as it hands the
+    tree's invokers (`Engine.share_tree_with`). A session is entered while its
+    run takes posts and removed when its run ends, after its inbox is closed and
+    what it held is applied. `find`, `wake_with` and `wake` are safe from any
+    thread; `enter` and `remove` are the owner's."""
+
+    __slots__ = ("_lock", "_sessions", "_waker")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._sessions: Dict[str, EngineInboxState[E]] = {}
+        self._waker: Optional[InboxWaker] = None
+
+    def find(self, session_id: str) -> Optional[EngineInboxState[E]]:
+        """The inbox of the session `session_id` names; ``None`` when the tree
+        holds no such session: never started, or ended."""
+        with self._lock:
+            return self._sessions.get(session_id)
+
+    def enter(self, session_id: str, inbox: EngineInboxState[E]) -> None:
+        """Enter `inbox` as the inbox of `session_id`. The owner's."""
+        with self._lock:
+            self._sessions[session_id] = inbox
+
+    def remove(self, session_id: str, inbox: EngineInboxState[E]) -> bool:
+        """Remove `session_id` when `inbox` is its inbox here; whether it was.
+        A session started since under the same id keeps its own. The owner's."""
+        with self._lock:
+            if self._sessions.get(session_id) is not inbox:
+                return False
+            del self._sessions[session_id]
+            return True
+
+    def wake_with(self, waker: Optional[InboxWaker]) -> None:
+        """Install `waker` as the tree's; ``None`` removes it."""
+        with self._lock:
+            self._waker = waker
+
+    def wake(self) -> None:
+        """Call the tree's waker, if one is installed, on this thread."""
+        with self._lock:
+            waker = self._waker
+        if waker is not None:
+            waker()
+
+
 class EngineInbox(Generic[E]):
     """The handle a host posts to an engine's inbox through (`Engine.inbox`).
 
     Thread-safe: any thread may post, and any number at once. What is posted is
-    applied by the engine's owner at its next macrostep boundary, before the
-    external queue is consulted, in the order the inbox took it. Every handle of
-    one engine names the same inbox."""
+    applied by the owner at the next macrostep boundary of the session it is
+    for, before that session's external queue is consulted, in the order its
+    inbox took it. Every handle of one engine names the same inbox."""
 
     __slots__ = ("_state",)
 
@@ -181,22 +261,44 @@ class EngineInbox(Generic[E]):
         self._state = state
 
     def post(self, posted: InboxInput[E]) -> bool:
-        """Post `posted`; whether the inbox took it. The inbox takes every post
-        from the moment the engine is built until its run ends at a top-level
-        ``<final>`` or is stopped, and refuses every post after either until a
-        run is entered again (`Engine.initialize`, `Engine.enter_at`). A post
-        taken before the first run is applied at that run's first boundary; one
-        still held when the run ends is applied then, as a direct call would be
-        at that moment."""
-        return self._state.post(posted)
+        """Post `posted`; whether an inbox took it.
+
+        An input that names a session (`InboxHostInvokeEnding.session_id`,
+        `InboxMeshDelivery.session_id`) is put in that session's own inbox,
+        found in the tree's directory now, so it is on that session's queue
+        ahead of whatever the session is sent after this returns; a post naming
+        a session the tree does not hold is refused. Any other input is put in
+        this engine's inbox.
+
+        An inbox takes every post from the moment its engine is built until its
+        run ends at a top-level ``<final>`` or is stopped, and refuses every
+        post after either until a run is entered again (`Engine.initialize`,
+        `Engine.enter_at`). A post taken before the first run is applied at that
+        run's first boundary; one still held when the run ends is applied then,
+        as a direct call would be at that moment. A refused post is counted
+        (`refused_posts`)."""
+        target: Optional[EngineInboxState[E]] = self._state
+        session_id = _named_session(posted)
+        if session_id is not None:
+            target = self._state.tree().find(session_id)
+            # The inbox it reaches is the named session's own, so it holds the
+            # input as one for that session.
+            posted = replace(posted, session_id=None)
+        if target is not None and target.post(posted):
+            return True
+        self._state.count_refusal()
+        return False
 
     def wake_with(self, waker: Optional[InboxWaker]) -> None:
-        """Install `waker`, called on the posting thread after each post the
-        inbox took, so a host that drives the engine knows there is something to
-        apply: its next drive applies it, and ``advance_time(0)`` is the drive
-        that moves no clock. ``None`` removes it."""
-        self._state.wake_with(waker)
+        """Install `waker`, the tree's one waker, called on the posting thread
+        after each post an inbox of the tree took, a child session's included,
+        so a host that drives the engine knows there is something to apply: its
+        next drive applies it, and ``advance_time(0)`` is the drive that moves
+        no clock. ``None`` removes it."""
+        self._state.tree().wake_with(waker)
 
     def refused_posts(self) -> int:
-        """How many posts this inbox refused, because it was closed."""
+        """How many posts made through this inbox were refused: because the
+        inbox they reached was closed, or because they named a session the tree
+        does not hold."""
         return self._state.refused_posts()

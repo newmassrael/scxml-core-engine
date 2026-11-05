@@ -241,8 +241,10 @@
                     session_id=f"{self._session_id}.{entry.invoke_id}",
                 )
                 # docs/adr/0045: the invokers a host registered serve every
-                # session of the tree, this child's too, before it runs.
-                engine.share_host_invokers_with(_child_engine)
+                # session of the tree, this child's too, before it runs; and
+                # docs/adr/0084: the child's inbox is entered in the tree's, so
+                # a post naming it reaches it and wakes the tree's owner.
+                engine.share_tree_with(_child_engine)
 {# `datamodel="sce-static"`: each argument is native code
    (`Param::native_seed`), read from the machine's own fields when the invoke
    executes, and handed to the child's variable of the same name through its

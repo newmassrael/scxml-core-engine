@@ -116,6 +116,6 @@ PY
 
 mutation_case "a child a restore resumes is not handed the tree's invokers" <<'PY'
 edit("tools/codegen/templates/python/saved_policy.py.jinja2",
-     "        engine.share_host_invokers_with(_child_engine)\n",
+     "        engine.share_tree_with(_child_engine)\n",
      "")
 PY

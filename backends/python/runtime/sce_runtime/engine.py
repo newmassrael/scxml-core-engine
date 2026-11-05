@@ -81,6 +81,7 @@ from .inbox import (
     InboxHostInvokeEnding,
     InboxInput,
     InboxMeshDelivery,
+    TreeInboxes,
 )
 from . import io_processors
 from . import send as send_module
@@ -259,8 +260,9 @@ class Engine(Generic[S, E]):
     (`complete_host_invoke`, `fail_host_invoke`, `complete_host_invoke_in`,
     `fail_host_invoke_in`, `end_host_invoke_in`, `cancel_host_invoke`) and
     applying a Mesh delivery (`apply_mesh_calls`, `apply_mesh_call`). Another
-    thread uses `inbox` instead, the one thread-safe handle, and posts to the
-    root of a tree, naming the session. The caller's thread is not checked.
+    thread uses `inbox` instead, the one thread-safe handle; an input for a
+    child session names it, and the post puts it in that session's own inbox.
+    The caller's thread is not checked.
     """
 
     def __init__(
@@ -331,7 +333,11 @@ class Engine(Generic[S, E]):
         # external queue (`_drain_inbox`, `_enqueue_external`). Open from
         # construction, so what is posted before the first run is applied at
         # that run's first boundary; closed with a run that ended or was stopped.
-        self._inbox_state: EngineInboxState[E] = EngineInboxState()
+        # It belongs to a tree of its own until a parent hands this session its
+        # tree (`share_tree_with`), and is entered in that tree's directory
+        # while it takes posts (docs/adr/0084, D2 as amended at step 10).
+        self._inbox_state: EngineInboxState[E] = EngineInboxState(TreeInboxes())
+        self._inbox_state.tree().enter(self._session_id, self._inbox_state)
         self._inbox: EngineInbox[E] = EngineInbox(self._inbox_state)
         # Set while `_drain_inbox` applies what it took, so the external events
         # those inputs queue do not drain the inbox again (`_drain_inbox`).
@@ -460,7 +466,7 @@ class Engine(Generic[S, E]):
         self._host_invokers: Dict[str, HostInvokeHandler] = {}
         # docs/adr/0045 — the invokers a host registered, shared by every session
         # of this machine's tree: made when this machine registers the first, and
-        # handed to each child as it is started or resumed (`share_host_invokers_with`).
+        # handed to each child as it is started or resumed (`share_tree_with`).
         # `_host_invokers` above keeps only what is this session's alone, the
         # invoker of a type SCE serves on a session's behalf.
         self._tree_invokers: Optional[TreeInvokers] = None
@@ -527,7 +533,7 @@ class Engine(Generic[S, E]):
         self._is_running = True
         # docs/adr/0084: a run that follows one that ended or was stopped takes
         # posts again; what was posted before the first run is still held.
-        self._inbox_state.open()
+        self._open_inbox()
         # §scxml-C-1-1 / §scxml-C-2-3 — bind `_sessionid` / `_name` /
         # `_ioprocessors` into the script-engine session before any datamodel
         # `<data>` is registered. The entries come from the same helper every
@@ -656,7 +662,7 @@ class Engine(Generic[S, E]):
         self._is_running = True
         # docs/adr/0084: the run entered here takes posts, as one `initialize`
         # starts does.
-        self._inbox_state.open()
+        self._open_inbox()
         return ConfigurationRejection.NONE
 
     def stop(self) -> None:
@@ -1170,8 +1176,10 @@ class Engine(Generic[S, E]):
         each input by the owner-thread operation of the same name. A host that
         drives the engine installs a waker (`EngineInbox.wake_with`) to learn
         when to drive it; ``advance_time(0)`` applies what was posted and moves
-        no clock. An input for a child session is posted here, at the root of
-        the tree, naming the session."""
+        no clock. An input for a child session is posted here naming the
+        session, and goes straight to that session's own inbox; the waker is the
+        tree's, so a post to a child calls it too, and the drive that reaches
+        the child applies it there (ARCHITECTURE.md "Engine Threading")."""
         return self._inbox
 
     def _drain_inbox(self) -> None:
@@ -1195,11 +1203,34 @@ class Engine(Generic[S, E]):
         finally:
             self._draining_inbox = False
 
+    def _open_inbox(self) -> None:
+        """Take posts from now on, and be found in the tree's directory by a
+        post that names this session."""
+        self._inbox_state.open()
+        self._inbox_state.tree().enter(self._session_id, self._inbox_state)
+
     def _close_inbox(self) -> None:
-        """Refuse every post from now on, and apply what the inbox still holds as
-        a direct call would be applied now."""
+        """Refuse every post from now on, apply what the inbox still holds as a
+        direct call would be applied now, and leave the tree's directory, so a
+        post that names this session is refused from then on."""
         self._inbox_state.close()
         self._drain_inbox()
+        self._inbox_state.tree().remove(self._session_id, self._inbox_state)
+
+    def _join_inboxes(self, tree: "TreeInboxes[Any]") -> None:
+        """Belong to `tree`, the inboxes of the tree a parent is handing this
+        session: entered in its directory when this session was entered in its
+        own, and woken by its waker. So is every session this machine holds now:
+        a child a restore resumed holds children of its own, resumed with it
+        before its parent could hand it anything."""
+        entered = self._inbox_state.tree().remove(self._session_id, self._inbox_state)
+        self._inbox_state.join(tree)
+        if entered:
+            tree.enter(self._session_id, self._inbox_state)
+        for invoke in self._active_invokes.values():
+            child = getattr(invoke, "child", None)
+            if isinstance(child, Engine):
+                child._join_inboxes(tree)
 
     def _apply_inbox_input(self, posted: InboxInput[E]) -> None:
         """Apply one posted input by the operation a direct call on the owner
@@ -1222,15 +1253,13 @@ class Engine(Generic[S, E]):
 
     def _apply_host_invoke_ending(self, posted: InboxHostInvokeEnding) -> None:
         """A posted ending, applied by the call the host would have made on the
-        owner. One addressed to a session is applied with the body of
-        `end_host_invoke_in`, whose refusal has nobody to reach here: an ending
-        the session does not run is ignored, as §scxml-6.4 ignores what a
+        owner, on this session: one that named a session was put in that
+        session's own inbox when it was posted (`EngineInbox.post`). An ending
+        this session does not run is ignored, as §scxml-6.4 ignores what a
         cancelled process sends, and as `complete_host_invoke` answers
         `False`."""
         ending = posted.ending
-        if posted.session_id is not None:
-            self.route_host_invoke_end(posted.session_id, ending)
-        elif ending.done:
+        if ending.done:
             self.complete_host_invoke(
                 ending.processor_type,
                 ending.invoke_id,
@@ -1250,15 +1279,10 @@ class Engine(Generic[S, E]):
             )
 
     def _apply_mesh_delivery(self, posted: InboxMeshDelivery) -> None:
-        """A posted Mesh delivery, applied with `apply_mesh_call` on the session
-        it names: this machine, or a session of the tree below it. A session the
-        tree no longer holds takes nothing."""
-        if posted.session_id is None:
-            self.apply_mesh_call(posted.call)
-            return
-        holder = self._session_in_tree(posted.session_id)
-        if holder is not None:
-            holder.apply_mesh_call(posted.call)
+        """A posted Mesh delivery, applied with `apply_mesh_call` on this
+        session: one that named a session was put in that session's own inbox
+        when it was posted (`EngineInbox.post`)."""
+        self.apply_mesh_call(posted.call)
 
     def raise_internal(
         self,
@@ -1619,14 +1643,22 @@ class Engine(Generic[S, E]):
             return self._host_invokers.get(processor_type)
         return self._tree().handlers.get(processor_type)
 
-    def share_host_invokers_with(self, child: "Engine[Any, Any]") -> None:
-        """Hand this machine's invokers to `child`, a session it is starting or
-        resuming, before the child runs (docs/adr/0045): the types a host registers
-        through `register_invoker` serve every session of the tree. An invoker
+    def share_tree_with(self, child: "Engine[Any, Any]") -> None:
+        """Hand `child`, a session this machine is starting or resuming, what
+        every session of the tree shares, before the child runs.
+
+        The tree's invokers (docs/adr/0045): the types a host registers through
+        `register_invoker` serve every session of the tree. An invoker
         registered afterwards serves the child too, since it is the tree's own
         registry the child holds. The Mesh request invoker is not handed on: a
-        child's is the router its parent's factory gave it."""
+        child's is the router its parent's factory gave it.
+
+        The tree's inboxes (docs/adr/0084, D2 as amended at step 10): the child
+        is entered in the tree's directory under its session id, so a post
+        naming it goes to its own inbox, and a post there calls the tree's one
+        waker, the one the host installed on the root."""
         child.adopt_host_invokers(self._tree())
+        child._join_inboxes(self._inbox_state.tree())
 
     def adopt_host_invokers(self, invokers: TreeInvokers) -> None:
         """Be served by `invokers`, the tree's, and hand them on to every child
@@ -1641,10 +1673,10 @@ class Engine(Generic[S, E]):
 
     def route_host_invoke_end(self, session_id: str, ending: HostInvokeEnding) -> Tuple[bool, Optional[str]]:
         """Deliver `ending` to the session `session_id` names, if that session is
-        this machine or one in the tree below it. Answers whether it is, and the
-        reason it was refused when it is and does not run that start: ``(False,
-        None)`` when it is neither, so the parent that asked can try another
-        child."""
+        this machine or one in the tree below it: the walk of the direct call
+        `end_host_invoke_in`, made on the owner between macrosteps. Answers
+        whether it is, and the reason it was refused when it is and does not run
+        that start: ``(False, None)`` when it is neither."""
         holder = self._session_in_tree(session_id)
         if holder is None:
             return False, None
@@ -1669,8 +1701,9 @@ class Engine(Generic[S, E]):
     def _session_in_tree(self, session_id: str) -> Optional["Engine[Any, Any]"]:
         """The running session `session_id` names in the tree this machine is
         the root of: this machine, or a child session at any depth below it.
-        ``None`` when the tree holds none: never started, or ended. The one walk
-        an ending and a Mesh delivery addressed to a session are routed by."""
+        ``None`` when the tree holds none: never started, or ended. The walk a
+        direct call made on the owner reaches its session by; a post that names a
+        session finds it in the tree's directory instead (`EngineInbox.post`)."""
         if session_id == self._session_id:
             return self
         for invoke in self._active_invokes.values():

@@ -55,8 +55,9 @@
 {% endif %}
         engine._active_invokes[{{ inv.invoke_id | py_string_literal }}] = _invoke
         # docs/adr/0045: the tree's host invokers, handed on before the child's
-        # re-armed invocations start at its first drive.
-        engine.share_host_invokers_with(_child_engine)
+        # re-armed invocations start at its first drive, and docs/adr/0084: the
+        # tree's inboxes, which the child is entered in.
+        engine.share_tree_with(_child_engine)
         # Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
         # resumed child is owed, not asked here. This machine is being restored,
         # and its host registers the factory of its children's routers only once
