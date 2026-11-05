@@ -1645,7 +1645,7 @@ nested union:
 | `mesh-rpc-srcexpr` | `<invoke type="sce:mesh-rpc">` with an `srcexpr` target. |
 | `mesh-rpc-request-expr` | `<invoke type="sce:mesh-rpc">` whose request is evaluated when it starts: a non-literal `<param>`, or an `idlocation` its id is written to. |
 | `host-invoke-expr` | An `<invoke>` the host runs (`--host-invoker`) whose request is evaluated when it starts: `srcexpr`, `namelist`, `<content expr>`, or a non-literal `<param>` — or that writes its id to an `idlocation`. |
-| `donedata-param`, `donedata-content` | `<donedata>` `<param>` / `<content expr=…>`. |
+| `donedata-param`, `donedata-content` | `<donedata>` `<param>` / `<content expr=…>`, or `<donedata><content>text</content>` whose text is an expression of the document, read as `send-content-expr` reads a `<send>`'s. |
 | `child-invoke-needs-script-engine` | A statically-invoked child whose own analysis required an engine. |
 
 **Typed guards.** A `cond` reading `_event.data.<field>` from an

@@ -98,12 +98,12 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 275
+engine-documents 274
 native-prefix-documents 2
 datamodel-variable-init 474
 transition-guard 258
 assign-action 412
-child-invoke-needs-script-engine 58
+child-invoke-needs-script-engine 57
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 96
@@ -111,7 +111,7 @@ send-content-expr 1
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
-donedata-content 10
+donedata-content 5
 inline-script-action 3
 send-namelist 10
 if-condition 19
@@ -452,11 +452,27 @@ telling the truth, not the tree getting worse.
   `integration_resources/an_assignment_keeps_the_document_it_is_given/` (one
   ECMAScript document: one data item with an initializer, two assigns of
   `_event.data`, two guards that read the DOM through each location) raises
-  `engine-documents` by one (274 to 275), `datamodel-variable-init` by one
-  (473 to 474), `transition-guard` by two (256 to 258) and `assign-action` by
-  two (410 to 412). The figures were derived by reading the document against
+  `engine-documents` by one, `datamodel-variable-init` by one (473 to 474),
+  `transition-guard` by two (256 to 258) and `assign-action` by two (410 to
+  412). The figures were derived by reading the document against
   `script_engine_analyzer`, not from this test's output; where the two
   disagree the test's block is the one to carry.
+  ⚠ **2026-11-06, deliberately, predicted from the fixtures and not yet
+  measured:** a `<donedata>`'s inline `<content>` text now costs an engine only
+  when it is an expression of the document, the one reading every backend's
+  `<final>` template already asked (`filters::inline_content_reading`), as a
+  `<send>`'s does. A C11 machine with no engine holds such a text in its own
+  `done_data` buffer, which a parent lifts a child's done data from
+  (`SCXMLModel::holds_inline_done_data`), so the reason the entry above gave no
+  longer holds. Five records of `donedata-content` were fixed readings and
+  leave it (10 to 5): test294's `'foo'`, test529's `21`, the long text of
+  `backends/kotlin/tests/fixtures/jvm_long_text/jvm_long_text_ecmascript.scxml`,
+  and both finals of
+  `sce-build/tests/fixtures/codegen_smoke/final_inline_text.scxml`, which
+  carried nothing else and leaves `engine-documents`. The
+  `reporter` child above needs no engine now, so
+  `child-invoke-needs-script-engine` falls by one (58 to 57). The five that
+  stay are `<content expr>`s. With both entries `engine-documents` is 274.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

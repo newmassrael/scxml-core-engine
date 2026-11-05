@@ -176,7 +176,8 @@ fn the_reading_does_not_follow_from_an_engine_needed_elsewhere() {
 /// How `language` writes the done data it finished at build time, up to the
 /// markup's first element, and how it would have handed the markup to its
 /// engine. C++ and Kotlin land it in `contentData`, the sink the
-/// expression-site census reads as verbatim.
+/// expression-site census reads as verbatim; C11, in a machine with no engine,
+/// copies it into the buffer the machine holds.
 fn donedata_spelling(language: Language) -> (&'static str, &'static str) {
     match language {
         Language::Rust => (
@@ -198,7 +199,7 @@ fn donedata_spelling(language: Language) -> (&'static str, &'static str) {
             "_done_data = engine._script_engine.evaluate_expression(",
         ),
         Language::C11 => (
-            "_sce_donedata = setmetatable({ \\\"<books",
+            "static const char sce_lit_[] = \"<books",
             "_sce_donedata = (<books",
         ),
     }
@@ -207,7 +208,8 @@ fn donedata_spelling(language: Language) -> (&'static str, &'static str) {
 /// A `<donedata>`'s XML `<content>` is read by the same classification: the
 /// done event carries the document text for the receiver to build the DOM
 /// from, and no backend hands the markup to its engine as an expression,
-/// which raised error.execution where the document carried a document.
+/// which raised error.execution where the document carried a document. Nothing
+/// is evaluated, so the machine carries no engine.
 #[test]
 fn a_donedata_xml_content_is_its_text_and_not_an_expression() {
     let doc = r#"<?xml version="1.0"?>
@@ -226,6 +228,10 @@ fn a_donedata_xml_content_is_its_text_and_not_an_expression() {
         let (ok, out, generated) = generate(language, doc);
         assert!(ok, "{language:?}: the machine generates:\n{out}");
         assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language:?}: the XML is no expression, so no engine:\n{out}"
+        );
+        assert!(
             generated.contains(carried),
             "{language:?}: the done data is the XML as written, `{carried}` was not written"
         );
@@ -233,6 +239,134 @@ fn a_donedata_xml_content_is_its_text_and_not_an_expression() {
             !generated.contains(evaluated),
             "{language:?}: the XML is handed to the engine as an expression (`{evaluated}`)"
         );
+    }
+}
+
+/// An ECMAScript parent that invokes an inline child whose one `<final>`
+/// carries `content` as its `<donedata>` `<content>`, and reads the done
+/// event's data in a guard, which costs the parent an engine of its own.
+fn invoking_document(content: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="wait"
+       datamodel="ecmascript">
+  <state id="wait">
+    <invoke type="scxml" id="reporter">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="reported">
+          <final id="reported">
+            <donedata><content>{content}</content></donedata>
+          </final>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.reporter" cond="_event.data === 21" target="pass"/>
+    <transition event="done.invoke.reporter" target="fail"/>
+  </state>
+  <final id="pass"/>
+  <final id="fail"/>
+</scxml>
+"#
+    )
+}
+
+/// How `language` writes a done data finished at build time as the JSON text
+/// `21`. C++ and Kotlin land it in `contentData`, the sink the expression-site
+/// census reads as verbatim; C11, in a machine with no engine, copies it into
+/// the buffer the machine holds.
+fn fixed_donedata_spelling(language: Language) -> &'static str {
+    match language {
+        Language::Rust => "done_event_data = String::from(\"21\");",
+        Language::Go => "doneEventData = \"21\"",
+        Language::Kotlin => "val contentData = \"21\"",
+        Language::Swift => "doneEventData = \"21\"",
+        Language::Cpp => "const std::string contentData = \"21\";",
+        Language::Python => "_done_data = \"21\"",
+        Language::C11 => "static const char sce_lit_[] = \"21\";",
+    }
+}
+
+/// Where a parent reads a child's done data from a buffer the child holds,
+/// for a backend that otherwise reads it from the child's engine state: C11
+/// lifts it through the child's `_done_data`. Every other backend's child
+/// stashes its done data on its runtime whether or not it has an engine.
+fn buffered_donedata_lift(language: Language) -> Option<&'static str> {
+    match language {
+        Language::C11 => Some("_done_data(&sm->child_"),
+        Language::Rust
+        | Language::Go
+        | Language::Kotlin
+        | Language::Swift
+        | Language::Cpp
+        | Language::Python => None,
+    }
+}
+
+/// A child whose only use of a script would be its `<donedata>`'s inline
+/// `<content>`, when the text is a literal, needs no engine: the text is
+/// finished at build time by the reading every backend's `<final>` template
+/// asks, and the analysis asks the same one. So the parent's engine is its
+/// own guard's alone, and the child's done data reaches it all the same.
+#[test]
+fn a_child_whose_done_data_is_fixed_costs_no_engine() {
+    let doc = invoking_document("21");
+    for &language in Language::ALL {
+        let (ok, out, generated) = generate(language, &doc);
+        assert!(ok, "{language:?}: the machines generate:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":true")
+                && out.contains("\"kind\":\"transition-guard\""),
+            "{language:?}: the parent's guard needs the engine:\n{out}"
+        );
+        assert!(
+            !out.contains("\"kind\":\"child-invoke-needs-script-engine\""),
+            "{language:?}: the child's done data is a literal, so the child needs no \
+             engine:\n{out}"
+        );
+        let line = fixed_donedata_spelling(language);
+        assert!(
+            generated.contains(line),
+            "{language:?}: the child's done data is the value the content denotes, \
+             `{line}` was not written"
+        );
+        if let Some(lift) = buffered_donedata_lift(language) {
+            assert!(
+                generated.contains(lift),
+                "{language:?}: the parent lifts the done data of a child with no engine \
+                 from the child's buffer, `{lift}` was not written"
+            );
+        }
+    }
+}
+
+/// The same child whose `<donedata>`'s inline `<content>` is an expression of
+/// the document evaluates it as the final is entered, so it keeps its engine,
+/// and the parent counts that engine as a cause of its own.
+#[test]
+fn a_child_whose_done_data_is_an_expression_keeps_its_engine() {
+    let doc = invoking_document("20 + 1");
+    for &language in Language::ALL {
+        let (ok, out, generated) = generate(language, &doc);
+        assert!(ok, "{language:?}: the machines generate:\n{out}");
+        assert!(
+            out.contains("\"kind\":\"child-invoke-needs-script-engine\""),
+            "{language:?}: the child evaluates its done data, so it carries an \
+             engine:\n{out}"
+        );
+        let line = fixed_donedata_spelling(language);
+        assert!(
+            !generated.contains(line),
+            "{language:?}: an expression is not folded into a value at build time, \
+             `{line}` was written"
+        );
+        if let Some(lift) = buffered_donedata_lift(language) {
+            assert!(
+                !generated.contains(lift),
+                "{language:?}: a child with an engine keeps its done data there, and \
+                 the parent read it from a buffer (`{lift}`)"
+            );
+        }
     }
 }
 

@@ -1225,8 +1225,9 @@ fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_documen
         );
     }
 
-    // `<donedata>` is evaluated by the script engine's seam, which the hosted
-    // profile carries.
+    // A top-level `<final>`'s `<donedata>` waits in a slot for the parent,
+    // asked of the hosted profile. Its `done` is no expression of the document,
+    // so the text is finished at build time and no engine reads it.
     let top_level = render(TOP_LEVEL_DONEDATA_FSM, "top_level_donedata", false);
     assert!(
         top_level.contains(STRING_SLOT),

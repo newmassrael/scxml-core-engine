@@ -118,13 +118,13 @@ pub enum ScriptEngineCauseKind {
     /// value must be evaluated when the final state is entered.
     DonedataParam { state_id: String },
     /// §scxml-5.7 — `<donedata>` has `<content expr="...">` whose
-    /// expression must be evaluated before the `done.state` event is raised.
-    /// `<content>literal</content>` does **not** trigger this cause: per
-    /// §scxml-5.5 the children are used as the value directly (see
-    /// [`DoneDataContent::Literal`]). Inline text under a data model with a
-    /// value expression language does, since its first reading is an
-    /// evaluation — except under `sce-static`, which has no engine and takes the
-    /// text as the string it spells ([`Self::is_typed_under_static`]).
+    /// expression must be evaluated before the `done.state` event is raised,
+    /// or inline `<content>` text that reads as an expression of the document
+    /// ([`crate::filters::inline_content_reading`]), as
+    /// [`Self::SendContentExpr`] is for a `<send>`. Text that reads as a fixed
+    /// value — XML, a literal, the string it spells — is finished at build
+    /// time and costs nothing, and so is a Null-data-model body, used as the
+    /// value directly (§scxml-5.5, [`DoneDataContent::Literal`]).
     DonedataContent { state_id: String },
     /// §scxml-6.4 — a static `<invoke>` targets a child SCXML whose
     /// own analyzer output declared `needs_script_engine = true`; the
@@ -178,10 +178,11 @@ impl ScriptEngineCauseKind {
             | C::LogExpr { .. }
             | C::HostInvokeExpr { .. }
             | C::DonedataParam { .. }
-            // A `<donedata>`'s inline `<content>` is the text it spells,
-            // finished at build time (`static_lowering`), and its `<content
-            // expr>` the model admits names a record or one value, lowered to
-            // the pairs or the value read from the machine's fields.
+            // A `<donedata>`'s `<content expr>` the model admits names a
+            // record or one value, lowered to the pairs or the value read from
+            // the machine's fields. Its inline `<content>` never reaches here:
+            // under this model the text is the string it spells
+            // (`inline_content_reading`), finished at build time.
             | C::DonedataContent { .. }
             // A hybrid `<invoke>` the model admits names its child by a string
             // over the machine's fields among the documents it declares, and
@@ -444,11 +445,14 @@ pub fn requires_script_engine(model: &SCXMLModel) -> bool {
 
 fn collect_datamodel_causes(variables: &[Variable], out: &mut Vec<NeedsScriptEngineCause>) {
     for var in variables {
-        // §scxml-5.3: any initializer (expr/src/content) needs the
-        // engine to evaluate at runtime. Tighter classification (int /
-        // string / bool literal → static init) is orthogonal — it
-        // happens later in [`crate::analyzer::classify_variables`] and
-        // doesn't affect this flag.
+        // §scxml-5.3: any initializer (expr/src/content) is a value the
+        // data model holds, and the engine is what holds it, so how inline
+        // text reads ([`crate::filters::inline_content_reading`]) does not
+        // decide this cause as it decides a `<send>`'s or a `<donedata>`'s:
+        // those values leave on an event, and these stay. Tighter
+        // classification (int / string / bool literal → static init) is
+        // orthogonal — it happens later in
+        // [`crate::analyzer::classify_variables`] and doesn't affect this flag.
         if !var.expr.is_empty() || !var.src.is_empty() || !var.content.is_empty() {
             out.push(NeedsScriptEngineCause::new(
                 ScriptEngineCauseKind::DatamodelVariableInit {
@@ -528,7 +532,7 @@ fn collect_state_causes(
         collect_invoke_causes(invoke, out);
     }
     if let Some(dd) = &state.donedata {
-        collect_donedata_causes(state_id, state, dd, out);
+        collect_donedata_causes(state_id, state, dd, document, out);
     }
 }
 
@@ -887,6 +891,7 @@ fn collect_donedata_causes(
     state_id: &str,
     state: &State,
     dd: &DoneData,
+    document: &DocumentFacts<'_>,
     out: &mut Vec<NeedsScriptEngineCause>,
 ) {
     if let Some(first) = dd.params.first() {
@@ -900,21 +905,25 @@ fn collect_donedata_causes(
                 .or(state.source_location.as_ref()),
         ));
     }
-    // `<content expr="...">` forces a script engine, and so does inline
-    // text under a data model that has a value expression language: the
-    // first of the ECMAScript data model appendix's readings is an
-    // evaluation. Text that reads as a fixed value — XML, a literal, the
-    // string it spells ([`crate::filters::inline_content_reading`]) — is
-    // finished at build time by every backend's `<final>` template, and is
-    // still counted here: the C11 backend keeps a done event's data in the
-    // engine's state (`_sce_donedata`), which is where a parent lifts a
-    // child's from. Only a Null-data-model literal body is free of it — that
-    // path emits a string constant, through the codegen literal branch and
-    // the interpreter's `DoneDataHelper::emitContentLiteral` alike.
-    if matches!(
-        dd.content,
-        DoneDataContent::Expression(_) | DoneDataContent::InlineText(_)
-    ) {
+    // `<content expr="...">` forces a script engine. Inline text forces one
+    // only when it is an expression of the document, which is the one
+    // reading of the text every backend's `<final>` template asks too
+    // ([`crate::filters::inline_content_reading`]), so the engine follows
+    // from the text and never the text's reading from the engine, as for a
+    // `<send>`'s. Text that reads as a fixed value — XML, a literal, the
+    // string it spells — is finished at build time; a machine with no engine
+    // holds it itself ([`SCXMLModel::holds_inline_done_data`]), which is
+    // where a parent lifts a child's done data from. A Null-data-model body
+    // is the string it spells and never reaches here as inline text.
+    let evaluated = match &dd.content {
+        DoneDataContent::Expression(_) => true,
+        DoneDataContent::InlineText(text) => {
+            crate::filters::inline_content_reading(text, document.datamodel, document.scope)
+                .is_evaluated()
+        }
+        DoneDataContent::None | DoneDataContent::Literal(_) => false,
+    };
+    if evaluated {
         out.push(NeedsScriptEngineCause::new(
             ScriptEngineCauseKind::DonedataContent {
                 state_id: state_id.to_string(),
@@ -1525,9 +1534,9 @@ mod tests {
         // §scxml-5.5 + `datamodel="null"`: inline text is the content value
         // verbatim — no evaluation, no script engine. This is the
         // native-only path (`cpp:` / `kt:` documents, tc8-harness verdict
-        // payloads). The same XML under the ECMAScript datamodel would
-        // route through the Expression variant (§scxml-B-2-8-1 JSON parse),
-        // exercised in `donedata_content_literal_ecmascript_triggers`.
+        // payloads). The same text under the ECMAScript datamodel takes that
+        // model's readings, exercised in
+        // `donedata_content_that_is_fixed_does_not_trigger`.
         let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="s">
             <state id="s" initial="f">
                 <final id="f"><donedata><content>{"verdict":"pass"}</content></donedata></final>
@@ -1543,21 +1552,65 @@ mod tests {
         assert!(!requires_script_engine(&model));
     }
 
+    /// A `<final>` whose `<donedata>` holds the inline `<content>` `content`, in
+    /// an ECMAScript document that declares `<data id="x"/>` and initializes
+    /// nothing.
+    fn donedata_content_document(content: &str) -> String {
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"
+                      datamodel="ecmascript">
+                <datamodel><data id="x"/></datamodel>
+                <state id="s" initial="f">
+                    <final id="f"><donedata><content>{content}</content></donedata></final>
+                </state>
+            </scxml>"#
+        )
+    }
+
+    /// §scxml-B-2-8-1: inline text that reads as an expression of the document
+    /// is evaluated as the final is entered, so the machine carries the engine
+    /// for it, and for nothing else here.
     #[test]
-    fn donedata_content_literal_ecmascript_triggers() {
-        // §scxml-B-2-8-1: inline text is parsed as JSON by
-        // the datamodel — SCE routes that through the script engine by
-        // tagging the content as Expression. This pins the contract that
-        // ECMAScript-datamodel documents keep the evaluated path.
-        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s">
-            <state id="s" initial="f">
-                <final id="f"><donedata><content>21</content></donedata></final>
-            </state>
-        </scxml>"##;
-        contains_cause(
-            scxml,
-            |c| matches!(c, ScriptEngineCauseKind::DonedataContent { state_id } if state_id == "f"),
-        );
+    fn donedata_content_expression_text_triggers() {
+        for content in ["1 + 1", "x", "[x, 2]"] {
+            let kind = single_cause(&donedata_content_document(content));
+            assert!(
+                matches!(
+                    &kind,
+                    ScriptEngineCauseKind::DonedataContent { state_id } if state_id == "f"
+                ),
+                "{content}: {kind:?}"
+            );
+            assert_eq!(kind.to_wire().kind, "donedata-content");
+        }
+    }
+
+    /// A literal is the value it denotes, XML travels as written, and text
+    /// that is no expression of the document is the string it spells: the
+    /// reading a `<send>`'s inline `<content>` takes, finished at build time,
+    /// so none of them costs an engine. W3C test529's `21` and test294's
+    /// `'foo'` are among them.
+    #[test]
+    fn donedata_content_that_is_fixed_does_not_trigger() {
+        for content in [
+            "21",
+            "'foo'",
+            "{\"k\": [1, true, null]}",
+            "two  words",
+            "y + 1",
+            "<books xmlns=\"\"><book title=\"x\"/></books>",
+        ] {
+            let model = parse(&donedata_content_document(content));
+            assert!(
+                !model.needs_script_engine,
+                "{content}: {:?}",
+                model.script_engine_causes
+            );
+            assert!(
+                model.holds_inline_done_data(),
+                "{content}: a machine with no engine holds its done data itself"
+            );
+        }
     }
 
     #[test]
