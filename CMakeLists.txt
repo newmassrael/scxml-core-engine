@@ -416,6 +416,7 @@ if(BUILD_EXAMPLES AND NOT EMSCRIPTEN)
     add_subdirectory(examples/async_dispatcher)
     add_subdirectory(examples/traffic_light_auto)
     add_subdirectory(examples/ai_loop)
+    add_subdirectory(examples/model_harness)
 endif()
 
 # Python bindings option (disabled by default, excluded from WASM builds)
