@@ -8981,6 +8981,13 @@ generates byte-identical files to what it generated before the attribute
 existed. The only other value of the attribute is its absence; anything else is
 refused as `validation/attribute-rule-violated`. A forge root does not take it.
 
+A run is read against the table by each runtime's transition observer
+(docs/adr/0089), told each transition the engine takes by the `from` and `index`
+of its row, so the rows a run took are its transition coverage, measured on the
+engine that ran. The observer is a runtime surface and changes nothing in the
+language: `docs/SCE_TRANSITION_TABLE.md` ("Reading a run against the table")
+states how each backend spells it.
+
 ### §2.21 A transition function — `sce:transition-function="emit"`
 
 A statechart root may declare `<scxml sce:transition-function="emit">`. The

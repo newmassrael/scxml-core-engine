@@ -143,6 +143,30 @@ Two flags matter when the document is not generated from its own directory. `tra
 takes `--input-root` and `--deploy` and they mean what they mean to `generate`: pass the values
 `generate` was given, or the two hashes name different source sets.
 
+## Reading a run against the table
+
+Every runtime has a transition observer (docs/adr/0089): a read-only callback told each
+transition the engine takes, after the selection and before the microstep's first exit, each
+transition of the optimal enabled set once and in selection order. It is told the pair a row of
+this table is named by, `from` and `index`, in the types this table holds them in, so the set of
+pairs a run is told is a set of rows, and its share of the table is the run's transition
+coverage, measured on the engine that ran.
+
+| Backend | Setter | Told |
+|---|---|---|
+| C++ | `setTransitionObserver(std::function<void(const TransitionTaken &)>)` on the engine | `TransitionTaken{source, index}` |
+| C11 | the host defines `<prefix><name>_observe_transition(const <prefix><name>_t *sm, <prefix><name>_state_t source, uint32_t index)`, called when the build sets `<PREFIX><NAME>_TRANSITION_OBSERVER` or `SCE_TRANSITION_OBSERVER` to 1 | the call's arguments |
+| Rust | `Engine::set_transition_observer`, with the runtime's `transition-observer` feature | `TransitionTaken { source, index }` |
+| Go | `(*Engine).SetTransitionObserver` | `TransitionTaken[S]{Source, Index}` |
+| Kotlin | `StateMachineEngine.transitionObserver` | `TransitionTaken(source, index)` |
+| Python | `Engine.set_observer`, kind `"transition"` | `fields["source"]` (the state's name, `str` of the row's `from_state`) and `fields["index"]` |
+| Swift | `Engine.setTransitionObserver(_:)` | `TransitionTaken(source:index:)` |
+
+Set it before the run starts to be told the transitions the first macrostep takes. On C11 a
+build that does not set the switch carries nothing of it, and on Rust a build without the feature
+carries nothing of it; on the other backends an observer that is not set costs one check per
+microstep.
+
 ## A document written against a feature model
 
 A document that gates its elements with `sce:requires` (ADR 0057, SCE Accepted Subset §2.22)
