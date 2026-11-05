@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "common/SCXMLConstants.h"
 #include "factory/NodeFactory.h"
 #include "model/IStateNode.h"
 #include "parsing/IXMLElement.h"
@@ -36,10 +37,14 @@ public:
      * @brief Set active datamodel type for subsequent `parseDoneData` calls.
      *
      * §scxml-5.5 + §scxml-B-2-6: the semantics of inline
-     * `<content>text</content>` depend on the datamodel — ECMAScript parses
-     * it as JSON (routed through the script engine), `null` uses it as the
-     * content value verbatim. Must be set by `SCXMLParser` from the root
-     * `datamodel` attribute before state parsing begins.
+     * `<content>text</content>` depend on the datamodel — under ECMAScript
+     * the children take the ordered readings of in-line content (routed
+     * through the script engine), `null` uses them as the content value
+     * verbatim. `SCXMLParser` sets it for every document before state
+     * parsing begins: from the root `datamodel` attribute, or
+     * `Constants::DEFAULT_DATAMODEL` when the document names none. This
+     * parser outlives a parse, so a document that names none must not be
+     * read under the previous document's data model.
      */
     void setDatamodelType(const std::string &datamodel) {
         datamodelType_ = datamodel;
@@ -70,8 +75,8 @@ private:
      */
     bool parseParam(const std::shared_ptr<IXMLElement> &paramElement, IStateNode *stateNode);
 
-    std::shared_ptr<NodeFactory> factory_;      // Node creation factory
-    std::string datamodelType_ = "ecmascript";  // §scxml-3.2 default (SCE-specific)
+    std::shared_ptr<NodeFactory> factory_;                      // Node creation factory
+    std::string datamodelType_ = Constants::DEFAULT_DATAMODEL;  // §scxml-3.2 default (SCE-specific)
 };
 
 }  // namespace SCE

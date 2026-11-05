@@ -4,6 +4,7 @@
 #pragma once
 
 #include "actions/IActionNode.h"
+#include "common/SCXMLConstants.h"
 #include "factory/NodeFactory.h"
 #include "parsing/IXMLElement.h"
 
@@ -93,7 +94,8 @@ public:
      * under the `null` datamodel and are read as the data model reads inline
      * content under any other (`SendAction::isContentLiteral`): the split
      * `DoneDataParser::setDatamodelType` makes for `<donedata>`, set by
-     * `SCXMLParser` from the same root attribute.
+     * `SCXMLParser` for every document from the same root attribute, or the
+     * default when the document names none.
      */
     void setDatamodelType(const std::string &datamodel) {
         datamodelType_ = datamodel;
@@ -157,11 +159,14 @@ private:
     /**
      * @brief Base directory path of the SCXML file (for resolving external script src attributes)
      * §scxml-5.8: External scripts are resolved relative to SCXML file location
+     *
+     * Per document: `SCXMLParser` sets it for every parse, to the file's
+     * directory or to empty for a document handed over as text.
      */
     std::string scxmlBasePath_;
 
     /// The document's datamodel; the default `DoneDataParser` takes too.
-    std::string datamodelType_ = "ecmascript";
+    std::string datamodelType_ = Constants::DEFAULT_DATAMODEL;
 };
 
 }  // namespace SCE

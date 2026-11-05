@@ -3,11 +3,17 @@
 
 #include "actions/ForeachAction.h"
 #include "actions/IfAction.h"
+#include "actions/SendAction.h"
 #include "factory/NodeFactory.h"
+#include "model/DoneData.h"
 #include "model/SCXMLModel.h"
 #include "parsing/SCXMLParser.h"
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <sstream>
+#include <string>
 
 namespace SCE {
 namespace Tests {
@@ -298,6 +304,83 @@ TEST_F(SCXMLParserBasicTest, DataCharacterDataIsReadAsItsCharacters) {
     const auto &items = model->getDataModelItems();
     ASSERT_EQ(items.size(), 1u);
     EXPECT_EQ(items[0]->getContent(), "a < b");
+}
+
+// The data model is the document's own. One parser reads a `datamodel="null"`
+// document and then the same document naming no data model: the second is
+// read under the default (ECMAScript), so its `<donedata>` and `<send>`
+// children are in-line content to be read, not the literal values the Null
+// data model makes them. The sub-parsers were told the data model only when
+// the attribute was present, and kept the first document's.
+TEST_F(SCXMLParserBasicTest, AReusedParserReadsEachDocumentUnderItsOwnDatamodel) {
+    const auto document = [](const std::string &datamodelAttribute) {
+        return R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" )" +
+               datamodelAttribute + R"( initial="s">
+    <state id="s" initial="f">
+        <onentry>
+            <send event="note"><content>payload</content></send>
+        </onentry>
+        <final id="f">
+            <donedata><content>verdict</content></donedata>
+        </final>
+    </state>
+</scxml>)";
+    };
+    const auto doneDataKind = [](const std::shared_ptr<SCXMLModel> &model) {
+        return model->findStateById("f")->getDoneData().getContentKind();
+    };
+    const auto sendIsLiteral = [](const std::shared_ptr<SCXMLModel> &model) {
+        const auto blocks = model->findStateById("s")->getEntryActionBlocks();
+        EXPECT_EQ(blocks.size(), 1u);
+        EXPECT_EQ(blocks.at(0).size(), 1u);
+        auto send = std::dynamic_pointer_cast<SendAction>(blocks.at(0).at(0));
+        EXPECT_NE(send, nullptr);
+        return send && send->isContentLiteral();
+    };
+
+    auto nullModel = parser_->parseContent(document(R"(datamodel="null")"));
+    ASSERT_NE(nullModel, nullptr);
+    EXPECT_EQ(doneDataKind(nullModel), DoneData::ContentKind::Literal);
+    EXPECT_TRUE(sendIsLiteral(nullModel));
+
+    auto defaultModel = parser_->parseContent(document(""));
+    ASSERT_NE(defaultModel, nullptr);
+    EXPECT_EQ(doneDataKind(defaultModel), DoneData::ContentKind::InlineText)
+        << "a document naming no data model was read under the previous document's";
+    EXPECT_FALSE(sendIsLiteral(defaultModel))
+        << "a document naming no data model was read under the previous document's";
+}
+
+// W3C SCXML 5.8: an external script resolves against the location of the
+// document that names it. A document handed over as text has none, so a
+// parser that read a file first must not resolve the text's script against
+// that file's directory.
+TEST_F(SCXMLParserBasicTest, AReusedParserResolvesATextDocumentsScriptAgainstNoFile) {
+    namespace fs = std::filesystem;
+    const std::string stamp = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const fs::path dir = fs::temp_directory_path() / ("sce_parser_base_path_" + stamp);
+    const std::string script = "sce_parser_base_path_probe_" + stamp + ".js";
+    ASSERT_TRUE(fs::create_directories(dir));
+    const std::string text = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s">
+    <script src=")" + script +
+                             R"("/>
+    <state id="s"/>
+</scxml>)";
+    {
+        std::ofstream scriptFile(dir / script);
+        scriptFile << "var probe = 1;\n";
+        std::ofstream documentFile(dir / "document.scxml");
+        documentFile << text;
+    }
+
+    auto fromFile = parser_->parseFile((dir / "document.scxml").string());
+    auto fromText = parser_->parseContent(text);
+    fs::remove_all(dir);
+
+    ASSERT_NE(fromFile, nullptr) << "the file's script sits beside it and must load";
+    EXPECT_EQ(fromText, nullptr) << "the text's script was resolved against the directory of the file read before it";
 }
 
 // Test final states

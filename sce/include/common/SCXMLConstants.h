@@ -52,4 +52,20 @@ constexpr const char *BASIC_HTTP_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scx
  */
 constexpr const char *SCXML_INVOKE_PROCESSOR_URI = "http://www.w3.org/TR/scxml/";
 
+// ============================================================================
+// Data model
+// ============================================================================
+
+/**
+ * @brief The data model of a document whose `<scxml>` names none
+ *
+ * The specification leaves the `datamodel` attribute's default to the
+ * platform. SCE's is ECMAScript, chosen once in sce-build's
+ * `Datamodel::default` (`sce-build/src/model.rs`, where the reason is
+ * written) and spelled here once for the C++ parser, which hands it to every
+ * sub-parser that reads a document by its data model. Spelled in each of
+ * them, a parser that met no attribute kept whichever value it last held.
+ */
+constexpr const char *DEFAULT_DATAMODEL = "ecmascript";
+
 }  // namespace SCE::Constants

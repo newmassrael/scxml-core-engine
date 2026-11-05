@@ -6,6 +6,7 @@
 #include "actions/NativeActionContract.h"
 #include "backends/LogUtils.h"
 #include "common/LogToLogger.h"
+#include "common/SCXMLConstants.h"
 #include "core/ConfigurationHelper.h"
 #include "parsing/Diagnostic.h"
 #include "parsing/IXMLParser.h"
@@ -142,6 +143,11 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         initParsing();
 
         SCE_LOG_INFO("Parsing SCXML content");
+
+        // An in-memory document has no location, so an external script it
+        // names resolves as a path of its own (`FileLoadingHelper`), never
+        // against the directory of a file this parser read before it.
+        actionParser_->setScxmlBasePath(std::string());
 
         // §wire-W4 D1-C: PugiXMLParser throws `ParseXmlFailed` on
         // malformed input; the caller no longer polls a nullable
@@ -290,8 +296,15 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         SCE_LOG_DEBUG("Initial state: {}", initial);
     }
 
-    if (scxmlNode->hasAttribute("datamodel")) {
-        std::string datamodelType = scxmlNode->getAttribute("datamodel");
+    // The document's data model, and §scxml-3.2's platform default when it
+    // names none. The sub-parsers that read by it outlive this parse, so they
+    // are told it for every document: told only when the attribute was
+    // present, a parser that had read a `datamodel="null"` document read the
+    // next one, which named none, under the Null data model's rules.
+    const bool declaresDatamodel = scxmlNode->hasAttribute("datamodel");
+    const std::string datamodelType =
+        declaresDatamodel ? scxmlNode->getAttribute("datamodel") : std::string(SCE::Constants::DEFAULT_DATAMODEL);
+    if (declaresDatamodel) {
         // SCE Accepted Subset §2.15 defines `sce-static`, whose variables are
         // typed and whose integer operations are checked. Generated code runs
         // it; this engine hands every expression to its script engine, which
@@ -310,17 +323,17 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         }
         model->setDatamodel(datamodelType);
         context.setDatamodelType(datamodelType);
-        // §scxml-5.5 + §scxml-B-2-6: `<donedata><content>text</content>`
-        // semantics are datamodel-dependent. Propagate the root attribute
-        // so `DoneDataParser` can pick Expression vs Literal per document.
-        if (doneDataParser_) {
-            doneDataParser_->setDatamodelType(datamodelType);
-        }
-        // §scxml-B-2-6: a <send>'s inline <content> is read by the same split.
-        if (actionParser_) {
-            actionParser_->setDatamodelType(datamodelType);
-        }
         SCE_LOG_DEBUG("Datamodel: {}", datamodelType);
+    }
+    // §scxml-5.5 + §scxml-B-2-6: `<donedata><content>text</content>`
+    // semantics are datamodel-dependent. Propagate this document's data model
+    // so `DoneDataParser` can pick InlineText vs Literal per document.
+    if (doneDataParser_) {
+        doneDataParser_->setDatamodelType(datamodelType);
+    }
+    // §scxml-B-2-6: a <send>'s inline <content> is read by the same split.
+    if (actionParser_) {
+        actionParser_->setDatamodelType(datamodelType);
     }
 
     if (scxmlNode->hasAttribute("binding")) {
