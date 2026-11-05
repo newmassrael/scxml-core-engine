@@ -1351,13 +1351,15 @@ typedef struct {
 /* Open the list value at `p`, of at most `bound` elements. A value that is no
    array, or an array that never closes, is not a list. */
 SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint32_t bound, sce_payload_list_t *out) {
+    /* A cursor whose list was refused hands out no element, whichever refusal
+       it was: it is emptied before the first one. */
+    out->next = p;
+    out->count = 0u;
+    out->index = 0u;
     if (*p != '[') {
         return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_LIST);
     }
-    /* A cursor whose list was refused hands out no element. */
     out->next = sce_payload_skip_space(p + 1);
-    out->count = 0u;
-    out->index = 0u;
     const char *q = out->next;
     if (*q == ']') {
         return NULL;
