@@ -509,6 +509,26 @@ fn a_model_generation_is_refused_by_name() {
     );
 }
 
+/// The reference harness (docs/adr/0087, sections 6 and 7.1) asks its host's model
+/// through the same host-run type, so the Interpreter refuses the harness by the
+/// name of its generation, naming the type and the state that holds the call: the
+/// refusal is the one section 7.1 states, and no other construct of the harness
+/// (its templates, its lift, its enum conversions, its bound read by name) is what
+/// stands in the way.
+#[test]
+fn the_reference_harness_is_refused_by_the_name_of_its_generation() {
+    let path = fixtures().join("static_model_harness.scxml");
+    let refusal = lower_file_set(path.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature")
+            && text.contains("a model's generation")
+            && text.contains("sce-host-model-generate")
+            && text.contains("`generate`"),
+        "the refusal names the harness's generation and its state: {text}"
+    );
+}
+
 /// An inline child is a `sce-static` document of its own, lowered where it stands
 /// in its parent's text, and a string it bounds is handed through that bound: the
 /// Interpreter holds no bound, so the lowered `<param>` carries it.

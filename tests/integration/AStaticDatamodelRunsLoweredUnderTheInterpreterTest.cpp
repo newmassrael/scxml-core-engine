@@ -940,13 +940,18 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
 // A model's generation (`sce-host-model-generate`) is the one host-run type the lowering
 // refuses (docs/adr/0087, section 7.1): the build writes its request's `answer_schema`
 // and the machine's table of answer schemas, and the lowered document carries neither.
-// Its scenario is answered by that refusal, by name, and replayed on the generated lanes.
+// Its scenario is answered by that refusal, by name, and replayed on the generated lanes; so are
+// the five of the reference harness (docs/adr/0087, sections 6 and 7.1), whose host-run invoke is
+// that generation.
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheStandardHostServesTheInterpreterAsItServesGeneratedCode) {
     const auto names = HostScenario::scenarioNames();
-    ASSERT_EQ(names, (std::vector<std::string>{"static_host_clock", "static_host_http", "static_host_kv",
-                                               "static_host_model", "static_host_notify"}))
+    ASSERT_EQ(names,
+              (std::vector<std::string>{"static_host_clock", "static_host_http", "static_host_kv", "static_host_model",
+                                        "static_host_notify", "static_model_harness_accepted",
+                                        "static_model_harness_exhausted", "static_model_harness_not_offered",
+                                        "static_model_harness_repaired", "static_model_harness_timeout"}))
         << "every scenario of the directory is replayed or refused by name here";
-    const std::set<std::string> refusedByName{"static_host_model"};
+    const std::set<std::string> refusedByName{"static_host_model", "static_model_harness"};
     for (const auto &name : names) {
         SCOPED_TRACE(name);
         const auto scenario = HostScenario::readScenario(name);

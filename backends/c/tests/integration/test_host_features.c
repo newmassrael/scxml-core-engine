@@ -33,6 +33,7 @@
 #include "static_host_kv_sm.h"
 #include "static_host_model_sm.h"
 #include "static_host_notify_sm.h"
+#include "static_model_harness_sm.h"
 
 #ifndef SCE_HOST_FEATURES_SCENARIO_DIR
 #error "SCE_HOST_FEATURES_SCENARIO_DIR names the directory of the scenarios"
@@ -957,6 +958,171 @@ static const machine_t machines[] = {
      static_host_model_answer_schemas_to},
 };
 
+// static_model_harness: the reference harness (docs/adr/0087, section 6). Its run ends at a final inside its
+// root, so its configuration holds a compound state beside the leaf; its leaf and its variables are read from
+// its saved state, the text every backend saves alike, as the other lanes read them.
+
+// A deep copy of `node`, which owns nothing of the tree it was read from.
+static jn_t *jn_copy(const jn_t *node) {
+    jn_t *copy = jn_new(node->kind);
+    copy->b = node->b;
+    copy->is_int = node->is_int;
+    copy->i = node->i;
+    copy->d = node->d;
+    if (node->s != NULL) {
+        copy->s = (char *)must(malloc(node->n + 1u));
+        memcpy(copy->s, node->s, node->n);
+        copy->s[node->n] = '\0';
+        copy->n = node->n;
+    }
+    for (size_t i = 0; i < node->count; ++i) {
+        if (node->kind == J_OBJ) {
+            jn_set(copy, node->keys[i], jn_copy(node->items[i]));
+        } else {
+            jn_push(copy, jn_copy(node->items[i]));
+        }
+    }
+    return copy;
+}
+
+// The harness's saved state as a tree, or NULL when it cannot be saved.
+static jn_t *harness_saved(const void *sm) {
+    sce_saved_error_t err;
+    size_t len = 0;
+    (void)static_model_harness_save((const static_model_harness_t *)sm, 0, NULL, 0u, &len, &err);
+    char *text = (char *)must(malloc(len + 1u));
+    if (!static_model_harness_save((const static_model_harness_t *)sm, 0, text, len + 1u, &len, &err)) {
+        (void)fprintf(stderr, "host_features: the harness was not saved: %s\n", err.message);
+        free(text);
+        return NULL;
+    }
+    parser_t ps = {text, text + len, true};
+    jn_t *saved = parse_value(&ps);
+    jn_t *copy = saved != NULL && ps.ok ? jn_copy(saved) : NULL;
+    jn_free(saved);
+    free(text);
+    return copy;
+}
+
+// The variable `name` of the harness's saved state; null when it cannot be read.
+static jn_t *harness_saved_variable(const void *sm, const char *name) {
+    jn_t *saved = harness_saved(sm);
+    const jn_t *value = jn_get(jn_get(saved, "variables"), name);
+    jn_t *copy = value != NULL ? jn_copy(value) : jn_new(J_NULL);
+    jn_free(saved);
+    return copy;
+}
+
+#define HARNESS_VARIABLE(VAR)                                                                                          \
+    static jn_t *harness_value_##VAR(const void *sm) {                                                                 \
+        return harness_saved_variable(sm, #VAR);                                                                       \
+    }
+HARNESS_VARIABLE(outcome)
+HARNESS_VARIABLE(attempts)
+HARNESS_VARIABLE(offered)
+HARNESS_VARIABLE(refusals)
+HARNESS_VARIABLE(answer)
+HARNESS_VARIABLE(why)
+
+static const variable_t harness_variables[] = {
+    {"outcome", J_OBJ, NULL, NULL, harness_value_outcome}, {"attempts", J_OBJ, NULL, NULL, harness_value_attempts},
+    {"offered", J_OBJ, NULL, NULL, harness_value_offered}, {"refusals", J_OBJ, NULL, NULL, harness_value_refusals},
+    {"answer", J_OBJ, NULL, NULL, harness_value_answer},   {"why", J_OBJ, NULL, NULL, harness_value_why},
+};
+
+static void harness_start(void *sm, const sce_host_invoker_registry_t *registry) {
+    static_model_harness_init_with_clock_and_host_invokers((static_model_harness_t *)sm, sce_clock_manual(0u),
+                                                           registry);
+}
+
+static bool harness_raise(void *sm, const char *name, const char *data) {
+    static_model_harness_event_t event;
+    if (!static_model_harness_resolve_event_by_name(name, &event)) {
+        return false;
+    }
+    static_model_harness_event_with_meta_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.event = event;
+    if (data != NULL) {
+        if (strlen(data) >= sizeof(meta.data)) {
+            return false;
+        }
+        memcpy(meta.data, data, strlen(data) + 1u);
+    }
+    static_model_harness_raise_external((static_model_harness_t *)sm, &meta);
+    return true;
+}
+
+static void harness_advance(void *sm, uint64_t ms) {
+    static_model_harness_advance_time_ms((static_model_harness_t *)sm, ms);
+}
+
+// A run may make its calls and take each completion within one event, a call a round.
+static void harness_settle(void *sm) {
+    for (int round = 0; round < 8; ++round) {
+        static_model_harness_tick((static_model_harness_t *)sm);
+    }
+}
+
+// The leaf the harness is in, by its document name, as its saved state's `current` holds it.
+static const char *harness_leaf(const void *sm) {
+    static char leaf[64];
+    jn_t *saved = harness_saved(sm);
+    const jn_t *current = jn_get(saved, "current");
+    if (current == NULL || current->kind != J_STR || current->n >= sizeof(leaf)) {
+        jn_free(saved);
+        return NULL;
+    }
+    memcpy(leaf, current->s, current->n + 1u);
+    jn_free(saved);
+    return leaf;
+}
+
+static void harness_answer_schemas_to(sce_hf_host_t *host) {
+    sce_hf_set_answer_schemas(host, static_model_harness_answer_schemas(), STATIC_MODEL_HARNESS_ANSWER_SCHEMA_COUNT);
+}
+
+static const machine_t harness_machine = {"static_model_harness",
+                                          harness_start,
+                                          harness_raise,
+                                          harness_advance,
+                                          harness_settle,
+                                          harness_leaf,
+                                          harness_variables,
+                                          sizeof(harness_variables) / sizeof(harness_variables[0]),
+                                          sizeof(static_model_harness_t),
+                                          harness_answer_schemas_to};
+
+// The cases of the reference harness's scenario (docs/adr/0087, section 9.1 item 8), one scenario each: a run
+// of the harness ends at one of its finals, so each case is a run of its own.
+static const char *const harness_scenarios[] = {
+    "static_model_harness_accepted", "static_model_harness_exhausted", "static_model_harness_not_offered",
+    "static_model_harness_repaired", "static_model_harness_timeout",
+};
+
+// The rows the transition observer of docs/adr/0089 is told in a run, in order. This target builds the harness
+// with STATIC_MODEL_HARNESS_TRANSITION_OBSERVER=1 (backends/c/tests/CMakeLists.txt), so the machine calls this
+// hook for each transition it takes, by the row of its emitted transition table.
+#if !STATIC_MODEL_HARNESS_TRANSITION_OBSERVER
+#error "this target builds static_model_harness with its transition observer (backends/c/tests/CMakeLists.txt)"
+#endif
+
+#define HARNESS_SEEN_MAX 256u
+
+static static_model_harness_state_t harness_seen_source[HARNESS_SEEN_MAX];
+static uint32_t harness_seen_index[HARNESS_SEEN_MAX];
+static size_t harness_seen_count;
+
+void static_model_harness_observe_transition(const static_model_harness_t *sm, static_model_harness_state_t source,
+                                             uint32_t index) {
+    (void)sm;
+    if (harness_seen_count < HARNESS_SEEN_MAX) {
+        harness_seen_source[harness_seen_count] = source;
+        harness_seen_index[harness_seen_count] = index;
+    }
+    ++harness_seen_count;
+}
+
 // ── The replay ───────────────────────────────────────────────────────────────
 
 static char *read_file(const char *path) {
@@ -988,9 +1154,11 @@ static int fail(const char *machine, int step, const char *note, const char *wha
     return 1;
 }
 
-static int replay(const machine_t *machine) {
+// Replays the scenario `stem` against `machine`, the machine the scenario names: a machine whose run ends has
+// one scenario a run (the reference harness's cases). Nonzero when the machine does not do what it says.
+static int replay(const machine_t *machine, const char *stem) {
     char path[512];
-    (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_HOST_FEATURES_SCENARIO_DIR, machine->name);
+    (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_HOST_FEATURES_SCENARIO_DIR, stem);
     char *text = read_file(path);
     if (text == NULL) {
         (void)fprintf(stderr, "host_features: the scenario %s is not readable\n", path);
@@ -1004,6 +1172,11 @@ static int replay(const machine_t *machine) {
         return 1;
     }
     int bad = 0;
+    const jn_t *named = jn_get(scenario, "machine");
+    if (named == NULL || named->kind != J_STR || strcmp(named->s, machine->name) != 0) {
+        (void)fprintf(stderr, "host_features: the scenario %s names another machine than %s\n", stem, machine->name);
+        bad = 1;
+    }
     const jn_t *steps = jn_get(scenario, "steps");
     if (steps == NULL || steps->count == 0u) {
         (void)fprintf(stderr, "host_features: a scenario with no steps judges nothing\n");
@@ -1049,7 +1222,7 @@ static int replay(const machine_t *machine) {
             const jn_t *data = jn_get(step, "data");
             char *payload = data != NULL ? (char *)must(strndup(data->raw, data->raw_len)) : NULL;
             if (!machine->raise(sm, event->s, payload)) {
-                bad |= fail(machine->name, (int)n, note, "the machine's events do not match the step's", NULL, NULL);
+                bad |= fail(stem, (int)n, note, "the machine's events do not match the step's", NULL, NULL);
             }
             free(payload);
             machine->settle(sm);
@@ -1058,14 +1231,14 @@ static int replay(const machine_t *machine) {
         jn_t *started = rig_starts(&rig);
         const jn_t *want_starts = jn_get(expect, "host_invokes");
         if (want_starts != NULL && !jn_equal(started, want_starts)) {
-            bad |= fail(machine->name, (int)n, note, "what the host was asked", started, want_starts);
+            bad |= fail(stem, (int)n, note, "what the host was asked", started, want_starts);
         }
         jn_free(started);
         const jn_t *want_state = jn_get(expect, "host_state");
         if (want_state != NULL) {
             jn_t *got = rig_state(&rig, want_state);
             if (!jn_equal(got, want_state)) {
-                bad |= fail(machine->name, (int)n, note, "what the host holds", got, want_state);
+                bad |= fail(stem, (int)n, note, "what the host holds", got, want_state);
             }
             free_state(got, rig.transport.log);
         }
@@ -1074,7 +1247,7 @@ static int replay(const machine_t *machine) {
             const char *atomic = machine->state(sm);
             if (atomic == NULL || strcmp(atomic, state->s) != 0) {
                 (void)fprintf(stderr, "host_features: FAIL [%s] step %zu (%s): the current state is %s, want %s\n",
-                              machine->name, n, note, atomic != NULL ? atomic : "(none)", state->s);
+                              stem, n, note, atomic != NULL ? atomic : "(none)", state->s);
                 bad = 1;
             }
         }
@@ -1098,7 +1271,7 @@ static int replay(const machine_t *machine) {
             if (!jn_equal(got, variables->items[v])) {
                 char what[96];
                 (void)snprintf(what, sizeof(what), "variable `%s`", variables->keys[v]);
-                bad |= fail(machine->name, (int)n, note, what, got, variables->items[v]);
+                bad |= fail(stem, (int)n, note, what, got, variables->items[v]);
             }
             jn_free(got);
         }
@@ -1303,6 +1476,329 @@ static int every_outcome_class_sequence(void) {
     return bad;
 }
 
+// ── The reference harness, every sequence of outcome classes ─────────────────
+
+#define HARNESS_NAME_MAX 64u
+#define HARNESS_KEYS_MAX 64u
+
+// The end of the host operation a class gives a call (docs/adr/0087, section 9.4), written into `out`: an
+// answer by its `finish`, a failure by its code, the refusal, and a held call, whichever way it is left.
+static void harness_outcome(const jn_t *cls, char *out, size_t cap) {
+    const char *end = jn_get(cls, "end")->s;
+    if (strcmp(end, "answer") == 0) {
+        (void)snprintf(out, cap, "answer:%s", jn_get(cls, "finish")->s);
+    } else if (strcmp(end, "failure") == 0) {
+        (void)snprintf(out, cap, "%s", jn_get(cls, "error")->s);
+    } else if (strcmp(end, "refusal") == 0) {
+        (void)snprintf(out, cap, "invalid_argument");
+    } else {
+        (void)snprintf(out, cap, "hold");
+    }
+}
+
+// The position of the row `(source, index)` in the harness's emitted transition table, or -1 for a pair that
+// is no row of it.
+static long harness_row_of(static_model_harness_state_t source, uint32_t index) {
+    const static_model_harness_transition_t *rows = static_model_harness_transitions();
+    for (size_t r = 0; r < (size_t)STATIC_MODEL_HARNESS_TRANSITION_COUNT; ++r) {
+        if (rows[r].from == source && rows[r].index == index) {
+            return (long)r;
+        }
+    }
+    return -1;
+}
+
+// Whether `key` is one of `keys[0..count)`, adding it when it is not and there is room.
+static bool harness_key_seen(char keys[][HARNESS_NAME_MAX], size_t *count, const char *key, bool add) {
+    for (size_t i = 0; i < *count; ++i) {
+        if (strcmp(keys[i], key) == 0) {
+            return true;
+        }
+    }
+    if (add && *count < HARNESS_KEYS_MAX) {
+        (void)snprintf(keys[*count], HARNESS_NAME_MAX, "%s", key);
+        ++*count;
+    }
+    return false;
+}
+
+// What one run of the harness against the exhaustive provider showed, beside the rows its observer was told
+// (`harness_seen_*`).
+typedef struct {
+    size_t calls;
+    char ended[HARNESS_NAME_MAX];
+    char codes[8][HARNESS_NAME_MAX];
+    size_t code_count;
+} harness_run_t;
+
+// Runs the reference harness against the exhaustive provider answering the classes `sequence[0..length)` names,
+// one call a class: offers it the table's ids, starts it, and leaves each call it holds as the table's harness
+// section says, until it ends. Nonzero when the run cannot be made.
+static int harness_run(const jn_t *table, const size_t *sequence, size_t length, harness_run_t *out) {
+    const jn_t *classes = jn_get(table, "classes");
+    const jn_t *harness = jn_get(table, "harness");
+    memset(out, 0, sizeof(*out));
+    if (strcmp(jn_get(harness, "then")->s, "advance") != 0) {
+        (void)fprintf(stderr, "host_features: a held call of the harness is left by its own deadline\n");
+        return 1;
+    }
+    sce_hf_outcome_class_t provided[8];
+    for (size_t i = 0; i < length; ++i) {
+        provided[i] = outcome_class(classes->items[sequence[i]]);
+    }
+    harness_seen_count = 0;
+    rig_t rig;
+    memset(&rig, 0, sizeof(rig));
+    rig.transport.log = jn_new(J_ARR);
+    sce_hf_clock_t clock = {scripted_read, scripted_zone, &rig};
+    sce_hf_transport_t transport = {scripted_exchange, &rig.transport};
+    rig.host = sce_hf_host_new(clock, transport);
+    sce_hf_exhaustive_provider_t *provider = sce_hf_exhaustive_provider_new(provided, length);
+    sce_hf_set_model_provider(rig.host, sce_hf_exhaustive_provider(provider));
+    harness_answer_schemas_to(rig.host);
+    sce_host_invoker_registry_t registry;
+    memset(&registry, 0, sizeof(registry));
+    int bad = sce_hf_register(&registry, rig.host) ? 0 : 1;
+    void *sm = calloc(1u, sizeof(static_model_harness_t));
+    harness_start(sm, &registry);
+    harness_settle(sm);
+    const jn_t *offered = jn_get(harness, "offered");
+    for (size_t i = 0; !bad && i < offered->count; ++i) {
+        char data[64];
+        (void)snprintf(data, sizeof(data), "{\"id\":%lld}", offered->items[i]->i);
+        bad |= harness_raise(sm, jn_get(harness, "offer")->s, data) ? 0 : 1;
+        harness_settle(sm);
+    }
+    const jn_t *data = jn_get(harness, "data");
+    char *payload = (char *)must(strndup(data->raw, data->raw_len));
+    bad |= harness_raise(sm, jn_get(harness, "start")->s, payload) ? 0 : 1;
+    free(payload);
+    harness_settle(sm);
+    const long long bound = jn_get(harness, "bound")->i;
+    for (long long waits = 0; !bad; ++waits) {
+        const char *leaf = harness_leaf(sm);
+        if (leaf != NULL && (strcmp(leaf, "accepted") == 0 || strcmp(leaf, "gave_up") == 0)) {
+            break;
+        }
+        if (waits > bound) {
+            (void)fprintf(stderr, "host_features: the harness neither ended nor held a call it could be moved past\n");
+            bad = 1;
+            break;
+        }
+        harness_advance(sm, (uint64_t)jn_get(harness, "deadline_ms")->i);
+        harness_settle(sm);
+    }
+    out->calls = sce_hf_start_count(rig.host);
+    const char *leaf = harness_leaf(sm);
+    (void)snprintf(out->ended, sizeof(out->ended), "%s", leaf != NULL ? leaf : "(none)");
+    jn_t *refusals = harness_saved_variable(sm, "refusals");
+    for (size_t i = 0; i < refusals->count && out->code_count < 8u; ++i) {
+        const jn_t *code = jn_get(refusals->items[i], "code");
+        (void)snprintf(out->codes[out->code_count++], HARNESS_NAME_MAX, "%s", code != NULL ? code->s : "(none)");
+    }
+    jn_free(refusals);
+    free(sm);
+    jn_free(rig.transport.log);
+    script_clear_response(&rig.transport);
+    sce_hf_host_free(rig.host);
+    sce_hf_exhaustive_provider_free(provider);
+    return bad;
+}
+
+// The reference harness is tested exhaustively, and its coverage is measured (docs/adr/0087, section 9.4 item
+// 1, Landing order item 7): every sequence of `bound` outcome classes is a run, the transition observer of
+// docs/adr/0089 tells each row of the emitted transition table the run takes, and the runs together take every
+// row of the table, reach every refusal code, and reach every host outcome at every call site (a row whose
+// targets are the state whose invoke is the call). Nonzero, naming what was never reached, when they do not.
+//
+// The harness makes at most `bound` calls and the provider answers a call by its position alone, so every
+// sequence of fewer classes the harness can consume is a prefix of a sequence run here, and none is asked past.
+static int every_harness_sequence(void) {
+    char path[512];
+    (void)snprintf(path, sizeof(path), "%s/../model_outcome_classes.json", SCE_HOST_FEATURES_SCENARIO_DIR);
+    char *text = read_file(path);
+    if (text == NULL) {
+        (void)fprintf(stderr, "host_features: the class table %s is not readable\n", path);
+        return 1;
+    }
+    parser_t ps = {text, text + strlen(text), true};
+    jn_t *table = parse_value(&ps);
+    const jn_t *classes = table != NULL && ps.ok ? jn_get(table, "classes") : NULL;
+    const jn_t *harness = table != NULL && ps.ok ? jn_get(table, "harness") : NULL;
+    const jn_t *bound_node = harness != NULL ? jn_get(harness, "bound") : NULL;
+    int bad = 0;
+    if (classes == NULL || bound_node == NULL || classes->count == 0u || bound_node->i <= 0 || bound_node->i > 8 ||
+        classes->count > HARNESS_KEYS_MAX) {
+        (void)fprintf(stderr, "host_features: the class table names no harness run\n");
+        jn_free(table);
+        free(text);
+        return 1;
+    }
+    if (strcmp(jn_get(harness, "machine")->s, "static_model_harness") != 0 ||
+        strcmp(jn_get(table, "answer_schema")->s, static_model_harness_answer_schemas()[0].id) != 0) {
+        (void)fprintf(stderr, "host_features: the class table names another harness or answer schema\n");
+        bad = 1;
+    }
+    const size_t bound = (size_t)bound_node->i;
+    const char *call = jn_get(harness, "call")->s;
+    const static_model_harness_transition_t *rows = static_model_harness_transitions();
+    const size_t row_count = (size_t)STATIC_MODEL_HARNESS_TRANSITION_COUNT;
+    bool site[HARNESS_KEYS_MAX] = {false};
+    bool taken[HARNESS_KEYS_MAX] = {false};
+    size_t site_count = 0;
+    for (size_t r = 0; r < row_count && r < HARNESS_KEYS_MAX; ++r) {
+        site[r] = strcmp(rows[r].targets, call) == 0;
+        site_count += site[r] ? 1u : 0u;
+    }
+    if (site_count == 0u || row_count > HARNESS_KEYS_MAX) {
+        (void)fprintf(stderr, "host_features: no row of the harness's table enters `%s`\n", call);
+        bad = 1;
+    }
+    char outcomes[HARNESS_KEYS_MAX][HARNESS_NAME_MAX];
+    size_t outcome_count = 0;
+    for (size_t i = 0; i < classes->count; ++i) {
+        char outcome[HARNESS_NAME_MAX];
+        harness_outcome(classes->items[i], outcome, sizeof(outcome));
+        (void)harness_key_seen(outcomes, &outcome_count, outcome, true);
+    }
+    // reached[r][o]: the outcome `o` was given a call made through the row `r`.
+    static bool reached[HARNESS_KEYS_MAX][HARNESS_KEYS_MAX];
+    memset(reached, 0, sizeof(reached));
+    char codes[HARNESS_KEYS_MAX][HARNESS_NAME_MAX];
+    size_t code_count = 0;
+    bool told_no_row = false;
+
+    size_t runs = 0;
+    size_t expected = 1;
+    size_t sequence[8] = {0};
+    for (size_t i = 0; i < bound; ++i) {
+        expected *= classes->count;
+    }
+    while (!bad) {
+        harness_run_t run;
+        bad |= harness_run(table, sequence, bound, &run);
+        if (bad) {
+            break;
+        }
+        if (strcmp(run.ended, "accepted") != 0 && strcmp(run.ended, "gave_up") != 0) {
+            (void)fprintf(stderr, "host_features: a harness run ended in `%s`, not a final\n", run.ended);
+            bad = 1;
+            break;
+        }
+        size_t called = 0;
+        const size_t told = harness_seen_count < HARNESS_SEEN_MAX ? harness_seen_count : HARNESS_SEEN_MAX;
+        for (size_t i = 0; i < told; ++i) {
+            const long r = harness_row_of(harness_seen_source[i], harness_seen_index[i]);
+            if (r < 0) {
+                told_no_row = true;
+                continue;
+            }
+            taken[r] = true;
+            if (site[r]) {
+                if (called < bound) {
+                    char outcome[HARNESS_NAME_MAX];
+                    harness_outcome(classes->items[sequence[called]], outcome, sizeof(outcome));
+                    for (size_t o = 0; o < outcome_count; ++o) {
+                        if (strcmp(outcomes[o], outcome) == 0) {
+                            reached[r][o] = true;
+                        }
+                    }
+                }
+                ++called;
+            }
+        }
+        if (called != run.calls || run.calls > bound) {
+            (void)fprintf(stderr,
+                          "host_features: a harness run made %zu calls, %zu of them by a row that enters `%s`\n",
+                          run.calls, called, call);
+            bad = 1;
+            break;
+        }
+        for (size_t i = 0; i < run.code_count; ++i) {
+            (void)harness_key_seen(codes, &code_count, run.codes[i], true);
+        }
+        ++runs;
+        size_t position = bound;
+        while (position > 0u && sequence[position - 1u] == classes->count - 1u) {
+            sequence[--position] = 0u;
+        }
+        if (position == 0u) {
+            break;
+        }
+        ++sequence[position - 1u];
+    }
+    if (!bad && runs != expected) {
+        (void)fprintf(stderr, "host_features: %zu harness sequences were run, not the %zu of the bound\n", runs,
+                      expected);
+        bad = 1;
+    }
+    // Every gap is named, not only the first: a run that could not be made judges none of them.
+    const int fatal = bad;
+    if (!fatal && told_no_row) {
+        (void)fprintf(stderr, "host_features: the observer was told a pair that is no row of the harness's table\n");
+        bad = 1;
+    }
+    for (size_t r = 0; !fatal && r < row_count; ++r) {
+        if (!taken[r]) {
+            (void)fprintf(stderr, "host_features: row %s[%u] of the harness's transition table was never taken\n",
+                          static_model_harness_state_name(rows[r].from), (unsigned)rows[r].index);
+            bad = 1;
+        }
+    }
+    if (!fatal) {
+        // The thirteen lift codes, reached by a class or deferred, and the application's own.
+        char expected_codes[HARNESS_KEYS_MAX][HARNESS_NAME_MAX];
+        size_t expected_count = 0;
+        char deferred[HARNESS_KEYS_MAX][HARNESS_NAME_MAX];
+        size_t deferred_count = 0;
+        (void)harness_key_seen(expected_codes, &expected_count, "notOffered", true);
+        const jn_t *deferred_node = jn_get(table, "deferred");
+        for (size_t i = 0; i < deferred_node->count; ++i) {
+            const char *code = jn_get(deferred_node->items[i], "code")->s;
+            (void)harness_key_seen(expected_codes, &expected_count, code, true);
+            (void)harness_key_seen(deferred, &deferred_count, code, true);
+        }
+        for (size_t i = 0; i < classes->count; ++i) {
+            const jn_t *why = jn_get(jn_get(classes->items[i], "expect"), "why");
+            if (why != NULL && why->kind == J_OBJ) {
+                (void)harness_key_seen(expected_codes, &expected_count, jn_get(why, "code")->s, true);
+            }
+        }
+        if (expected_count != 14u) {
+            (void)fprintf(stderr, "host_features: %zu refusal codes, not the thirteen lift codes and notOffered\n",
+                          expected_count);
+            bad = 1;
+        }
+        for (size_t i = 0; i < expected_count; ++i) {
+            if (!harness_key_seen(codes, &code_count, expected_codes[i], false) &&
+                !harness_key_seen(deferred, &deferred_count, expected_codes[i], false)) {
+                (void)fprintf(stderr, "host_features: the refusal code %s was never reached by the harness\n",
+                              expected_codes[i]);
+                bad = 1;
+            }
+        }
+        for (size_t i = 0; i < code_count; ++i) {
+            if (!harness_key_seen(expected_codes, &expected_count, codes[i], false)) {
+                (void)fprintf(stderr, "host_features: the harness kept the code %s, which no class reaches\n",
+                              codes[i]);
+                bad = 1;
+            }
+        }
+    }
+    for (size_t r = 0; !fatal && r < row_count; ++r) {
+        for (size_t o = 0; site[r] && o < outcome_count; ++o) {
+            if (!reached[r][o]) {
+                (void)fprintf(stderr, "host_features: the host outcome %s was never reached at the call site %s[%u]\n",
+                              outcomes[o], static_model_harness_state_name(rows[r].from), (unsigned)rows[r].index);
+                bad = 1;
+            }
+        }
+    }
+    jn_free(table);
+    free(text);
+    return bad;
+}
+
 // What the host makes of a generation apart from the scenario: each argument it does not accept is refused
 // before the provider is asked, an answer past its bound or a request past the context fails whole, and the
 // exhaustive provider answers each class in turn.
@@ -1446,12 +1942,21 @@ int main(void) {
         bad = 1;
     }
     for (size_t i = 0; i < sizeof(machines) / sizeof(machines[0]); ++i) {
-        const int one = replay(&machines[i]);
+        const int one = replay(&machines[i], machines[i].name);
         (void)printf("host_features: %s %s\n", machines[i].name, one == 0 ? "ok" : "FAILED");
+        bad |= one;
+    }
+    for (size_t i = 0; i < sizeof(harness_scenarios) / sizeof(harness_scenarios[0]); ++i) {
+        const int one = replay(&harness_machine, harness_scenarios[i]);
+        (void)printf("host_features: %s %s\n", harness_scenarios[i], one == 0 ? "ok" : "FAILED");
         bad |= one;
     }
     const int sequences = every_outcome_class_sequence();
     (void)printf("host_features: every outcome class sequence %s\n", sequences == 0 ? "ok" : "FAILED");
     bad |= sequences;
+    const int harness_sequences = every_harness_sequence();
+    (void)printf("host_features: every outcome class sequence of the reference harness %s\n",
+                 harness_sequences == 0 ? "ok" : "FAILED");
+    bad |= harness_sequences;
     return bad;
 }

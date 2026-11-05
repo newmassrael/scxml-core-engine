@@ -857,10 +857,21 @@ target_compile_definitions(standard_host_scenario_test
 
 apply_sce_test_policies(standard_host_scenario_test)
 
-foreach(_STANDARD_HOST_MACHINE static_host_kv static_host_clock static_host_notify static_host_http static_host_model)
+foreach(_STANDARD_HOST_MACHINE static_host_kv static_host_clock static_host_notify static_host_http static_host_model
+                               static_model_harness)
     sce_add_state_machine(
         TARGET standard_host_scenario_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STANDARD_HOST_MACHINE}.scxml
+    )
+endforeach()
+# The reference harness's two text templates (docs/adr/0087, section 6.1), the prompt it
+# asks with and the one it repairs with: documents of their own kind whose units' `render`
+# the machine calls, generated beside the machine that includes their headers, as
+# static_render's template is for static_datamodel_generated_cpp_test.
+foreach(_HARNESS_TEMPLATE harness_ask harness_repair)
+    sce_add_algorithm(
+        TARGET standard_host_scenario_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_HARNESS_TEMPLATE}.scxml
     )
 endforeach()
 

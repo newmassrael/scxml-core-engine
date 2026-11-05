@@ -3046,6 +3046,21 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_HOST_FEATURE_MACHINE}.scxml"
         )
     endforeach()
+    # The reference harness (docs/adr/0087, section 6), with the documents it imports
+    # beside it, and its two text templates, whose headers the machine includes and
+    # does not generate, as static_render's template is generated above.
+    sce_generate_static_integration_c_test(static_model_harness
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml"
+        STAGE_ALSO lift_answer.scxml enum_lift_kind.scxml harness_refusal.scxml enum_harness_code.scxml
+                   harness_offer.scxml harness_start.scxml harness_ask.scxml harness_repair.scxml
+    )
+    set(_HARNESS_TEMPLATE_HEADERS "")
+    foreach(_HARNESS_TEMPLATE harness_ask harness_repair)
+        sce_c_integration_generation(_HARNESS_TEMPLATE_ONE
+            "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_HARNESS_TEMPLATE}.scxml")
+        list(APPEND _HARNESS_TEMPLATE_HEADERS ${_HARNESS_TEMPLATE_ONE_HEADERS})
+    endforeach()
     add_executable(sce_c_integration_host_features
         integration/test_host_features.c
         ${CMAKE_SOURCE_DIR}/backends/c/host-features/src/standard_host.c
@@ -3054,6 +3069,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_host_notify_SOURCES}
         ${INTEGRATION_C_TEST_static_host_http_SOURCES}
         ${INTEGRATION_C_TEST_static_host_model_SOURCES}
+        ${INTEGRATION_C_TEST_static_model_harness_SOURCES}
+        ${_HARNESS_TEMPLATE_HEADERS}
     )
     sce_c_link_runtime(sce_c_integration_host_features)
     target_include_directories(sce_c_integration_host_features PRIVATE
@@ -3061,10 +3078,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
         "${CMAKE_SOURCE_DIR}/backends/c/host-features/include"
     )
+    # The reference harness alone is built with its transition observer (docs/adr/0089):
+    # the test defines its hook and holds the rows an exhaustive run takes to its table.
     target_compile_definitions(sce_c_integration_host_features PRIVATE
         SCE_MAX_DATA_LEN=40960
         SCE_MAX_HOST_INVOKERS=13
         SCE_HOST_FEATURES_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/tests/host_features/scenarios"
+        STATIC_MODEL_HARNESS_TRANSITION_OBSERVER=1
     )
     set_target_properties(sce_c_integration_host_features PROPERTIES
         C_STANDARD 11
@@ -3074,8 +3094,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     add_test(NAME c11_integration_host_features
         COMMAND sce_c_integration_host_features
     )
+    # 300 and not 60 since the reference harness's exhaustive run joined it: every
+    # sequence of its bound's outcome classes is a run, 24^3 of them.
     set_tests_properties(c11_integration_host_features PROPERTIES
-        TIMEOUT 60
+        TIMEOUT 300
         LABELS "integration;c11;aot"
     )
 

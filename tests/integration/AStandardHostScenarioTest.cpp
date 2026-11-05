@@ -19,17 +19,21 @@
 #include "static_host_kv_sm.h"
 #include "static_host_model_sm.h"
 #include "static_host_notify_sm.h"
+#include "static_model_harness_sm.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace SCE::Tests {
@@ -43,11 +47,16 @@ using HostScenario::ScriptTransport;
 
 constexpr int kSettleTicks = 5;
 
+/// Replay the scenario @p stem against a machine of the document @p machine, which the scenario
+/// names: a machine whose run ends has one scenario a run (the reference harness's cases).
 template <typename Machine>
-void replay(const std::string &name, std::map<std::string, std::function<json(Machine &)>> variables,
-            const std::vector<SCE::AnswerSchema> &schemas = {}) {
-    const json scenario = HostScenario::readScenario(name);
-    ASSERT_EQ(scenario.at("machine").get<std::string>(), name);
+void replayScenario(const std::string &stem, const std::string &machineName,
+                    std::map<std::string, std::function<json(Machine &)>> variables,
+                    const std::vector<SCE::AnswerSchema> &schemas) {
+    SCOPED_TRACE(stem);
+    const json scenario = HostScenario::readScenario(stem);
+    ASSERT_EQ(scenario.at("machine").get<std::string>(), machineName)
+        << "the scenario " << stem << " names its machine";
     Rig rig;
     rig.host.setAnswerSchemas(schemas.data(), schemas.size());
     Machine machine;
@@ -87,6 +96,13 @@ void replay(const std::string &name, std::map<std::string, std::function<json(Ma
         EXPECT_EQ(read->second(machine), want) << where << ": variable " << variable;
     };
     HostScenario::replay(scenario, rig, driver);
+}
+
+/// Replay the scenario of @p name's own name against a machine of that document.
+template <typename Machine>
+void replay(const std::string &name, std::map<std::string, std::function<json(Machine &)>> variables,
+            const std::vector<SCE::AnswerSchema> &schemas = {}) {
+    replayScenario<Machine>(name, name, std::move(variables), schemas);
 }
 
 }  // namespace
@@ -289,6 +305,273 @@ TEST(AStandardHostScenario, EverySequenceOfOutcomeClassesIsReadAsItsClassesSay) 
     EXPECT_EQ(codes.size(), 13u) << "every refusal code is reached or deferred";
 }
 
+namespace {
+
+using HarnessMachine = SCE::Generated::static_model_harness::static_model_harness;
+
+/// The cases of the reference harness's scenario (docs/adr/0087, section 9.1 item 8), one scenario each:
+/// a run of the harness ends at one of its finals, so each case is a run of its own.
+constexpr const char *kHarnessScenarios[] = {"static_model_harness_accepted", "static_model_harness_exhausted",
+                                             "static_model_harness_not_offered", "static_model_harness_repaired",
+                                             "static_model_harness_timeout"};
+
+/// The codes of the application's own checks, after the thirteen of the lift its enum repeats
+/// (enum_harness_code.scxml), each named for the class that reaches it.
+constexpr const char *kApplicationCodes[] = {"notOffered"};
+
+/// The ticks a harness run is given after each event: a run may make its calls and take each completion
+/// within one event, a call a round.
+constexpr int kHarnessSettleTicks = 8;
+
+/// The harness's table of answer schemas, as the host is handed it.
+std::vector<SCE::AnswerSchema> harnessSchemas() {
+    using namespace SCE::Generated::static_model_harness;
+    return {std::begin(ANSWER_SCHEMAS), std::end(ANSWER_SCHEMAS)};
+}
+
+/// What the harness holds, read from its saved state, the text every backend saves alike.
+json harnessVariable(HarnessMachine &machine, const std::string &variable) {
+    return json::parse(machine.saveAt(0).toJson()).at("variables").at(variable);
+}
+
+/// A row of the harness's transition table as a failure names it: its state's id and its index.
+std::string harnessRowName(HarnessMachine::State source, std::uint32_t index) {
+    return std::string(HarnessMachine::PolicyType::getStateName(source)) + "[" + std::to_string(index) + "]";
+}
+
+/// The end of the host operation a class gives a call (docs/adr/0087, section 9.4): an answer by its
+/// `finish`, a failure by its code, the refusal, and a held call, whichever way it is left.
+std::string hostOutcome(const json &cls) {
+    const std::string end = cls.at("end").get<std::string>();
+    if (end == "answer") {
+        return "answer:" + cls.at("finish").get<std::string>();
+    }
+    if (end == "failure") {
+        return cls.at("error").get<std::string>();
+    }
+    if (end == "refusal") {
+        return "invalid_argument";
+    }
+    return "hold";
+}
+
+/// What one run of the harness against the exhaustive provider showed.
+struct HarnessRun {
+    /// Every row the transition observer was told, in order.
+    std::vector<HarnessMachine::TransitionTaken> rows;
+    /// How many calls the host was asked to start.
+    size_t calls = 0;
+    /// The state the run ended in.
+    std::string ended;
+    /// The code of each refusal the harness kept, in order.
+    std::vector<std::string> codes;
+};
+
+/// Run the reference harness against the exhaustive provider answering the classes `sequence` names, one
+/// call a class: offer it the table's ids, start it, and leave each call it holds as the table's harness
+/// section says, until it ends.
+HarnessRun runHarness(const json &table, const std::vector<size_t> &sequence) {
+    const json &classes = table.at("classes");
+    const json &harness = table.at("harness");
+    EXPECT_EQ(harness.at("then").get<std::string>(), "advance") << "a held call is left by its own deadline";
+    std::vector<host::OutcomeClass> provided;
+    for (const size_t i : sequence) {
+        provided.push_back(outcomeClass(classes.at(i)));
+    }
+    HarnessRun run;
+    host::ScriptedClock clock;
+    ScriptTransport transport;
+    host::ReferenceHost reference{clock, transport};
+    host::ExhaustiveProvider provider(provided);
+    const auto schemas = harnessSchemas();
+    reference.setAnswerSchemas(schemas.data(), schemas.size());
+    reference.setModelProvider(provider);
+    HarnessMachine machine;
+    machine.setTransitionObserver([&run](const HarnessMachine::TransitionTaken &taken) { run.rows.push_back(taken); });
+    host::serve(machine, reference);
+    machine.setClock(std::make_shared<SCE::ManualClock>(0));
+    machine.initialize();
+    const auto settle = [&machine]() {
+        for (int round = 0; round < kHarnessSettleTicks; ++round) {
+            machine.tick();
+        }
+    };
+    settle();
+    for (const auto &id : harness.at("offered")) {
+        machine.raiseExternal(harness.at("offer").get<std::string>(), json{{"id", id}}.dump());
+        settle();
+    }
+    machine.raiseExternal(harness.at("start").get<std::string>(), harness.at("data").dump());
+    settle();
+    const auto current = [&machine]() {
+        return std::string(HarnessMachine::PolicyType::getStateName(machine.getCurrentState()));
+    };
+    const size_t bound = harness.at("bound").get<size_t>();
+    for (size_t waits = 0; current() != "accepted" && current() != "gave_up"; ++waits) {
+        if (waits > bound) {
+            ADD_FAILURE() << "the run neither ended nor held a call it could be moved past";
+            break;
+        }
+        machine.advanceTimeMs(harness.at("deadline_ms").get<uint64_t>());
+        settle();
+    }
+    run.calls = reference.takeStarts().size();
+    run.ended = current();
+    for (const auto &refusal : harnessVariable(machine, "refusals")) {
+        run.codes.push_back(refusal.at("code").get<std::string>());
+    }
+    return run;
+}
+
+}  // namespace
+
+TEST(AStandardHostScenario, TheReferenceHarnessRunsEachCaseOfItsScenario) {
+    std::map<std::string, std::function<json(HarnessMachine &)>> variables;
+    for (const char *variable : {"outcome", "attempts", "offered", "refusals", "answer", "why"}) {
+        variables[variable] = [variable](HarnessMachine &m) { return harnessVariable(m, variable); };
+    }
+    for (const char *stem : kHarnessScenarios) {
+        replayScenario<HarnessMachine>(stem, "static_model_harness", variables, harnessSchemas());
+    }
+}
+
+/// The reference harness is tested exhaustively, and its coverage is measured (docs/adr/0087, section 9.4
+/// item 1, Landing order item 7): every sequence of `bound` outcome classes is a run, the transition
+/// observer of docs/adr/0089 tells each row of the emitted transition table the run takes, and the runs
+/// together take every row of the table, reach every refusal code, and reach every host outcome at every
+/// call site (a row that enters the state whose invoke is the call).
+///
+/// The harness makes at most `bound` calls and the provider answers a call by its position alone, so every
+/// sequence of fewer classes the harness can consume is a prefix of a sequence run here, and none is asked
+/// past.
+TEST(AStandardHostScenario, EverySequenceOfOutcomeClassesTakesEveryRowOfTheReferenceHarness) {
+    std::ifstream in(std::filesystem::path(SCE_PROJECT_ROOT) / "tests" / "host_features" /
+                     "model_outcome_classes.json");
+    ASSERT_TRUE(in.good()) << "the class table is readable";
+    const json table = json::parse(in);
+    const json &harness = table.at("harness");
+    ASSERT_EQ(harness.at("machine").get<std::string>(), "static_model_harness");
+    ASSERT_EQ(table.at("answer_schema").get<std::string>(), std::string(harnessSchemas().at(0).id));
+    const json &classes = table.at("classes");
+    const size_t count = classes.size();
+    const size_t bound = harness.at("bound").get<size_t>();
+    const std::string call = harness.at("call").get<std::string>();
+    ASSERT_TRUE(count > 0 && bound > 0) << "a table that names nothing judges nothing";
+    std::set<std::string> rows;
+    std::set<std::string> sites;
+    for (const auto &row : HarnessMachine::PolicyType::transitions) {
+        rows.insert(harnessRowName(row.from, row.index));
+        if (call == row.targets) {
+            sites.insert(harnessRowName(row.from, row.index));
+        }
+    }
+    ASSERT_FALSE(sites.empty()) << "no row of the table enters " << call;
+    std::set<std::string> outcomes;
+    for (const auto &cls : classes) {
+        outcomes.insert(hostOutcome(cls));
+    }
+
+    std::set<std::string> taken;
+    std::set<std::string> codes;
+    std::set<std::string> reached;
+    size_t runs = 0;
+    size_t expected = 1;
+    for (size_t i = 0; i < bound; ++i) {
+        expected *= count;
+    }
+    std::vector<size_t> sequence(bound, 0);
+    while (true) {
+        std::string named;
+        for (const size_t i : sequence) {
+            named += classes.at(i).at("class").get<std::string>() + " ";
+        }
+        const HarnessRun run = runHarness(table, sequence);
+        if (::testing::Test::HasFailure()) {
+            FAIL() << named << ": the run could not be made";
+        }
+        ASSERT_TRUE(run.ended == "accepted" || run.ended == "gave_up")
+            << named << ": the run ended in " << run.ended << ", not a final";
+        std::vector<std::string> called;
+        for (const auto &row : run.rows) {
+            const std::string name = harnessRowName(row.source, row.index);
+            if (sites.count(name) != 0) {
+                called.push_back(name);
+            }
+            taken.insert(name);
+        }
+        ASSERT_TRUE(called.size() == run.calls && run.calls <= bound)
+            << named << ": " << run.calls << " calls, " << called.size() << " of them by a row that enters " << call;
+        for (size_t n = 0; n < called.size(); ++n) {
+            reached.insert(called[n] + " " + hostOutcome(classes.at(sequence[n])));
+        }
+        codes.insert(run.codes.begin(), run.codes.end());
+        ++runs;
+        size_t position = bound;
+        while (position > 0 && sequence[position - 1] == count - 1) {
+            sequence[--position] = 0;
+        }
+        if (position == 0) {
+            break;
+        }
+        ++sequence[position - 1];
+    }
+    EXPECT_EQ(runs, expected) << "every sequence was run";
+
+    std::string toldNoRow;
+    for (const auto &row : taken) {
+        if (rows.count(row) == 0) {
+            toldNoRow += row + " ";
+        }
+    }
+    EXPECT_TRUE(toldNoRow.empty()) << "the observer was told pairs that are no row of the table: " << toldNoRow;
+    std::string neverTaken;
+    for (const auto &row : rows) {
+        if (taken.count(row) == 0) {
+            neverTaken += row + " ";
+        }
+    }
+    EXPECT_TRUE(neverTaken.empty()) << "every row of the harness's transition table is taken; never taken: "
+                                    << neverTaken;
+
+    std::set<std::string> deferred;
+    for (const auto &entry : table.at("deferred")) {
+        deferred.insert(entry.at("code").get<std::string>());
+    }
+    std::set<std::string> expectedCodes(std::begin(kApplicationCodes), std::end(kApplicationCodes));
+    expectedCodes.insert(deferred.begin(), deferred.end());
+    for (const auto &cls : classes) {
+        if (cls.at("expect").at("why").is_object()) {
+            expectedCodes.insert(cls.at("expect").at("why").at("code").get<std::string>());
+        }
+    }
+    EXPECT_EQ(expectedCodes.size(), 14u) << "the thirteen lift codes and the application's own";
+    std::string neverReached;
+    for (const auto &code : expectedCodes) {
+        if (codes.count(code) == 0 && deferred.count(code) == 0) {
+            neverReached += code + " ";
+        }
+    }
+    EXPECT_TRUE(neverReached.empty()) << "every refusal code is reached; never reached: " << neverReached;
+    std::string unknown;
+    for (const auto &code : codes) {
+        if (expectedCodes.count(code) == 0) {
+            unknown += code + " ";
+        }
+    }
+    EXPECT_TRUE(unknown.empty()) << "the harness kept codes no class reaches: " << unknown;
+
+    std::string notAtEverySite;
+    for (const auto &site : sites) {
+        for (const auto &outcome : outcomes) {
+            if (reached.count(site + " " + outcome) == 0) {
+                notAtEverySite += site + " " + outcome + "; ";
+            }
+        }
+    }
+    EXPECT_TRUE(notAtEverySite.empty()) << "every host outcome is reached at every call site; never reached: "
+                                        << notAtEverySite;
+}
+
 TEST(AStandardHostScenario, TheReferenceHostJudgesAGenerationBeforeItsProvider) {
     host::ScriptedClock clock;
     ScriptTransport transport;
@@ -323,9 +606,11 @@ TEST(AStandardHostScenario, TheReferenceHostJudgesAGenerationBeforeItsProvider) 
 }
 
 TEST(AStandardHostScenario, EveryScenarioOfTheDirectoryIsReplayedHere) {
-    EXPECT_EQ(HostScenario::scenarioNames(),
-              (std::vector<std::string>{"static_host_clock", "static_host_http", "static_host_kv", "static_host_model",
-                                        "static_host_notify"}));
+    std::vector<std::string> replayed{"static_host_clock", "static_host_http", "static_host_kv", "static_host_model",
+                                      "static_host_notify"};
+    replayed.insert(replayed.end(), std::begin(kHarnessScenarios), std::end(kHarnessScenarios));
+    std::sort(replayed.begin(), replayed.end());
+    EXPECT_EQ(HostScenario::scenarioNames(), replayed);
 }
 
 TEST(AStandardHostScenario, TheSystemClockAnswersAMonotonicReadingThatDoesNotDecrease) {
