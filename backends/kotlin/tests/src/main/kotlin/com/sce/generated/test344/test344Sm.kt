@@ -403,7 +403,7 @@ class Test344StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test344State, event: Test344Event?): EnabledTransition<Test344State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("return")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("error(\"SCXML cond is not valid ECMAScript: return: unsupported ECMAScript construct: reserved word 'return' used as a value. Extended SCXML expressions must use the stateless subset.\")", "return")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }

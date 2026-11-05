@@ -431,7 +431,7 @@ class Test496StateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("undefined")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("nil", "undefined")))
             } catch (_: Exception) {
                 raisePlatformError(Test496Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true

@@ -419,7 +419,7 @@ class Test558StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test558State, event: Test558Event?): EnabledTransition<Test558State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1 == 'this is a string'")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var1, \"this is a string\")", "var1 == 'this is a string'")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -427,7 +427,7 @@ class Test558StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test558State, event: Test558Event?): EnabledTransition<Test558State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var2 == 'this is a string'")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var2, \"this is a string\")", "var2 == 'this is a string'")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }

@@ -183,7 +183,7 @@ class Test302StateMachine(
 
     private fun runDocumentScriptsPart0(engine: ScxmlScriptEngine, sid: String) {
         try {
-            engine.executeScript(sid, com.sce.runtime.ScriptSource.ecmascript("Var1 = 1"))
+            engine.executeScript(sid, com.sce.runtime.ScriptSource.lua("Var1 = 1", "Var1 = 1"))
         } catch (e: Exception) {
             raisePlatformError(Test302Event.Error.Execution, "a top-level <script> failed to execute")
         }
@@ -384,7 +384,7 @@ class Test302StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test302State, event: Test302Event?): EnabledTransition<Test302State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }

@@ -250,28 +250,28 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sent' with expr
         try {
-            val initResult_sent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_sent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "sent", initResult_sent)
         } catch (e: Exception) {
             raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='sent'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'after' with expr
         try {
-            val initResult_after = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_after = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "after", initResult_after)
         } catch (e: Exception) {
             raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='after'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
-            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({})"))
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
             engine.setVariable(sid, "obj", initResult_obj)
         } catch (e: Exception) {
             raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
@@ -568,7 +568,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
                 return@run
             }
                 }
@@ -583,7 +583,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 ""
             }
@@ -607,7 +607,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
                 return@run
             }
                 }
@@ -622,7 +622,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_2")
                 return@send true
@@ -702,7 +702,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
                 return@run
             }
                 }
@@ -718,7 +718,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             // that is not the CSS2 time the clause names (ARCHITECTURE.md,
             // "Durations"): the message is not scheduled under some default wait.
             val sendDelayText = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_3")
                 return@send true
@@ -738,7 +738,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
                 return@run
             }
                 }
@@ -758,7 +758,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"), sendIdGenerated, "<send>")) return@send true
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), sendIdGenerated, "<send>")) return@send true
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
             send(ABadSendArgumentDiscardsItsMessageEvent.Sent, EventMetadata.external(sendId = sendIdGenerated, origin = sessionId, data = sendData))
@@ -770,7 +770,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
                 return@run
             }
                 }
@@ -785,7 +785,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             // W3C SCXML 6.2: a type the platform does not support is the same
             // error as one that cannot be evaluated.
             val sendTypeValue = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> typeexpr could not be evaluated", "__send_5")
                 return@send true
@@ -805,7 +805,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
                 return@run
             }
                 }
@@ -859,7 +859,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
                 // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:68 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
     }
@@ -868,7 +868,7 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
                 // SCE-MAP: a_bad_send_argument_discards_its_message.scxml:71 :: s0 :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sent"), com.sce.runtime.ScriptSource.ecmascript("sent + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sent", "sent"), com.sce.runtime.ScriptSource.lua("_scxml_add(sent, 1)", "sent + 1"))) {
                 return
             }
     }

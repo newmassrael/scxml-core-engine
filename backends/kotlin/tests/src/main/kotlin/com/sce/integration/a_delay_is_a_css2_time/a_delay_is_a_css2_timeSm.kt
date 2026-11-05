@@ -280,42 +280,42 @@ class ADelayIsACss2TimeStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'after' with expr
         try {
-            val initResult_after = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_after = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "after", initResult_after)
         } catch (e: Exception) {
             raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='after'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'bad' with expr
         try {
-            val initResult_bad = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_bad = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "bad", initResult_bad)
         } catch (e: Exception) {
             raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='bad'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'bSeen' with expr
         try {
-            val initResult_bSeen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_bSeen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "bSeen", initResult_bSeen)
         } catch (e: Exception) {
             raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='bSeen'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'aAfterB' with expr
         try {
-            val initResult_aAfterB = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("-1"))
+            val initResult_aAfterB = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(-1)", "-1"))
             engine.setVariable(sid, "aAfterB", initResult_aAfterB)
         } catch (e: Exception) {
             raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='aAfterB'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'bare' with expr
         try {
-            val initResult_bare = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("5"))
+            val initResult_bare = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("5", "5"))
             engine.setVariable(sid, "bare", initResult_bare)
         } catch (e: Exception) {
             raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='bare'> expr failed to evaluate")
@@ -575,7 +575,7 @@ class ADelayIsACss2TimeStateMachine(
             // that is not the CSS2 time the clause names (ARCHITECTURE.md,
             // "Durations"): the message is not scheduled under some default wait.
             val sendDelayText = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("bare")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("bare", "bare")))
             } catch (_: Exception) {
                 raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_1")
                 return@send true
@@ -595,7 +595,7 @@ class ADelayIsACss2TimeStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
                 return@run
             }
                 }
@@ -611,7 +611,7 @@ class ADelayIsACss2TimeStateMachine(
             // that is not the CSS2 time the clause names (ARCHITECTURE.md,
             // "Durations"): the message is not scheduled under some default wait.
             val sendDelayText = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("'0.57s'")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0.57s\"", "'0.57s'")))
             } catch (_: Exception) {
                 raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_2")
                 return@send true
@@ -694,7 +694,7 @@ class ADelayIsACss2TimeStateMachine(
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:53 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
     }
@@ -703,7 +703,7 @@ class ADelayIsACss2TimeStateMachine(
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:56 :: s0 :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("bad"), com.sce.runtime.ScriptSource.ecmascript("bad + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("bad", "bad"), com.sce.runtime.ScriptSource.lua("_scxml_add(bad, 1)", "bad + 1"))) {
                 return
             }
     }
@@ -712,7 +712,7 @@ class ADelayIsACss2TimeStateMachine(
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:59 :: s0 :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("bSeen"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("bSeen", "bSeen"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }
@@ -721,7 +721,7 @@ class ADelayIsACss2TimeStateMachine(
                 // SCE-MAP: a_delay_is_a_css2_time.scxml:62 :: s0 :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("aAfterB"), com.sce.runtime.ScriptSource.ecmascript("bSeen"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("aAfterB", "aAfterB"), com.sce.runtime.ScriptSource.lua("bSeen", "bSeen"))) {
                 return
             }
     }

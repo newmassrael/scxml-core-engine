@@ -307,49 +307,49 @@ class ABadSendParamEndsItsBlockStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'partials' with expr
         try {
-            val initResult_partials = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_partials = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "partials", initResult_partials)
         } catch (e: Exception) {
             raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='partials'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'bares' with expr
         try {
-            val initResult_bares = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_bares = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "bares", initResult_bares)
         } catch (e: Exception) {
             raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='bares'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'after' with expr
         try {
-            val initResult_after = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_after = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "after", initResult_after)
         } catch (e: Exception) {
             raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='after'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'carried' with expr
         try {
-            val initResult_carried = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_carried = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "carried", initResult_carried)
         } catch (e: Exception) {
             raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='carried'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'v' with expr
         try {
-            val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("7"))
+            val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
             engine.setVariable(sid, "v", initResult_v)
         } catch (e: Exception) {
             raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
-            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({})"))
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
             engine.setVariable(sid, "obj", initResult_obj)
         } catch (e: Exception) {
             raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
@@ -552,9 +552,9 @@ class ABadSendParamEndsItsBlockStateMachine(
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: ABadSendParamEndsItsBlockState, event: ABadSendParamEndsItsBlockEvent?): EnabledTransition<ABadSendParamEndsItsBlockState, HistoryId>? = when {
         event is ABadSendParamEndsItsBlockEvent.Error.Execution -> TransitionsPart0.transitionS0At0
-        event is ABadSendParamEndsItsBlockEvent.Partial && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.good === 1")) -> TransitionsPart0.transitionS0At1
+        event is ABadSendParamEndsItsBlockEvent.Partial && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.good == 1)", "_event.data.good === 1")) -> TransitionsPart0.transitionS0At1
         event is ABadSendParamEndsItsBlockEvent.Bare -> TransitionsPart0.transitionS0At2
-        event is ABadSendParamEndsItsBlockEvent.Carried && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.p === 7")) -> TransitionsPart0.transitionS0At3
+        event is ABadSendParamEndsItsBlockEvent.Carried && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.p == 7)", "_event.data.p === 7")) -> TransitionsPart0.transitionS0At3
         event is ABadSendParamEndsItsBlockEvent.Finish -> TransitionsPart0.transitionS0At4
         else -> null
     }
@@ -592,14 +592,14 @@ class ABadSendParamEndsItsBlockStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")))
+                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "good", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("1")))
+                putParam(sendPayload, "good", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='good'> could not be read")
                 paramFailed = true
@@ -617,7 +617,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
                 return@run
             }
                 }
@@ -632,14 +632,14 @@ class ABadSendParamEndsItsBlockStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "good", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("1")))
+                putParam(sendPayload, "good", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='good'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")))
+                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
                 paramFailed = true
@@ -657,7 +657,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 100"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 100)", "after + 100"))) {
                 return@run
             }
                 }
@@ -685,7 +685,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after"), com.sce.runtime.ScriptSource.ecmascript("after + 10"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 10)", "after + 10"))) {
                 return@run
             }
                 }
@@ -700,7 +700,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "p", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("v")))
+                putParam(sendPayload, "p", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("v", "v")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='p'> could not be read")
                 paramFailed = true
@@ -769,7 +769,7 @@ class ABadSendParamEndsItsBlockStateMachine(
                 // SCE-MAP: a_bad_send_param_ends_its_block.scxml:83 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
     }
@@ -778,7 +778,7 @@ class ABadSendParamEndsItsBlockStateMachine(
                 // SCE-MAP: a_bad_send_param_ends_its_block.scxml:86 :: s0 :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("partials"), com.sce.runtime.ScriptSource.ecmascript("partials + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("partials", "partials"), com.sce.runtime.ScriptSource.lua("_scxml_add(partials, 1)", "partials + 1"))) {
                 return
             }
     }
@@ -787,7 +787,7 @@ class ABadSendParamEndsItsBlockStateMachine(
                 // SCE-MAP: a_bad_send_param_ends_its_block.scxml:89 :: s0 :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("bares"), com.sce.runtime.ScriptSource.ecmascript("bares + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("bares", "bares"), com.sce.runtime.ScriptSource.lua("_scxml_add(bares, 1)", "bares + 1"))) {
                 return
             }
     }
@@ -796,7 +796,7 @@ class ABadSendParamEndsItsBlockStateMachine(
                 // SCE-MAP: a_bad_send_param_ends_its_block.scxml:92 :: s0 :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("carried"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("carried", "carried"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }

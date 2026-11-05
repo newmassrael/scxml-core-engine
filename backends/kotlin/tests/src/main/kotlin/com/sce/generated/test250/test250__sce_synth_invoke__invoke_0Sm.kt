@@ -461,7 +461,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'entering final state, invocation was not cancelled'"))?.toString() ?: ""))
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"entering final state, invocation was not cancelled\"", "'entering final state, invocation was not cancelled'"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test250SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
@@ -496,7 +496,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'Exiting sub0'"))?.toString() ?: ""))
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Exiting sub0\"", "'Exiting sub0'"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test250SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
@@ -518,7 +518,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'Exiting sub01'"))?.toString() ?: ""))
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Exiting sub01\"", "'Exiting sub01'"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test250SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")

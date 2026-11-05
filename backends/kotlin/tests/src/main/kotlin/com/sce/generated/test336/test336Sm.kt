@@ -555,7 +555,7 @@ class Test336StateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_event.origin")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin")))
             } catch (_: Exception) {
                 raisePlatformError(Test336Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true
@@ -568,7 +568,7 @@ class Test336StateMachine(
             // W3C SCXML 6.2: a type the platform does not support is the same
             // error as one that cannot be evaluated.
             val sendTypeValue = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_event.origintype")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype")))
             } catch (_: Exception) {
                 raisePlatformError(Test336Event.Error.Execution, "<send> typeexpr could not be evaluated", "__send_0")
                 return@send true

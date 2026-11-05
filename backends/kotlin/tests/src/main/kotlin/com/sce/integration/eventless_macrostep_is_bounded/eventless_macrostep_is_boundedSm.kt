@@ -315,21 +315,21 @@ class EventlessMacrostepIsBoundedStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(EventlessMacrostepIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'laps' with expr
         try {
-            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "laps", initResult_laps)
         } catch (e: Exception) {
             raisePlatformError(EventlessMacrostepIsBoundedEvent.Error.Execution, "<data id='laps'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'spins' with expr
         try {
-            val initResult_spins = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_spins = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "spins", initResult_spins)
         } catch (e: Exception) {
             raisePlatformError(EventlessMacrostepIsBoundedEvent.Error.Execution, "<data id='spins'> expr failed to evaluate")
@@ -534,7 +534,7 @@ class EventlessMacrostepIsBoundedStateMachine(
 
     // bounded_a's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfBoundedA(state: EventlessMacrostepIsBoundedState, event: EventlessMacrostepIsBoundedEvent?): EnabledTransition<EventlessMacrostepIsBoundedState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 500")) -> TransitionsPart0.transitionBoundedAAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 500)", "laps < 500")) -> TransitionsPart0.transitionBoundedAAt0
         event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionsPart0.transitionBoundedAAt1
         else -> null
     }
@@ -674,7 +674,7 @@ class EventlessMacrostepIsBoundedStateMachine(
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:85 :: bounded_a :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))) {
                 return
             }
     }
@@ -683,7 +683,7 @@ class EventlessMacrostepIsBoundedStateMachine(
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:90 :: bounded_a :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
     }
@@ -705,7 +705,7 @@ class EventlessMacrostepIsBoundedStateMachine(
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:72 :: idle :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
     }
@@ -728,7 +728,7 @@ class EventlessMacrostepIsBoundedStateMachine(
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:105 :: spin_a :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("spins"), com.sce.runtime.ScriptSource.ecmascript("spins + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("spins", "spins"), com.sce.runtime.ScriptSource.lua("_scxml_add(spins, 1)", "spins + 1"))) {
                 return
             }
     }
@@ -737,7 +737,7 @@ class EventlessMacrostepIsBoundedStateMachine(
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:108 :: spin_a :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
                 return
             }
     }

@@ -238,28 +238,28 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'peer' with expr
         try {
-            val initResult_peer = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#hmi'"))
+            val initResult_peer = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#hmi\"", "'#hmi'"))
             engine.setVariable(sid, "peer", initResult_peer)
         } catch (e: Exception) {
             raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<data id='peer'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'here' with expr
         try {
-            val initResult_here = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#_internal'"))
+            val initResult_here = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'"))
             engine.setVariable(sid, "here", initResult_here)
         } catch (e: Exception) {
             raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<data id='here'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'refused' with expr
         try {
-            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "refused", initResult_refused)
         } catch (e: Exception) {
             raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'looped' with expr
         try {
-            val initResult_looped = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_looped = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "looped", initResult_looped)
         } catch (e: Exception) {
             raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<data id='looped'> expr failed to evaluate")
@@ -499,7 +499,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("peer")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("peer", "peer")))
             } catch (_: Exception) {
                 raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true
@@ -586,7 +586,7 @@ APeerNamedAtRunTimeReachesTheRouterEvent.Ping,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("here")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("here", "here")))
             } catch (_: Exception) {
                 raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
@@ -715,7 +715,7 @@ APeerNamedAtRunTimeReachesTheRouterEvent.Loopback,
                 // SCE-MAP: a_peer_named_at_run_time_reaches_the_router.scxml:37 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("refused"), com.sce.runtime.ScriptSource.ecmascript("refused + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {
                 return
             }
     }
@@ -724,7 +724,7 @@ APeerNamedAtRunTimeReachesTheRouterEvent.Loopback,
                 // SCE-MAP: a_peer_named_at_run_time_reaches_the_router.scxml:40 :: s0 :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("looped"), com.sce.runtime.ScriptSource.ecmascript("looped + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("looped", "looped"), com.sce.runtime.ScriptSource.lua("_scxml_add(looped, 1)", "looped + 1"))) {
                 return
             }
     }

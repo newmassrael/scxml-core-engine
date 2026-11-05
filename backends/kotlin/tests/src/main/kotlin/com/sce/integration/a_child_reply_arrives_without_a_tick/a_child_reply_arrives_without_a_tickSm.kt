@@ -204,7 +204,7 @@ class AChildReplyArrivesWithoutATickStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'hellos' with expr
         try {
-            val initResult_hellos = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_hellos = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "hellos", initResult_hellos)
         } catch (e: Exception) {
             raisePlatformError(AChildReplyArrivesWithoutATickEvent.Error.Execution, "<data id='hellos'> expr failed to evaluate")
@@ -524,7 +524,7 @@ class AChildReplyArrivesWithoutATickStateMachine(
                 // SCE-MAP: a_child_reply_arrives_without_a_tick.scxml:44 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("hellos"), com.sce.runtime.ScriptSource.ecmascript("hellos + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("hellos", "hellos"), com.sce.runtime.ScriptSource.lua("_scxml_add(hellos, 1)", "hellos + 1"))) {
                 return
             }
     }

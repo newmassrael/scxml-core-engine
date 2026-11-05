@@ -190,7 +190,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'alsoBroken' with expr
         try {
-            val initResult_alsoBroken = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
+            val initResult_alsoBroken = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
             engine.setVariable(sid, "alsoBroken", initResult_alsoBroken)
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, "<data id='alsoBroken'> expr failed to evaluate")

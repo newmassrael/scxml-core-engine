@@ -293,7 +293,7 @@ class Test422StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test422Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -498,7 +498,7 @@ class Test422StateMachine(
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test422State, event: Test422Event?): EnabledTransition<Test422State, HistoryId>? = when {
         (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> TransitionsPart0.transitionS1At0
         event is Test422Event.InvokeS11 -> TransitionsPart0.transitionS1At1
-        event is Test422Event.Timeout && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionsPart0.transitionS1At2
+        event is Test422Event.Timeout && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionsPart0.transitionS1At2
         event is Test422Event.Timeout -> TransitionsPart0.transitionS1At3
         else -> null
     }
@@ -712,7 +712,7 @@ class Test422StateMachine(
                 // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
                 return
             }
     }

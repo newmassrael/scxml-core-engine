@@ -443,7 +443,7 @@ class Test527StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test527State, event: Test527Event?): EnabledTransition<Test527State, HistoryId>? = when {
-        event is Test527Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 'foo'")) -> TransitionsPart0.transitionS0At0
+        event is Test527Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, \"foo\")", "_event.data == 'foo'")) -> TransitionsPart0.transitionS0At0
         event is Test527Event.Done.State.S0 -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -502,7 +502,7 @@ class Test527StateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("'foo'"))
+                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("\"foo\"", "'foo'"))
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {

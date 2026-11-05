@@ -198,7 +198,7 @@ class Test156StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test156Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -412,7 +412,7 @@ class Test156StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test156State, event: Test156Event?): EnabledTransition<Test156State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -455,13 +455,13 @@ class Test156StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var3"), "Var2", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var2", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var5"), com.sce.runtime.ScriptSource.ecmascript("undefined.invalidProperty"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var5", "Var5"), com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {

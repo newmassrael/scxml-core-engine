@@ -419,7 +419,7 @@ class Test319StateMachine(
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("typeof _event !== 'undefined'")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_typeof(_event) ~= \"undefined\")", "typeof _event !== 'undefined'")) { ifCondFailed1 = true }) {
 
             raiseInternal(Test319Event.Bound)
             } else {

@@ -412,7 +412,7 @@ class DonedataLateCompletionStateMachine(
     // phase's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPhase(state: DonedataLateCompletionState, event: DonedataLateCompletionEvent?): EnabledTransition<DonedataLateCompletionState, HistoryId>? = when {
         event is DonedataLateCompletionEvent.Ready -> TransitionsPart0.transitionPhaseAt0
-        event is DonedataLateCompletionEvent.Done.Invoke.InvLate && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> TransitionsPart0.transitionPhaseAt1
+        event is DonedataLateCompletionEvent.Done.Invoke.InvLate && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.result == 42))", "_event.data && _event.data.result === 42")) -> TransitionsPart0.transitionPhaseAt1
         event is DonedataLateCompletionEvent.Done.Invoke.InvLate -> TransitionsPart0.transitionPhaseAt2
         event is DonedataLateCompletionEvent.Error.Execution -> TransitionsPart0.transitionPhaseAt3
         else -> null

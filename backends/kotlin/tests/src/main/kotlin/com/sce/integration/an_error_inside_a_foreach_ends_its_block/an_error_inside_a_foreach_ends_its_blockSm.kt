@@ -409,77 +409,77 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sent' with expr
         try {
-            val initResult_sent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_sent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "sent", initResult_sent)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='sent'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'iters1' with expr
         try {
-            val initResult_iters1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_iters1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "iters1", initResult_iters1)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='iters1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'after1' with expr
         try {
-            val initResult_after1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_after1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "after1", initResult_after1)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='after1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'iters2' with expr
         try {
-            val initResult_iters2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_iters2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "iters2", initResult_iters2)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='iters2'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'after2' with expr
         try {
-            val initResult_after2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_after2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "after2", initResult_after2)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='after2'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'iters3' with expr
         try {
-            val initResult_iters3 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_iters3 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "iters3", initResult_iters3)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='iters3'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'after3' with expr
         try {
-            val initResult_after3 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_after3 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "after3", initResult_after3)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='after3'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'items' with expr
         try {
-            val initResult_items = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[1, 2, 3]"))
+            val initResult_items = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 2, 3}", "[1, 2, 3]"))
             engine.setVariable(sid, "items", initResult_items)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='items'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'item' with expr
         try {
-            val initResult_item = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_item = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "item", initResult_item)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='item'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
-            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({})"))
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
             engine.setVariable(sid, "obj", initResult_obj)
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
@@ -733,10 +733,10 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("items"), "item", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("items", "items"), "item", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("iters1"), com.sce.runtime.ScriptSource.ecmascript("iters1 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("iters1", "iters1"), com.sce.runtime.ScriptSource.lua("_scxml_add(iters1, 1)", "iters1 + 1"))
 
 
             if (run send@{
@@ -746,7 +746,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")))
+                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
                 paramFailed = true
@@ -778,7 +778,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             } // end of run foreach@
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after1"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after1", "after1"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
@@ -795,13 +795,13 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("items"), "item", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("items", "items"), "item", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("iters2"), com.sce.runtime.ScriptSource.ecmascript("iters2 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("iters2", "iters2"), com.sce.runtime.ScriptSource.lua("_scxml_add(iters2, 1)", "iters2 + 1"))
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), com.sce.runtime.ScriptSource.lua("1", "1"))
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
@@ -818,7 +818,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             } // end of run foreach@
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after2"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after2", "after2"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
@@ -883,7 +883,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:57 :: run :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
     }
@@ -892,7 +892,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:60 :: run :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sent"), com.sce.runtime.ScriptSource.ecmascript("sent + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sent", "sent"), com.sce.runtime.ScriptSource.lua("_scxml_add(sent, 1)", "sent + 1"))) {
                 return
             }
     }
@@ -906,10 +906,10 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("items"), "item", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("items", "items"), "item", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("iters3"), com.sce.runtime.ScriptSource.ecmascript("iters3 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("iters3", "iters3"), com.sce.runtime.ScriptSource.lua("_scxml_add(iters3, 1)", "iters3 + 1"))
 
 
             if (run send@{
@@ -919,7 +919,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep")))
+                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
                 paramFailed = true
@@ -951,7 +951,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             } // end of run foreach@
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("after3"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after3", "after3"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }

@@ -525,7 +525,7 @@ class InlineContentIsReadByItsDataModelStateMachine(
 
     // awaitDocument's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAwaitDocument(state: InlineContentIsReadByItsDataModelState, event: InlineContentIsReadByItsDataModelEvent?): EnabledTransition<InlineContentIsReadByItsDataModelState, HistoryId>? = when {
-        event is InlineContentIsReadByItsDataModelEvent.Done.Invoke.Reporter && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.getElementsByTagName('book')[0].getAttribute('title') === 'x'")) -> TransitionsPart0.transitionAwaitDocumentAt0
+        event is InlineContentIsReadByItsDataModelEvent.Done.Invoke.Reporter && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data:getElementsByTagName(\"book\")[1]:getAttribute(\"title\") == \"x\"))", "_event.data && _event.data.getElementsByTagName('book')[0].getAttribute('title') === 'x'")) -> TransitionsPart0.transitionAwaitDocumentAt0
         event is InlineContentIsReadByItsDataModelEvent.Done.Invoke.Reporter -> TransitionsPart0.transitionAwaitDocumentAt1
         else -> null
     }
@@ -533,7 +533,7 @@ class InlineContentIsReadByItsDataModelStateMachine(
 
     // awaitNumber's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAwaitNumber(state: InlineContentIsReadByItsDataModelState, event: InlineContentIsReadByItsDataModelEvent?): EnabledTransition<InlineContentIsReadByItsDataModelState, HistoryId>? = when {
-        event is InlineContentIsReadByItsDataModelEvent.Number && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 21")) -> TransitionsPart0.transitionAwaitNumberAt0
+        event is InlineContentIsReadByItsDataModelEvent.Number && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == 21)", "_event.data === 21")) -> TransitionsPart0.transitionAwaitNumberAt0
         event is InlineContentIsReadByItsDataModelEvent.Number -> TransitionsPart0.transitionAwaitNumberAt1
         else -> null
     }
@@ -541,7 +541,7 @@ class InlineContentIsReadByItsDataModelStateMachine(
 
     // awaitObject's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAwaitObject(state: InlineContentIsReadByItsDataModelState, event: InlineContentIsReadByItsDataModelEvent?): EnabledTransition<InlineContentIsReadByItsDataModelState, HistoryId>? = when {
-        event is InlineContentIsReadByItsDataModelEvent.Object && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.k === 7")) -> TransitionsPart0.transitionAwaitObjectAt0
+        event is InlineContentIsReadByItsDataModelEvent.Object && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.k == 7))", "_event.data && _event.data.k === 7")) -> TransitionsPart0.transitionAwaitObjectAt0
         event is InlineContentIsReadByItsDataModelEvent.Object -> TransitionsPart0.transitionAwaitObjectAt1
         else -> null
     }
@@ -549,7 +549,7 @@ class InlineContentIsReadByItsDataModelStateMachine(
 
     // awaitText's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAwaitText(state: InlineContentIsReadByItsDataModelState, event: InlineContentIsReadByItsDataModelEvent?): EnabledTransition<InlineContentIsReadByItsDataModelState, HistoryId>? = when {
-        event is InlineContentIsReadByItsDataModelEvent.Text && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 'two words'")) -> TransitionsPart0.transitionAwaitTextAt0
+        event is InlineContentIsReadByItsDataModelEvent.Text && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"two words\")", "_event.data === 'two words'")) -> TransitionsPart0.transitionAwaitTextAt0
         event is InlineContentIsReadByItsDataModelEvent.Text -> TransitionsPart0.transitionAwaitTextAt1
         else -> null
     }

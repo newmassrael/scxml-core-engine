@@ -410,21 +410,21 @@ class WildcardInDocumentOrderStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'armed' with expr
         try {
-            val initResult_armed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("false"))
+            val initResult_armed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false"))
             engine.setVariable(sid, "armed", initResult_armed)
         } catch (e: Exception) {
             raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<data id='armed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'guardedEntries' with expr
         try {
-            val initResult_guardedEntries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_guardedEntries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "guardedEntries", initResult_guardedEntries)
         } catch (e: Exception) {
             raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<data id='guardedEntries'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sealedEntries' with expr
         try {
-            val initResult_sealedEntries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_sealedEntries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "sealedEntries", initResult_sealedEntries)
         } catch (e: Exception) {
             raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<data id='sealedEntries'> expr failed to evaluate")
@@ -640,21 +640,21 @@ class WildcardInDocumentOrderStateMachine(
 
     // guardClosedLeaf's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardClosedLeaf(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
-        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed")) -> TransitionsPart0.transitionGuardClosedLeafAt0
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> TransitionsPart0.transitionGuardClosedLeafAt0
         else -> null
     }
 
 
     // guardedInternal's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardedInternal(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
-        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed")) -> TransitionsPart0.transitionGuardedInternalAt0
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> TransitionsPart0.transitionGuardedInternalAt0
         else -> null
     }
 
 
     // guardedTo's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardedTo(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("guardedEntries == 1")) -> TransitionsPart0.transitionGuardedToAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(guardedEntries, 1)", "guardedEntries == 1")) -> TransitionsPart0.transitionGuardedToAt0
         event == null -> TransitionsPart0.transitionGuardedToAt1
         else -> null
     }
@@ -669,7 +669,7 @@ class WildcardInDocumentOrderStateMachine(
 
     // guardOpenLeaf's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfGuardOpenLeaf(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
-        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed")) -> TransitionsPart0.transitionGuardOpenLeafAt0
+        event != null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(armed)", "armed")) -> TransitionsPart0.transitionGuardOpenLeafAt0
         else -> null
     }
 
@@ -683,7 +683,7 @@ class WildcardInDocumentOrderStateMachine(
 
     // sealedTo's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfSealedTo(state: WildcardInDocumentOrderState, event: WildcardInDocumentOrderEvent?): EnabledTransition<WildcardInDocumentOrderState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sealedEntries == 1")) -> TransitionsPart0.transitionSealedToAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(sealedEntries, 1)", "sealedEntries == 1")) -> TransitionsPart0.transitionSealedToAt0
         event == null -> TransitionsPart0.transitionSealedToAt1
         else -> null
     }
@@ -762,7 +762,7 @@ class WildcardInDocumentOrderStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("guardedEntries"), com.sce.runtime.ScriptSource.ecmascript("guardedEntries + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("guardedEntries", "guardedEntries"), com.sce.runtime.ScriptSource.lua("_scxml_add(guardedEntries, 1)", "guardedEntries + 1"))) {
                 return@run
             }
 
@@ -780,7 +780,7 @@ class WildcardInDocumentOrderStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("armed"), com.sce.runtime.ScriptSource.ecmascript("true"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("armed", "armed"), com.sce.runtime.ScriptSource.lua("true", "true"))) {
                 return@run
             }
 
@@ -808,7 +808,7 @@ class WildcardInDocumentOrderStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sealedEntries"), com.sce.runtime.ScriptSource.ecmascript("sealedEntries + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sealedEntries", "sealedEntries"), com.sce.runtime.ScriptSource.lua("_scxml_add(sealedEntries, 1)", "sealedEntries + 1"))) {
                 return@run
             }
 

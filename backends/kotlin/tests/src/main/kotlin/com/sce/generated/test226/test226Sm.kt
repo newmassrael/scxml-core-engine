@@ -481,7 +481,7 @@ class Test226StateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("1"))
+                            invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("1", "1"))
                         } catch (_: Exception) {
                             raisePlatformError(Test226Event.Error.Execution, "<invoke> <param name='Var1'> could not be read")
                         }

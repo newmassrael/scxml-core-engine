@@ -313,7 +313,7 @@ class Test241StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test241Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -682,7 +682,7 @@ class Test241StateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("1"))
+                            invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("1", "1"))
                         } catch (_: Exception) {
                             raisePlatformError(Test241Event.Error.Execution, "<invoke> <param name='Var1'> could not be read")
                         }
@@ -713,7 +713,7 @@ class Test241StateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("1"))
+                            invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("1", "1"))
                         } catch (_: Exception) {
                             raisePlatformError(Test241Event.Error.Execution, "<invoke> <param name='Var1'> could not be read")
                         }

@@ -402,84 +402,84 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
-            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({})"))
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
             engine.setVariable(sid, "obj", initResult_obj)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'execErrors' with expr
         try {
-            val initResult_execErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_execErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "execErrors", initResult_execErrors)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='execErrors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'commErrors' with expr
         try {
-            val initResult_commErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_commErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "commErrors", initResult_commErrors)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='commErrors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterRefused' with expr
         try {
-            val initResult_afterRefused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_afterRefused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "afterRefused", initResult_afterRefused)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='afterRefused'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterNobody' with expr
         try {
-            val initResult_afterNobody = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_afterNobody = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "afterNobody", initResult_afterNobody)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='afterNobody'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterStranger' with expr
         try {
-            val initResult_afterStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_afterStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "afterStranger", initResult_afterStranger)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='afterStranger'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterOrphan' with expr
         try {
-            val initResult_afterOrphan = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_afterOrphan = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "afterOrphan", initResult_afterOrphan)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='afterOrphan'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'tParent' with expr
         try {
-            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#_parent'"))
+            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_parent\"", "'#_parent'"))
             engine.setVariable(sid, "tParent", initResult_tParent)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='tParent'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterOrphanExpr' with expr
         try {
-            val initResult_afterOrphanExpr = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_afterOrphanExpr = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "afterOrphanExpr", initResult_afterOrphanExpr)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='afterOrphanExpr'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterOrphanExprLater' with expr
         try {
-            val initResult_afterOrphanExprLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_afterOrphanExprLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "afterOrphanExprLater", initResult_afterOrphanExprLater)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='afterOrphanExprLater'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'bareArrived' with expr
         try {
-            val initResult_bareArrived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_bareArrived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "bareArrived", initResult_bareArrived)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='bareArrived'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pongOk' with expr
         try {
-            val initResult_pongOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pongOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pongOk", initResult_pongOk)
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='pongOk'> expr failed to evaluate")
@@ -766,7 +766,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterStranger"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterStranger", "afterStranger"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
@@ -793,7 +793,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterOrphan"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterOrphan", "afterOrphan"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
@@ -808,7 +808,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tParent")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
             } catch (_: Exception) {
                 raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_6")
                 return@send true
@@ -888,7 +888,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterOrphanExpr"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterOrphanExpr", "afterOrphanExpr"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
@@ -903,7 +903,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("tParent")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
             } catch (_: Exception) {
                 raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_7")
                 return@send true
@@ -981,7 +981,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterOrphanExprLater"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterOrphanExprLater", "afterOrphanExprLater"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
@@ -1099,7 +1099,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:121 :: run :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("execErrors"), com.sce.runtime.ScriptSource.ecmascript("execErrors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("execErrors", "execErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(execErrors, 1)", "execErrors + 1"))) {
                 return
             }
     }
@@ -1108,7 +1108,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:124 :: run :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("commErrors"), com.sce.runtime.ScriptSource.ecmascript("commErrors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("commErrors", "commErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(commErrors, 1)", "commErrors + 1"))) {
                 return
             }
     }
@@ -1117,7 +1117,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:127 :: run :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("bareArrived"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("bareArrived", "bareArrived"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }
@@ -1126,7 +1126,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
                 // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:130 :: run :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterNobody"), com.sce.runtime.ScriptSource.ecmascript("100"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterNobody", "afterNobody"), com.sce.runtime.ScriptSource.lua("100", "100"))) {
                 return
             }
     }
@@ -1146,7 +1146,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
             ensureScriptEngine()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.ecmascript("7"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("7", "7"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_0")
@@ -1173,10 +1173,10 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.data === 8")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.data == 8)", "_event.data === 8")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pongOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pongOk", "pongOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }

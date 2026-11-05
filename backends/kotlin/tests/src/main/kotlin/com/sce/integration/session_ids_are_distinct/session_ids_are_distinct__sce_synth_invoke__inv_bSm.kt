@@ -365,7 +365,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "sid", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("_sessionid")))
+                putParam(sendPayload, "sid", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid")))
             } catch (_: Exception) {
                 raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution, "<send> <param name='sid'> could not be read")
                 paramFailed = true

@@ -419,7 +419,7 @@ class Test446StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test446State, event: Test446Event?): EnabledTransition<Test446State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1 instanceof Array")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_isArray(var1)", "var1 instanceof Array")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -427,7 +427,7 @@ class Test446StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test446State, event: Test446Event?): EnabledTransition<Test446State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var2 instanceof Array")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_isArray(var2)", "var2 instanceof Array")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }

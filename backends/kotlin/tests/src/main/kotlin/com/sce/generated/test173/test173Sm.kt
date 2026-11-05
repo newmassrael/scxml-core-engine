@@ -207,7 +207,7 @@ class Test173StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'invalid_session_id'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"invalid_session_id\"", "'invalid_session_id'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test173Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -447,7 +447,7 @@ class Test173StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'#_internal'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'"))) {
                 return@run
             }
 
@@ -459,7 +459,7 @@ class Test173StateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("Var1")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
             } catch (_: Exception) {
                 raisePlatformError(Test173Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true

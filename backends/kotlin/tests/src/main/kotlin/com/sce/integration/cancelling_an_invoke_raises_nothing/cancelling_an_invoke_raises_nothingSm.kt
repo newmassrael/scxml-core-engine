@@ -236,7 +236,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'spurious' with expr
         try {
-            val initResult_spurious = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_spurious = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "spurious", initResult_spurious)
         } catch (e: Exception) {
             raisePlatformError(CancellingAnInvokeRaisesNothingEvent.Error.Execution, "<data id='spurious'> expr failed to evaluate")
@@ -576,7 +576,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:33 :: s2 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("spurious"), com.sce.runtime.ScriptSource.ecmascript("spurious + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("spurious", "spurious"), com.sce.runtime.ScriptSource.lua("_scxml_add(spurious, 1)", "spurious + 1"))) {
                 return
             }
     }
@@ -585,7 +585,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:36 :: s2 :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("spurious"), com.sce.runtime.ScriptSource.ecmascript("spurious + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("spurious", "spurious"), com.sce.runtime.ScriptSource.lua("_scxml_add(spurious, 1)", "spurious + 1"))) {
                 return
             }
     }

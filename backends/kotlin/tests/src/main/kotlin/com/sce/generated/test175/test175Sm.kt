@@ -229,7 +229,7 @@ class Test175StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'0s'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"0s\"", "'0s'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test175Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -479,7 +479,7 @@ class Test175StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'1s'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"1s\"", "'1s'"))) {
                 return@run
             }
 
@@ -492,7 +492,7 @@ class Test175StateMachine(
             // that is not the CSS2 time the clause names (ARCHITECTURE.md,
             // "Durations"): the message is not scheduled under some default wait.
             val sendDelayText = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("Var1")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
             } catch (_: Exception) {
                 raisePlatformError(Test175Event.Error.Execution, "<send> delayexpr could not be evaluated", "__send_0")
                 return@send true

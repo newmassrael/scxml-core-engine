@@ -281,14 +281,14 @@ class SessionIdsAreDistinctStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'firstSid' with expr
         try {
-            val initResult_firstSid = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("''"))
+            val initResult_firstSid = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
             engine.setVariable(sid, "firstSid", initResult_firstSid)
         } catch (e: Exception) {
             raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<data id='firstSid'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'readBackProbe' with expr
         try {
-            val initResult_readBackProbe = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[{ name: 'first', keys: 'Escape' }, { name: 'second' }]"))
+            val initResult_readBackProbe = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{{[\"name\"] = \"first\", [\"keys\"] = \"Escape\"}, {[\"name\"] = \"second\"}}", "[{ name: 'first', keys: 'Escape' }, { name: 'second' }]"))
             engine.setVariable(sid, "readBackProbe", initResult_readBackProbe)
         } catch (e: Exception) {
             raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<data id='readBackProbe'> expr failed to evaluate")
@@ -491,7 +491,7 @@ class SessionIdsAreDistinctStateMachine(
 
     // one_seen's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfOneSeen(state: SessionIdsAreDistinctState, event: SessionIdsAreDistinctEvent?): EnabledTransition<SessionIdsAreDistinctState, HistoryId>? = when {
-        event is SessionIdsAreDistinctEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.sid != firstSid")) -> TransitionsPart0.transitionOneSeenAt0
+        event is SessionIdsAreDistinctEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(_event.data.sid, firstSid))", "_event.data.sid != firstSid")) -> TransitionsPart0.transitionOneSeenAt0
         event is SessionIdsAreDistinctEvent.FromChild -> TransitionsPart0.transitionOneSeenAt1
         else -> null
     }
@@ -667,7 +667,7 @@ class SessionIdsAreDistinctStateMachine(
                 // SCE-MAP: session_ids_are_distinct.scxml:101 :: waiting :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("firstSid"), com.sce.runtime.ScriptSource.ecmascript("_event.data.sid"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("firstSid", "firstSid"), com.sce.runtime.ScriptSource.lua("_event.data.sid", "_event.data.sid"))) {
                 return
             }
     }

@@ -210,7 +210,7 @@ class Test149StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test149Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -412,7 +412,7 @@ class Test149StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test149State, event: Test149Event?): EnabledTransition<Test149State, HistoryId>? = when {
-        event is Test149Event.Bat && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 0")) -> TransitionsPart0.transitionS0At0
+        event is Test149Event.Bat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 0)", "Var1 == 0")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -451,20 +451,20 @@ class Test149StateMachine(
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("false")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("false", "false")) { ifCondFailed1 = true }) {
 
             raiseInternal(Test149Event.Foo)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
                 return@run
             }
-            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("false")) { ifCondFailed1 = true }) {
+            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("false", "false")) { ifCondFailed1 = true }) {
 
             raiseInternal(Test149Event.Bar)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
                 return@run
             }
             }

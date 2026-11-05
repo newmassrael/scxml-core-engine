@@ -226,7 +226,7 @@ class Test342StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'foo'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"foo\"", "'foo'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test342Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -442,7 +442,7 @@ class Test342StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test342State, event: Test342Event?): EnabledTransition<Test342State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 === Var2")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(Var1 == Var2)", "Var1 === Var2")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -488,7 +488,7 @@ class Test342StateMachine(
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("Var1")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
             } catch (_: Exception) {
                 ""
             }
@@ -574,7 +574,7 @@ class Test342StateMachine(
                 // SCE-MAP: test342.scxml:14 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.name"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))) {
                 return
             }
     }

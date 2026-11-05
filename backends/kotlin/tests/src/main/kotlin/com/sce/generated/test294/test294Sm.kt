@@ -314,7 +314,7 @@ class Test294StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test294Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -519,7 +519,7 @@ class Test294StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test294State, event: Test294Event?): EnabledTransition<Test294State, HistoryId>? = when {
-        event is Test294Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.Var1 == 1")) -> TransitionsPart0.transitionS0At0
+        event is Test294Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data.Var1, 1)", "_event.data.Var1 == 1")) -> TransitionsPart0.transitionS0At0
         event is Test294Event.Done.State.S0 -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -534,7 +534,7 @@ class Test294StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test294State, event: Test294Event?): EnabledTransition<Test294State, HistoryId>? = when {
-        event is Test294Event.Done.State.S1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 'foo'")) -> TransitionsPart0.transitionS1At0
+        event is Test294Event.Done.State.S1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, \"foo\")", "_event.data == 'foo'")) -> TransitionsPart0.transitionS1At0
         event is Test294Event.Done.State.S1 -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -597,7 +597,7 @@ class Test294StateMachine(
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
                     try {
-                        doneParams["Var1"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("1"))
+                        doneParams["Var1"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("1", "1"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(Test294Event.Error.Execution, "<donedata> <param name='Var1'> failed to evaluate")
@@ -628,7 +628,10 @@ class Test294StateMachine(
                     val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     var doneEventData = ""
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
-                    doneEventData = "\"foo\""
+                    // It lands in `contentData`, the sink the expression-site census
+                    // adjudicates as verbatim (`INERT_DESTINATIONS`).
+                    val contentData = "\"foo\""
+                    doneEventData = contentData
                     // W3C SCXML 3.7: Final child state reached, raise done.state with data
                     raiseInternal(Test294Event.Done.State.S1, EventMetadata.platform(doneEventData))
                 }

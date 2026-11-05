@@ -458,7 +458,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "tally", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("7")))
+                putParam(sendPayload, "tally", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (_: Exception) {
                 raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent.Error.Execution, "<send> <param name='tally'> could not be read")
                 paramFailed = true

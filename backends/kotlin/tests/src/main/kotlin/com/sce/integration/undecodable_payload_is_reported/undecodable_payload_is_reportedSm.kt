@@ -220,14 +220,14 @@ class UndecodablePayloadIsReportedStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'answers' with expr
         try {
-            val initResult_answers = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_answers = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "answers", initResult_answers)
         } catch (e: Exception) {
             raisePlatformError(UndecodablePayloadIsReportedEvent.Error.Execution, "<data id='answers'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'notes' with expr
         try {
-            val initResult_notes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_notes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "notes", initResult_notes)
         } catch (e: Exception) {
             raisePlatformError(UndecodablePayloadIsReportedEvent.Error.Execution, "<data id='notes'> expr failed to evaluate")
@@ -429,7 +429,7 @@ class UndecodablePayloadIsReportedStateMachine(
 
     // waiting's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: UndecodablePayloadIsReportedState, event: UndecodablePayloadIsReportedEvent?): EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>? = when {
-        event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.done")) -> TransitionsPart0.transitionWaitingAt0
+        event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> TransitionsPart0.transitionWaitingAt0
         event is UndecodablePayloadIsReportedEvent.Answer -> TransitionsPart0.transitionWaitingAt1
         event is UndecodablePayloadIsReportedEvent.Note -> TransitionsPart0.transitionWaitingAt2
         else -> null
@@ -507,7 +507,7 @@ class UndecodablePayloadIsReportedStateMachine(
                 // SCE-MAP: undecodable_payload_is_reported.scxml:65 :: waiting :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("answers"), com.sce.runtime.ScriptSource.ecmascript("answers + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("answers", "answers"), com.sce.runtime.ScriptSource.lua("_scxml_add(answers, 1)", "answers + 1"))) {
                 return
             }
     }
@@ -516,7 +516,7 @@ class UndecodablePayloadIsReportedStateMachine(
                 // SCE-MAP: undecodable_payload_is_reported.scxml:68 :: waiting :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("notes"), com.sce.runtime.ScriptSource.ecmascript("notes + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("notes", "notes"), com.sce.runtime.ScriptSource.lua("_scxml_add(notes, 1)", "notes + 1"))) {
                 return
             }
     }

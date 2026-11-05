@@ -424,7 +424,7 @@ class Test352StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test352State, event: Test352Event?): EnabledTransition<Test352State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\")", "Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -549,7 +549,7 @@ class Test352StateMachine(
                 // SCE-MAP: test352.scxml:15 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.origintype"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype"))) {
                 return
             }
     }

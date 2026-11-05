@@ -361,7 +361,10 @@ class InlineContentIsReadByItsDataModelSceSynthInvokeReporterStateMachine(
                     val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     var doneEventData = ""
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
-                    doneEventData = "<books xmlns=\"\"><book title=\"x\"></book></books>"
+                    // It lands in `contentData`, the sink the expression-site census
+                    // adjudicates as verbatim (`INERT_DESTINATIONS`).
+                    val contentData = "<books xmlns=\"\"><book title=\"x\"></book></books>"
+                    doneEventData = contentData
                     // W3C SCXML 5.5 + 6.3.1: stash onto the engine so the invoking parent's
                     // startInvoke completion callback can lift the payload onto
                     // done.invoke.<id>._event.data. Mirrors C++ AOT stashDonedataAtFinal.

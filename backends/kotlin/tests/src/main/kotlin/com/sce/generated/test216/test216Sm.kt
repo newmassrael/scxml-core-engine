@@ -209,7 +209,7 @@ class Test216StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'foo'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"foo\"", "'foo'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test216Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -461,7 +461,7 @@ class Test216StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'file:test216sub1.scxml'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"file:test216sub1.scxml\"", "'file:test216sub1.scxml'"))) {
                 return@run
             }
                 }
@@ -512,7 +512,7 @@ class Test216StateMachine(
                             // "the child could not be started". A `null` result took
                             // neither path and returned silently.
                             val filePath = try {
-                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"))?.toString()
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))?.toString()
                             } catch (_: Exception) {
                                 null
                             }

@@ -209,7 +209,7 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
@@ -518,7 +518,7 @@ class AnInvokeLeftBeforeItStartsRaisesNothingStateMachine(
                 // SCE-MAP: an_invoke_left_before_it_starts_raises_nothing.scxml:29 :: s1 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
     }

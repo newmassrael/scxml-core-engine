@@ -380,7 +380,7 @@ class Test560StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test560State, event: Test560Event?): EnabledTransition<Test560State, HistoryId>? = when {
-        event is Test560Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.aParam == 1")) -> TransitionsPart0.transitionS0At0
+        event is Test560Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data.aParam, 1)", "_event.data.aParam == 1")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -425,7 +425,7 @@ class Test560StateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "aParam", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("1")))
+                putParam(sendPayload, "aParam", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
                 raisePlatformError(Test560Event.Error.Execution, "<send> <param name='aParam'> could not be read")
                 paramFailed = true

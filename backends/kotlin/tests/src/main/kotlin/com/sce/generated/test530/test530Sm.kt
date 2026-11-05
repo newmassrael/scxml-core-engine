@@ -209,7 +209,7 @@ class Test530StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test530Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -449,7 +449,7 @@ class Test530StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"><final></final></scxml>'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"<scxml xmlns=\\\"http://www.w3.org/2005/07/scxml\\\" version=\\\"1.0\\\"><final></final></scxml>\"", "'<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"><final></final></scxml>'"))) {
                 return@run
             }
 
@@ -508,7 +508,7 @@ class Test530StateMachine(
                             // W3C SCXML 6.4.2: Evaluate contentexpr → SCXML string → create child.
                             // Split for the reason the srcexpr arm above states.
                             val scxmlContent = try {
-                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"))?.toString()
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))?.toString()
                             } catch (_: Exception) {
                                 null
                             }

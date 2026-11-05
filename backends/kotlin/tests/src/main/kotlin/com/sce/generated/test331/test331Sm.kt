@@ -516,7 +516,7 @@ class Test331StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test331State, event: Test331Event?): EnabledTransition<Test331State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'internal'")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"internal\")", "Var1 == 'internal'")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -532,7 +532,7 @@ class Test331StateMachine(
 
     // s3's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test331State, event: Test331Event?): EnabledTransition<Test331State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'platform'")) -> TransitionsPart0.transitionS3At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"platform\")", "Var1 == 'platform'")) -> TransitionsPart0.transitionS3At0
         event == null -> TransitionsPart0.transitionS3At1
         else -> null
     }
@@ -548,7 +548,7 @@ class Test331StateMachine(
 
     // s5's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS5(state: Test331State, event: Test331Event?): EnabledTransition<Test331State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'external'")) -> TransitionsPart0.transitionS5At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"external\")", "Var1 == 'external'")) -> TransitionsPart0.transitionS5At0
         event == null -> TransitionsPart0.transitionS5At1
         else -> null
     }
@@ -722,7 +722,7 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:15 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.type"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))) {
                 return
             }
     }
@@ -744,7 +744,7 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:31 :: s2 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.type"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))) {
                 return
             }
     }
@@ -766,7 +766,7 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:47 :: s4 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.type"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))) {
                 return
             }
     }

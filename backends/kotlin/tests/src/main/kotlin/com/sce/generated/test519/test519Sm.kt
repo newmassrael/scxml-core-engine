@@ -386,7 +386,7 @@ class Test519StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test519State, event: Test519Event?): EnabledTransition<Test519State, HistoryId>? = when {
-        event is Test519Event.Test && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data[\"param1\"] == 1")) -> TransitionsPart0.transitionS0At0
+        event is Test519Event.Test && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data.param1, 1)", "_event.data[\"param1\"] == 1")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -444,7 +444,7 @@ class Test519StateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
                 raisePlatformError(Test519Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
@@ -466,7 +466,7 @@ class Test519StateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "param1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("1")))
+                putParam(sendPayload, "param1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
                 raisePlatformError(Test519Event.Error.Execution, "<send> <param name='param1'> could not be read")
                 paramFailed = true

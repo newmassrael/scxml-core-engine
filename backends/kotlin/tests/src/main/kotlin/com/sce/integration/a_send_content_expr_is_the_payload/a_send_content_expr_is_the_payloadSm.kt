@@ -331,56 +331,56 @@ class ASendContentExprIsThePayloadStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
-            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({})"))
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
             engine.setVariable(sid, "obj", initResult_obj)
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'numberOk' with expr
         try {
-            val initResult_numberOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_numberOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "numberOk", initResult_numberOk)
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='numberOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'objectOk' with expr
         try {
-            val initResult_objectOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_objectOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "objectOk", initResult_objectOk)
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='objectOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'textOk' with expr
         try {
-            val initResult_textOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_textOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "textOk", initResult_textOk)
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='textOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'badArrived' with expr
         try {
-            val initResult_badArrived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_badArrived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "badArrived", initResult_badArrived)
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='badArrived'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'badEmpty' with expr
         try {
-            val initResult_badEmpty = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_badEmpty = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "badEmpty", initResult_badEmpty)
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='badEmpty'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterBad' with expr
         try {
-            val initResult_afterBad = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_afterBad = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "afterBad", initResult_afterBad)
         } catch (e: Exception) {
             raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='afterBad'> expr failed to evaluate")
@@ -583,9 +583,9 @@ class ASendContentExprIsThePayloadStateMachine(
     // run's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRun(state: ASendContentExprIsThePayloadState, event: ASendContentExprIsThePayloadEvent?): EnabledTransition<ASendContentExprIsThePayloadState, HistoryId>? = when {
         event is ASendContentExprIsThePayloadEvent.Error.Execution -> TransitionsPart0.transitionRunAt0
-        event is ASendContentExprIsThePayloadEvent.Number && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 42")) -> TransitionsPart0.transitionRunAt1
-        event is ASendContentExprIsThePayloadEvent.Object && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.a === 1")) -> TransitionsPart0.transitionRunAt2
-        event is ASendContentExprIsThePayloadEvent.Text && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 'hi'")) -> TransitionsPart0.transitionRunAt3
+        event is ASendContentExprIsThePayloadEvent.Number && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == 42)", "_event.data === 42")) -> TransitionsPart0.transitionRunAt1
+        event is ASendContentExprIsThePayloadEvent.Object && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.a == 1)", "_event.data.a === 1")) -> TransitionsPart0.transitionRunAt2
+        event is ASendContentExprIsThePayloadEvent.Text && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"hi\")", "_event.data === 'hi'")) -> TransitionsPart0.transitionRunAt3
         event is ASendContentExprIsThePayloadEvent.Bad -> TransitionsPart0.transitionRunAt4
         event is ASendContentExprIsThePayloadEvent.Settle -> TransitionsPart0.transitionRunAt5
         else -> null
@@ -628,7 +628,7 @@ class ASendContentExprIsThePayloadStateMachine(
             ensureScriptEngine()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.ecmascript("40 + 2"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("(40 + 2)", "40 + 2"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_0")
@@ -656,7 +656,7 @@ class ASendContentExprIsThePayloadStateMachine(
             ensureScriptEngine()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.ecmascript("({a: 1})"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("{[\"a\"] = 1}", "({a: 1})"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_1")
@@ -684,7 +684,7 @@ class ASendContentExprIsThePayloadStateMachine(
             ensureScriptEngine()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.ecmascript("'hi'"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("\"hi\"", "'hi'"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_2")
@@ -715,7 +715,7 @@ class ASendContentExprIsThePayloadStateMachine(
             ensureScriptEngine()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_3")
@@ -732,7 +732,7 @@ class ASendContentExprIsThePayloadStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterBad"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterBad", "afterBad"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
@@ -804,7 +804,7 @@ class ASendContentExprIsThePayloadStateMachine(
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:64 :: run :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
     }
@@ -813,7 +813,7 @@ class ASendContentExprIsThePayloadStateMachine(
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:67 :: run :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("numberOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("numberOk", "numberOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }
@@ -822,7 +822,7 @@ class ASendContentExprIsThePayloadStateMachine(
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:70 :: run :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("objectOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("objectOk", "objectOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }
@@ -831,7 +831,7 @@ class ASendContentExprIsThePayloadStateMachine(
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:73 :: run :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("textOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("textOk", "textOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }
@@ -840,16 +840,16 @@ class ASendContentExprIsThePayloadStateMachine(
                 // SCE-MAP: a_send_content_expr_is_the_payload.scxml:76 :: run :: _transition_4
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("badArrived"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("badArrived", "badArrived"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.data === ''")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.data == \"\")", "_event.data === ''")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("badEmpty"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("badEmpty", "badEmpty"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }

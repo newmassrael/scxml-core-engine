@@ -288,7 +288,7 @@ class Test403bStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test403bEvent.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -499,7 +499,7 @@ class Test403bStateMachine(
 
     // p0s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP0s1(state: Test403bState, event: Test403bEvent?): EnabledTransition<Test403bState, HistoryId>? = when {
-        event is Test403bEvent.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionsPart0.transitionP0s1At0
+        event is Test403bEvent.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionP0s1At0
         event is Test403bEvent.Event2 -> TransitionsPart0.transitionP0s1At1
         else -> null
     }
@@ -632,7 +632,7 @@ class Test403bStateMachine(
                 // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
                 return
             }
     }
@@ -654,7 +654,7 @@ class Test403bStateMachine(
                 // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
                 return
             }
     }

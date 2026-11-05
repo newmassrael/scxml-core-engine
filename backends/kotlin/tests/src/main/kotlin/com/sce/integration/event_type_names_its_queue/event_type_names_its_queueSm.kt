@@ -235,21 +235,21 @@ class EventTypeNamesItsQueueStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'intCode' with expr
         try {
-            val initResult_intCode = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_intCode = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "intCode", initResult_intCode)
         } catch (e: Exception) {
             raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<data id='intCode'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sendCode' with expr
         try {
-            val initResult_sendCode = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_sendCode = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "sendCode", initResult_sendCode)
         } catch (e: Exception) {
             raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<data id='sendCode'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'extCode' with expr
         try {
-            val initResult_extCode = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_extCode = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "extCode", initResult_extCode)
         } catch (e: Exception) {
             raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<data id='extCode'> expr failed to evaluate")
@@ -504,7 +504,7 @@ class EventTypeNamesItsQueueStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "a", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("1")))
+                putParam(sendPayload, "a", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
                 raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<send> <param name='a'> could not be read")
                 paramFailed = true
@@ -573,22 +573,22 @@ class EventTypeNamesItsQueueStateMachine(
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.type == 'internal'")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"internal\")", "_event.type == 'internal'")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("intCode"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.type == 'external'")) { ifCondFailed1 = true }) {
+            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"external\")", "_event.type == 'external'")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("intCode"), com.sce.runtime.ScriptSource.ecmascript("2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
                 return
             }
             } else {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("intCode"), com.sce.runtime.ScriptSource.ecmascript("3"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("3", "3"))) {
                 return
             }
             }
@@ -602,22 +602,22 @@ class EventTypeNamesItsQueueStateMachine(
 
 
             var ifCondFailed2 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.type == 'internal'")) { ifCondFailed2 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"internal\")", "_event.type == 'internal'")) { ifCondFailed2 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sendCode"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.type == 'external'")) { ifCondFailed2 = true }) {
+            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"external\")", "_event.type == 'external'")) { ifCondFailed2 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sendCode"), com.sce.runtime.ScriptSource.ecmascript("2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
                 return
             }
             } else {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sendCode"), com.sce.runtime.ScriptSource.ecmascript("3"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("3", "3"))) {
                 return
             }
             }
@@ -631,22 +631,22 @@ class EventTypeNamesItsQueueStateMachine(
 
 
             var ifCondFailed3 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.type == 'internal'")) { ifCondFailed3 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"internal\")", "_event.type == 'internal'")) { ifCondFailed3 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("extCode"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
-            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.type == 'external'")) { ifCondFailed3 = true }) {
+            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"external\")", "_event.type == 'external'")) { ifCondFailed3 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("extCode"), com.sce.runtime.ScriptSource.ecmascript("2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
                 return
             }
             } else {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("extCode"), com.sce.runtime.ScriptSource.ecmascript("3"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("3", "3"))) {
                 return
             }
             }

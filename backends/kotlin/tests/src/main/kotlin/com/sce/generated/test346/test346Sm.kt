@@ -553,7 +553,7 @@ class Test346StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_sessionid"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))) {
                 return@run
             }
 
@@ -567,7 +567,7 @@ class Test346StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_event"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_event", "_event"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))) {
                 return@run
             }
 
@@ -581,7 +581,7 @@ class Test346StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))) {
                 return@run
             }
 
@@ -595,7 +595,7 @@ class Test346StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_name"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_name", "_name"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))) {
                 return@run
             }
 

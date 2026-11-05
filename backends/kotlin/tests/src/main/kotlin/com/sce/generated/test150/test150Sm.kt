@@ -470,7 +470,7 @@ class Test150StateMachine(
 
     // s2's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: Test150State, event: Test150Event?): EnabledTransition<Test150State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var4 !== 'undefined'")) -> TransitionsPart0.transitionS2At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var4) ~= \"undefined\")", "typeof Var4 !== 'undefined'")) -> TransitionsPart0.transitionS2At0
         event == null -> TransitionsPart0.transitionS2At1
         else -> null
     }
@@ -515,7 +515,7 @@ class Test150StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var3"), "Var1", "Var2") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var1", "Var2") {
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
@@ -546,7 +546,7 @@ class Test150StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var3"), "Var4", "Var5") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var4", "Var5") {
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {

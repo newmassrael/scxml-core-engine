@@ -210,7 +210,7 @@ class Test153StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test153Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -229,7 +229,7 @@ class Test153StateMachine(
         }
         // W3C SCXML 5.3: Initialize variable 'Var4' with expr
         try {
-            val initResult_Var4 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var4 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var4", initResult_Var4)
         } catch (e: Exception) {
             raisePlatformError(Test153Event.Error.Execution, "<data id='Var4'> expr failed to evaluate")
@@ -431,7 +431,7 @@ class Test153StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test153State, event: Test153Event?): EnabledTransition<Test153State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4 == 0")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var4, 0)", "Var4 == 0")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -474,18 +474,18 @@ class Test153StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var3"), "Var2", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var2", "") {
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("Var1 < Var2")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(Var1 < Var2)", "Var1 < Var2")) { ifCondFailed1 = true }) {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var2"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("Var2", "Var2"))
             } else {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var4"), com.sce.runtime.ScriptSource.ecmascript("0"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var4", "Var4"), com.sce.runtime.ScriptSource.lua("0", "0"))
             }
             if (ifCondFailed1) {
                 throw com.sce.runtime.ActionBlockAbort()

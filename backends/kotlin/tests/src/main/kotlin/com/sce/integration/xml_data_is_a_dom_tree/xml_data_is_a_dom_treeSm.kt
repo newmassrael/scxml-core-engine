@@ -442,7 +442,7 @@ class XmlDataIsADomTreeStateMachine(
 
     // reading's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReading(state: XmlDataIsADomTreeState, event: XmlDataIsADomTreeEvent?): EnabledTransition<XmlDataIsADomTreeState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.nodeType === 9 && doc.nodeName === '#document' && doc.documentElement.tagName === 'books' && doc.hasAttribute('count')")) -> TransitionsPart0.transitionReadingAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((doc.nodeType == 9) and (doc.nodeName == \"#document\")) and (doc.documentElement.tagName == \"books\")) and _scxml_truthy(doc:hasAttribute(\"count\")))", "doc.nodeType === 9 && doc.nodeName === '#document' && doc.documentElement.tagName === 'books' && doc.hasAttribute('count')")) -> TransitionsPart0.transitionReadingAt0
         event == null -> TransitionsPart0.transitionReadingAt1
         else -> null
     }
@@ -450,7 +450,7 @@ class XmlDataIsADomTreeStateMachine(
 
     // readingText's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReadingText(state: XmlDataIsADomTreeState, event: XmlDataIsADomTreeEvent?): EnabledTransition<XmlDataIsADomTreeState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.documentElement.firstChild.firstChild.nodeType === 3 && doc.documentElement.firstChild.firstChild.nodeValue === 'first' && doc.documentElement.textContent === 'first' && doc.documentElement.lastChild.hasChildNodes() === false")) -> TransitionsPart0.transitionReadingTextAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((doc.documentElement.firstChild.firstChild.nodeType == 3) and (doc.documentElement.firstChild.firstChild.nodeValue == \"first\")) and (doc.documentElement.textContent == \"first\")) and (doc.documentElement.lastChild:hasChildNodes() == false))", "doc.documentElement.firstChild.firstChild.nodeType === 3 && doc.documentElement.firstChild.firstChild.nodeValue === 'first' && doc.documentElement.textContent === 'first' && doc.documentElement.lastChild.hasChildNodes() === false")) -> TransitionsPart0.transitionReadingTextAt0
         event == null -> TransitionsPart0.transitionReadingTextAt1
         else -> null
     }
@@ -458,7 +458,7 @@ class XmlDataIsADomTreeStateMachine(
 
     // traversing's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfTraversing(state: XmlDataIsADomTreeState, event: XmlDataIsADomTreeEvent?): EnabledTransition<XmlDataIsADomTreeState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.documentElement.childNodes.length === 2 && doc.documentElement.firstChild.getAttribute('title') === 't1' && doc.documentElement.lastChild.getAttribute('title') === 't2' && doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' && doc.documentElement.firstChild.parentNode.tagName === 'books'")) -> TransitionsPart0.transitionTraversingAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((((#doc.documentElement.childNodes == 2) and (doc.documentElement.firstChild:getAttribute(\"title\") == \"t1\")) and (doc.documentElement.lastChild:getAttribute(\"title\") == \"t2\")) and (doc.documentElement.lastChild.previousSibling:getAttribute(\"title\") == \"t1\")) and (doc.documentElement.firstChild.parentNode.tagName == \"books\"))", "doc.documentElement.childNodes.length === 2 && doc.documentElement.firstChild.getAttribute('title') === 't1' && doc.documentElement.lastChild.getAttribute('title') === 't2' && doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' && doc.documentElement.firstChild.parentNode.tagName === 'books'")) -> TransitionsPart0.transitionTraversingAt0
         event == null -> TransitionsPart0.transitionTraversingAt1
         else -> null
     }

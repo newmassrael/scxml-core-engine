@@ -300,7 +300,7 @@ class Test457StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test457Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -317,14 +317,14 @@ class Test457StateMachine(
         } catch (_: Exception) {}
         // W3C SCXML 5.3: Initialize variable 'Var4' with expr
         try {
-            val initResult_Var4 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("7"))
+            val initResult_Var4 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
             engine.setVariable(sid, "Var4", initResult_Var4)
         } catch (e: Exception) {
             raisePlatformError(Test457Event.Error.Execution, "<data id='Var4'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var5' with expr
         try {
-            val initResult_Var5 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[1,2,3]"))
+            val initResult_Var5 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 2, 3}", "[1,2,3]"))
             engine.setVariable(sid, "Var5", initResult_Var5)
         } catch (e: Exception) {
             raisePlatformError(Test457Event.Error.Execution, "<data id='Var5'> expr failed to evaluate")
@@ -550,7 +550,7 @@ class Test457StateMachine(
 
     // s2's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: Test457State, event: Test457Event?): EnabledTransition<Test457State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1==0")) -> TransitionsPart0.transitionS2At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 0)", "Var1==0")) -> TransitionsPart0.transitionS2At0
         event == null -> TransitionsPart0.transitionS2At1
         else -> null
     }
@@ -558,7 +558,7 @@ class Test457StateMachine(
 
     // s3's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test457State, event: Test457Event?): EnabledTransition<Test457State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var6==6")) -> TransitionsPart0.transitionS3At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var6, 6)", "Var6==6")) -> TransitionsPart0.transitionS3At0
         event == null -> TransitionsPart0.transitionS3At1
         else -> null
     }
@@ -591,7 +591,7 @@ class Test457StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'fail'"))?.toString() ?: ""))
+                    println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"fail\"", "'fail'"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test457Event.Error.Execution, "<log> expr failed to evaluate")
@@ -615,7 +615,7 @@ class Test457StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'pass'"))?.toString() ?: ""))
+                    println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"pass\"", "'pass'"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test457Event.Error.Execution, "<log> expr failed to evaluate")
@@ -640,10 +640,10 @@ class Test457StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var4"), "Var2", "Var3") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var4", "Var4"), "Var2", "Var3") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
@@ -674,10 +674,10 @@ class Test457StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var5"), "'continue'", "Var3") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var5", "Var5"), "'continue'", "Var3") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
@@ -707,7 +707,7 @@ class Test457StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var6"), com.sce.runtime.ScriptSource.ecmascript("0"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var6", "Var6"), com.sce.runtime.ScriptSource.lua("0", "0"))) {
                 return@run
             }
 
@@ -717,10 +717,10 @@ class Test457StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var5"), "Var2", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var5", "Var5"), "Var2", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var6"), com.sce.runtime.ScriptSource.ecmascript("Var6 + Var2"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var6", "Var6"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var6, Var2)", "Var6 + Var2"))
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {

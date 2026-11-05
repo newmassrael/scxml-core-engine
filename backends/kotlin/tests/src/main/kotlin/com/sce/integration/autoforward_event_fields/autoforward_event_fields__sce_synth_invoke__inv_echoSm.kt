@@ -381,7 +381,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
     // emit's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfEmit(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState, event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent?): EnabledTransition<AutoforwardEventFieldsSceSynthInvokeInvEchoState, HistoryId>? = when {
-        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> TransitionsPart0.transitionEmitAt0
+        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= \"\")) and (_event.invokeid ~= \"\"))", "_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> TransitionsPart0.transitionEmitAt0
         event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> TransitionsPart0.transitionEmitAt1
         else -> null
     }
@@ -413,7 +413,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "value", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("42")))
+                putParam(sendPayload, "value", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("42", "42")))
             } catch (_: Exception) {
                 raisePlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.Error.Execution, "<send> <param name='value'> could not be read")
                 paramFailed = true

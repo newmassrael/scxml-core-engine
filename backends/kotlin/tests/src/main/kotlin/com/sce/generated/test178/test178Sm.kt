@@ -425,14 +425,14 @@ class Test178StateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "Var1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("2")))
+                putParam(sendPayload, "Var1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("2", "2")))
             } catch (_: Exception) {
                 raisePlatformError(Test178Event.Error.Execution, "<send> <param name='Var1'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "Var1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("3")))
+                putParam(sendPayload, "Var1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("3", "3")))
             } catch (_: Exception) {
                 raisePlatformError(Test178Event.Error.Execution, "<send> <param name='Var1'> could not be read")
                 paramFailed = true
@@ -506,7 +506,7 @@ class Test178StateMachine(
             // block (W3C SCXML 4.9).
             if (run log@{
                 try {
-                    println("_event : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.raw"))?.toString() ?: ""))
+                    println("_event : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.raw", "_event.raw"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
                     raisePlatformError(Test178Event.Error.Execution, "<log> expr failed to evaluate")

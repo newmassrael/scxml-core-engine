@@ -443,7 +443,7 @@ class Test531StateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
                 raisePlatformError(Test531Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true

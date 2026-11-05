@@ -204,7 +204,7 @@ class Test172StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'event1'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"event1\"", "'event1'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test172Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -444,7 +444,7 @@ class Test172StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'event2'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"event2\"", "'event2'"))) {
                 return@run
             }
 
@@ -456,7 +456,7 @@ class Test172StateMachine(
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("Var1")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
             } catch (_: Exception) {
                 ""
             }

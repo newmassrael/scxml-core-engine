@@ -341,21 +341,21 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'tally' with expr
         try {
-            val initResult_tally = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_tally = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "tally", initResult_tally)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='tally'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'guard' with expr
         try {
-            val initResult_guard = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_guard = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "guard", initResult_guard)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='guard'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'keeper' with expr
         try {
-            val initResult_keeper = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("3"))
+            val initResult_keeper = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("3", "3"))
             engine.setVariable(sid, "keeper", initResult_keeper)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='keeper'> expr failed to evaluate")
@@ -559,7 +559,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
     // absentPhase's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAbsentPhase(state: EmptyFinalizeUpdatesTheLocationState, event: EmptyFinalizeUpdatesTheLocationEvent?): EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>? = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("guard !== 1")) -> TransitionsPart0.transitionAbsentPhaseAt0
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(guard ~= 1)", "guard !== 1")) -> TransitionsPart0.transitionAbsentPhaseAt0
         event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild -> TransitionsPart0.transitionAbsentPhaseAt1
         event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent -> TransitionsPart0.transitionAbsentPhaseAt2
         else -> null
@@ -568,7 +568,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
     // emptyPhase's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfEmptyPhase(state: EmptyFinalizeUpdatesTheLocationState, event: EmptyFinalizeUpdatesTheLocationEvent?): EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>? = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("tally === 7")) -> TransitionsPart0.transitionEmptyPhaseAt0
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(tally == 7)", "tally === 7")) -> TransitionsPart0.transitionEmptyPhaseAt0
         event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild -> TransitionsPart0.transitionEmptyPhaseAt1
         event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty -> TransitionsPart0.transitionEmptyPhaseAt2
         else -> null
@@ -577,7 +577,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
     // unmatchedPhase's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfUnmatchedPhase(state: EmptyFinalizeUpdatesTheLocationState, event: EmptyFinalizeUpdatesTheLocationEvent?): EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>? = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("keeper !== 3")) -> TransitionsPart0.transitionUnmatchedPhaseAt0
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(keeper ~= 3)", "keeper !== 3")) -> TransitionsPart0.transitionUnmatchedPhaseAt0
         event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild -> TransitionsPart0.transitionUnmatchedPhaseAt1
         event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched -> TransitionsPart0.transitionUnmatchedPhaseAt2
         else -> null

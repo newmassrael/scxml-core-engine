@@ -407,7 +407,7 @@ class Test183StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test183State, event: Test183Event?): EnabledTransition<Test183State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var1 !== 'undefined'")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var1) ~= \"undefined\")", "typeof Var1 !== 'undefined'")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -457,7 +457,7 @@ class Test183StateMachine(
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("Var1"), sendIdGenerated, "<send>")) return@send true
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), sendIdGenerated, "<send>")) return@send true
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
             send(Test183Event.Event1, EventMetadata.external(sendId = sendIdGenerated, origin = sessionId, data = sendData))

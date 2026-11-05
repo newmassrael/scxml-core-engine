@@ -449,7 +449,7 @@ class Test332StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test332State, event: Test332Event?): EnabledTransition<Test332State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 === Var2")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(Var1 == Var2)", "Var1 === Var2")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -500,7 +500,7 @@ class Test332StateMachine(
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("Var1"), sendIdGenerated, "<send>")) return@send true
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), sendIdGenerated, "<send>")) return@send true
             // W3C SCXML 6.2.4 (test194): a target this processor cannot address
             // — `Action::target_unsupported`, decided once at build time.
             raisePlatformError(Test332Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", sendIdGenerated)
@@ -574,7 +574,7 @@ class Test332StateMachine(
                 // SCE-MAP: test332.scxml:17 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.sendid"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.sendid", "_event.sendid"))) {
                 return
             }
     }

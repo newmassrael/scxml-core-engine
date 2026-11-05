@@ -368,42 +368,42 @@ class ASelfSentEventNamesItsOriginStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'blank' with expr
         try {
-            val initResult_blank = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("''"))
+            val initResult_blank = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
             engine.setVariable(sid, "blank", initResult_blank)
         } catch (e: Exception) {
             raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='blank'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'immediateOk' with expr
         try {
-            val initResult_immediateOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_immediateOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "immediateOk", initResult_immediateOk)
         } catch (e: Exception) {
             raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='immediateOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'replied' with expr
         try {
-            val initResult_replied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_replied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "replied", initResult_replied)
         } catch (e: Exception) {
             raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='replied'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'delayedOk' with expr
         try {
-            val initResult_delayedOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_delayedOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "delayedOk", initResult_delayedOk)
         } catch (e: Exception) {
             raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='delayedOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'unreachable' with expr
         try {
-            val initResult_unreachable = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_unreachable = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "unreachable", initResult_unreachable)
         } catch (e: Exception) {
             raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='unreachable'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'strayed' with expr
         try {
-            val initResult_strayed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_strayed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "strayed", initResult_strayed)
         } catch (e: Exception) {
             raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='strayed'> expr failed to evaluate")
@@ -673,7 +673,7 @@ class ASelfSentEventNamesItsOriginStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("blank")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("blank", "blank")))
             } catch (_: Exception) {
                 raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_3")
                 return@send true
@@ -892,7 +892,7 @@ ASelfSentEventNamesItsOriginEvent.Nowhere,
                 // SCE-MAP: a_self_sent_event_names_its_origin.scxml:85 :: blankTarget :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("unreachable"), com.sce.runtime.ScriptSource.ecmascript("unreachable + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("unreachable", "unreachable"), com.sce.runtime.ScriptSource.lua("_scxml_add(unreachable, 1)", "unreachable + 1"))) {
                 return
             }
     }
@@ -915,10 +915,10 @@ ASelfSentEventNamesItsOriginEvent.Nowhere,
 
 
             var ifCondFailed2 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.origin === _ioprocessors['scxml'].location")) { ifCondFailed2 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.origin == _ioprocessors.scxml.location)", "_event.origin === _ioprocessors['scxml'].location")) { ifCondFailed2 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("delayedOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("delayedOk", "delayedOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }
@@ -945,10 +945,10 @@ ASelfSentEventNamesItsOriginEvent.Nowhere,
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.origin === _ioprocessors['scxml'].location")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.origin == _ioprocessors.scxml.location)", "_event.origin === _ioprocessors['scxml'].location")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("immediateOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("immediateOk", "immediateOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }
@@ -964,7 +964,7 @@ ASelfSentEventNamesItsOriginEvent.Nowhere,
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_event.origin")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin")))
             } catch (_: Exception) {
                 raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true
@@ -1061,7 +1061,7 @@ ASelfSentEventNamesItsOriginEvent.Pong,
                 // SCE-MAP: a_self_sent_event_names_its_origin.scxml:62 :: replying :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("replied"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("replied", "replied"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }
@@ -1083,7 +1083,7 @@ ASelfSentEventNamesItsOriginEvent.Pong,
                 // SCE-MAP: a_self_sent_event_names_its_origin.scxml:45 :: run :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("strayed"), com.sce.runtime.ScriptSource.ecmascript("strayed + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("strayed", "strayed"), com.sce.runtime.ScriptSource.lua("_scxml_add(strayed, 1)", "strayed + 1"))) {
                 return
             }
     }

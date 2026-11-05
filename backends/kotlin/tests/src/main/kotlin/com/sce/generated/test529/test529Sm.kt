@@ -443,7 +443,7 @@ class Test529StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test529State, event: Test529Event?): EnabledTransition<Test529State, HistoryId>? = when {
-        event is Test529Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 21")) -> TransitionsPart0.transitionS0At0
+        event is Test529Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, 21)", "_event.data == 21")) -> TransitionsPart0.transitionS0At0
         event is Test529Event.Done.State.S0 -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -501,7 +501,10 @@ class Test529StateMachine(
                     val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     var doneEventData = ""
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
-                    doneEventData = "21"
+                    // It lands in `contentData`, the sink the expression-site census
+                    // adjudicates as verbatim (`INERT_DESTINATIONS`).
+                    val contentData = "21"
+                    doneEventData = contentData
                     // W3C SCXML 3.7: Final child state reached, raise done.state with data
                     raiseInternal(Test529Event.Done.State.S0, EventMetadata.platform(doneEventData))
                 }

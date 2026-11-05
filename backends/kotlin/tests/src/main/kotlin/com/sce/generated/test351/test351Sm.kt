@@ -478,7 +478,7 @@ class Test351StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test351State, event: Test351Event?): EnabledTransition<Test351State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'send1'")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"send1\")", "Var1 == 'send1'")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -666,7 +666,7 @@ class Test351StateMachine(
                 // SCE-MAP: test351.scxml:18 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.sendid"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.sendid", "_event.sendid"))) {
                 return
             }
     }
@@ -688,7 +688,7 @@ class Test351StateMachine(
                 // SCE-MAP: test351.scxml:37 :: s2 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.sendid"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.sendid", "_event.sendid"))) {
                 return
             }
     }

@@ -207,14 +207,14 @@ class Test350StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'#_scxml_'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_scxml_\"", "'#_scxml_'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test350Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_sessionid"))
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test350Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")

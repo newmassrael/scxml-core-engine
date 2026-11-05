@@ -205,7 +205,7 @@ class Test525StateMachine(
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test525Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
@@ -407,7 +407,7 @@ class Test525StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test525State, event: Test525Event?): EnabledTransition<Test525State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 3")) -> TransitionsPart0.transitionS0At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 3)", "Var2 == 3")) -> TransitionsPart0.transitionS0At0
         event == null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -450,10 +450,10 @@ class Test525StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), "Var3", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "Var3", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("Var2 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {

@@ -360,49 +360,49 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'v' with expr
         try {
-            val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("7"))
+            val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
             engine.setVariable(sid, "v", initResult_v)
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
-            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({})"))
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
             engine.setVariable(sid, "obj", initResult_obj)
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'started' with expr
         try {
-            val initResult_started = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_started = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "started", initResult_started)
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='started'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'fromLocOk' with expr
         try {
-            val initResult_fromLocOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_fromLocOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "fromLocOk", initResult_fromLocOk)
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='fromLocOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'emptyLocLeftOut' with expr
         try {
-            val initResult_emptyLocLeftOut = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_emptyLocLeftOut = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "emptyLocLeftOut", initResult_emptyLocLeftOut)
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='emptyLocLeftOut'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'brokenLeftOut' with expr
         try {
-            val initResult_brokenLeftOut = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_brokenLeftOut = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "brokenLeftOut", initResult_brokenLeftOut)
         } catch (e: Exception) {
             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='brokenLeftOut'> expr failed to evaluate")
@@ -614,7 +614,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: ABadInvokeArgumentIsReportedOnceState, event: ABadInvokeArgumentIsReportedOnceEvent?): EnabledTransition<ABadInvokeArgumentIsReportedOnceState, HistoryId>? = when {
-        event is ABadInvokeArgumentIsReportedOnceEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.fromLoc === 7")) -> TransitionsPart0.transitionS0At0
+        event is ABadInvokeArgumentIsReportedOnceEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.fromLoc == 7)", "_event.data.fromLoc === 7")) -> TransitionsPart0.transitionS0At0
         event is ABadInvokeArgumentIsReportedOnceEvent.Go -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -701,7 +701,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["fromLoc"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("v"))
+                            invokeParams["fromLoc"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("v", "v"))
                         } catch (_: Exception) {
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='fromLoc'> could not be read")
                         }
@@ -711,7 +711,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["broken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"))
+                            invokeParams["broken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                         } catch (_: Exception) {
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='broken'> could not be read")
                         }
@@ -720,7 +720,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["notInChild"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"))
+                            invokeParams["notInChild"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                         } catch (_: Exception) {
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='notInChild'> could not be read")
                         }
@@ -784,7 +784,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         // child still starts. The map insert is inside the `try`, so a
                         // failure leaves the name absent.
                         try {
-                            invokeParams["alsoBroken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"))
+                            invokeParams["alsoBroken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                         } catch (_: Exception) {
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='alsoBroken'> could not be read")
                         }
@@ -866,7 +866,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:57 :: run :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
     }
@@ -875,7 +875,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:60 :: run :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("started"), com.sce.runtime.ScriptSource.ecmascript("started + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))) {
                 return
             }
     }
@@ -897,21 +897,21 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:92 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("fromLocOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("fromLocOk", "fromLocOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("started"), com.sce.runtime.ScriptSource.ecmascript("started + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))) {
                 return
             }
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.data.emptyLoc === 'unset'")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.data.emptyLoc == \"unset\")", "_event.data.emptyLoc === 'unset'")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("emptyLocLeftOut"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("emptyLocLeftOut", "emptyLocLeftOut"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }
@@ -921,10 +921,10 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
 
 
             var ifCondFailed2 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.data.broken === 'unset'")) { ifCondFailed2 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.data.broken == \"unset\")", "_event.data.broken === 'unset'")) { ifCondFailed2 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("brokenLeftOut"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("brokenLeftOut", "brokenLeftOut"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }

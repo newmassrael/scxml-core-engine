@@ -216,7 +216,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'declared' with expr
         try {
-            val initResult_declared = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
+            val initResult_declared = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
             engine.setVariable(sid, "declared", initResult_declared)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent.Error.Execution, "<data id='declared'> expr failed to evaluate")
@@ -418,8 +418,8 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(
 
     // report's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfReport(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent?): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof nowhere !== 'undefined'")) -> TransitionsPart0.transitionReportAt0
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("declared === 'carried'")) -> TransitionsPart0.transitionReportAt1
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(nowhere) ~= \"undefined\")", "typeof nowhere !== 'undefined'")) -> TransitionsPart0.transitionReportAt0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(declared == \"carried\")", "declared === 'carried'")) -> TransitionsPart0.transitionReportAt1
         event == null -> TransitionsPart0.transitionReportAt2
         else -> null
     }

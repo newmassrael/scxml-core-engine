@@ -428,7 +428,7 @@ class Test280StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test280State, event: Test280Event?): EnabledTransition<Test280State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 === Var2")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(Var1 == Var2)", "Var1 === Var2")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -476,7 +476,7 @@ class Test280StateMachine(
                     val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     try {
-                        val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+                        val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
                         engine.setVariable(sid, "Var2", v)
                     } catch (e: Exception) {
                         raisePlatformError(Test280Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
@@ -486,7 +486,7 @@ class Test280StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("Var2", "Var2"))) {
                 return@run
             }
                 }

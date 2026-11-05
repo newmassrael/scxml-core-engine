@@ -390,63 +390,63 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'order' with expr
         try {
-            val initResult_order = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_order = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "order", initResult_order)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='order'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'innerInternal' with expr
         try {
-            val initResult_innerInternal = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_innerInternal = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "innerInternal", initResult_innerInternal)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='innerInternal'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'lateOk' with expr
         try {
-            val initResult_lateOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_lateOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "lateOk", initResult_lateOk)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='lateOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'lateCount' with expr
         try {
-            val initResult_lateCount = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_lateCount = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "lateCount", initResult_lateCount)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='lateCount'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pongOk' with expr
         try {
-            val initResult_pongOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pongOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pongOk", initResult_pongOk)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='pongOk'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'commErrors' with expr
         try {
-            val initResult_commErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_commErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "commErrors", initResult_commErrors)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='commErrors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'lostArrived' with expr
         try {
-            val initResult_lostArrived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_lostArrived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "lostArrived", initResult_lostArrived)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='lostArrived'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'afterStranger' with expr
         try {
-            val initResult_afterStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_afterStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "afterStranger", initResult_afterStranger)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='afterStranger'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'hellos' with expr
         try {
-            val initResult_hellos = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_hellos = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "hellos", initResult_hellos)
         } catch (e: Exception) {
             raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='hellos'> expr failed to evaluate")
@@ -652,7 +652,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
         event is ADelayedSendReachesWhatItsTargetNamesEvent.Inner -> TransitionsPart0.transitionRunAt1
         event is ADelayedSendReachesWhatItsTargetNamesEvent.Early -> TransitionsPart0.transitionRunAt2
         event is ADelayedSendReachesWhatItsTargetNamesEvent.Late -> TransitionsPart0.transitionRunAt3
-        event is ADelayedSendReachesWhatItsTargetNamesEvent.Hello && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("hellos === 1")) -> TransitionsPart0.transitionRunAt4
+        event is ADelayedSendReachesWhatItsTargetNamesEvent.Hello && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(hellos == 1)", "hellos === 1")) -> TransitionsPart0.transitionRunAt4
         event is ADelayedSendReachesWhatItsTargetNamesEvent.Hello -> TransitionsPart0.transitionRunAt5
         event is ADelayedSendReachesWhatItsTargetNamesEvent.LostReached -> TransitionsPart0.transitionRunAt6
         event is ADelayedSendReachesWhatItsTargetNamesEvent.Pong -> TransitionsPart0.transitionRunAt7
@@ -736,7 +736,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("afterStranger"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterStranger", "afterStranger"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
@@ -857,7 +857,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:114 :: run :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("commErrors"), com.sce.runtime.ScriptSource.ecmascript("commErrors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("commErrors", "commErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(commErrors, 1)", "commErrors + 1"))) {
                 return
             }
     }
@@ -866,16 +866,16 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:117 :: run :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("order"), com.sce.runtime.ScriptSource.ecmascript("order * 10 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 1)", "order * 10 + 1"))) {
                 return
             }
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.type === 'internal'")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.type == \"internal\")", "_event.type === 'internal'")) { ifCondFailed1 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("innerInternal"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("innerInternal", "innerInternal"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }
@@ -888,7 +888,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:123 :: run :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("order"), com.sce.runtime.ScriptSource.ecmascript("order * 10 + 3"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 3)", "order * 10 + 3"))) {
                 return
             }
     }
@@ -897,16 +897,16 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:126 :: run :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("lateCount"), com.sce.runtime.ScriptSource.ecmascript("lateCount + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("lateCount", "lateCount"), com.sce.runtime.ScriptSource.lua("_scxml_add(lateCount, 1)", "lateCount + 1"))) {
                 return
             }
 
 
             var ifCondFailed2 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.data === 5")) { ifCondFailed2 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.data == 5)", "_event.data === 5")) { ifCondFailed2 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("lateOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("lateOk", "lateOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }
@@ -919,7 +919,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:132 :: run :: _transition_4
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("hellos"), com.sce.runtime.ScriptSource.ecmascript("2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("hellos", "hellos"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
                 return
             }
 
@@ -935,7 +935,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             ensureScriptEngine()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.ecmascript("7"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("7", "7"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_0")
@@ -989,7 +989,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:140 :: run :: _transition_5
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("hellos"), com.sce.runtime.ScriptSource.ecmascript("hellos + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("hellos", "hellos"), com.sce.runtime.ScriptSource.lua("_scxml_add(hellos, 1)", "hellos + 1"))) {
                 return
             }
     }
@@ -998,7 +998,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:143 :: run :: _transition_6
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("lostArrived"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("lostArrived", "lostArrived"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }
@@ -1008,10 +1008,10 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
 
 
             var ifCondFailed3 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.ecmascript("_event.data === 8")) { ifCondFailed3 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.data == 8)", "_event.data === 8")) { ifCondFailed3 = true }) {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pongOk"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pongOk", "pongOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
             }

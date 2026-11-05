@@ -226,7 +226,7 @@ class Test176StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test176Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -442,7 +442,7 @@ class Test176StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test176State, event: Test176Event?): EnabledTransition<Test176State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 2")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 2)", "Var2 == 2")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -481,7 +481,7 @@ class Test176StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
                 return@run
             }
 
@@ -493,7 +493,7 @@ class Test176StateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "aParam", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("Var1")))
+                putParam(sendPayload, "aParam", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
             } catch (_: Exception) {
                 raisePlatformError(Test176Event.Error.Execution, "<send> <param name='aParam'> could not be read")
                 paramFailed = true
@@ -572,7 +572,7 @@ class Test176StateMachine(
                 // SCE-MAP: test176.scxml:19 :: s0 :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.data.aParam"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.data.aParam", "_event.data.aParam"))) {
                 return
             }
     }

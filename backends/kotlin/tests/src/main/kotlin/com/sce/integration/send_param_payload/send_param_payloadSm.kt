@@ -446,14 +446,14 @@ class SendParamPayloadStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'nothing' with expr
         try {
-            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("null"))
+            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
             engine.setVariable(sid, "nothing", initResult_nothing)
         } catch (e: Exception) {
             raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sawParamError' with expr
         try {
-            val initResult_sawParamError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_sawParamError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "sawParamError", initResult_sawParamError)
         } catch (e: Exception) {
             raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='sawParamError'> expr failed to evaluate")
@@ -463,21 +463,21 @@ class SendParamPayloadStateMachine(
     private fun declareStateVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // State 'escapePhase' variable 'lines'
         try {
-            val initResult_lines = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'x\\ny'"))
+            val initResult_lines = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"x\\ny\"", "'x\\ny'"))
             engine.setVariable(sid, "lines", initResult_lines)
         } catch (e: Exception) {
             raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='lines'> expr failed to evaluate")
         }
         // State 'escapePhase' variable 'keyed'
         try {
-            val initResult_keyed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({'q\"k': 1, 'b\\\\k': 2})"))
+            val initResult_keyed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{[\"q\\\"k\"] = 1, [\"b\\\\k\"] = 2}", "({'q\"k': 1, 'b\\\\k': 2})"))
             engine.setVariable(sid, "keyed", initResult_keyed)
         } catch (e: Exception) {
             raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='keyed'> expr failed to evaluate")
         }
         // State 'typedPhase' variable 'tag'
         try {
-            val initResult_tag = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'kept'"))
+            val initResult_tag = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"kept\"", "'kept'"))
             engine.setVariable(sid, "tag", initResult_tag)
         } catch (e: Exception) {
             raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='tag'> expr failed to evaluate")
@@ -683,7 +683,7 @@ class SendParamPayloadStateMachine(
 
     // awaitChild's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAwaitChild(state: SendParamPayloadState, event: SendParamPayloadEvent?): EnabledTransition<SendParamPayloadState, HistoryId>? = when {
-        event is SendParamPayloadEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === '42'")) -> TransitionsPart0.transitionAwaitChildAt0
+        event is SendParamPayloadEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.value == \"42\"))", "_event.data && _event.data.value === '42'")) -> TransitionsPart0.transitionAwaitChildAt0
         event is SendParamPayloadEvent.FromChild -> TransitionsPart0.transitionAwaitChildAt1
         else -> null
     }
@@ -691,8 +691,8 @@ class SendParamPayloadStateMachine(
 
     // escapePhase's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfEscapePhase(state: SendParamPayloadState, event: SendParamPayloadEvent?): EnabledTransition<SendParamPayloadState, HistoryId>? = when {
-        event is SendParamPayloadEvent.Escaped && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.text === 'x\\ny' && _event.data.obj['q\"k'] === 1 && _event.data.obj['b\\\\k'] === 2")) -> TransitionsPart0.transitionEscapePhaseAt0
-        event is SendParamPayloadEvent.Escaped && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.text === 'x\\ny'")) -> TransitionsPart0.transitionEscapePhaseAt1
+        event is SendParamPayloadEvent.Escaped && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_event.data.text == \"x\\ny\") and (_event.data.obj[\"q\\\"k\"] == 1)) and (_event.data.obj[\"b\\\\k\"] == 2))", "_event.data.text === 'x\\ny' && _event.data.obj['q\"k'] === 1 && _event.data.obj['b\\\\k'] === 2")) -> TransitionsPart0.transitionEscapePhaseAt0
+        event is SendParamPayloadEvent.Escaped && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.text == \"x\\ny\")", "_event.data.text === 'x\\ny'")) -> TransitionsPart0.transitionEscapePhaseAt1
         event is SendParamPayloadEvent.Escaped -> TransitionsPart0.transitionEscapePhaseAt2
         else -> null
     }
@@ -700,7 +700,7 @@ class SendParamPayloadStateMachine(
 
     // internalPhase's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfInternalPhase(state: SendParamPayloadState, event: SendParamPayloadEvent?): EnabledTransition<SendParamPayloadState, HistoryId>? = when {
-        event is SendParamPayloadEvent.Loopback && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.carried === 'kept'")) -> TransitionsPart0.transitionInternalPhaseAt0
+        event is SendParamPayloadEvent.Loopback && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.carried == \"kept\"))", "_event.data && _event.data.carried === 'kept'")) -> TransitionsPart0.transitionInternalPhaseAt0
         event is SendParamPayloadEvent.Loopback -> TransitionsPart0.transitionInternalPhaseAt1
         else -> null
     }
@@ -709,9 +709,9 @@ class SendParamPayloadStateMachine(
     // paramErrorPhase's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfParamErrorPhase(state: SendParamPayloadState, event: SendParamPayloadEvent?): EnabledTransition<SendParamPayloadState, HistoryId>? = when {
         event is SendParamPayloadEvent.Error.Execution -> TransitionsPart0.transitionParamErrorPhaseAt0
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawParamError !== 1")) -> TransitionsPart0.transitionParamErrorPhaseAt1
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.broken === ''")) -> TransitionsPart0.transitionParamErrorPhaseAt2
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.kept === 'here'")) -> TransitionsPart0.transitionParamErrorPhaseAt3
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawParamError ~= 1)", "sawParamError !== 1")) -> TransitionsPart0.transitionParamErrorPhaseAt1
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.broken == \"\")", "_event.data.broken === ''")) -> TransitionsPart0.transitionParamErrorPhaseAt2
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.kept == \"here\")", "_event.data.kept === 'here'")) -> TransitionsPart0.transitionParamErrorPhaseAt3
         event is SendParamPayloadEvent.WithBadParam -> TransitionsPart0.transitionParamErrorPhaseAt4
         else -> null
     }
@@ -719,9 +719,9 @@ class SendParamPayloadStateMachine(
 
     // typedPhase's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfTypedPhase(state: SendParamPayloadState, event: SendParamPayloadEvent?): EnabledTransition<SendParamPayloadState, HistoryId>? = when {
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.n !== 7")) -> TransitionsPart0.transitionTypedPhaseAt0
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.s !== 'kept'")) -> TransitionsPart0.transitionTypedPhaseAt1
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.d.length === 2 && _event.data.d[0] === 1 && _event.data.d[1] === 2")) -> TransitionsPart0.transitionTypedPhaseAt2
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.n ~= 7)", "_event.data.n !== 7")) -> TransitionsPart0.transitionTypedPhaseAt0
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.s ~= \"kept\")", "_event.data.s !== 'kept'")) -> TransitionsPart0.transitionTypedPhaseAt1
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((#_event.data.d == 2) and (_event.data.d[1] == 1)) and (_event.data.d[2] == 2))", "_event.data.d.length === 2 && _event.data.d[0] === 1 && _event.data.d[1] === 2")) -> TransitionsPart0.transitionTypedPhaseAt2
         event is SendParamPayloadEvent.Typed -> TransitionsPart0.transitionTypedPhaseAt3
         else -> null
     }
@@ -773,14 +773,14 @@ class SendParamPayloadStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("lines")))
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("lines", "lines")))
             } catch (_: Exception) {
                 raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='text'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "obj", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("keyed")))
+                putParam(sendPayload, "obj", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("keyed", "keyed")))
             } catch (_: Exception) {
                 raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='obj'> could not be read")
                 paramFailed = true
@@ -895,7 +895,7 @@ class SendParamPayloadStateMachine(
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "kept", "here")
             try {
-                putParam(sendPayload, "broken", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("nothing.deep")))
+                putParam(sendPayload, "broken", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='broken'> could not be read")
                 paramFailed = true
@@ -933,28 +933,28 @@ class SendParamPayloadStateMachine(
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "n", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("7")))
+                putParam(sendPayload, "n", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (_: Exception) {
                 raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='n'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "s", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("tag")))
+                putParam(sendPayload, "s", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("tag", "tag")))
             } catch (_: Exception) {
                 raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='s'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "d", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("1")))
+                putParam(sendPayload, "d", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
                 raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "d", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.ecmascript("2")))
+                putParam(sendPayload, "d", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("2", "2")))
             } catch (_: Exception) {
                 raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> could not be read")
                 paramFailed = true
@@ -1130,7 +1130,7 @@ class SendParamPayloadStateMachine(
                 // SCE-MAP: send_param_payload.scxml:199 :: paramErrorPhase :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("sawParamError"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sawParamError", "sawParamError"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }

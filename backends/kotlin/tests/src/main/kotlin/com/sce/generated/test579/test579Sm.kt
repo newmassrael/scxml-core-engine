@@ -400,7 +400,7 @@ class Test579StateMachine(
     private fun declareStateVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // State 's0' variable 'Var1'
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test579Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -622,8 +622,8 @@ class Test579StateMachine(
 
     // s03's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS03(state: Test579State, event: Test579Event?): EnabledTransition<Test579State, HistoryId>? = when {
-        event is Test579Event.Event3 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 0")) -> TransitionsPart0.transitionS03At0
-        event is Test579Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionsPart0.transitionS03At1
+        event is Test579Event.Event3 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 0)", "Var1 == 0")) -> TransitionsPart0.transitionS03At0
+        event is Test579Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionsPart0.transitionS03At1
         event != null -> TransitionsPart0.transitionS03At2
         else -> null
     }
@@ -777,7 +777,7 @@ class Test579StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
                 return@run
             }
                 }

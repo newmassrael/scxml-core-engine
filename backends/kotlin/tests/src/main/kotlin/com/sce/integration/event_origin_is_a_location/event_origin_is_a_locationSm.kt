@@ -459,7 +459,7 @@ class EventOriginIsALocationStateMachine(
 
     // waiting's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: EventOriginIsALocationState, event: EventOriginIsALocationEvent?): EnabledTransition<EventOriginIsALocationState, HistoryId>? = when {
-        event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.origin == _event.data.myLocation")) -> TransitionsPart0.transitionWaitingAt0
+        event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.origin, _event.data.myLocation)", "_event.origin == _event.data.myLocation")) -> TransitionsPart0.transitionWaitingAt0
         event is EventOriginIsALocationEvent.FromChild -> TransitionsPart0.transitionWaitingAt1
         else -> null
     }
@@ -616,7 +616,7 @@ class EventOriginIsALocationStateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_event.origin")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin")))
             } catch (_: Exception) {
                 raisePlatformError(EventOriginIsALocationEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true

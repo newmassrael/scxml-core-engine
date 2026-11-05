@@ -207,7 +207,7 @@ class Test210StateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'bar'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"bar\"", "'bar'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test210Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -471,7 +471,7 @@ class Test210StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'foo'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"foo\"", "'foo'"))) {
                 return@run
             }
 
@@ -484,7 +484,7 @@ class Test210StateMachine(
                 val engineCancel = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidCancel = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = engineCancel.evaluateExpr(sidCancel, com.sce.runtime.ScriptSource.ecmascript("Var1"))
+                    val v = engineCancel.evaluateExpr(sidCancel, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
                     val sendidToCancel = v?.toString() ?: ""
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
                     false

@@ -240,21 +240,21 @@ class LateDataBindsOnFirstEntryStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'entries' with expr
         try {
-            val initResult_entries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_entries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "entries", initResult_entries)
         } catch (e: Exception) {
             raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='entries'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'seen' with expr
         try {
-            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "seen", initResult_seen)
         } catch (e: Exception) {
             raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'contentSeen' with expr
         try {
-            val initResult_contentSeen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_contentSeen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "contentSeen", initResult_contentSeen)
         } catch (e: Exception) {
             raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='contentSeen'> expr failed to evaluate")
@@ -497,7 +497,7 @@ class LateDataBindsOnFirstEntryStateMachine(
                     val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     try {
-                        val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+                        val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
                         engine.setVariable(sid, "v", v)
                     } catch (e: Exception) {
                         raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
@@ -513,17 +513,17 @@ class LateDataBindsOnFirstEntryStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("entries"), com.sce.runtime.ScriptSource.ecmascript("entries + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("entries", "entries"), com.sce.runtime.ScriptSource.lua("_scxml_add(entries, 1)", "entries + 1"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("seen"), com.sce.runtime.ScriptSource.ecmascript("seen * 10 + v"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("seen", "seen"), com.sce.runtime.ScriptSource.lua("_scxml_add((seen * 10), v)", "seen * 10 + v"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("contentSeen"), com.sce.runtime.ScriptSource.ecmascript("c"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("contentSeen", "contentSeen"), com.sce.runtime.ScriptSource.lua("c", "c"))) {
                 return@run
             }
                 }
@@ -576,7 +576,7 @@ class LateDataBindsOnFirstEntryStateMachine(
                 // SCE-MAP: late_data_binds_on_first_entry.scxml:50 :: s :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("v"), com.sce.runtime.ScriptSource.ecmascript("5"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("v", "v"), com.sce.runtime.ScriptSource.lua("5", "5"))) {
                 return
             }
     }

@@ -386,7 +386,7 @@ class Test534StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test534State, event: Test534Event?): EnabledTransition<Test534State, HistoryId>? = when {
-        event is Test534Event.Test && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data[\"_scxmleventname\"] == \"test\"")) -> TransitionsPart0.transitionS0At0
+        event is Test534Event.Test && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data._scxmleventname, \"test\")", "_event.data[\"_scxmleventname\"] == \"test\"")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -443,7 +443,7 @@ class Test534StateMachine(
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
-                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location")))
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
                 raisePlatformError(Test534Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true

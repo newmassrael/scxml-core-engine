@@ -428,7 +428,7 @@ class Test487StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("undefined.invalidProperty"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))) {
                 return@run
             }
 

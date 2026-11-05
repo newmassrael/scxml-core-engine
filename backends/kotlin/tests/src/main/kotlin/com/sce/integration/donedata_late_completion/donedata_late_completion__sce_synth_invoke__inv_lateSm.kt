@@ -398,7 +398,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
                     try {
-                        doneParams["result"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("42"))
+                        doneParams["result"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("42", "42"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution, "<donedata> <param name='result'> failed to evaluate")

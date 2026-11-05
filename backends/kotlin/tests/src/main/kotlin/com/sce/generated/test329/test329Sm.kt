@@ -474,7 +474,7 @@ class Test329StateMachine(
 
     // s0's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS0(state: Test329State, event: Test329Event?): EnabledTransition<Test329State, HistoryId>? = when {
-        event is Test329Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == _sessionid")) -> TransitionsPart0.transitionS0At0
+        event is Test329Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, _sessionid)", "Var1 == _sessionid")) -> TransitionsPart0.transitionS0At0
         event != null -> TransitionsPart0.transitionS0At1
         else -> null
     }
@@ -482,7 +482,7 @@ class Test329StateMachine(
 
     // s1's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS1(state: Test329State, event: Test329Event?): EnabledTransition<Test329State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == _event")) -> TransitionsPart0.transitionS1At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, _event)", "Var2 == _event")) -> TransitionsPart0.transitionS1At0
         event == null -> TransitionsPart0.transitionS1At1
         else -> null
     }
@@ -490,7 +490,7 @@ class Test329StateMachine(
 
     // s2's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS2(state: Test329State, event: Test329Event?): EnabledTransition<Test329State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == _name")) -> TransitionsPart0.transitionS2At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var3, _name)", "Var3 == _name")) -> TransitionsPart0.transitionS2At0
         event == null -> TransitionsPart0.transitionS2At1
         else -> null
     }
@@ -498,7 +498,7 @@ class Test329StateMachine(
 
     // s3's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfS3(state: Test329State, event: Test329Event?): EnabledTransition<Test329State, HistoryId>? = when {
-        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4 == _ioprocessors")) -> TransitionsPart0.transitionS3At0
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var4, _ioprocessors)", "Var4 == _ioprocessors")) -> TransitionsPart0.transitionS3At0
         event == null -> TransitionsPart0.transitionS3At1
         else -> null
     }
@@ -541,12 +541,12 @@ class Test329StateMachine(
             raiseInternal(Test329Event.Foo)
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_sessionid"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_sessionid"), com.sce.runtime.ScriptSource.ecmascript("'invalid_session_id'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"), com.sce.runtime.ScriptSource.lua("\"invalid_session_id\"", "'invalid_session_id'"))) {
                 return@run
             }
                 }
@@ -558,12 +558,12 @@ class Test329StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event", "_event"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_event"), com.sce.runtime.ScriptSource.ecmascript("27"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_event", "_event"), com.sce.runtime.ScriptSource.lua("27", "27"))) {
                 return@run
             }
                 }
@@ -575,12 +575,12 @@ class Test329StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var3"), com.sce.runtime.ScriptSource.ecmascript("_name"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var3", "Var3"), com.sce.runtime.ScriptSource.lua("_name", "_name"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_name"), com.sce.runtime.ScriptSource.ecmascript("27"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_name", "_name"), com.sce.runtime.ScriptSource.lua("27", "27"))) {
                 return@run
             }
                 }
@@ -592,12 +592,12 @@ class Test329StateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var4"), com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var4", "Var4"), com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"))) {
                 return@run
             }
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"), com.sce.runtime.ScriptSource.ecmascript("27"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"), com.sce.runtime.ScriptSource.lua("27", "27"))) {
                 return@run
             }
                 }

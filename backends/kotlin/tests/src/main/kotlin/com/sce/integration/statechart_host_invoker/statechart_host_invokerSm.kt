@@ -1033,189 +1033,189 @@ class StatechartHostInvokerStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'started' with expr
         try {
-            val initResult_started = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_started = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "started", initResult_started)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='started'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'started2' with expr
         try {
-            val initResult_started2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_started2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "started2", initResult_started2)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='started2'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'refused' with expr
         try {
-            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "refused", initResult_refused)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'ended' with expr
         try {
-            val initResult_ended = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_ended = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "ended", initResult_ended)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='ended'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'entered' with expr
         try {
-            val initResult_entered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_entered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "entered", initResult_entered)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='entered'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'destination' with expr
         try {
-            val initResult_destination = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'pane://dyn'"))
+            val initResult_destination = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"pane://dyn\"", "'pane://dyn'"))
             engine.setVariable(sid, "destination", initResult_destination)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='destination'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'n' with expr
         try {
-            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("7"))
+            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
             engine.setVariable(sid, "n", initResult_n)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'dropped' with expr
         try {
-            val initResult_dropped = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_dropped = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "dropped", initResult_dropped)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='dropped'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'doneId' with expr
         try {
-            val initResult_doneId = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("''"))
+            val initResult_doneId = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
             engine.setVariable(sid, "doneId", initResult_doneId)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='doneId'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'matched' with expr
         try {
-            val initResult_matched = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_matched = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "matched", initResult_matched)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='matched'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'slot' with expr
         try {
-            val initResult_slot = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({ id: '', sid: '' })"))
+            val initResult_slot = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{[\"id\"] = \"\", [\"sid\"] = \"\"}", "({ id: '', sid: '' })"))
             engine.setVariable(sid, "slot", initResult_slot)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='slot'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'slotted' with expr
         try {
-            val initResult_slotted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_slotted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "slotted", initResult_slotted)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='slotted'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pinged' with expr
         try {
-            val initResult_pinged = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pinged = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pinged", initResult_pinged)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='pinged'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'leaked' with expr
         try {
-            val initResult_leaked = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_leaked = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "leaked", initResult_leaked)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='leaked'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'lost' with expr
         try {
-            val initResult_lost = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_lost = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "lost", initResult_lost)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='lost'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'expired' with expr
         try {
-            val initResult_expired = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_expired = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "expired", initResult_expired)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='expired'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'finished' with expr
         try {
-            val initResult_finished = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_finished = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "finished", initResult_finished)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='finished'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'misdated' with expr
         try {
-            val initResult_misdated = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_misdated = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "misdated", initResult_misdated)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='misdated'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'granted' with expr
         try {
-            val initResult_granted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_granted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "granted", initResult_granted)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='granted'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'denied' with expr
         try {
-            val initResult_denied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_denied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "denied", initResult_denied)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='denied'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'unreadable' with expr
         try {
-            val initResult_unreadable = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_unreadable = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "unreadable", initResult_unreadable)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='unreadable'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'scope' with expr
         try {
-            val initResult_scope = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'storage'"))
+            val initResult_scope = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"storage\"", "'storage'"))
             engine.setVariable(sid, "scope", initResult_scope)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='scope'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'level' with expr
         try {
-            val initResult_level = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("2"))
+            val initResult_level = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2"))
             engine.setVariable(sid, "level", initResult_level)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='level'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'failed' with expr
         try {
-            val initResult_failed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_failed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "failed", initResult_failed)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='failed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'overturned' with expr
         try {
-            val initResult_overturned = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_overturned = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "overturned", initResult_overturned)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='overturned'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'unstarted' with expr
         try {
-            val initResult_unstarted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_unstarted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "unstarted", initResult_unstarted)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='unstarted'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'revived' with expr
         try {
-            val initResult_revived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_revived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "revived", initResult_revived)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='revived'> expr failed to evaluate")
@@ -1444,7 +1444,7 @@ class StatechartHostInvokerStateMachine(
 
     // done's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfDone(state: StatechartHostInvokerState, event: StatechartHostInvokerEvent?): EnabledTransition<StatechartHostInvokerState, HistoryId>? = when {
-        (event is StatechartHostInvokerEvent.Done.Invoke || event is StatechartHostInvokerEvent.Done.Invoke.Gate || event is StatechartHostInvokerEvent.Done.Invoke.Job || event is StatechartHostInvokerEvent.Done.Invoke.Perm || event is StatechartHostInvokerEvent.Done.Invoke.Probe || event is StatechartHostInvokerEvent.Done.Invoke.Probe2 || event is StatechartHostInvokerEvent.Done.Invoke.Slow) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === doneId")) -> TransitionsPart0.transitionDoneAt0
+        (event is StatechartHostInvokerEvent.Done.Invoke || event is StatechartHostInvokerEvent.Done.Invoke.Gate || event is StatechartHostInvokerEvent.Done.Invoke.Job || event is StatechartHostInvokerEvent.Done.Invoke.Perm || event is StatechartHostInvokerEvent.Done.Invoke.Probe || event is StatechartHostInvokerEvent.Done.Invoke.Probe2 || event is StatechartHostInvokerEvent.Done.Invoke.Slow) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == doneId)", "_event.invokeid === doneId")) -> TransitionsPart0.transitionDoneAt0
         event is StatechartHostInvokerEvent.Again -> TransitionsPart0.transitionDoneAt1
         else -> null
     }
@@ -1459,7 +1459,7 @@ class StatechartHostInvokerStateMachine(
 
     // failing's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfFailing(state: StatechartHostInvokerState, event: StatechartHostInvokerEvent?): EnabledTransition<StatechartHostInvokerState, HistoryId>? = when {
-        event is StatechartHostInvokerEvent.Error.Invoke.Job && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === 'job' && _event.data === 'no' && _event.origin === 'host://job' && _event.origintype === 'x-sce-host'")) -> TransitionsPart0.transitionFailingAt0
+        event is StatechartHostInvokerEvent.Error.Invoke.Job && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((_event.invokeid == \"job\") and (_event.data == \"no\")) and (_event.origin == \"host://job\")) and (_event.origintype == \"x-sce-host\"))", "_event.invokeid === 'job' && _event.data === 'no' && _event.origin === 'host://job' && _event.origintype === 'x-sce-host'")) -> TransitionsPart0.transitionFailingAt0
         event is StatechartHostInvokerEvent.Done.Invoke.Job -> TransitionsPart0.transitionFailingAt1
         else -> null
     }
@@ -1467,8 +1467,8 @@ class StatechartHostInvokerStateMachine(
 
     // invoking's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfInvoking(state: StatechartHostInvokerState, event: StatechartHostInvokerEvent?): EnabledTransition<StatechartHostInvokerState, HistoryId>? = when {
-        event is StatechartHostInvokerEvent.Done.Invoke.Probe && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === 'probe'")) -> TransitionsPart0.transitionInvokingAt0
-        event is StatechartHostInvokerEvent.Done.Invoke.Probe2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === 'probe2'")) -> TransitionsPart0.transitionInvokingAt1
+        event is StatechartHostInvokerEvent.Done.Invoke.Probe && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == \"probe\")", "_event.invokeid === 'probe'")) -> TransitionsPart0.transitionInvokingAt0
+        event is StatechartHostInvokerEvent.Done.Invoke.Probe2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == \"probe2\")", "_event.invokeid === 'probe2'")) -> TransitionsPart0.transitionInvokingAt1
         event is StatechartHostInvokerEvent.Error.Execution -> TransitionsPart0.transitionInvokingAt2
         event is StatechartHostInvokerEvent.Leave -> TransitionsPart0.transitionInvokingAt3
         event is StatechartHostInvokerEvent.Evaluate -> TransitionsPart0.transitionInvokingAt4
@@ -1484,7 +1484,7 @@ class StatechartHostInvokerStateMachine(
 
     // locating's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfLocating(state: StatechartHostInvokerState, event: StatechartHostInvokerEvent?): EnabledTransition<StatechartHostInvokerState, HistoryId>? = when {
-        (event is StatechartHostInvokerEvent.Done.Invoke || event is StatechartHostInvokerEvent.Done.Invoke.Gate || event is StatechartHostInvokerEvent.Done.Invoke.Job || event is StatechartHostInvokerEvent.Done.Invoke.Perm || event is StatechartHostInvokerEvent.Done.Invoke.Probe || event is StatechartHostInvokerEvent.Done.Invoke.Probe2 || event is StatechartHostInvokerEvent.Done.Invoke.Slow) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === slot.id")) -> TransitionsPart0.transitionLocatingAt0
+        (event is StatechartHostInvokerEvent.Done.Invoke || event is StatechartHostInvokerEvent.Done.Invoke.Gate || event is StatechartHostInvokerEvent.Done.Invoke.Job || event is StatechartHostInvokerEvent.Done.Invoke.Perm || event is StatechartHostInvokerEvent.Done.Invoke.Probe || event is StatechartHostInvokerEvent.Done.Invoke.Probe2 || event is StatechartHostInvokerEvent.Done.Invoke.Slow) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == slot.id)", "_event.invokeid === slot.id")) -> TransitionsPart0.transitionLocatingAt0
         event is StatechartHostInvokerEvent.Ping -> TransitionsPart0.transitionLocatingAt1
         event is StatechartHostInvokerEvent.Leak -> TransitionsPart0.transitionLocatingAt2
         event is StatechartHostInvokerEvent.Error.Execution -> TransitionsPart0.transitionLocatingAt3
@@ -1501,7 +1501,7 @@ class StatechartHostInvokerStateMachine(
 
     // refusing's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRefusing(state: StatechartHostInvokerState, event: StatechartHostInvokerEvent?): EnabledTransition<StatechartHostInvokerState, HistoryId>? = when {
-        event is StatechartHostInvokerEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.reason === 'NOT_HERE'")) -> TransitionsPart0.transitionRefusingAt0
+        event is StatechartHostInvokerEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.reason == \"NOT_HERE\")", "_event.data.reason === 'NOT_HERE'")) -> TransitionsPart0.transitionRefusingAt0
         event is StatechartHostInvokerEvent.Done.Invoke.Gate -> TransitionsPart0.transitionRefusingAt1
         else -> null
     }
@@ -1512,8 +1512,8 @@ class StatechartHostInvokerStateMachine(
         event is StatechartHostInvokerEvent.Error.Execution -> TransitionsPart0.transitionTimedAt0
         event is StatechartHostInvokerEvent.Forget -> TransitionsPart0.transitionTimedAt1
         event is StatechartHostInvokerEvent.Leave -> TransitionsPart0.transitionTimedAt2
-        event is StatechartHostInvokerEvent.Error.Invoke.Slow && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === 'slow' && _event.data === 'deadline'")) -> TransitionsPart0.transitionTimedAt3
-        event is StatechartHostInvokerEvent.Done.Invoke.Slow && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.invokeid === 'slow'")) -> TransitionsPart0.transitionTimedAt4
+        event is StatechartHostInvokerEvent.Error.Invoke.Slow && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_event.invokeid == \"slow\") and (_event.data == \"deadline\"))", "_event.invokeid === 'slow' && _event.data === 'deadline'")) -> TransitionsPart0.transitionTimedAt3
+        event is StatechartHostInvokerEvent.Done.Invoke.Slow && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == \"slow\")", "_event.invokeid === 'slow'")) -> TransitionsPart0.transitionTimedAt4
         else -> null
     }
 
@@ -1554,7 +1554,7 @@ class StatechartHostInvokerStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("ended"), com.sce.runtime.ScriptSource.ecmascript("ended + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ended", "ended"), com.sce.runtime.ScriptSource.lua("_scxml_add(ended, 1)", "ended + 1"))) {
                 return@run
             }
                 }
@@ -1585,7 +1585,7 @@ class StatechartHostInvokerStateMachine(
                         // names, so the document can match on what it stored.
                         // The write is the assignment `<assign>` makes, so a
                         // location that cannot take the id starts nothing.
-                        if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("doneId"), "done._invoke_0", "<invoke>")) return@deferInvoke
+                        if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("doneId", "doneId"), "done._invoke_0", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -1636,7 +1636,7 @@ class StatechartHostInvokerStateMachine(
                         val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val hostInvokeSrc = try {
-                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("destination")))
+                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("destination", "destination")))
                         } catch (_: Exception) {
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
                             return@deferInvoke
@@ -1665,7 +1665,7 @@ class StatechartHostInvokerStateMachine(
                         try {
                             // The param crosses as text, and `toString()` is the platform's
                             // spelling of the value; this is the document's.
-                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("n + 1"))
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("_scxml_add(n, 1)", "n + 1"))
                             hostInvokeParams["twice"] =
                                 (hostInvokeParams["twice"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "twice", v)
@@ -1678,7 +1678,7 @@ class StatechartHostInvokerStateMachine(
                         try {
                             // The param crosses as text, and `toString()` is the platform's
                             // spelling of the value; this is the document's.
-                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("n.nope.deeper"))
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"))
                             hostInvokeParams["bad"] =
                                 (hostInvokeParams["bad"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "bad", v)
@@ -1729,7 +1729,7 @@ class StatechartHostInvokerStateMachine(
                         val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val hostInvokeContent = try {
-                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("'body:' + n")))
+                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("(\"body:\" .. _scxml_tostring(n))", "'body:' + n")))
                         } catch (_: Exception) {
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> contentexpr failed to evaluate")
                             return@deferInvoke
@@ -1780,7 +1780,7 @@ class StatechartHostInvokerStateMachine(
                         val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val hostInvokeSrc = try {
-                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("n.nope.deeper")))
+                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper")))
                         } catch (_: Exception) {
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
                             return@deferInvoke
@@ -1858,7 +1858,7 @@ class StatechartHostInvokerStateMachine(
                 run {
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("entered"), com.sce.runtime.ScriptSource.ecmascript("entered + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("entered", "entered"), com.sce.runtime.ScriptSource.lua("_scxml_add(entered, 1)", "entered + 1"))) {
                 return@run
             }
                 }
@@ -1959,7 +1959,7 @@ class StatechartHostInvokerStateMachine(
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("slot.sid"), sendIdGenerated, "<send>")) return@send true
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.sid", "slot.sid"), sendIdGenerated, "<send>")) return@send true
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
             send(StatechartHostInvokerEvent.Ping, EventMetadata.external(sendId = sendIdGenerated, origin = sessionId, data = sendData))
@@ -1983,7 +1983,7 @@ class StatechartHostInvokerStateMachine(
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("n.nope.deeper"), sendIdGenerated, "<send>")) return@send true
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), sendIdGenerated, "<send>")) return@send true
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
             send(StatechartHostInvokerEvent.Leak, EventMetadata.external(sendId = sendIdGenerated, origin = sessionId, data = sendData))
@@ -2021,7 +2021,7 @@ class StatechartHostInvokerStateMachine(
                         // names, so the document can match on what it stored.
                         // The write is the assignment `<assign>` makes, so a
                         // location that cannot take the id starts nothing.
-                        if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("slot.id"), "locating._invoke_1", "<invoke>")) return@deferInvoke
+                        if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.id", "slot.id"), "locating._invoke_1", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -2073,7 +2073,7 @@ class StatechartHostInvokerStateMachine(
                         // names, so the document can match on what it stored.
                         // The write is the assignment `<assign>` makes, so a
                         // location that cannot take the id starts nothing.
-                        if (!storeIdInLocation(com.sce.runtime.ScriptSource.ecmascript("n.nope.deeper"), "locating._invoke_2", "<invoke>")) return@deferInvoke
+                        if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), "locating._invoke_2", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -2213,7 +2213,7 @@ class StatechartHostInvokerStateMachine(
                         try {
                             // The param crosses as text, and `toString()` is the platform's
                             // spelling of the value; this is the document's.
-                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("50"))
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("50", "50"))
                             hostInvokeParams["_sce_deadline_ms"] =
                                 (hostInvokeParams["_sce_deadline_ms"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "_sce_deadline_ms", v)
@@ -2317,7 +2317,7 @@ class StatechartHostInvokerStateMachine(
                         // here, where the invocation starts; one that cannot
                         // be evaluated or does not fit starts nothing.
                         try {
-                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("scope"))
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("scope", "scope"))
                             hostInvokeParams["scope"] =
                                 (hostInvokeParams["scope"] ?: emptyList()) +
                                     TypedRequest.wire(v, "scope", TypedRequest.FieldType.STRING, ::valueToWireString)
@@ -2327,7 +2327,7 @@ class StatechartHostInvokerStateMachine(
                             return@deferInvoke
                         }
                         try {
-                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.ecmascript("level"))
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("level", "level"))
                             hostInvokeParams["level"] =
                                 (hostInvokeParams["level"] ?: emptyList()) +
                                     TypedRequest.wire(v, "level", TypedRequest.FieldType.UINT8, ::valueToWireString)
@@ -2534,7 +2534,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:226 :: done :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("matched"), com.sce.runtime.ScriptSource.ecmascript("matched + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("matched", "matched"), com.sce.runtime.ScriptSource.lua("_scxml_add(matched, 1)", "matched + 1"))) {
                 return
             }
     }
@@ -2556,7 +2556,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:216 :: evaluating :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("dropped"), com.sce.runtime.ScriptSource.ecmascript("dropped + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("dropped", "dropped"), com.sce.runtime.ScriptSource.lua("_scxml_add(dropped, 1)", "dropped + 1"))) {
                 return
             }
     }
@@ -2579,7 +2579,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:309 :: failing :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("failed"), com.sce.runtime.ScriptSource.ecmascript("failed + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("failed", "failed"), com.sce.runtime.ScriptSource.lua("_scxml_add(failed, 1)", "failed + 1"))) {
                 return
             }
     }
@@ -2588,7 +2588,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:313 :: failing :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("overturned"), com.sce.runtime.ScriptSource.ecmascript("overturned + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("overturned", "overturned"), com.sce.runtime.ScriptSource.lua("_scxml_add(overturned, 1)", "overturned + 1"))) {
                 return
             }
     }
@@ -2612,7 +2612,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:184 :: invoking :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("started"), com.sce.runtime.ScriptSource.ecmascript("started + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))) {
                 return
             }
     }
@@ -2621,7 +2621,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:187 :: invoking :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("started2"), com.sce.runtime.ScriptSource.ecmascript("started2 + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("started2", "started2"), com.sce.runtime.ScriptSource.lua("_scxml_add(started2, 1)", "started2 + 1"))) {
                 return
             }
     }
@@ -2630,7 +2630,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:190 :: invoking :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("refused"), com.sce.runtime.ScriptSource.ecmascript("refused + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {
                 return
             }
     }
@@ -2655,7 +2655,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:240 :: locating :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("slotted"), com.sce.runtime.ScriptSource.ecmascript("slotted + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("slotted", "slotted"), com.sce.runtime.ScriptSource.lua("_scxml_add(slotted, 1)", "slotted + 1"))) {
                 return
             }
     }
@@ -2664,7 +2664,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:243 :: locating :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("pinged"), com.sce.runtime.ScriptSource.ecmascript("pinged + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pinged", "pinged"), com.sce.runtime.ScriptSource.lua("_scxml_add(pinged, 1)", "pinged + 1"))) {
                 return
             }
     }
@@ -2673,7 +2673,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:246 :: locating :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("leaked"), com.sce.runtime.ScriptSource.ecmascript("leaked + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("leaked", "leaked"), com.sce.runtime.ScriptSource.lua("_scxml_add(leaked, 1)", "leaked + 1"))) {
                 return
             }
     }
@@ -2682,7 +2682,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:249 :: locating :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("lost"), com.sce.runtime.ScriptSource.ecmascript("lost + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("lost", "lost"), com.sce.runtime.ScriptSource.lua("_scxml_add(lost, 1)", "lost + 1"))) {
                 return
             }
     }
@@ -2705,7 +2705,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:320 :: refusing :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("unstarted"), com.sce.runtime.ScriptSource.ecmascript("unstarted + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("unstarted", "unstarted"), com.sce.runtime.ScriptSource.lua("_scxml_add(unstarted, 1)", "unstarted + 1"))) {
                 return
             }
     }
@@ -2714,7 +2714,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:323 :: refusing :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("revived"), com.sce.runtime.ScriptSource.ecmascript("revived + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("revived", "revived"), com.sce.runtime.ScriptSource.lua("_scxml_add(revived, 1)", "revived + 1"))) {
                 return
             }
     }
@@ -2739,7 +2739,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:261 :: timed :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("misdated"), com.sce.runtime.ScriptSource.ecmascript("misdated + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("misdated", "misdated"), com.sce.runtime.ScriptSource.lua("_scxml_add(misdated, 1)", "misdated + 1"))) {
                 return
             }
     }
@@ -2756,7 +2756,7 @@ class StatechartHostInvokerStateMachine(
                 val engineCancel = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidCancel = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = engineCancel.evaluateExpr(sidCancel, com.sce.runtime.ScriptSource.ecmascript("''"))
+                    val v = engineCancel.evaluateExpr(sidCancel, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
                     val sendidToCancel = v?.toString() ?: ""
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
                     false
@@ -2773,7 +2773,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:274 :: timed :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("expired"), com.sce.runtime.ScriptSource.ecmascript("expired + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("expired", "expired"), com.sce.runtime.ScriptSource.lua("_scxml_add(expired, 1)", "expired + 1"))) {
                 return
             }
     }
@@ -2782,7 +2782,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:278 :: timed :: _transition_4
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("finished"), com.sce.runtime.ScriptSource.ecmascript("finished + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("finished", "finished"), com.sce.runtime.ScriptSource.lua("_scxml_add(finished, 1)", "finished + 1"))) {
                 return
             }
     }
@@ -2807,7 +2807,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:293 :: typed :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("granted"), com.sce.runtime.ScriptSource.ecmascript("granted + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("granted", "granted"), com.sce.runtime.ScriptSource.lua("_scxml_add(granted, 1)", "granted + 1"))) {
                 return
             }
     }
@@ -2816,7 +2816,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:296 :: typed :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("denied"), com.sce.runtime.ScriptSource.ecmascript("denied + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("denied", "denied"), com.sce.runtime.ScriptSource.lua("_scxml_add(denied, 1)", "denied + 1"))) {
                 return
             }
     }
@@ -2825,7 +2825,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:299 :: typed :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("unreadable"), com.sce.runtime.ScriptSource.ecmascript("unreadable + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("unreadable", "unreadable"), com.sce.runtime.ScriptSource.lua("_scxml_add(unreadable, 1)", "unreadable + 1"))) {
                 return
             }
     }
@@ -2834,7 +2834,7 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:302 :: typed :: _transition_3
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("level"), com.sce.runtime.ScriptSource.ecmascript("'high'"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("level", "level"), com.sce.runtime.ScriptSource.lua("\"high\"", "'high'"))) {
                 return
             }
     }

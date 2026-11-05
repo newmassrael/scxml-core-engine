@@ -353,28 +353,28 @@ class ABadDonedataPairIsIgnoredStateMachine(
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
         // W3C SCXML 5.3: Initialize variable 'errors' with expr
         try {
-            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_errors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "errors", initResult_errors)
         } catch (e: Exception) {
             raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'shape' with expr
         try {
-            val initResult_shape = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_shape = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "shape", initResult_shape)
         } catch (e: Exception) {
             raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='shape'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'v' with expr
         try {
-            val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("7"))
+            val initResult_v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
             engine.setVariable(sid, "v", initResult_v)
         } catch (e: Exception) {
             raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'obj' with expr
         try {
-            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("({})"))
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
             engine.setVariable(sid, "obj", initResult_obj)
         } catch (e: Exception) {
             raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
@@ -578,7 +578,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
     // p's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfP(state: ABadDonedataPairIsIgnoredState, event: ABadDonedataPairIsIgnoredEvent?): EnabledTransition<ABadDonedataPairIsIgnoredState, HistoryId>? = when {
         event is ABadDonedataPairIsIgnoredEvent.Error.Execution -> TransitionsPart0.transitionPAt0
-        event is ABadDonedataPairIsIgnoredEvent.Done.State.R1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.good === 7 && typeof _event.data.empty === 'undefined' && typeof _event.data.bad === 'undefined'")) -> TransitionsPart0.transitionPAt1
+        event is ABadDonedataPairIsIgnoredEvent.Done.State.R1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_event.data.good == 7) and (_typeof(_event.data.empty) == \"undefined\")) and (_typeof(_event.data.bad) == \"undefined\"))", "_event.data.good === 7 && typeof _event.data.empty === 'undefined' && typeof _event.data.bad === 'undefined'")) -> TransitionsPart0.transitionPAt1
         event is ABadDonedataPairIsIgnoredEvent.Done.State.R1 -> TransitionsPart0.transitionPAt2
         event is ABadDonedataPairIsIgnoredEvent.Done.State.P -> TransitionsPart0.transitionPAt3
         else -> null
@@ -642,13 +642,13 @@ class ABadDonedataPairIsIgnoredStateMachine(
                     // error.execution, and this pair is ignored.
                     raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<donedata> <param name='empty'> has an empty location")
                     try {
-                        doneParams["good"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("v"))
+                        doneParams["good"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("v", "v"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<donedata> <param name='good'> failed to evaluate")
                     }
                     try {
-                        doneParams["bad"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("obj.missing.deep"))
+                        doneParams["bad"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<donedata> <param name='bad'> failed to evaluate")
@@ -760,7 +760,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:51 :: p :: _transition_0
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("errors"), com.sce.runtime.ScriptSource.ecmascript("errors + 1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
                 return
             }
     }
@@ -769,7 +769,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:54 :: p :: _transition_1
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("shape"), com.sce.runtime.ScriptSource.ecmascript("1"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("shape", "shape"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
     }
@@ -778,7 +778,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
                 // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:58 :: p :: _transition_2
 
 
-            if (!executeAssign(com.sce.runtime.ScriptSource.ecmascript("shape"), com.sce.runtime.ScriptSource.ecmascript("2"))) {
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("shape", "shape"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
                 return
             }
     }
