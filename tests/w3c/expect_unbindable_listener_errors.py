@@ -18,9 +18,10 @@ The port is held on the wildcard address (both families where the host has
 dual-stack IPv6), so whichever address ``localhost`` resolves to first, the
 listener's bind collides. The holder sets no SO_REUSEPORT, so the listener's
 own SO_REUSEPORT cannot share it either.
-"""
 
-from __future__ import annotations
+It runs under whichever Python 3 CMake found for the build (a build host's may be
+3.6), so it uses no interface newer than that.
+"""
 
 import os
 import re
@@ -28,16 +29,32 @@ import socket
 import subprocess
 import sys
 import tempfile
+from typing import List
 
 
 def hold_a_port() -> socket.socket:
     """A listening socket on a port the kernel assigned, on every address."""
-    if socket.has_dualstack_ipv6():
-        return socket.create_server(("", 0), family=socket.AF_INET6, dualstack_ipv6=True)
-    return socket.create_server(("", 0))
+    if socket.has_ipv6:
+        try:
+            dual = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        except OSError:
+            dual = None
+        if dual is not None:
+            try:
+                dual.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+                dual.bind(("::", 0))
+                dual.listen()
+                return dual
+            except OSError:
+                # No dual-stack here: the IPv4 wildcard below is what localhost reaches.
+                dual.close()
+    single = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    single.bind(("", 0))
+    single.listen()
+    return single
 
 
-def main(argv: list[str]) -> int:
+def main(argv: List[str]) -> int:
     if len(argv) != 3:
         print(__doc__, file=sys.stderr)
         return 2
