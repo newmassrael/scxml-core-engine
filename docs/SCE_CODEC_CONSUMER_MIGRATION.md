@@ -804,8 +804,30 @@ Landing: the commit that adds this section.
   returns `Result<(), E>` with the `E` it returned before. On the tier with no allocator the `N` elements then live
   where the caller put them, never in the algorithm's frame or its return.
 - A call `let list = f(a, b)?;` becomes `f(a, b, &mut list)?;`, with `list` a `SceOwnedList<T, N>` (or `SceBytes<N>`)
-  the caller keeps, made once with `::new()`. A caller that hands the same destination to every call allocates once
-  on the heap tier. What the destination holds after a failed call is not specified; read it only after `Ok(())`.
+  the caller keeps, made once with `::new()`. A caller that hands the same destination to every call stops allocating
+  on the heap tier once the destination has grown to the longest output. What the destination holds after a failed
+  call is not specified; read it only after `Ok(())`.
+- Keep the destination where the caller keeps its own state, one per writer, not in a local of the function that
+  makes the call. On the heap tier `::new()` reserves nothing and the algorithm grows the destination one push at a
+  time, as a `Vec` grows, so a destination made afresh for each call reallocates several times on every call: a COBS
+  encode of a 64-byte frame into a new `SceBytes<N>` allocates five times. The algorithm starts with `clear()`, which
+  keeps what the destination has reserved, so a kept destination reallocates only while it grows:
+
+  ```rust
+  struct Writer { frame: SceBytes<MAX_FRAME> }
+
+  impl Writer {
+      fn frame_of(&mut self, payload: &[u8]) -> Result<&[u8], CapacityExceeded> {
+          cobs_encode(payload, &mut self.frame)?; // emptied and refilled, its reservation kept
+          Ok(self.frame.as_slice())
+      }
+  }
+  ```
+
+- Where the crate has an allocator, a byte destination can reserve its longest output at once:
+  `SceBytes::<N>::try_from_vec(Vec::with_capacity(max))?`, `max` at most `N` (for a COBS encode of `n` bytes,
+  `n + n / 254 + 1`). A `SceOwnedList<T, N>` has no such constructor. On the tier with no allocator the `N` elements
+  are inline and nothing is allocated.
 - An input may not be the destination: `f(list.as_slice(), &mut list)` does not borrow-check. Write into a second
   list and, on success, swap the two (`core::mem::swap`), which on the heap tier moves three words. On the inline
   tier copy the elements back instead, since a swap of two inline lists moves their whole bound.
@@ -872,6 +894,52 @@ Landing: the commit that adds this section.
   extension of a chain of depth 8 now belongs to `codec_chain_depth_plain` and `codec_chain_depth_gated`, which state
   a depth. A consumer's documents are its own; nothing here changes what they state.
 
+## Every text and byte string states its bound in its type, and the forge AST writes it there (ADR 0086 §1.4)
+
+Landing: d689744af4 (the refusal); fec8eb67bc with f9b2ba2582 (an event schema field's AST form); 0a4c8547a3 and
+d9ab59ea12 with ba7d30289e (an algorithm's and a statechart variable's AST form).
+
+- A `string` or `bytes` with no bound is refused wherever it is held: an event schema's field, a list's element, a
+  `sce-static` variable, an algorithm's return and local. A schema field or a variable is refused with
+  `validation/attribute-rule-violated` on its `sce:type`, naming the place in the type that lacks the bound. Write
+  the bound in the type, the most bytes any value takes:
+
+  ```xml
+  <!-- before -->
+  <data id="label" sce:type="string" sce:direction="in"/>
+  <!-- now -->
+  <data id="label" sce:type="string[64]" sce:direction="in"/>
+  <data id="digest" sce:type="bytes[64]" sce:direction="in"/>
+  ```
+
+  An algorithm's parameter is the one exception: it views its argument, which holds the bound, so its outermost
+  `string` or `bytes` stays bare. A `sce:max-size` beside the type is still read as the bracket, with
+  `validation/bound-attribute-superseded` asking for the bracket; `sce-codegen bound-spelling <document>` prints the
+  document rewritten.
+- The forge AST (`apis/forge-ast.v1.schema.json`) writes a bounded text as `{"string": 64}` and a bounded byte string
+  as `{"bytes": 64}`, where it wrote the bare `"string"` / `"bytes"` with the number beside it (`max_size` on a
+  schema field, `capacity` on a variable or a local, `returns_max_size` on a return). The
+  other constructors take the same shape: `{"optional": "int64"}`, `{"record": "Item"}`,
+  `{"list": {"string": 8}, "max": 4}`. The number is the one the build holds; a `[name=N]` bracket crosses as `N`. A
+  scalar stays a bare string (`"uint32"`, `"bool"`, `"enum:Mode"`).
+- The positions with this shape are the definitions `ValueType` (an event schema's `fields[].sce_type`) and
+  `WrittenType` (an algorithm's parameter `type`, `return_type` and local `type`, and a variable's `value_type`).
+  `WrittenType` may leave a bound out, as an algorithm's parameter does, and is then the bare `"string"`, `"bytes"` or
+  `{"list": "uint8"}`. A codec's entry and field (`EntryType`, `SceType`) keep the bare string and `max_size`. The
+  keys `capacity`, `limit`, `returns_max_size` and `returns_limit` are gone from an algorithm and a variable: the
+  bound is inside the type.
+- A reader that took `sce_type` as a string matches on its JSON kind:
+
+  ```rust
+  match &field["sce_type"] {
+      Value::String(scalar) => Ty::Scalar(scalar.clone()),
+      Value::Object(o) if o.contains_key("string") => Ty::Text(o["string"].as_u64().unwrap()),
+      Value::Object(o) if o.contains_key("bytes") => Ty::Bytes(o["bytes"].as_u64().unwrap()),
+      Value::Object(o) => composed(o), // "optional", "record", or "list" with "max"
+      _ => unreachable!("the schema admits no other kind"),
+  }
+  ```
+
 ## A Rust machine holds a list's bound in its type (ADR 0086 §7.4)
 
 Landing: the commit that adds this section; the Rust trees are regenerated after it.
@@ -910,6 +978,21 @@ Landing: the commit that adds this section.
   and their reading (the heap form's `N` advisory, as a foreign protocol's bound is). A codec's owned form never
   named `SceString` or `SceBytes`, so a codec consumer changes nothing; code that passed a `SceBytes<N>` where a
   codec's `HeapBytes<N>` was asked for converts with `HeapBytes::from_slice(bytes.as_slice())`.
+- `SceString<N>` is no longer a codec text container: it implements neither `sce_forge_runtime::storage::SceStr` nor,
+  through it, `HeldStr`, and `SceBytes<N>` no longer implements `SceByteBuf`. Each was the container it aliased. Code
+  that used the text type through the codec's trait (`<SceString<64> as SceStr>::from_view(s)?`, or a
+  `T: SceStr` instantiated at `SceString<64>`) no longer compiles. Build the text with its own constructor, whose
+  `CapacityExceeded` converts into `CodecError` through `?`, and read it with `as_str()`:
+
+  ```rust
+  // before
+  let name = <SceString<64> as SceStr>::from_view(view)?;
+  // now
+  let name = SceString::<64>::from_text(view)?;
+  ```
+
+  Where the value is a codec's own field, name the codec's container instead (`HeapStr<N>` / `InlineStr<N>`,
+  `HeapBytes<N>` / `InlineBytes<N>`), which keeps `SceStr` and `SceByteBuf`.
 
 ## `sce_forge_runtime::algorithm::within` is gone (ADR 0086 §7.4)
 
