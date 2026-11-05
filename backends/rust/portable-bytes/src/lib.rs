@@ -132,10 +132,30 @@ impl<T: Clone, const N: usize> HeapList<T, N> {
         Self(alloc::vec::Vec::new())
     }
 
+    /// An empty buffer with room for `n` elements, at most `N`: [`Self::new`]
+    /// followed by [`Self::reserve`].
+    pub fn with_capacity(n: usize) -> Self {
+        let mut list = Self::new();
+        list.reserve(n);
+        list
+    }
+
+    /// Make room for `additional` more elements in one allocation, never more
+    /// than `N` minus what the buffer holds, so a reservation past the bound
+    /// is cut to it. Exact, as `Vec::reserve_exact` is: what to call once with
+    /// the longest output, which is what a generated algorithm does with its
+    /// destination's bound before it writes (docs/adr/0082).
+    pub fn reserve(&mut self, additional: usize) {
+        let room = N.saturating_sub(self.0.len());
+        self.0.reserve_exact(additional.min(room));
+    }
+
     /// Empty the buffer and keep what it allocated. An algorithm that returns a
     /// list or bytes writes into a destination its caller holds
-    /// (docs/adr/0082), and starts by emptying it, so a caller may hand the
-    /// same destination to every call and allocate once.
+    /// (docs/adr/0082), empties it, and reserves its bound in it
+    /// ([`Self::reserve`]): the first call allocates the bound once, and a
+    /// caller that hands the same destination to every later call allocates no
+    /// more.
     pub fn clear(&mut self) {
         self.0.clear();
     }
@@ -174,6 +194,20 @@ impl<T: Clone, const N: usize> InlineList<T, N> {
     /// An empty buffer holding the fixed capacity `N` inline.
     pub fn new() -> Self {
         Self(heapless::Vec::new())
+    }
+
+    /// An empty buffer, the same as [`Self::new`]: the `N` elements are inline
+    /// already. The heap form's call shape, so one generated call serves both.
+    pub fn with_capacity(n: usize) -> Self {
+        let _ = n;
+        Self::new()
+    }
+
+    /// Nothing to do: the room for `N` elements is inline from the start. The
+    /// heap form's call shape (`HeapList::reserve` under `alloc`), so a
+    /// generated algorithm reserves its destination's bound on every profile.
+    pub fn reserve(&mut self, additional: usize) {
+        let _ = additional;
     }
 
     /// Empty the buffer. An algorithm that returns a list or bytes writes into a
@@ -420,6 +454,53 @@ impl<T, const N: usize> BoundedList<T, N> {
         Self(BoundedListStorage::<T, N>::new())
     }
 
+    /// The empty list, with room for `n` elements, at most `N`: [`Self::new`]
+    /// followed by [`Self::reserve`].
+    pub fn with_capacity(n: usize) -> Self {
+        let mut list = Self::new();
+        list.reserve(n);
+        list
+    }
+
+    /// Make room for `additional` more elements in one allocation, never more
+    /// than `N` minus what the list holds, so a reservation past the bound is
+    /// cut to it. Exact, as `Vec::reserve_exact` is: what to call once with the
+    /// longest output, which is what a generated algorithm does with its
+    /// destination's bound before it writes (docs/adr/0082). Without an
+    /// allocator the `N` elements are inline already, and this does nothing.
+    pub fn reserve(&mut self, additional: usize) {
+        #[cfg(feature = "alloc")]
+        {
+            let room = N.saturating_sub(self.0.len());
+            self.0.reserve_exact(additional.min(room));
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            let _ = additional;
+        }
+    }
+
+    /// Room for `additional` more elements, before an append the bound has
+    /// already admitted: grown to twice what the list has room for when that
+    /// is more, as a `Vec` grows, so a run of short appends is not one
+    /// allocation each, and never past `N`, which no value of the type uses.
+    /// Without an allocator the room is inline already.
+    fn make_room(&mut self, additional: usize) {
+        #[cfg(feature = "alloc")]
+        {
+            let needed = self.0.len().saturating_add(additional).min(N);
+            let held = self.0.capacity();
+            if needed > held {
+                let target = held.saturating_mul(2).clamp(needed, N);
+                self.0.reserve_exact(target - self.0.len());
+            }
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            let _ = additional;
+        }
+    }
+
     /// Append one element, refusing it once the list holds `N`; the list is then
     /// as it was.
     pub fn push(&mut self, value: T) -> Result<(), CapacityExceeded> {
@@ -450,8 +531,10 @@ impl<T, const N: usize> BoundedList<T, N> {
 
     /// The list of the elements `items` yields, in order, refused whole when it
     /// yields more than `N`: the elements past the bound are never taken.
+    /// Room is made at once for as many as `items` says it yields at least.
     pub fn try_from_iter(items: impl IntoIterator<Item = T>) -> Result<Self, CapacityExceeded> {
-        let mut list = Self::new();
+        let items = items.into_iter();
+        let mut list = Self::with_capacity(items.size_hint().0);
         for item in items {
             list.push(item)?;
         }
@@ -468,7 +551,7 @@ impl<T, const N: usize> BoundedList<T, N> {
         mut f: impl FnMut(&U) -> T,
     ) -> Self {
         let () = Fits::<M, N>::OK;
-        let mut list = Self::new();
+        let mut list = Self::with_capacity(from.len());
         for item in from {
             // At most `M <= N` elements, so no element is refused.
             if list.push(f(item)).is_err() {
@@ -494,7 +577,7 @@ impl<T: Clone, const N: usize> BoundedList<T, N> {
     /// What [`sce_bytes!`] builds a byte-string literal with.
     pub fn proven<const L: usize>(items: &[T; L]) -> Self {
         let () = Fits::<L, N>::OK;
-        let mut list = Self::new();
+        let mut list = Self::with_capacity(L);
         for item in items {
             // `L <= N` elements, so no push is refused.
             if list.push(item.clone()).is_err() {
@@ -507,10 +590,13 @@ impl<T: Clone, const N: usize> BoundedList<T, N> {
     /// Append `items`, refused whole where the list would pass `N`: either every
     /// element is appended or none is. What an algorithm that writes a byte
     /// string into its caller's destination appends through (docs/adr/0082).
+    /// Room for the whole slice is made before the first element is copied,
+    /// so the append grows the list once rather than once per doubling.
     pub fn extend_from_slice(&mut self, items: &[T]) -> Result<(), CapacityExceeded> {
         if self.0.len() + items.len() > N {
             return Err(CapacityExceeded);
         }
+        self.make_room(items.len());
         for item in items {
             self.push(item.clone())?;
         }
@@ -1022,6 +1108,120 @@ mod tests {
             assert!(list.push(each).is_ok());
         }
         assert_eq!(list.push(10), Err(CapacityExceeded));
+    }
+
+    // A heap list reserved for its bound takes `N` elements without growing
+    // again, made with the room or given it after, and keeps it through a
+    // clear: what a generated algorithm does with its caller's destination
+    // (docs/adr/0082), so a kept destination allocates once.
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn a_list_reserved_for_its_bound_takes_it_without_growing() {
+        let made = SceBytes::<128>::with_capacity(128);
+        let mut given = SceBytes::<128>::new();
+        given.reserve(128);
+        for mut list in [made, given] {
+            let reserved = list.0.capacity();
+            assert!(reserved >= 128);
+            for i in 0..128u8 {
+                assert!(list.push(i).is_ok());
+            }
+            assert_eq!(list.push(0), Err(CapacityExceeded));
+            assert_eq!(list.0.capacity(), reserved);
+            list.clear();
+            list.reserve(128);
+            assert_eq!(list.0.capacity(), reserved);
+        }
+
+        let mut owned = SceOwnedList::<i64, 64>::new();
+        owned.reserve(64);
+        let reserved = owned.0.capacity();
+        assert!(reserved >= 64);
+        for i in 0..64i64 {
+            assert!(owned.push(i).is_ok());
+        }
+        assert_eq!(owned.0.capacity(), reserved);
+        let made = HeapBytes::<32>::with_capacity(32);
+        assert!(made.0.capacity() >= 32);
+    }
+
+    // A reservation is cut to what the bound leaves, on the language's list and
+    // on a codec's heap list alike, however much is asked for.
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn a_reservation_never_passes_the_bound() {
+        assert!(SceBytes::<16>::with_capacity(1000).0.capacity() <= 16);
+        let mut list = SceBytes::<16>::new();
+        assert!(list.extend_from_slice(&[1; 10]).is_ok());
+        list.reserve(1000);
+        assert!(list.0.capacity() >= 16);
+        assert!(list.0.capacity() <= 16);
+        list.reserve(usize::MAX);
+        assert!(list.0.capacity() <= 16);
+        assert_eq!(list, &[1u8; 10]);
+
+        assert!(HeapList::<i64, 16>::with_capacity(1000).0.capacity() <= 16);
+        let mut owned = HeapList::<i64, 16>::with_capacity(4);
+        assert!(owned.extend_from_slice(&[1, 2, 3, 4]).is_ok());
+        owned.reserve(usize::MAX);
+        assert!(owned.0.capacity() >= 16);
+        assert!(owned.0.capacity() <= 16);
+        assert_eq!(owned, &[1i64, 2, 3, 4]);
+    }
+
+    // An append makes room for the whole slice at once and never past the
+    // bound, and a list built from a slice holds room for it alone. Copied
+    // element by element, a `Vec` doubles to 128 to take 65 bytes, from 64 to
+    // 128 to take 90 in a list of 100, and to 64 to take 33 numbers.
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn an_append_makes_room_for_the_slice_at_once_and_never_past_the_bound() {
+        let mut fresh = SceBytes::<128>::new();
+        assert!(fresh.extend_from_slice(&[7; 65]).is_ok());
+        assert!(fresh.0.capacity() >= 65);
+        assert!(fresh.0.capacity() < 128);
+
+        let mut near = SceBytes::<100>::new();
+        for i in 0..60u8 {
+            assert!(near.push(i).is_ok());
+        }
+        assert!(near.extend_from_slice(&[0; 30]).is_ok());
+        assert!(near.0.capacity() <= 100);
+        assert!(near.extend_from_slice(&[0; 10]).is_ok());
+        assert_eq!(near.len(), 100);
+        assert!(near.0.capacity() <= 100);
+
+        let built = BoundedList::<i64, 64>::from_slice(&[0; 33]).expect("33 fit 64");
+        assert!(built.0.capacity() >= 33);
+        assert!(built.0.capacity() < 64);
+    }
+
+    // The inline profile has its room from the start: a reservation, past the
+    // bound or not, leaves the list as it was, and the bound still refuses. The
+    // language's list is checked on whichever profile this test runs under.
+    #[test]
+    fn a_reservation_on_an_inline_list_changes_nothing() {
+        let mut inline = InlineList::<u8, 4>::with_capacity(100);
+        inline.reserve(100);
+        assert!(inline.is_empty());
+        assert_eq!(inline.0.capacity(), 4);
+        assert!(inline.extend_from_slice(&[1, 2, 3, 4]).is_ok());
+        inline.reserve(1);
+        assert_eq!(inline.push(5), Err(CapacityExceeded));
+        assert_eq!(inline, &[1u8, 2, 3, 4]);
+
+        let mut bounded = BoundedList::<u8, 4>::with_capacity(100);
+        bounded.reserve(usize::MAX);
+        assert!(bounded.is_empty());
+        assert!(bounded.extend_from_slice(&[1, 2, 3, 4]).is_ok());
+        bounded.reserve(usize::MAX);
+        assert_eq!(bounded.push(5), Err(CapacityExceeded));
+        assert_eq!(bounded, &[1u8, 2, 3, 4]);
+
+        let mut default = SceOwnedList::<i64, 2>::with_capacity(2);
+        default.reserve(2);
+        assert!(default.extend_from_slice(&[-1, 1]).is_ok());
+        assert_eq!(default, &[-1i64, 1]);
     }
 
     // A byte string widens into a larger bound by type, and an append past its
