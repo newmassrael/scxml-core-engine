@@ -30,6 +30,7 @@ pub fn sheet_settle(
     trail: &mut SceOwnedList<i64, 768>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     trail.clear();
+    trail.reserve(768);
     let mut moving: bool = true;
     let mut passes: i64 = 0;
     while moving && passes <= (cells).len() as i64 {

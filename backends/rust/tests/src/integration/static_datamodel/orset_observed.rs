@@ -23,6 +23,7 @@ pub fn orset_observed(
     out: &mut SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(1024);
     for &x in live.iter() {
         if x.element == element {
             out.push(x)?;

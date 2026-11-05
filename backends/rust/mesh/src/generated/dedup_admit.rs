@@ -33,6 +33,7 @@ pub fn dedup_admit(
         }
     }
     out.clear();
+    out.reserve(256);
     let skip: u32 = if held || ((window).len() as u32) < capacity {
         0
     } else {

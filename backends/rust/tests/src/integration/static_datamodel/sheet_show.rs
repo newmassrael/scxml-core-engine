@@ -24,6 +24,7 @@ pub fn sheet_show(
     out: &mut SceOwnedList<sheet_shown::SheetShownPayload, 256>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(256);
     let mut started: bool = false;
     let mut last_row: u64 = 0;
     let mut last_col: u64 = 0;

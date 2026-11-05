@@ -21,6 +21,7 @@ pub fn day_repeat(
     out: &mut SceOwnedList<u8, 4>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(4);
     let mut i: u8 = 0;
     while i < count {
         out.push(value)?;

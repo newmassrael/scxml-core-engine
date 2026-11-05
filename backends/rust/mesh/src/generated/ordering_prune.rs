@@ -23,6 +23,7 @@ pub fn ordering_prune(
     out: &mut SceOwnedList<ordering_slot::OrderingSlotPayload, 256>,
 ) -> Result<(), CapacityExceeded> {
     out.clear();
+    out.reserve(256);
     for &slot in pending.iter() {
         if slot.seq >= next {
             out.push(slot)?;

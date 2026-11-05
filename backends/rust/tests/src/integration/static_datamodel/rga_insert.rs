@@ -23,6 +23,7 @@ pub fn rga_insert(
     out: &mut SceOwnedList<rga_node::RgaNodePayload, 256>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(256);
     let mut held: bool = false;
     for &probe in nodes.iter() {
         if probe.key == node.key {

@@ -27,6 +27,7 @@ pub fn merkle_insert(
         return Err(sce_forge_runtime::algorithm::AlgorithmError::Precondition);
     }
     out.clear();
+    out.reserve(2048);
     let mut pd: u32 = 0;
     let mut pp: u64 = 0;
     let mut div: i64 = 68630377364883;

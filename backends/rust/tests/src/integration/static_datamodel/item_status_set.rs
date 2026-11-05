@@ -29,6 +29,7 @@ pub fn item_status_set(
         status: status,
     };
     out.clear();
+    out.reserve(4);
     for &e in items.iter() {
         if e.id == id {
             out.push(moved)?;

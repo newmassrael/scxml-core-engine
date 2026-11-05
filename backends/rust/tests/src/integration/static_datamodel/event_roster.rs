@@ -24,6 +24,7 @@ pub fn event_roster(
     out: &mut SceOwnedList<event_member::EventMemberPayload, 64>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(64);
     for &m in roster.iter() {
         if m.node != node {
             out.push(m)?;

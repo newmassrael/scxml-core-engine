@@ -25,6 +25,7 @@ pub fn lww_write(
     out: &mut SceOwnedList<lww_cell::LwwCellPayload, 256>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(256);
     let mut held: bool = false;
     let incoming = hlc_timestamp::HlcTimestampPayload {
         wall_time: write.wall_time,

@@ -23,6 +23,7 @@ pub fn mv_value_drop(
     out: &mut SceOwnedList<mv_value::MvValuePayload, 512>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(512);
     for v in values.iter() {
         if v.id != gone.id
             || v.field != gone.field

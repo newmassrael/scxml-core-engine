@@ -23,6 +23,7 @@ pub fn rga_remove(
     out: &mut SceOwnedList<rga_gone::RgaGonePayload, 256>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(256);
     let mut held: bool = false;
     for &g in gone.iter() {
         out.push(g)?;

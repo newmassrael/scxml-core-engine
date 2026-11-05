@@ -23,6 +23,7 @@ pub fn orset_union(
     out: &mut SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(1024);
     for &x in a.iter() {
         out.push(x)?;
     }

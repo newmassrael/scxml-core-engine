@@ -24,6 +24,7 @@ pub fn register_values(
     out: &mut SceOwnedList<mv_value::MvValuePayload, 512>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(512);
     let mut started: bool = false;
     let mut last_wall: i64 = 0;
     let mut last_counter: u32 = 0;

@@ -21,6 +21,7 @@ pub fn day_run(
     out: &mut SceOwnedList<u8, 8>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(8);
     let mut i: u8 = 0;
     while i < count {
         out.push(sce_forge_runtime::algorithm::add::<u8>(first, i)?)?;

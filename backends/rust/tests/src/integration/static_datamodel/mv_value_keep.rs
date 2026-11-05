@@ -23,6 +23,7 @@ pub fn mv_value_keep(
     out: &mut SceOwnedList<mv_value::MvValuePayload, 512>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(512);
     let mut there: bool = false;
     for v in values.iter() {
         if v.id == held.id

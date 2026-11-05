@@ -28,6 +28,7 @@ pub fn ordering_hold(
         arrived_at_ms: now,
     };
     out.clear();
+    out.reserve(256);
     let mut placed: bool = false;
     for &slot in pending.iter() {
         if slot.seq == seq {

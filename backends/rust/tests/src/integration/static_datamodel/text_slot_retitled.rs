@@ -22,6 +22,7 @@ pub fn text_slot_retitled(
     out: &mut SceOwnedList<text_slot::TextSlotPayload, 16>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(16);
     for s in slots.iter() {
         let mut shown = text_slot::TextSlotPayload {
             slot: s.slot,

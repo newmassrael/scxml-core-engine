@@ -24,6 +24,7 @@ pub fn record_roster(
     out: &mut SceOwnedList<record_member::RecordMemberPayload, 64>,
 ) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     out.clear();
+    out.reserve(64);
     for &m in roster.iter() {
         if m.node != node {
             out.push(m)?;

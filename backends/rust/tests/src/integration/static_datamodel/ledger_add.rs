@@ -28,6 +28,7 @@ pub fn ledger_add(
         amount: amount,
     };
     out.clear();
+    out.reserve(8);
     let mut seen: bool = false;
     for &e in entries.iter() {
         if e.id == id {
