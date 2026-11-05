@@ -18181,9 +18181,9 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
 // Go, Kotlin and Python hold a byte string and a list in a container any length
 // fits, so their encode refuses a value outside the field's bound before its
 // first byte, with the error a decode of that frame gives (docs/adr/0077 §3),
-// and their convenience facade answers no frame. C++ does so for a list; a C++
-// codec printed from its plan presents a byte string as `Bytes<MAX>`, which
-// holds the bound, so such a value cannot be made and its encode refuses
+// and their convenience facade answers no frame. A C++ codec printed from its
+// plan presents a byte string as `Bytes<MAX>` and a list as `List<T, MAX>`,
+// which hold the bound, so such a value cannot be made and its encode refuses
 // nothing (docs/adr/0081 step 4). Rust cannot be handed such a value either
 // (its types hold the bounds), and C11 is held by `codec_encode_bound_test.c`.
 // `codec_length_ref` holds at most 32 bytes and `codec_repeat_basic` at most
@@ -18303,21 +18303,21 @@ int main() {
         check(at_bytes.size() == 34 && at_bytes[1] == 32, "32 bytes at the bound encode, their length derived");
     }
 
-    Repeat many{};
-    many.num_frags = 33;
-    many.frags.assign(33, Elem{});
-    std::vector<std::uint8_t> many_out;
-    ::SCE::Forge::VectorSink many_sink(many_out);
-    const auto too_many = many.encode(many_sink);
-    check(too_many.has_value() && *too_many == CodecError::TooManyElements,
-          "33 entries past a bound of 32 are refused as too many");
-    check(many_out.empty(), "a refused list writes nothing");
+    // The list is printed from its plan too (docs/adr/0081 step 4): it is held
+    // to its bound as a type, and its count is derived.
+    using Frags = decltype(std::declval<const Repeat &>().frags());
+    const std::vector<Elem> many(33, Elem{});
+    check(!Frags::make(many).has_value(), "33 entries past a bound of 32 cannot be made");
 
-    Repeat full{};
-    full.num_frags = 32;
-    full.frags.assign(32, Elem{});
-    const auto full_bytes = full.encode_to_vec();
-    check(full_bytes.has_value() && full_bytes->size() == 1 + 32 * 2, "32 entries at the bound encode");
+    const std::vector<Elem> full(32, Elem{});
+    const auto at_frags = Frags::make(full);
+    check(at_frags.has_value(), "32 entries at the bound are made");
+    if (at_frags.has_value()) {
+        const Repeat at{*at_frags};
+        const std::vector<std::uint8_t> full_bytes = at.encode_to_vec();
+        check(full_bytes.size() == 1 + 32 * 2 && full_bytes[0] == 32,
+              "32 entries at the bound encode, their count derived");
+    }
 
     return failures == 0 ? 0 : 1;
 }

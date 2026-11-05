@@ -178,13 +178,18 @@ public:
         return size() == 0;
     }
 
-    /// The first element, read only.
-    [[nodiscard]] constexpr auto data() const noexcept -> decltype(std::declval<const L &>().data()) {
+    /// The first element, read only, of a list that holds its elements in a
+    /// row; a list that does not has none, and is read by iteration.
+    template <typename M = L>
+    [[nodiscard]] constexpr auto data() const noexcept -> decltype(std::declval<const M &>().data()) {
         return list_.data();
     }
 
-    /// The element at `index`, read only; `index` must be below `size()`.
-    [[nodiscard]] constexpr decltype(auto) operator[](std::size_t index) const noexcept {
+    /// The element at `index`, read only; `index` must be below `size()`. A
+    /// list that cannot be indexed has none.
+    template <typename M = L>
+    [[nodiscard]] constexpr auto operator[](std::size_t index) const noexcept
+        -> decltype(std::declval<const M &>()[index]) {
         return list_[index];
     }
 
@@ -235,6 +240,27 @@ template <std::size_t Max, std::size_t Min = 0> using Bytes = Bounded<Span<const
 /// well-formed UTF-8 only, which `make` checks with the bound; the value keeps
 /// its own copy, a `Bounded<std::string, Max, Min>`.
 template <std::size_t Max, std::size_t Min = 0> using Text = Bounded<std::string_view, Max, Min>;
+
+/// A list of at least `Min` and at most `Max` values of `T`, viewed: what a
+/// generated value presents a codec's list of entries through, `T` the entry
+/// codec's value (docs/adr/0065 §6 R2, docs/adr/0081 step 4). The value keeps
+/// its own copy, a `Bounded<std::vector<T>, Max, Min>`.
+template <typename T, std::size_t Max, std::size_t Min = 0> using List = Bounded<Span<const T>, Max, Min>;
+
+namespace Detail {
+
+/// Whether `T` is a `Bounded` whose bounds lie within `Max` and `Min`: a list a
+/// source may present for a list of those bounds, of any type it holds its
+/// entries in.
+template <typename T, std::size_t Max, std::size_t Min = 0> struct IsBoundedWithin : std::false_type {};
+
+template <typename L, std::size_t Max2, std::size_t Min2, std::size_t Max, std::size_t Min>
+struct IsBoundedWithin<Bounded<L, Max2, Min2>, Max, Min> : WithinBounds<Max, Min, Max2, Min2> {};
+
+/// The type of the elements a list `T` holds, as iteration reads them.
+template <typename T> using ElementOf = std::decay_t<decltype(*std::declval<const T &>().begin())>;
+
+}  // namespace Detail
 
 // A `Bounded` compares with what it holds, as a `std::vector` compares with
 // another: the bounds are a fact about the value, not more of it, so

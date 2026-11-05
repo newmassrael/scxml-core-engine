@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "fd8d04c",
+  "embed_version": "ff48fce",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 525,
+  "symbol_count": 528,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3015,6 +3015,12 @@
       "header": "sce/forge/bounded.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Forge::Detail::IsBoundedWithin<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Forge::Detail::IsContiguous<T>"
     },
     {
@@ -3040,6 +3046,18 @@
       "kind": "typedef",
       "name": "SCE::Forge::Bytes",
       "type": "Bounded<Span<const std::uint8_t>, Max, Min>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::ElementOf",
+      "type": "std::decay_t<decltype(*std::declval<const T &>().begin())>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::List",
+      "type": "Bounded<Span<const T>, Max, Min>"
     },
     {
       "header": "sce/forge/bounded.h",

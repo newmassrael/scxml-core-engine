@@ -428,6 +428,14 @@ old encode, the old encode and its templates are removed in the same landing.
    derives the flag it binds to it from and which a declaration forwarding it calls on its body. A codec the
    template still writes hands a printed codec it holds only the inputs that codec does not say
    (`embed_flag_bind_thread_args_supplying`). The printed set is 69 codecs.
+
+   *The seventh C++ landing, 2026-11-06:* a list always there, of a stated bound and no law, of entries of a printed
+   codec, and the count of its entries. The value holds `Bounded<std::vector<Entry>, MAX>` and presents
+   `::SCE::Forge::List<Entry, MAX>`, a view of it; a source presents the list as any `Bounded` of bounds within its
+   own, of any type of entry sources (`is_<list>_list`), and the encode walks it, writing each entry by the entry
+   codec's `Wire`. `Bounded` reads a list that is not held in a row (its `data` and indexing only where the list
+   has them). A chain whose entries end on a flag it sets, are handed an input from the entry before, or are held to
+   a law, and a list a gate decides, wait for their landings. The printed set is 75 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

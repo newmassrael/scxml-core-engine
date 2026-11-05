@@ -79,7 +79,35 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     forms.push(format!("`{id}`, a body handed an input nothing binds"));
                 }
             }
-            Value::List { .. } => forms.push(format!("`{id}`, a list")),
+            // A list of entries is held to its bound and walked entry by
+            // entry, each written by its codec's encode over the source the
+            // list holds it as. A law over the entries, or a list a gate
+            // decides, is not yet.
+            Value::List { codec, bound, law } => {
+                if !held_printed(imports, codec) {
+                    forms.push(format!(
+                        "`{id}`, a list of entries of a codec the printer does not print"
+                    ));
+                }
+                if bound.most.is_none() {
+                    forms.push(format!("`{id}`, a list of no stated bound"));
+                }
+                if !law.is_none() {
+                    forms.push(format!("`{id}`, a list held to a law"));
+                }
+                if element.presence == Presence::Gated {
+                    forms.push(format!("`{id}`, a list a gate decides"));
+                }
+                if plan
+                    .handed
+                    .get(*codec)
+                    .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
+                {
+                    forms.push(format!(
+                        "`{id}`, a list whose entries are handed an input nothing binds"
+                    ));
+                }
+            }
         }
         // A gated element is presented as an optional value; a number the
         // value states only while its content is absent is not yet.
@@ -204,8 +232,30 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     }
                 }
             }
+            // A list is walked entry by entry, each entry written whole; one
+            // whose entries are handed an input from the entry before, whose
+            // chain holds memberships, or whose entries end on a flag the chain
+            // sets, is not yet.
+            Write::Streamed {
+                field,
+                guard: Guard::Always,
+                list: Some(list),
+            } => {
+                if !list.previous.is_empty() || list.slots.is_some() || list.lawful {
+                    forms.push(format!(
+                        "`{}`, a chain whose entries the entry before or a group decides",
+                        field.id
+                    ));
+                }
+                if list.ends.is_some() {
+                    forms.push(format!(
+                        "`{}`, a chain whose entries end on a flag it sets",
+                        field.id
+                    ));
+                }
+            }
             Write::Streamed { field, .. } => forms.push(format!(
-                "`{}`, a list or a chain walked as it is written",
+                "`{}`, a list written where it is present",
                 field.id
             )),
             // The variant is named once, by the model.
@@ -227,6 +277,8 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     } | BitSize::Tail
                         | BitSize::LengthRef
                         | BitSize::Embed
+                        | BitSize::Repeat { .. }
+                        | BitSize::TlvChain { .. }
                         | BitSize::Vle {
                             width_bits: 16 | 32 | 64
                         }
@@ -315,6 +367,8 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
         }
         // The input a body says, read through the body's codec.
         Measured::Says { .. } if !measure.gated => {}
+        // How many entries a list always there holds.
+        Measured::Entries { .. } if !measure.gated => {}
         _ => return Some(format!("`{element}`, a count")),
     }
     match (element, &number.into) {
@@ -460,6 +514,9 @@ struct Presented<'p> {
     optional: bool,
     /// Where it is the body of a codec it holds, that codec.
     body: Option<HeldCodec>,
+    /// Where it is a list of entries of a codec, that codec and the list's
+    /// bounds, as `Max` or `Max, Min`.
+    list: Option<(HeldCodec, String)>,
 }
 
 /// A codec a printed value holds as a body (its class is the element's view):
@@ -519,6 +576,35 @@ impl<'p> Presented<'p> {
                         namespace: namespace.to_string(),
                         alias: (*codec).to_string(),
                     }),
+                    list: None,
+                }
+            }
+            Value::List { codec, bound, .. } => {
+                let (class, namespace) = held_codec(imports, codec);
+                let most = bound
+                    .most
+                    .expect("`unlowered` refuses a list of no stated bound");
+                let bounds = if bound.least == 0 {
+                    format!("{most}")
+                } else {
+                    format!("{most}, {}", bound.least)
+                };
+                Presented {
+                    field: element.field,
+                    name,
+                    view: format!("::SCE::Forge::List<{class}, {bounds}>"),
+                    held: format!("::SCE::Forge::Bounded<std::vector<{class}>, {bounds}>"),
+                    bytes: false,
+                    text: false,
+                    optional,
+                    body: None,
+                    list: Some((
+                        HeldCodec {
+                            namespace: namespace.to_string(),
+                            alias: (*codec).to_string(),
+                        },
+                        bounds,
+                    )),
                 }
             }
             Value::Bytes(bound) | Value::Text(bound) => {
@@ -545,6 +631,7 @@ impl<'p> Presented<'p> {
                     text,
                     optional,
                     body: None,
+                    list: None,
                 }
             }
             _ => {
@@ -558,18 +645,38 @@ impl<'p> Presented<'p> {
                     text: false,
                     optional,
                     body: None,
+                    list: None,
                 }
             }
         }
+    }
+
+    /// The trait, of the codec's namespace, that says whether a list a source
+    /// presents for this element lies within its bounds and holds sources of
+    /// the entry codec; `None` for an element that is no list.
+    fn list_trait(&self) -> Option<String> {
+        let (held, bounds) = self.list.as_ref()?;
+        Some(format!(
+            "/// Whether `R` is a list a source may present for `{name}`: held to bounds\n\
+             /// within its own, of any type, each entry a source of the entry codec.\n\
+             template <class R, class = void>\n\
+             struct is_{name}_list : std::false_type {{}};\n\
+             template <class R>\n\
+             struct is_{name}_list<R, std::enable_if_t<::SCE::Forge::Detail::IsBoundedWithin<R, {bounds}>::value>>\n\
+             \x20   : {ns}::is_source<::SCE::Forge::Detail::ElementOf<R>> {{}};\n\n",
+            name = self.name,
+            ns = held.namespace
+        ))
     }
 
     /// What a source's read of it must be: convertible to what it is
     /// presented as, or, for a body, a source of the codec it holds.
     fn source_requirement(&self) -> String {
         let read = format!("decltype(source::{}(std::declval<const S&>()))", self.name);
-        match &self.body {
-            Some(held) => format!("{}::is_source<std::decay_t<{read}>>", held.namespace),
-            None => format!("std::is_convertible<{read}, {}>", self.presented()),
+        match (&self.body, &self.list) {
+            (Some(held), _) => format!("{}::is_source<std::decay_t<{read}>>", held.namespace),
+            (None, Some(_)) => format!("is_{}_list<std::decay_t<{read}>>", self.name),
+            (None, None) => format!("std::is_convertible<{read}, {}>", self.presented()),
         }
     }
 
@@ -578,12 +685,17 @@ impl<'p> Presented<'p> {
     /// read of the body as a source of its codec throw nothing.
     fn nothrow_requirement(&self) -> String {
         let read = format!("source::{}(std::declval<const S&>())", self.name);
-        match &self.body {
-            Some(held) => format!(
+        match (&self.body, &self.list) {
+            (Some(held), _) => format!(
                 "noexcept({read}) && {}::is_nothrow_source<std::decay_t<decltype({read})>>::value",
                 held.namespace
             ),
-            None => format!(
+            // A list's entries are read as sources of the entry codec.
+            (None, Some((held, _))) => format!(
+                "noexcept({read}) && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<std::decay_t<decltype({read})>>>::value",
+                held.namespace
+            ),
+            (None, None) => format!(
                 "noexcept(::SCE::Forge::Detail::converts_to<{}>({read}))",
                 self.presented()
             ),
@@ -639,6 +751,9 @@ pub(super) fn render(
     before.push_str("}  // namespace source\n\n");
 
     let names: Vec<&str> = elements.iter().map(|e| e.name.as_str()).collect();
+    for trait_text in elements.iter().filter_map(Presented::list_trait) {
+        before.push_str(&trait_text);
+    }
     before.push_str(&format!(
         "/// Whether `S` presents every element of `{struct_name}`, each convertible to\n\
          /// its type (a C++17 trait, ADR 0059 §3).\n\
@@ -714,9 +829,10 @@ pub(super) fn render(
     // A byte string is read once and viewed within its bound, and an optional
     // value is read once and tested before it is written: what the read
     // returns lives to the end of the encode, so a view never outlives it. A
-    // body is read once, as the source of its codec it is, and kept as read.
+    // body is read once, as the source of its codec it is, and kept as read; a
+    // list likewise, as the bounded list of entry sources it is.
     for e in &elements {
-        if e.body.is_some() {
+        if e.body.is_some() || e.list.is_some() {
             before.push_str(&format!(
                 "        const auto& _r_{name} = source::{name}(src);\n",
                 name = e.name
@@ -810,6 +926,11 @@ pub(super) fn render(
                             ),
                             None,
                         )
+                    }
+                    // How many entries the list holds, as the source presents
+                    // it, within its bound.
+                    Measured::Entries { list } => {
+                        (format!("_r_{}.size()", l.codec_field_id(&list.id)), None)
                     }
                     // Counted below, once the carriers its body may be handed
                     // are as the encode writes them.
@@ -1051,11 +1172,9 @@ pub(super) fn render(
                 }
                 before.push_str(&bytes_write(field));
             }
-            Write::Streamed {
-                field,
-                guard,
-                list: None,
-            } => {
+            // A field in turn; a list among them is walked as its bit size
+            // says, `unlowered` having refused every walk it does not lower.
+            Write::Streamed { field, guard, .. } => {
                 let body = match &field.bit_size {
                     // A body, written by its codec's encode over the source the
                     // value read it as, with the inputs that codec is handed.
@@ -1070,13 +1189,27 @@ pub(super) fn render(
                             handed(&held.alias)
                         )
                     }
+                    // A list, each entry written in turn by its codec's encode
+                    // over the source the list holds it as.
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                        let (held, _) = element(field)
+                            .and_then(|e| e.list.as_ref())
+                            .expect("a list field is a list the value presents");
+                        format!(
+                            "        for (const auto& _x : _r_{}) {{\n\
+                             \x20           if (auto _e = {}::Wire::encode_source(_x, w{}); _e) return _e;\n\
+                             \x20       }}\n",
+                            l.codec_field_id(&field.id),
+                            held.namespace,
+                            handed(&held.alias)
+                        )
+                    }
                     BitSize::Fixed { .. } => fixed_write(plan, field, &read(field)),
                     BitSize::Tail | BitSize::LengthRef => bytes_write(field),
                     BitSize::Vle { width_bits } => format!(
                         "        if (auto _e = w.write_vle_u{width_bits}(static_cast<std::uint{width_bits}_t>({})); _e) return _e;\n",
                         read(field)
                     ),
-                    _ => unreachable!("`unlowered` refuses a field of no width the sink writes"),
                 };
                 before.push_str(&match guard {
                     Guard::Always => body,
@@ -1087,8 +1220,8 @@ pub(super) fn render(
                     Guard::Gate => guarded(gate_test(field), body),
                 });
             }
-            Write::Streamed { .. } | Write::Variant => {
-                unreachable!("`unlowered` refuses a plan with a write the printer does not lower")
+            Write::Variant => {
+                unreachable!("`unlowered` refuses a plan with a variant")
             }
         }
     }
@@ -1115,7 +1248,9 @@ pub(super) fn render(
     // constant expression in C++17; a value of integers alone is both.
     // A body is held by value and moved in; the codec it holds may hold bytes,
     // so a value holding a body is made as one holding bytes is.
-    let holds_bytes = elements.iter().any(|e| e.bytes || e.body.is_some());
+    let holds_bytes = elements
+        .iter()
+        .any(|e| e.bytes || e.body.is_some() || e.list.is_some());
     let mut members = String::new();
     members.push_str(&format!("    {struct_name}() = default;\n"));
     if !elements.is_empty() {
@@ -1154,6 +1289,15 @@ pub(super) fn render(
             members.push_str(&format!(
                 "    /// The `{name}` element, the body it holds.\n\
                  \x20   [[nodiscard]] const {}& {name}() const noexcept {{ return {held}; }}\n",
+                e.view
+            ));
+            continue;
+        }
+        // A list is viewed within its bound, as the value holds it.
+        if e.list.is_some() {
+            members.push_str(&format!(
+                "    /// The `{name}` element, the entries it holds.\n\
+                 \x20   [[nodiscard]] {} {name}() const noexcept {{ return {held}; }}\n",
                 e.view
             ));
             continue;
@@ -1203,6 +1347,18 @@ pub(super) fn render(
     // a gate decides), and a derived number read and dropped, since the value
     // derives it. A carrier keeps the flags it was read with.
     let mut decoded = String::new();
+    // A list the decode read is held to its bound by the same door, past which
+    // it has too many entries.
+    for e in elements.iter().filter(|e| e.list.is_some()) {
+        let (name, view) = (&e.name, &e.view);
+        decoded.push_str(&format!(
+            "        const auto _b_{name} = {view}::make({name});\n\
+             \x20       if (!_b_{name}) {{\n\
+             \x20           cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
+             \x20           return std::nullopt;\n\
+             \x20       }}\n"
+        ));
+    }
     for e in elements.iter().filter(|e| e.bytes) {
         let (name, view) = (&e.name, &e.view);
         if e.optional {
@@ -1239,6 +1395,8 @@ pub(super) fn render(
             (true, true) => format!("_b_{name}"),
             // A body the decode read is moved into the value.
             (false, _) if e.body.is_some() => format!("std::move({name})"),
+            // A list is made from the view of the entries the decode read.
+            (false, _) if e.list.is_some() => format!("*_b_{name}"),
             (false, _) => name.clone(),
         };
         decoded.push_str(&format!("            /*{name}=*/{value},\n"));

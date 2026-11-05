@@ -1205,6 +1205,20 @@ resources, 69 in all, the wire expression and the declarations that hold it amon
 - `<Codec namespace>::input_<name>(value)` reads the input a value (or any source) says, as a `std::uint8_t`: use it
   where you set the parent's flag by hand, or drop that code where the parent is printed and derives it.
 
+## A printed C++ codec holds a list to its bound as a type and derives its count (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose lists
+are always there, of a stated bound, of entries of a printed codec (6 more codecs of the resources, 75 in all). The
+sections above apply.
+
+- A list element is `::SCE::Forge::List<Entry, MAX>` (`sce/forge/bounded.h`), a view of at most `MAX` entry values.
+  Make one with `List<Entry, MAX>::make(entries)` from a `std::vector<Entry>`; it returns `std::nullopt` past the
+  bound. `repeat.frags.assign(n, e)` and `repeat.num_frags = n` become `CodecRepeatBasic{*List<Elem, 32>::make(v)}`.
+- The count that states how many entries follow is no longer an element; the encode counts the list.
+- `encode_to_vec` returns the bytes; a list past its bound cannot be made, so the encode refuses nothing.
+- A source of the codec may present the list as any `Bounded<L, N>` with `N` at most `MAX`, of entries that are
+  sources of the entry codec: a `Bounded<std::vector<MyEntry>, 8>` of your own type is written as is.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

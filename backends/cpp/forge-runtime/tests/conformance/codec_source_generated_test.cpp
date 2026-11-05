@@ -30,6 +30,7 @@
 #include "codec_length_ref_dotted_basic.h"
 #include "codec_little_endian.h"
 #include "codec_present_if_basic.h"
+#include "codec_repeat_basic.h"
 #include "codec_simple_frame.h"
 #include "codec_zenoh_decl_subscriber.h"
 #include "codec_zenoh_locator.h"
@@ -238,6 +239,24 @@ struct SequencedReading {
 
     [[nodiscard]] std::optional<std::uint16_t> seq() const noexcept {
         return std::uint16_t{42};
+    }
+};
+
+// A fragment of the consumer's own: a source of the fragment codec.
+struct OwnFragment {
+    std::uint16_t value;
+
+    [[nodiscard]] std::uint16_t seq() const noexcept {
+        return value;
+    }
+};
+
+// Fragments held in a list of the consumer's own type, to a tighter bound than
+// the codec's: a list of sources of the entry codec, which the codec writes
+// entry by entry.
+struct Fragments {
+    [[nodiscard]] ::SCE::Forge::Bounded<std::vector<OwnFragment>, 4> frags() const {
+        return *::SCE::Forge::Bounded<std::vector<OwnFragment>, 4>::make({OwnFragment{0x0102}, OwnFragment{0x0304}});
     }
 };
 
@@ -549,6 +568,37 @@ void an_input_the_value_says_is_read_off_the_value_and_handed_on() {
           "a declaration writes its wire expression as the expression's own encode does");
 }
 
+namespace Fragmented = ::SCE::Generated::CodecRepeatBasic;
+using Fragment = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem;
+
+static_assert(std::is_same<decltype(std::declval<const Fragmented::CodecRepeatBasic &>().frags()),
+                           ::SCE::Forge::List<Fragment, 32>>::value,
+              "a list is presented as a view of its entries held to its bound");
+static_assert(Fragmented::is_source<consumer::Fragments>::value,
+              "a list of the consumer's own entry sources, within the bound, is a source");
+
+void a_list_is_written_entry_by_entry_and_its_count_derived() {
+    const std::vector<std::uint8_t> expected{0x02, 0x01, 0x02, 0x03, 0x04};
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!Fragmented::Wire::encode_source(consumer::Fragments{}, sink).has_value() && out == expected,
+          "each entry the consumer's list holds is written by the entry codec, the count before them");
+
+    const std::vector<Fragment> entries{Fragment{0x0102}, Fragment{0x0304}};
+    const auto frags = ::SCE::Forge::List<Fragment, 32>::make(entries);
+    CHECK(frags.has_value(), "two entries lie within a bound of 32");
+    if (!frags) {
+        return;
+    }
+    const Fragmented::CodecRepeatBasic value{*frags};
+    CHECK(value.encode_to_vec() == expected, "the generated value holding its list encodes alike");
+
+    ::SCE::Forge::SceCursor cursor(expected.data(), expected.size());
+    const auto decoded = Fragmented::CodecRepeatBasic::decode(cursor);
+    CHECK(decoded.has_value() && decoded->frags().size() == 2 && decoded->frags()[1].seq() == 0x0304,
+          "a decoded value holds its entries");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -569,6 +619,7 @@ int main() {
     a_text_is_made_of_utf8_within_its_bound_and_its_length_is_derived();
     a_body_is_encoded_over_the_source_its_holder_presents();
     an_input_the_value_says_is_read_off_the_value_and_handed_on();
+    a_list_is_written_entry_by_entry_and_its_count_derived();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);
