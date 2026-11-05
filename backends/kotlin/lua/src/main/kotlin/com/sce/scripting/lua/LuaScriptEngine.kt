@@ -20,6 +20,7 @@ import com.sce.runtime.ScriptLanguage
 import com.sce.runtime.ScriptSource
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
+import com.sce.runtime.assignmentOperand
 import org.w3c.dom.Node
 
 /**
@@ -535,35 +536,14 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val luaLocation = loweredLocationOf(location, session)
         val L = session.handle
 
-        // C++ AssignmentExecutionHelper 3-path strategy.
-        //
-        // W3C SCXML 5.10 names `_event`, `_sessionid` and the rest — it names
-        // them in the AUTHOR'S language, so the question "is this expression a
-        // system variable reference" is asked of `source()` and not of whatever
-        // a lowering spells them as. C++ states the same rule in
-        // `docs/SCE_LUA_TRANSLATION_SEAM.md`: shape questions stay on the
-        // author's text.
-        if (isSystemVariableReference(expr.source)) {
-            // Path 1: System variable reference — use script execution
-            val err = LuaNative.doString(L, "$luaLocation = $luaExpr")
-            if (err != null) {
-                throw ScriptEngineException("Assignment failed: ${location.source} = ${expr.source} ($err)")
-            }
-        } else if (isSimpleVariableName(luaLocation)) {
-            // Path 2: Simple variable — evaluate + setGlobal
-            val status = LuaNative.loadAndCall(L, "return $luaExpr", 1)
-            if (status != 0) {
-                val err = LuaNative.getError(L)
-                LuaNative.pop(L, 1)
-                throw ScriptEngineException("Assignment failed: ${location.source} = ${expr.source} ($err)")
-            }
-            LuaNative.setGlobal(L, luaLocation)
-        } else {
-            // Path 3: Complex path — use script execution
-            val err = LuaNative.doString(L, "$luaLocation = ($luaExpr)")
-            if (err != null) {
-                throw ScriptEngineException("Assignment failed: ${location.source} = ${expr.source} ($err)")
-            }
+        // §scxml-5.4: one statement the engine runs itself, for every
+        // location, as C++'s `IScriptEngine::assign` runs it. The value never
+        // leaves the Lua state, so `_event` (test 329), a DOM userdata held in
+        // `_event.data` or a function is the same value at the location
+        // afterwards, with no list of spellings to route around a loss.
+        val err = LuaNative.doString(L, "$luaLocation = (${assignmentOperand(luaExpr)})")
+        if (err != null) {
+            throw ScriptEngineException("Assignment failed: ${location.source} = ${expr.source} ($err)")
         }
         session.declaredVars.add(luaLocation.split('.')[0].substringBefore('['))
         // §scxml-5.4: an assignment is how this datamodel's globals come into
@@ -938,11 +918,6 @@ class LuaScriptEngine : ScxmlScriptEngine {
     private fun pushField(L: Long, key: String, value: String) {
         LuaNative.pushString(L, value)
         LuaNative.setField(L, -2, key)
-    }
-
-    private fun isSystemVariableReference(expr: String): Boolean {
-        return expr == "_sessionid" || expr == "_event" || expr == "_name" ||
-                expr == "_ioprocessors" || expr == "_x"
     }
 
     private fun isSimpleVariableName(name: String): Boolean {

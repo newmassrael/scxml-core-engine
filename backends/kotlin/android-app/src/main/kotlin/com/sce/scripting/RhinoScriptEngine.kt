@@ -14,6 +14,7 @@ import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
+import com.sce.runtime.assignmentOperand
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Scriptable
@@ -190,14 +191,11 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             cx.languageVersion = Context.VERSION_ES6
             cx.optimizationLevel = -1
 
-            if (isSystemVariableReference(expr)) {
-                cx.evaluateString(session.scope, "$location = $expr;", "assign", 1, null)
-            } else if (isSimpleVariableName(location)) {
-                val result = cx.evaluateString(session.scope, expr, "assign", 1, null)
-                ScriptableObject.putProperty(session.scope, location, result)
-            } else {
-                cx.evaluateString(session.scope, "$location = ($expr);", "assign", 1, null)
-            }
+            // One statement Rhino runs itself, for every location, as the JVM
+            // test engine (`backends/kotlin/rhino`) runs it: the value never
+            // leaves the engine, so `_event`, a DOM or a function is the same
+            // object at the location afterwards.
+            cx.evaluateString(session.scope, "$location = (${assignmentOperand(expr)});", "assign", 1, null)
         } catch (e: ScriptEngineException) {
             throw e
         } catch (e: Exception) {
@@ -205,18 +203,6 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         } finally {
             Context.exit()
         }
-    }
-
-    private fun isSystemVariableReference(expr: String): Boolean {
-        return expr == "_sessionid" || expr == "_event" || expr == "_name" ||
-               expr == "_ioprocessors" || expr == "_x"
-    }
-
-    private fun isSimpleVariableName(name: String): Boolean {
-        if (name.isEmpty()) return false
-        val first = name[0]
-        if (!first.isLetter() && first != '_') return false
-        return name.all { it.isLetterOrDigit() || it == '_' }
     }
 
     override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs): PayloadReading {

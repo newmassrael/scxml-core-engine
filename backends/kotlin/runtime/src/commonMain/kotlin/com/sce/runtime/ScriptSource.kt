@@ -115,3 +115,20 @@ class ScriptSource private constructor(
 
     override fun toString(): String = "ScriptSource(${language.wireName}, ${text})"
 }
+
+/**
+ * The value expression of an `<assign>` as the operand of `=` in
+ * `<location> = (<operand>)`: one trailing `;`, and the whitespace around it,
+ * dropped.
+ *
+ * W3C's own corpus writes `expr="new testobject();"` (test 452), an author
+ * copying a statement into an attribute that takes an expression, and
+ * `sce-build`'s frontend accepts and drops that `;` when it parses an
+ * expression (`ecmascript::parser::parse_expression`). Inside the parentheses
+ * it would be a syntax error, in ECMAScript and in Lua alike. C++ applies the
+ * same rule in `IScriptEngine::assignmentStatement`.
+ */
+fun assignmentOperand(expression: String): String {
+    val trimmed = expression.trimEnd()
+    return if (trimmed.endsWith(';')) trimmed.dropLast(1).trimEnd() else trimmed
+}

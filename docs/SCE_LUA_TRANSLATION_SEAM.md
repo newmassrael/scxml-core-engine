@@ -3127,15 +3127,19 @@ guards five entry points, not two:
 | `evaluateExpr` | `ScriptSource` | `doEvaluateExpr` | — |
 | `executeScript` | `ScriptSource` | `doExecuteScript` | — |
 | `evaluateCondition` | `ScriptSource` | `doEvaluateCondition` | a guard reaches the rewriter with `ExpressionContext.Guard`, its own cache and its own wrapping; §scxml-5.9 `cond` is also the entry point a generated machine calls most |
-| `assign` | `location: String`, `ScriptSource` | `doAssign` | §scxml-5.4: the engine evaluates AND stores, over three assignment paths |
+| `assign` | `location: String`, `ScriptSource` | `doAssign` | §scxml-5.4: the engine evaluates AND stores, as one statement `<location> = (<expr>)` |
 | `executeForeach` | `ScriptSource`, `item`/`index`, body | `doExecuteForeach` | §scxml-4.6: the expression must evaluate to a COLLECTION, and a non-collection is `error.execution` rather than a wrong value |
 
 `location`, `item` and `index` stay `String` deliberately. They are datamodel
 locations, not expressions — §scxml-5.4 spells one in the datamodel's terms —
 so they carry no language and the shape questions asked of them are asked of
-what the author wrote. That is also why `isSystemVariableReference` moved onto
-`source()`: §scxml-5.10 names `_event`, not whatever a lowering spells it as,
-which is the rule C++ already states above.
+what the author wrote. The read-only check on a location is asked of
+`source()` for that reason: §scxml-5.10 names `_event`, not whatever a lowering
+spells it as, which is the rule C++ already states above. (An
+`isSystemVariableReference` once asked the same of the EXPRESSION, to route
+`Var2 = _event` around a value read out of the engine and written back; with
+every assignment run as one statement inside the engine there is nothing to
+route around, and it was deleted on 2026-11-06 on both sides.)
 
 ### A predicate, because a count in a comment is what went wrong here twice
 

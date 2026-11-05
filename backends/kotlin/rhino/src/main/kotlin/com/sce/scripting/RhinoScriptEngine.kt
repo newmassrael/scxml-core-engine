@@ -11,6 +11,7 @@ import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
+import com.sce.runtime.assignmentOperand
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Scriptable
@@ -185,20 +186,12 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             cx.languageVersion = Context.VERSION_ES6
             cx.optimizationLevel = -1
 
-            // C++ AssignmentExecutionHelper 3-path strategy:
-            // 1. System variable reference in expr → executeScript (preserves JS object references)
-            if (isSystemVariableReference(expr)) {
-                cx.evaluateString(session.scope, "$location = $expr;", "assign", 1, null)
-            }
-            // 2. Simple variable name → evaluate + setVariable
-            else if (isSimpleVariableName(location)) {
-                val result = cx.evaluateString(session.scope, expr, "assign", 1, null)
-                ScriptableObject.putProperty(session.scope, location, result)
-            }
-            // 3. Complex path (e.g., "foo.bar") → executeScript
-            else {
-                cx.evaluateString(session.scope, "$location = ($expr);", "assign", 1, null)
-            }
+            // W3C SCXML 5.4 / B.2: one statement Rhino runs itself, for every
+            // location, as C++'s `IScriptEngine::assign` runs it. The value
+            // never leaves the engine, so `_event` (test 329), a DOM held in
+            // `_event.data` or a function is the same object at the location
+            // afterwards, with no list of spellings to route around a loss.
+            cx.evaluateString(session.scope, "$location = (${assignmentOperand(expr)});", "assign", 1, null)
         } catch (e: ScriptEngineException) {
             throw e
         } catch (e: Exception) {
@@ -206,27 +199,6 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         } finally {
             Context.exit()
         }
-    }
-
-    /**
-     * C++ AssignmentExecutionHelper::isSystemVariableReference pattern.
-     * W3C SCXML 5.10: System variables that require direct script execution
-     * to preserve JavaScript object reference semantics (test 329: Var2 = _event).
-     */
-    private fun isSystemVariableReference(expr: String): Boolean {
-        return expr == "_sessionid" || expr == "_event" || expr == "_name" ||
-               expr == "_ioprocessors" || expr == "_x"
-    }
-
-    /**
-     * C++ AssignmentExecutionHelper regex: ^[a-zA-Z_][a-zA-Z0-9_]*$
-     * Simple variable names use setVariable, complex paths use executeScript.
-     */
-    private fun isSimpleVariableName(name: String): Boolean {
-        if (name.isEmpty()) return false
-        val first = name[0]
-        if (!first.isLetter() && first != '_') return false
-        return name.all { it.isLetterOrDigit() || it == '_' }
     }
 
     override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs): PayloadReading {
