@@ -675,6 +675,9 @@ impl StatePolicy for Test510Policy {
     const NEEDS_EVENT_SCHEDULER: bool = true;
     // The generate manifest's `needs_parent`: what a root-start policy reads.
     const NEEDS_PARENT: bool = false;
+    // Whether an `<invoke>` is handed to a host: the engine leaves the code
+    // that starts, ends and expires one out of a machine that has none.
+    const HAS_HOST_INVOKES: bool = false;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
