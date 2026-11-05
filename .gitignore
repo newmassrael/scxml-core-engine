@@ -5,6 +5,7 @@ target/
 build_debug/
 build_python/
 build_wasm/
+build_wasm_web/
 build_tsan/
 build_release/
 build_conformance_c/

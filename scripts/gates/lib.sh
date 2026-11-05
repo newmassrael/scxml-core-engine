@@ -529,24 +529,40 @@ sce_gate_activate_emsdk() {
     return 0
 }
 
-# The emscripten build tree, and the one configure every gate that builds in it
-# runs.
+# The two emscripten build trees, and the one configure every gate that builds
+# in one of them runs.
 #
-# `visualizer-wasm` and `w3c-wasm` build different targets of the same tree,
-# `cpp-suite-wasm` and `scripts/build_wasm.sh` all of it.
-# Two spellings of its configure would be two trees in one directory: a
+# A tree has threads or it has not (SCE_WASM_THREADS in the root list), and the
+# engine it builds is threaded or host-driven accordingly
+# (sce/include/common/ThreadSupport.h):
+#
+#   build_wasm      threads: the Node programs. `w3c-wasm` builds two of
+#                   them, `cpp-suite-wasm` and `scripts/build_wasm.sh` all.
+#   build_wasm_web  no threads: the browser module, which `visualizer-wasm`
+#                   builds and the deploy publishes.
+#
+# Two spellings of one tree's configure would be two trees in one directory: a
 # generator chosen by one gate and refused by the next ("Does not match the
 # generator used previously"), or a build type that flips the whole tree from
-# one gate to the other. Gitignored (`build_wasm/`), so building in it touches
-# no tracked file.
+# one gate to the other. Both are gitignored, so building in them touches no
+# tracked file.
 #
 # Returns the configure's status; the caller names what failed.
 SCE_WASM_BUILD_DIR="build_wasm"
-sce_gate_configure_wasm_tree() {
+SCE_WASM_WEB_BUILD_DIR="build_wasm_web"
+sce_gate_configure_wasm_build_dir() {
+    local dir="$1" threads="$2"
     local GENERATOR=()
     command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
-    emcmake cmake -S . -B "$SCE_WASM_BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
+    emcmake cmake -S . -B "$dir" -DCMAKE_BUILD_TYPE=Release \
+        -DSCE_WASM_THREADS="$threads" \
         ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null
+}
+sce_gate_configure_wasm_tree() {
+    sce_gate_configure_wasm_build_dir "$SCE_WASM_BUILD_DIR" ON
+}
+sce_gate_configure_wasm_web_tree() {
+    sce_gate_configure_wasm_build_dir "$SCE_WASM_WEB_BUILD_DIR" OFF
 }
 
 # Remove ctest log temporaries that interrupted runs left behind.

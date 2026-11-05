@@ -176,10 +176,12 @@ jobs:
         echo "Copying visualizer source files..."
         cp -r web/visualizer/* gh-pages/visualizer/
 
-        # Copy WASM build outputs (overwrite placeholder files if present)
+        # Copy WASM build outputs (overwrite placeholder files if present).
+        # The browser module is built in the tree without threads
+        # (scripts/gates/lib.sh, the two emscripten trees).
         echo "Copying WASM build outputs..."
-        cp build_wasm/tests/visualizer.wasm gh-pages/visualizer/
-        cp build_wasm/tests/visualizer.js gh-pages/visualizer/
+        cp build_wasm_web/tests/visualizer.wasm gh-pages/visualizer/
+        cp build_wasm_web/tests/visualizer.js gh-pages/visualizer/
 
         # Copy SCXML resources for visualizer
         echo "Copying SCXML test resources..."

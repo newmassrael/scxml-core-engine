@@ -680,22 +680,12 @@ else()
     message(WARNING "SCE: No script engine enabled. Interpreter and static hybrid will not work.")
 endif()
 
-# WASM pthread configuration
-# All SCE library tiers must be compiled with pthread/atomics for --shared-memory linking
-if(EMSCRIPTEN)
-    set(_SCE_PTHREAD_TARGETS sce_base sce_runtime)
-    if(SCE_HAS_SCRIPTING)
-        list(APPEND _SCE_PTHREAD_TARGETS sce_scripting)
-    endif()
-    foreach(_target IN LISTS _SCE_PTHREAD_TARGETS)
-        target_compile_options(${_target} PRIVATE -pthread -sUSE_PTHREADS=1)
-    endforeach()
-    # The thread pool, heap, stack, environment and exit behaviour are each
-    # program's to choose at its own link; a static library is never linked,
-    # so it states only what its code requires of a link (the fetch client's
-    # options, above) and nothing of a program's shape.
-    message(STATUS "WASM build: pthread enabled for EventDispatcherImpl (no PROXY_TO_PTHREAD)")
-endif()
+# WASM: whether the libraries are compiled with pthreads is the tree's one
+# setting, SCE_WASM_THREADS in the root list, because it is part of every
+# object's ABI. The thread pool, heap, stack, environment and exit behaviour
+# are each program's to choose at its own link; a static library is never
+# linked, so it states only what its code requires of a link (the fetch
+# client's options, above) and nothing of a program's shape.
 
 # HTTP support (optional feature)
 if(SCE_ENABLE_HTTP)

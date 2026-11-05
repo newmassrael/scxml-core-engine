@@ -54,8 +54,9 @@ if(EMSCRIPTEN)
     # WASM: POSIX subset available via Emscripten, no dlopen
     target_compile_definitions(lua54 PRIVATE LUA_USE_POSIX)
     target_link_libraries(lua54 PRIVATE m)
-    # WASM pthread: Required for --shared-memory linking compatibility
-    target_compile_options(lua54 PRIVATE -pthread -sUSE_PTHREADS=1)
+    # `-pthread` is the tree's one setting (SCE_WASM_THREADS in the root list),
+    # because it is part of every object's ABI: a tree with threads compiles
+    # this library with it, a tree without them does not.
 elseif(WIN32)
     # Windows: No extra definitions needed (Lua defaults to Windows APIs)
 elseif(UNIX)

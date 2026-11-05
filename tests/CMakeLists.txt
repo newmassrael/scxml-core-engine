@@ -4,6 +4,74 @@
 # CMakeLists.txt).
 cmake_minimum_required(VERSION 3.20)
 
+# ============================================================================
+# The emscripten tree without threads (SCE_WASM_THREADS OFF, build_wasm_web)
+# ============================================================================
+# The browser module and nothing else. It runs in a page without cross-origin
+# isolation, so without SharedArrayBuffer and without threads, and the engine
+# it links is the host-driven one (sce/include/common/ThreadSupport.h). Every
+# test program here is a Node program and belongs to the threaded tree, where
+# the engine is the one the native build runs.
+if(EMSCRIPTEN AND NOT SCE_WASM_THREADS)
+    add_executable(visualizer
+        w3c/wasm_bindings.cpp
+        w3c/InteractiveTestRunner.cpp
+        ${CMAKE_SOURCE_DIR}/sce/src/runtime/StateSnapshot.cpp
+    )
+
+    target_include_directories(visualizer PRIVATE
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
+        ${CMAKE_SOURCE_DIR}/third_party/quickjs
+        ${CMAKE_CURRENT_SOURCE_DIR}/w3c
+    )
+
+    target_link_libraries(visualizer
+        PRIVATE
+            sce_runtime
+            spdlog::spdlog
+    )
+
+    target_link_options(visualizer PRIVATE
+        # Emscripten bindings
+        --bind
+
+        # Module configuration
+        -sMODULARIZE=1
+        -sEXPORT_NAME=createVisualizer
+
+        # Memory configuration (browser-friendly, no file embedding)
+        -sALLOW_MEMORY_GROWTH=0
+        -sINITIAL_MEMORY=67108864  # 64MB initial (browser max ~2GB, grows as needed)
+
+        # Exported functions and runtime methods
+        "-sEXPORTED_FUNCTIONS=[_malloc,_free]"
+        "-sEXPORTED_RUNTIME_METHODS=[cwrap,ccall,UTF8ToString,FS]"
+
+        # File system (for fetch API)
+        -sFORCE_FILESYSTEM=1
+
+        # Environment (browser and Node.js)
+        -sENVIRONMENT=web,node
+
+        # Assertions for debugging
+        -sASSERTIONS=1
+    )
+
+    # Auto-deploy WASM files to web/visualizer/ directory after build
+    add_custom_command(TARGET visualizer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_BINARY_DIR}/visualizer.wasm
+                ${CMAKE_SOURCE_DIR}/web/visualizer/visualizer.wasm
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_BINARY_DIR}/visualizer.js
+                ${CMAKE_SOURCE_DIR}/web/visualizer/visualizer.js
+        COMMENT "Auto-deploying WASM files to web/visualizer/"
+        VERBATIM
+    )
+    return()
+endif()
+
 # GoogleTest setup - FetchContent approach
 find_package(GTest QUIET)
 
@@ -46,19 +114,6 @@ if(NOT GTest_FOUND)
 
     get_target_property(GMOCK_MAIN_INCLUDE_DIRS gmock_main INTERFACE_INCLUDE_DIRECTORIES)
     set_target_properties(gmock_main PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${GMOCK_MAIN_INCLUDE_DIRS}")
-
-    # WASM builds: Apply pthread flags
-    if(EMSCRIPTEN)
-        target_compile_options(gtest PRIVATE -pthread -sUSE_PTHREADS=1)
-        target_compile_options(gtest_main PRIVATE -pthread -sUSE_PTHREADS=1)
-        target_compile_options(gmock PRIVATE -pthread -sUSE_PTHREADS=1)
-        target_compile_options(gmock_main PRIVATE -pthread -sUSE_PTHREADS=1)
-
-        target_link_options(gtest PRIVATE -pthread -sUSE_PTHREADS=1)
-        target_link_options(gtest_main PRIVATE -pthread -sUSE_PTHREADS=1)
-        target_link_options(gmock PRIVATE -pthread -sUSE_PTHREADS=1)
-        target_link_options(gmock_main PRIVATE -pthread -sUSE_PTHREADS=1)
-    endif()
 
     # Create alias (provides same interface as find_package). googletest
     # defines GTest::gtest, GTest::gtest_main, GTest::gmock and
@@ -133,13 +188,7 @@ function(apply_sce_test_policies target_name)
     # `-s` setting and these options are appended where the policy is applied,
     # so a program states only what it adds, never another value of these.
     if(EMSCRIPTEN)
-        target_compile_options(${target_name} PRIVATE
-            -pthread
-            -sUSE_PTHREADS=1
-        )
         target_link_options(${target_name} PRIVATE
-            -pthread
-            -sUSE_PTHREADS=1
             -sPTHREAD_POOL_SIZE=4
             -sEXIT_RUNTIME=1  # Exit immediately after main()
             -sENVIRONMENT=node
@@ -3164,7 +3213,7 @@ if(EMSCRIPTEN)
     set(POLYFILL_PRE_JS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/wasm_polyfill.js")
 
     # WASM: what the runner adds to the shape apply_sce_test_policies gives
-    # every test program (Node, NODERAWFS, pthreads, ASYNCIFY, the heap and
+    # every test program (Node, NODERAWFS, the pool, ASYNCIFY, the heap and
     # stack); the fetch client's -sFETCH comes from sce_runtime.
     target_link_options(w3c_test_cli PRIVATE
         -sALLOW_TABLE_GROWTH=1          # Allow function table to grow dynamically (required for QuickJS JS_NewCFunction)
@@ -8485,84 +8534,6 @@ message(STATUS "✅ Core Parser tests enabled")
 message(STATUS "✅ Integration tests enabled")
 message(STATUS "🚫 std::cout usage prohibited in all test targets")
 
-# ============================================================================
-# Interactive SCXML Visualizer (WASM-only)
-# ============================================================================
-if(EMSCRIPTEN)
-    message(STATUS "🎨 Building Interactive SCXML Visualizer for WASM")
-
-    # Visualizer WASM module
-    add_executable(visualizer
-        w3c/wasm_bindings.cpp
-        w3c/InteractiveTestRunner.cpp
-        ${CMAKE_SOURCE_DIR}/sce/src/runtime/StateSnapshot.cpp
-    )
-
-    target_include_directories(visualizer PRIVATE
-        ${CMAKE_SOURCE_DIR}/sce/include
-        ${CMAKE_SOURCE_DIR}/sce/src
-        ${CMAKE_SOURCE_DIR}/third_party/quickjs
-        ${CMAKE_CURRENT_SOURCE_DIR}/w3c
-    )
-
-    target_link_libraries(visualizer
-        PRIVATE
-            sce_runtime
-            spdlog::spdlog
-    )
-
-    # WASM-specific compile flags (NO pthread for browser compatibility)
-    # Removed pthread to avoid SharedArrayBuffer/Cross-Origin-Isolation requirement
-
-    # WASM-specific link flags for visualizer
-    target_link_options(visualizer PRIVATE
-        # Emscripten bindings
-        --bind
-
-        # Module configuration
-        -sMODULARIZE=1
-        -sEXPORT_NAME=createVisualizer
-
-        # Memory configuration (browser-friendly, no file embedding)
-        -sALLOW_MEMORY_GROWTH=0
-        -sINITIAL_MEMORY=67108864  # 64MB initial (browser max ~2GB, grows as needed)
-
-        # Exported functions and runtime methods
-        "-sEXPORTED_FUNCTIONS=[_malloc,_free]"
-        "-sEXPORTED_RUNTIME_METHODS=[cwrap,ccall,UTF8ToString,FS]"
-
-        # File system (for fetch API)
-        -sFORCE_FILESYSTEM=1
-
-        # Environment (browser and Node.js)
-        -sENVIRONMENT=web,node
-
-        # Assertions for debugging
-        -sASSERTIONS=1
-
-        # Asyncify (for async operations)
-        -sASYNCIFY
-    )
-
-    # Auto-deploy WASM files to web/visualizer/ directory after build
-    add_custom_command(TARGET visualizer POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${CMAKE_CURRENT_BINARY_DIR}/visualizer.wasm
-                ${CMAKE_SOURCE_DIR}/web/visualizer/visualizer.wasm
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${CMAKE_CURRENT_BINARY_DIR}/visualizer.js
-                ${CMAKE_SOURCE_DIR}/web/visualizer/visualizer.js
-        COMMENT "Auto-deploying WASM files to web/visualizer/"
-        VERBATIM
-    )
-    message(STATUS "   - WASM files will be automatically deployed after build")
-
-    message(STATUS "✅ Interactive SCXML Visualizer configured")
-    message(STATUS "   - Output: visualizer.wasm + visualizer.js")
-    message(STATUS "   - SCXML loading: Dynamic fetch (no embedding)")
-    message(STATUS "   - JavaScript API: createVisualizer() module")
-endif()
-
 # ----------------------------------------------------------------------------
 # Install-tree consumer smoke test (opt-in).
 #
@@ -8675,17 +8646,14 @@ endforeach()
 # Every program declared here is a test program and has had
 # apply_sce_test_policies, which is where a test program's shape lives: the
 # cout prohibition, the warning classes, and under emscripten how it is linked
-# to run under Node (NODERAWFS, pthreads, the heap). Four programs once missed
+# to run under Node (NODERAWFS, the thread pool, the heap). Four programs once missed
 # it and were linked with none of that; under Node they could not have opened
-# one file the configure step names. A program that is not a test says why
-# here.
-#
-#   visualizer: the browser module web/visualizer loads, which ctest never
-#               runs; it is linked for the web by its own options.
-set(_SCE_NOT_TEST_PROGRAMS visualizer)
+# one file the configure step names. The browser module, the one program
+# here that is not a test, is declared only in the tree without threads, which
+# returns at the top of this file.
 foreach(_sce_t IN LISTS _sce_dir_targets)
     get_target_property(_sce_type ${_sce_t} TYPE)
-    if(NOT _sce_type STREQUAL "EXECUTABLE" OR _sce_t IN_LIST _SCE_NOT_TEST_PROGRAMS)
+    if(NOT _sce_type STREQUAL "EXECUTABLE")
         continue()
     endif()
     get_target_property(_sce_policed ${_sce_t} SCE_TEST_POLICIES_APPLIED)
@@ -8693,7 +8661,6 @@ foreach(_sce_t IN LISTS _sce_dir_targets)
         message(FATAL_ERROR
             "${_sce_t} is a program tests/CMakeLists.txt declares without "
             "apply_sce_test_policies. Add it to SCE_TEST_TARGETS (or call the "
-            "function on it); a program that is not a test goes in "
-            "_SCE_NOT_TEST_PROGRAMS with the reason it is not.")
+            "function on it).")
     endif()
 endforeach()

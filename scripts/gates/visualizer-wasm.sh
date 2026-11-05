@@ -24,7 +24,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # Both outputs are gitignored build products (`/web/visualizer/wasm/`,
-# `build_wasm/`), so writing them here does not touch a tracked file, and
+# `build_wasm_web/`), so writing them here does not touch a tracked file, and
 # writing them where the lane writes them is what lets the deploy steps keep
 # working when this gate is the thing that produced them.
 # wasm-pack is a cargo install, not a toolchain: a developer who changed the
@@ -41,15 +41,16 @@ wasm-pack build sce-build-wasm \
     || sce_gate_fail "codegen WASM build — the browser generator would ship broken or stale"
 
 # An emsdk that is installed and not active is found (lib.sh says why this
-# matters for a local run), and the tree is configured the way `w3c-wasm`
-# configures it, because the two build in the same directory.
+# matters for a local run). The visualizer is built in the tree without
+# threads: it runs in a page without SharedArrayBuffer, on the host-driven
+# engine (lib.sh, the two emscripten trees).
 sce_gate_activate_emsdk
 
 if sce_gate_requires_tool emcmake emsdk; then
-    sce_gate_step "building the visualizer (emscripten)"
-    sce_gate_configure_wasm_tree \
+    sce_gate_step "building the visualizer (emscripten, no threads)"
+    sce_gate_configure_wasm_web_tree \
         || sce_gate_fail "visualizer emcmake configure"
-    sce_gate_build "$SCE_WASM_BUILD_DIR" --target visualizer \
+    sce_gate_build "$SCE_WASM_WEB_BUILD_DIR" --target visualizer \
         || sce_gate_fail "visualizer WASM build"
 
     sce_gate_step "building the DOOM example (emscripten)"

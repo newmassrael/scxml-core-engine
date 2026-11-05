@@ -261,6 +261,25 @@ if(EMSCRIPTEN)
     # turned the first such error into an abort of the W3C run.
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-sDISABLE_EXCEPTION_CATCHING=0>)
     add_link_options(-sDISABLE_EXCEPTION_CATCHING=0)
+
+    # Whether this tree has threads, which decides the engine's execution model
+    # (sce/include/common/ThreadSupport.h): `-pthread` defines
+    # __EMSCRIPTEN_PTHREADS__ and the engine is threaded, as natively; without
+    # it the engine is host-driven. It is one setting of the whole tree because
+    # it is part of every object's ABI (shared memory and atomics): a program
+    # linked without `-pthread` against archives compiled with it mixes two
+    # ABIs, which the browser module did while the model was chosen by the
+    # target and no thread was ever started.
+    #
+    #   ON  (build_wasm): the Node programs, every test suite among them.
+    #   OFF (build_wasm_web): the browser module, which runs without
+    #       cross-origin isolation and so without SharedArrayBuffer.
+    option(SCE_WASM_THREADS "Build the emscripten tree with pthreads (the threaded engine)" ON)
+    if(SCE_WASM_THREADS)
+        add_compile_options(-pthread)
+        add_link_options(-pthread)
+    endif()
+    message(STATUS "WASM: threads ${SCE_WASM_THREADS}")
 endif()
 
 # Include GNUInstallDirs for installation paths
