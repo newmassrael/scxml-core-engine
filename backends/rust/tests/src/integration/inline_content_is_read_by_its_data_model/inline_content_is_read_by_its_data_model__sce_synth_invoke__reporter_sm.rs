@@ -210,43 +210,10 @@ impl InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent {
 // ======================================================================
 
 pub struct InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy {
-    // W3C SCXML 5.10: Event name for _event.name binding
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
-    // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
-    // under no_std — so the emitted field is allocator-free on MCU targets.
-    pending_event_name: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10 + 3.12.1: the name the event arrived under when that is longer than
-    // the enum member it was matched through (`request.new` for a transition on
-    // `request`); empty when the member's own name is the name. Filled from the
-    // event's metadata before the event is bound, and read by `bind_current_event`.
-    pending_event_arrival_name: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10: Event data for the script `_event.data` baseline (the
-    // typed path reads the Payload sum, not this field — so needs_script_engine).
-    pending_event_data: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10.1: Event type for _event.type binding
-    pending_event_type: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10.1: Event sendid for _event.sendid binding
-    pending_event_sendid: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10.1: Event origin for _event.origin binding
-    pending_event_origin: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10.1: Event origintype for _event.origintype binding
-    pending_event_origintype: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
-    pending_event_invokeid: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
     pub session_id: Option<String>,
-    // Engine DI Parity RFC (Path B+): per-instance script engine. The
-    // constructor parameter is mandatory whenever `model.needs_script_engine`
-    // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
-    pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
-    script_engine_initialized: bool,
-    // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
-    // by the deployment before initialize(). Empty means no such endpoint is
-    // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
-    basic_http_access_uri: String,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -263,31 +230,9 @@ pub struct InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy {
 }
 
 impl InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy {
-    /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
-    /// machine, published as the processor's 'location' in `_ioprocessors`.
-    /// Must be called before `initialize()`, since the entries are populated
-    /// once at session setup. Leaving it unset publishes no BasicHTTP entry.
-    pub fn set_basic_http_access_uri(&mut self, access_uri: impl Into<String>) {
-        self.basic_http_access_uri = access_uri.into();
-    }
-
-    fn build(
-        session_id: String,
-        script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
-    ) -> Self {
+    fn build(session_id: String) -> Self {
         Self {
-            script_engine,
-            pending_event_name: ::sce_rust_runtime::SceString::new(),
-            pending_event_arrival_name: ::sce_rust_runtime::SceString::new(),
-            pending_event_data: ::sce_rust_runtime::SceString::new(),
-            pending_event_type: ::sce_rust_runtime::SceString::new(),
-            pending_event_sendid: ::sce_rust_runtime::SceString::new(),
-            pending_event_origin: ::sce_rust_runtime::SceString::new(),
-            pending_event_origintype: ::sce_rust_runtime::SceString::new(),
-            pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
-            script_engine_initialized: false,
-            basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -301,11 +246,8 @@ impl InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy {
     /// (`wasm32-unknown-unknown`): a host there gives the id, through
     /// [`new_with_session_id`](Self::new_with_session_id).
     #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
-    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
-        Self::build(
-            ::sce_rust_runtime::helpers::session_id::drawn(),
-            script_engine,
-        )
+    pub fn new() -> Self {
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn())
     }
 
     /// Build the machine under the session id its host gives: the host's own
@@ -324,12 +266,10 @@ impl InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy {
     /// refused with the reason, and no machine is built.
     pub fn new_with_session_id(
         session_id: &str,
-        script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
-        Ok(Self::build(
-            ::sce_rust_runtime::helpers::session_id::given(session_id)?,
-            script_engine,
-        ))
+        Ok(Self::build(::sce_rust_runtime::helpers::session_id::given(
+            session_id,
+        )?))
     }
 
     /// [`new_with_session_id`](Self::new_with_session_id) under an id already
@@ -338,207 +278,25 @@ impl InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy {
     /// compile error and the program carries no run-time check of it.
     pub fn new_with_checked_session_id(
         session_id: ::sce_rust_runtime::helpers::session_id::SessionId,
-        script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     ) -> Self {
-        Self::build(session_id.as_str().to_string(), script_engine)
+        Self::build(session_id.as_str().to_string())
     }
 
     /// The policy of a child its parent invokes, under the id the tree gives it,
     /// `<parent>.<invokeid>` (docs/adr/0045): formed by the parent from its own
     /// id and the invoke id, both held to the rule already, so it is not
     /// judged again.
-    pub(crate) fn for_child(
-        session_id: String,
-        script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
-    ) -> Self {
-        Self::build(session_id, script_engine)
+    pub(crate) fn for_child(session_id: String) -> Self {
+        Self::build(session_id)
     }
+}
 
-    // W3C SCXML 5.2: Lazy script engine initialization. The script engine's
-    // session is named by the session's id (W3C SCXML 5.10), which every
-    // constructor bound when the policy was built (docs/adr/0045).
-    fn ensure_script_engine(&mut self) {
-        if self.script_engine_initialized {
-            return;
-        }
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        se.create_session(&sid);
-
-        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
-        // same helper every other backend uses, so a machine reads the same
-        // entry names and the same addresses whichever one runs it.
-        let io_processors =
-            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
-        if let Err(e) = se.setup_system_variables(
-            &sid,
-            "inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter",
-            &io_processors,
-        ) {
-            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
-        }
-
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
-
-        self.script_engine_initialized = true;
-    }
-
-    // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution on failure
-    // Called from StatePolicy::initialize_data_model() trait override
-    fn do_initialize_data_model(&mut self, engine: &mut Engine<Self>) {
-        if self.script_engine_initialized {
-            return;
-        }
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        se.create_session(&sid);
-
-        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
-        // same helper every other backend uses, so a machine reads the same
-        // entry names and the same addresses whichever one runs it.
-        let io_processors =
-            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
-        if let Err(e) = se.setup_system_variables(
-            &sid,
-            "inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter",
-            &io_processors,
-        ) {
-            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
-        }
-
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
-
-        self.script_engine_initialized = true;
-    }
-
-    // W3C SCXML 5.9: Safe guard evaluation with error handling
-    fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
-        self.evaluate_guard_raising(cond, engine, "a <transition> cond failed to evaluate")
-            .unwrap_or(false)
-    }
-
-    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond. It is evaluated and
-    // reported as a transition guard is, and a failure is also recorded in
-    // `cond_failed`: the <if> still selects on `false`, and is then the
-    // element whose processing raised, so its block ends after it.
-    #[allow(dead_code)]
-    fn evaluate_if_cond(
-        &mut self,
-        cond: &str,
-        engine: &mut Engine<Self>,
-        cond_failed: &mut bool,
-    ) -> bool {
-        let result = self.evaluate_guard_raising(cond, engine, "an <if> cond failed to evaluate");
-        *cond_failed = *cond_failed || result.is_none();
-        result.unwrap_or(false)
-    }
-
-    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
-    // `None` says so, where a bare `false` could not.
-    fn evaluate_guard_raising(
-        &mut self,
-        cond: &str,
-        engine: &mut Engine<Self>,
-        reason: &str,
-    ) -> Option<bool> {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        match se.evaluate_expression(&sid, cond) {
-            Ok(val) => Some(val.to_bool()),
-            Err(e) => {
-                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                    InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent::ErrorExecution,
-                    reason,
-                ));
-                None
-            }
-        }
-    }
-
-    // W3C SCXML 5.10: Set _event system variable for current event
-    //
-    // W3C SCXML C.1: `_event.origin` is the sender's published
-    // `_ioprocessors` location, not its bare session id — and this is the one
-    // place that publishes `_event` to the document, so this is where the id
-    // becomes a location. The engine keeps the bare id in
-    // `EventMetadata::origin` because its session-keyed lookups match on it;
-    // converting at the raise would make one value serve two consumers that
-    // need different spellings. The conversion itself lives in
-    // `helpers::io_processors::published_origin`, the port of the
-    // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
-    // spelling of the rule is how the backends would stop agreeing.
-    // Returns which rung of §scxml-B-2-8-1 the payload got, because the
-    // binding is the only place that knows. This used to be `let _ = ...`:
-    // the ladder decided between a DOM, a value and a space-normalized string,
-    // and the decision was dropped one line later. A payload that announced
-    // structure and would not parse therefore reached the document as raw
-    // characters, every `_event.data.<field>` read empty, and nothing anywhere
-    // could say so — see `sce_rust_runtime::PayloadReading`.
-    //
-    // A session that has not been created yet binds nothing, which is
-    // `Absent` rather than a failure: there is no payload in play.
-    fn set_current_event_in_script_engine(
-        &self,
-        event_name: &str,
-        event_data: &str,
-        event_type: &str,
-        send_id: &str,
-        origin: &str,
-        origin_type: &str,
-        invoke_id: &str,
-    ) -> sce_rust_runtime::PayloadReading {
-        if let Some(ref sid) = self.session_id {
-            let se = self.script_engine.clone();
-            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let published = sce_rust_runtime::helpers::io_processors::published_origin(origin);
-            se.set_current_event(
-                sid,
-                sce_rust_runtime::SetCurrentEventArgs {
-                    event_name,
-                    event_data,
-                    event_type,
-                    send_id,
-                    origin: &published,
-                    origin_type,
-                    invoke_id,
-                },
-            )
-            // An engine that could not bind `_event` at all has a larger
-            // problem than an unreadable payload, and reporting `Undecodable`
-            // for it would point a host at the wrong thing.
-            .unwrap_or(sce_rust_runtime::PayloadReading::Absent)
-        } else {
-            sce_rust_runtime::PayloadReading::Absent
-        }
-    }
-
-    // §scxml-6.4.3: seed a `<data>` this (child) session declares with the
-    // value the INVOKING session produced for an `<invoke>` `<param>` or
-    // namelist location.
-    //
-    // The value crosses as a value. This used to take the parent's value
-    // rendered as an engine literal and re-evaluate it here, which survived
-    // every value a test had tried and lost the ones no Lua grammar can
-    // spell: `to_script_literal` renders a non-finite number as `inf`, and
-    // `inf` is an undeclared identifier to the engine that reads it back, so
-    // an `<invoke>` `<param expr="1/0"/>` arrived as nothing at all. The
-    // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
-    // is the channel that did not.
-    pub fn set_param_value_in_script_engine(
-        &mut self,
-        name: &str,
-        value: sce_rust_runtime::ScriptValue,
-    ) {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        let _ = se.set_variable(&sid, name, value);
+// docs/adr/0045: a machine built with no arguments draws its session id, so it
+// has a default only where `new` can draw one.
+#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
+impl Default for InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -572,11 +330,12 @@ impl StatePolicy for InlineContentIsReadByItsDataModelSceSynthInvokeReporterPoli
     // itself during a macrostep, so its no_std depth is the bound the
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
-    // No depth is proven, so it is the external queue's: a script engine
-    // evaluates this document's expressions, and one that fails raises
-    // error.execution in places this bound does not count (data bindings,
-    // <donedata> and the guards of every selection).
-    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    // Proven depth 1: one microstep enqueues at most 1 internal event(s), and
+    // at most 1 + 0 microstep(s) run before the first internal event is taken,
+    // so 1 x (1 + 0) = 1.
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 1>;
+    // The same bound, held to every run a test build makes (docs/adr/0076).
+    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(1);
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
     // so `<cancel sendid>` can find and drop the matching entry; the timer-fire
@@ -655,8 +414,8 @@ impl StatePolicy for InlineContentIsReadByItsDataModelSceSynthInvokeReporterPoli
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
-    const NEEDS_SCRIPT_ENGINE: bool = true;
-    const NEEDS_DATA_MODEL_INIT: bool = true;
+    const NEEDS_SCRIPT_ENGINE: bool = false;
+    const NEEDS_DATA_MODEL_INIT: bool = false;
     // The same fact the generate manifest publishes as `needs_event_scheduler`.
     // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
     // `()` — so without this constant a host had no route to the knowledge that
@@ -715,32 +474,6 @@ impl StatePolicy for InlineContentIsReadByItsDataModelSceSynthInvokeReporterPoli
 
     fn null_event() -> Self::Event {
         InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent::Null
-    }
-
-    // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
-    // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
-    fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
-        self.pending_event_arrival_name = metadata.name.clone();
-        self.pending_event_data = metadata.data.clone();
-        self.pending_event_type =
-            ::sce_rust_runtime::sce_string_from_str(metadata.event_type.as_str());
-        self.pending_event_sendid = metadata.send_id.clone();
-        self.pending_event_origin = metadata.origin.clone();
-        self.pending_event_origintype = metadata.origin_type.clone();
-        self.pending_event_invokeid = metadata.invoke_id.clone();
-    }
-
-    // W3C SCXML 5.10: Clear pending event metadata after transition processing
-    // Ports C++ EventMetadataHelper::clearPolicyMetadata
-    fn clear_event_metadata(&mut self) {
-        self.pending_event_name.clear();
-        self.pending_event_arrival_name.clear();
-        self.pending_event_data.clear();
-        self.pending_event_type.clear();
-        self.pending_event_sendid.clear();
-        self.pending_event_origin.clear();
-        self.pending_event_origintype.clear();
-        self.pending_event_invokeid.clear();
     }
 
     // ======================================================================
@@ -802,58 +535,6 @@ impl StatePolicy for InlineContentIsReadByItsDataModelSceSynthInvokeReporterPoli
         // `state` from the configuration after this returns.
     }
 
-    // §scxml-5.10: the event whose transitions are about to be selected is the
-    // `_event` their guards read — bound before the first guard runs, and not
-    // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: inline_content_is_read_by_its_data_model.scxml:86 :: _machine"]
-    // SCE-MAP: inline_content_is_read_by_its_data_model.scxml:86 :: _machine
-    fn bind_current_event(
-        &mut self,
-        event: Self::Event,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) {
-        // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
-        self.ensure_script_engine();
-        if event != Self::null_event() {
-            // §scxml-5.10: the name the event ARRIVED under, which is longer than
-            // its member's when a name the document does not write was matched
-            // through a prefix (§scxml-3.12.1).
-            let arrival = self.pending_event_arrival_name.clone();
-            let event_name: &str = if arrival.is_empty() {
-                Self::get_event_name(event)
-            } else {
-                arrival.as_str()
-            };
-            self.pending_event_name = event_name.to_string();
-            // §scxml-5.10.1: typed by the queue the engine took the event from.
-            let event_type = sce_rust_runtime::EventType::classify(
-                event_name,
-                engine.is_current_event_external(),
-            )
-            .as_str();
-            self.pending_event_type = event_type.to_string();
-            // W3C SCXML 5.10: Set _event with all available metadata fields
-            let ev_data: &str = &self.pending_event_data;
-            let ev_sendid: &str = &self.pending_event_sendid;
-            let ev_origin: &str = &self.pending_event_origin;
-            let ev_origintype: &str = &self.pending_event_origintype;
-            let ev_invokeid: &str = &self.pending_event_invokeid;
-            // §scxml-B-2-8-1: the rung the payload got, handed to the engine
-            // rather than dropped. This is the only frame that has both the
-            // reading and the event it belongs to.
-            let payload_reading = self.set_current_event_in_script_engine(
-                event_name,
-                ev_data,
-                event_type,
-                ev_sendid,
-                ev_origin,
-                ev_origintype,
-                ev_invokeid,
-            );
-            engine.note_payload_reading(event, payload_reading);
-        }
-    }
-
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
     // enables, as its row of the tables, which holds its targets and its
@@ -884,11 +565,6 @@ impl StatePolicy for InlineContentIsReadByItsDataModelSceSynthInvokeReporterPoli
     ) {
         // W3C SCXML 3.13: no transition in this document has content.
         let _ = (transition, engine);
-    }
-    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
-    // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
-    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
-        self.do_initialize_data_model(engine);
     }
 
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is

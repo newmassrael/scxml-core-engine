@@ -507,7 +507,6 @@ func (p *InlineContentIsReadByItsDataModelPolicy) ExecutePendingInvokes(engine *
 
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewInlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy()
-			childPolicy.ScriptEngine = p.ScriptEngine
 			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID

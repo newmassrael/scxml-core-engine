@@ -705,7 +705,7 @@ impl InlineContentIsReadByItsDataModelPolicy {
                 // names for one session that can never be compared — which is
                 // exactly what C.1 requires of them. A child's id comes from the
                 // tree alone, and nothing is drawn for it (docs/adr/0045).
-                let mut child_policy = super::inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter_sm::InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy::for_child(child_session_id.clone(), self.script_engine.clone());
+                let mut child_policy = super::inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter_sm::InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy::for_child(child_session_id.clone());
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();

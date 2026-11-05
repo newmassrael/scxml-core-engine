@@ -154,29 +154,8 @@ func (e InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent) String() s
 // ======================================================================
 
 type InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy struct {
-	pendingEventName string
-	// W3C SCXML 5.10 + 3.12.1: the name the event arrived under when that is longer
-	// than the enum value it was matched through (`request.new` for a transition on
-	// `request`); empty when the value's own name is the name. Filled from the
-	// event's metadata before the event is bound, and read by BindCurrentEvent.
-	pendingEventArrivalName string
-	pendingEventData string
-	pendingEventType string
-	pendingEventSendid string
-	pendingEventOrigin string
-	pendingEventOrigintype string
-	pendingEventInvokeid string
 	// W3C SCXML 5.10: Session ID
 	SessionID string
-	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)
-	ScriptEngine sce.IScriptEngine
-	scriptEngineInitialized bool
-	// W3C SCXML C.2.3: inbound BasicHTTP endpoint serving this machine,
-	// declared by the deployment before Initialize(). The address belongs to
-	// whoever runs the listener, so the machine takes it from here rather than
-	// guessing one. Empty means no such endpoint is deployed, and no BasicHTTP
-	// entry is published in _ioprocessors.
-	BasicHTTPAccessURI string
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -194,193 +173,11 @@ func NewInlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy() InlineCo
 
 
 
+// No script engine needed for this state machine.
+func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) InitializeDataModel(eng *sce.Engine[InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent]) {}
 
-// ensureScriptEngine lazily initializes the script engine session.
-//
-// Engine DI Parity RFC: panics if ScriptEngine was not set on the policy
-// before Initialize() — mirrors Kotlin's mandatory constructor parameter
-// contract. Silent no-op would otherwise turn missed injection into a
-// hidden runtime regression (every <assign>/<log>/guard becomes a no-op
-// and the SM walks to its default-state final without diagnostic).
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) ensureScriptEngine() {
-	if p.scriptEngineInitialized {
-		return
-	}
-	engine := p.ScriptEngine
-	if engine == nil {
-		panic("InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy: ScriptEngine field must be set before Initialize()")
-	}
-	sessionID := p.SessionID
-	if sessionID == "" {
-		sessionID = sce.GenerateSessionID()
-		p.SessionID = sessionID
-	}
-	if !engine.HasSession(sessionID) {
-		_ = engine.CreateSession(sessionID)
-	}
-	// W3C SCXML C.1.1 / C.2.3: the _ioprocessors entries come from the same
-	// helper every other backend uses, so a machine reads the same entry names
-	// and the same addresses whichever one runs it.
-	_ = engine.SetupSystemVariables(sessionID, "inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter",
-		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI))
-	p.scriptEngineInitialized = true
-}
-
-
-// InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) InitializeDataModel(eng *sce.Engine[InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent]) {
-	p.ensureScriptEngine()
-	engine := p.ScriptEngine
-	sessionID := p.SessionID
-
-	// W3C SCXML 5.3: Initialize _sessionid
-	_ = engine.SetVariable(sessionID, "_sessionid", sessionID)
-
-	// W3C SCXML 5.3: Initialize _name
-	_ = engine.SetVariable(sessionID, "_name", "inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter")
-
-	// W3C SCXML 5.3.3: Initialize global datamodel variables
-
-
-
-	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
-	// `<data>` default this block just seeded, and only for a name the child
-	// declares ("if the names do not match, the Processor MUST NOT add the
-	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule.
-	if len(p.pendingParams) > 0 {
-		for paramName, paramValue := range p.pendingParams {
-			if engine.HasVariable(sessionID, paramName) {
-				_ = engine.SetVariable(sessionID, paramName, paramValue)
-			}
-		}
-		p.pendingParams = nil
-	}
-}
-
-// evaluateGuard evaluates a guard condition via script engine.
-// W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
-// MUST treat it as false and MUST raise error.execution.
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) evaluateGuard(guard string, eng *sce.Engine[InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent]) bool {
-	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
-	return value
-}
-
-// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
-// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
-// selects on false, and is then the element whose processing raised, so its
-// block ends after it.
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) evaluateIfCond(guard string, eng *sce.Engine[InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent], condFailed *bool) bool {
-	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
-	if !ok {
-		*condFailed = true
-	}
-	return value
-}
-
-// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
-// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
-// not say so.
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent], reason string) (value bool, ok bool) {
-	p.ensureScriptEngine()
-	engine := p.ScriptEngine
-	result, err := engine.EvaluateExpression(p.SessionID, guard)
-	if err != nil {
-		eng.Raise(sce.NewPlatformError(InlineContentIsReadByItsDataModelSceSynthInvokeReporterEventErrorExecution, reason))
-		return false, false
-	}
-	return sce.ScriptToBool(result), true
-}
-
-// executeScript executes a script block via script engine.
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) executeScript(script string) error {
-	p.ensureScriptEngine()
-	engine := p.ScriptEngine
-	return engine.ExecuteScript(p.SessionID, script)
-}
-
-// setCurrentEvent binds _event system variable (W3C SCXML 5.10) and answers
-// which rung of §scxml-B-2-8-1 the payload got, because the binding is the
-// only place that knows.
-//
-// This used to be `_ = engine.SetCurrentEvent(...)`: the ladder decided
-// between a DOM, a value and a space-normalized string, and the decision was
-// dropped one line later. A payload that announced structure and would not
-// parse therefore reached the document as raw characters, every
-// _event.data.<field> read empty, and nothing anywhere could say so — see
-// sce.PayloadReading.
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) setCurrentEvent(name string) sce.PayloadReading {
-	p.ensureScriptEngine()
-	engine := p.ScriptEngine
-	data := p.pendingEventData
-	eventType := p.pendingEventType
-	sendID := p.pendingEventSendid
-	// W3C SCXML C.1: `_event.origin` is the sender's published
-	// `_ioprocessors` location, not its bare session id — and this is the one
-	// place that publishes `_event` to the document, so this is where the id
-	// becomes a location. The engine keeps the bare id in
-	// `EventMetadata.Origin` because its session-keyed lookups (<finalize>
-	// dispatch, cancelled-invoke filtering) match on it; converting at the
-	// raise would make one value serve two consumers that need different
-	// spellings. The conversion itself lives in `sce.PublishedOrigin`, the
-	// port of the `IOProcessorHelper::publishedOrigin` the C++ engines share:
-	// a second spelling of the rule is how the backends would stop agreeing.
-	origin := sce.PublishedOrigin(p.pendingEventOrigin)
-	originType := p.pendingEventOrigintype
-	invokeID := p.pendingEventInvokeid
-	reading, err := engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
-		Name:       name,
-		Data:       data,
-		Type:       eventType,
-		SendID:     sendID,
-		Origin:     origin,
-		OriginType: originType,
-		InvokeID:   invokeID,
-	})
-	if err != nil {
-		// An engine that could not bind _event at all has a larger problem
-		// than an unreadable payload, and reporting PayloadUndecodable for it
-		// would point a host at the wrong thing.
-		return sce.PayloadAbsent
-	}
-	return reading
-}
-
-// assignVariable assigns a value to a datamodel variable via script engine.
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) assignVariable(location, expr string) error {
-	p.ensureScriptEngine()
-	engine := p.ScriptEngine
-	script := location + " = " + expr
-	return engine.ExecuteScript(p.SessionID, script)
-}
-
-// getVariable reads a datamodel variable from the script engine.
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) getVariable(name string) interface{} {
-	p.ensureScriptEngine()
-	engine := p.ScriptEngine
-	result, err := engine.GetVariable(p.SessionID, name)
-	if err != nil {
-		return nil
-	}
-	return result
-}
-
-// SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
-// application after datamodel init (§scxml-6.4.3).
-//
-// Params are applied at the end of InitializeDataModel, overriding the
-// `<data>` default only for names the child declares. The value crosses as a
-// value: this took the parent's value rendered as Lua source and
-// re-evaluated it here until 2026-08-21, which survived every value a test
-// had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
-// non-finite number as `+Inf`, which is not a Lua expression, so an
-// `<invoke>` `<param expr="1/0"/>` arrived as nothing at all.
-func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) SetParamValueInScriptEngine(name string, value interface{}) {
-	if p.pendingParams == nil {
-		p.pendingParams = make(map[string]interface{})
-	}
-	p.pendingParams[name] = value
-}
+// SetParamValueInScriptEngine is a no-op for state machines without script engine.
+func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
 
 
 // ExecutePendingInvokes is a no-op (no invokes in this SM).
@@ -523,7 +320,7 @@ func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) HasParal
 
 // NeedsScriptEngine returns whether the SM needs a script engine.
 func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) NeedsScriptEngine() bool {
-	return true
+	return false
 }
 
 // NeedsEventScheduler reports whether a host must drive this machine with
@@ -545,7 +342,7 @@ func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) NeedsPar
 
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) NeedsDataModelInit() bool {
-	return true
+	return false
 }
 
 func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) HasInvokeSupport() bool { return false }
@@ -568,13 +365,6 @@ func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) ForwardT
 // Note: event name is set separately via setCurrentEvent(); metadata supplies
 // only the name the event ARRIVED under, when that is not its value's own.
 func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
-	p.pendingEventArrivalName = meta.Name
-	p.pendingEventData = meta.Data
-	p.pendingEventType = meta.EventType.String()
-	p.pendingEventSendid = meta.SendID
-	p.pendingEventOrigin = meta.Origin
-	p.pendingEventOrigintype = meta.OriginType
-	p.pendingEventInvokeid = meta.InvokeID
 }
 
 // LiftTypedPayload binds the dequeued event's typed `_event.data` view from
@@ -593,14 +383,6 @@ func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) LiftType
 
 // ClearEventMetadata resets pending event metadata (W3C SCXML 5.10).
 func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) ClearEventMetadata() {
-	p.pendingEventName = ""
-	p.pendingEventArrivalName = ""
-	p.pendingEventData = ""
-	p.pendingEventType = ""
-	p.pendingEventSendid = ""
-	p.pendingEventOrigin = ""
-	p.pendingEventOrigintype = ""
-	p.pendingEventInvokeid = ""
 }
 
 
@@ -610,7 +392,6 @@ func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) ClearEve
 // its initial state is entered by default.
 //line inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:3
 func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) ExecuteEntryActions(state InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, engine *sce.Engine[InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent], isDefaultEntry bool) {
-	p.ensureScriptEngine()
 	switch state {
 	case InlineContentIsReadByItsDataModelSceSynthInvokeReporterStateReported:
 //line inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:5
@@ -651,7 +432,6 @@ func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) ExecuteH
 // configuration — §scxml-D-exitStates's order.
 //line inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:3
 func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) ExecuteExitActions(state InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, engine *sce.Engine[InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent], configurationBeforeExit []InlineContentIsReadByItsDataModelSceSynthInvokeReporterState) {
-	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
 	// handler is true: the <onexit> switch comes first and the removal from
@@ -669,20 +449,7 @@ func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) ExecuteE
 // and not for an eventless selection, which has no event of its own.
 //line inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:3
 func (p *InlineContentIsReadByItsDataModelSceSynthInvokeReporterPolicy) BindCurrentEvent(event InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent, engine *sce.Engine[InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, InlineContentIsReadByItsDataModelSceSynthInvokeReporterEvent]) {
-	if event != InlineContentIsReadByItsDataModelSceSynthInvokeReporterEventNull {
-		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
-		// rather than dropped. This is the only frame that has both the
-		// reading and the event it belongs to.
-		//
-		// §scxml-5.10: `_event.name` is the name the event ARRIVED under, which is
-		// longer than its value's when a name the document does not write was matched
-		// through a prefix (§scxml-3.12.1).
-		name := p.pendingEventArrivalName
-		if name == "" {
-			name = p.GetEventName(event)
-		}
-		engine.NotePayloadReading(event, p.setCurrentEvent(name))
-	}
+	// This document's guards never read _event, so there is nothing to bind.
 }
 
 // FirstEnabledTransition is Appendix D selectTransitions, the half only this

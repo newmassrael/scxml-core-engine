@@ -660,7 +660,7 @@ class InlineContentIsReadByItsDataModelStateMachine(
                 val generatedInvokeId = "awaitDocument.${nextInvokeStart("reporter")}.reporter"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = adoptChild(InlineContentIsReadByItsDataModelSceSynthInvokeReporterStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
+                    val childSM = adoptChild(InlineContentIsReadByItsDataModelSceSynthInvokeReporterStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("reporter", childSM, false, InlineContentIsReadByItsDataModelEvent.Done.Invoke.Reporter, "", generatedInvokeId, "", "inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter", "reporter")
                 }

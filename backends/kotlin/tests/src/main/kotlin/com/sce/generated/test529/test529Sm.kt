@@ -496,9 +496,6 @@ class Test529StateMachine(
                 // SCE-MAP: test529.scxml:18 :: s02 :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
-                    ensureScriptEngine()
-                    val engineDD = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     var doneEventData = ""
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
                     // It lands in `contentData`, the sink the expression-site census
