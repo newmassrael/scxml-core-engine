@@ -21,9 +21,17 @@ the rule:
 * a Mesh delivery is applied as `apply_mesh_call` applies it, on the session it
   names;
 * a post is taken before the run starts and refused once the run is stopped or
-  has ended, and what the inbox holds then is applied as a direct call would be.
+  has ended, and what the inbox holds then is applied as a direct call would be;
+* an ending posted for a child session is on that session's queue from the
+  moment it is posted, so the child takes it before an event its parent sends it
+  later in the same macrostep (docs/adr/0084, D2 as amended at step 10).
 
-The machine is written by hand, as the smallest one with a host-run invocation:
+The last case drives `static_invoke_ending_order.scxml`, the machine
+`scripts/regen_static_datamodel_python.sh` generates from
+`sce-build/tests/fixtures/static_datamodel/`, imported when the case runs.
+
+The machine of the other cases is written by hand, as the smallest one with a
+host-run invocation:
 `working` (initial) starts `job` on entry and cancels it on exit; `leave` goes
 to `idle` and `go` back; `finish` ends the run in the top-level final `done`.
 `ping`, `done.invoke.job` and `error.invoke.job` are taken in `working` and
@@ -36,6 +44,7 @@ under `integration/` so the Python lane's run of that directory collects it.
 """
 from __future__ import annotations
 
+import importlib
 import sys
 import threading
 import time
@@ -46,6 +55,10 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime"))
+# The tests directory, so the generated machines are importable by the name they
+# have there, and the forge runtime they import.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "forge-runtime"))
 
 from sce_runtime import (  # noqa: E402
     EnabledTransition,
@@ -565,3 +578,97 @@ def test_what_is_posted_while_the_run_ends_is_counted_unseen_and_the_inbox_close
     assert policy.taken == []
     assert engine.unseen_external_events() == 1, "the post made while the run ended was not applied"
     assert not engine.inbox.post(_ping("after")), "an ended run's inbox took a post"
+
+
+# ── an ending posted for a child session (docs/adr/0084, D2 at step 10) ─────
+
+#: The standard host type the fixture's child asks, and its invocation's id.
+_CLOCK = "sce-host-clock-now"
+_CLOCK_ID = "clock"
+#: A completion of the clock the child's result record reads.
+_NOW = '{"error":"","utc_ms":1700000000000,"monotonic_ms":5}'
+#: The id the fixture's root is built under, and the session `worker` is: the
+#: root's id and the id its first start is started under.
+_ORDER_ROOT = "fixture-root"
+_ORDER_WORKER = "fixture-root.working.1.worker"
+#: How many drives a case gives the machine to settle before it says it did not.
+_DRIVES = 16
+
+
+class _EndingOrderHost:
+    """The host of `static_invoke_ending_order`. It runs the clock and does not
+    answer, recording each start; on `beforeQuestion`, which the parent performs
+    inside the macrostep that then sends `question` to `worker`, it posts the
+    clock's ending, naming the session that started it, from a thread of its own
+    joined before the action returns, and records whether the inbox took it."""
+
+    def __init__(self) -> None:
+        self.engine: Optional[Engine] = None
+        self.starts: List[HostInvokeRequest] = []
+        self.posted: List[bool] = []
+
+    def serve(self, event: HostInvokeEvent) -> Optional[HostInvokeResponse]:
+        if event.start is not None:
+            self.starts.append(event.start)
+        return None
+
+    def before_question(self) -> None:
+        if self.engine is None or not self.starts:
+            self.posted.append(False)
+            return
+        request = self.starts[-1]
+        ending = InboxHostInvokeEnding(
+            HostInvokeEnding(_CLOCK, _CLOCK_ID, request.token, True, _NOW),
+            session_id=request.session_id,
+        )
+        self.posted.append(_post_from_another_thread(self.engine, ending))
+
+
+def _drive_until(engine: Engine, reached: Callable[[], bool], what: str) -> None:
+    """Drive `engine` without moving its clock until `reached` holds."""
+    for _ in range(_DRIVES):
+        if reached():
+            return
+        engine.advance_time(0)
+    assert reached(), f"{what} was not reached in {_DRIVES} drives"
+
+
+def _drive_until_quiet(engine: Engine) -> None:
+    """Drive `engine` without moving its clock until nothing is owed a drive now."""
+    engine.advance_time(0)
+    for _ in range(_DRIVES):
+        if engine.time_until_next_scheduled_ms() != 0:
+            return
+        engine.advance_time(0)
+    raise AssertionError(f"the machine still owed a drive after {_DRIVES} drives")
+
+
+def _ending_order_started() -> Tuple[Engine, _EndingOrderHost]:
+    """The fixture's root, built under `_ORDER_ROOT` with the clock served, and
+    driven until `worker` has started the clock."""
+    module = importlib.import_module("integration.static_datamodel.static_invoke_ending_order_sm")
+    host = _EndingOrderHost()
+    engine = module.create_engine(host, session_id=_ORDER_ROOT)
+    host.engine = engine
+    engine.register_invoker(_CLOCK, host.serve)
+    engine.initialize()
+    _drive_until(engine, lambda: bool(host.starts), "`worker` starting the clock")
+    assert [start.session_id for start in host.starts] == [_ORDER_WORKER], (
+        "the clock was not started once, by `worker`"
+    )
+    return engine, host
+
+
+def test_an_ending_posted_for_a_child_before_its_parents_send_is_taken_before_that_send() -> None:
+    engine, host = _ending_order_started()
+
+    engine.send_event(engine.policy.get_event_from_name("ask"))
+    _drive_until_quiet(engine)
+
+    assert host.posted == [True], "the host was not asked, or the inbox refused the ending it posted"
+    stamped_at, answer_at = engine.policy.v_stamped_at, engine.policy.v_answer_at
+    assert stamped_at == 1 and answer_at == 2, (
+        "`worker` took the parent's `question` before the clock's ending, though the "
+        f"ending was posted first: the parent heard `stamped` at {stamped_at} and "
+        f"`answer` at {answer_at}, where 1 and 2 were owed"
+    )
