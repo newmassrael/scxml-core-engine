@@ -190,7 +190,10 @@ eventData = contentData;
 // event carries: a literal under ECMAScript, and with no value expressions
 // (§scxml-B-1) the space-normalized string the children spell. The typed value
 // is what that text parses as, as for a `<donedata>` finished at build time.
-eventData = {{ content_reading.wire | cpp_text_expr }};
+// It lands in `contentData`, the sink the expression-site census adjudicates as
+// verbatim (`INERT_DESTINATIONS`), as the XML arm's does.
+const std::string contentData = {{ content_reading.wire | cpp_text_expr }};
+eventData = contentData;
 typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
 {% endif %}
 {% elif action.native_content_value %}

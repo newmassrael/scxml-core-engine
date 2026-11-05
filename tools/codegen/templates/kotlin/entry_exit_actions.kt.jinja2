@@ -560,7 +560,10 @@
    script-engine analysis read): the XML as written, which the receiver builds
    the DOM from, or a literal's JSON, finished at build time. #}
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
-                    doneEventData = "{{ (state.donedata.content.text | inline_content_reading(model.datamodel)).wire | escape_kotlin }}"
+                    // It lands in `contentData`, the sink the expression-site census
+                    // adjudicates as verbatim (`INERT_DESTINATIONS`).
+                    val contentData = "{{ (state.donedata.content.text | inline_content_reading(model.datamodel)).wire | escape_kotlin }}"
+                    doneEventData = contentData
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
