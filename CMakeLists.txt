@@ -369,12 +369,27 @@ published location, so this rarely needs overriding.")
     # RFC §5.J.1 — C11 backend conformance harness, sibling of the
     # C++ tests/ tree. Lives at the repo root next to backends/c/runtime
     # so the C-only translation units stay isolated from C++ link.
-    add_subdirectory(backends/c/tests)
+    #
+    # Not declared under Emscripten. What this project ships as WebAssembly is
+    # the C++ engine (the visualizer), and the emscripten tree builds and runs
+    # that engine's suites under Node (`cpp-suite-wasm`). The C11 harness holds
+    # the generated C a host or a microcontroller compiles; no product of it is
+    # WebAssembly, so a build of it with emcc would check a target nothing
+    # ships. Every target the emscripten tree declares is built and run by a
+    # gate, so a target with no WebAssembly purpose is not declared there.
+    if(NOT EMSCRIPTEN)
+        add_subdirectory(backends/c/tests)
+    endif()
 endif()
 
 # Example build option (enabled by default)
+#
+# Not declared under Emscripten: each example is a native program that embeds
+# the engine in a host process (its own threads, timers and terminal), which is
+# what it demonstrates. The emscripten tree declares only what a gate builds
+# and runs there (see backends/c/tests above).
 option(BUILD_EXAMPLES "Build the examples" ON)
-if(BUILD_EXAMPLES)
+if(BUILD_EXAMPLES AND NOT EMSCRIPTEN)
     add_subdirectory(examples/cmake_function)
     add_subdirectory(examples/traffic_light)
     add_subdirectory(examples/smart_light)

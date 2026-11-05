@@ -767,6 +767,16 @@ add_executable(standard_host_scenario_test
     integration/AStandardHostScenarioTest.cpp
 )
 
+# The reference host's cpp-httplib transport, held against a local server:
+# native only, since cpp-httplib is not built under Emscripten
+# (sce/CMakeLists.txt). The scenarios reach the host through a scripted
+# transport and run under Node as natively.
+if(NOT EMSCRIPTEN)
+    target_sources(standard_host_scenario_test PRIVATE
+        integration/AStandardHostHttplibTransportTest.cpp
+    )
+endif()
+
 target_include_directories(standard_host_scenario_test
     PRIVATE
         ${CMAKE_SOURCE_DIR}
@@ -2167,14 +2177,13 @@ include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
 set(GENERATED_W3C_HEADERS "")
 set(W3C_AOT_TESTS "")
 
-# Native builds only: the integration fixtures, the machines integration_tests
-# compiles beside them, and the feature-conformance programs. The generator
-# runs under Emscripten as it does natively (the W3C route below is the proof),
-# so this fence is not about the generator: integration_tests (section 6) is
-# declared under Emscripten too, and its AOT sources include machines declared
-# only here, so that target does not compile there. Whether integration_tests
-# is a WASM target is its own decision, and the W3C route does not hang on it.
-if(NOT EMSCRIPTEN)
+# The integration fixtures, the machines integration_tests compiles beside them,
+# and the feature-conformance programs. Declared under Emscripten as natively:
+# integration_tests is one of the engine's suites, which the emscripten tree
+# builds and runs under Node (`cpp-suite-wasm`), and its AOT sources include
+# these machines. They were fenced to native builds once, which left
+# integration_tests declared under Emscripten without the machines it compiles.
+#
 # Output directory for generated static integration-fixture code. Distinct
 # from STATIC_W3C_OUTPUT_DIR so the build system treats W3C and integration
 # trees as separate §6.2.6 drift contexts.
@@ -2925,7 +2934,6 @@ sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_thermostat.scxml
 )
-endif()  # NOT EMSCRIPTEN - integration fixtures and the machines integration_tests compiles
 
 # ── W3C test registrations, derived from the conformance registry ──
 #
@@ -3149,13 +3157,7 @@ target_link_libraries(w3c_test_cli
         sce_runtime
 )
 
-# WASM: Disable warnings Emscripten's clang raises on the generated AOT headers
 if(EMSCRIPTEN)
-    target_compile_options(w3c_test_cli PRIVATE
-        -Wno-unused-lambda-capture
-        -Wno-unused-parameter
-    )
-
     # WASM: Use pre-js for XMLHttpRequest polyfill, NODEFS mount, and HTTP server auto-management
     set(POLYFILL_PRE_JS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/wasm_polyfill.js")
 
