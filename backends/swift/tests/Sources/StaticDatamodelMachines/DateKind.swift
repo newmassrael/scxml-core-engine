@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0c71031c0d27e4d67ce7e4f29c8b0629804b2b22ba0439698c8a940297a0f1bd
-// SCE-MAP: date_kind.scxml:28 :: _forge_body
+// source-hash: b2575d48129e1acf0f70c09ad24f44255a7a62f71444c27101300757ede12222
+// SCE-MAP: date_kind.scxml:32 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -24,6 +24,7 @@ public enum DateKind: UInt8, CaseIterable, Sendable {
     case comingWeekday = 7
     case previousWeekday = 8
     case weekdayOfWeek = 9
+    case dayOfMonthOffset = 10
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -38,6 +39,7 @@ public enum DateKind: UInt8, CaseIterable, Sendable {
         case .comingWeekday: return "comingWeekday"
         case .previousWeekday: return "previousWeekday"
         case .weekdayOfWeek: return "weekdayOfWeek"
+        case .dayOfMonthOffset: return "dayOfMonthOffset"
         }
     }
 
@@ -65,6 +67,7 @@ public enum DateKind: UInt8, CaseIterable, Sendable {
         case "comingWeekday": self = .comingWeekday
         case "previousWeekday": self = .previousWeekday
         case "weekdayOfWeek": self = .weekdayOfWeek
+        case "dayOfMonthOffset": self = .dayOfMonthOffset
         default: return nil
         }
     }

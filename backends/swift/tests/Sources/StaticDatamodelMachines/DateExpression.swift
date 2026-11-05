@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0c71031c0d27e4d67ce7e4f29c8b0629804b2b22ba0439698c8a940297a0f1bd
-// SCE-MAP: date_expression.scxml:22 :: _forge_body
+// source-hash: b2575d48129e1acf0f70c09ad24f44255a7a62f71444c27101300757ede12222
+// SCE-MAP: date_expression.scxml:23 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -20,7 +20,7 @@ public enum DateExpression {
 
     /// The most bytes the event's `_event.data` JSON text takes: every list full, every text at its
     /// bound, every number at its longest spelling.
-    public static let dataMaxLen: UInt64 = 104
+    public static let dataMaxLen: UInt64 = 105
 
     /// The id of the payload's schema, `urn:sce:schema:<document>:<revision>`: the `$id` of
     /// `jsonSchema`.
@@ -28,7 +28,7 @@ public enum DateExpression {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:date_expression:1\",\"x-sce-source-hash\":\"0c71031c0d27e4d67ce7e4f29c8b0629804b2b22ba0439698c8a940297a0f1bd\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"kind\":{\"enum\":[\"none\",\"absolute\",\"monthDay\",\"relativeDays\",\"relativeWeeks\",\"relativeMonths\",\"relativeYears\",\"comingWeekday\",\"previousWeekday\",\"weekdayOfWeek\"]},\"year\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647},{\"type\":\"null\"}]},\"month\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"day\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"weekday\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"count\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647},{\"type\":\"null\"}]}},\"required\":[\"kind\",\"year\",\"month\",\"day\",\"weekday\",\"count\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:date_expression:1\",\"x-sce-source-hash\":\"b2575d48129e1acf0f70c09ad24f44255a7a62f71444c27101300757ede12222\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"kind\":{\"enum\":[\"none\",\"absolute\",\"monthDay\",\"relativeDays\",\"relativeWeeks\",\"relativeMonths\",\"relativeYears\",\"comingWeekday\",\"previousWeekday\",\"weekdayOfWeek\",\"dayOfMonthOffset\"]},\"year\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647},{\"type\":\"null\"}]},\"month\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"day\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"weekday\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"count\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647},{\"type\":\"null\"}]}},\"required\":[\"kind\",\"year\",\"month\",\"day\",\"weekday\",\"count\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,

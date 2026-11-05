@@ -4836,7 +4836,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     for testCase in try oracleCases("pure_functions", "resolve_date") {
         let args = try oracleArray(testCase.member("args"))
         let arg0 = try oracleInteger(args[0], as: Int64.self)
-        let arg1 = try { () throws -> DateKind in switch try oracleText(args[1]) { case "none": return DateKind.none; case "absolute": return DateKind.absolute; case "monthDay": return DateKind.monthDay; case "relativeDays": return DateKind.relativeDays; case "relativeWeeks": return DateKind.relativeWeeks; case "relativeMonths": return DateKind.relativeMonths; case "relativeYears": return DateKind.relativeYears; case "comingWeekday": return DateKind.comingWeekday; case "previousWeekday": return DateKind.previousWeekday; case "weekdayOfWeek": return DateKind.weekdayOfWeek; default: throw OracleError(description: "resolve_date arg1: no variant is declared as the name the case writes") } }()
+        let arg1 = try { () throws -> DateKind in switch try oracleText(args[1]) { case "none": return DateKind.none; case "absolute": return DateKind.absolute; case "monthDay": return DateKind.monthDay; case "relativeDays": return DateKind.relativeDays; case "relativeWeeks": return DateKind.relativeWeeks; case "relativeMonths": return DateKind.relativeMonths; case "relativeYears": return DateKind.relativeYears; case "comingWeekday": return DateKind.comingWeekday; case "previousWeekday": return DateKind.previousWeekday; case "weekdayOfWeek": return DateKind.weekdayOfWeek; case "dayOfMonthOffset": return DateKind.dayOfMonthOffset; default: throw OracleError(description: "resolve_date arg1: no variant is declared as the name the case writes") } }()
         let arg2 = try oracleOptional(args[2]) { try oracleInteger($0, as: Int32.self) }
         let arg3 = try oracleOptional(args[3]) { try oracleInteger($0, as: UInt8.self) }
         let arg4 = try oracleOptional(args[4]) { try oracleInteger($0, as: UInt8.self) }
@@ -6455,8 +6455,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Count first: a vocabulary that gained or lost a variant without the manifest moving
     // would otherwise satisfy every assertion below.
-    #expect(variants.count == 10, "date_kind: oracle variant count")
-    guard variants.count == 10 else {
+    #expect(variants.count == 11, "date_kind: oracle variant count")
+    guard variants.count == 11 else {
         return
     }
 
@@ -6530,6 +6530,13 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     )
     // The name the declaration answers is the one the document wrote.
     #expect(DateKind.weekdayOfWeek.declaredName == "weekdayOfWeek", "date_kind.weekdayOfWeek declared name")
+    #expect(try oracleText(variants[10].member("name")) == "dayOfMonthOffset", "date_kind variant 10 name")
+    #expect(
+        try oracleNumberText(variants[10].member("value")) == String(DateKind.dayOfMonthOffset.rawValue),
+        "date_kind.dayOfMonthOffset"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.dayOfMonthOffset.declaredName == "dayOfMonthOffset", "date_kind.dayOfMonthOffset declared name")
 }
 
 // MARK: - enum: rpc_status

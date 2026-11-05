@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0c71031c0d27e4d67ce7e4f29c8b0629804b2b22ba0439698c8a940297a0f1bd
-// SCE-MAP: resolve_date.scxml:45 :: _forge_body
+// source-hash: b2575d48129e1acf0f70c09ad24f44255a7a62f71444c27101300757ede12222
+// SCE-MAP: resolve_date.scxml:52 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -240,6 +240,28 @@ public enum ResolveDate {
                 try sceFailure.throwIfFailed()
                 do {
                     let sceReturned: Int64? = Checked.sub(sceFailure, today, previousGap == 0 ? 7 : previousGap)
+                    try sceFailure.throwIfFailed()
+                    return sceReturned
+                }
+            }
+        }
+        do {
+            let sceCond2 = kind == DateKind.dayOfMonthOffset
+            try sceFailure.throwIfFailed()
+            if sceCond2 {
+                do {
+                    let sceCond4 = !(day != nil && count != nil && SceOptional.proven(day) >= 1 && SceOptional.proven(day) <= 31)
+                    try sceFailure.throwIfFailed()
+                    if sceCond4 {
+                        throw AlgorithmError.precondition
+                    }
+                }
+                let offsetFrom: CivilDatePayload = Checked.takeDefault(sceFailure, { try CivilFromDays.civilFromDays(today) })
+                try sceFailure.throwIfFailed()
+                let offsetTo: CivilDatePayload = Checked.takeDefault(sceFailure, { try AddMonths.addMonths(offsetFrom.year, offsetFrom.month, 1, SceOptional.proven(count)) })
+                try sceFailure.throwIfFailed()
+                do {
+                    let sceReturned: Int64? = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(offsetTo.year, offsetTo.month, SceOptional.proven(day)) })
                     try sceFailure.throwIfFailed()
                     return sceReturned
                 }
