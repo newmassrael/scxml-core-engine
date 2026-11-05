@@ -26,6 +26,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <optional>
 #include <string>
 #include <utility>
@@ -521,24 +522,180 @@ TEST(MeshDispatchTest, InboundEnvelopeCarriesSubjectAsSendId) {
     EXPECT_TRUE(withoutSubject.events[0].sendId.empty());
 }
 
-TEST(MeshDispatchTest, ChildEventCarriesTheTransportsOriginAndTheChildAsSender) {
-    // docs/adr/0090, section 2: the wire-16 ChildEvent arm writes the pair the
-    // transport reaches the peer by (§mesh-10.7: `mesh://<source>` and the
-    // SCXML processor), never a wrapping of the `<source>:<invoke>` session
-    // id. The parent's `<finalize>` match compares
-    // `activeInvokes_[id].sessionId` with the event's sender, and that
-    // sessionId is the §mesh-9.6.1 child session id, so the id travels as the
-    // sender and the remote finalize still matches.
+TEST(MeshDispatchTest, ChildEventCarriesTheChildSessionEndpointAndTheChildAsSender) {
+    // docs/adr/0090, section 2 + SCE_MESH.md §mesh-9.6.3: the wire-16
+    // ChildEvent arm writes the child session's endpoint
+    // (`mesh://<child_device>/<child_machine>/<child_session_id>`), which the
+    // worker names in `reply_to`, with the SCXML processor, so a reply sent to
+    // the origin reaches that session. The parent's `<finalize>` match
+    // compares `activeInvokes_[id].sessionId` with the event's sender, and
+    // that sessionId is the §mesh-9.6.1 child session id, so the id travels as
+    // the sender and the remote finalize still matches.
     RecordingEngine engine;
-    engine.activeChildSessions.push_back("dev_a:parent:remote_inv");
-    auto env = makeChildEvent("dev_a:parent:remote_inv");
+    engine.activeChildSessions.push_back("parent:remote_inv");
+    auto env = makeChildEvent("parent:remote_inv");
     env.source = "child_machine";
+    env.reply_to = "mesh://ecu_b/child_machine/parent%3Aremote_inv";
 
     EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
     ASSERT_EQ(engine.events.size(), 1u);
-    EXPECT_EQ(engine.events[0].origin, "mesh://child_machine");
+    EXPECT_EQ(engine.events[0].origin, "mesh://ecu_b/child_machine/parent%3Aremote_inv");
     EXPECT_EQ(engine.events[0].originType, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
-    EXPECT_EQ(engine.events[0].sender, "dev_a:parent:remote_inv");
+    EXPECT_EQ(engine.events[0].sender, "parent:remote_inv");
+}
+
+TEST(MeshDispatchTest, ChildEventFromAWorkerThatNamedNoEndpointTakesItsMachinesAddress) {
+    // A worker that wrote no session endpoint in `reply_to` (or wrote a value
+    // of another shape) leaves the parent the one address its transport
+    // reaches: the worker's machine, `mesh://<source>`.
+    RecordingEngine engine;
+    engine.activeChildSessions.push_back("parent:remote_inv");
+    auto env = makeChildEvent("parent:remote_inv");
+    env.source = "child_machine";
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    env.reply_to = "child_machine";
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.events.size(), 2u);
+    for (const auto &raised : engine.events) {
+        EXPECT_EQ(raised.origin, "mesh://child_machine");
+        EXPECT_EQ(raised.originType, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
+        EXPECT_EQ(raised.sender, "parent:remote_inv");
+    }
+}
+
+// common/MeshEndpoint.h: a session endpoint is the Mesh scheme and three
+// segments, each percent-encoded as an SCXML location's session id is, so a
+// `<parent_machine>:<invoke_id>` child session id stays one segment.
+TEST(MeshEndpointTest, AnEndpointNamesDeviceMachineAndSession) {
+    EXPECT_EQ(SCE::Common::meshSessionEndpoint("ecu_b", "child_machine", "parent:remote_inv"),
+              "mesh://ecu_b/child_machine/parent%3Aremote_inv");
+    EXPECT_TRUE(SCE::Common::isMeshSessionEndpoint(
+        SCE::Common::meshSessionEndpoint("ecu_b", "child_machine", "parent:remote_inv")));
+}
+
+TEST(MeshEndpointTest, OnlyThreeNonEmptySegmentsAreASessionEndpoint) {
+    EXPECT_TRUE(SCE::Common::isMeshSessionEndpoint("mesh://d/m/s"));
+    // A peer's address names a machine, not a session.
+    EXPECT_FALSE(SCE::Common::isMeshSessionEndpoint("mesh://chassis"));
+    EXPECT_FALSE(SCE::Common::isMeshSessionEndpoint("mesh://d/m"));
+    EXPECT_FALSE(SCE::Common::isMeshSessionEndpoint("mesh://d/m/s/x"));
+    EXPECT_FALSE(SCE::Common::isMeshSessionEndpoint("mesh://d//s"));
+    EXPECT_FALSE(SCE::Common::isMeshSessionEndpoint("mesh://d/m/"));
+    EXPECT_FALSE(SCE::Common::isMeshSessionEndpoint("mesh://"));
+    EXPECT_FALSE(SCE::Common::isMeshSessionEndpoint("#_parent"));
+    EXPECT_FALSE(SCE::Common::isMeshSessionEndpoint("sce://scxml/parent"));
+}
+
+namespace {
+
+/// A child engine double for `ChildSessionAdapter`: it records the events the
+/// adapter raises in it and keeps the mesh-send callback the adapter installs,
+/// so a test can make the child send as its `<send>` would.
+struct RecordingChildEngine {
+    using MeshSend = std::function<bool(const std::string &, const std::string &, const std::string &,
+                                        const std::string &, const std::string &)>;
+
+    MeshSend meshSend;
+    std::vector<SCE::Common::ForwardedEvent> raised;
+
+    void setMeshSendCallback(MeshSend callback) {
+        meshSend = std::move(callback);
+    }
+
+    void raiseExternal(const SCE::Common::ForwardedEvent &forwarded) {
+        raised.push_back(forwarded);
+    }
+
+    void tick() {}
+
+    bool isInFinalState() const {
+        return false;
+    }
+
+    std::string donedataAtFinal() const {
+        return std::string();
+    }
+};
+
+constexpr std::array<std::uint8_t, 16> kChildInvokeUuid{
+    0x01, 0x8f, 0x2a, 0x10, 0x00, 0x00, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+};
+
+constexpr const char *kChildEndpoint = "mesh://ecu_b/child_machine/parent_machine%3Aremote_inv";
+constexpr const char *kParentEndpoint = "mesh://ecu_a/parent_machine/b1a3";
+
+}  // namespace
+
+// docs/adr/0090 + SCE_MESH.md §mesh-9.6.3: a send from the child whose target
+// is the endpoint its parent's events carry as their origin reaches the parent
+// as wire-16, as `#_parent` does, and names the child's own endpoint for the
+// parent's reply.
+TEST(ChildSessionAdapterTest, ASendToTheParentsEndpointReachesTheParent) {
+    std::vector<MeshEnvelope> published;
+    SCE::Mesh::ChildSessionAdapter<RecordingChildEngine> adapter(
+        "child_machine", "parent_machine:remote_inv", kChildEndpoint, kChildInvokeUuid, "remote_inv", "parent_machine",
+        kParentEndpoint, [&published](const MeshEnvelope &env) {
+            published.push_back(env);
+            return true;
+        });
+
+    ASSERT_TRUE(static_cast<bool>(adapter.engine().meshSend));
+    EXPECT_TRUE(adapter.engine().meshSend(kParentEndpoint, "pong", "", "reply_1", ""));
+    EXPECT_TRUE(adapter.engine().meshSend("#_parent", "ping", "", "", ""));
+    // Another session's endpoint is not the parent: the adapter declines it.
+    EXPECT_FALSE(adapter.engine().meshSend("mesh://ecu_a/parent_machine/other", "pong", "", "", ""));
+
+    ASSERT_EQ(published.size(), 2u);
+    for (const auto &env : published) {
+        EXPECT_EQ(env.pattern, PatternKind::ChildEvent);
+        EXPECT_EQ(env.child_session_id.value_or(""), "parent_machine:remote_inv");
+        EXPECT_EQ(env.reply_to.value_or(""), kChildEndpoint);
+    }
+    EXPECT_EQ(published[0].type, "pong");
+    EXPECT_EQ(published[0].subject.value_or(""), "reply_1");
+    EXPECT_EQ(published[1].type, "ping");
+}
+
+// The reverse of the ChildEvent row: an event from the parent arrives at the
+// child from the SCXML processor at the parent's endpoint, with no sender.
+TEST(ChildSessionAdapterTest, AParentEventIsFromTheParentsEndpoint) {
+    SCE::Mesh::ChildSessionAdapter<RecordingChildEngine> adapter(
+        "child_machine", "parent_machine:remote_inv", kChildEndpoint, kChildInvokeUuid, "remote_inv", "parent_machine",
+        kParentEndpoint, [](const MeshEnvelope &) { return true; });
+
+    SCE::Common::ForwardedEvent forwarded;
+    forwarded.name = "pong";
+    forwarded.sender = "stale";
+    ASSERT_TRUE(adapter.raiseExternal(forwarded));
+
+    ASSERT_EQ(adapter.engine().raised.size(), 1u);
+    const auto &delivered = adapter.engine().raised[0];
+    ASSERT_TRUE(delivered.origin.has_value());
+    EXPECT_EQ(delivered.origin->address, kParentEndpoint);
+    EXPECT_EQ(delivered.origin->processor, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
+    EXPECT_TRUE(delivered.sender.empty());
+    EXPECT_EQ(delivered.type, "external");
+}
+
+// A parent whose request named no endpoint is reached at its machine's
+// address, the one the transport has for it.
+TEST(ChildSessionAdapterTest, AParentThatNamedNoEndpointIsItsMachinesAddress) {
+    std::vector<MeshEnvelope> published;
+    SCE::Mesh::ChildSessionAdapter<RecordingChildEngine> adapter(
+        "child_machine", "parent_machine:remote_inv", kChildEndpoint, kChildInvokeUuid, "remote_inv", "parent_machine",
+        "", [&published](const MeshEnvelope &env) {
+            published.push_back(env);
+            return true;
+        });
+
+    ASSERT_TRUE(adapter.raiseExternal(SCE::Common::ForwardedEvent{}));
+    ASSERT_EQ(adapter.engine().raised.size(), 1u);
+    ASSERT_TRUE(adapter.engine().raised[0].origin.has_value());
+    EXPECT_EQ(adapter.engine().raised[0].origin->address, "mesh://parent_machine");
+    // With no endpoint to compare, only `#_parent` addresses the parent.
+    EXPECT_FALSE(adapter.engine().meshSend("", "pong", "", "", ""));
+    EXPECT_TRUE(published.empty());
 }
 
 namespace {

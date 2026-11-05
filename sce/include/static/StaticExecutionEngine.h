@@ -20,6 +20,7 @@
 #include "common/EventTypeHelper.h"
 #include "common/ForwardedEvent.h"
 #include "common/IOProcessorHelper.h"
+#include "common/MeshEndpoint.h"
 #include "common/NoParent.h"
 #include "common/SCXMLConstants.h"
 #include "common/SceClock.h"
@@ -488,6 +489,9 @@ public:
     struct InboxChildSessionStarted {
         std::string invokeId;
         std::string childSessionId;
+        /// The child session's Mesh endpoint the wire carried
+        /// (`common/MeshEndpoint.h`), empty when it carried none.
+        std::string endpoint;
     };
 
     /// Wire-16: `event` comes from the child session `childSessionId`. Applied
@@ -1413,7 +1417,7 @@ private:
     void applyChildSessionInput(InboxInput &input) {
         if constexpr (SCE::Core::HasRemoteChildSessionsTrait<StatePolicy, StaticExecutionEngine>::value) {
             if (const auto *started = std::get_if<InboxChildSessionStarted>(&input)) {
-                policy_.onInvokeStarted(started->invokeId, started->childSessionId);
+                policy_.onInvokeStarted(started->invokeId, started->childSessionId, started->endpoint);
             } else if (const auto *child = std::get_if<InboxChildSessionEvent>(&input)) {
                 if (policy_.hasActiveChildSession(child->childSessionId)) {
                     raiseExternal(child->event);
@@ -1629,6 +1633,24 @@ public:
      */
     void raiseExternal(const EventWithMetadata &eventWithMetadata) {
         requireOwner("raiseExternal");
+        // A Mesh session endpoint — the origin a remote child's event or its
+        // parent's carries — is a target, so a reply sent to it reaches that
+        // session (docs/adr/0090). Resolved by the one that wrote it: the
+        // policy for the children this machine runs, the child's transport
+        // adapter (its Mesh send) for the parent that invoked it.
+        if (::SCE::Common::isMeshSessionEndpoint(eventWithMetadata.target)) {
+            if (!deliverToMeshEndpoint(eventWithMetadata)) {
+                // §scxml-C-1: a target the processor cannot dispatch to is
+                // error.communication on the sender's internal queue.
+                if (auto error = policy_.getEventFromName("error.communication")) {
+                    raise(EventWithMetadata(*error,
+                                            "<send target='" + eventWithMetadata.target +
+                                                "'> names no Mesh session this machine reaches",
+                                            std::nullopt, eventWithMetadata.sendId));
+                }
+            }
+            return;
+        }
         // SCE Mesh: route cross-machine targets through the mesh callback before
         // they reach the external queue. Matches the §scxml-C-2 BasicHTTP
         // split — HTTP targets are dispatched via performHttpSend(), mesh
@@ -1835,6 +1857,7 @@ public:
             // — with the invokeid captured when the send was made (§mesh-10.7).
             // The router reports a peer it cannot reach itself (§mesh-16.7).
             EventWithMetadata meta = sentByASession(event, eventData, sendId, senderSessionId);
+            meta.name = arrivalNameOf(event, route.eventName);
             meta.invokeId = route.meshInvokeId;
             meta.target = route.address;
             raiseExternal(std::move(meta));
@@ -1861,6 +1884,40 @@ public:
         } else {
             return false;
         }
+    }
+
+    /**
+     * @brief Deliver an event whose target is a Mesh session endpoint
+     *        (`common/MeshEndpoint.h`), now
+     *
+     * The endpoint is resolved by the side that wrote it, by its text: a child
+     * session this machine runs on another device answers at the endpoint its
+     * transport reported when it started (`deliverToMeshEndpoint` of the
+     * policy), and the session that invoked this one answers at the endpoint it
+     * sent with its request, which this machine's transport adapter holds and
+     * takes through the Mesh send (`ChildSessionAdapter`). The event keeps the
+     * origin and the sender it was sent with.
+     *
+     * @return Whether a session answered at the endpoint and took the event
+     */
+    bool deliverToMeshEndpoint(const EventWithMetadata &eventWithMetadata) {
+        const std::string eventName = eventWithMetadata.name.empty()
+                                          ? std::string(policy_.getEventName(eventWithMetadata.event))
+                                          : eventWithMetadata.name;
+        if constexpr (SCE::Core::HasMeshEndpointDeliveryTrait<StatePolicy, StaticExecutionEngine>::value) {
+            const ::SCE::Common::ForwardedEvent forwarded{eventName,
+                                                          eventWithMetadata.data,
+                                                          eventWithMetadata.origin,
+                                                          eventWithMetadata.sender,
+                                                          eventWithMetadata.sendId,
+                                                          "external",
+                                                          eventWithMetadata.invokeId};
+            if (policy_.deliverToMeshEndpoint(eventWithMetadata.target, forwarded, *this)) {
+                return true;
+            }
+        }
+        return performMeshSend(eventWithMetadata.target, eventName, eventWithMetadata.data, eventWithMetadata.sendId,
+                               eventWithMetadata.invokeId);
     }
 
     /// What became of a `<send>` handed to [sendToTarget].
@@ -1893,8 +1950,24 @@ public:
                                    const std::string &senderSessionId) {
         using Kind = ::SCE::SendHelper::SendTarget::Kind;
         using RouteKind = ::SCE::ScheduledRoute::Kind;
-        const auto resolved = ::SCE::SendHelper::classifyTarget(target, ownSessionId);
         const bool delayed = delay.count() > 0;
+        // §scxml-C-1: a Mesh session endpoint — the origin of an event a remote
+        // child or its parent sent — is a target (docs/adr/0090). Its session is
+        // looked for when the event is delivered, at once or when the delay is
+        // over, through the same delivery a `#<peer>` send's deadline takes.
+        if (::SCE::Common::isMeshSessionEndpoint(target)) {
+            if (delayed) {
+                scheduleRoutedEvent(
+                    event, delay, sendId, eventData, senderSessionId,
+                    ::SCE::ScheduledRoute{RouteKind::MeshPeer, eventName, target, currentEventInvokeId_});
+                return TargetSendOutcome::Sent;
+            }
+            EventWithMetadata meta = sentByASession(event, eventData, sendId, senderSessionId);
+            meta.name = arrivalNameOf(event, eventName);
+            meta.target = target;
+            return deliverToMeshEndpoint(meta) ? TargetSendOutcome::Sent : TargetSendOutcome::Unreachable;
+        }
+        const auto resolved = ::SCE::SendHelper::classifyTarget(target, ownSessionId);
         std::optional<::SCE::ScheduledRoute> route;
         switch (resolved.kind) {
         case Kind::Unsupported:

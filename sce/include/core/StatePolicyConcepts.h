@@ -227,11 +227,24 @@ struct HasRemoteChildSessionsTrait<
     P, E,
     std::void_t<decltype(std::declval<const P &>().hasActiveChildSession(std::declval<const std::string &>())),
                 decltype(std::declval<P &>().onInvokeStarted(std::declval<const std::string &>(),
+                                                             std::declval<const std::string &>(),
                                                              std::declval<const std::string &>())),
                 decltype(std::declval<P &>().onInvokeDone(std::declval<const std::string &>(),
                                                           std::declval<const std::string &>(), std::declval<E &>())),
                 decltype(std::declval<P &>().failScxmlRemoteInvokesForPeer(std::declval<const std::string &>(),
                                                                            std::declval<E &>()))>> : std::true_type {};
+
+/// SCE_MESH.md §9.6: a policy that can hand an event to the remote child session a Mesh
+/// endpoint names (`common/MeshEndpoint.h`), answering whether a running child answers at
+/// that endpoint. Emitted beside the members above, for a machine that runs such children.
+template <typename P, typename E, typename = void> struct HasMeshEndpointDeliveryTrait : std::false_type {};
+
+template <typename P, typename E>
+struct HasMeshEndpointDeliveryTrait<P, E,
+                                    std::void_t<decltype(std::declval<P &>().deliverToMeshEndpoint(
+                                        std::declval<const std::string &>(),
+                                        std::declval<const SCE::Common::ForwardedEvent &>(), std::declval<E &>()))>>
+    : std::true_type {};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // StatePolicy contract traits

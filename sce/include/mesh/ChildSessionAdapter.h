@@ -8,7 +8,9 @@
 // registry through std::unique_ptr<IChildSession>. The adapter:
 //
 //   - Installs a MeshSendCallback on the engine that intercepts
-//     <send target="#_parent"> and emits wire-16 `ChildEvent` envelopes.
+//     <send target="#_parent">, and a send to the parent session's endpoint,
+//     and emits wire-16 `ChildEvent` envelopes that name the child's own
+//     endpoint (common/MeshEndpoint.h) as the address a reply goes to.
 //   - Forwards tick() / cancel() / raiseExternal calls to the engine.
 //   - Advertises the child's top-level `<final>` condition via
 //     StaticExecutionEngine::isInFinalState so WorkerSessionHost can
@@ -111,20 +113,34 @@ inline MeshEnvelope makeInvokeChildInitFailedEnvelope(const std::string &host_ma
 
 template <typename Engine> class ChildSessionAdapter : public IChildSession {
 public:
-    ChildSessionAdapter(std::string machine_name, std::string session_id, std::array<uint8_t, 16> invoke_uuid,
-                        std::string invoke_id_string, std::string parent_peer, ChildToParentPublisher wire16_publisher)
-        : machine_name_(std::move(machine_name)), session_id_(std::move(session_id)), invoke_uuid_(invoke_uuid),
-          invoke_id_string_(std::move(invoke_id_string)), parent_peer_(std::move(parent_peer)),
+    /**
+     * @param endpoint        this child session's Mesh endpoint
+     *                        (common/MeshEndpoint.h), which every envelope it
+     *                        sends its parent carries for the parent's events
+     *                        to name as their origin
+     * @param parent_endpoint the endpoint of the session that invoked this one,
+     *                        as its wire-14 `InvokeStart` named it; empty when
+     *                        it named none
+     */
+    ChildSessionAdapter(std::string machine_name, std::string session_id, std::string endpoint,
+                        std::array<uint8_t, 16> invoke_uuid, std::string invoke_id_string, std::string parent_peer,
+                        std::string parent_endpoint, ChildToParentPublisher wire16_publisher)
+        : machine_name_(std::move(machine_name)), session_id_(std::move(session_id)), endpoint_(std::move(endpoint)),
+          invoke_uuid_(invoke_uuid), invoke_id_string_(std::move(invoke_id_string)),
+          parent_peer_(std::move(parent_peer)), parent_endpoint_(std::move(parent_endpoint)),
           wire16_(std::move(wire16_publisher)) {
-        // Intercept <send target="#_parent"> on the engine and emit wire-16.
-        // The child's mesh-send callback returns true when the send has been
-        // accepted — preventing fall-through to the external queue (W3C
-        // graceful-degrade path). Any other target returns false so the
-        // engine's default handling (external queue or http send) applies.
+        // Intercept a send to the parent on the engine and emit wire-16: one
+        // whose target is `#_parent`, or the parent's endpoint, which the
+        // parent's events carry as their origin, so a reply to one reaches
+        // the session that sent it (docs/adr/0090). The child's mesh-send
+        // callback returns true when the send has been accepted — preventing
+        // fall-through to the external queue (W3C graceful-degrade path). Any
+        // other target returns false so the engine's default handling
+        // (external queue or http send) applies.
         engine_.setMeshSendCallback([this](const std::string &target, const std::string &eventName,
                                            const std::string &data, const std::string &sendId,
                                            const std::string & /*invokeId*/) -> bool {
-            if (target != "#_parent") {
+            if (!addressesParent(target)) {
                 return false;
             }
             if (cancelled_) {
@@ -140,6 +156,11 @@ public:
             env.child_session_id = session_id_;
             if (!sendId.empty()) {
                 env.subject = sendId;
+            }
+            // The address a reply to this event goes to: the parent's
+            // dispatch writes it as the event's origin.
+            if (!endpoint_.empty()) {
+                env.reply_to = endpoint_;
             }
             return wire16_(env);
         });
@@ -167,12 +188,16 @@ public:
         // §mesh-9.6.5; the processor identity is stamped here so every
         // transport arm's `onWire17` gets it without repeating the constant.
         //
-        // The origin is the pair the transport reaches the parent's peer by
-        // (§mesh-9.6.3 "the reverse applies"; docs/adr/0090, section 2), written
-        // whole: the processor never comes without the address.
+        // The origin is the parent session's endpoint (§mesh-9.6.3 "the reverse
+        // applies"; docs/adr/0090, section 2), written whole: the processor
+        // never comes without the address, and a reply sent to it reaches the
+        // parent through this adapter's mesh-send callback. A parent that
+        // named no endpoint is reached at the address of its peer.
         ::SCE::Common::ForwardedEvent delivered = forwarded;
         delivered.type = "external";
-        delivered.origin = meshPeerOrigin(parent_peer_);
+        delivered.origin = parent_endpoint_.empty()
+                               ? meshPeerOrigin(parent_peer_)
+                               : ::SCE::Core::EventOrigin(SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, parent_endpoint_);
         delivered.sender.clear();
         // Engine's ForwardedEvent overload handles graceful-degrade for
         // unknown events (§scxml-6.4) via PolicyType::getEventFromName.
@@ -214,6 +239,17 @@ public:
         return parent_peer_;
     }
 
+    /// This child session's Mesh endpoint; empty when the worker gave none.
+    const std::string &endpoint() const {
+        return endpoint_;
+    }
+
+    /// The endpoint of the session that invoked this one; empty when its
+    /// request named none.
+    const std::string &parentEndpoint() const {
+        return parent_endpoint_;
+    }
+
     const std::string &invokeIdString() const override {
         return invoke_id_string_;
     }
@@ -227,11 +263,20 @@ public:
     }
 
 private:
+    /// Whether a send to @p target is one to the session that invoked this
+    /// one: `#_parent`, or the parent's endpoint, compared as the text the
+    /// parent's request named.
+    bool addressesParent(const std::string &target) const {
+        return target == "#_parent" || (!parent_endpoint_.empty() && target == parent_endpoint_);
+    }
+
     std::string machine_name_;
     std::string session_id_;
+    std::string endpoint_;
     std::array<uint8_t, 16> invoke_uuid_;
     std::string invoke_id_string_;
     std::string parent_peer_;
+    std::string parent_endpoint_;
     ChildToParentPublisher wire16_;
     Engine engine_;
     bool cancelled_ = false;

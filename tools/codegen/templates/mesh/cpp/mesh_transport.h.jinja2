@@ -1643,8 +1643,9 @@ struct TransportRouter {
         using ChildEngine = ::SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::{{ machine_name }};
         using ChildAdapter = ::SCE::Mesh::ChildSessionAdapter<ChildEngine>;
 
-        explicit WorkerSessionHost(std::string host_machine_name)
-            : host_machine_name_(std::move(host_machine_name)) {}
+        WorkerSessionHost(std::string host_device_name, std::string host_machine_name)
+            : host_device_name_(std::move(host_device_name)),
+              host_machine_name_(std::move(host_machine_name)) {}
 
         void onWire14(const ::SCE::Mesh::MeshEnvelope& env,
                       ::SCE::Mesh::ChildToParentPublisher send_ctp) {
@@ -1654,6 +1655,18 @@ struct TransportRouter {
             const std::string invoke_id_str = *env.subject;
             const std::array<uint8_t, 16> invoke_uuid = *env.invoke_id;
             std::string session_id = env.source + ":" + invoke_id_str;
+            // SCE_MESH.md §9.6.3: the child session's endpoint, written here
+            // once from what this worker alone knows (its device, its machine,
+            // the session id above) and carried in `reply_to` on every
+            // envelope the child sends its parent; the parent names it as the
+            // origin of the child's events, and a reply sent to it comes back
+            // as a wire-17 `ParentEvent` (docs/adr/0090). The parent's own
+            // endpoint rides in the request's `reply_to` the same way.
+            const std::string endpoint =
+                ::SCE::Common::meshSessionEndpoint(host_device_name_, host_machine_name_, session_id);
+            const std::string parent_endpoint =
+                (env.reply_to && ::SCE::Common::isMeshSessionEndpoint(*env.reply_to)) ? *env.reply_to
+                                                                                         : std::string();
 
             // SCE_MESH.md §9.3 "Child fails during initialization": bringing a
             // child up is the one step here that runs author-supplied content
@@ -1669,9 +1682,11 @@ struct TransportRouter {
             auto adapter = std::make_unique<ChildAdapter>(
                 host_machine_name_,
                 session_id,
+                endpoint,
                 invoke_uuid,
                 invoke_id_str,
                 env.source,
+                parent_endpoint,
                 send_ctp);
 
             // Publish wire-15 `InvokeStarted` BEFORE the child's first
@@ -1691,6 +1706,7 @@ struct TransportRouter {
             started.invoke_id = invoke_uuid;
             started.subject = invoke_id_str;
             started.child_session_id = session_id;
+            started.reply_to = endpoint;
             (void)send_ctp(started);
 
             // W3C SCXML B.1: Forward the build-configured script engine to the
@@ -1789,6 +1805,7 @@ struct TransportRouter {
                 s.sessionId(), s.getDonedata()));
         }
 
+        std::string host_device_name_;
         std::string host_machine_name_;
         std::unordered_map<std::string, std::unique_ptr<::SCE::Mesh::IChildSession>> sessions_;
     };
@@ -2675,7 +2692,7 @@ struct TransportRouter {
 {#- SCE_MESH.md §9.6 WorkerSessionHost init — hosted-machine identity
     is embedded in the host for sessionId construction and wire-16/18
     envelope `source` stamping. #}
-{%-   set ns.parts = ns.parts + ["worker_session_host_(\"" ~ machine_name ~ "\")"] %}
+{%-   set ns.parts = ns.parts + ["worker_session_host_(\"" ~ device_name ~ "\", \"" ~ machine_name ~ "\")"] %}
 {%- endif %}
 {#- Server SOME/IP app init: must appear in declaration order (before sessions_).
     The device-level `transports.someip.application_name` identifies the
@@ -2951,9 +2968,9 @@ struct TransportRouter {
             // peer-machine name into the matching `p2c_to_<peer>_` shm
             // channel created in (D1c').
             sessions_[i]->setScxmlInvokeStartCallback(
-                [this](const std::string& target,
-                       const std::string& invokeIdString,
-                       const std::string& data) -> bool {
+                [this, i](const std::string& target,
+                          const std::string& invokeIdString,
+                          const std::string& data) -> bool {
                     SCE::Mesh::MeshEnvelope env{};
                     env.id = SCE::uuid::v7();
                     env.source = "{{ machine_name }}";
@@ -2966,6 +2983,16 @@ struct TransportRouter {
                     env.invoke_id = SCE::uuid::v7();
                     env.subject = invokeIdString;
                     env.routing_id = routing_id_;
+                    // SCE_MESH.md §9.6.3 "the reverse applies": the endpoint of
+                    // the invoking session, which the child names as the origin
+                    // of every event this session sends it, rides in `reply_to`
+                    // (docs/adr/0090). Read on the owner thread, which is the
+                    // one that runs this callback.
+                    std::string invokingEndpoint = SCE::Mesh::meshEndpointOfSession(
+                        "{{ device_name }}", "{{ machine_name }}", *sessions_[i]);
+                    if (!invokingEndpoint.empty()) {
+                        env.reply_to = std::move(invokingEndpoint);
+                    }
 {% for peer in scxml_remote_outbound_peers %}
                     if (target == "{{ peer.name }}") {
 {%   if peer.transport == "someip" %}

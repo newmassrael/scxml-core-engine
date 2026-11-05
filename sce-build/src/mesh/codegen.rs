@@ -1141,6 +1141,11 @@ pub struct MeshCodegenInputs<'a> {
     /// [`Self::machine_name`] when a document is deployed under another
     /// name (deploy.yaml `motor:` with `source: motor_someip_multi.scxml`).
     pub deploy_machine_name: &'a str,
+    /// The deploy.yaml device that hosts the machine, which the endpoint of
+    /// each of its sessions names (`mesh://<device>/<machine>/<session>`, the
+    /// origin a remote child's events and its parent's carry). `None` when
+    /// the topology places the machine on no device.
+    pub device_name: Option<&'a str>,
     pub targets: &'a [ResolvedTarget],
     pub server: Option<&'a super::topology::ServerBinding>,
     pub zenoh_session: Option<&'a ZenohTransportConfig>,
@@ -1404,6 +1409,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         // The C++ router is emitted and named per document; the deploy
         // key reaches it through the resolved targets and the topology.
         deploy_machine_name: _,
+        device_name,
         targets,
         server,
         zenoh_session,
@@ -2076,6 +2082,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
 
     let ctx = minijinja::context! {
         machine_name => machine_name,
+        device_name => device_name.unwrap_or_default(),
         sm_header_stem => sm_header_stem,
         machine_pascal => machine_pascal,
         targets => target_contexts,

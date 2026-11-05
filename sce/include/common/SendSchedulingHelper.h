@@ -88,7 +88,8 @@ struct ScheduledRoute {
     Kind kind;
     std::string eventName;
     /// The invoke id (Kind::Invocation), the session id (Kind::Session), or
-    /// the `#<peer>` target (Kind::MeshPeer).
+    /// the `#<peer>` target or Mesh session endpoint (Kind::MeshPeer;
+    /// common/MeshEndpoint.h).
     std::string address;
     /// SCE_MESH.md §mesh-10.7: for Kind::MeshPeer, the invokeid of the event
     /// being processed when the send was MADE. Captured then because a reply

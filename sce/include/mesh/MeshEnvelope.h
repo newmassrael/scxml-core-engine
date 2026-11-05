@@ -37,8 +37,12 @@ struct MeshEnvelope {
     // ── Optional ──
     std::optional<std::string> subject;  // CE 'subject' — interaction key (someip method_id, zenoh key)
     std::optional<std::array<uint8_t, 16>> correlation_id;  // RPC req↔resp matching (UUID v7)
-    std::optional<std::string> reply_to;                    // CE-extension — response routing endpoint
-    std::optional<std::array<uint8_t, 16>> invoke_id;       // RESERVED for <invoke type="sce:mesh-rpc"> lifecycle
+    /// CE-extension — response routing endpoint. On a remote invoke's
+    /// `InvokeStart`, `InvokeStarted` and `ChildEvent` it is the sending
+    /// session's Mesh endpoint (common/MeshEndpoint.h), which the receiver
+    /// names as the origin of that session's events (docs/adr/0090).
+    std::optional<std::string> reply_to;
+    std::optional<std::array<uint8_t, 16>> invoke_id;  // RESERVED for <invoke type="sce:mesh-rpc"> lifecycle
     /// SCE-extension — per-session routing identifier (UUID v7, generated
     /// once per TransportRouter construction). `source` carries the stable
     /// document identity (machine_name); `routing_id` discriminates sessions

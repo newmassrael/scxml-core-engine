@@ -1348,19 +1348,52 @@
 
 
     // SCE_MESH.md §9.6.2 wire-15 consumer — parent stashes the child's
-    // session URI (§9.6.3 L1463 `_event.origin` source). Matched by
-    // the envelope's subject against the compile-time invoke_id emitted at
-    // wire-14 dispatch. Idempotent: a redundant wire-15 is silently
-    // replaced; matching against an unregistered invoke_id (e.g. a stale
-    // envelope arriving after onexit) is a no-op.
-    void onInvokeStarted(const std::string& invokeId, const std::string& childSessionId) {
+    // session id (the sender its events carry, which finalize matches on)
+    // and its Mesh endpoint (§9.6.3: the origin its events carry, which a
+    // reply is sent to). Matched by the envelope's subject against the
+    // compile-time invoke_id emitted at wire-14 dispatch. Idempotent: a
+    // redundant wire-15 is silently replaced; matching against an
+    // unregistered invoke_id (e.g. a stale envelope arriving after onexit)
+    // is a no-op.
+    void onInvokeStarted(const std::string& invokeId, const std::string& childSessionId,
+                         const std::string& childEndpoint) {
         auto it = activeInvokes_.find(invokeId);
         if (it == activeInvokes_.end()) {
             AOT_DEBUG("AOT onInvokeStarted: no active invoke matching subject='{}' — drop", invokeId);
             return;
         }
         it->second.sessionId = childSessionId;
-        AOT_DEBUG("AOT onInvokeStarted: bound invoke='{}' to child sessionId='{}'", invokeId, childSessionId);
+        it->second.endpoint = childEndpoint;
+        AOT_DEBUG("AOT onInvokeStarted: bound invoke='{}' to child sessionId='{}' at '{}'", invokeId, childSessionId,
+                  childEndpoint);
+    }
+
+    // SCE_MESH.md §9.6.3 + docs/adr/0090: the Mesh session endpoint a remote
+    // child's events carry as their origin is a target. An event sent to it
+    // reaches the running child that answers there as a wire-17 `ParentEvent`,
+    // as an autoforwarded one does. The endpoint is matched by the text the
+    // child's transport reported (`onInvokeStarted`), never taken apart.
+    // Answers whether a child answered at it.
+    template <typename Engine>
+    bool deliverToMeshEndpoint(const std::string& endpoint, const ::SCE::Common::ForwardedEvent& forwarded,
+                               Engine& engine) {
+        if (endpoint.empty()) {
+            return false;
+        }
+        {% for invoke_info in model.invokes | scxml_remote %}
+        {
+            const auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+            if (it != activeInvokes_.end() && it->second.endpoint == endpoint) {
+                return engine.performScxmlInvokeParentEvent(
+                    "{{ invoke_info.remote_mesh_target }}",
+                    "{{ invoke_info.invoke_id }}",
+                    forwarded.name,
+                    forwarded.data,
+                    forwarded.sendId);
+            }
+        }
+        {% endfor %}
+        return false;
     }
 
     // SCE_MESH.md §9.6.2 wire-18 consumer — child reached <final>. Raise

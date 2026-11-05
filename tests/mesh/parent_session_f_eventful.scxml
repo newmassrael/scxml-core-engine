@@ -8,7 +8,8 @@
      `ChildEvent` envelope over the `/sce_c2p_<worker>_<parent>` channel.
 
      On the parent, `MeshDispatch::ChildEvent` reconstructs an
-     `EventWithMetadata` with `_event.origin=child_session_id` and
+     `EventWithMetadata` whose `_event.origin` is the child session's
+     endpoint and whose sender is the child session id, and
      delivers it via `raiseExternal`. During the parent's next macrostep,
      the runtime selects the `<transition event="ping">` in the invoking
      state — the `<finalize>` block fires **before** transition

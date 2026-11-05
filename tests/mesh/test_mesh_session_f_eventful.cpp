@@ -11,7 +11,8 @@
 // `engine.performMeshSend("#_parent", ...)`; the adapter's callback
 // intercepts and publishes a wire-16 `ChildEvent`. The parent drains
 // wire-16 via `pumpScxmlInvokeReplies` → `MeshDispatch::ChildEvent`
-// reconstructs `EventWithMetadata` with `_event.origin=child_session_id`.
+// reconstructs `EventWithMetadata` whose `_event.origin` is the child
+// session's endpoint and whose sender is the child session id.
 //
 // The parent is in the invoking state (`waiting`) and its `<invoke>`
 // declares a `<finalize>` block that assigns `finalized=true`. Per

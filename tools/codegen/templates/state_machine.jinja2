@@ -861,6 +861,9 @@ struct {{ model.name }}Policy {
         std::string parentSessionId;     // Parent's session ID
         bool autoforward = false;        // W3C 6.4.1: Autoforward events to child
         std::string finalizeScript;      // W3C 6.5: Finalize handler script
+        // SCE_MESH.md §9.6.3: a remote child's Mesh session endpoint, which its
+        // transport reports when the child starts; empty for a local child.
+        std::string endpoint{};
     };
 
     {% endif %}
@@ -1360,7 +1363,7 @@ public:
     /// probes this method via SFINAE (`HasInvokeStartedHook`); its presence
     /// makes the SM eligible to consume `InvokeStarted` envelopes from its
     /// worker peer(s). Safe from any thread: it posts the child's session id
-    /// to this machine's inbox, and the owner stamps it into the Policy's
+    /// and endpoint to this machine's inbox, and the owner stamps them into the Policy's
     /// `activeInvokes_` (`onInvokeStarted`) at its next macrostep boundary
     /// (docs/adr/0084). An envelope missing its subject or session id names
     /// no invoke and is dropped.
@@ -1369,7 +1372,9 @@ public:
             return;
         }
         using Posted = typename ::SCE::Static::StaticExecutionEngine<{{ _pol_inst }}>::InboxChildSessionStarted;
-        (void)this->inbox().post(Posted{*env.subject, *env.child_session_id});
+        // The child's Mesh endpoint rides in `reply_to`, the envelope's
+        // response-routing slot (docs/adr/0090); empty from a worker that sent none.
+        (void)this->inbox().post(Posted{*env.subject, *env.child_session_id, env.reply_to.value_or(std::string())});
     }
 
     /// SCE_MESH.md §9.6.2 wire-18 SM-side entry point. Symmetric to the

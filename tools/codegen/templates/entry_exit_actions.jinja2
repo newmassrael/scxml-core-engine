@@ -204,7 +204,8 @@
                             "{{ invoke_info.invoke_id }}",
                             sessionId_.has_value() ? sessionId_.value() : "",
                             {{ 'true' if invoke_info.autoforward else 'false' }},
-                            {{ invoke_info.finalize_content | cpp_text_expr }}
+                            {{ invoke_info.finalize_content | cpp_text_expr }},
+                            ""  // endpoint: filled on wire-15 InvokeStarted
                         };
                         pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
                     } else {

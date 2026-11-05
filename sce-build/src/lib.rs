@@ -11113,6 +11113,7 @@ pub fn compile_mesh_transport(
         mesh::codegen::MeshCodegenInputs {
             machine_name: &model.name,
             deploy_machine_name: &effective_machine_name,
+            device_name: deploy_cfg.device_name_for_machine(&effective_machine_name),
             targets: &resolved,
             server: server_binding.as_ref(),
             zenoh_session,
