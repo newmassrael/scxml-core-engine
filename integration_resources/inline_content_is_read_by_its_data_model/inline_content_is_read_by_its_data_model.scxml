@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML B.2 on inline `<content>` text: under the ECMAScript data model the
+  text is read first as an expression, then as XML, then as the
+  space-normalized string, and the value it reads as is `_event.data`. Which
+  reading applies is the data model's to decide, the same for every document
+  that declares it, and the same for a `<send>`'s `<content>` and a
+  `<donedata>`'s.
+
+  It used to be decided by other things. Read in the templates on 2026-11-04:
+  the Rust, Go and C++ AOT templates chose the reading of a `<send>`'s text by
+  whether the machine needed a script engine for anything, and took the last
+  rung for a machine that needed none, so `21` would arrive as the string "21"
+  from a machine like `emitter` below and as the number from one that carried
+  an engine for another reason; the Kotlin, Python and C11 templates evaluated
+  the text through an engine such a machine is not given. And every generated
+  engine handed a `<donedata>`'s XML to its engine as an expression, which
+  raised error.execution where the document carried a document.
+
+    number   `<send><content>21</content>`          arrives as the number 21
+    text     `<send><content>two  words</content>`  arrives as 'two words',
+             the space-normalized string, since the text is no expression
+    object   `<send><content>{"k": 7}</content>`    arrives with `k === 7`
+    document `<donedata><content><books/>`           arrives on done.invoke as
+             a DOM whose `book` element carries `title="x"`
+
+  `emitter` sends the first three and needs an engine for nothing, which is
+  the property its sends are measured under. `reporter` ends at once with the
+  document as its done data; it is a child of its own, invoked by the state
+  that reads its answer, so its done event cannot arrive before the parent is
+  waiting for it. The verdict is the parent's, which needs an engine to read
+  the payloads. Each reading has its own failure state, so a failure names it.
+  `emitter`'s invoke sits on `run`, which its three phases are inside, so the
+  parent moving between them cancels nothing.
+
+  This fixture is the canonical source for every channel; see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="inline_content_is_read_by_its_data_model">
+
+  <state id="run" initial="awaitNumber">
+    <invoke type="scxml" id="emitter">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml"
+               version="1.0" datamodel="ecmascript" initial="emit">
+          <state id="emit">
+            <onentry>
+              <send target="#_parent" event="number"><content>21</content></send>
+              <send target="#_parent" event="text"><content>
+                two
+                words
+              </content></send>
+              <send target="#_parent" event="object"><content>{"k": 7}</content></send>
+            </onentry>
+            <transition target="sent"/>
+          </state>
+          <final id="sent"/>
+        </scxml>
+      </content>
+    </invoke>
+
+    <state id="awaitNumber">
+      <transition event="number" cond="_event.data === 21" target="awaitText"/>
+      <transition event="number" target="failNumber"/>
+    </state>
+
+    <state id="awaitText">
+      <transition event="text" cond="_event.data === 'two words'" target="awaitObject"/>
+      <transition event="text" target="failText"/>
+    </state>
+
+    <!-- `_event.data &&` first: a payload that did not arrive leaves nothing
+         to index, and a guard that raises reads as false, which would land
+         in the failure state for a reason its message would misname. -->
+    <state id="awaitObject">
+      <transition event="object" cond="_event.data &amp;&amp; _event.data.k === 7" target="awaitDocument"/>
+      <transition event="object" target="failObject"/>
+    </state>
+  </state>
+
+  <state id="awaitDocument">
+    <invoke type="scxml" id="reporter">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml"
+               version="1.0" datamodel="ecmascript" initial="reported">
+          <final id="reported">
+            <donedata>
+              <content><books xmlns=""><book title="x"/></books></content>
+            </donedata>
+          </final>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.reporter"
+                cond="_event.data &amp;&amp; _event.data.getElementsByTagName('book')[0].getAttribute('title') === 'x'"
+                target="pass"/>
+    <transition event="done.invoke.reporter" target="failDocument"/>
+  </state>
+
+  <final id="pass"/>
+  <final id="failNumber"/>
+  <final id="failText"/>
+  <final id="failObject"/>
+  <final id="failDocument"/>
+</scxml>

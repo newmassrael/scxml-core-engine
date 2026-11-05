@@ -631,6 +631,32 @@ the message on failure, and the C++ AOT sent it without ending the block.
 Expected: `numberOk`, `objectOk`, `textOk`, `errors`, `badArrived` and
 `badEmpty` 1, `afterBad` 0, ending in `done`.
 
+`inline_content_is_read_by_its_data_model` covers W3C §B.2 on inline
+`<content>` text, a `<send>`'s and a `<donedata>`'s: the reading is the data
+model's. Under ECMAScript the text is read first as an expression, so `21`
+arrives as the number 21 and `{"k": 7}` as the object, text that is no
+expression arrives as the space-normalized string (`two words`), and XML is a
+document the receiver builds from the text. The sends come from an inline
+child, `emitter`, that needs a script engine for nothing, because that is the
+shape where a send's reading used to differ; the document comes as the done
+data of a second child, `reporter`, invoked by the state that reads it so its
+done event cannot overtake the sends. Read in the templates on 2026-11-04, the Rust, Go
+and C++ AOT templates chose a send's reading by whether the WHOLE machine
+needed an engine, and took the last rung for one that needed none, while
+Kotlin, Python and C11 evaluated the text through an engine such a machine is
+not given; and every generated engine handed a `<donedata>`'s XML to its
+engine as an expression, which raised error.execution. One classification
+decides it now (`filters::inline_content_reading`), read by every send and
+donedata template and by the analysis that says whether the machine carries an
+engine: a literal is its value finished at build time, XML its text, and only
+an expression of the document is evaluated, which for a send is then a
+`send-content-expr` cause. A `<donedata>`'s inline text still costs its
+machine an engine (`donedata-content`), since the C11 backend keeps done data
+in the engine's state, which is where a parent lifts it from. The parent reads each payload
+in a phase of its own with its own failure state (`failNumber`, `failText`,
+`failObject`, `failDocument`), all inside the state that holds the invoke so
+moving between them cancels nothing; it ends in `pass`.
+
 `a_send_reaches_only_what_its_target_names` covers W3C §6.2, §6.4 and C.1 on
 where a `<send>` goes. A type the platform does not support is one of the
 element's own arguments, refused before the payload is read, so a failing

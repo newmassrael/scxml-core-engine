@@ -1737,6 +1737,31 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML B.2: inline <content> text, a <send>'s and a <donedata>'s, is
+    # the value its data model reads it as, from a child that needs no engine.
+    sce_generate_static_integration_c_test(inline_content_is_read_by_its_data_model "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_inline_content_is_read_by_its_data_model
+        integration/test_inline_content_is_read_by_its_data_model.c
+        ${INTEGRATION_C_TEST_inline_content_is_read_by_its_data_model_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_inline_content_is_read_by_its_data_model)
+    target_include_directories(sce_c_integration_inline_content_is_read_by_its_data_model PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_inline_content_is_read_by_its_data_model PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_inline_content_is_read_by_its_data_model
+        COMMAND sce_c_integration_inline_content_is_read_by_its_data_model
+    )
+    set_tests_properties(c11_integration_inline_content_is_read_by_its_data_model PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.2 + 6.4 + C.1: a <send> reaches what its target names and
     # carries its payload there; a target that names nothing is reported.
     sce_generate_static_integration_c_test(a_send_reaches_only_what_its_target_names "${SCE_C_INTEGRATION_GENERATED_DIR}")
