@@ -70,6 +70,12 @@ endfunction()
 #               asked (see `tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml`).
 #               Its file name must be `${STEM}.scxml`, and the directory holding
 #               it is the `--input-root` the way the stem's own directory is.
+#   HOST_PROCESSOR / HOST_INVOKER
+#               (optional) The `<send>` and `<invoke>` types the fixture's host
+#               serves, passed to its generation as `--host-processor` and
+#               `--host-invoker`, as `sce_add_state_machine` passes them: a
+#               fixture whose document sends to a host or has a host run an
+#               invocation is built with the types its driver registers.
 #
 # What the fixture produces besides its own `_sm.{h,inl}` — a machine per inline
 # `<invoke>` (`<stem>__sce_synth_invoke__<id>`, SCE Mesh §9.6.6 rule 1) and one
@@ -99,7 +105,7 @@ endfunction()
 #   so a stale fixture surfaces as a stale tree per-context (mirroring
 #   the committed-tree backends' separate §6.2.6 drift contexts).
 function(sce_generate_static_integration_test STEM OUTPUT_DIR)
-    cmake_parse_arguments(_INT "" "SCXML_FILE" "" ${ARGN})
+    cmake_parse_arguments(_INT "" "SCXML_FILE" "HOST_PROCESSOR;HOST_INVOKER" ${ARGN})
     _sce_refuse_children_arguments(sce_generate_static_integration_test "${STEM}"
         ${_INT_UNPARSED_ARGUMENTS})
     get_property(_DECLARED GLOBAL PROPERTY _SCE_STATIC_INTEGRATION_DECLARED)
@@ -126,6 +132,18 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     set_property(GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_OUTPUT_DIR" "${OUTPUT_DIR}")
     set_property(GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_SCXML_FILE"
         "${_INT_SCXML_FILE}")
+    # §scxml-6.2.5 + §scxml-6.4.1: the processor and invoker types the HOST of
+    # this fixture serves, declared to its generation as `sce_add_state_machine`
+    # declares them: codegen decides at build time whether a `<send type>` or an
+    # `<invoke type>` dispatches to the host or refuses.
+    set(_HOST_ARGS "")
+    foreach(_TYPE IN LISTS _INT_HOST_PROCESSOR)
+        list(APPEND _HOST_ARGS --host-processor "${_TYPE}")
+    endforeach()
+    foreach(_TYPE IN LISTS _INT_HOST_INVOKER)
+        list(APPEND _HOST_ARGS --host-invoker "${_TYPE}")
+    endforeach()
+    set_property(GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_HOST_ARGS" "${_HOST_ARGS}")
 endfunction()
 
 # sce_declare_registered_static_integration_tests()
@@ -181,6 +199,7 @@ function(_sce_static_integration_fixture MODE STEM)
     set(_FIXTURE_HEADERS "" PARENT_SCOPE)
     get_property(OUTPUT_DIR GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_OUTPUT_DIR")
     get_property(_SCXML_FILE GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_SCXML_FILE")
+    get_property(_HOST_ARGS GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_HOST_ARGS")
     if(_SCXML_FILE)
         set(FIXTURE "${_SCXML_FILE}")
         get_filename_component(FIXTURE_ROOT "${FIXTURE}" DIRECTORY)
@@ -217,7 +236,8 @@ function(_sce_static_integration_fixture MODE STEM)
             OUTPUT_DIR "${OUTPUT_DIR}"
             LANGUAGE cpp
             INPUT_ROOT "${FIXTURE_ROOT}"
-            CHILD_GENERATIONS)
+            CHILD_GENERATIONS
+            ARGS ${_HOST_ARGS})
         return()
     endif()
 
@@ -251,7 +271,8 @@ function(_sce_static_integration_fixture MODE STEM)
         OUTPUT_DIR "${OUTPUT_DIR}"
         LANGUAGE cpp
         INPUT_ROOT "${FIXTURE_ROOT}"
-        CHILD_GENERATIONS)
+        CHILD_GENERATIONS
+        ARGS ${_HOST_ARGS})
 
     # Formatting happens inside sce-codegen, with the pinned clang-format, on
     # the parent and the synth children it emits alike — see SCEClangFormat.cmake.
@@ -272,6 +293,7 @@ function(_sce_static_integration_fixture MODE STEM)
         COMMAND ${_LAUNCH} "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l cpp -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
+                ${_HOST_ARGS}
                 --write-deps "${_PLAN_DEPFILE}"
                 ${_FORMAT_ARGS}
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"

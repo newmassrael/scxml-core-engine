@@ -589,6 +589,33 @@ at all — two defects that cancel on the one test that sees them. Expected:
 `immediateOk` 1, `replied` 1, `delayedOk` 1, `unreachable` 1, `strayed` 0,
 ending in `done`.
 
+`an_origin_is_the_address_its_sender_published` asks the same clause of every
+route a session sends by (docs/adr/0090, test 1): a self-send, a child's send
+to `#_parent` and a parent's send to `#_<invokeid>`. Each time `_event.origin`
+is the location the sender published, `_event.origintype` is the SCXML
+processor's URI, and a reply sent with `targetexpr="_event.origin"
+typeexpr="_event.origintype"` arrives — the child's reply to its parent goes to
+the parent's location, which is the half no other fixture asks. The self-send
+is written with the alias `type="scxml"`, so the origintype it reads is the
+URI the alias names and never the spelling. Expected: `selfOk` 1,
+`selfReplied` 1, `childOk` 1, `childReplied` 1, `parentOk` 1, `parentReplied`
+1, ending in `done`.
+
+`an_event_no_processor_delivered_has_no_origin` is the absence (docs/adr/0090,
+test 2): an event the host raises itself and the reply a host processor
+answers a `<send>` with, both naming no party, read `_event.origin` and
+`_event.origintype` as `''`. No engine invents an origin for them — neither the
+receiving session's own address nor the SCXML processor's type. The driver
+registers a processor for `x-sce-host`, the type the build is told the host
+serves. Expected: `postedBlank` 1, `replyBlank` 1, ending in `done`.
+
+`a_host_names_its_origin_in_its_own_terms` is the host's pair (docs/adr/0090,
+test 3): a host-run `<invoke type="x-sce-host">` is ended with the origin
+{`x-sce-host`, `motor`}, and the document reads `motor` and `x-sce-host`. The
+address has no scheme, so an engine that read an address by its shape wrapped
+it as an SCXML location, and one that defaulted the type reported the SCXML
+processor. Expected: `hostNamed` 1, ending in `done`.
+
 `a_peer_named_at_run_time_reaches_the_router` covers SCE_MESH.md §mesh-19's
 run-time half: a `targetexpr` that evaluates to a Mesh peer (`#hmi`) reaches
 the host's Mesh router, the `sce:mesh` host-served processor, as a literal

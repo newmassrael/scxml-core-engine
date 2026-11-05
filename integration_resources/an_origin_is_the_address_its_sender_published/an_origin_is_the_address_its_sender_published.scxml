@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.10.1 + C.1 (docs/adr/0090, test 1): the origin of an event the
+  SCXML Event I/O Processor delivers is the address its sender published, on
+  every route a session sends by, and a reply to it arrives.
+
+  C.1 has the origin of an event match the `location` of the sender's
+  `_ioprocessors['scxml']` entry, and 5.10.1 makes `origintype` the type that,
+  used as a `<send>` type, answers the sender at that address. So each route
+  asks three questions: is `_event.origin` the sender's published location, is
+  `_event.origintype` the processor's URI (never an author's spelling of it),
+  and does `<send targetexpr="_event.origin" typeexpr="_event.origintype"/>`
+  reach the sender. W3C test 336 asks the last one of a session sending to
+  itself; this fixture asks it of the three routes.
+
+  `self`      a self-send, written with the alias `type="scxml"`: the origin
+              is this session's location and the origintype is the URI the
+              alias names. Answered with `pong`.
+  `family`    the child `kid` sends `hello` to `#_parent` with the location it
+              publishes; the parent compares, and answers with `welcome`,
+              which the child acknowledges with `welcomed`. The parent then
+              sends `hi` to `#_kid` with ITS location; the child compares and
+              answers with `hiBack` to the origin it read, or reports `hiWrong`.
+
+    selfOk 1, selfReplied 1, childOk 1, childReplied 1, parentOk 1,
+    parentReplied 1, and the run ends in `done`.
+
+  A reply that reaches nobody leaves the run waiting, and the harness reports
+  the state it stopped in.
+
+  This fixture is the canonical source for every channel — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="an_origin_is_the_address_its_sender_published">
+  <datamodel>
+    <data id="processor" expr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/>
+    <data id="childLocation" expr="''"/>
+    <data id="selfOk" expr="0"/>
+    <data id="selfReplied" expr="0"/>
+    <data id="childOk" expr="0"/>
+    <data id="childReplied" expr="0"/>
+    <data id="parentOk" expr="0"/>
+    <data id="parentReplied" expr="0"/>
+  </datamodel>
+
+  <state id="run" initial="self">
+    <state id="self">
+      <onentry>
+        <send event="ping" type="scxml"/>
+      </onentry>
+      <transition event="ping" target="selfReply">
+        <if cond="_event.origin === _ioprocessors['scxml'].location &amp;&amp; _event.origintype === processor">
+          <assign location="selfOk" expr="1"/>
+        </if>
+        <send event="pong" targetexpr="_event.origin" typeexpr="_event.origintype"/>
+      </transition>
+    </state>
+
+    <state id="selfReply">
+      <transition event="pong" target="family">
+        <assign location="selfReplied" expr="1"/>
+      </transition>
+    </state>
+
+    <!-- The child runs for as long as `family` is active: §6.4 cancels an
+         invocation when the state that holds it is exited, so every exchange
+         with the child happens inside it. -->
+    <state id="family" initial="awaitHello">
+      <invoke type="scxml" id="kid">
+        <content>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                 version="1.0" datamodel="ecmascript" initial="greeting">
+            <datamodel>
+              <data id="processor" expr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/>
+            </datamodel>
+            <state id="greeting">
+              <onentry>
+                <send target="#_parent" event="hello">
+                  <param name="location" expr="_ioprocessors['scxml'].location"/>
+                </send>
+              </onentry>
+              <transition event="welcome" target="listening">
+                <send target="#_parent" event="welcomed"/>
+              </transition>
+            </state>
+            <state id="listening">
+              <transition event="hi"
+                          cond="_event.origin === _event.data.location &amp;&amp; _event.origintype === processor"
+                          target="answered">
+                <send event="hiBack" targetexpr="_event.origin" typeexpr="_event.origintype"/>
+              </transition>
+              <transition event="hi" target="answered">
+                <send target="#_parent" event="hiWrong"/>
+              </transition>
+            </state>
+            <state id="answered"/>
+          </scxml>
+        </content>
+      </invoke>
+
+      <state id="awaitHello">
+        <transition event="hello" target="awaitWelcomed">
+          <if cond="_event.origin === _event.data.location &amp;&amp; _event.origintype === processor">
+            <assign location="childOk" expr="1"/>
+          </if>
+          <assign location="childLocation" expr="_event.origin"/>
+          <send event="welcome" targetexpr="_event.origin" typeexpr="_event.origintype"/>
+        </transition>
+      </state>
+
+      <state id="awaitWelcomed">
+        <transition event="welcomed" target="awaitHiBack">
+          <assign location="childReplied" expr="1"/>
+          <send target="#_kid" event="hi">
+            <param name="location" expr="_ioprocessors['scxml'].location"/>
+          </send>
+        </transition>
+      </state>
+
+      <state id="awaitHiBack">
+        <transition event="hiBack" target="done">
+          <assign location="parentOk" expr="1"/>
+          <if cond="_event.origin === childLocation">
+            <assign location="parentReplied" expr="1"/>
+          </if>
+        </transition>
+        <transition event="hiWrong" target="done"/>
+      </state>
+    </state>
+  </state>
+
+  <final id="done"/>
+</scxml>

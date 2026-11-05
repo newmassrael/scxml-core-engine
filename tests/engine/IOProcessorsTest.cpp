@@ -21,8 +21,10 @@
 // test exists to exercise.
 
 #include "common/IOProcessorHelper.h"
+#include "core/EventOrigin.h"
 #include "scripting/JSEngine.h"
 #include <gtest/gtest.h>
+#include <optional>
 #include <string>
 
 namespace {
@@ -76,6 +78,85 @@ TEST(IOProcessorEntries, SessionIdIsPercentEncodedIntoTheLocation) {
     const auto descriptors = IOProcessorHelper::build("a b/c#d");
 
     EXPECT_EQ(locationOf(descriptors, SCXML_ENTRY), "sce://scxml/a%20b%2Fc%23d");
+}
+
+// === The SCXML processor's address codec (docs/adr/0090, test 6) ===
+//
+// `scxmlLocation` writes the address a session publishes and the SCXML
+// processor stamps as the origin of what the session sends; a reply sent to it
+// is routed by `sessionIdFromScxmlLocation`. The two are one mapping only if a
+// session id survives the round trip, reserved characters included.
+
+TEST(ScxmlAddressCodec, ASessionIdWithReservedCharactersSurvivesTheRoundTrip) {
+    for (const std::string id : {"session-1", "a b/c#d", "parent:invoke.1", "x%2Fy", "100%"}) {
+        const std::string location = IOProcessorHelper::scxmlLocation(id);
+        EXPECT_EQ(location.rfind("sce://scxml/", 0), 0u) << location;
+        EXPECT_EQ(IOProcessorHelper::sessionIdFromScxmlLocation(location), id) << location;
+    }
+}
+
+TEST(ScxmlAddressCodec, AReservedCharacterIsPercentEncodedOnce) {
+    // `%` is itself reserved: an id that already looks encoded is encoded
+    // again, so decoding gives back the id rather than what it looked like.
+    EXPECT_EQ(IOProcessorHelper::scxmlLocation("x%2Fy"), "sce://scxml/x%252Fy");
+    EXPECT_EQ(IOProcessorHelper::sessionIdFromScxmlLocation("sce://scxml/x%252Fy"), "x%2Fy");
+}
+
+TEST(ScxmlAddressCodec, AnAddressOfAnotherProcessorNamesNoSession) {
+    EXPECT_EQ(IOProcessorHelper::sessionIdFromScxmlLocation("mesh://motor"), "");
+    EXPECT_EQ(IOProcessorHelper::sessionIdFromScxmlLocation("motor"), "");
+    EXPECT_EQ(IOProcessorHelper::sessionIdFromScxmlLocation("sce://scxml/"), "");
+    EXPECT_EQ(IOProcessorHelper::sessionIdFromScxmlLocation(""), "");
+}
+
+TEST(ScxmlAddressCodec, TheSendersPairIsTheProcessorsTypeAndItsLocation) {
+    const SCE::Core::EventOrigin origin = IOProcessorHelper::scxmlOrigin("a b");
+    EXPECT_EQ(origin.processor, SCXML_ENTRY);
+    EXPECT_EQ(origin.address, IOProcessorHelper::scxmlLocation("a b"));
+    EXPECT_FALSE(IOProcessorHelper::scxmlOriginOf("").has_value()) << "no sender has no address to publish";
+    EXPECT_EQ(IOProcessorHelper::scxmlOriginOf("a b"), std::optional<SCE::Core::EventOrigin>(origin));
+}
+
+TEST(ScxmlAddressCodec, AProcessorAliasIsReadAsItsTypeUri) {
+    EXPECT_EQ(IOProcessorHelper::canonicalProcessorType("scxml"), SCXML_ENTRY);
+    EXPECT_EQ(IOProcessorHelper::canonicalProcessorType("basichttp"), BASIC_HTTP_ENTRY);
+    EXPECT_EQ(IOProcessorHelper::canonicalProcessorType(SCXML_ENTRY), SCXML_ENTRY);
+    EXPECT_EQ(IOProcessorHelper::canonicalProcessorType("x-sce-host"), "x-sce-host");
+    EXPECT_EQ(IOProcessorHelper::canonicalProcessorType(""), "");
+}
+
+// docs/adr/0090, section 7: a format-2 origin, as a saved state or a queue
+// snapshot stores it, is read back as the pair and the sender.
+TEST(StoredOrigin, AFormat2OriginIsReadAsThePairItStoodFor) {
+    // Empty both: none.
+    const auto none = IOProcessorHelper::readStoredOrigin("", "");
+    EXPECT_FALSE(none.origin.has_value());
+    EXPECT_EQ(none.sender, "");
+    // A bare id with the SCXML type: that session's pair, the id its sender.
+    const auto bare = IOProcessorHelper::readStoredOrigin("root.work.1.kid", SCXML_ENTRY);
+    EXPECT_EQ(bare.origin, std::optional<SCE::Core::EventOrigin>(IOProcessorHelper::scxmlOrigin("root.work.1.kid")));
+    EXPECT_EQ(bare.sender, "root.work.1.kid");
+    // An SCXML location, whatever the stored type: the pair, the decoded id its sender.
+    const auto located = IOProcessorHelper::readStoredOrigin("sce://scxml/a%20b", "");
+    EXPECT_EQ(located.origin, std::optional<SCE::Core::EventOrigin>(IOProcessorHelper::scxmlOrigin("a b")));
+    EXPECT_EQ(located.sender, "a b");
+    // Anything else: the pair as stored, no sender — a host's bare address keeps its type.
+    const auto host = IOProcessorHelper::readStoredOrigin("motor", "x-sce-host");
+    EXPECT_EQ(host.origin, std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin("x-sce-host", "motor")));
+    EXPECT_EQ(host.sender, "");
+    const auto mesh = IOProcessorHelper::readStoredOrigin("mesh://motor", SCXML_ENTRY);
+    EXPECT_EQ(mesh.origin, std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin(SCXML_ENTRY, "mesh://motor")));
+    EXPECT_EQ(mesh.sender, "");
+    // A waiting send's origin names its sender, bare or located.
+    EXPECT_EQ(IOProcessorHelper::readStoredSender("fixture-root"), "fixture-root");
+    EXPECT_EQ(IOProcessorHelper::readStoredSender("sce://scxml/a%20b"), "a b");
+}
+
+TEST(StoredOrigin, AnEventIsStoredAsFormat2WritesIt) {
+    // A session's event stores its sender's id; any other stores the address.
+    EXPECT_EQ(IOProcessorHelper::storedOriginText(IOProcessorHelper::scxmlOrigin("kid"), "kid"), "kid");
+    EXPECT_EQ(IOProcessorHelper::storedOriginText(SCE::Core::EventOrigin("x-sce-host", "motor"), ""), "motor");
+    EXPECT_EQ(IOProcessorHelper::storedOriginText(std::nullopt, ""), "");
 }
 
 TEST(IOProcessorEntries, NoHttpEntryWhenNoEndpointIsDeployed) {

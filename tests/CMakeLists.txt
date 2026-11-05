@@ -1971,6 +1971,12 @@ add_executable(integration_tests
     integration/ADelayIsACss2TimeAotTest.cpp
     integration/ASelfSentEventNamesItsOriginTest.cpp
     integration/ASelfSentEventNamesItsOriginAotTest.cpp
+    integration/AnOriginIsTheAddressItsSenderPublishedTest.cpp
+    integration/AnOriginIsTheAddressItsSenderPublishedAotTest.cpp
+    integration/AnEventNoProcessorDeliveredHasNoOriginTest.cpp
+    integration/AnEventNoProcessorDeliveredHasNoOriginAotTest.cpp
+    integration/AHostNamesItsOriginInItsOwnTermsTest.cpp
+    integration/AHostNamesItsOriginInItsOwnTermsAotTest.cpp
     integration/ASendContentExprIsThePayloadTest.cpp
     integration/ASendContentExprIsThePayloadAotTest.cpp
     integration/InlineContentIsReadByItsDataModelTest.cpp
@@ -2548,6 +2554,17 @@ sce_generate_static_integration_test(a_payload_rides_on_its_own_event ${STATIC_I
 # W3C SCXML C.1: an event a session sends to itself names its origin — now
 # and after a delay — and a target that evaluates to nothing reaches no one.
 sce_generate_static_integration_test(a_self_sent_event_names_its_origin ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.10.1 + C.1 (docs/adr/0090): the origin of an event the SCXML
+# processor delivers is its sender's published location on every route, and a
+# reply to it arrives; an event no processor delivered has none; a host names
+# the origin of what it delivers in its own terms. The last two are built with
+# the host types their drivers register.
+sce_generate_static_integration_test(an_origin_is_the_address_its_sender_published ${STATIC_INTEGRATION_OUTPUT_DIR})
+sce_generate_static_integration_test(an_event_no_processor_delivered_has_no_origin ${STATIC_INTEGRATION_OUTPUT_DIR}
+    HOST_PROCESSOR x-sce-host)
+sce_generate_static_integration_test(a_host_names_its_origin_in_its_own_terms ${STATIC_INTEGRATION_OUTPUT_DIR}
+    HOST_INVOKER x-sce-host)
 
 # W3C SCXML 5.6.2: a <send>'s <content expr> is its payload as a value, and one
 # that fails sends '' and ends the block.

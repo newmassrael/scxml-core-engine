@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.10.1 (docs/adr/0090, test 2): an event no Event I/O Processor
+  delivered has no origin, so `_event.origin` and `_event.origintype` both read
+  as the empty string.
+
+  5.10.1 asks the processor that delivers an external event to set the two
+  fields to an address it can answer at. An event the host hands the machine
+  itself, and a reply the host's own processor answers a `<send>` with when it
+  names no party, were delivered by no such processor: no engine may invent an
+  origin for them, neither the receiving session's own address nor the SCXML
+  processor's type by default.
+
+  `waiting`  the host raises `posted` on the machine, naming no origin.
+  `asking`   the document sends `host.ask` to the host's processor
+             `x-sce-host`, which answers `host.reply` naming no origin.
+
+    postedBlank 1, replyBlank 1, and the run ends in `done`.
+
+  The driver registers a processor for `x-sce-host`; the build is told the
+  machine's host serves that type.
+
+  This fixture is the canonical source for every channel — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="waiting"
+       name="an_event_no_processor_delivered_has_no_origin">
+  <datamodel>
+    <data id="postedBlank" expr="0"/>
+    <data id="replyBlank" expr="0"/>
+  </datamodel>
+
+  <state id="waiting">
+    <transition event="posted" target="asking">
+      <if cond="_event.origin === '' &amp;&amp; _event.origintype === ''">
+        <assign location="postedBlank" expr="1"/>
+      </if>
+    </transition>
+  </state>
+
+  <state id="asking">
+    <onentry>
+      <send type="x-sce-host" event="host.ask"/>
+    </onentry>
+    <transition event="host.reply" target="done">
+      <if cond="_event.origin === '' &amp;&amp; _event.origintype === ''">
+        <assign location="replyBlank" expr="1"/>
+      </if>
+    </transition>
+  </state>
+
+  <final id="done"/>
+</scxml>

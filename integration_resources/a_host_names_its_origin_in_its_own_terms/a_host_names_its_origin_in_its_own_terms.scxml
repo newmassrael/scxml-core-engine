@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.10.1 (docs/adr/0090, test 3): a host names the origin of an
+  event it delivers in its own terms, and the document reads it as named.
+
+  A host that runs an `<invoke>` for a party it can name ends the invocation
+  with that party's address and its own processor type: the pair the
+  document would answer it with. The address here has no scheme (`motor`), so
+  it is no SCXML session's location, and the type is the host's (`x-sce-host`),
+  never the SCXML processor's filled in by default. An engine that read the
+  address by its shape would wrap it as an SCXML location; one that defaulted
+  the type would report the SCXML processor.
+
+  `running`  the host runs `job`, of type `x-sce-host`, and completes it
+             naming the origin {x-sce-host, motor}.
+
+    hostNamed 1, and the run ends in `done`.
+
+  The driver registers an invoker for `x-sce-host`; the build is told the
+  machine's host runs that type.
+
+  This fixture is the canonical source for every channel — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="running"
+       name="a_host_names_its_origin_in_its_own_terms">
+  <datamodel>
+    <data id="hostNamed" expr="0"/>
+  </datamodel>
+
+  <state id="running">
+    <invoke type="x-sce-host" id="job" src="motor://job"/>
+    <transition event="done.invoke.job" target="done">
+      <if cond="_event.origin === 'motor' &amp;&amp; _event.origintype === 'x-sce-host'">
+        <assign location="hostNamed" expr="1"/>
+      </if>
+    </transition>
+  </state>
+
+  <final id="done"/>
+</scxml>
