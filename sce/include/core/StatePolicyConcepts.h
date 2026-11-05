@@ -183,10 +183,11 @@ template <typename P>
 struct HasSessionIdTextTrait<P, std::void_t<decltype(std::declval<const P &>().sessionIdText())>> : std::true_type {};
 
 /// The policy runs child sessions that a host's invokers serve (docs/adr/0045): it
-/// hands the tree's registry to each, and finds the session a host-run invocation's
-/// ending is for among them. `Ending` is `HostInvokeEnding`, a parameter so this header
-/// need not include the one that declares it. Emitted beside `tickChildren`, so a policy
-/// that ticks children answers it too, and asked only through this trait.
+/// hands the tree to each (`joinTreeInChildren`), and finds the session a direct
+/// owner-thread ending of a host-run invocation is for among them. `Ending` is
+/// `HostInvokeEnding`, a parameter so this header need not include the one that
+/// declares it. Emitted beside `tickChildren`, so a policy that ticks children
+/// answers it too, and asked only through this trait.
 template <typename P, typename Ending, typename = void> struct HasHostInvokerChildrenTrait : std::false_type {};
 
 template <typename P, typename Ending>

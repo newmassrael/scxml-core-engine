@@ -80,6 +80,46 @@ inline constexpr std::size_t ENGINE_INBOX_SEGMENT = 64;
 inline constexpr std::size_t ENGINE_INBOX_PARTICIPANTS = 64;
 
 /**
+ * @brief The waker a post calls: the one a host installed, shared by the inbox of
+ *        every session of one tree
+ *
+ * A tree has one owner, so it has one waker (docs/adr/0084, D2 as amended at step
+ * 10): a post to a child session's inbox wakes the thread that drives the root,
+ * through what the host installed on the root. Each inbox is made with a waker of
+ * its own, and a session started in a tree is handed the tree's
+ * (`EngineInboxState::wakeThrough`). Installing and calling take a short lock of
+ * its own, so both are safe from any thread.
+ */
+class InboxWaker {
+public:
+    /// Install @p waker; an empty one removes what was installed.
+    void install(std::function<void()> waker) {
+        std::shared_ptr<const std::function<void()>> installed;
+        if (waker) {
+            installed = std::make_shared<const std::function<void()>>(std::move(waker));
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        waker_ = std::move(installed);
+    }
+
+    /// Call what is installed, on the calling thread, outside the lock.
+    void wake() const {
+        std::shared_ptr<const std::function<void()>> waker;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            waker = waker_;
+        }
+        if (waker) {
+            (*waker)();
+        }
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::shared_ptr<const std::function<void()>> waker_;
+};
+
+/**
  * @brief What an engine and every handle to its inbox share
  *
  * The queue, the gate that opens and closes it, the waker the host installed and
@@ -153,16 +193,34 @@ public:
      *        inbox took; an empty one removes it
      *
      * How a host that drives the engine itself (`tick`, `step`) learns there is
-     * something to apply. Installing and reading it takes a short lock of its own;
-     * the queue takes none.
+     * something to apply. It is installed in the waker this inbox calls, which is
+     * the tree's once the engine's session was started in one (`wakeThrough`), so
+     * a post to any session of the tree calls it. Installing and reading it takes a
+     * short lock of its own; the queue takes none.
      */
     void wakeWith(std::function<void()> waker) {
-        std::shared_ptr<const std::function<void()>> installed;
-        if (waker) {
-            installed = std::make_shared<const std::function<void()>>(std::move(waker));
+        currentWaker()->install(std::move(waker));
+    }
+
+    /// The waker a post to this inbox calls, to hand to a session started in the
+    /// same tree.
+    std::shared_ptr<InboxWaker> waker() const {
+        return currentWaker();
+    }
+
+    /**
+     * @brief Call @p waker after each post this inbox takes from now on: the tree's,
+     *        handed to a session started in it (docs/adr/0084, D2)
+     *
+     * Made by the owner before the session is entered in the tree's directory, so
+     * before any thread can post to it through the tree. An empty one is ignored.
+     */
+    void wakeThrough(std::shared_ptr<InboxWaker> waker) {
+        if (!waker) {
+            return;
         }
         std::lock_guard<std::mutex> lock(wakerMutex_);
-        waker_ = std::move(installed);
+        waker_ = std::move(waker);
     }
 
     /**
@@ -327,15 +385,13 @@ private:
         }
     }
 
+    std::shared_ptr<InboxWaker> currentWaker() const {
+        std::lock_guard<std::mutex> lock(wakerMutex_);
+        return waker_;
+    }
+
     void wake() {
-        std::shared_ptr<const std::function<void()>> waker;
-        {
-            std::lock_guard<std::mutex> lock(wakerMutex_);
-            waker = waker_;
-        }
-        if (waker) {
-            (*waker)();
-        }
+        currentWaker()->wake();
     }
 
     /// Declared before `ring_`'s queue can need it, and outlives it: the destructor
@@ -347,8 +403,9 @@ private:
     /// Posts taken and not yet applied.
     std::atomic<std::size_t> held_{0};
     std::atomic<std::uint64_t> refused_{0};
-    std::mutex wakerMutex_;
-    std::shared_ptr<const std::function<void()>> waker_;
+    /// Guards which waker `waker_` is; the waker guards what is installed in it.
+    mutable std::mutex wakerMutex_;
+    std::shared_ptr<InboxWaker> waker_ = std::make_shared<InboxWaker>();
     std::atomic<std::thread::id> owner_{std::thread::id()};
 };
 

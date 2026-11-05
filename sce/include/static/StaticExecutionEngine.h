@@ -55,6 +55,9 @@
 // about the event rather than about that interface.
 #include "core/PayloadReading.h"
 #include "core/StatePolicyConcepts.h"
+// docs/adr/0084, D2 as amended at step 10: the tree's directory of sessions, which
+// hands an input that names a session to that session's inbox when it is posted.
+#include "core/TreeSessions.h"
 #include "events/EventDescriptor.h"
 #include <algorithm>
 #include <any>
@@ -429,12 +432,13 @@ public:
     };
 
     /// The end of a host-run invocation's start. An empty `sessionId` ends one of
-    /// this machine, applied with `completeHostInvoke` or `failHostInvoke`; a
-    /// session id ends one of that session of the tree, applied with
-    /// `endHostInvokeIn`. The token check those make is made when the input is
-    /// applied, so an ending posted for a start that was cancelled or started
-    /// again by then raises nothing, as a direct one would (see
-    /// `completeHostInvoke`).
+    /// this machine; a session id ends one of that session of the tree, this
+    /// machine's own included, and the handle hands it to that session's inbox
+    /// when it is posted (`Inbox::post`). The session it reached applies it with
+    /// `completeHostInvoke` or `failHostInvoke`. The token check those make is
+    /// made when the input is applied, so an ending posted for a start that was
+    /// cancelled or started again by then raises nothing, as a direct one would
+    /// (see `completeHostInvoke`).
     struct InboxHostInvokeEnding {
         std::string sessionId;
         ::SCE::HostInvokeEnding ending;
@@ -480,8 +484,50 @@ public:
         std::variant<InboxExternalEvent, InboxExternalEventByName, InboxHostInvokeEnding, InboxChildSessionStarted,
                      InboxChildSessionEvent, InboxChildSessionDone, InboxPeerLost>;
 
-    /// The handle another thread posts to this engine through (`inbox()`).
-    using Inbox = ::SCE::Core::EngineInbox<InboxInput>;
+    /**
+     * @brief The handle another thread posts to this engine through (`inbox()`)
+     *
+     * Copyable and safe from any thread, as is every copy of it, and valid after
+     * the engine is gone (its posts are refused then). The address of what is
+     * posted is resolved when it is posted (ARCHITECTURE.md "Engine Threading";
+     * docs/adr/0084, D2 as amended at step 10): an ending that names a session goes
+     * to that session's own inbox, found in the tree's directory, and every other
+     * input to this engine's.
+     */
+    class Inbox {
+    public:
+        /**
+         * @brief Post @p input; whether it was taken
+         *
+         * An `InboxHostInvokeEnding` that names a session is posted to that
+         * session's inbox, and refused, answering false, when the tree holds no
+         * session of that id: it never started, or it has ended. That refusal
+         * reached no inbox, so no inbox counts it (`refusedInboxPosts`).
+         */
+        bool post(InboxInput input) const {
+            if (const auto *ended = std::get_if<InboxHostInvokeEnding>(&input);
+                ended != nullptr && !ended->sessionId.empty()) {
+                return sessions_->endHostInvokeIn(ended->sessionId, ended->ending) ==
+                       ::SCE::HostInvokeEndOutcome::Delivered;
+            }
+            return own_.post(std::move(input));
+        }
+
+        /// Install the waker a post to any session of the tree calls; see
+        /// `EngineInboxState::wakeWith`.
+        void wakeWith(std::function<void()> waker) const {
+            own_.wakeWith(std::move(waker));
+        }
+
+    private:
+        friend StaticExecutionEngine;
+
+        Inbox(::SCE::Core::EngineInbox<InboxInput> own, std::shared_ptr<::SCE::Core::TreeSessions> sessions) noexcept
+            : own_(std::move(own)), sessions_(std::move(sessions)) {}
+
+        ::SCE::Core::EngineInbox<InboxInput> own_;
+        std::shared_ptr<::SCE::Core::TreeSessions> sessions_;
+    };
 
 private:
     // ── Appendix D over the generated policy ─────────────────────────────
@@ -894,6 +940,13 @@ private:
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
+    // docs/adr/0084, D2 as amended at step 10: the directory of the tree's sessions,
+    // shared as the tree's invokers are (`shareTreeWith`), and this session's entry
+    // in it, made when a run starts (`enterTree`) and removed when the run ends
+    // (`closeInbox`) or the engine goes. Declared before the inbox, so an engine
+    // that goes closes its inbox before it leaves the directory, as an ended run does.
+    std::shared_ptr<::SCE::Core::TreeSessions> treeSessions_ = std::make_shared<::SCE::Core::TreeSessions>();
+    ::SCE::Core::TreeSessions::Membership treeMembership_;
     // docs/adr/0084: what other threads posted, which the owner applies at each
     // macrostep boundary (`drainInbox`) and before it puts an event of its own on
     // the external queue (`applyHeldBeforeExternalEnqueue`), and the record of who
@@ -982,7 +1035,7 @@ private:
     // docs/adr/0045: shared by every session of the tree this machine is the root
     // of. The set of invocable types is the processor's, not a session's
     // (§scxml-6.4.1), so a parent hands this registry to each child it starts or
-    // resumes (`shareHostInvokersWith`), and an invoker registered afterwards
+    // resumes (`shareTreeWith`), and an invoker registered afterwards
     // serves the child too, since it is the tree's own registry the child holds.
     std::shared_ptr<::SCE::TreeInvokers> invokers_ = std::make_shared<::SCE::TreeInvokers>();
 
@@ -1258,6 +1311,30 @@ private:
     void closeInbox() {
         inbox_.state().close();
         drainInbox();
+        // docs/adr/0084, D2 as amended at step 10: the session has ended, so it
+        // leaves the tree's directory, after what its inbox held was applied; a post
+        // that names it from now on is refused where it is posted.
+        treeMembership_.leave();
+    }
+
+    /**
+     * @brief Enter this session in the tree's directory as its run starts, before
+     *        the run's first macrostep (docs/adr/0084, D2 as amended at step 10)
+     *
+     * From then on an ending posted for this session, through this engine's
+     * handle or any other session's of the tree, is posted to this inbox. A
+     * machine that holds no session id is named by no post and enters nothing.
+     */
+    void enterTree() {
+        const std::string sessionId = ownSessionId();
+        if (sessionId.empty()) {
+            treeMembership_.leave();
+            return;
+        }
+        treeMembership_ =
+            treeSessions_->enter(sessionId, [own = inbox_.handle()](const ::SCE::HostInvokeEnding &ending) {
+                return own.post(InboxHostInvokeEnding{std::string(), ending});
+            });
     }
 
     /// Apply one posted @p input by the operation a direct call on the owner makes.
@@ -1271,10 +1348,11 @@ private:
             return;
         }
         if (const auto *ended = std::get_if<InboxHostInvokeEnding>(&input)) {
+            // An ending in this inbox is this session's own: one that names a
+            // session was handed to that session's inbox when it was posted
+            // (`Inbox::post`).
             const ::SCE::HostInvokeEnding &ending = ended->ending;
-            if (!ended->sessionId.empty()) {
-                (void)endHostInvokeIn(ended->sessionId, ending);
-            } else if (ending.done) {
+            if (ending.done) {
                 (void)completeHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data,
                                          ending.origin, ending.originType);
             } else {
@@ -1326,16 +1404,20 @@ public:
      * or been stopped (until the next `initialize` or `enterAt`), and when the
      * heap refuses the memory for it. It is unbounded otherwise (docs/adr/0084,
      * D2), and never refuses a post for contention. A post taken before the
-     * first run is applied by that run. `wakeWith` installs what each post
-     * calls, so a host that drives the engine itself knows when to drive it.
+     * first run is applied by that run. An ending that names a session of the
+     * tree is posted to that session's inbox instead, and refused when the tree
+     * holds no such session (`Inbox::post`). `wakeWith` installs what each post
+     * to any session of the tree calls, so a host that drives the engine itself
+     * knows when to drive it.
      */
     Inbox inbox() const {
-        return inbox_.handle();
+        return Inbox(inbox_.handle(), treeSessions_);
     }
 
     /// How many posts this engine's inbox refused: closed, or out of memory. A
     /// post that returned `false` to a caller who could not act on it is still
-    /// counted here.
+    /// counted here, by the inbox it was posted to; one that named a session the
+    /// tree does not hold reached no inbox and is not.
     uint64_t refusedInboxPosts() const {
         return inbox_.state().refusedPosts();
     }
@@ -3000,10 +3082,13 @@ public:
         // `step`, `tick` or `processEvent`). A run that ended or was stopped
         // closed the inbox; this one takes posts again, and what was posted
         // before the first run is applied by it, at its first boundary or
-        // before the first event it puts on the external queue.
+        // before the first event it puts on the external queue. The session enters
+        // its tree's directory before its first macrostep, so an ending posted for
+        // it from now on reaches its inbox.
         requireOwner("initialize");
         inbox_.state().releaseOwner();
         inbox_.state().open();
+        enterTree();
 
         // §scxml-3.13: entering the initial configuration is one turn, and the
         // `<onentry>` handlers it runs arm their `<send delay>`s against one
@@ -3118,10 +3203,12 @@ public:
         }
 
         // The run resumed here is entered as `initialize` enters one: its owner is
-        // the thread that drives it next, and its inbox takes posts.
+        // the thread that drives it next, its inbox takes posts, and it enters its
+        // tree's directory under the id it carries on under (a restore has bound it).
         requireOwner("enterAt");
         inbox_.state().releaseOwner();
         inbox_.state().open();
+        enterTree();
 
         // §scxml-5.3: the datamodel is declared before anything can read it.
         // This is not a state entry action — `<datamodel>` holds `<data>`, not
@@ -3820,28 +3907,38 @@ public:
     }
 
     /**
-     * @brief Hand this machine's invokers to @p child, a session it is starting or
-     *        resuming, before the child runs (docs/adr/0045)
+     * @brief Hand this machine's tree to @p child, a session it is starting or
+     *        resuming, before the child runs
      *
-     * The types a host registers through `registerInvoker` serve every session of the
-     * tree. An invoker registered afterwards serves the child too, since it is the
-     * tree's own registry the child holds.
+     * What every session of the tree shares (`Core::SessionTree`): the invokers a host
+     * registers through `registerInvoker`, which serve every session of the tree, one
+     * registered afterwards included, since it is the tree's own registry the child
+     * holds (docs/adr/0045); the directory of the tree's sessions, which the child
+     * enters when its run starts; and the waker the host installed on the root, which a
+     * post to the child's inbox calls, since the tree has one owner (docs/adr/0084, D2
+     * as amended at step 10).
      */
-    template <typename ChildEngine> void shareHostInvokersWith(ChildEngine &child) {
-        child.adoptHostInvokers(invokers_);
+    template <typename ChildEngine> void shareTreeWith(ChildEngine &child) {
+        child.joinTree(::SCE::Core::SessionTree{invokers_, treeSessions_, inbox_.state().waker()});
     }
 
     /**
-     * @brief Be served by @p invokers, the tree's, and hand them on to every child this
-     *        machine holds now
+     * @brief Be a session of @p tree, and hand it on to every child this machine holds
+     *        now
      *
      * A child a restore resumed holds children of its own, resumed with it before its
-     * parent could hand it anything.
+     * parent could hand it anything. A session whose run has started already moves its
+     * entry into the tree's directory.
      */
-    void adoptHostInvokers(std::shared_ptr<::SCE::TreeInvokers> invokers) {
-        invokers_ = std::move(invokers);
+    void joinTree(const ::SCE::Core::SessionTree &tree) {
+        invokers_ = tree.invokers;
+        treeSessions_ = tree.sessions;
+        inbox_.state().wakeThrough(tree.waker);
+        if (isRunning_) {
+            enterTree();
+        }
         if constexpr (SCE::Core::HasHostInvokerChildrenTrait<StatePolicy, ::SCE::HostInvokeEnding>::value) {
-            policy_.adoptHostInvokersInChildren(invokers_);
+            policy_.joinTreeInChildren(tree);
         }
     }
 
@@ -3874,9 +3971,12 @@ public:
      * The session's queue takes `done.invoke` or `error.invoke` as `completeHostInvoke`
      * and `failHostInvoke` raise them; a child takes it when its parent next drives it.
      *
-     * An owner-thread operation: a host whose invocation ends on a thread of its own
-     * posts an `InboxHostInvokeEnding` naming the session to `inbox()` instead, and
-     * the owner applies it with this call when it next drains the inbox (`drainInbox`).
+     * An owner-thread operation, made between macrosteps: it reaches the session it
+     * names through the children each session holds, and that session raises the
+     * ending's event through its own external enqueue. A host whose invocation ends on a
+     * thread of its own posts an `InboxHostInvokeEnding` naming the session to `inbox()`
+     * instead, which hands it to that session's inbox when it is posted (`Inbox::post`;
+     * ARCHITECTURE.md "Engine Threading").
      */
     ::SCE::HostInvokeEndOutcome endHostInvokeIn(const std::string &sessionId, const ::SCE::HostInvokeEnding &ending) {
         requireOwner("endHostInvokeIn");

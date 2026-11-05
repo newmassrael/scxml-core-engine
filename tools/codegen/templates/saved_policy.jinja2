@@ -41,8 +41,9 @@
 {{ invoke_start.child_completion_callback(inv, slot, model, "        ") }}
 
         // docs/adr/0045: the tree's host invokers, handed on before the child's re-armed
-        // invocations start at its first drive.
-        engine.shareHostInvokersWith(*{{ slot }});
+        // invocations start at its first drive, with the tree's directory the restore
+        // enters the child in and the tree's waker (docs/adr/0084, D2).
+        engine.shareTreeWith(*{{ slot }});
 
         {{ slot }}->restoreAt(*child.session, wallNowMs);
 
