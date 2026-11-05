@@ -561,6 +561,42 @@ bytes on the three probe codecs against lists of 136 and 132). There is no judge
   `scripts/codec_frame_probe.sh` (`backends/rust/probes/nostd-codec-frame`), which refuses a frame on the decode's
   chain that is not shorter than one inline list of its codec.
 
+*Note of 2026-11-05 on a lent reply decode and an encode.* A consumer measured its thumbv7em kit once the amendment
+above had landed: its worst chain of direct calls fell from 4,280 to 2,960 bytes, and the kit's stack peak from 4,472 to
+3,592, while the static bound of its stack fell only 120 bytes, from 4,816 to 4,696. The bound's worst path joins a
+lent reply decode, whose own frame is about 1,472 bytes, with a generic encode of about 1,488, through a call by
+register. The probe read neither: it decoded the three shapes of a group, at 296, 296 and 136 bytes of worst-case
+stack.
+
+- **What a lent decode builds outside where it lives.** It builds lists, bodies and chains in place; the one value
+  it makes elsewhere is a default it installs: a variant's arm holding its body's default
+  (`tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2`, each arm and the default arm), a gated
+  body's `Some` (the embed statement, `{_out}.{id}.insert({body}::default())`), a chain's fewest entries
+  (`insert(Default::default())` before its `refill`), and the entry a chain reads each entry into. Rust builds the
+  right side of an assignment in a temporary before it drops the old value, and a default called out of line returns
+  its value through a stack slot of the caller's frame, the whole value with every inline list at its capacity. A
+  reply's arm is a body that holds a chain and a variant of its own, so that slot is the size of a reply. A group's
+  arms are built by closures the chain's door takes and inlines, which is why the three shapes measured below a list.
+- **What changes.** The default of `{Codec}In<S>` and of `{Codec}VariantIn<S>`, `Bounded`'s default and an inline
+  list's fewest entries are `#[inline(always)]`. Built in line, a default is the stores of its scalars and its lists'
+  lengths, and the slot goes. A decode is otherwise unchanged: the same bytes, refused in the same order, with
+  `NeedMoreBytes` before `CapacityExceeded`. C11 decodes an arm through a pointer into it and builds nothing to
+  install, so it has no such slot and is unchanged.
+- **The encode.** It reads its value by reference through its source and writes each field into the sink
+  (`{Codec}Wire::write_source_in`); the only arrays on its path are the eight bytes or fewer of a fixed-width integer
+  or a VLE that `SliceSink` stores in place. Nothing on it grows with the codec, so nothing in it changes; the probe
+  now holds that.
+- **The probe.** It decodes a response (`codec_zenoh_response`, a variant whose arm is a reply) at a deployment of its
+  own, each extension chain held at 16 entries, into a value the caller holds, and encodes that value into a
+  `SliceSink`; it refuses a frame on either chain that is not shorter than one of the response's lists, which a reply's
+  arm holds one of.
+- **What it cannot see.** The value a lent decode fills and the value an encode reads live where the caller puts
+  them. A function that holds a decoded reply on its own stack to lend it holds the whole value, and so does one that
+  builds a message on its stack to encode it. Where the probe's two reply frames are below a list, the two frames of
+  about 1.5 KB are those values, and the remedy is the caller's: decode into a value that does not live on that stack,
+  or into a view, whose lists are spans of the frame, and encode from a source over what the caller already holds
+  (`{Codec}Parts`, or its own `{Codec}Source`, docs/adr/0058) rather than from a value built to be encoded.
+
 ## Alternatives
 
 - **The view decode does not check, and the owned projection does.** This is the reading the consumer offered as the
