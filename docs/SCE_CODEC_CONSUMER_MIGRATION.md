@@ -1193,6 +1193,18 @@ above apply to each of them too.
 - A printed codec that takes flag inputs keeps them as parameters of `encode`, `encode_to_vec` and `decode`, as
   before.
 
+## A printed C++ codec's encode is not handed an input its value says (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose flag
+inputs the value says by the field gated on them or by the body that forwards them (5 more codecs of the
+resources, 69 in all, the wire expression and the declarations that hold it among them). The sections above apply.
+
+- `encode`, `encode_to_vec` and `Wire::encode_source` of such a codec drop the input the value says:
+  `wireexpr.encode_to_vec()` where it was `wireexpr.encode_to_vec(n)`. The value's suffix being present is what sets
+  `N`. `decode` still takes the input, since the frame's carrier says it.
+- `<Codec namespace>::input_<name>(value)` reads the input a value (or any source) says, as a `std::uint8_t`: use it
+  where you set the parent's flag by hand, or drop that code where the parent is printed and derives it.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

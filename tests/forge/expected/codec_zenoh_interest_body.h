@@ -181,7 +181,7 @@ struct CodecZenohInterestBody {
         // dedicated helpers; everything else uses `present_if_encode_block`.
         if (auto _e = w.write_u8(header); _e) return _e;
         if (this->keyexpr.has_value()) {
-            if (auto _e = this->keyexpr->encode(w, static_cast<std::uint8_t>((this->header >> 5) & 0x1)); _e) return _e;
+            if (auto _e = this->keyexpr->encode(w); _e) return _e;
         }
         return std::nullopt;
     }

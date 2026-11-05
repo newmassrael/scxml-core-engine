@@ -12,15 +12,111 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_wireexpr.h"
 
 namespace SCE::Generated::CodecZenohDeclToken {
 
+/// The elements a value of `CodecZenohDeclToken` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_id {
+void id() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.id())) -> decltype(s.id()) {
+    return s.id();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(id(s))) -> decltype(id(s)) {
+    return id(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_id
+/// The `id` element of a source.
+inline constexpr detail_id::Read id{};
+namespace detail_wireexpr {
+void wireexpr() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.wireexpr())) -> decltype(s.wireexpr()) {
+    return s.wireexpr();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(wireexpr(s))) -> decltype(wireexpr(s)) {
+    return wireexpr(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_wireexpr
+/// The `wireexpr` element of a source.
+inline constexpr detail_wireexpr::Read wireexpr{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecZenohDeclToken`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::id(std::declval<const S&>())), decltype(source::wireexpr(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::id(std::declval<const S&>())), uint32_t>, ::SCE::Generated::CodecZenohWireexpr::is_source<std::decay_t<decltype(source::wireexpr(std::declval<const S&>()))>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint32_t>(source::id(std::declval<const S&>()))) && noexcept(source::wireexpr(std::declval<const S&>())) && ::SCE::Generated::CodecZenohWireexpr::is_nothrow_source<std::decay_t<decltype(source::wireexpr(std::declval<const S&>()))>>::value> {};
+
+/// The encode of `CodecZenohDeclToken` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecZenohDeclToken: id, wireexpr");
+        const auto& _r_wireexpr = source::wireexpr(src);
+        const std::uint8_t n = ::SCE::Generated::CodecZenohWireexpr::input_n(_r_wireexpr);
+        (void)n;
+        if (auto _e = w.write_vle_u32(static_cast<std::uint32_t>(source::id(src))); _e) return _e;
+        if (auto _e = ::SCE::Generated::CodecZenohWireexpr::Wire::encode_source(_r_wireexpr, w); _e) return _e;
+        return std::nullopt;
+    }
+};
+
+/// The flag input `N` a source of `CodecZenohDeclToken` says, which its encode is not
+/// handed (docs/adr/0065 §6 R4a).
+template <class S>
+[[nodiscard]] std::uint8_t input_n(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohDeclToken");
+    return ::SCE::Generated::CodecZenohWireexpr::input_n(source::wireexpr(src));
+}
+
 struct CodecZenohDeclToken {
-    uint32_t id{};
-    ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr wireexpr{};
+    CodecZenohDeclToken() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecZenohDeclToken(uint32_t id, ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr wireexpr)
+        : id_(id), wireexpr_(std::move(wireexpr)) {}
+    /// The `id` element.
+    [[nodiscard]] constexpr uint32_t id() const noexcept { return id_; }
+    /// The `wireexpr` element, the body it holds.
+    [[nodiscard]] const ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr& wireexpr() const noexcept { return wireexpr_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -50,10 +146,11 @@ struct CodecZenohDeclToken {
         auto _emb_wireexpr = ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr::decode(cursor, n);
         if (!_emb_wireexpr.has_value()) return std::nullopt;
         auto wireexpr = std::move(*_emb_wireexpr);
-        return CodecZenohDeclToken{
+        CodecZenohDeclToken _decoded{
             /*id=*/id,
-            /*wireexpr=*/wireexpr,
+            /*wireexpr=*/std::move(wireexpr),
         };
+        return _decoded;
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
@@ -66,19 +163,10 @@ struct CodecZenohDeclToken {
     /// `CodecError::BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
-    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w, std::uint8_t n) const noexcept {
-        (void)n;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_vle_u32(static_cast<std::uint32_t>(id)); _e) return _e;
-        if (auto _e = wireexpr.encode(w, n); _e) return _e;
-        return std::nullopt;
+    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -86,13 +174,17 @@ struct CodecZenohDeclToken {
     /// then delegates to `encode` over a `VectorSink`. Returns the
     /// freshly-encoded byte vector. Callers targeting zero-alloc hot
     /// paths should call `encode` directly against a caller-owned sink.
-    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec(std::uint8_t n) const {
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        (void)encode(_sce_sink, n);
+        (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint32_t id_{};
+    ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr wireexpr_{};
 };
 
 }  // namespace SCE::Generated::CodecZenohDeclToken

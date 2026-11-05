@@ -425,11 +425,11 @@ struct {{ struct_name }} {
     /// `CodecError::BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
-    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w{{ params_after_first_arg }}) const noexcept {
+    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w{{ encode_params_after_first_arg }}) const noexcept {
 {% if cpp_source %}
         // The encode over any source of the codec, this value one of them,
         // handed the inputs the caller hands this encode.
-        return Wire::encode_source(*this, w{{ params_first_arg_with_comma }});
+        return Wire::encode_source(*this, w{{ encode_args_with_comma }});
 {% else %}
 {% if has_parent_flags %}
         (void)parent_flags;
@@ -563,13 +563,13 @@ struct {{ struct_name }} {
     /// `CodecError::TooManyElements`). Callers that need the reason, and
     /// zero-alloc hot paths, call `encode` directly against a caller-owned
     /// sink.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec({{ params_first_arg }}) const {
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec({{ encode_params_first_arg }}) const {
         std::vector<std::uint8_t> _sce_v;
 {% if max_bytes_fit %}
         _sce_v.reserve(MAX_ENCODED_BYTES);
 {% endif %}
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        if (encode(_sce_sink{{ params_first_arg_with_comma }})) {
+        if (encode(_sce_sink{{ encode_args_with_comma }})) {
             return std::nullopt;
         }
         return _sce_v;
@@ -586,13 +586,13 @@ struct {{ struct_name }} {
 {% endif %}
     /// freshly-encoded byte vector. Callers targeting zero-alloc hot
     /// paths should call `encode` directly against a caller-owned sink.
-    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec({{ params_first_arg }}) const {
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec({{ encode_params_first_arg }}) const {
         std::vector<std::uint8_t> _sce_v;
 {% if max_bytes_fit %}
         _sce_v.reserve(MAX_ENCODED_BYTES);
 {% endif %}
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        (void)encode(_sce_sink{{ params_first_arg_with_comma }});
+        (void)encode(_sce_sink{{ encode_args_with_comma }});
         return _sce_v;
     }
 {% endif %}

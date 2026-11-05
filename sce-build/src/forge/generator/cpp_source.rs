@@ -13,7 +13,7 @@
 //! does not print yet, and such a codec keeps the template's encode whole.
 
 use super::*;
-use crate::forge::codec_roles::ElementId;
+use crate::forge::codec_roles::{ElementId, InputSource};
 use crate::forge::encode_plan::{
     Absent, Bound, Clause, CodecPlan, Derive, EncodePlan, Guard, HandedFrom, Measured, Narrow,
     Number, NumberInto, Offset, Presence, Value, Write,
@@ -103,10 +103,41 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             })
             .map(|field| format!("`{}`, which no element presents", field.id)),
     );
-    // An input the caller hands the encode is a parameter of it; one the value
-    // says (docs/adr/0065 §6 R4a) is not yet.
-    if !plan.said.is_empty() {
-        forms.push("a flag input the value says".to_string());
+    // An input the caller hands the encode is a parameter of it. One the value
+    // says (docs/adr/0065 §6 R4a) is read off it: off the field gated on it
+    // alone, or off the body always there that says it in every value; one a
+    // group, a variant or a list says is not yet.
+    for said in &plan.said {
+        let name = &said.input.name;
+        match &plan.roles.inputs[name] {
+            InputSource::Gate { .. } => {}
+            InputSource::Forward { partly: false, .. } => {}
+            InputSource::Forward { partly: true, .. } => forms.push(format!(
+                "`{name}`, a flag input a body says in some of its values only"
+            )),
+            _ => forms.push(format!(
+                "`{name}`, a flag input a group, a variant or a list says"
+            )),
+        }
+    }
+    // A body's said input is read through the body's codec, which says it in
+    // every value; one it says in some values only answers nothing at times.
+    for derived in &plan.derivations {
+        if let Derive::Number(number) = &derived.by {
+            for measure in &number.measures {
+                if let Measured::Says { codec, input, .. } = &measure.of {
+                    let partly = imports.iter().any(|import| {
+                        import.alias == *codec && import.codec_partly_says_inputs.contains(input)
+                    });
+                    if partly {
+                        forms.push(format!(
+                            "`{}`, an input a body says in some of its values only",
+                            derived.element
+                        ));
+                    }
+                }
+            }
+        }
     }
     if !plan.gate_checks.is_empty() || !plan.input_checks.is_empty() || !plan.totality.is_total() {
         forms.push("an encode that can refuse".to_string());
@@ -282,6 +313,8 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
                 "`{element}`, the encoded length of a body that can refuse"
             ))
         }
+        // The input a body says, read through the body's codec.
+        Measured::Says { .. } if !measure.gated => {}
         _ => return Some(format!("`{element}`, a count")),
     }
     match (element, &number.into) {
@@ -338,6 +371,61 @@ pub(super) struct CppSource {
 /// The name the value's class holds the element `id` under.
 pub(super) fn member(id: &str) -> String {
     format!("{id}_")
+}
+
+/// Where an input the value says is read: in the encode, off the elements it
+/// read once (`_e_<field>`, `_r_<body>`), or in the input's own function a
+/// parent calls, off the source it is handed.
+#[derive(Clone, Copy)]
+enum Read {
+    Encode,
+    Source,
+}
+
+/// The `std::uint8_t` the input `input` that the value says holds
+/// (docs/adr/0065 §6 R4a): set exactly when the field gated on it alone is
+/// present (absent, for a field gated on its clear state), or what the body
+/// that forwards it says, read through that body's codec. [`unlowered`] refuses
+/// every other way a value says one.
+fn said_input(plan: &EncodePlan<'_>, elements: &[Presented<'_>], input: &str, at: Read) -> String {
+    let element = |id: &str| {
+        elements
+            .iter()
+            .find(|e| e.field.id == id)
+            .expect("an input the value says is said by an element it presents")
+    };
+    match &plan.roles.inputs[input] {
+        InputSource::Gate { field, when_clear } => {
+            let e = element(field);
+            let present = match at {
+                Read::Encode => format!("_e_{}.has_value()", e.name),
+                Read::Source => format!(
+                    "static_cast<{}>(source::{}(src)).has_value()",
+                    e.presented(),
+                    e.name
+                ),
+            };
+            let (set, clear) = if *when_clear { (0, 1) } else { (1, 0) };
+            format!("static_cast<std::uint8_t>({present} ? {set} : {clear})")
+        }
+        InputSource::Forward { embed, input, .. } => {
+            let e = element(embed);
+            let held = e
+                .body
+                .as_ref()
+                .expect("an input forwarded from a body is said by a body");
+            let body = match at {
+                Read::Encode => format!("_r_{}", e.name),
+                Read::Source => format!("source::{}(src)", e.name),
+            };
+            format!(
+                "{}::input_{}({body})",
+                held.namespace,
+                filters::to_snake_case(input.clone())
+            )
+        }
+        _ => unreachable!("`unlowered` refuses an input said by a group, a variant or a list"),
+    }
 }
 
 /// A bit-range of a carrier the encode derives, folded into the carrier's
@@ -644,6 +732,16 @@ pub(super) fn render(
     }
     let element = |f: &CodecField| elements.iter().find(|e| e.field.id == f.id);
     let optional = |f: &CodecField| element(f).is_some_and(|e| e.optional);
+    // Each input the value says (docs/adr/0065 §6 R4a), read off what it holds
+    // under the name a gate reads it by, as [`said_input`] reads it for a
+    // parent.
+    for said in &plan.said {
+        let name = input_name(&said.input.name);
+        before.push_str(&format!(
+            "        const std::uint8_t {name} = {};\n        (void){name};\n",
+            said_input(plan, &elements, &said.input.name, Read::Encode)
+        ));
+    }
 
     // What the encode derives (docs/adr/0081 §3): a number held whole in a
     // field, as the local `_d_<field>`, and the flags of a carrier, folded into
@@ -677,8 +775,42 @@ pub(super) fn render(
                 let [measure] = number.measures.as_slice() else {
                     unreachable!("`unlowered` refuses a number of more than one measure");
                 };
-                let (bytes, offset) = match &measure.of {
-                    Measured::Bytes { field, offset } => (*field, offset),
+                let (size, present) = match &measure.of {
+                    Measured::Bytes {
+                        field: bytes,
+                        offset,
+                    } => {
+                        let name = l.codec_field_id(&bytes.id);
+                        let arith = match offset {
+                            Offset::None => String::new(),
+                            Offset::More { by } => format!(" + {by}u"),
+                            Offset::Less { by, .. } => format!(" - {by}u"),
+                        };
+                        if measure.gated {
+                            (
+                                format!("_e_{name}->size(){arith}"),
+                                Some(format!("_e_{name}.has_value()")),
+                            )
+                        } else {
+                            (format!("_e_{name}.size(){arith}"), None)
+                        }
+                    }
+                    // The input a body always there says, read off the source
+                    // the value presents it by (docs/adr/0065 §6 R4a).
+                    Measured::Says { body, input, .. } => {
+                        let held = element(body)
+                            .and_then(|e| e.body.as_ref())
+                            .expect("a body that says an input is a body the value presents");
+                        (
+                            format!(
+                                "{}::input_{}(_r_{})",
+                                held.namespace,
+                                input_name(input),
+                                l.codec_field_id(&body.id)
+                            ),
+                            None,
+                        )
+                    }
                     // Counted below, once the carriers its body may be handed
                     // are as the encode writes them.
                     Measured::Encoded { .. } => {
@@ -686,20 +818,6 @@ pub(super) fn render(
                         continue;
                     }
                     _ => unreachable!("`unlowered` refuses a count"),
-                };
-                let name = l.codec_field_id(&bytes.id);
-                let arith = match offset {
-                    Offset::None => String::new(),
-                    Offset::More { by } => format!(" + {by}u"),
-                    Offset::Less { by, .. } => format!(" - {by}u"),
-                };
-                let (size, present) = if measure.gated {
-                    (
-                        format!("_e_{name}->size(){arith}"),
-                        Some(format!("_e_{name}.has_value()")),
-                    )
-                } else {
-                    (format!("_e_{name}.size(){arith}"), None)
                 };
                 match (element_id, &number.into) {
                     (ElementId::Field(_), NumberInto::Field { field, .. }) => {
@@ -975,6 +1093,23 @@ pub(super) fn render(
         }
     }
     before.push_str("        return std::nullopt;\n    }\n};\n\n");
+    // Each input the value says, read off any source of it: what a parent that
+    // holds this codec derives the flag it binds to the input from
+    // (docs/adr/0065 §6 R4a).
+    for said in &plan.said {
+        let name = input_name(&said.input.name);
+        before.push_str(&format!(
+            "/// The flag input `{}` a source of `{struct_name}` says, which its encode is not\n\
+             /// handed (docs/adr/0065 §6 R4a).\n\
+             template <class S>\n\
+             [[nodiscard]] std::uint8_t input_{name}(const S& src) noexcept(is_nothrow_source<S>::value) {{\n\
+             \x20   static_assert(is_source<S>::value, \"S presents every element of {struct_name}\");\n\
+             \x20   return {};\n\
+             }}\n\n",
+            said.input.name,
+            said_input(plan, &elements, &said.input.name, Read::Source)
+        ));
+    }
 
     // A value that holds a byte string copies it in, which may throw and is no
     // constant expression in C++17; a value of integers alone is both.

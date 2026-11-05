@@ -11865,25 +11865,30 @@ fn render_codec(
         "params_first_arg_with_comma".into(),
         flag_input_call_args_with_comma.into(),
     );
-    // The Rust encode is handed only the inputs its value does not say
-    // (docs/adr/0065 §6 R4a); the decode is handed every input. Another
-    // backend's encode is handed every input until it takes the source
-    // interface.
-    let encode_inputs: Vec<FlagInput> = if matches!(lang, crate::generator::Language::Rust) {
-        let roles = crate::forge::codec_roles::classify(m, imports);
-        m.flag_inputs
-            .iter()
-            .filter(|input| !roles.says_input(&input.name))
-            .cloned()
-            .collect()
-    } else {
-        m.flag_inputs.clone()
-    };
+    // The Rust encode, and that of a C++ codec printed from its plan, is handed
+    // only the inputs its value does not say (docs/adr/0065 §6 R4a); the decode
+    // is handed every input. Another encode is handed every input until it
+    // takes the source interface.
+    let encode_inputs: Vec<FlagInput> =
+        if matches!(lang, crate::generator::Language::Rust) || cpp_printed.is_some() {
+            let roles = crate::forge::codec_roles::classify(m, imports);
+            m.flag_inputs
+                .iter()
+                .filter(|input| !roles.says_input(&input.name))
+                .cloned()
+                .collect()
+        } else {
+            m.flag_inputs.clone()
+        };
+    let (encode_params_after_first_arg, encode_params_first_arg) =
+        compute_flag_input_param_fragments(&encode_inputs, lang);
     ctx.insert(
         "encode_params_after_first_arg".into(),
-        compute_flag_input_param_fragments(&encode_inputs, lang)
-            .0
-            .into(),
+        encode_params_after_first_arg.into(),
+    );
+    ctx.insert(
+        "encode_params_first_arg".into(),
+        encode_params_first_arg.into(),
     );
     ctx.insert(
         "encode_args_with_comma".into(),
@@ -16039,6 +16044,12 @@ fn embed_flag_bind_thread_args_supplying(
     let mut encode_out = String::new();
     let mut inputs: Vec<ThreadInput> = Vec::new();
     for input in &imp.codec_flag_inputs {
+        // A C++ codec printed from its plan is not handed, on encode, an input
+        // its value says (docs/adr/0065 §6 R4a): its encode reads it off the
+        // value. Its decode is handed every input.
+        let encode_hands = !(matches!(lang, Language::Cpp)
+            && imp.cpp_printed
+            && imp.codec_says_inputs.contains(&input.name));
         if let Some(arg) = supplied(&input.name) {
             // A Swift codec takes its inputs as labelled parameters, named as the leaf names them.
             let passed = match lang {
@@ -16051,7 +16062,9 @@ fn embed_flag_bind_thread_args_supplying(
                 | Language::C11 => arg.clone(),
             };
             decode_out.push_str(&format!(", {passed}"));
-            encode_out.push_str(&format!(", {passed}"));
+            if encode_hands {
+                encode_out.push_str(&format!(", {passed}"));
+            }
             inputs.push(ThreadInput {
                 input: input.name.clone(),
                 expr: arg,
@@ -16152,7 +16165,9 @@ fn embed_flag_bind_thread_args_supplying(
                     }
                 };
                 decode_out.push_str(&decode_arg);
-                encode_out.push_str(&encode_arg);
+                if encode_hands {
+                    encode_out.push_str(&encode_arg);
+                }
                 inputs.push(ThreadInput {
                     input: input.name.clone(),
                     expr: decode_arg.trim_start_matches(", ").to_string(),
@@ -16171,7 +16186,9 @@ fn embed_flag_bind_thread_args_supplying(
                     Language::Swift => format!(", {}: {name}", input.name),
                 };
                 decode_out.push_str(&arg);
-                encode_out.push_str(&arg);
+                if encode_hands {
+                    encode_out.push_str(&arg);
+                }
                 inputs.push(ThreadInput {
                     input: input.name.clone(),
                     expr: arg.trim_start_matches(", ").to_string(),

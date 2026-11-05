@@ -420,6 +420,14 @@ old encode, the old encode and its templates are removed in the same landing.
    them. Whether a codec a C++ codec holds is printed is now read with its imports resolved as the C++ tree resolves
    them (`read_codec_file_as`), as the generator reads it. The printed set is 64 codecs. An input the value says
    (docs/adr/0065 §6 R4a) waits for its own landing with the wire expression it gates.
+
+   *The sixth C++ landing, 2026-11-05:* a flag input the value says (docs/adr/0065 §6 R4a), by the field gated on it
+   alone or by the body always there that says it. As the Rust encode, a printed C++ codec's `encode`,
+   `encode_to_vec` and `Wire::encode_source` are not handed such an input; the decode still is. The encode reads
+   it off the value, and each one is a function of the codec's namespace, `input_<name>(src)`, which a parent
+   derives the flag it binds to it from and which a declaration forwarding it calls on its body. A codec the
+   template still writes hands a printed codec it holds only the inputs that codec does not say
+   (`embed_flag_bind_thread_args_supplying`). The printed set is 69 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

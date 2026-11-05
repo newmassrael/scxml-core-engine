@@ -103,7 +103,7 @@ struct CodecZenohDeclQueryable {
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
         if (auto _e = w.write_vle_u32(static_cast<std::uint32_t>(id)); _e) return _e;
-        if (auto _e = wireexpr.encode(w, n); _e) return _e;
+        if (auto _e = wireexpr.encode(w); _e) return _e;
         if (ext_type.has_value()) {
             auto _v = *ext_type;
             if (auto _e = w.write_u8(_v); _e) return _e;

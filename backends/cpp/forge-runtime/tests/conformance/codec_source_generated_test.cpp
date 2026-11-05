@@ -31,7 +31,9 @@
 #include "codec_little_endian.h"
 #include "codec_present_if_basic.h"
 #include "codec_simple_frame.h"
+#include "codec_zenoh_decl_subscriber.h"
 #include "codec_zenoh_locator.h"
+#include "codec_zenoh_wireexpr.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -523,6 +525,30 @@ void a_body_is_encoded_over_the_source_its_holder_presents() {
           "a counting sink counts the bytes an encode writes and keeps none");
 }
 
+namespace Wireexpr = ::SCE::Generated::CodecZenohWireexpr;
+namespace Subscriber = ::SCE::Generated::CodecZenohDeclSubscriber;
+
+void an_input_the_value_says_is_read_off_the_value_and_handed_on() {
+    using Suffix = typename decltype(std::declval<const Wireexpr::CodecZenohWireexpr &>().suffix())::value_type;
+    const auto suffix = Suffix::make(std::string_view("a/b"));
+    CHECK(suffix.has_value(), "a three-byte suffix lies within its bound");
+    if (!suffix) {
+        return;
+    }
+    const Wireexpr::CodecZenohWireexpr named{5, *suffix};
+    const Wireexpr::CodecZenohWireexpr bare{5, std::nullopt};
+    CHECK(Wireexpr::input_n(named) == 1 && Wireexpr::input_n(bare) == 0,
+          "the input is set exactly when the suffix it gates is there");
+    CHECK(named.encode_to_vec() == (std::vector<std::uint8_t>{0x05, 0x03, 'a', '/', 'b'}),
+          "a suffix is written after the id with its length, the encode handed no input");
+    CHECK(bare.encode_to_vec() == std::vector<std::uint8_t>{0x05}, "no suffix, no length");
+
+    const Subscriber::CodecZenohDeclSubscriber declaration{7, named};
+    CHECK(Subscriber::input_n(declaration) == 1, "a declaration says the input its wire expression says");
+    CHECK(declaration.encode_to_vec() == (std::vector<std::uint8_t>{0x07, 0x05, 0x03, 'a', '/', 'b'}),
+          "a declaration writes its wire expression as the expression's own encode does");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -542,6 +568,7 @@ int main() {
     a_length_held_in_a_flag_is_derived_from_the_bytes();
     a_text_is_made_of_utf8_within_its_bound_and_its_length_is_derived();
     a_body_is_encoded_over_the_source_its_holder_presents();
+    an_input_the_value_says_is_read_off_the_value_and_handed_on();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);
