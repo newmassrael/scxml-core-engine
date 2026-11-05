@@ -10,38 +10,30 @@ namespace SCE::W3C::AotTests {
 /**
  * @brief BasicHTTP Event I/O Processor location field
  *
- * Tests that the BasicHTTP Event I/O Processor can send messages to external
- * HTTP targets using the processor's location field (target URL).
+ * Tests that the location field of the BasicHTTP Event I/O Processor's
+ * _ioprocessors entry can be used to send a message to the processor.
  *
  * W3C SCXML C.2 specifies that BasicHTTP Event I/O Processor must:
- * - Accept target URLs in the <send> element's target attribute
- * - Send HTTP POST requests to the specified URL
- * - Deliver any response event back to the state machine
+ * - Publish its access URI as the location of its _ioprocessors entry
+ * - Accept HTTP POST requests at that URI
+ * - Deliver the resulting event back to the state machine
  *
  * Expected behavior:
- * - <send event="test" target="http://localhost:8080/test"> triggers HTTP POST
+ * - <send event="test" targetexpr="_ioprocessors['basichttp'].location">
+ *   posts to the location HttpAotTest hands the machine from the
+ *   W3CHttpTestServer it starts in process, on the port that listener bound
+ *   (the kernel's, unless SCE_W3C_HTTP_PORT names one)
  * - W3CHttpTestServer receives POST and sends "test" event back
- * - Any event (except timeout/error) transitions to pass state
+ * - Any event other than timeout or error transitions to pass state
  * - Wildcard transition "*" catches the response event
  *
- * ARCHITECTURE.md Compliance - Pure Static Approach:
- *
- * ✅ All-or-Nothing Strategy:
- * - State machine structure: Fully static (compile-time states/transitions)
- * - HTTP target URL: Static literal "http://localhost:8080/test"
- * - Event name: Static literal "test"
- * - No JSEngine required (NEEDS_SCRIPT_ENGINE = false)
- * - External HTTP server handles I/O (W3CHttpTestServer)
- *
- * ✅ Zero Duplication Principle:
- * - SendHelper.isInvalidTarget() shared validation logic
+ * Shared infrastructure (Zero Duplication):
  * - HttpEventTarget shared HTTP POST implementation
  * - W3CHttpTestServer shared test infrastructure
  * - EventMatchingHelper for wildcard transition matching
  *
- * Key Distinction from Test 521:
- * - Test 521: Uses targetexpr (dynamic expression) → Static Hybrid with JSEngine
- * - Test 522: Uses target (static literal) → Pure Static, no JSEngine needed
+ * The document names no URL: its target is the processor's published
+ * location, an expression the script engine evaluates.
  */
 struct Test522 : public HttpAotTest<Test522, 522> {
     using SM = SCE::Generated::test522::test522;

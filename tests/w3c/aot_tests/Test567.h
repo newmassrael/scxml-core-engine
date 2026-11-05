@@ -15,19 +15,17 @@ namespace SCE::W3C::AotTests {
  * with the parameter structure in the response event for ECMAScript datamodel.
  *
  * Test flow:
- * 1. State machine initializes to s0
- * 2. Entry action in s0: Initialize Var1 = 2 in ECMAScript datamodel
- * 3. Entry action in s0: Send HTTP POST to http://localhost:8080/test with <param name="param1" expr="2">
- * 4. SendHelper evaluates expr="2" with JSEngine → EventWithMetadata(data={"param1":"2"})
- * 5. StaticExecutionEngine.raiseExternal() detects BasicHTTPEventProcessor target
- * 6. HttpEventTarget sends real HTTP POST with URL-encoded body: "param1=2"
- * 7. W3CHttpTestServer receives POST, parses body, returns response with _event.data={"param1":"2"}
- * 8. HttpAotTest callback maps response event name to Event enum
- * 9. State machine processes event: SystemVariableHelper sets _event.data in JSEngine session
- * 10. Guard evaluation: JSEngine evaluates "Var1 == 2" → true
- * 11. Transition s0 → s1: Assign Var1 = _event.data.param1 (JSEngine evaluates)
- * 12. Guard evaluation: JSEngine evaluates "_event.data.param1 == 2" → true
- * 13. Transition s1 → pass (final state)
+ * 1. The datamodel declares Var1 = 2; the machine enters s0
+ * 2. Entry action in s0: <send event="test"> with <param name="param1" expr="2">
+ *    to targetexpr="_ioprocessors['basichttp'].location", the location
+ *    HttpAotTest hands the machine from the W3CHttpTestServer it starts in
+ *    process, on the port that listener bound (the kernel's, unless
+ *    SCE_W3C_HTTP_PORT names one)
+ * 3. HttpAotTest's send callback POSTs the URL-encoded body "param1=2&_scxmleventname=test"
+ * 4. W3CHttpTestServer makes the event "test" with _event.data {"param1": ...}
+ *    and HttpAotTest posts it to the machine's inbox
+ * 5. Transition s0 to s1 on "test": assign Var1 = _event.data.param1
+ * 6. In s1 the guard "Var1 == 2" takes the machine to pass, otherwise to fail
  *
  * ARCHITECTURE.md Compliance - Static Hybrid Approach:
  *
@@ -35,7 +33,7 @@ namespace SCE::W3C::AotTests {
  * - JSEngine for ECMAScript datamodel (variable initialization, guard evaluation, _event.data access)
  * - Uses Helper functions: SendHelper (param evaluation), EventDataHelper (JSON building),
  *   SystemVariableHelper (_event.data setup), GuardHelper (guard evaluation)
- * - Zero Duplication: Reuses Interpreter's HttpEventTarget and W3CHttpTestServer
+ * - Zero Duplication: the Interpreter's run serves the same W3CHttpTestServer
  *
  * W3C SCXML Features:
  * - BasicHTTP Event I/O Processor (W3C SCXML C.2)
@@ -46,9 +44,8 @@ namespace SCE::W3C::AotTests {
  *
  * Infrastructure:
  * - HttpAotTest base class manages W3CHttpTestServer lifecycle
- * - StaticExecutionEngine.raiseExternal() detects HTTP targets via EventWithMetadata.originType
- * - HttpEventTarget handles real HTTP POST operations (shared with Interpreter)
- * - Async event processing: HTTP request → server response → event callback → state machine tick
+ * - The listener's thread posts each event it makes to the machine's inbox,
+ *   which the machine applies at its next tick
  */
 struct Test567 : public HttpAotTest<Test567, 567> {
     using SM = SCE::Generated::test567::test567;

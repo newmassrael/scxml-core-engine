@@ -13,7 +13,10 @@ namespace SCE::W3C::AotTests {
  * Tests that SCXML Processor accepts messages at the access URI as HTTP POST requests.
  *
  * Expected behavior:
- * - Send event via BasicHTTPEventProcessor with target="http://localhost:8080/test"
+ * - Send event via BasicHTTPEventProcessor to
+ *   targetexpr="_ioprocessors['basichttp'].location": the location HttpAotTest
+ *   hands the machine from the listener it starts in process, on the port
+ *   that listener bound (the kernel's, unless SCE_W3C_HTTP_PORT names one)
  * - HTTP server receives POST request and validates method
  * - Server responds with event, state machine processes it
  * - Test transitions to pass if event received via HTTP POST

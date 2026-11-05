@@ -14,7 +14,9 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML C.1 specifies that internal queue has higher priority than external queue.
  *
  * Expected behavior:
- * - Send HTTP event via BasicHTTPEventProcessor with target="http://localhost:8080/test"
+ * - Send HTTP event via BasicHTTPEventProcessor to
+ *   targetexpr="_ioprocessors['basichttp'].location", the location of the
+ *   in-process listener HttpAotTest starts, on the port that listener bound
  * - StaticExecutionEngine detects HTTP target and performs real HTTP POST
  * - HTTP server responds, event placed in external queue via callback
  * - Raise internal event via <raise> action (goes to internal queue with higher priority)

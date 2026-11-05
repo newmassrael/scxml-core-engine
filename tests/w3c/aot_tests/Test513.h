@@ -19,36 +19,21 @@ namespace SCE::W3C::AotTests {
  * - Place received events in the external event queue
  *
  * Expected behavior:
- * - W3CTestRunner starts HTTP server infrastructure automatically
- * - State machine sends HTTP POST to http://localhost:8080/test via <send>
- * - BasicHTTP Event I/O Processor receives request and responds with 200 OK
- * - Event is placed in external queue and state machine transitions to pass
+ * - HttpAotTest starts W3CHttpTestServer in process and hands the machine the
+ *   location that listener bound (W3CHttpTestServer::accessUri): its port is
+ *   the one the kernel assigned, unless SCE_W3C_HTTP_PORT names one
+ * - The machine sends `test` to `_ioprocessors['basichttp'].location`, the
+ *   location it was handed, so the POST reaches that listener
+ * - The listener answers 200 OK and the event is placed in the external queue
+ * - The machine takes `test` to pass; `timeout` (30s) takes it to fail
  *
  * Original W3C test is manual (requires external wget/curl to send HTTP POST).
  * This implementation automates validation by having the state machine send
  * HTTP events to itself, validating successful 200 OK response reception.
  *
- * ARCHITECTURE.md Compliance - Static Hybrid Approach:
- * This test uses Static Hybrid strategy, NOT Interpreter wrapper, because:
- *
- * ✅ All-or-Nothing Strategy:
- * - State machine structure: Fully static (compile-time known states/transitions)
- * - HTTP target URL: Static string "http://localhost:8080/test" (not dynamic expression)
- * - SendHelper.isHttpTarget(): Detects HTTP URL and routes to external queue
- * - No engine mixing: AOT state machine + external HTTP server (W3CHttpTestServer)
- *
- * ✅ Zero Duplication Principle:
- * - SendHelper.isHttpTarget() shared between Interpreter and AOT engines
- * - Single Source of Truth for HTTP URL detection logic
- * - External HTTP infrastructure (W3CHttpTestServer) is separate, not duplicated
- *
- * Key Distinction (ARCHITECTURE.md lines 274-283):
- * - ✅ Static URL (`target="http://..."`) → Static/Static Hybrid compatible
- * - ❌ Dynamic expression (`targetexpr="urlVar"`) → Would require Interpreter
- *
- * This validates that HTTP URL targets with compile-time known values
- * are fully compatible with Static Hybrid approach when using external
- * infrastructure (not implementing the processor itself).
+ * The target is the processor's published location, an expression the script
+ * engine evaluates, not a URL written into the document: the document names
+ * no port, so it posts wherever the listener of the run bound.
  */
 struct Test513 : public HttpAotTest<Test513, 513> {
     using SM = SCE::Generated::test513::test513;

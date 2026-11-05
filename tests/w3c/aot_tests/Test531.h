@@ -21,18 +21,22 @@ namespace SCE::W3C::AotTests {
  * Test SCXML structure:
  * ```xml
  * <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
- *       target="http://localhost:8080/test">
+ *       targetexpr="_ioprocessors['basichttp'].location">
  *   <param name="_scxmleventname" expr="'test'"/>
  * </send>
  * ```
  *
  * Expected behavior:
- * 1. <send> has NO event attribute (only type and target)
+ * 1. <send> has NO event attribute (only type and targetexpr)
  * 2. <param name="_scxmleventname" expr="'test'"> specifies event name
- * 3. EventDataHelper::buildJsonFromParams() encodes as POST parameters
- * 4. W3CHttpTestServer receives POST with "_scxmleventname=test"
- * 5. Server extracts "test" from _scxmleventname param and echoes "test" event
- * 6. State machine receives "test" event and transitions to pass state
+ * 3. The target is the location HttpAotTest hands the machine from the
+ *    W3CHttpTestServer it starts in process, on the port that listener bound
+ *    (the kernel's, unless SCE_W3C_HTTP_PORT names one)
+ * 4. EventDataHelper::buildJsonFromParams() encodes as POST parameters
+ * 5. W3CHttpTestServer receives POST with "_scxmleventname=test"
+ * 6. Server extracts "test" from _scxmleventname param and echoes "test" event
+ * 7. State machine receives "test" event and transitions to pass state; any
+ *    other event, the 3s `timeout` among them, takes it to fail
  *
  * Key W3C SCXML C.2 Feature:
  * - When event attribute is ABSENT, _scxmleventname param value becomes event name
@@ -45,36 +49,13 @@ namespace SCE::W3C::AotTests {
  * - test 520: NO event + content-only (server generates HTTP.POST event)
  * - test 531: NO event + _scxmleventname param (event name from parameter)
  *
- * ARCHITECTURE.md Compliance - Pure Static Approach:
+ * Shared helpers (Zero Duplication):
+ * - SendHelper.isHttpTarget() routes the HTTP target for both engines
+ * - EventDataHelper::buildJsonFromParams() builds the POST parameter encoding
+ * - W3CHttpTestServer's _scxmleventname handling serves both engines
  *
- * ✅ Pure Static Strategy:
- * - State machine structure: Fully static (compile-time known states/transitions)
- * - HTTP target URL: Static string "http://localhost:8080/test"
- * - Param value: Static string literal expr="'test'" (NO variable reference)
- * - No JSEngine needed: Param value is static literal, not ECMAScript expression
- * - SendHelper.isHttpTarget(): Detects HTTP URL and routes to external queue
- *
- * ✅ Zero Duplication Principle:
- * - SendHelper.isHttpTarget() shared between Interpreter and AOT engines
- * - EventDataHelper::buildJsonFromParams() shared for POST parameter encoding
- * - W3CHttpTestServer._scxmleventname handling shared (no duplication)
- * - Single Source of Truth for _scxmleventname parameter extraction
- *
- * ✅ W3C SCXML C.2 Compliance:
- * - Real HTTP POST operations (not fake/mock implementation)
- * - Actual network traffic to localhost:8080/test
- * - Server-side _scxmleventname extraction and event name override
- * - Full BasicHTTP Event I/O Processor specification support
- *
- * Pure Static Optimization Implementation:
- * The param value expr="'test'" is a static string literal in SCXML.
- * The code generator detects this at parse time using _is_static_string_literal()
- * and extracts the value "test" using _extract_static_string_literal().
- * Generated code uses direct C++ assignment: params["_scxmleventname"].push_back("test")
- * No JSEngine initialization, no sessionId_ field - pure compile-time static code.
- *
- * Performance benefit: ~0.01ms JSEngine initialization overhead eliminated.
- * Code simplicity: Generated code has zero runtime dependencies on JSEngine.
+ * The POST is real network traffic to the in-process listener, at the location
+ * the machine publishes; the document names no port.
  */
 struct Test531 : public HttpAotTest<Test531, 531> {
     using SM = SCE::Generated::test531::test531;

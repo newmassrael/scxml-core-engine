@@ -19,41 +19,22 @@ namespace SCE::W3C::AotTests {
  * - State machine can access _scxmleventname parameter from event data
  *
  * Expected behavior:
- * - <send event="test" type="BasicHTTP" target="http://localhost:8080/test">
+ * - <send event="test" targetexpr="_ioprocessors['basichttp'].location"> posts
+ *   to the location HttpAotTest hands the machine from the W3CHttpTestServer
+ *   it starts in process, on the port that listener bound (the kernel's,
+ *   unless SCE_W3C_HTTP_PORT names one)
  * - HTTP POST includes "_scxmleventname=test" parameter
  * - W3CHttpTestServer receives POST with "_scxmleventname=test"
- * - Server validates parameter and echoes "test" event back
- * - Transition expr="_scxmleventname test" guards the transition (JSEngine evaluation)
- * - State machine transitions to pass state only if guard succeeds
+ * - Server echoes "test" event back, its data carrying _scxmleventname
+ * - The transition guarded by _event.data["_scxmleventname"] == "test" takes
+ *   the machine to pass; any other event takes it to fail
  *
- * ARCHITECTURE.md Compliance - Static Hybrid Approach:
+ * Shared helpers (Zero Duplication):
+ * - SendHelper.isHttpTarget() routes the HTTP target for both engines
+ * - EventDataHelper::buildJsonFromParams() builds the POST parameter encoding
  *
- * ✅ All-or-Nothing Strategy:
- * - State machine structure: Fully static (compile-time known states/transitions)
- * - HTTP target URL: Static string "http://localhost:8080/test"
- * - SendHelper.isHttpTarget(): Detects HTTP URL and routes to external queue
- * - No engine mixing: AOT state machine + external HTTP server (W3CHttpTestServer)
- *
- * ✅ Zero Duplication Principle:
- * - SendHelper.isHttpTarget() shared between Interpreter and AOT engines
- * - EventDataHelper::buildJsonFromParams() shared for POST parameter encoding
- * - Single Source of Truth for HTTP POST encoding logic
- *
- * ✅ Static Hybrid: JSEngine for transition guard evaluation
- * - State machine structure is static (compile-time known)
- * - Transition guard expr="_scxmleventname test" requires JSEngine for ECMAScript evaluation
- * - JSEngine evaluates guard condition at runtime with event data access
- * - W3C SCXML 5.9 & C.2: System-reserved identifier _scxmleventname requires JSEngine
- *
- * Key W3C SCXML Features:
- * - W3C SCXML C.2: BasicHTTP Event I/O Processor parameter encoding
- * - W3C SCXML 3.13: Transition guards with ECMAScript expressions
- * - W3C SCXML 5.9: ECMAScript datamodel for runtime expression evaluation
- *
- * This validates that:
- * 1. HTTP POST requests include _scxmleventname parameter
- * 2. State machine can access HTTP parameters via ECMAScript expressions
- * 3. Transition guards can validate event data parameters at runtime
+ * The script engine evaluates the target expression and the guard, which
+ * reads the event's data.
  */
 struct Test534 : public HttpAotTest<Test534, 534> {
     using SM = SCE::Generated::test534::test534;
