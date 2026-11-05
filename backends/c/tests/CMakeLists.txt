@@ -1658,6 +1658,82 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 5.10.1 + C.1 (docs/adr/0090): the origin of an event the SCXML
+    # processor delivers is its sender's published location on every route, and
+    # a reply to it arrives; an event no processor delivered has none; a host
+    # names the origin of what it delivers in its own terms. The last two are
+    # built with the host types their drivers register.
+    sce_generate_static_integration_c_test(an_origin_is_the_address_its_sender_published "${SCE_C_INTEGRATION_GENERATED_DIR}")
+    sce_generate_static_integration_c_test(an_event_no_processor_delivered_has_no_origin "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        HOST_PROCESSOR x-sce-host
+    )
+    sce_generate_static_integration_c_test(a_host_names_its_origin_in_its_own_terms "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        HOST_INVOKER x-sce-host
+    )
+
+    add_executable(sce_c_integration_an_origin_is_the_address_its_sender_published
+        integration/test_an_origin_is_the_address_its_sender_published.c
+        ${INTEGRATION_C_TEST_an_origin_is_the_address_its_sender_published_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_an_origin_is_the_address_its_sender_published)
+    target_include_directories(sce_c_integration_an_origin_is_the_address_its_sender_published PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_an_origin_is_the_address_its_sender_published PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_an_origin_is_the_address_its_sender_published
+        COMMAND sce_c_integration_an_origin_is_the_address_its_sender_published
+    )
+    set_tests_properties(c11_integration_an_origin_is_the_address_its_sender_published PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    add_executable(sce_c_integration_an_event_no_processor_delivered_has_no_origin
+        integration/test_an_event_no_processor_delivered_has_no_origin.c
+        ${INTEGRATION_C_TEST_an_event_no_processor_delivered_has_no_origin_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_an_event_no_processor_delivered_has_no_origin)
+    target_include_directories(sce_c_integration_an_event_no_processor_delivered_has_no_origin PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_an_event_no_processor_delivered_has_no_origin PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_an_event_no_processor_delivered_has_no_origin
+        COMMAND sce_c_integration_an_event_no_processor_delivered_has_no_origin
+    )
+    set_tests_properties(c11_integration_an_event_no_processor_delivered_has_no_origin PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    add_executable(sce_c_integration_a_host_names_its_origin_in_its_own_terms
+        integration/test_a_host_names_its_origin_in_its_own_terms.c
+        ${INTEGRATION_C_TEST_a_host_names_its_origin_in_its_own_terms_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_a_host_names_its_origin_in_its_own_terms)
+    target_include_directories(sce_c_integration_a_host_names_its_origin_in_its_own_terms PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_host_names_its_origin_in_its_own_terms PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_host_names_its_origin_in_its_own_terms
+        COMMAND sce_c_integration_a_host_names_its_origin_in_its_own_terms
+    )
+    set_tests_properties(c11_integration_a_host_names_its_origin_in_its_own_terms PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE_MESH.md §mesh-19: a `targetexpr` that evaluates to a Mesh peer
     # reaches the host's Mesh router, and with none registered is
     # error.execution. The machine carries the host-send surface because the
@@ -4438,6 +4514,22 @@ set_target_properties(sce_c_saved_state_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_saved_state COMMAND sce_c_saved_state_unit_test)
 set_tests_properties(c11_unit_saved_state PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+# An event's origin (docs/adr/0090): the pair its processor writes, the SCXML
+# processor's address codec a session's location and every origin it sends are
+# spelled by, a location read as a send target, and a format-2 stored origin read
+# back as the ADR's table says. Header-only and allocation-free.
+add_executable(sce_c_event_origin_unit_test unit/event_origin_test.c)
+target_link_libraries(sce_c_event_origin_unit_test PRIVATE sce_c_runtime m)
+set_target_properties(sce_c_event_origin_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_event_origin COMMAND sce_c_event_origin_unit_test)
+set_tests_properties(c11_unit_event_origin PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )
