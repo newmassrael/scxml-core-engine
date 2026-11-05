@@ -8,7 +8,8 @@
 # of one arm away: the week a coming or a previous weekday of today's own
 # weekday is, the Monday an ISO week starts on, the step of a weekly shift, the
 # day a month or a year lands on, the next year that has a 29 February, the
-# leap year a month day is admitted against, and the absent answer of `none`.
+# leap year a month day is admitted against, the absent answer of `none`, and
+# the month, the day and the refusals of `dayOfMonthOffset`.
 # The calendar table `tests/forge/conformance/gen_cases.py` writes into the
 # oracle resolves every kind from each day of five weeks, and the Rust
 # numerical conformance harness holds the generated document to it, so each
@@ -101,4 +102,28 @@ mutation_case "the week of a weekday starts on Sunday, not on the ISO Monday" <<
 edit("stdlib/time/resolve_date.scxml",
      r'''(isoWanted + 6) % 7 - (isoNow + 6) % 7''',
      r'''isoWanted - isoNow''')
+PY
+
+mutation_case "a day of a month offset ignores the count and stays in today's month" <<'PY'
+edit("stdlib/time/resolve_date.scxml",
+     r'''addMonths(offsetFrom.year, offsetFrom.month, 1, count.value)''',
+     r'''addMonths(offsetFrom.year, offsetFrom.month, 1, 0)''')
+PY
+
+mutation_case "a day of a month offset answers today's day instead of the one asked for" <<'PY'
+edit("stdlib/time/resolve_date.scxml",
+     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, day.value)"/>''',
+     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, offsetFrom.day)"/>''')
+PY
+
+mutation_case "a day the landing month lacks is held to its last day instead of refused" <<'PY'
+edit("stdlib/time/resolve_date.scxml",
+     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, day.value)"/>''',
+     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, day.value &lt; monthLength(offsetTo.year, offsetTo.month) ? day.value : monthLength(offsetTo.year, offsetTo.month))"/>''')
+PY
+
+mutation_case "a day past 31 is judged only after today is read" <<'PY'
+edit("stdlib/time/resolve_date.scxml",
+     r'''day.value &gt;= 1 &amp;&amp; day.value &lt;= 31"/>''',
+     r'''day.value &gt;= 1"/>''')
 PY
