@@ -4,6 +4,7 @@
 #include "parsing/DoneDataParser.h"
 #include "common/LogToLogger.h"
 #include "parsing/ParsingCommon.h"
+#include "parsing/XmlSerializationHelper.h"
 
 SCE::DoneDataParser::DoneDataParser(std::shared_ptr<NodeFactory> factory) : factory_(factory) {
     SCE_LOG_DEBUG("Creating DoneData parser");
@@ -72,9 +73,10 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
         SCE_LOG_DEBUG("Found 'expr' attribute: {}", exprValue);
     }
 
-    // Check content
-    std::string textContent = contentElement->getTextContent();
-    textContent = ParsingCommon::trimString(textContent);
+    // The children: their markup when they hold elements, their character
+    // data otherwise — read by the helper every in-line `<content>` is read
+    // by, so a done event and a `<send>` carry one text for one element.
+    const std::string textContent = XmlSerializationHelper::serializeContentBody(contentElement);
     if (!textContent.empty()) {
         SCE_LOG_DEBUG("Found text content: {}",
                       (textContent.length() > 30 ? textContent.substr(0, 27) + "..." : textContent));
@@ -88,16 +90,20 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
     }
 
     // §scxml-B-2-6: under the ECMAScript data model a <content> child of <donedata> is
-    // interpreted as §scxml-B-2-8-1 defines _event.data, which is why the text body
-    // becomes an expression here rather than a verbatim literal.
+    // interpreted as §scxml-B-2-8-1 defines _event.data, which is why the children
+    // are read as the data model reads in-line content rather than used verbatim.
     // §scxml-5.5 + 5.6 + §scxml-B-2-6:
     //   - `expr` attribute => Expression (evaluated against the datamodel).
-    //   - Text body with ECMAScript datamodel => Expression (§scxml-B-2-8-1:
-    //     inline text is parsed as JSON; SCE delegates that parsing to the
-    //     script engine so `<content>21</content>` yields number 21 for
-    //     `_event.data == 21` style guards).
-    //   - Text body with the "null" datamodel => Literal (children used
-    //     **as the content value** verbatim — no script engine needed).
+    //   - Children under a data model => InlineText, given the ordered
+    //     readings at run time (`DataModelInitHelper::inlineContentEventData`,
+    //     the reading a `<send>`'s in-line `<content>` gets): an expression
+    //     when they are one, so `<content>21</content>` yields number 21 for
+    //     `_event.data == 21` style guards; the XML as written when they open
+    //     with `<`; and otherwise the space-normalized string, so
+    //     `<content>hello world</content>` is the string the generated
+    //     engines carry rather than an expression that can only fail.
+    //   - Children under the "null" datamodel => Literal (used **as the
+    //     content value** verbatim — no script engine needed).
     if (!exprValue.empty()) {
         stateNode->setDoneDataContentExpression(exprValue);
         return true;
@@ -105,7 +111,7 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
         if (datamodelType_ == "null") {
             stateNode->setDoneDataContentLiteral(textContent);
         } else {
-            stateNode->setDoneDataContentExpression(textContent);
+            stateNode->setDoneDataContentInlineText(textContent);
         }
         return true;
     }

@@ -7,6 +7,7 @@
 #include "scripting/ScriptResultUtils.h"
 #include "scripting/SessionRegistry.h"
 
+#include "common/DataModelInitHelper.h"
 #include "common/DoneDataHelper.h"
 #include "common/EventDataHelper.h"
 #include "common/LogToLogger.h"
@@ -2975,8 +2976,11 @@ void StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
 
     const auto &doneData = finalState->getDoneData();
 
-    // §scxml-5.5 — route through DoneDataHelper (Zero Duplication SSoT):
+    // §scxml-5.5 — route through the shared helpers (Zero Duplication SSoT):
     //   Expression => evaluate against the datamodel.
+    //   InlineText => the children, read as a `<send>`'s in-line content is
+    //                 read: the expression's value, the XML as written, or
+    //                 the space-normalized string.
     //   Literal    => children used as the content value, no evaluation.
     switch (doneData.getContentKind()) {
     case DoneData::ContentKind::Expression:
@@ -2990,6 +2994,13 @@ void StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
                 }
             },
             &outTypedData);
+        return;
+    case DoneData::ContentKind::InlineText:
+        SCE_LOG_DEBUG("Reading donedata <content> children: '{}'", doneData.getContent());
+        // The Interpreter parses SCXML at run time, so the children are the
+        // author's own text; no build step could have lowered them.
+        outEventData = DataModelInitHelper::inlineContentEventData(
+            scriptEngine_, sessionId_, ScriptSource::ecmascript(doneData.getContent()), &outTypedData);
         return;
     case DoneData::ContentKind::Literal:
         SCE_LOG_DEBUG("W3C SCXML 5.5: Emitting donedata literal content: '{}'", doneData.getContent());

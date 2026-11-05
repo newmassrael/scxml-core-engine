@@ -279,6 +279,27 @@ TEST_F(SCXMLParserBasicTest, ParseDataModel) {
     EXPECT_TRUE(foundFlag) << "Data item 'flag' not found";
 }
 
+// W3C SCXML 5.3.2: a `<data>` element's character data is the text the author
+// meant, read as its characters — the reading the generated machines get from
+// sce-build's `inline_data_value`. Printing the children as XML handed the
+// escaped `&lt;` on as four characters.
+TEST_F(SCXMLParserBasicTest, DataCharacterDataIsReadAsItsCharacters) {
+    std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="start">
+    <datamodel>
+        <data id="text">  a &lt; b  </data>
+    </datamodel>
+    <state id="start"/>
+</scxml>)";
+
+    auto model = parser_->parseContent(scxmlContent);
+    ASSERT_NE(model, nullptr);
+
+    const auto &items = model->getDataModelItems();
+    ASSERT_EQ(items.size(), 1u);
+    EXPECT_EQ(items[0]->getContent(), "a < b");
+}
+
 // Test final states
 TEST_F(SCXMLParserBasicTest, ParseFinalStates) {
     std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>

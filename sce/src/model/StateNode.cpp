@@ -142,6 +142,15 @@ void SCE::StateNode::setDoneDataContentLiteral(const std::string &literal) {
     }
 }
 
+void SCE::StateNode::setDoneDataContentInlineText(const std::string &text) {
+    SCE_LOG_DEBUG("Setting donedata <content> in-line children for {}", id_);
+    if (text.empty()) {
+        doneData_.clearContent();
+    } else {
+        doneData_.setContentInlineText(text);
+    }
+}
+
 void SCE::StateNode::addDoneDataParam(const std::string &name, const std::string &location) {
     SCE_LOG_DEBUG("Adding param to donedata for {}: {} -> {}", id_, name, location);
     doneData_.addParam(name, location);

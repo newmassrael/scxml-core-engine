@@ -168,6 +168,14 @@ public:
         }
     }
 
+    void setDoneDataContentInlineText(const std::string &text) override {
+        if (text.empty()) {
+            doneData_.clearContent();
+        } else {
+            doneData_.setContentInlineText(text);
+        }
+    }
+
     void addDoneDataParam(const std::string &name, const std::string &location) override {
         doneData_.addParam(name, location);
     }

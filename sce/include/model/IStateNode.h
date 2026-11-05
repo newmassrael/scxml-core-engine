@@ -106,6 +106,15 @@ public:
     virtual void setDoneDataContentLiteral(const std::string &literal) = 0;
 
     /**
+     * @brief Set `<donedata><content>children</content>` under a data model
+     *
+     * The children are read at run time as in-line content is read
+     * (`DoneData::ContentKind::InlineText`). Pass an empty string to clear
+     * any previously-set content.
+     */
+    virtual void setDoneDataContentInlineText(const std::string &text) = 0;
+
+    /**
      * @brief Add <param> element to <donedata>
      * @param name Parameter name
      * @param location Data model location path

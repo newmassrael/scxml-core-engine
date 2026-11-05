@@ -17,6 +17,7 @@
 
 #include "scripting/IScriptEngine.h"
 #include <functional>
+#include <optional>
 #include <string>
 
 /**
@@ -117,7 +118,7 @@ public:
                                           const ScriptSource &content);
 
     /**
-     * @brief The event data a `<send>`'s inline `<content>` carries, as JSON text
+     * @brief The event data an inline `<content>` carries, as JSON text
      *
      * The one reading inline content has under a data model, which a
      * generated machine's send decides when it is built
@@ -128,12 +129,20 @@ public:
      * the number the expression gives, `<content>'v'</content>` the string
      * `v`, and `<content>a  b</content>` the string `a b`, on both engines.
      *
+     * Every inline `<content>` that becomes event data takes it: a `<send>`'s
+     * and a `<donedata>`'s alike, so a done event cannot read the same
+     * children differently from a message.
+     *
      * @param jsEngine Engine the expression is evaluated by
      * @param sessionId Session it is evaluated in
      * @param content The children, as a `ScriptSource` (see `initializeVariable`)
+     * @param outTypedData When given, the value the JSON text writes, for the
+     *        typed event pipeline; reset when the children are XML, whose
+     *        value is the DOM node the binding builds from the text
      */
     static std::string inlineContentEventData(IScriptEngine &jsEngine, const std::string &sessionId,
-                                              const ScriptSource &content);
+                                              const ScriptSource &content,
+                                              std::optional<ScriptValue> *outTypedData = nullptr);
 
     /**
      * @brief Initialize a datamodel variable with external file loading

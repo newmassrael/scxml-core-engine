@@ -207,6 +207,7 @@ public:
 
     void setDoneDataContentExpression(const std::string &expr) override;
     void setDoneDataContentLiteral(const std::string &literal) override;
+    void setDoneDataContentInlineText(const std::string &text) override;
 
     /**
      * @brief Add <param> element to <donedata>

@@ -131,8 +131,13 @@ void SCE::DataModelParser::parseDataContent(const std::shared_ptr<IXMLElement> &
     // §scxml-B-2: Serialize data element content
     // §scxml-5.3.2: the children of <data> are an in-line specification of the data
     // object's value.
-    // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
-    std::string textContent = XmlSerializationHelper::serializeContent(dataNode);
+    // ARCHITECTURE.md Zero Duplication: the children are read by the helper
+    // every in-line `<content>` is read by — their markup when they hold
+    // elements, their character data otherwise — which is the reading
+    // sce-build's `inline_data_value` gives the generated machines. Printing
+    // every child as XML instead handed `a &lt; b` on as the escaped text,
+    // where the generated machines read the three characters the author meant.
+    std::string textContent = XmlSerializationHelper::serializeContentBody(dataNode);
 
     if (!textContent.empty()) {
         dataItem->setContent(textContent);

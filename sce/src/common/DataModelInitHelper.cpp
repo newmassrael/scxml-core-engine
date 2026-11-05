@@ -175,13 +175,23 @@ ScriptValue SCE::DataModelInitHelper::inlineContentValue(IScriptEngine &jsEngine
 }
 
 std::string SCE::DataModelInitHelper::inlineContentEventData(IScriptEngine &jsEngine, const std::string &sessionId,
-                                                             const ScriptSource &content) {
+                                                             const ScriptSource &content,
+                                                             std::optional<ScriptValue> *outTypedData) {
     // Whether the children are an XML document is asked of the author's text,
-    // as `initializeVariable` asks it; such children travel as written.
+    // as `initializeVariable` asks it; such children travel as written, and
+    // carry no typed value: the DOM node is built where `_event.data` is bound.
     if (isXMLContent(content.source())) {
+        if (outTypedData) {
+            outTypedData->reset();
+        }
         return content.source();
     }
-    return EventDataHelper::scriptValueToJsonString(inlineContentValue(jsEngine, sessionId, content));
+    ScriptValue value = inlineContentValue(jsEngine, sessionId, content);
+    std::string eventData = EventDataHelper::scriptValueToJsonString(value);
+    if (outTypedData) {
+        *outTypedData = std::move(value);
+    }
+    return eventData;
 }
 
 bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine, const std::string &sessionId,
