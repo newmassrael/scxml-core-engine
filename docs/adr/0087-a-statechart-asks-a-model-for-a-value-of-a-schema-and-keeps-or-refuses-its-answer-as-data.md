@@ -219,18 +219,25 @@ where `examples/ai_loop/ai_loop.scxml` already stands:
    | `string[B]` | `{"type":"string","maxLength":B,"x-sce-max-bytes":B}` | a quoted text of at most `B` bytes, counted exactly (item 3) |
    | `bytes[B]` | `{"type":"string","maxLength":B,"pattern":"^[\\u0000-\\u00ff]*$"}` | a quoted Latin-1 text of at most `B` characters, each one byte |
    | `optional<T>` | `{"anyOf":[S(T),{"type":"null"}]}`; the key stays in `required` | `"null" \| G(T)` |
-   | `record:R` | `{"$ref":"#/$defs/<R's document name>"}`, defined once in `$defs` as `{"type":"object","properties":{...},"required":[every key],"additionalProperties":false}` | one rule per record document: `"{"` each key in canonical order `":"` its value, separated by `","`, `"}"` |
+   | `record:R` | `{"$ref":"#/$defs/<R's document name>"}`, defined once in `$defs` as `{"type":"object","properties":{...},"required":[every key],"additionalProperties":false}` | one rule per record document: `"{"` each key in the order the record's document declares them `":"` its value, separated by `","`, `"}"` |
    | `list<T>[B]` | `{"type":"array","items":S(T),"maxItems":B}` | `"[" ( G(T) ( "," G(T) ){0,B-1} )? "]"` |
 
    An open enum (`sce:strict-variants="false"`) has no fold: a statechart holds a closed enum only
    (docs/SCE_ACCEPTED_SUBSET.md:4500-4502), and a schema whose grammar is asked for and holds one is refused by name.
 2. **The schema describes the answer to write, the lift decides what is accepted.** Both forms state one spelling of
-   each value: a record has exactly its keys, in the grammar in the canonical key order (ARCHITECTURE.md, "JSON
-   Object Key Order"), and no others; a 64-bit integer is its quoted digits; no whitespace stands outside a text. The
-   lift accepts more, as a wire reader must: keys in any order, a key the schema does not declare stepped over, a
-   64-bit integer up to 2^53 - 1 as a JSON number, whitespace (ADR 0086 section 4.1). A text in the schemas' language
-   is always accepted by the lift; the converse is not asked. A grammar with no whitespace outside texts also leaves
-   a constrained model no way to spend its tokens on spaces.
+   each value: a record has exactly its keys, in both forms in the order the record's document declares them, and no
+   others; a 64-bit integer is its quoted digits; no whitespace stands outside a text. The lift accepts more, as a
+   wire reader must: keys in any order, a key the schema does not declare stepped over, a 64-bit integer up to
+   2^53 - 1 as a JSON number, whitespace (ADR 0086 section 4.1). A text in the schemas' language is always accepted
+   by the lift; the converse is not asked. A grammar with no whitespace outside texts also leaves a constrained model
+   no way to spend its tokens on spaces. On 2026-11-05 a schema's `properties` and `required`, and the grammar's keys,
+   moved from ascending order (ARCHITECTURE.md, "JSON Object Key Order", which still orders what SCE's writers write)
+   to the declared order, because the constrained decoders that consume these schemas (llguidance, XGrammar,
+   Outlines) emit an object's properties in the schema's order, whatever JSON Schema says of key order: measured that
+   day on a desktop with one model, an event schema declared as title, year, month, day, milestone was answered
+   `day` first and `title` fourth under constrained decoding, and the pass rate of two tasks fell by about half
+   against unconstrained decoding. The JSON Schema writes the keywords of each object in one fixed order, the order
+   of the example below (`Keyword` in `sce-build/src/forge/value_type.rs`), so its text stays one text.
 3. **A bound counts bytes, and each form says how far it holds it.** JSON Schema counts a string's length in
    characters (draft-bhutton-json-schema-validation-01 section 6.3.1). A text of at most `B` UTF-8 bytes has at most
    `B` characters, so `maxLength: B` admits every value of `string[B]` and some longer ones, which the lift refuses
@@ -249,20 +256,20 @@ where `examples/ai_loop/ai_loop.scxml` already stands:
    {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"urn:sce:schema:answer_slot:1",
     "x-sce-source-hash":"<the unit's source-hash>",
     "description":"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters","type":"object",
-    "properties":{"kind":{"enum":["meeting","task"]},
-                  "note":{"anyOf":[{"type":"string","maxLength":8,"x-sce-max-bytes":8},{"type":"null"}]},
+    "properties":{"title":{"type":"string","maxLength":16,"x-sce-max-bytes":16},
                   "slot":{"type":"integer","minimum":0,"maximum":65535},
-                  "title":{"type":"string","maxLength":16,"x-sce-max-bytes":16}},
-    "required":["kind","note","slot","title"],"additionalProperties":false}
+                  "kind":{"enum":["meeting","task"]},
+                  "note":{"anyOf":[{"type":"string","maxLength":8,"x-sce-max-bytes":8},{"type":"null"}]}},
+    "required":["title","slot","kind","note"],"additionalProperties":false}
    ```
 
    ```
-   root  ::= "{\"kind\":" kind ",\"note\":" note ",\"slot\":" slot ",\"title\":" title "}"
-   kind  ::= "\"meeting\"" | "\"task\""
-   note  ::= "null" | "\"" t8 "\""
+   root  ::= "{\"title\":" title ",\"slot\":" slot ",\"kind\":" kind ",\"note\":" note "}"
+   title ::= "\"" t16 "\""
    slot  ::= ( "0" | [1-9] [0-9]{0,3} | [1-5] [0-9]{4} | "6" [0-4] [0-9]{3} |
                "65" [0-4] [0-9]{2} | "655" [0-2] [0-9] | "6553" [0-5] )
-   title ::= "\"" t16 "\""
+   kind  ::= "\"meeting\"" | "\"task\""
+   note  ::= "null" | "\"" t8 "\""
    t0 ::= ""
    t1 ::= "" | c1 t0
    ...
