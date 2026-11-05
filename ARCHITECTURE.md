@@ -665,8 +665,9 @@ the frontend refuses is refused (§scxml-5.9.1); nothing answers it instead.
 one.** The engine reached through a generated `--script-engine ecmascript`
 document is measured separately by `LoweredEcma262`, and it reported
 `source-wrong=14` while this cell read 98/98. The gap was one entry point, not
-one more path: a `<assign>` whose location is not a bare identifier is run as a
-SCRIPT (`AssignmentExecutionHelper`'s complex path), and the seam was on
+one more path: a `<assign>` whose location is not a bare identifier was run as a
+SCRIPT (`AssignmentExecutionHelper`'s complex path then; every `<assign>` runs
+as one statement through `IScriptEngine::assign` now), and the seam was on
 `loweredTextOf` only — so `5 ^ 3` came back 125, Lua's exponentiation. Putting
 the seam on `loweredScriptOf` took that census to `source-wrong=0`. Ask the
 lane's census line rather than this cell for the document route; it prints on

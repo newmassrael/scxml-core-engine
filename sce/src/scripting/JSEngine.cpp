@@ -289,6 +289,15 @@ std::future<ScriptResult> JSEngine::doValidateExpression(const std::string &sess
     });
 }
 
+std::future<ScriptResult> JSEngine::doAssign(const std::string &sessionId, const ScriptSource &location,
+                                             const ScriptSource &expr) {
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync(
+        [this, sessionId, assignment = assignmentStatement(location, expr).text()]() {
+            return assignInternal(sessionId, assignment);
+        });
+}
+
 std::future<ScriptResult> JSEngine::setVariable(const std::string &sessionId, const std::string &name,
                                                 const ScriptValue &value) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper

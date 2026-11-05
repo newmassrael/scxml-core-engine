@@ -240,6 +240,17 @@ private:
                                                    const ScriptSource &expression) override;
     std::future<ScriptResult> doValidateExpression(const std::string &sessionId,
                                                    const ScriptSource &expression) override;
+    std::future<ScriptResult> doAssign(const std::string &sessionId, const ScriptSource &location,
+                                       const ScriptSource &expr) override;
+
+    // The name a bare-name assignment created, filed as declared.
+    //
+    // Writing a name nothing declared creates it, and it stays a variable when
+    // the value written is nil — but in Lua a nil global is no global at all,
+    // so the name has to be filed in `declaredVars` for a later read to find
+    // it rather than raise the ReferenceError kept for names never written.
+    // A member path creates nothing: it writes into a root that had to exist.
+    void declareAssignedName(const std::string &sessionId, const ScriptSource &location);
 
     // The seam itself: the one step a pre-lowered call skips.
     //

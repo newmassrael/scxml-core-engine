@@ -53,6 +53,31 @@ ScriptResult JSEngine::executeScriptInternal(const std::string &sessionId, const
     return ScriptResult::createSuccess(jsResult);
 }
 
+ScriptResult JSEngine::assignInternal(const std::string &sessionId, const std::string &assignment) {
+    SessionContext *session = getSession(sessionId);
+    if (!session || !session->jsContext) {
+        return ScriptResult::createError("Session not found: " + sessionId);
+    }
+
+    JSContext *ctx = session->jsContext;
+
+    // The assignment runs as one statement and its completion value, which is
+    // the assigned value, is released unread. Converting it
+    // to a ScriptValue, as `executeScriptInternal` converts a script's result,
+    // would be the crossing out of the engine the assignment exists to avoid:
+    // wasted for a DOM, which has no own properties to copy, and without end
+    // for an object that holds itself.
+    ::JSValue result = JS_Eval(ctx, assignment.c_str(), assignment.length(), "<assign>", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(result)) {
+        ScriptResult error = createErrorFromException(ctx);
+        SCE_LOG_DEBUG("JSEngine::assignInternal - '{}' raised: {}", assignment, error.getErrorMessage());
+        JS_FreeValue(ctx, result);
+        return error;
+    }
+    JS_FreeValue(ctx, result);
+    return ScriptResult::createSuccess();
+}
+
 ScriptResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, const std::string &expression) {
     SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - Evaluating expression '{}' in session '{}'", expression,
                   sessionId);

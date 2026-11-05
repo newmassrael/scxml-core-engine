@@ -166,7 +166,9 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const Scrip
         std::string jsLocation = transformVariableName(location);
 
         // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
-        // §scxml-5.4 / §scxml-5.10: Assignment execution with proper system variable handling
+        // §scxml-5.4: the engine runs the assignment itself, so the value is
+        // never read out of the data model and written back; the read-only
+        // §scxml-5.10 locations were refused above, before anything ran.
         bool success = AssignmentExecutionHelper::executeAssignment(
             scriptEngine_, sessionId_, jsLocation, expr, [this, &location, &expr](const std::string &error) {
                 handleJSError("assignment execution", error);

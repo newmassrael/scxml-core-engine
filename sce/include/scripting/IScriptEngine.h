@@ -108,6 +108,30 @@ public:
      */
     std::future<ScriptResult> validateExpression(const std::string &sessionId, const ScriptSource &expression);
 
+    /**
+     * @brief Store the value of @p expr at @p location, inside the data model
+     *
+     * An `<assign>` replaces the value at its location with the value its
+     * expression produces, and raises error.execution when it cannot, which
+     * the caller raises from the error this answers. It is ONE operation
+     * here, `<location> = (<expr>)`, which the engine evaluates itself: the
+     * value never crosses out of the engine, so
+     * a DOM held in `_event.data`, a function, or any object keeps what it is
+     * and which object it is. Reading the value out as a `ScriptValue` and
+     * writing it back, which a bare-name location used to do, kept none of
+     * that, because a `ScriptValue` has no kind for them.
+     *
+     * @param sessionId Target session context
+     * @param location the location expression, in the language of @p expr
+     * @param expr the value expression; one trailing `;` is dropped, as
+     *        `sce-build`'s frontend drops it when it reads an expression
+     * @return Future with success and no value, the engine's error when the
+     *         assignment raised, or a refusal when this engine does not
+     *         evaluate the language or the two halves are in different ones
+     */
+    std::future<ScriptResult> assign(const std::string &sessionId, const ScriptSource &location,
+                                     const ScriptSource &expr);
+
     // === The language this engine speaks ===
 
     /**
@@ -321,6 +345,27 @@ protected:
 
     virtual std::future<ScriptResult> doValidateExpression(const std::string &sessionId,
                                                            const ScriptSource &expression) = 0;
+
+    /**
+     * @brief Run `assignmentStatement(location, expr)` for its effect.
+     *
+     * Both halves are in one language the engine accepts. An implementation
+     * hands no value back: the assigned value stays where the statement put
+     * it, and converting it on the way out would be the crossing `assign`
+     * exists to avoid.
+     */
+    virtual std::future<ScriptResult> doAssign(const std::string &sessionId, const ScriptSource &location,
+                                               const ScriptSource &expr) = 0;
+
+    /**
+     * @brief `<location> = (<expr>);`, in the language both halves share.
+     *
+     * Valid as written in ECMAScript and in Lua alike. The parentheses keep
+     * the expression one operand whatever it contains; the trailing `;` an
+     * author may write after an expression is dropped first, since inside
+     * them it would be a syntax error in either language.
+     */
+    static ScriptSource assignmentStatement(const ScriptSource &location, const ScriptSource &expr);
 
     /**
      * @brief The refusal a wrong-language call gets.

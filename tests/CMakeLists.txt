@@ -1323,6 +1323,31 @@ apply_sce_test_policies(in_predicate_session_scope_test)
 
 add_test(NAME InPredicateSessionScope COMMAND in_predicate_session_scope_test)
 
+# An <assign> is one operation inside the data model (W3C SCXML B.2): the value
+# never leaves the engine, so a DOM, a function or an object's identity
+# survives it. Names both engines for the reason the seam target above does.
+add_executable(an_assignment_stays_in_the_engine_test
+    engine/AnAssignmentStaysInTheEngineTest.cpp
+)
+
+target_include_directories(an_assignment_stays_in_the_engine_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(an_assignment_stays_in_the_engine_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+apply_sce_test_policies(an_assignment_stays_in_the_engine_test)
+
+add_test(NAME AnAssignmentStaysInTheEngine COMMAND an_assignment_stays_in_the_engine_test)
+
 # ============================================================================
 # ECMA-262 through a Lua-LOWERED C++ artifact, compiled and run
 #

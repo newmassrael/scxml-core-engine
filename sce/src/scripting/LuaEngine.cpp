@@ -24,6 +24,8 @@ extern "C" {
 #include <lualib.h>
 }
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <future>
@@ -646,6 +648,39 @@ std::future<ScriptResult> LuaEngine::doExecuteScript(const std::string &sessionI
     std::promise<ScriptResult> promise;
     promise.set_value(std::move(result));
     return promise.get_future();
+}
+
+std::future<ScriptResult> LuaEngine::doAssign(const std::string &sessionId, const ScriptSource &location,
+                                              const ScriptSource &expr) {
+    // The assignment is a chunk, and a Lua chunk hands back only what it
+    // returns. An assignment returns nothing, so the value stays in
+    // the state where the statement put it: a DOM userdata or a table keeps
+    // its identity, which reading it out as a ScriptValue would not.
+    auto result = executeScriptInternal(sessionId, assignmentStatement(location, expr));
+    if (result.isSuccess()) {
+        declareAssignedName(sessionId, location);
+    }
+    std::promise<ScriptResult> promise;
+    promise.set_value(std::move(result));
+    return promise.get_future();
+}
+
+void LuaEngine::declareAssignedName(const std::string &sessionId, const ScriptSource &location) {
+    const std::string &name = location.text();
+    const auto isNameChar = [](unsigned char c) { return std::isalnum(c) || c == '_'; };
+    if (name.empty() || std::isdigit(static_cast<unsigned char>(name[0])) ||
+        !std::all_of(name.begin(), name.end(), isNameChar)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(sessionMutex_);
+    auto it = sessions_.find(sessionId);
+    if (it == sessions_.end()) {
+        return;
+    }
+    it->second->declaredVars.insert(name);
+    // The same name, as the author wrote it, for the frontend: a bare name
+    // lowers to itself, so the two halves agree on it.
+    offerToScope(*it->second, location.source());
 }
 
 std::future<ScriptResult> LuaEngine::doEvaluateExpression(const std::string &sessionId,

@@ -314,10 +314,10 @@ TEST(ScriptLanguageSeam, AChunkRefusedAgainstAnOlderScopeIsAskedAgain) {
  * @brief An `<assign>` to a member location reaches the frontend.
  *
  * This is the route a DOCUMENT takes, and it is not the route a direct
- * `evaluateExpression` takes. `AssignmentExecutionHelper` sends a location that
- * is not a bare identifier down its complex path, which builds
+ * `evaluateExpression` takes. `IScriptEngine::assign`, which
+ * `AssignmentExecutionHelper` calls for every location, builds
  * `<location> = (<expr>);` and runs it as a SCRIPT — so the seam has to be on
- * `loweredScriptOf`, and while it was only on `loweredTextOf` every such
+ * `loweredScriptOf`, and while it was only on `loweredTextOf` every member-path
  * assignment silently fell back to the rewriter.
  *
  * That was not hypothetical. Measured 2026-08-29 on the `ecma262-lowered-cpp`
@@ -344,7 +344,7 @@ TEST(ScriptLanguageSeam, AMemberLocationAssignmentReachesTheFrontend) {
     ASSERT_TRUE(SCE::AssignmentExecutionHelper::executeAssignment(
         engine, sessionId, SCE::ScriptSource::ecmascript("answers.d53"), SCE::ScriptSource::ecmascript("5 ^ 3"),
         [&raised](const std::string &) { raised = true; }))
-        << "the complex-path assignment failed outright";
+        << "the member-path assignment failed outright";
     ASSERT_FALSE(raised);
 
     auto answer = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("answers.d53")).get();
