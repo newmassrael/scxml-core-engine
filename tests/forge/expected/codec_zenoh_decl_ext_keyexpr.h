@@ -12,16 +12,105 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_decl_ext_keyexpr_inner.h"
 
 namespace SCE::Generated::CodecZenohDeclExtKeyexpr {
 
+/// The elements a value of `CodecZenohDeclExtKeyexpr` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_outer_header {
+void outer_header() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.outer_header())) -> decltype(s.outer_header()) {
+    return s.outer_header();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(outer_header(s))) -> decltype(outer_header(s)) {
+    return outer_header(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_outer_header
+/// The `outer_header` element of a source.
+inline constexpr detail_outer_header::Read outer_header{};
+namespace detail_inner {
+void inner() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.inner())) -> decltype(s.inner()) {
+    return s.inner();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(inner(s))) -> decltype(inner(s)) {
+    return inner(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_inner
+/// The `inner` element of a source.
+inline constexpr detail_inner::Read inner{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecZenohDeclExtKeyexpr`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::outer_header(std::declval<const S&>())), decltype(source::inner(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::outer_header(std::declval<const S&>())), uint8_t>, ::SCE::Generated::CodecZenohDeclExtKeyexprInner::is_source<std::decay_t<decltype(source::inner(std::declval<const S&>()))>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::outer_header(std::declval<const S&>()))) && noexcept(source::inner(std::declval<const S&>())) && ::SCE::Generated::CodecZenohDeclExtKeyexprInner::is_nothrow_source<std::decay_t<decltype(source::inner(std::declval<const S&>()))>>::value> {};
+
+/// The encode of `CodecZenohDeclExtKeyexpr` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecZenohDeclExtKeyexpr: outer_header, inner");
+        const auto& _r_inner = source::inner(src);
+        ::SCE::Forge::CountingSink _k_inner;
+        (void)::SCE::Generated::CodecZenohDeclExtKeyexprInner::Wire::encode_source(_r_inner, _k_inner);
+        const uint64_t _d_total_length = static_cast<uint64_t>(_k_inner.position());
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::outer_header(src))); _e) return _e;
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(_d_total_length)); _e) return _e;
+        if (auto _e = ::SCE::Generated::CodecZenohDeclExtKeyexprInner::Wire::encode_source(_r_inner, w); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecZenohDeclExtKeyexpr {
-    uint8_t outer_header{};
-    uint64_t total_length{};
-    ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner inner{};
+    CodecZenohDeclExtKeyexpr() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecZenohDeclExtKeyexpr(uint8_t outer_header, ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner inner)
+        : outer_header_(outer_header), inner_(std::move(inner)) {}
+    /// The `outer_header` element.
+    [[nodiscard]] constexpr uint8_t outer_header() const noexcept { return outer_header_; }
+    /// The `inner` element, the body it holds.
+    [[nodiscard]] const ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner& inner() const noexcept { return inner_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -62,11 +151,12 @@ struct CodecZenohDeclExtKeyexpr {
             if (!cursor.advance(_len)) return std::nullopt;
             inner = std::move(*_emb);
         }
-        return CodecZenohDeclExtKeyexpr{
+        (void)total_length;
+        CodecZenohDeclExtKeyexpr _decoded{
             /*outer_header=*/outer_header,
-            /*total_length=*/total_length,
-            /*inner=*/inner,
+            /*inner=*/std::move(inner),
         };
+        return _decoded;
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors.
@@ -76,7 +166,7 @@ struct CodecZenohDeclExtKeyexpr {
     // sibling bits. Wire layout is unchanged.
     uint8_t ext_id() const noexcept {
         return static_cast<uint8_t>(
-            (this->outer_header >> 0) & static_cast<uint8_t>(0x0F)
+            (this->outer_header_ >> 0) & static_cast<uint8_t>(0x0F)
         );
     }
 
@@ -89,26 +179,26 @@ struct CodecZenohDeclExtKeyexpr {
             static_cast<uint8_t>(
                 (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x0F)) << 0
             );
-        this->outer_header = static_cast<uint8_t>(
-            (this->outer_header & static_cast<uint8_t>(~_shifted_mask)) | _val
+        this->outer_header_ = static_cast<uint8_t>(
+            (this->outer_header_ & static_cast<uint8_t>(~_shifted_mask)) | _val
         );
     }
 
     bool m() const noexcept {
-        return (this->outer_header & 0x10) != 0;
+        return (this->outer_header_ & 0x10) != 0;
     }
 
     void set_m(bool v) noexcept {
         if (v) {
-            this->outer_header = static_cast<uint8_t>(this->outer_header | 0x10);
+            this->outer_header_ = static_cast<uint8_t>(this->outer_header_ | 0x10);
         } else {
-            this->outer_header = static_cast<uint8_t>(this->outer_header & static_cast<uint8_t>(~0x10));
+            this->outer_header_ = static_cast<uint8_t>(this->outer_header_ & static_cast<uint8_t>(~0x10));
         }
     }
 
     uint8_t enc() const noexcept {
         return static_cast<uint8_t>(
-            (this->outer_header >> 5) & static_cast<uint8_t>(0x03)
+            (this->outer_header_ >> 5) & static_cast<uint8_t>(0x03)
         );
     }
 
@@ -121,20 +211,20 @@ struct CodecZenohDeclExtKeyexpr {
             static_cast<uint8_t>(
                 (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x03)) << 5
             );
-        this->outer_header = static_cast<uint8_t>(
-            (this->outer_header & static_cast<uint8_t>(~_shifted_mask)) | _val
+        this->outer_header_ = static_cast<uint8_t>(
+            (this->outer_header_ & static_cast<uint8_t>(~_shifted_mask)) | _val
         );
     }
 
     bool z() const noexcept {
-        return (this->outer_header & 0x80) != 0;
+        return (this->outer_header_ & 0x80) != 0;
     }
 
     void set_z(bool v) noexcept {
         if (v) {
-            this->outer_header = static_cast<uint8_t>(this->outer_header | 0x80);
+            this->outer_header_ = static_cast<uint8_t>(this->outer_header_ | 0x80);
         } else {
-            this->outer_header = static_cast<uint8_t>(this->outer_header & static_cast<uint8_t>(~0x80));
+            this->outer_header_ = static_cast<uint8_t>(this->outer_header_ & static_cast<uint8_t>(~0x80));
         }
     }
 
@@ -149,18 +239,9 @@ struct CodecZenohDeclExtKeyexpr {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_u8(outer_header); _e) return _e;
-        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(total_length)); _e) return _e;
-        if (auto _e = inner.encode(w); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -175,6 +256,10 @@ struct CodecZenohDeclExtKeyexpr {
         (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint8_t outer_header_{};
+    ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner inner_{};
 };
 
 }  // namespace SCE::Generated::CodecZenohDeclExtKeyexpr

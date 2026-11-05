@@ -410,6 +410,16 @@ old encode, the old encode and its templates are removed in the same landing.
    accessor: the `<sce:index-by>` field the collection finds by, and an algorithm's `entry.<field>` over the
    collection, which the document set threads as `element_type_cpp_printed` beside the element schemas. The printed
    set is 60 codecs.
+
+   *The fifth C++ landing, 2026-11-05:* a body always there, of a codec the printer prints, and the flag inputs a
+   caller hands the encode. The value holds the body's value and presents it by reference; a source presents it as
+   any source of the body's codec (that codec's `is_source`), and the encode writes it by that codec's
+   `Wire::encode_source`, handing it the inputs the parent binds. A length of the bytes a body encodes to is counted
+   by the same encode over a `CountingSink` (`sce/forge/codec.h`) before it is written. The inputs a caller hands
+   are parameters of `Wire::encode_source` after the sink, as the template's `encode` has them, and a gate may test
+   them. Whether a codec a C++ codec holds is printed is now read with its imports resolved as the C++ tree resolves
+   them (`read_codec_file_as`), as the generator reads it. The printed set is 64 codecs. An input the value says
+   (docs/adr/0065 §6 R4a) waits for its own landing with the wire expression it gates.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

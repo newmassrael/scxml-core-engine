@@ -25,6 +25,7 @@
 // derives the bit; codec_length_ref_dotted_basic.scxml (a carrier whose high
 // nibble holds the length of the payload after it) derives the nibble.
 
+#include "codec_embed_basic.h"
 #include "codec_length_ref.h"
 #include "codec_length_ref_dotted_basic.h"
 #include "codec_little_endian.h"
@@ -235,6 +236,26 @@ struct SequencedReading {
 
     [[nodiscard]] std::optional<std::uint16_t> seq() const noexcept {
         return std::uint16_t{42};
+    }
+};
+
+// A locator of the consumer's own: a source of the locator codec, which an
+// endpoint presents as its body.
+struct OwnLocator {
+    [[nodiscard]] ::SCE::Forge::Text<255> locator() const noexcept {
+        return *::SCE::Forge::Text<255>::make(std::string_view("tcp/x"));
+    }
+};
+
+// An endpoint presenting its locator as a source of the locator codec, not
+// as the generated value: the body is encoded over what it presents.
+struct Endpoint {
+    [[nodiscard]] std::uint8_t tag() const noexcept {
+        return 7;
+    }
+
+    [[nodiscard]] OwnLocator locator() const noexcept {
+        return {};
     }
 };
 
@@ -468,6 +489,40 @@ void a_text_is_made_of_utf8_within_its_bound_and_its_length_is_derived() {
     CHECK(!Locator::CodecZenohLocator::decode(cursor).has_value(), "a frame whose text is not UTF-8 is refused");
 }
 
+namespace Embed = ::SCE::Generated::CodecEmbedBasic;
+
+static_assert(std::is_same<decltype(std::declval<const Embed::CodecEmbedBasic &>().locator()),
+                           const Locator::CodecZenohLocator &>::value,
+              "a body is presented by reference to the value of its codec");
+static_assert(Embed::is_source<consumer::Endpoint>::value,
+              "a type presenting its body as a source of the body's codec is a source");
+
+void a_body_is_encoded_over_the_source_its_holder_presents() {
+    const std::vector<std::uint8_t> expected{0x07, 0x05, 't', 'c', 'p', '/', 'x'};
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!Embed::Wire::encode_source(consumer::Endpoint{}, sink).has_value() && out == expected,
+          "a body presented as a source of its codec is written by that codec's encode");
+
+    const auto text = ::SCE::Forge::Text<255>::make(std::string_view("tcp/x"));
+    CHECK(text.has_value(), "the locator lies within its bound");
+    if (!text) {
+        return;
+    }
+    const Embed::CodecEmbedBasic value{7, Locator::CodecZenohLocator{*text}};
+    CHECK(value.encode_to_vec() == expected, "the generated value holding its body encodes alike");
+
+    ::SCE::Forge::SceCursor cursor(expected.data(), expected.size());
+    const auto decoded = Embed::CodecEmbedBasic::decode(cursor);
+    CHECK(decoded.has_value() && decoded->tag() == 7 && decoded->locator().locator() == std::string("tcp/x"),
+          "a decoded value holds its body");
+
+    ::SCE::Forge::CountingSink counter;
+    CHECK(!Embed::Wire::encode_source(consumer::Endpoint{}, counter).has_value() &&
+              counter.position() == expected.size(),
+          "a counting sink counts the bytes an encode writes and keeps none");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -486,6 +541,7 @@ int main() {
     a_presence_flag_is_derived_from_the_element_it_gates();
     a_length_held_in_a_flag_is_derived_from_the_bytes();
     a_text_is_made_of_utf8_within_its_bound_and_its_length_is_derived();
+    a_body_is_encoded_over_the_source_its_holder_presents();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

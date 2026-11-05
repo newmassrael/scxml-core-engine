@@ -12,15 +12,81 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_source_info.h"
 
 namespace SCE::Generated::CodecZenohSourceInfoExt {
 
+/// The elements a value of `CodecZenohSourceInfoExt` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_info {
+void info() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.info())) -> decltype(s.info()) {
+    return s.info();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(info(s))) -> decltype(info(s)) {
+    return info(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_info
+/// The `info` element of a source.
+inline constexpr detail_info::Read info{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecZenohSourceInfoExt`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::info(std::declval<const S&>()))>>
+    : std::conjunction<::SCE::Generated::CodecZenohSourceInfo::is_source<std::decay_t<decltype(source::info(std::declval<const S&>()))>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(source::info(std::declval<const S&>())) && ::SCE::Generated::CodecZenohSourceInfo::is_nothrow_source<std::decay_t<decltype(source::info(std::declval<const S&>()))>>::value> {};
+
+/// The encode of `CodecZenohSourceInfoExt` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecZenohSourceInfoExt: info");
+        const auto& _r_info = source::info(src);
+        ::SCE::Forge::CountingSink _k_info;
+        (void)::SCE::Generated::CodecZenohSourceInfo::Wire::encode_source(_r_info, _k_info);
+        const uint64_t _d_ext_size = static_cast<uint64_t>(_k_info.position());
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(_d_ext_size)); _e) return _e;
+        if (auto _e = ::SCE::Generated::CodecZenohSourceInfo::Wire::encode_source(_r_info, w); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecZenohSourceInfoExt {
-    uint64_t ext_size{};
-    ::SCE::Generated::CodecZenohSourceInfo::CodecZenohSourceInfo info{};
+    CodecZenohSourceInfoExt() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecZenohSourceInfoExt(::SCE::Generated::CodecZenohSourceInfo::CodecZenohSourceInfo info)
+        : info_(std::move(info)) {}
+    /// The `info` element, the body it holds.
+    [[nodiscard]] const ::SCE::Generated::CodecZenohSourceInfo::CodecZenohSourceInfo& info() const noexcept { return info_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -54,10 +120,11 @@ struct CodecZenohSourceInfoExt {
             if (!cursor.advance(_len)) return std::nullopt;
             info = std::move(*_emb);
         }
-        return CodecZenohSourceInfoExt{
-            /*ext_size=*/ext_size,
-            /*info=*/info,
+        (void)ext_size;
+        CodecZenohSourceInfoExt _decoded{
+            /*info=*/std::move(info),
         };
+        return _decoded;
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
@@ -71,17 +138,9 @@ struct CodecZenohSourceInfoExt {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(ext_size)); _e) return _e;
-        if (auto _e = info.encode(w); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -96,6 +155,9 @@ struct CodecZenohSourceInfoExt {
         (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    ::SCE::Generated::CodecZenohSourceInfo::CodecZenohSourceInfo info_{};
 };
 
 }  // namespace SCE::Generated::CodecZenohSourceInfoExt

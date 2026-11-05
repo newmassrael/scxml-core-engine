@@ -427,8 +427,9 @@ struct {{ struct_name }} {
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w{{ params_after_first_arg }}) const noexcept {
 {% if cpp_source %}
-        // The encode over any source of the codec, this value one of them.
-        return Wire::encode_source(*this, w);
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
+        return Wire::encode_source(*this, w{{ params_first_arg_with_comma }});
 {% else %}
 {% if has_parent_flags %}
         (void)parent_flags;

@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "803319f",
+  "embed_version": "fd8d04c",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 524,
+  "symbol_count": 525,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3266,6 +3266,12 @@
         "method void (const Head &) noexcept Head"
       ],
       "name": "SCE::Forge::Cbor::Head"
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::CountingSink"
     },
     {
       "header": "sce/forge/codec.h",

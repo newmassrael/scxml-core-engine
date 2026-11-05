@@ -15,21 +15,22 @@
 use super::*;
 use crate::forge::codec_roles::ElementId;
 use crate::forge::encode_plan::{
-    Absent, Bound, Clause, CodecPlan, Derive, EncodePlan, Guard, Measured, Narrow, Number,
-    NumberInto, Offset, Presence, Value, Write,
+    Absent, Bound, Clause, CodecPlan, Derive, EncodePlan, Guard, HandedFrom, Measured, Narrow,
+    Number, NumberInto, Offset, Presence, Value, Write,
 };
 
 /// The first form of `plan` the C++ printer does not print yet, or `None`
-/// where it prints the codec whole.
-pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
-    unlowered_forms(plan).into_iter().next()
+/// where it prints the codec whole. `imports` are the codec's own, which say
+/// whether a codec it holds is printed too.
+pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Option<String> {
+    unlowered_forms(plan, imports).into_iter().next()
 }
 
 /// Every form of `plan` the C++ printer does not print yet, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole. A codec
 /// moves at the landing that lowers the last of them, so a landing is chosen
 /// by the codecs whose every form it lowers.
-pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
+pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let plan = match plan {
         CodecPlan::Positional(plan) => plan,
         CodecPlan::Cbor(_) => return vec!["a CBOR codec".to_string()],
@@ -58,7 +59,26 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
                 forms.push(format!("`{id}`, a text of no stated bound"))
             }
             Value::Text(_) => {}
-            Value::Body { .. } => forms.push(format!("`{id}`, a body")),
+            // A body is encoded over a source of its codec, which a codec the
+            // printer prints has; it is written whole, every input it takes
+            // handed by what the parent binds to it.
+            Value::Body { codec } => {
+                if !held_printed(imports, codec) {
+                    forms.push(format!(
+                        "`{id}`, a body of a codec the printer does not print"
+                    ));
+                }
+                if element.presence == Presence::Gated {
+                    forms.push(format!("`{id}`, a body a gate decides"));
+                }
+                if plan
+                    .handed
+                    .get(*codec)
+                    .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
+                {
+                    forms.push(format!("`{id}`, a body handed an input nothing binds"));
+                }
+            }
             Value::List { .. } => forms.push(format!("`{id}`, a list")),
         }
         // A gated element is presented as an optional value; a number the
@@ -79,13 +99,14 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
         m.fields
             .iter()
             .filter(|f| {
-                !plan.elements.iter().any(|e| e.field.id == f.id)
-                    && derived_number(plan, &f.id).is_none()
+                !plan.elements.iter().any(|e| e.field.id == f.id) && !derived_number(plan, &f.id)
             })
             .map(|field| format!("`{}`, which no element presents", field.id)),
     );
-    if !m.flag_inputs.is_empty() {
-        forms.push("a flag input".to_string());
+    // An input the caller hands the encode is a parameter of it; one the value
+    // says (docs/adr/0065 §6 R4a) is not yet.
+    if !plan.said.is_empty() {
+        forms.push("a flag input the value says".to_string());
     }
     if !plan.gate_checks.is_empty() || !plan.input_checks.is_empty() || !plan.totality.is_total() {
         forms.push("an encode that can refuse".to_string());
@@ -138,18 +159,16 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
                         field.id
                     )),
                     // Written where its gate holds, which the printer tests on
-                    // the carriers as the encode writes them.
+                    // the carriers as the encode writes them and on the inputs
+                    // it is handed.
                     Guard::Gate => {
-                        let flags_only = field.present_if.as_ref().is_some_and(|gate| {
+                        let testable = field.present_if.as_ref().is_some_and(|gate| {
                             plan.clauses(gate)
                                 .iter()
-                                .all(|c| matches!(c, Clause::Flag { .. }))
+                                .all(|c| matches!(c, Clause::Flag { .. } | Clause::Input { .. }))
                         });
-                        if !flags_only {
-                            forms.push(format!(
-                                "`{}`, gated on an input or a chain's membership",
-                                field.id
-                            ));
+                        if !testable {
+                            forms.push(format!("`{}`, gated on a chain's membership", field.id));
                         }
                     }
                 }
@@ -164,8 +183,8 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
         }
     }
     // A field is written in its declared bits (a byte or less, or one of the
-    // sink's whole widths), as the bytes it holds, or as a VLE of a width the
-    // sink writes.
+    // sink's whole widths), as the bytes it holds, as a VLE of a width the
+    // sink writes, or as the body of the codec it embeds.
     forms.extend(
         m.fields
             .iter()
@@ -176,6 +195,7 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
                         bits: 1..=8 | 16 | 32 | 64
                     } | BitSize::Tail
                         | BitSize::LengthRef
+                        | BitSize::Embed
                         | BitSize::Vle {
                             width_bits: 16 | 32 | 64
                         }
@@ -184,6 +204,30 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
             .map(|field| format!("`{}`, of no width the sink writes whole", field.id)),
     );
     forms
+}
+
+/// Whether the codec a value holds as `alias` is one the C++ printer prints,
+/// whose namespace has the encode over any source of it (`Wire`).
+fn held_printed(imports: &[ImportContext], alias: &str) -> bool {
+    imports
+        .iter()
+        .any(|import| import.alias == alias && import.cpp_printed)
+}
+
+/// The C++ class of the codec a value holds as `alias`, and the namespace that
+/// holds its `Wire` and its traits: a generated codec's class is named as its
+/// namespace is (`::SCE::Generated::X::X`).
+fn held_codec<'i>(imports: &'i [ImportContext], alias: &str) -> (&'i str, &'i str) {
+    let import = imports
+        .iter()
+        .find(|import| import.alias == alias)
+        .expect("`unlowered` refuses a body of a codec not imported");
+    let class = import.member_type.as_str();
+    let namespace = class
+        .rsplit_once("::")
+        .map(|(namespace, _)| namespace)
+        .expect("a generated C++ codec's class is named in its namespace");
+    (class, namespace)
 }
 
 /// What of the derivation `derived` the printer does not print yet, or `None`
@@ -225,7 +269,20 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
             ))
         }
         Measured::Bytes { .. } => {}
-        _ => return Some(format!("`{element}`, a count or an encoded length")),
+        // How many bytes a body encodes to, counted by its encode over a sink
+        // that keeps none: a body whose encode can refuse passes the refusal
+        // on, which the printer does not yet.
+        Measured::Encoded { refuses: false, .. }
+            if matches!(number.into, NumberInto::Field { .. }) => {}
+        Measured::Encoded { refuses: false, .. } => {
+            return Some(format!("`{element}`, an encoded length held in a flag"))
+        }
+        Measured::Encoded { refuses: true, .. } => {
+            return Some(format!(
+                "`{element}`, the encoded length of a body that can refuse"
+            ))
+        }
+        _ => return Some(format!("`{element}`, a count")),
     }
     match (element, &number.into) {
         (
@@ -252,28 +309,13 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
     }
 }
 
-/// The number the field `id` holds, where the plan derives the field whole
-/// from the length of one byte string: the byte string and how the wire's
-/// number differs from its length ([`derivation_unlowered`] answers `None`
-/// for the derivation).
-fn derived_number<'p>(plan: &EncodePlan<'p>, id: &str) -> Option<(&'p CodecField, Offset)> {
-    plan.derivations.iter().find_map(|derived| {
-        let ElementId::Field(element) = &derived.element else {
-            return None;
-        };
-        let Derive::Number(number) = &derived.by else {
-            return None;
-        };
-        if element != id {
-            return None;
-        }
-        match number.measures.as_slice() {
-            [measure] => match &measure.of {
-                Measured::Bytes { field, offset } => Some((*field, *offset)),
-                _ => None,
-            },
-            _ => None,
-        }
+/// Whether the plan derives the field `id` whole as a number, which the value
+/// does not present: the encode computes it as the local `_d_<id>`, and the
+/// decode reads it and drops it.
+fn derived_number(plan: &EncodePlan<'_>, id: &str) -> bool {
+    plan.derivations.iter().any(|derived| {
+        matches!(&derived.element, ElementId::Field(element) if element == id)
+            && matches!(derived.by, Derive::Number(_))
     })
 }
 
@@ -328,6 +370,16 @@ struct Presented<'p> {
     /// Whether a gate decides it, so that it is presented as an optional
     /// value (docs/adr/0055).
     optional: bool,
+    /// Where it is the body of a codec it holds, that codec.
+    body: Option<HeldCodec>,
+}
+
+/// A codec a printed value holds as a body (its class is the element's view):
+/// the namespace whose `Wire` encodes it over any source of it and whose
+/// `is_source` says what one is, and the alias the value imports it as.
+struct HeldCodec {
+    namespace: String,
+    alias: String,
 }
 
 impl<'p> Presented<'p> {
@@ -357,10 +409,30 @@ impl<'p> Presented<'p> {
         self.bytes || self.optional
     }
 
-    fn of(element: &crate::forge::encode_plan::Element<'p>, l: &LangCtx) -> Self {
+    fn of(
+        element: &crate::forge::encode_plan::Element<'p>,
+        l: &LangCtx,
+        imports: &[ImportContext],
+    ) -> Self {
         let name = l.codec_field_id(&element.field.id);
         let optional = element.presence == Presence::Gated;
         match &element.value {
+            Value::Body { codec } => {
+                let (class, namespace) = held_codec(imports, codec);
+                Presented {
+                    field: element.field,
+                    name,
+                    view: class.to_string(),
+                    held: class.to_string(),
+                    bytes: false,
+                    text: false,
+                    optional,
+                    body: Some(HeldCodec {
+                        namespace: namespace.to_string(),
+                        alias: (*codec).to_string(),
+                    }),
+                }
+            }
             Value::Bytes(bound) | Value::Text(bound) => {
                 let text = matches!(element.value, Value::Text(_));
                 let most = bound
@@ -384,6 +456,7 @@ impl<'p> Presented<'p> {
                     bytes: true,
                     text,
                     optional,
+                    body: None,
                 }
             }
             _ => {
@@ -396,16 +469,53 @@ impl<'p> Presented<'p> {
                     bytes: false,
                     text: false,
                     optional,
+                    body: None,
                 }
             }
+        }
+    }
+
+    /// What a source's read of it must be: convertible to what it is
+    /// presented as, or, for a body, a source of the codec it holds.
+    fn source_requirement(&self) -> String {
+        let read = format!("decltype(source::{}(std::declval<const S&>()))", self.name);
+        match &self.body {
+            Some(held) => format!("{}::is_source<std::decay_t<{read}>>", held.namespace),
+            None => format!("std::is_convertible<{read}, {}>", self.presented()),
+        }
+    }
+
+    /// Whether reading it from a source `S`, and taking it as what it is
+    /// presented as, throws nothing; for a body, whether the read and every
+    /// read of the body as a source of its codec throw nothing.
+    fn nothrow_requirement(&self) -> String {
+        let read = format!("source::{}(std::declval<const S&>())", self.name);
+        match &self.body {
+            Some(held) => format!(
+                "noexcept({read}) && {}::is_nothrow_source<std::decay_t<decltype({read})>>::value",
+                held.namespace
+            ),
+            None => format!(
+                "noexcept(::SCE::Forge::Detail::converts_to<{}>({read}))",
+                self.presented()
+            ),
         }
     }
 }
 
 /// The C++ text of the codec `plan`, whose class is `struct_name`; the plan is
 /// one [`unlowered`] answers `None` for.
-pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> CppSource {
-    let elements: Vec<Presented<'_>> = plan.elements.iter().map(|e| Presented::of(e, l)).collect();
+pub(super) fn render(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> CppSource {
+    let elements: Vec<Presented<'_>> = plan
+        .elements
+        .iter()
+        .map(|e| Presented::of(e, l, imports))
+        .collect();
     let mut before = String::new();
     before.push_str(&format!(
         "/// The elements a value of `{struct_name}` presents, each read by name: the\n\
@@ -454,16 +564,7 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
             .iter()
             .map(|n| format!("decltype(source::{n}(std::declval<const S&>()))"))
             .collect();
-        let converts: Vec<String> = elements
-            .iter()
-            .map(|e| {
-                format!(
-                    "std::is_convertible<decltype(source::{}(std::declval<const S&>())), {}>",
-                    e.name,
-                    e.presented()
-                )
-            })
-            .collect();
+        let converts: Vec<String> = elements.iter().map(Presented::source_requirement).collect();
         before.push_str(&format!(
             "template <class S>\n\
              struct is_source<S, std::void_t<{}>>\n\
@@ -483,13 +584,7 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
     } else {
         elements
             .iter()
-            .map(|e| {
-                format!(
-                    "noexcept(::SCE::Forge::Detail::converts_to<{}>(source::{}(std::declval<const S&>())))",
-                    e.presented(),
-                    e.name
-                )
-            })
+            .map(Presented::nothrow_requirement)
             .collect::<Vec<_>>()
             .join(" && ")
     };
@@ -501,6 +596,14 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
          struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>\n\
          \x20   : std::bool_constant<{nothrow}> {{}};\n\n"
     ));
+    // The flag inputs the caller hands the encode (docs/adr/0065 §6 R4a), one
+    // byte each, named as the template's `encode` names them.
+    let input_name = |name: &str| filters::to_snake_case(name.to_string());
+    let input_params: String = plan
+        .given
+        .iter()
+        .map(|input| format!(", std::uint8_t {}", input_name(&input.name)))
+        .collect();
     before.push_str(&format!(
         "/// The encode of `{struct_name}` over any source of it: each element read\n\
          /// through `source`, written as the plan lays it out (docs/adr/0081). It\n\
@@ -508,23 +611,36 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
          /// throws only what a read of `src` throws.\n\
          struct Wire {{\n\
          \x20   template <class S>\n\
-         \x20   [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {{\n\
+         \x20   [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w{input_params}) noexcept(is_nothrow_source<S>::value) {{\n\
          \x20       static_assert(is_source<S>::value, \"S presents every element of {struct_name}: {}\");\n",
         if names.is_empty() { "none".to_string() } else { names.join(", ") }
     ));
     if elements.is_empty() {
         before.push_str("        (void)src;\n        (void)w;\n");
     }
+    // An input is read where a gate or a held codec needs it, which some
+    // layouts never do.
+    for input in &plan.given {
+        before.push_str(&format!("        (void){};\n", input_name(&input.name)));
+    }
     // A byte string is read once and viewed within its bound, and an optional
     // value is read once and tested before it is written: what the read
-    // returns lives to the end of the encode, so a view never outlives it.
-    for e in elements.iter().filter(|e| e.kept()) {
-        before.push_str(&format!(
-            "        const auto& _r_{name} = source::{name}(src);\n\
-             \x20       const {presented} _e_{name} = _r_{name};\n",
-            name = e.name,
-            presented = e.presented()
-        ));
+    // returns lives to the end of the encode, so a view never outlives it. A
+    // body is read once, as the source of its codec it is, and kept as read.
+    for e in &elements {
+        if e.body.is_some() {
+            before.push_str(&format!(
+                "        const auto& _r_{name} = source::{name}(src);\n",
+                name = e.name
+            ));
+        } else if e.kept() {
+            before.push_str(&format!(
+                "        const auto& _r_{name} = source::{name}(src);\n\
+                 \x20       const {presented} _e_{name} = _r_{name};\n",
+                name = e.name,
+                presented = e.presented()
+            ));
+        }
     }
     let element = |f: &CodecField| elements.iter().find(|e| e.field.id == f.id);
     let optional = |f: &CodecField| element(f).is_some_and(|e| e.optional);
@@ -539,6 +655,7 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
     // there, or exactly when it is not for a field gated on the flag's clear
     // state; fields one group holds are there together, so the first says it.
     let mut folds: std::collections::BTreeMap<&str, Vec<Fold>> = std::collections::BTreeMap::new();
+    let mut encoded: Vec<(&ElementId, &Number<'_>)> = Vec::new();
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
             (ElementId::Flag { field, flag }, Derive::Presence(presence)) => {
@@ -560,12 +677,15 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
                 let [measure] = number.measures.as_slice() else {
                     unreachable!("`unlowered` refuses a number of more than one measure");
                 };
-                let Measured::Bytes {
-                    field: bytes,
-                    offset,
-                } = &measure.of
-                else {
-                    unreachable!("`unlowered` refuses a number of anything but bytes");
+                let (bytes, offset) = match &measure.of {
+                    Measured::Bytes { field, offset } => (*field, offset),
+                    // Counted below, once the carriers its body may be handed
+                    // are as the encode writes them.
+                    Measured::Encoded { .. } => {
+                        encoded.push((element_id, number));
+                        continue;
+                    }
+                    _ => unreachable!("`unlowered` refuses a count"),
                 };
                 let name = l.codec_field_id(&bytes.id);
                 let arith = match offset {
@@ -657,7 +777,7 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
     // (read only where it is tested present), or what the source presents.
     let read = |f: &CodecField| {
         let name = l.codec_field_id(&f.id);
-        if derived_number(plan, &f.id).is_some() {
+        if derived_number(plan, &f.id) {
             format!("_d_{name}")
         } else if folds.contains_key(f.id.as_str()) {
             format!("_c_{name}")
@@ -680,30 +800,97 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
             "        if (auto _e = w.write_bytes({data}, _e_{name}{at}size()); _e) return _e;\n"
         )
     };
-    // A gate, tested on the carriers as the encode writes them.
+    // A gate, tested on the carriers as the encode writes them and on the
+    // inputs it is handed.
     let gate_test = |f: &CodecField| {
         let gate = f
             .present_if
             .as_ref()
             .expect("a field written where its gate holds is gated");
+        let bit = |read: String, mask: u64, negate: bool| {
+            format!(
+                "((static_cast<std::uint64_t>({read}) & 0x{mask:X}ull) {} 0)",
+                if negate { "==" } else { "!=" }
+            )
+        };
         plan.clauses(gate)
             .iter()
             .map(|clause| match clause {
                 Clause::Flag {
                     carrier,
-                    bit,
+                    bit: at,
                     negate,
-                } => format!(
-                    "((static_cast<std::uint64_t>({}) & 0x{:X}ull) {} 0)",
-                    read(carrier),
-                    1u64 << bit,
-                    if *negate { "==" } else { "!=" }
-                ),
-                _ => unreachable!("`unlowered` refuses a gate on an input or a chain"),
+                } => bit(read(carrier), 1u64 << at, *negate),
+                Clause::Input { name, negate } => bit(input_name(name), 1, *negate),
+                Clause::Member { .. } => {
+                    unreachable!("`unlowered` refuses a gate on a chain's membership")
+                }
             })
             .collect::<Vec<_>>()
             .join(" || ")
     };
+    // What a held codec is handed for each input it takes (docs/adr/0065 §6
+    // R4a), in the order it declares them: bits of a carrier as the encode
+    // writes it, or an input of this codec's own, passed on.
+    let handed = |alias: &str| -> String {
+        plan.handed
+            .get(alias)
+            .map(|inputs| {
+                inputs
+                    .iter()
+                    .map(|handed| match &handed.from {
+                        Some(HandedFrom::Carrier {
+                            carrier,
+                            bit,
+                            width,
+                        }) => {
+                            let mask = if *width >= 64 {
+                                u64::MAX
+                            } else {
+                                (1u64 << width) - 1
+                            };
+                            format!(
+                                ", static_cast<std::uint8_t>((static_cast<std::uint64_t>({}) >> {bit}) & 0x{mask:X}ull)",
+                                read(carrier)
+                            )
+                        }
+                        Some(HandedFrom::Input { name }) => format!(", {}", input_name(name)),
+                        None => unreachable!("`unlowered` refuses a body handed an input nothing binds"),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    // How many bytes a body encodes to, counted by its encode over a sink that
+    // keeps none; its encode refuses nothing, so the count is all it returns.
+    for (element_id, number) in encoded {
+        let [measure] = number.measures.as_slice() else {
+            unreachable!("`unlowered` refuses a number of more than one measure");
+        };
+        let Measured::Encoded { body, .. } = &measure.of else {
+            unreachable!("only an encoded length is counted here");
+        };
+        let held = element(body)
+            .and_then(|e| e.body.as_ref())
+            .expect("an encoded length measures a body the value presents");
+        let name = l.codec_field_id(&body.id);
+        before.push_str(&format!(
+            "        ::SCE::Forge::CountingSink _k_{name};\n\
+             \x20       (void){}::Wire::encode_source(_r_{name}, _k_{name}{});\n",
+            held.namespace,
+            handed(&held.alias)
+        ));
+        match (element_id, &number.into) {
+            (ElementId::Field(_), NumberInto::Field { field, .. }) => {
+                let ty = l.type_name(&field.sce_type);
+                before.push_str(&format!(
+                    "        const {ty} _d_{} = static_cast<{ty}>(_k_{name}.position());\n",
+                    l.codec_field_id(&field.id)
+                ));
+            }
+            _ => unreachable!("`unlowered` refuses an encoded length into what holds none"),
+        }
+    }
     // The statements of a guarded write, inside the test that guards it.
     let guarded = |test: String, body: String| {
         let mut out = format!("        if ({test}) {{\n");
@@ -752,6 +939,19 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
                 list: None,
             } => {
                 let body = match &field.bit_size {
+                    // A body, written by its codec's encode over the source the
+                    // value read it as, with the inputs that codec is handed.
+                    BitSize::Embed => {
+                        let held = element(field)
+                            .and_then(|e| e.body.as_ref())
+                            .expect("an embedded field is a body the value presents");
+                        format!(
+                            "        if (auto _e = {}::Wire::encode_source(_r_{}, w{}); _e) return _e;\n",
+                            held.namespace,
+                            l.codec_field_id(&field.id),
+                            handed(&held.alias)
+                        )
+                    }
                     BitSize::Fixed { .. } => fixed_write(plan, field, &read(field)),
                     BitSize::Tail | BitSize::LengthRef => bytes_write(field),
                     BitSize::Vle { width_bits } => format!(
@@ -778,7 +978,9 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
 
     // A value that holds a byte string copies it in, which may throw and is no
     // constant expression in C++17; a value of integers alone is both.
-    let holds_bytes = elements.iter().any(|e| e.bytes);
+    // A body is held by value and moved in; the codec it holds may hold bytes,
+    // so a value holding a body is made as one holding bytes is.
+    let holds_bytes = elements.iter().any(|e| e.bytes || e.body.is_some());
     let mut members = String::new();
     members.push_str(&format!("    {struct_name}() = default;\n"));
     if !elements.is_empty() {
@@ -788,7 +990,13 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
             .collect();
         let inits: Vec<String> = elements
             .iter()
-            .map(|Presented { name, .. }| format!("{}({name})", member(name)))
+            .map(|e| {
+                if e.body.is_some() {
+                    format!("{}(std::move({}))", member(&e.name), e.name)
+                } else {
+                    format!("{}({})", member(&e.name), e.name)
+                }
+            })
             .collect();
         let (constexpr, noexcept) = if holds_bytes {
             ("", "")
@@ -806,6 +1014,15 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
     for e in &elements {
         let name = &e.name;
         let held = member(name);
+        // A body is presented by reference: the value holds it whole.
+        if e.body.is_some() {
+            members.push_str(&format!(
+                "    /// The `{name}` element, the body it holds.\n\
+                 \x20   [[nodiscard]] const {}& {name}() const noexcept {{ return {held}; }}\n",
+                e.view
+            ));
+            continue;
+        }
         let constexpr = if e.bytes { "" } else { "constexpr " };
         // An optional byte string is viewed where it is present.
         let body = if e.bytes && e.optional {
@@ -875,7 +1092,7 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
         }
     }
     for field in &plan.model.fields {
-        if derived_number(plan, &field.id).is_some() {
+        if derived_number(plan, &field.id) {
             decoded.push_str(&format!("        (void){};\n", l.codec_field_id(&field.id)));
         }
     }
@@ -885,6 +1102,8 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> C
         let value = match (e.bytes, e.optional) {
             (true, false) => format!("*_b_{name}"),
             (true, true) => format!("_b_{name}"),
+            // A body the decode read is moved into the value.
+            (false, _) if e.body.is_some() => format!("std::move({name})"),
             (false, _) => name.clone(),
         };
         decoded.push_str(&format!("            /*{name}=*/{value},\n"));

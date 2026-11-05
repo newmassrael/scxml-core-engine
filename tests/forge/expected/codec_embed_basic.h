@@ -12,15 +12,101 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_locator.h"
 
 namespace SCE::Generated::CodecEmbedBasic {
 
+/// The elements a value of `CodecEmbedBasic` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_tag {
+void tag() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.tag())) -> decltype(s.tag()) {
+    return s.tag();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(tag(s))) -> decltype(tag(s)) {
+    return tag(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_tag
+/// The `tag` element of a source.
+inline constexpr detail_tag::Read tag{};
+namespace detail_locator {
+void locator() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.locator())) -> decltype(s.locator()) {
+    return s.locator();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(locator(s))) -> decltype(locator(s)) {
+    return locator(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_locator
+/// The `locator` element of a source.
+inline constexpr detail_locator::Read locator{};
+}  // namespace source
+
+/// Whether `S` presents every element of `CodecEmbedBasic`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::tag(std::declval<const S&>())), decltype(source::locator(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::tag(std::declval<const S&>())), uint8_t>, ::SCE::Generated::CodecZenohLocator::is_source<std::decay_t<decltype(source::locator(std::declval<const S&>()))>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::tag(std::declval<const S&>()))) && noexcept(source::locator(std::declval<const S&>())) && ::SCE::Generated::CodecZenohLocator::is_nothrow_source<std::decay_t<decltype(source::locator(std::declval<const S&>()))>>::value> {};
+
+/// The encode of `CodecEmbedBasic` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecEmbedBasic: tag, locator");
+        const auto& _r_locator = source::locator(src);
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::tag(src))); _e) return _e;
+        if (auto _e = ::SCE::Generated::CodecZenohLocator::Wire::encode_source(_r_locator, w); _e) return _e;
+        return std::nullopt;
+    }
+};
+
 struct CodecEmbedBasic {
-    uint8_t tag{};
-    ::SCE::Generated::CodecZenohLocator::CodecZenohLocator locator{};
+    CodecEmbedBasic() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecEmbedBasic(uint8_t tag, ::SCE::Generated::CodecZenohLocator::CodecZenohLocator locator)
+        : tag_(tag), locator_(std::move(locator)) {}
+    /// The `tag` element.
+    [[nodiscard]] constexpr uint8_t tag() const noexcept { return tag_; }
+    /// The `locator` element, the body it holds.
+    [[nodiscard]] const ::SCE::Generated::CodecZenohLocator::CodecZenohLocator& locator() const noexcept { return locator_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -50,10 +136,11 @@ struct CodecEmbedBasic {
         auto _emb_locator = ::SCE::Generated::CodecZenohLocator::CodecZenohLocator::decode(cursor);
         if (!_emb_locator.has_value()) return std::nullopt;
         auto locator = std::move(*_emb_locator);
-        return CodecEmbedBasic{
+        CodecEmbedBasic _decoded{
             /*tag=*/tag,
-            /*locator=*/locator,
+            /*locator=*/std::move(locator),
         };
+        return _decoded;
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
@@ -67,17 +154,9 @@ struct CodecEmbedBasic {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_u8(tag); _e) return _e;
-        if (auto _e = locator.encode(w); _e) return _e;
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -92,6 +171,10 @@ struct CodecEmbedBasic {
         (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint8_t tag_{};
+    ::SCE::Generated::CodecZenohLocator::CodecZenohLocator locator_{};
 };
 
 }  // namespace SCE::Generated::CodecEmbedBasic

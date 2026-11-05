@@ -485,4 +485,24 @@ private:
     std::size_t pos_;
 };
 
+/// A sink that keeps no byte and counts each one written: what an encode runs
+/// a part of the frame over first, where the frame states how many bytes that
+/// part encodes to before the part itself (docs/adr/0058 §3, docs/adr/0081
+/// §1). It never fails, and its position is the count.
+class CountingSink final : public SceSink {
+public:
+    [[nodiscard]] std::optional<CodecError> write_bytes(const std::uint8_t *data, std::size_t n) noexcept override {
+        (void)data;
+        count_ += n;
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::size_t position() const noexcept override {
+        return count_;
+    }
+
+private:
+    std::size_t count_ = 0;
+};
+
 }  // namespace SCE::Forge

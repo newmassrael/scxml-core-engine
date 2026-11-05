@@ -7524,14 +7524,21 @@ pub(crate) fn codec_inline_holds(m: &CodecModel, imports: &[ImportContext]) -> b
 /// 4, §6): its plan uses only the forms the C++ printer lowers. Such a value
 /// presents its elements through accessors and is made by its constructor.
 pub(crate) fn cpp_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
-    cpp_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+    cpp_source::unlowered(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
+    .is_none()
 }
 
 /// Every form of `m`'s encode plan the C++ printer does not lower, each of
 /// which keeps `m` on the template's encode; empty where
 /// [`cpp_codec_printed`].
 pub(crate) fn cpp_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
-    cpp_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+    cpp_source::unlowered_forms(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
 }
 
 /// Whether the eager form at the default profile, `{Codec}In<Lent<'a>>`,
@@ -10214,9 +10221,9 @@ fn render_codec(
     // template's encode whole (§6), so no codec has two.
     let cpp_printed = if matches!(lang, crate::generator::Language::Cpp) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-        match (&plan, cpp_source::unlowered(&plan)) {
+        match (&plan, cpp_source::unlowered(&plan, imports)) {
             (crate::forge::encode_plan::CodecPlan::Positional(p), None) => Some(
-                cpp_source::render(p, &l, &filters::to_pascal_case(m.name.clone())),
+                cpp_source::render(p, &l, imports, &filters::to_pascal_case(m.name.clone())),
             ),
             _ => None,
         }

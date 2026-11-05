@@ -191,7 +191,8 @@ struct CodecQosByte {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // The encode over any source of the codec, this value one of them.
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
         return Wire::encode_source(*this, w);
     }
 

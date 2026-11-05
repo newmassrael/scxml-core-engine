@@ -3182,9 +3182,13 @@ pub fn cpp_codec_printed_file(
     include_dirs: &[PathBuf],
     options: &ForgeCompileOptions,
 ) -> Result<Option<bool>, forge::error::Located<forge::error::ForgeError>> {
-    read_codec_file(path, include_dirs, options, |model, imports, _| {
-        forge::generator::cpp_codec_printed(&model, imports)
-    })
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::Cpp,
+        |model, imports, _| forge::generator::cpp_codec_printed(&model, imports),
+    )
 }
 
 /// Every form of the codec at `path` that the C++ printer does not lower
@@ -3197,9 +3201,13 @@ pub fn cpp_codec_unlowered_file(
     include_dirs: &[PathBuf],
     options: &ForgeCompileOptions,
 ) -> Result<Option<Vec<String>>, forge::error::Located<forge::error::ForgeError>> {
-    read_codec_file(path, include_dirs, options, |model, imports, _| {
-        forge::generator::cpp_codec_unlowered(&model, imports)
-    })
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::Cpp,
+        |model, imports, _| forge::generator::cpp_codec_unlowered(&model, imports),
+    )
 }
 
 /// A codec a codec imports: the alias it is imported as, the file it is read
@@ -3236,11 +3244,30 @@ pub fn encode_plan_file_with_imports<R>(
 /// What `read` answers of the codec at `path` and its imports, read as
 /// `compile_forge_file` reads it: expanded, parsed, its imports resolved and
 /// enriched, which is what a codec it holds is judged by. `None` for a document
-/// that is not a codec: a statechart is no forge document and no codec.
+/// that is not a codec: a statechart is no forge document and no codec. Its
+/// imports are resolved as the Rust tree resolves them; a question of another
+/// tree asks [`read_codec_file_as`].
 fn read_codec_file<R>(
     path: &Path,
     include_dirs: &[PathBuf],
     options: &ForgeCompileOptions,
+    read: impl FnOnce(
+        forge::model::CodecModel,
+        &[forge::generator::ImportContext],
+        &[ImportedCodec],
+    ) -> R,
+) -> Result<Option<R>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file_as(path, include_dirs, options, generator::Language::Rust, read)
+}
+
+/// [`read_codec_file`], its imports resolved and enriched as the tree of
+/// `language` resolves them: what a codec it holds is named as there, and
+/// what that tree knows of it (whether the C++ tree prints it from its plan).
+fn read_codec_file_as<R>(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+    language: generator::Language,
     read: impl FnOnce(
         forge::model::CodecModel,
         &[forge::generator::ImportContext],
@@ -3261,7 +3288,6 @@ fn read_codec_file<R>(
     let forge::model::ForgeDocument::Codec(model) = parsed.document else {
         return Ok(None);
     };
-    let language = generator::Language::Rust;
     let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
         .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     validate_and_enrich_imports(

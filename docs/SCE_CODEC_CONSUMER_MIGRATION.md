@@ -1178,6 +1178,21 @@ whose texts state a bound (5 more codecs of the resources, 60 in all). The secti
 - A generated algorithm that iterates a collection of a printed element reads its fields by accessor
   (`entry.pattern()`), and a collection indexed by a field of one finds by the accessor; both are regenerated.
 
+## A printed C++ codec holds a body of another printed codec and derives its encoded length (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the positional codecs
+whose bodies are always there and are themselves printed (4 more codecs of the resources, 64 in all). The sections
+above apply to each of them too.
+
+- A body element is the value of its codec, presented by reference: `ext.ts()` returns
+  `const CodecZenohTimestamp&`. The constructor takes the body's value: `CodecZenohTimestampExt{ts}`.
+- A length that counts the bytes the body encodes to (`ext_size`) is no longer an element; the encode counts it.
+- A source of the codec presents a body as any source of the body's codec, not only its generated value: a type of
+  yours with the body codec's accessors is written as the generated value would be.
+- `SCE::Forge::CountingSink` is a sink that counts what is written and keeps nothing.
+- A printed codec that takes flag inputs keeps them as parameters of `encode`, `encode_to_vec` and `decode`, as
+  before.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
