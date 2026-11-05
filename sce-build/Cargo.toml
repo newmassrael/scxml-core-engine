@@ -1807,5 +1807,12 @@ name = "a_schema_unit_declares_the_grammar_of_its_payload"
 path = "tests/a_schema_unit_declares_the_grammar_of_its_payload.rs"
 required-features = ["cli"]
 
+# A document's long text is held as characters in C and C++. It runs `sce-codegen`, so it carries
+# the `cli` gate.
+[[test]]
+name = "a_long_document_text_is_held_as_characters_in_c_and_cpp"
+path = "tests/a_long_document_text_is_held_as_characters_in_c_and_cpp.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
