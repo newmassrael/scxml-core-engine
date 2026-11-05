@@ -348,9 +348,13 @@
         AOT_DEBUG("Executing {} pending invokes at macrostep end", pendingInvokes_.size());
 
         // W3C SCXML 6.4: Use InvokeHelper as Single Source of Truth
+        // `[&]`: the executor runs inside this call, so the compiler captures
+        // what the body uses. A machine with no in-line invoke leaves the body
+        // without a use of `this`, and a listed `this` there is an unused
+        // capture clang refuses (-Wunused-lambda-capture).
         ::SCE::Core::InvokeHelper::executePendingInvokes(
             pendingInvokes_,
-            [this, &engine](const PendingInvoke& pending) {
+            [&](const PendingInvoke& pending) {
                 AOT_DEBUG("Executing pending invoke: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
 
                 // Switch on state to find which invoke to execute

@@ -451,8 +451,14 @@
                     // W3C SCXML 3.8: Build onentry block lambdas for EntryExitHelper
                     // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
                     std::vector<std::function<void()>> entryBlocks;
+{# `[&]`, not a list: each block runs inside this scope (executeEntryBlocks
+   below), so a reference to anything here outlives it, and the compiler
+   captures exactly what the block's body uses. A spelled list has to guess
+   that per machine, not per block: `this` listed for every block of a machine
+   whose methods need it left an unused capture in each block that does not,
+   which clang refuses under -Werror (-Wunused-lambda-capture). #}
 {% for block in state.on_entry_blocks %}
-                    entryBlocks.push_back([{% if model.needs_nonstatic_method %}this, {% endif %}&engine]() {
+                    entryBlocks.push_back([&]() {
                         // Onentry block {{ loop.index }}/{{ state.on_entry_blocks|length }}
 {# `block_flow` is what one list of executable content knows about its own
    end. An element the build has already decided will raise — a `<send>`
@@ -847,8 +853,9 @@
                     // W3C SCXML 3.9: Build onexit block lambdas for EntryExitHelper
                     // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
                     std::vector<std::function<void()>> exitBlocks;
+{# `[&]` for the reason the onentry blocks give. #}
 {% for block in state.on_exit_blocks %}
-                    exitBlocks.push_back([{% if model.needs_nonstatic_method %}this, {% endif %}&engine]() {
+                    exitBlocks.push_back([&]() {
                         // Onexit block {{ loop.index }}/{{ state.on_exit_blocks|length }}
 {% with block_flow = namespace(ended=false) %}
 {% for action in block %}
