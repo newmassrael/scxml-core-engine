@@ -385,6 +385,16 @@ func (p *probePolicy) ClearEventMetadata() {
 // OwnSessionID is the session id an ending names this machine by.
 func (p *probePolicy) OwnSessionID() string { return p.sessionID }
 
+// SetSessionID gives the probe the id its host has for it, as a generated policy
+// takes one (sce.SessionIDSetter).
+func (p *probePolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.sessionID = id
+	return nil
+}
+
 // HostInvokeIDs makes `done.invoke.job` the host's alone to raise, as a
 // generated policy does for a host-run invocation.
 func (p *probePolicy) HostInvokeIDs() []string { return []string{probeJob} }
@@ -838,6 +848,77 @@ func TestAnEndingNamingTheRootPostedBeforeTheRunIsTakenByIt(t *testing.T) {
 	if want := []string{"done:early"}; !slices.Equal(pr.policy.taken, want) {
 		t.Fatalf("the ending posted before the run, naming its session, was not taken by it: took %v, want %v",
 			pr.policy.taken, want)
+	}
+}
+
+// An id the host gives once the engine is made (Engine.SetSessionID) moves the
+// machine's entry in its tree's directory: an ending naming the new id, posted
+// before the run, is taken by it, and one naming the old id is refused. A running
+// session keeps its id, and an id that is no Nmtoken is refused.
+func TestAnIDGivenAfterTheEngineIsMadeIsTheOneAPostBeforeTheRunNames(t *testing.T) {
+	pr := newProbe()
+	inbox := pr.engine.Inbox()
+	drawn := pr.policy.sessionID
+	const given = "given-root"
+	if err := pr.engine.SetSessionID(given); err != nil {
+		t.Fatalf("an engine not yet running refused the id %q: %v", given, err)
+	}
+	if pr.policy.sessionID != given {
+		t.Fatalf("the policy holds the id %q, not the %q its host gave", pr.policy.sessionID, given)
+	}
+	if postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[probeEvent]) bool {
+		return in.EndHostInvoke(drawn, ending(0, false, "old"))
+	}) {
+		t.Fatalf("an ending naming the id the machine was made with (%s) was taken after the host gave it %q",
+			drawn, given)
+	}
+	const firstToken = 0
+	if !postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[probeEvent]) bool {
+		return in.EndHostInvoke(given, ending(firstToken, true, "given"))
+	}) {
+		t.Fatalf("an ending naming the id the host gave (%s) was refused before the run", given)
+	}
+
+	pr.engine.Initialize()
+	if token := pr.latestToken(t); token != firstToken {
+		t.Fatalf("the run's first start of `job` carries token %d, not the %d the post named", token, firstToken)
+	}
+	if want := []string{"done:given"}; !slices.Equal(pr.policy.taken, want) {
+		t.Fatalf("the ending posted before the run, naming the id the host gave, was not taken by it: "+
+			"took %v, want %v", pr.policy.taken, want)
+	}
+
+	if err := pr.engine.SetSessionID("another"); err == nil {
+		t.Fatalf("a running session took a new id")
+	}
+	if pr.policy.sessionID != given {
+		t.Fatalf("a refused id reached the policy: it holds %q", pr.policy.sessionID)
+	}
+}
+
+// idlessPolicy is the probe's document behind a policy that keeps no session id:
+// embedding the interface promotes its methods alone.
+type idlessPolicy struct {
+	sce.StatePolicy[probeState, probeEvent]
+}
+
+func TestAnIDIsRefusedByAPolicyThatTakesNoneOrForAnIDThatIsNoNmtoken(t *testing.T) {
+	idless := sce.NewEngine[probeState, probeEvent](idlessPolicy{&probePolicy{}})
+	if err := idless.SetSessionID("given-root"); err == nil {
+		t.Fatalf("a policy that takes no session id took one")
+	}
+
+	pr := newProbe()
+	drawn := pr.policy.sessionID
+	if err := pr.engine.SetSessionID("no spaces"); err == nil {
+		t.Fatalf("an id that is no Nmtoken was taken")
+	}
+	if pr.policy.sessionID != drawn {
+		t.Fatalf("a refused id reached the policy: it holds %q, not %q", pr.policy.sessionID, drawn)
+	}
+	// The entry stays under the id the machine was made with.
+	if !pr.engine.Inbox().EndHostInvoke(drawn, ending(0, true, "kept")) {
+		t.Fatalf("a refused id moved the machine's entry off %q", drawn)
 	}
 }
 

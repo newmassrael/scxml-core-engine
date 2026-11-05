@@ -298,9 +298,10 @@ type Engine[S comparable, E comparable] struct {
 //
 // The engine is entered in its own tree's directory under the session id its
 // policy holds now, so a post naming that session made before the run is kept
-// for it, as every post before the run is (docs/adr/0084, D2). A host gives
-// the policy its id before it makes the engine (SetSessionID); a run entered
-// later is entered again under the id the policy holds then.
+// for it, as every post before the run is (docs/adr/0084, D2). An id given
+// once the engine is made goes through Engine.SetSessionID, which moves the
+// entry; a run entered later is entered again under the id the policy holds
+// then.
 //
 // Matches Rust Engine::new.
 func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, E] {

@@ -66,6 +66,34 @@ func (e *Engine[S, E]) sessionID() string {
 	return ""
 }
 
+// SessionIDSetter is a policy whose session id a host gives it: the generated
+// policy's SetSessionID.
+type SessionIDSetter interface {
+	SetSessionID(id string) error
+}
+
+// SetSessionID gives this session the id its host has for it, through the
+// policy's own SetSessionID, and moves the session's entry in its tree's
+// directory to that id: a post naming the new id is kept for the run, and one
+// naming the old id is refused from then on. What the inbox holds stays where
+// it is. An owner-goroutine operation, made before the run starts. Refused for a
+// running session, which keeps the id what it sent was named by; for a policy
+// that takes no id; and for an id the policy refuses.
+func (e *Engine[S, E]) SetSessionID(id string) error {
+	if e.isRunning {
+		return refuse("session '%s' is running, and a running session keeps its id", e.sessionID())
+	}
+	setter, ok := any(e.policy).(SessionIDSetter)
+	if !ok {
+		return refuse("this machine's policy takes no session id from its host")
+	}
+	if err := setter.SetSessionID(id); err != nil {
+		return err
+	}
+	e.enterDirectory()
+	return nil
+}
+
 // HostInvokeTree is the part of a running child session the tree's host reaches
 // it by: the invokers it is served by, and the endings of the invocations of the
 // sessions at and below it. Engine implements it, and a generated parent holds
