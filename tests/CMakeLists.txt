@@ -169,7 +169,6 @@ set(SCE_TEST_TARGETS
     states_tests
     action_tests
     history_tests
-    http_bridge_tests
     session_target_routing_tests
     scheduler_manual_mode_tests
     scheduler_session_order_tests
@@ -178,8 +177,6 @@ set(SCE_TEST_TARGETS
     model_tests
     integration_tests
     concurrency_tests
-    qt_dispatcher_tests
-    glib_dispatcher_tests
     txml_converter_tests
     w3c_test_cli
     w3c_full_runner
@@ -1531,6 +1528,8 @@ if(SCE_ENABLE_HTTP AND NOT EMSCRIPTEN)
             pthread
     )
 
+    apply_sce_test_policies(http_bridge_tests)
+
     add_test(NAME HttpBridgeTests COMMAND http_bridge_tests)
 endif()
 
@@ -2072,6 +2071,8 @@ if(SCE_DISPATCHER_QT)
             pthread
     )
 
+    apply_sce_test_policies(qt_dispatcher_tests)
+
     add_test(NAME QtDispatcherTests COMMAND qt_dispatcher_tests)
     message(STATUS "SCE Tests: Qt dispatcher tests enabled")
 endif()
@@ -2098,6 +2099,8 @@ if(SCE_DISPATCHER_GLIB)
             GTest::gtest_main
             pthread
     )
+
+    apply_sce_test_policies(glib_dispatcher_tests)
 
     add_test(NAME GLibDispatcherTests COMMAND glib_dispatcher_tests)
     message(STATUS "SCE Tests: GLib dispatcher tests enabled")
