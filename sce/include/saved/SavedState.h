@@ -979,7 +979,10 @@ inline SavedHostInvoke savedHostInvokeFromJson(const JsonValue &value, const std
 ///
 /// Formats 1 and 2 store only `origin`, the sending session's id or its location as one
 /// backend stored it, read as that session's pair with the id as its sender
-/// (IOProcessorHelper::readStoredSender); an internal act's stored origin is not read. An
+/// (IOProcessorHelper::readStoredSender); an internal act's stored origin is not read. A
+/// stored origin that is not empty names the act's session or the text is refused: the
+/// sender it is read as must be an XML Nmtoken, as a format-3 `sender` must. The SCXML
+/// location prefix alone is one origin this refuses, read as itself, which holds '/'. An
 /// empty stored origin is left with no sender here: in format 2 the act is the send of the
 /// session that holds it, whose `sessionid` savedSessionFromJson gives it once it is read, and
 /// a format-1 text names no session, so the machine that restores it arms it as its own.
@@ -987,17 +990,15 @@ inline void savedActOriginFromJson(const JsonObject &members, const std::string 
     const bool internal = act.kind == SavedActKind::Internal;
     if (format != kSavedFormat3) {
         const std::string stored = memberText(members, what, "origin");
-        // The SCXML location of no session, the prefix alone: it names no session in format 1
-        // or 2, and a session's act is the send of one.
-        if (!internal && stored == IOProcessorHelper::scxmlLocation(std::string())) {
-            refuse("'" + what + ".origin' is '" + stored +
-                   "', the SCXML location prefix with no session after it, and a " + savedActName(act.kind) +
-                   " act is the send of a session");
+        if (internal || stored.empty()) {
+            return;
         }
-        if (!internal) {
-            act.sender = IOProcessorHelper::readStoredSender(stored);
-            act.origin = IOProcessorHelper::scxmlOriginOf(act.sender);
+        act.sender = IOProcessorHelper::readStoredSender(stored);
+        if (!SessionId::isNmtoken(act.sender)) {
+            refuse("'" + what + ".origin' is '" + stored + "', which names no session: a " + savedActName(act.kind) +
+                   " act is a session's own send, and its stored origin is that session's id or its SCXML location");
         }
+        act.origin = IOProcessorHelper::scxmlOrigin(act.sender);
         return;
     }
     StoredOrigin read = savedOriginPairFromJson(members, what);

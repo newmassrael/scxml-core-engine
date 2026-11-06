@@ -452,35 +452,48 @@ TEST(SavedState, AFormatTwoActWithAnEmptyOriginIsTheSendOfTheSessionThatHoldsIt)
     EXPECT_EQ(SavedState::fromJson(text).toJson(), text);
 }
 
-// docs/adr/0090, section 7: a format-1 or format-2 act whose stored origin is the SCXML
-// location prefix alone names no session, and a raise, parent or child act is the send of
-// one, so it is refused. A queued event stored with that origin is read as the pair as saved,
-// with no sender: the prefix names no session to be its sender.
-TEST(SavedState, TheScxmlPrefixAloneIsNoSenderOfAStoredAct) {
-    const auto acting = [](const std::string &act) {
+// docs/adr/0090, section 7: a format-1 or format-2 act whose stored origin is not empty must
+// name the act's session, by an id or by an SCXML location with an id: the sender it is read
+// as is an XML Nmtoken, or the text is refused. The SCXML location prefix alone, an address
+// of another processor and a location whose id decodes to no Nmtoken are each refused; an id
+// written as a location is read as that id. A queued event stored with the prefix alone is
+// read as the pair as saved, with no sender: the prefix names no session to be its sender.
+TEST(SavedState, AStoredActOriginThatNamesNoSessionIsRefused) {
+    const auto acting = [](const std::string &act, const std::string &origin) {
         const std::string head = act == "child" ? R"("act":"child","invokeid":"w",)" : R"("act":")" + act + R"(",)";
         return R"({"format":2,)" +
                replaceFirst(kMinimal, R"("pending":[])",
-                            R"("pending":[{"due":"5",)" + head +
-                                R"("event":"e","data":"","sendid":"","origin":"sce://scxml/"}])") +
+                            R"("pending":[{"due":"5",)" + head + R"("event":"e","data":"","sendid":"","origin":")" +
+                                origin + R"("}])") +
                "}";
     };
-    for (const std::string act : {"raise", "parent", "child"}) {
-        EXPECT_EQ(refusalOf(acting(act)), "'pending[0].origin' is 'sce://scxml/', the SCXML location prefix with no "
-                                          "session after it, and a " +
-                                              act + " act is the send of a session")
-            << act;
+    const auto namesNoSession = [](const std::string &origin, const std::string &act) {
+        return "'pending[0].origin' is '" + origin + "', which names no session: a " + act +
+               " act is a session's own send, and its stored origin is that session's id or its SCXML location";
+    };
+    for (const std::string origin : {"sce://scxml/", "mesh://elsewhere", "sce://scxml/a%20b"}) {
+        for (const std::string act : {"raise", "parent", "child"}) {
+            EXPECT_EQ(refusalOf(acting(act, origin)), namesNoSession(origin, act)) << act << " " << origin;
+        }
+        // Format 1 stores a raise act's origin the same way, and it names no session there
+        // either.
+        EXPECT_EQ(
+            refusalOf(R"({"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},)"
+                      R"("pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"","origin":")" +
+                      origin +
+                      R"("}],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]})"),
+            namesNoSession(origin, "raise"))
+            << origin;
+        // An internal act's stored origin is not read.
+        EXPECT_EQ(refusalOf(acting("internal", origin)), "") << origin;
     }
-    // Format 1 stores a raise act's origin the same way, and the prefix names no session there
-    // either.
-    EXPECT_EQ(refusalOf(R"({"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},)"
-                        R"("pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"",)"
-                        R"("origin":"sce://scxml/"}],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0",)"
-                        R"("sendseq":"0","external":[]})"),
-              "'pending[0].origin' is 'sce://scxml/', the SCXML location prefix with no session after it, and a "
-              "raise act is the send of a session");
-    // An internal act's stored origin is not read.
-    EXPECT_EQ(refusalOf(acting("internal")), "");
+
+    // A location whose id decodes to an Nmtoken names that session, and is read as its sender.
+    const SavedState located = SavedState::fromJson(acting("raise", "sce://scxml/peer%3A1"));
+    ASSERT_EQ(located.pending.size(), 1U);
+    EXPECT_EQ(located.pending[0].act.sender, "peer:1");
+    EXPECT_EQ(located.pending[0].act.origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("peer:1")));
 
     const SavedState queued = SavedState::fromJson(
         R"({"format":2,)" +
