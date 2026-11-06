@@ -831,6 +831,142 @@ pub fn enum_divergence(first: &EnumModel, second: &EnumModel) -> Option<EnumDive
     })
 }
 
+/// A union document as the revision rule reads it (docs/adr/0092, section 8):
+/// the key its tag is written under, the enum document its tag is a value of,
+/// and, by variant, the record schema each case holds, `None` for an empty
+/// case. A union declares no revision of its own: its revision is its tag
+/// enum's.
+#[derive(Debug, Clone)]
+pub struct UnionRevision {
+    pub tag: String,
+    pub tag_enum: EnumModel,
+    pub cases: BTreeMap<String, Option<crate::forge::model::EventSchemaModel>>,
+}
+
+/// Where two unions part, so that they are not revisions of one union
+/// ([`union_divergence`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnionDivergence {
+    /// The two write the tag under different keys.
+    TagKey { first: String, second: String },
+    /// The two tag enums are not revisions of one enum ([`enum_divergence`]).
+    Tag(EnumDivergence),
+    /// Both give `variant` a case, and the two cases hold records of
+    /// different documents, or one holds a record and the other none: the
+    /// case moved to another record.
+    CaseMoved { variant: String },
+    /// Both give `variant` a case that holds one record, and the two
+    /// declarations of that record are not revisions of one schema.
+    CaseRecord {
+        variant: String,
+        divergence: Divergence,
+    },
+}
+
+/// The union document `parsed` is, as the revision rule reads it
+/// ([`UnionRevision`]): its tag's enum and each case's record read from the
+/// imports beside it in `base_dir`. `None` for a document of another kind, or
+/// one whose tag's enum cannot be read, which the import pass reports in its
+/// own words.
+pub fn union_revision(parsed: &ParsedForge, base_dir: &Path) -> Option<UnionRevision> {
+    use crate::forge::model::ForgeKind;
+    let ForgeDocument::Union(union) = &parsed.document else {
+        return None;
+    };
+    let tag_enum = crate::forge::import_source::enum_model(parsed, base_dir, &union.tag_enum)?;
+    let cases = union
+        .cases
+        .iter()
+        .map(|case| {
+            let record = case.record.as_ref().and_then(|alias| {
+                let import = parsed
+                    .imports
+                    .iter()
+                    .find(|i| i.alias == *alias && i.kind == ForgeKind::EventSchema)?;
+                match crate::forge::import_source::parse_quietly(base_dir, import)?.document {
+                    ForgeDocument::EventSchema(schema) => Some(schema),
+                    _ => None,
+                }
+            });
+            (case.variant.clone(), record)
+        })
+        .collect();
+    Some(UnionRevision {
+        tag: union.tag.clone(),
+        tag_enum,
+        cases,
+    })
+}
+
+/// Whether `first` and `second`, two builds' unions, are revisions of one
+/// union, and where they part when they are not (docs/adr/0092, section 8.2,
+/// extending docs/adr/0044 decision 1).
+///
+/// They are when they write the tag under one key, their tag enums are
+/// revisions of one enum ([`enum_divergence`]), and each case both give holds
+/// no record in either, or a record of one document in both whose two
+/// declarations are revisions of one schema ([`record_divergence`]). A case
+/// only one gives is for a variant only one enum declares, which the enum rule
+/// has judged: a later revision adds a case with its variant. Another key, a
+/// case moved to another record and a case removed with its variant all part.
+/// The first parting is answered, the cases in the order of their variants'
+/// names, so the same pair always answers the same.
+pub fn union_divergence(first: &UnionRevision, second: &UnionRevision) -> Option<UnionDivergence> {
+    if first.tag != second.tag {
+        return Some(UnionDivergence::TagKey {
+            first: first.tag.clone(),
+            second: second.tag.clone(),
+        });
+    }
+    if let Some(divergence) = enum_divergence(&first.tag_enum, &second.tag_enum) {
+        return Some(UnionDivergence::Tag(divergence));
+    }
+    for (variant, one) in &first.cases {
+        let Some(other) = second.cases.get(variant) else {
+            continue;
+        };
+        let moved = || UnionDivergence::CaseMoved {
+            variant: variant.clone(),
+        };
+        match (one, other) {
+            (None, None) => {}
+            (Some(one), Some(other)) if one.name != other.name => return Some(moved()),
+            (Some(one), Some(other)) => {
+                if let Some(divergence) = record_divergence(one, other) {
+                    return Some(UnionDivergence::CaseRecord {
+                        variant: variant.clone(),
+                        divergence,
+                    });
+                }
+            }
+            (Some(_), None) | (None, Some(_)) => return Some(moved()),
+        }
+    }
+    None
+}
+
+/// Where two declarations of one record schema part, so that they are not
+/// revisions of one (docs/adr/0086, section 10.3): as [`divergence`] judges two
+/// schemas of one entry per field, and, where either holds a composition, as
+/// [`composed_parting`] does, unless the two are one revision that declares its
+/// fields alike, as the forge model serialises them.
+pub fn record_divergence(
+    first: &crate::forge::model::EventSchemaModel,
+    second: &crate::forge::model::EventSchemaModel,
+) -> Option<Divergence> {
+    match (first.entry_schema(), second.entry_schema()) {
+        (Ok(one), Ok(other)) => divergence(&one, &other),
+        (Err(composed), _) | (_, Err(composed)) => {
+            let alike = first.revision() == second.revision()
+                && matches!(
+                    (serde_json::to_value(&first.fields), serde_json::to_value(&second.fields)),
+                    (Ok(one), Ok(other)) if one == other
+                );
+            (!alike).then(|| composed_parting(first, second, &composed.field))
+        }
+    }
+}
+
 /// Whether two fields of one id are declared alike: the whole field, as the forge
 /// model serialises it (positions are not serialised, so where it is written does
 /// not count), but for the alias of the enum it holds ([`unaliased`]).
@@ -2759,5 +2895,234 @@ mod tests {
             declared += 1;
         }
         assert!(declared >= 6, "only {declared} backends declared the texts");
+    }
+
+    // ── A union that grows (docs/adr/0092, section 8) ─────────────────────
+
+    /// The model of the forge document `text`, named `name`.
+    fn forge_document(text: &str, name: &str) -> ForgeDocument {
+        crate::forge::parser::parse_forge(text, crate::DocumentLabel::symmetric(name))
+            .unwrap_or_else(|e| panic!("{name} parses: {e:?}"))
+            .expect("a forge document")
+    }
+
+    /// ` sce:revision="n"` on a root past the first revision, nothing on the
+    /// first.
+    fn revision_attr(revision: u32) -> String {
+        if revision > 1 {
+            format!(r#" sce:revision="{revision}""#)
+        } else {
+            String::new()
+        }
+    }
+
+    /// The shape kinds of revision `revision`, whose variants are `variants`.
+    fn shape_kinds(revision: u32, variants: &str) -> EnumModel {
+        let text = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="enum" name="shape_kind" sce:underlying-type="uint8"{}>
+  <datamodel><data id="variants">{variants}</data></datamodel>
+</scxml>"#,
+            revision_attr(revision)
+        );
+        match forge_document(&text, "shape_kind") {
+            ForgeDocument::Enum(model) => model,
+            other => panic!("an enum, got {:?}", other.kind()),
+        }
+    }
+
+    /// The dot and the circle, the first revision's two kinds.
+    const FIRST_KINDS: &str =
+        r#"<sce:variant name="dot" value="0"/><sce:variant name="circle" value="1"/>"#;
+
+    /// A record named `name` of revision `revision`, whose fields are `fields`.
+    fn case_record(
+        name: &str,
+        revision: u32,
+        fields: &str,
+    ) -> crate::forge::model::EventSchemaModel {
+        let text = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="{name}" sce:event-name="{name}.sent"{}>
+  <datamodel>{fields}</datamodel>
+</scxml>"#,
+            revision_attr(revision)
+        );
+        match forge_document(&text, name) {
+            ForgeDocument::EventSchema(model) => model,
+            other => panic!("an event schema, got {:?}", other.kind()),
+        }
+    }
+
+    fn radius() -> crate::forge::model::EventSchemaModel {
+        case_record(
+            "radius",
+            1,
+            r#"<data id="radius" sce:type="uint16" sce:direction="in"/>"#,
+        )
+    }
+
+    /// A union whose tag is written under `tag` over `tag_enum`, of `cases`.
+    fn shapes(
+        tag: &str,
+        tag_enum: EnumModel,
+        cases: Vec<(&str, Option<crate::forge::model::EventSchemaModel>)>,
+    ) -> UnionRevision {
+        UnionRevision {
+            tag: tag.to_string(),
+            tag_enum,
+            cases: cases
+                .into_iter()
+                .map(|(variant, record)| (variant.to_string(), record))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_case_added_with_its_variant_and_a_record_grown_by_a_revision_revise_a_union() {
+        let first = shapes(
+            "kind",
+            shape_kinds(1, FIRST_KINDS),
+            vec![("dot", None), ("circle", Some(radius()))],
+        );
+        assert_eq!(union_divergence(&first, &first), None);
+        // The second revision of the enum adds `label`, whose case comes with
+        // it, and the circle's record gains a field its own second revision
+        // added (docs/adr/0092, section 8.1; docs/adr/0086, section 10.3).
+        let wider = case_record(
+            "radius",
+            2,
+            r#"<data id="radius" sce:type="uint16" sce:direction="in"/>
+               <data id="unit" sce:type="uint8" sce:direction="in" sce:since="2" sce:default="0"/>"#,
+        );
+        let label = case_record(
+            "label",
+            1,
+            r#"<data id="text" sce:type="string[8]" sce:direction="in"/>"#,
+        );
+        let second = shapes(
+            "kind",
+            shape_kinds(
+                2,
+                &format!(r#"{FIRST_KINDS}<sce:variant name="label" value="2" sce:since="2"/>"#),
+            ),
+            vec![
+                ("dot", None),
+                ("circle", Some(wider)),
+                ("label", Some(label)),
+            ],
+        );
+        assert_eq!(union_divergence(&first, &second), None);
+        assert_eq!(union_divergence(&second, &first), None);
+    }
+
+    #[test]
+    fn a_union_parts_from_another_by_its_key_its_enum_or_a_case_that_moved() {
+        let base = shapes(
+            "kind",
+            shape_kinds(1, FIRST_KINDS),
+            vec![("dot", None), ("circle", Some(radius()))],
+        );
+        // Another key.
+        let keyed = shapes(
+            "shape",
+            shape_kinds(1, FIRST_KINDS),
+            vec![("dot", None), ("circle", Some(radius()))],
+        );
+        assert_eq!(
+            union_divergence(&base, &keyed),
+            Some(UnionDivergence::TagKey {
+                first: "kind".into(),
+                second: "shape".into(),
+            })
+        );
+        // An enum that renumbers a variant is no revision of it.
+        let renumbered = shapes(
+            "kind",
+            shape_kinds(
+                1,
+                r#"<sce:variant name="dot" value="0"/><sce:variant name="circle" value="5"/>"#,
+            ),
+            vec![("dot", None), ("circle", Some(radius()))],
+        );
+        assert_eq!(
+            union_divergence(&base, &renumbered),
+            Some(UnionDivergence::Tag(EnumDivergence::Redeclared {
+                variant: "circle".into()
+            }))
+        );
+        // A case moved to another record, and a case emptied.
+        let rect = case_record(
+            "rect",
+            1,
+            r#"<data id="width" sce:type="uint16" sce:direction="in"/>"#,
+        );
+        for moved in [Some(rect), None] {
+            let other = shapes(
+                "kind",
+                shape_kinds(1, FIRST_KINDS),
+                vec![("dot", None), ("circle", moved)],
+            );
+            assert_eq!(
+                union_divergence(&base, &other),
+                Some(UnionDivergence::CaseMoved {
+                    variant: "circle".into()
+                })
+            );
+        }
+        // One record, re-typed: no revision of the schema.
+        let retyped = shapes(
+            "kind",
+            shape_kinds(1, FIRST_KINDS),
+            vec![
+                ("dot", None),
+                (
+                    "circle",
+                    Some(case_record(
+                        "radius",
+                        1,
+                        r#"<data id="radius" sce:type="uint32" sce:direction="in"/>"#,
+                    )),
+                ),
+            ],
+        );
+        assert!(
+            matches!(
+                union_divergence(&base, &retyped),
+                Some(UnionDivergence::CaseRecord {
+                    variant,
+                    divergence: Divergence::Redeclared { field, .. },
+                }) if variant == "circle" && field == "radius"
+            ),
+            "{:?}",
+            union_divergence(&base, &retyped)
+        );
+    }
+
+    #[test]
+    fn a_union_document_is_read_for_the_revision_rule_from_its_imports() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/union");
+        let text = std::fs::read_to_string(dir.join("union_shape.scxml")).expect("the fixture");
+        let parsed = crate::forge::parser::parse_forge_with_imports(
+            &text,
+            crate::DocumentLabel::symmetric("union_shape"),
+        )
+        .expect("the union parses")
+        .expect("a forge document");
+        let read = union_revision(&parsed, &dir).expect("the union and its imports read");
+        assert_eq!(read.tag, "kind");
+        assert_eq!(read.tag_enum.name, "shape_kind");
+        let held: Vec<(&str, Option<&str>)> = read
+            .cases
+            .iter()
+            .map(|(variant, record)| (variant.as_str(), record.as_ref().map(|r| r.name.as_str())))
+            .collect();
+        assert_eq!(
+            held,
+            [
+                ("circle", Some("shape_radius")),
+                ("dot", None),
+                ("rect", Some("shape_rect")),
+            ]
+        );
+        assert_eq!(union_divergence(&read, &read), None);
     }
 }
