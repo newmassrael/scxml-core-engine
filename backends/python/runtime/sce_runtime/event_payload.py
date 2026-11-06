@@ -196,7 +196,45 @@ class RecordOf:
         return f"RecordOf({self.fields!r})"
 
 
-_COMPOSED = (Whole, WideOf, Text, Bytes, ListOf, RecordOf)
+class CaseOf:
+    """Names one case of a union: ``variant``, the member of the tag's enum the
+    case is chosen by, and ``record``, the ``RecordOf`` the case holds, or None
+    for an empty case, its tag alone. ``make`` builds the case's value, from the
+    record read (from nothing for an empty case); without one the value is the
+    pair of the variant and the record read (None for an empty case)."""
+
+    __slots__ = ("variant", "record", "make")
+
+    def __init__(self, variant: Any, record: RecordOf | None = None,
+                 make: Callable[..., Any] | None = None) -> None:
+        self.variant = variant
+        self.record = record
+        self.make = make
+
+    def __repr__(self) -> str:
+        return f"CaseOf({self.variant!r}, {self.record!r})"
+
+
+class UnionOf:
+    """Names a union type (docs/adr/0092, section 4): an object holding its tag
+    under the key ``tag``, a value of the enum ``tag_type``, and beside it the
+    fields of the case the tag names. ``cases`` are ``CaseOf``, one per variant
+    of the enum. The tag is read first, by the enum's reader, wherever it stands
+    in the object, and then the case's record from the same object; a key the
+    case does not declare is stepped over, as a record steps over one."""
+
+    __slots__ = ("tag", "tag_type", "cases")
+
+    def __init__(self, tag: str, tag_type: type, cases: Sequence[CaseOf]) -> None:
+        self.tag = tag
+        self.tag_type = tag_type
+        self.cases = {case.variant: case for case in cases}
+
+    def __repr__(self) -> str:
+        return f"UnionOf({self.tag!r}, {self.tag_type!r}, {list(self.cases.values())!r})"
+
+
+_COMPOSED = (Whole, WideOf, Text, Bytes, ListOf, RecordOf, UnionOf)
 
 
 class RefusalCode(enum.IntEnum):
@@ -304,8 +342,8 @@ def read_value(path: str, declared: Any, value: Any, pointer: str) -> Any:
 
     ``declared`` is what a field spec names a type by: a scalar (``int``,
     ``bool``, ``float``, ``Single``, ``str``, ``bytes``, an enum type), or one of
-    ``Whole``, ``WideOf``, ``Text``, ``Bytes``, ``OptionalOf``, ``ListOf`` and
-    ``RecordOf``, composed to any depth. A value outside its type is refused
+    ``Whole``, ``WideOf``, ``Text``, ``Bytes``, ``OptionalOf``, ``ListOf``,
+    ``RecordOf`` and ``UnionOf``, composed to any depth. A value outside its type is refused
     before anything of it is kept, the refusal naming the path."""
     if isinstance(declared, OptionalOf):
         # Absence is the one JSON `null` (docs/adr/0055, section 4).
@@ -346,6 +384,23 @@ def read_value(path: str, declared: Any, value: Any, pointer: str) -> Any:
         if declared.make is not None:
             return declared.make(*held)
         return {name: v for (name, _), v in zip(declared.fields, held)}
+    if isinstance(declared, UnionOf):
+        # The refusals in the one order of every runtime (docs/adr/0092,
+        # section 4.1): no object, then the tag, then the case's record.
+        if not isinstance(value, dict):
+            raise TypedPayloadError(f"{path!r} is not a union",
+                                    RefusalCode.WRONG_KIND, pointer)
+        tag_path = _join(path, declared.tag)
+        tag_pointer = pointer_below(pointer, declared.tag)
+        if declared.tag not in value:
+            raise TypedPayloadError(f"the event's data has no {tag_path!r}",
+                                    RefusalCode.MISSING, tag_pointer)
+        variant = read_value(tag_path, declared.tag_type, value[declared.tag], tag_pointer)
+        case = declared.cases[variant]
+        record = None if case.record is None else read_value(path, case.record, value, pointer)
+        if case.make is None:
+            return (variant, record)
+        return case.make() if case.record is None else case.make(record)
     if isinstance(declared, Text):
         text = _as(path, str, value, pointer)
         size = _utf8_size(text)
@@ -464,6 +519,14 @@ def record_json(members: Dict[str, Any]) -> Raw:
     return Raw("{" + ",".join(
         json.dumps(key, ensure_ascii=False) + ":" + value_json(value)
         for key, value in ordered) + "}")
+
+
+def union_json(tag: str, variant: str, members: Dict[str, Any]) -> Raw:
+    """The JSON of one union value (docs/adr/0092, section 2.1): the tag under
+    the key ``tag``, its value ``variant``, the case's name as its enum spells
+    it, beside ``members``, the fields of the case's record (none for an empty
+    case), written as ``record_json`` writes a record, the tag among them."""
+    return record_json({**members, tag: variant})
 
 
 def write_optional(value: Any, write: Any) -> Any:

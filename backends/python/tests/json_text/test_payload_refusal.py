@@ -21,6 +21,7 @@ import pytest
 
 from sce_runtime.event_payload import (
     Bytes,
+    CaseOf,
     ListOf,
     OptionalOf,
     RecordOf,
@@ -28,6 +29,7 @@ from sce_runtime.event_payload import (
     Single,
     Text,
     TypedPayloadError,
+    UnionOf,
     Whole,
     WideOf,
     lift,
@@ -92,6 +94,14 @@ def _declared(ty: Any) -> Any:
         return ListOf(_declared(ty["list"]), ty["max"], ty.get("min", 0))
     if "record" in ty:
         return RecordOf([(id_, _declared(field)) for id_, field in ty["record"].items()])
+    if "union" in ty:
+        # The tag's enum is the cases' names; an empty case is null, any other
+        # the record it holds (docs/adr/0092, section 4).
+        cases = ty["union"]["cases"]
+        tag_type = _enum_of(list(cases))
+        return UnionOf(ty["union"]["tag"], tag_type, [
+            CaseOf(member, None if case is None else _declared(case))
+            for member, case in zip(tag_type, cases.values())])
     raise AssertionError(f"a type of the table names no constructor: {ty!r}")
 
 
