@@ -516,6 +516,47 @@ static inline bool sce_saved_stored_origin_(sce_jv_t v, const char *what, sce_ev
     return true;
 }
 
+/* The stored `origin` of `what`, a `name` act of a session in a state of format 1 or 2
+ * (docs/adr/0090, section 7). The act is the session's own send, so an origin that is not empty
+ * names that session, by its id or by its SCXML location, and is read as the SCXML processor's
+ * stored origin is (`sce_saved_origin_read`). The sender it names must be an XML Nmtoken, as a
+ * format-3 `sender` must; any other names no session and is refused: the SCXML prefix alone, an
+ * address of another processor, a location whose id decodes to no Nmtoken. An empty one is read as
+ * sent by the session that holds it.
+ *
+ * The text is held in `SCE_MAX_URI_LEN` bytes and the id it names in `SCE_MAX_SESSION_ID_LEN`, as
+ * a queued event's are, and one that does not fit is refused rather than cut. */
+static inline bool sce_saved_act_stored_origin_(sce_jv_t stored, const char *what, const char *name,
+                                                sce_saved_error_t *err) {
+    sce_event_origin_t pair;
+    sce_saved_error_t why;
+    uint8_t from_session;
+    char at[SCE_SAVED_AT_LEN];
+    char text[SCE_MAX_URI_LEN];
+    char sender[SCE_MAX_SESSION_ID_LEN];
+    sce_saved_path_field(at, sizeof(at), what, "origin");
+    if (!sce_saved_text_into(stored, at, text, sizeof(text), err)) {
+        return false;
+    }
+    if (text[0] == '\0') {
+        return true;
+    }
+    if (!sce_saved_origin_read(text, SCE_SCXML_EVENT_PROCESSOR_TYPE, &pair, &from_session)) {
+        return sce_saved_refuse(err,
+                                "'%s' names a session id longer than this build holds, or one whose SCXML location "
+                                "is (SCE_MAX_SESSION_ID_LEN, SCE_MAX_URI_LEN)",
+                                at);
+    }
+    if (!sce_event_origin_sender(&pair, from_session, sender, sizeof(sender)) ||
+        !sce_saved_session_id_ok(sender, &why)) {
+        return sce_saved_refuse(err,
+                                "'%s' is '%s', which names no session: a %s act is a session's own send, and its "
+                                "stored origin is that session's id or its SCXML location",
+                                at, text, name);
+    }
+    return true;
+}
+
 /* The text member `key` of the pair `pair`, which `what` names in a refusal, into `dst` of `cap`
  * bytes: a text, not empty, that fits. */
 static inline bool sce_saved_pair_member_(sce_jv_t pair, const char *what, const char *key, char *dst, size_t cap,
@@ -698,18 +739,12 @@ static inline bool sce_saved_send_read(sce_jv_t v, const char *what, int form, s
         /* The sending session's id, or its location as this backend once stored it, and always
          * this session's: a session's act is its own send, so one stored empty is read as sent by
          * the session that holds it, and an `internal` act's is not read, since its event has no
-         * origin (docs/adr/0090, section 7). The machine that restores it arms it as its own. The
-         * SCXML prefix alone names no session, so a session's act that stores it is refused. */
+         * origin (docs/adr/0090, section 7). The machine that restores it arms it as its own. One
+         * that is not empty must name a session (`sce_saved_act_stored_origin_`). */
         if (!sce_saved_member_text_(v, what, "origin", &out->origin, err)) {
             return false;
         }
-        if (out->act != SCE_SAVED_ACT_INTERNAL && sce_jv_string_is(out->origin, SCE_SCXML_LOCATION_PREFIX)) {
-            return sce_saved_refuse(err,
-                                    "'%s.origin' is '%s', a location that names no session: a %s act is this "
-                                    "session's own send",
-                                    what, SCE_SCXML_LOCATION_PREFIX, name);
-        }
-        return true;
+        return out->act == SCE_SAVED_ACT_INTERNAL || sce_saved_act_stored_origin_(out->origin, what, name, err);
     }
     {
         sce_event_origin_t pair;

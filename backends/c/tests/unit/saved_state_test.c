@@ -522,20 +522,59 @@ static void a_format_three_act_holds_what_its_event_will_carry(void) {
     // A format-2 session's act stored with an empty origin is sent by the session that holds it.
     pending_of("raise", "\"origin\":\"\"", pending, sizeof(pending));
     CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
-    // The SCXML prefix alone names no session, so a session's act that stores it is refused; an
-    // internal act's origin is not read.
-    pending_of("raise", "\"origin\":\"sce://scxml/\"", pending, sizeof(pending));
-    CHECK(!tree_holding(2, pending, "[]", &session, &err) &&
-              strcmp(err.message, "'pending[0].origin' is 'sce://scxml/', a location that names no session: a "
-                                  "raise act is this session's own send") == 0,
-          "%s", err.message);
-    pending_of("child", "\"origin\":\"sce://scxml/\"", pending, sizeof(pending));
-    CHECK(!tree_holding(2, pending, "[]", &session, &err) &&
-              strcmp(err.message, "'pending[0].origin' is 'sce://scxml/', a location that names no session: a "
-                                  "child act is this session's own send") == 0,
-          "%s", err.message);
-    pending_of("internal", "\"origin\":\"sce://scxml/\"", pending, sizeof(pending));
+    // A stored origin that is not empty names the act's session, by an id or by an SCXML location
+    // with an id, and its sender is an XML Nmtoken; any other names no session, so a session's act
+    // that stores it is refused, in format 1 as in format 2. An internal act's origin is not read.
+    static const char *const no_session[] = {"sce://scxml/", "mesh://elsewhere", "sce://scxml/a%20b"};
+    static const char *const sessions_acts[] = {"raise", "parent", "child"};
+    char members[128];
+    char reason[SCE_SAVED_ERROR_LEN];
+    static char format_one[2048];
+    for (size_t i = 0u; i < sizeof(no_session) / sizeof(no_session[0]); ++i) {
+        (void)snprintf(members, sizeof(members), "\"origin\":\"%s\"", no_session[i]);
+        for (size_t k = 0u; k < sizeof(sessions_acts) / sizeof(sessions_acts[0]); ++k) {
+            (void)snprintf(reason, sizeof(reason),
+                           "'pending[0].origin' is '%s', which names no session: a %s act is a session's own send, "
+                           "and its stored origin is that session's id or its SCXML location",
+                           no_session[i], sessions_acts[k]);
+            pending_of(sessions_acts[k], members, pending, sizeof(pending));
+            CHECK(!tree_holding(2, pending, "[]", &session, &err) && strcmp(err.message, reason) == 0, "%s %s: %s",
+                  sessions_acts[k], no_session[i], err.message);
+        }
+        (void)snprintf(reason, sizeof(reason),
+                       "'pending[0].origin' is '%s', which names no session: a raise act is a session's own send, "
+                       "and its stored origin is that session's id or its SCXML location",
+                       no_session[i]);
+        pending_of("raise", members, pending, sizeof(pending));
+        (void)snprintf(format_one, sizeof(format_one),
+                       "{\"format\":1,\"shape\":\"s\",\"configuration\":[\"s\"],\"current\":\"s\",\"variables\":{},"
+                       "\"history\":{},\"pending\":%s,\"invokes\":[],\"hostinvokes\":[],\"hostinvoketoken\":\"0\","
+                       "\"sendseq\":\"0\",\"external\":[]}",
+                       pending);
+        CHECK(!sce_saved_read(format_one, strlen(format_one), &session, &err) && strcmp(err.message, reason) == 0,
+              "format 1 %s: %s", no_session[i], err.message);
+        pending_of("internal", members, pending, sizeof(pending));
+        CHECK(tree_holding(2, pending, "[]", &session, &err), "internal %s: %s", no_session[i], err.message);
+    }
+    // An id, and a location whose id decodes to an Nmtoken, each name a session.
+    pending_of("raise", "\"origin\":\"sce://scxml/peer%3A1\"", pending, sizeof(pending));
     CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
+    pending_of("raise", "\"origin\":\"peer:1\"", pending, sizeof(pending));
+    CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
+    // An id longer than this build holds a session id in is refused rather than cut.
+    {
+        char long_id[SCE_MAX_SESSION_ID_LEN + 16];
+        memset(long_id, 'a', sizeof(long_id) - 1u);
+        long_id[sizeof(long_id) - 1u] = '\0';
+        (void)snprintf(pending, sizeof(pending),
+                       "[{\"due\":\"1\",\"act\":\"raise\",\"event\":\"e\",\"data\":\"\",\"sendid\":\"s\","
+                       "\"origin\":\"%s\"}]",
+                       long_id);
+        CHECK(!tree_holding(2, pending, "[]", &session, &err) &&
+                  strcmp(err.message, "'pending[0].origin' names a session id longer than this build holds, or one "
+                                      "whose SCXML location is (SCE_MAX_SESSION_ID_LEN, SCE_MAX_URI_LEN)") == 0,
+              "%s", err.message);
+    }
     pending_of("raise", "\"origin\":null", pending, sizeof(pending));
     CHECK(!tree_holding(2, pending, "[]", &session, &err) &&
               strcmp(err.message, "'pending[0].origin' is not a text") == 0,
