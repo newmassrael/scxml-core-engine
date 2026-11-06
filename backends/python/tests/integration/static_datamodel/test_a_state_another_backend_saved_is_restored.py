@@ -26,7 +26,7 @@ sys.path.insert(0, str(_HERE.parents[1]))
 sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 sys.path.insert(0, str(_HERE.parents[2] / "forge-runtime"))
 
-from sce_runtime import saved_state_from_json  # noqa: E402 -- path inserted above
+from sce_runtime import saved_state_from_json, scxml_origin  # noqa: E402 -- path inserted above
 
 # The wall-clock moment the shared fixtures were saved at, as the Rust, Kotlin and
 # Go suites have it: 2023-11-14T22:13:20Z.
@@ -94,9 +94,18 @@ def test_every_format_three_text_of_a_document_is_held_to_its_machine() -> None:
 def test_a_format_one_state_is_restored_and_takes_the_machines_own_session(name: str) -> None:
     text = _texts(_SAVED / "format1")[name]
     # What a format-1 text holds is what a restore reads; saving it again writes
-    # format 3, with the machine's own session id.
+    # format 3, with the machine's own session id. A waiting send whose stored
+    # origin is empty is armed as the restoring machine's own: it is saved again
+    # with that machine's pair and id (docs/adr/0090, section 7).
     again = _restored_and_saved_again(_machine_of(name), text)
     assert again.startswith('{"format":3,'), again
+    resaved = saved_state_from_json(again)
+    for send in resaved.pending:
+        if send.act.kind in ("raise", "parent", "child"):
+            assert (send.act.origin, send.act.sender) == (
+                scxml_origin(resaved.session_id),
+                resaved.session_id,
+            ), send
 
 
 def _readings() -> dict:
