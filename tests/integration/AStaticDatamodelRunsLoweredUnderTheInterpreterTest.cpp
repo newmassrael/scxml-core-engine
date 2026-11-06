@@ -1612,6 +1612,49 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRe
     engine_->destroySession(session);
 }
 
+// A union is read tag first and then the record of the case its tag names, from the same
+// object, and held as the wire's form: the case's fields beside its tag, a key or a `null`
+// the case does not declare left behind (docs/adr/0092, sections 4 and 7). Two cases that
+// hold one record stay apart by their tag.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReadsAUnionAsTheCaseItsTagNames) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    const Ran ran =
+        capture(std::string("\"") + bin + "\" lower-algorithm sce:std/time/second_of_day.scxml 2>/dev/null");
+    ASSERT_EQ(0, ran.status);
+    const auto line = nlohmann::json::parse(ran.output, nullptr, false);
+    ASSERT_TRUE(line.is_object()) << ran.output.substr(0, 200);
+
+    const std::string session = "union_payload_lowered";
+    ASSERT_TRUE(engine_->createSession(session, ""));
+    const auto installed = engine_->executeScript(session, line.at("install").get<std::string>()).get();
+    ASSERT_TRUE(installed.isSuccess()) << installed.getErrorMessage();
+
+    const std::string shape = "{union: {tag: 'kind', cases: {dot: null, circle: {record: {radius: 'uint16'}}, disc: "
+                              "{record: {radius: 'uint16'}}}}}";
+
+    const struct {
+        const char *data;
+        const char *held;
+    } cases[] = {
+        {R"({"s":{"kind":"dot"}})", R"({"kind":"dot"})"},
+        {R"({"s":{"radius":2,"kind":"disc"}})", R"({"kind":"disc","radius":2})"},
+        {R"({"s":{"kind":"circle","radius":2,"width":null,"text":"x"}})", R"({"kind":"circle","radius":2})"},
+        {R"({"s":{"kind":"dot","radius":null}})", R"({"kind":"dot"})"},
+    };
+
+    for (const auto &c : cases) {
+        const std::string program = std::string("(function () { var s = SceStatic.field(SceStatic.parseText(") +
+                                    nlohmann::json(c.data).dump() + "), 's', " + shape +
+                                    "); var keys = Object.keys(s).sort(); var out = {}; keys.forEach(function (k) { "
+                                    "out[k] = s[k]; }); return JSON.stringify(out); })()";
+        const auto answered = engine_->evaluateExpression(session, program).get();
+        ASSERT_TRUE(answered.isSuccess()) << c.data << ": " << answered.getErrorMessage();
+        EXPECT_EQ(answered.getValue<std::string>(), c.held) << c.data;
+    }
+    engine_->destroySession(session);
+}
+
 // A lift raises nothing (docs/adr/0087, section 2.1), and this engine's data model holds
 // an integer only up to 2^53 - 1: a 64-bit integer past that, which a generated backend's
 // int64 holds and its lift reads, is refused here as a whole number past the width the

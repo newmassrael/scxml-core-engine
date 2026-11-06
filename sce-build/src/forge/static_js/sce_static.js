@@ -640,13 +640,15 @@
      the array of its names, and a composed type by an object with one key that
      names its constructor: {optional: T}, {list: T, max: B}, with min: M beside
      a list that states a lower count, {record: {id: T, ...}, defaults: {...}},
-     {string: B}, {bytes: B} (docs/adr/0086, sections 4.3 and 15). */
+     {string: B}, {bytes: B} (docs/adr/0086, sections 4.3 and 15), and
+     {union: {tag: K, cases: {variant: null or a record's descriptor, ...}}},
+     the tag's enum the cases' names (docs/adr/0092, section 4). */
   function kindOf(type) {
     if (Array.isArray(type)) {
       return 'enum';
     }
     if (type !== null && typeof type === 'object') {
-      var keys = ['optional', 'list', 'record', 'string', 'bytes'];
+      var keys = ['optional', 'list', 'record', 'union', 'string', 'bytes'];
       for (var i = 0; i < keys.length; i++) {
         if (Object.prototype.hasOwnProperty.call(type, keys[i])) {
           return keys[i] === 'string' ? 'bounded-string' : keys[i] === 'bytes' ? 'bounded-bytes' : keys[i];
@@ -710,6 +712,25 @@
         held[id] = readValue(member, type.record[id], below(path, id), pointerBelow(pointer, id));
       });
       return held;
+    }
+    if (kind === 'union') {
+      /* The tag first, wherever it stands in the object, read as its enum is read;
+         then the record of the case it names, from the same object, a key the case
+         does not declare stepped over as a record steps over one. The value is the
+         wire's form: the case's fields beside its tag (docs/adr/0092, section 4). */
+      if (typeof value !== 'object' || Array.isArray(value) || value instanceof JsonNumber) {
+        refuse('wrongKind', pointer, where + 'is not a union');
+      }
+      var tag = type.union.tag;
+      var tagPointer = pointerBelow(pointer, tag);
+      if (!Object.prototype.hasOwnProperty.call(value, tag)) {
+        refuse('missing', tagPointer, 'the event data has no \'' + below(path, tag) + '\'');
+      }
+      var variant = readValue(value[tag], Object.keys(type.union.cases), below(path, tag), tagPointer);
+      var chosen = type.union.cases[variant];
+      var named = chosen === null ? {} : readValue(value, chosen, path, pointer);
+      named[tag] = variant;
+      return named;
     }
     if (kind === 'enum') {
       text(value, where, pointer);
