@@ -88,6 +88,8 @@
         "validation/lift-location",
         "validation/lift-text",
         "validation/lift-path-bound",
+        "validation/lower-count-past-bound",
+        "validation/lower-count-misplaced",
         "validation/model-answer-schema",
         "validation/native-action-argument",
         "validation/native-action-signature-conflict",

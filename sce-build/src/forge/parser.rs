@@ -12534,6 +12534,11 @@ fn type_as_written(node: &roxmltree::Node, attr: &str, decoded: &str) -> String 
 
 /// The refusal of a type whose text breaks a rule of the grammar, naming the
 /// place in the type that breaks it.
+///
+/// A list's lower count that leaves the type no value, and one where nothing
+/// reads it, are facts of their own (docs/adr/0086, section 15.13): the second
+/// carries the type with its lower counts removed, as the document spells it,
+/// as its one replacement.
 fn type_rule_refusal(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -12542,16 +12547,29 @@ fn type_rule_refusal(
     text: &str,
     refusal: &TypeRefusal,
 ) -> Located<ForgeError> {
-    located(
-        node,
-        doc_name,
-        ValidationError::AttributeRuleViolated {
+    let value = type_as_written(node, attr, text);
+    let error = match refusal {
+        TypeRefusal::CountPastBound { .. } => ValidationError::LowerCountPastBound {
             element: element.to_string(),
             attr: attr.into(),
-            value: type_as_written(node, attr, text),
+            value,
             rule: refusal.rule(),
         },
-    )
+        TypeRefusal::CountMisplaced { .. } => ValidationError::LowerCountMisplaced {
+            element: element.to_string(),
+            attr: attr.into(),
+            to: crate::forge::value_type::without_lower_counts(&value),
+            value,
+            rule: refusal.rule(),
+        },
+        _ => ValidationError::AttributeRuleViolated {
+            element: element.to_string(),
+            attr: attr.into(),
+            value,
+            rule: refusal.rule(),
+        },
+    };
+    located(node, doc_name, error)
 }
 
 /// The refusal of a word that names no type, with the scalars and the

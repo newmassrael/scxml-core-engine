@@ -1212,6 +1212,35 @@ pub enum ValidationError {
         bound: u32,
     },
 
+    /// docs/adr/0086, section 15.2: a list's lower count past its bound, as
+    /// written (`list<uint8>[4..3]`) or after a build's `--limit` moved the
+    /// bound below it, so the type has no value. `value` is the type as the
+    /// document spells it, the record's `actual`; `rule` says which count and
+    /// which bound. No fix: which of the two numbers to change is the
+    /// author's choice.
+    #[error("{element}: {attr} '{value}' has no value: {rule}")]
+    LowerCountPastBound {
+        element: String,
+        attr: String,
+        value: String,
+        rule: String,
+    },
+
+    /// docs/adr/0086, sections 15.2, 15.7 and 15.8: a lower count where
+    /// nothing reads it, on a string or bytes, in a variable's or an algorithm
+    /// slot's type, or on a list a later revision adds. `value` is the type as
+    /// the document spells it, the record's `actual`, and `to` the same text
+    /// with every lower count removed, the one type that keeps everything else
+    /// the declaration says: the record's `replace_with`.
+    #[error("{element}: {attr} '{value}' states a lower count nothing reads: {rule}")]
+    LowerCountMisplaced {
+        element: String,
+        attr: String,
+        value: String,
+        rule: String,
+        to: String,
+    },
+
     /// docs/adr/0087, section 3.1: a hole of a text template that breaks a
     /// rule of holes — a type whose text is not the same on every backend,
     /// `sce:trust` missing on a text hole or written on another, a hole

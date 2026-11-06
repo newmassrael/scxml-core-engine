@@ -4535,8 +4535,8 @@ that schema is read by, a field a later revision added taking its default. When 
 text is one, it replaces `answer` whole and `why` becomes absent; when it is not, `why`
 holds a record of `sce:std/lift/refusal.scxml` (its `code`, a value of
 `sce:std/lift/refusal_code.scxml`; its `path`, the strict RFC 6901 pointer to the first
-place refused; its `bound`, the bound that place broke, for `tooLong`, `tooMany` and
-`tooDeep`) and `answer` is left as it was. The statement raises nothing, so the block it
+place refused; its `bound`, the bound that place broke, for `tooLong`, `tooMany`,
+`tooFew` and `tooDeep`) and `answer` is left as it was. The statement raises nothing, so the block it
 stands in goes on, and after it `why` says which of the two happened. What each name
 must be is judged where the document is read:
 
@@ -4923,6 +4923,21 @@ type writes none; every bound inside it is stated. An event schema's field holds
 any type of the grammar, a list, a record and an optional over either included,
 and its schema unit declares it. A statechart imports such a schema and takes its
 event on every target, holding the schema whole.
+
+**A list states its lower count in its type** (docs/adr/0086, section 15):
+`list<T>[M..N]` holds at least `M` and at most `N` elements, and `list<T>[N]` is
+`list<T>[0..N]`. A named bound pairs with it as `[M..name=N]`; the name moves the
+bound alone, and a `--limit` that puts the bound below the lower count leaves the
+type no value and is refused, as a lower count past a written bound is
+(`validation/lower-count-past-bound`). A string and a bytes take none, and
+neither does a variable, an algorithm's slot or a list a later revision adds:
+each is filled from empty, or read empty from an earlier delivery, so a lower
+count there is `validation/lower-count-misplaced`, its fix the type without it.
+A delivery whose list holds fewer is refused whole, `'items' holds 0 elements,
+fewer than the 3 its type declares`, and a lift keeps it as `tooFew`; the answer
+schema states `minItems` and its grammar leaves the shorter lists out. A copy
+takes only a list whose lower count proves the place's (section 5.1); a later
+revision may lower a lower count and may not raise it.
 
 A statechart reads a composed payload as it reads a variable of the same type, at
 any depth (docs/adr/0086, section 6): every place, a variable, `_event.data` or a
@@ -9171,7 +9186,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (501 codes)
+## Appendix — `DiagnosticCode` index (503 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9254,6 +9269,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/lift-location` | Validation |
 | `validation/lift-text` | Validation |
 | `validation/lift-path-bound` | Validation |
+| `validation/lower-count-past-bound` | Validation |
+| `validation/lower-count-misplaced` | Validation |
 | `validation/model-answer-schema` | Validation |
 | `validation/native-action-argument` | Validation |
 | `validation/native-action-signature-conflict` | Validation |

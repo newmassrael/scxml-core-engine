@@ -1045,6 +1045,38 @@ fn read_bracket(
     Ok(Some(bound.at_least(least)))
 }
 
+/// `written`, the text of a type as a document spells it (`list&lt;uint8&gt;[1..3]`
+/// in XML), with every lower count removed from its brackets
+/// (`list&lt;uint8&gt;[3]`): the one type that keeps everything else the
+/// declaration says, which a refusal of a lower count nothing reads offers as
+/// its replacement (docs/adr/0086, section 15.13). A bracket whose text before
+/// `..` is not written in digits is kept as it is, as the reader keeps it.
+pub fn without_lower_counts(written: &str) -> String {
+    let mut out = String::with_capacity(written.len());
+    let mut rest = written;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..=open]);
+        let after = &rest[open + 1..];
+        let Some(close) = after.find(']') else {
+            out.push_str(after);
+            return out;
+        };
+        let inside = &after[..close];
+        match inside.split_once("..") {
+            Some((lower, upper))
+                if !lower.trim().is_empty() && lower.trim().chars().all(|c| c.is_ascii_digit()) =>
+            {
+                out.push_str(upper.trim_start());
+            }
+            _ => out.push_str(inside),
+        }
+        out.push(']');
+        rest = &after[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
 // ── The narrowing onto the shapes a position lowers ─────────────────────────
 
 /// A type a position's lowering does not hold yet: the part of the type it
@@ -3593,6 +3625,35 @@ mod tests {
         );
         // A list with no bracket, a parameter's, states no lower count.
         assert_eq!(found("list<uint8>"), None);
+    }
+
+    /// The replacement a refusal of a misplaced lower count offers is the text
+    /// as written with every lower count removed, nothing else moved
+    /// (docs/adr/0086, section 15.13).
+    #[test]
+    fn a_lower_count_is_removed_from_the_spelling_it_stands_in() {
+        assert_eq!(
+            without_lower_counts("list&lt;uint8&gt;[1..3]"),
+            "list&lt;uint8&gt;[3]"
+        );
+        assert_eq!(
+            without_lower_counts("list<list<string[8]>[1..4]>[2..n=3]"),
+            "list<list<string[8]>[4]>[n=3]"
+        );
+        assert_eq!(without_lower_counts("string[1..8]"), "string[8]");
+        assert_eq!(without_lower_counts("list<uint8>[3]"), "list<uint8>[3]");
+        // A limit name that holds `..` is no lower count.
+        assert_eq!(
+            without_lower_counts("list<uint8>[a..b=4]"),
+            "list<uint8>[a..b=4]"
+        );
+        // What it gives is read as the type without its lower counts.
+        assert_eq!(
+            WrittenType::read(&without_lower_counts("list<list<uint8>[1..2]>[1..3]"))
+                .unwrap()
+                .lower_count_inside(),
+            None
+        );
     }
 
     #[test]

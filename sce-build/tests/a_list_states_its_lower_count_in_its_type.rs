@@ -130,7 +130,7 @@ fn an_event_field_holds_a_lower_count_at_any_depth() {
 fn a_lower_count_past_its_bound_is_refused() {
     for ty in ["list<uint8>[4..3]", "list<list<uint8>[5..4]>[3]"] {
         let (code, said) = field_type(&schema(ty, "", "")).expect_err(ty);
-        assert_eq!(code, "validation/attribute-rule-violated", "{ty}");
+        assert_eq!(code, "validation/lower-count-past-bound", "{ty}");
         assert!(said.contains("is past its bound"), "{ty}: {said}");
     }
 }
@@ -145,7 +145,7 @@ fn a_limit_moved_below_the_lower_count_is_refused() {
     let (ok, out) = check(&["probe_items=2"], &path);
     assert!(!ok, "a bound moved to 2 leaves no value:\n{out}");
     assert!(
-        out.contains("\"code\":\"validation/attribute-rule-violated\"")
+        out.contains("\"code\":\"validation/lower-count-past-bound\"")
             && out.contains("is past its bound"),
         "{out}"
     );
@@ -155,7 +155,7 @@ fn a_limit_moved_below_the_lower_count_is_refused() {
 fn a_text_and_a_byte_string_take_no_lower_count() {
     for ty in ["string[1..8]", "bytes[0..4]", "list<string[1..8]>[3]"] {
         let (code, said) = field_type(&schema(ty, "", "")).expect_err(ty);
-        assert_eq!(code, "validation/attribute-rule-violated", "{ty}");
+        assert_eq!(code, "validation/lower-count-misplaced", "{ty}");
         assert!(said.contains("takes no lower count"), "{ty}: {said}");
     }
 }
@@ -168,7 +168,7 @@ fn a_list_a_later_revision_adds_states_no_lower_count() {
         r#" sce:revision="2""#,
     );
     let (code, said) = field_type(&added).expect_err("a lower count on an added list");
-    assert_eq!(code, "validation/attribute-rule-violated");
+    assert_eq!(code, "validation/lower-count-misplaced");
     assert!(said.contains("a later revision adds"), "{said}");
     // One that states none reads empty from an earlier delivery, and an
     // optional one reads absent.
@@ -200,16 +200,36 @@ fn a_variable_states_no_lower_count() {
     std::fs::write(&path, statechart("list<uint8>[3]")).expect("write");
     let (ok, out) = check(&[], &path);
     assert!(ok, "a list variable that states no lower count:\n{out}");
-    for ty in ["list<uint8>[1..3]", "list<list<uint8>[1..2]>[3]"] {
+    // The replacement is the type as the document spells it, its lower counts
+    // removed (docs/adr/0086, section 15.13).
+    for (ty, to) in [
+        ("list<uint8>[1..3]", "list&lt;uint8&gt;[3]"),
+        (
+            "list<list<uint8>[1..2]>[3]",
+            "list&lt;list&lt;uint8&gt;[2]&gt;[3]",
+        ),
+    ] {
         std::fs::write(&path, statechart(ty)).expect("write");
         let (ok, out) = check(&[], &path);
         assert!(!ok, "{ty} in a variable:\n{out}");
         assert!(
-            out.contains("\"code\":\"validation/attribute-rule-violated\"")
-                && out.contains("starts empty and is filled an element at a time"),
+            out.contains("\"code\":\"validation/lower-count-misplaced\"")
+                && out.contains("starts empty and is filled an element at a time")
+                && out.contains(&format!(
+                    "\"fix\":{{\"kind\":\"replace_with\",\"to\":\"{to}\"}}"
+                )),
             "{ty}:\n{out}"
         );
     }
+    // The replacement applied, the document checks as the list variable it
+    // then is.
+    std::fs::write(
+        &path,
+        statechart("list<uint8>[1..3]").replace("[1..3]", "[3]"),
+    )
+    .expect("write");
+    let (ok, out) = check(&[], &path);
+    assert!(ok, "the variable with its replacement:\n{out}");
 }
 
 /// An algorithm returning a list built in a local, the return typed `ret`
@@ -244,7 +264,7 @@ fn an_algorithm_slot_states_no_lower_count() {
         ("list<int64>[4]", "list<int64>[1..4]"),
     ] {
         let refusal = parse_forge(&algorithm(ret, local), label()).expect_err(ret);
-        assert_eq!(code_of(&refusal), "validation/attribute-rule-violated");
+        assert_eq!(code_of(&refusal), "validation/lower-count-misplaced");
         assert!(
             refusal
                 .to_string()

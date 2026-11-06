@@ -855,6 +855,15 @@ pub enum DiagnosticCode {
     /// is past the refusal record's `path` bound.
     #[serde(rename = "validation/lift-path-bound")]
     ValidationLiftPathBound,
+    /// A list's lower count past its bound, as written or after `--limit`
+    /// (docs/adr/0086, section 15.2): the type has no value.
+    #[serde(rename = "validation/lower-count-past-bound")]
+    ValidationLowerCountPastBound,
+    /// A lower count where nothing reads it (docs/adr/0086, sections 15.2,
+    /// 15.7, 15.8): on a string or bytes, in a variable's or an algorithm
+    /// slot's type, on a list a later revision adds.
+    #[serde(rename = "validation/lower-count-misplaced")]
+    ValidationLowerCountMisplaced,
     /// `<invoke sce:answer>` (docs/adr/0087, section 4.1): an answer schema the
     /// build cannot name for a model's generation.
     #[serde(rename = "validation/model-answer-schema")]
@@ -3818,6 +3827,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationLiftLocation,
         ValidationLiftText,
         ValidationLiftPathBound,
+        ValidationLowerCountPastBound,
+        ValidationLowerCountMisplaced,
         ValidationModelAnswerSchema,
         ValidationNativeActionArgument,
         ValidationNativeActionSignatureConflict,
@@ -4690,6 +4701,10 @@ impl DiagnosticCode {
             // refusal is kept in, are the ADR's own sections.
             ValidationLiftLocation | ValidationLiftText => Some("ADR 0087 §2.1"),
             ValidationLiftPathBound => Some("ADR 0087 §2.4"),
+            // A list's lower count is the amendment's own section.
+            ValidationLowerCountPastBound | ValidationLowerCountMisplaced => {
+                Some("ADR 0086 §15")
+            }
             ValidationModelAnswerSchema => Some("ADR 0087 §4.1"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
@@ -5471,6 +5486,8 @@ impl DiagnosticCode {
             | ValidationLiftLocation
             | ValidationLiftText
             | ValidationLiftPathBound
+            | ValidationLowerCountPastBound
+            | ValidationLowerCountMisplaced
             | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
             | ValidationNativeActionSignatureConflict
@@ -5969,6 +5986,8 @@ impl DiagnosticCode {
             ValidationLiftLocation => "validation/lift-location",
             ValidationLiftText => "validation/lift-text",
             ValidationLiftPathBound => "validation/lift-path-bound",
+            ValidationLowerCountPastBound => "validation/lower-count-past-bound",
+            ValidationLowerCountMisplaced => "validation/lower-count-misplaced",
             ValidationModelAnswerSchema => "validation/model-answer-schema",
             ValidationNativeActionArgument => "validation/native-action-argument",
             ValidationNativeActionSignatureConflict => {
@@ -8101,6 +8120,40 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(pointer.clone()),
             fix: None,
             key_fragments: vec![schema.clone(), pointer.clone(), bound.to_string()],
+        },
+        // docs/adr/0086, section 15.13: the type as written is `actual`, the
+        // count and the bound it passes are the rule; lowering either number
+        // is the author's choice, so no fix.
+        ValidationError::LowerCountPastBound {
+            element,
+            attr,
+            value,
+            rule,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationLowerCountPastBound,
+            stage: Stage::Validation,
+            expected: Some(vec![rule.clone()]),
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), attr.clone(), value.clone()],
+        },
+        // docs/adr/0086, section 15.13: the type as written is `actual`, and
+        // the same text with its lower counts removed the one replacement that
+        // keeps everything else it says, so it rides `fix` and `expected` stays
+        // absent (SCE_ERROR_CONTRACT.md, section 3.2).
+        ValidationError::LowerCountMisplaced {
+            element,
+            attr,
+            value,
+            rule: _,
+            to,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationLowerCountMisplaced,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.clone()),
+            fix: Some(Fix::ReplaceWith { to: to.clone() }),
+            key_fragments: vec![element.clone(), attr.clone(), value.clone()],
         },
         // docs/adr/0087, section 4.1: the alias as written is `actual`; each
         // repair (import the schema, close its enum, move the attribute) is a
@@ -13325,6 +13378,42 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:8baeffd46b939664","code":"validation/lift-path-bound","stage":"validation","spec":"ADR 0087 §2.4","message":"<sce:lift schema=\"Answer\">: the longest pointer into a record of Answer is `/title_text`, 11 bytes, past the 8 bytes the refusal record's path holds (string[lift_path=8]): raise the bound with --limit lift_path=N, or shorten the names on the way to that place","actual":"/title_text"}"#,
+            ),
+            (
+                // A list's lower count past its bound leaves the type no value
+                // (docs/adr/0086, section 15.2); which number to change is the
+                // author's, so no fix.
+                "forge/lower-count-past-bound",
+                ValidationError::LowerCountPastBound {
+                    element: "EventSchema field 'steps'".into(),
+                    attr: "sce:type".into(),
+                    value: "list&lt;uint8&gt;[4..3]".into(),
+                    rule: "the lower count 4 of `list<uint8>[4..3]` is past its bound 3: a list \
+                           holds at least its lower count and at most its bound, so the lower \
+                           count is at most the bound, or the type has no value"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:122aa144a87b017b","code":"validation/lower-count-past-bound","stage":"validation","spec":"ADR 0086 §15","message":"EventSchema field 'steps': sce:type 'list&lt;uint8&gt;[4..3]' has no value: the lower count 4 of `list<uint8>[4..3]` is past its bound 3: a list holds at least its lower count and at most its bound, so the lower count is at most the bound, or the type has no value","expected":["the lower count 4 of `list<uint8>[4..3]` is past its bound 3: a list holds at least its lower count and at most its bound, so the lower count is at most the bound, or the type has no value"],"actual":"list&lt;uint8&gt;[4..3]"}"#,
+            ),
+            (
+                // A variable's type states a lower count, which a place filled
+                // from empty breaks until it is full (docs/adr/0086, section
+                // 15.7); the type without it is the one replacement.
+                "forge/lower-count-misplaced",
+                ValidationError::LowerCountMisplaced {
+                    element: "<data id=\"kept\">".into(),
+                    attr: "sce:type".into(),
+                    value: "list&lt;uint8&gt;[1..3]".into(),
+                    rule: "`list<uint8>[1..3]` states a lower count, and a variable or an \
+                           algorithm's slot starts empty and is filled an element at a time, so \
+                           no lower count holds of it until it is full: its type states none \
+                           (`list<T>[N]`)"
+                        .into(),
+                    to: "list&lt;uint8&gt;[3]".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:198826dc7e6b5a4d","code":"validation/lower-count-misplaced","stage":"validation","spec":"ADR 0086 §15","message":"<data id=\"kept\">: sce:type 'list&lt;uint8&gt;[1..3]' states a lower count nothing reads: `list<uint8>[1..3]` states a lower count, and a variable or an algorithm's slot starts empty and is filled an element at a time, so no lower count holds of it until it is full: its type states none (`list<T>[N]`)","actual":"list&lt;uint8&gt;[1..3]","fix":{"kind":"replace_with","to":"list&lt;uint8&gt;[3]"}}"#,
             ),
             (
                 // A model's generation names an answer schema the document does
@@ -19609,6 +19698,8 @@ mod tests {
             | ValidationLiftLocation
             | ValidationLiftText
             | ValidationLiftPathBound
+            | ValidationLowerCountPastBound
+            | ValidationLowerCountMisplaced
             | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
@@ -20603,6 +20694,7 @@ mod tests {
                 | ValidationDynamicFeatures | ValidationNativeActionPlacement
                 | ValidationTypedInvokeSchema | ValidationTypedInvokeRequest
                 | ValidationLiftLocation | ValidationLiftText | ValidationLiftPathBound
+                | ValidationLowerCountPastBound | ValidationLowerCountMisplaced
                 | ValidationModelAnswerSchema
                 | ValidationNativeActionArgument
                 | ValidationNativeActionSignatureConflict | ValidationNativeActionRelease
@@ -21025,9 +21117,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            501,
+            503,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 501 distinct variants to match the DiagnosticCode \
+             expected 503 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21671,6 +21763,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationLiftLocation
             | ValidationLiftText
             | ValidationLiftPathBound
+            | ValidationLowerCountPastBound
+            | ValidationLowerCountMisplaced
             | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
