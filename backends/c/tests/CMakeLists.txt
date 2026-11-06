@@ -1763,6 +1763,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 5.10.1 + B.2.8: a blank `_event` field reads as nil, never as
+    # the empty string (tests/ecmascript/event_blank_fields.json, which every
+    # backend reads). A document of this channel alone, beside the C test: this
+    # backend binds `_event` in the generated machine, so a machine carries the
+    # table's events and the test reads the `_event` it bound.
+    sce_generate_static_integration_c_test(event_blank_fields
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_blank_fields/event_blank_fields.scxml"
+    )
+    add_executable(sce_c_integration_event_blank_fields
+        integration/test_event_blank_fields.c
+        ${INTEGRATION_C_TEST_event_blank_fields_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_event_blank_fields PRIVATE
+        SCE_EVENT_BLANK_FIELDS_TABLE="${CMAKE_SOURCE_DIR}/tests/ecmascript/event_blank_fields.json"
+    )
+    sce_c_link_runtime(sce_c_integration_event_blank_fields)
+    target_include_directories(sce_c_integration_event_blank_fields PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_event_blank_fields PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_event_blank_fields
+        COMMAND sce_c_integration_event_blank_fields
+    )
+    set_tests_properties(c11_integration_event_blank_fields PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.5 + docs/adr/0090, sections 1 and 6: `<finalize>` runs for the
     # child's own send and not for a host's event that spells the child's pair as
     # its origin. A document of this channel alone, beside the C test: this

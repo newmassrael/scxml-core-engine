@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The carrier of tests/ecmascript/event_blank_fields.json on the C11 channel:
+  what an `_event` field the Processor left blank reads as (W3C SCXML 5.10.1,
+  B.2.8). A document of this channel alone, beside its C test: the other
+  channels ask the same table of their engines' bindings directly, and this
+  backend binds `_event` in the generated machine, so a machine is what
+  carries the question here.
+
+  `listening` takes each event the table names and stays where it is, so the
+  `_event` the dequeue bound is still bound when the test reads it. `taken`
+  counts the events taken, and gives the document the script engine whose
+  binding is under test.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="listening"
+       name="event_blank_fields">
+  <datamodel>
+    <data id="taken" expr="0"/>
+  </datamodel>
+
+  <state id="listening">
+    <transition event="brief">
+      <assign location="taken" expr="taken + 1"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="taken" expr="taken + 1"/>
+    </transition>
+  </state>
+</scxml>

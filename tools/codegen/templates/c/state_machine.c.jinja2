@@ -4102,6 +4102,19 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
    same way (rust `set_current_event -> ScriptResult<PayloadReading>`, cpp
    `SetCurrentEventResult`, go `(PayloadReading, error)`), so the caller below
    is the one place a rung becomes a statistic on every channel. #}
+/* §scxml-5.10.1: `sendid`, `origin`, `origintype` and `invokeid` are fields
+   the Processor leaves blank in named cases, and the event record carries a
+   blank one as the empty string. In the ECMAScript data model blank is
+   undefined, never the empty string, and this backend lowers ECMAScript to
+   Lua, which holds undefined as nil: so an empty value is pushed as nil. */
+SCE_SM_FN static void push_blankable_event_field(lua_State *L, const char *value) {
+    if (value[0] != '\0') {
+        lua_pushstring(L, value);
+    } else {
+        lua_pushnil(L);
+    }
+}
+
 SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     (void)L;
     (void)evt;
@@ -4134,7 +4147,7 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
        wrote into `evt->origin` where it built the event (docs/adr/0090),
        read here as it is, on every queue. An event that carries none —
        an internal or platform event, a host's event naming no party —
-       reads both as the empty string, as test330 asks of every event.
+       leaves both blank, which reads as nil (see the helper above).
 
        W3C SCXML 5.10.1 (.invokeid): cpp `LuaEngine::setCurrentEvent`
        (LuaEngine.cpp:1138-1139) pushes `invokeId.c_str()` onto
@@ -4156,17 +4169,13 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
        §"Spec-mirror parity (N-backend codegen)" — cpp's branch
        is the contract; missing the field would be silent
        semantic drift on the W3C 5.10.1 metadata family. */
-    if (evt->send_id[0] != '\0') {
-        lua_pushstring(L, evt->send_id);
-    } else {
-        lua_pushnil(L);
-    }
+    push_blankable_event_field(L, evt->send_id);
     lua_setglobal(L, "_pending_send_id");
-    /* §scxml-5.10.1 (test336): the event's pair, or two empty strings for an
+    /* §scxml-5.10.1 (test336): the event's pair, or two blank fields for an
        event that carries none (docs/adr/0090, section 1). */
-    lua_pushstring(L, sce_event_origin_address(&evt->origin));
+    push_blankable_event_field(L, sce_event_origin_address(&evt->origin));
     lua_setglobal(L, "_pending_event_origin");
-    lua_pushstring(L, sce_event_origin_processor(&evt->origin));
+    push_blankable_event_field(L, sce_event_origin_processor(&evt->origin));
     lua_setglobal(L, "_pending_event_origintype");
     /* W3C SCXML 5.10.1 (.invokeid, test228/338): seed the lua-side
        carry from the dequeued event's `invoke_id` meta field so the
@@ -4180,11 +4189,7 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
        invoke_id` cache (process_event_queues lines below) keeps the
        C-side state for any non-Lua consumers; the lua push here is
        what the ECMAScript datamodel reads. */
-    if (evt->invoke_id[0] != '\0') {
-        lua_pushstring(L, evt->invoke_id);
-    } else {
-        lua_pushnil(L);
-    }
+    push_blankable_event_field(L, evt->invoke_id);
     lua_setglobal(L, "_pending_event_invokeid");
     /* W3C SCXML testing extension (.raw): cpp `JSEngineImpl.cpp:510` sets
        `_event.raw` to the unparsed event data string before donedata
