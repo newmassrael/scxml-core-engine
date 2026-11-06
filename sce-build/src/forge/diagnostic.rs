@@ -11387,13 +11387,13 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
         // The read is `actual`, as for an optional value; which case to test
         // for is the author's choice, so no fix and no `expected`
         // (docs/adr/0092, section 9).
-        ExprError::UnionReadUnproven { read, union, .. } => DiagnosticPayload {
+        ExprError::UnionReadUnproven(refusal) => DiagnosticPayload {
             code: DiagnosticCode::ExpressionUnionReadUnproven,
             stage: Stage::Expression,
             expected: None,
-            actual: Some(read.clone()),
+            actual: Some(refusal.read.clone()),
             fix: None,
-            key_fragments: vec![read.clone(), union.clone()],
+            key_fragments: vec![refusal.read.clone(), refusal.union.clone()],
         },
         // The call is what `actual` names, because the call is what the
         // consumer edits: `.length` occurs on the line either way, and a
@@ -15341,12 +15341,14 @@ mod tests {
                 // read is `actual`; no fix, since which case to test for is the
                 // author's choice.
                 "forge/expression-union-read-unproven",
-                ExprError::UnionReadUnproven {
-                    read: "when.count".into(),
-                    union: "DateExpression".into(),
-                    declaring: vec!["relativeDays".into(), "relativeWeeks".into()],
-                    test: "when.kind === DateKind.<case>".into(),
-                }
+                ExprError::UnionReadUnproven(Box::new(
+                    crate::forge::error::UnionReadUnproven {
+                        read: "when.count".into(),
+                        union: "DateExpression".into(),
+                        declaring: vec!["relativeDays".into(), "relativeWeeks".into()],
+                        test: "when.kind === DateKind.<case>".into(),
+                    },
+                ))
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2513297643b69b57","code":"expression/union-read-unproven","stage":"expression","spec":"ADR 0092 §6.1","message":"when.count reads a field of the union `DateExpression` that the case(s) relativeDays, relativeWeeks declare, where the build has not proven the union in cases that each declare it with one type: test its tag first (`when.kind === DateKind.<case>` around the read)","actual":"when.count"}"#,
             ),

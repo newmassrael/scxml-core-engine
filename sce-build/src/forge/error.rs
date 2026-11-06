@@ -5722,22 +5722,12 @@ pub enum ExprError {
     /// case is proven, so no backend has a run-time path for reading a field of
     /// a case the value is not in. Refused when the document is checked, at the
     /// read. No fix: which case to test for is the author's choice.
-    #[error(
-        "{read} reads a field of the union `{union}` that the case(s) {} declare, where the \
-         build has not proven the union in cases that each declare it with one type: test \
-         its tag first (`{test}` around the read)",
-        .declaring.join(", ")
-    )]
-    UnionReadUnproven {
-        /// The read as written (`when.count`).
-        read: String,
-        /// The alias the union is named by.
-        union: String,
-        /// The cases whose records declare the field, in the enum's order.
-        declaring: Vec<String>,
-        /// The test that proves one of them, as the author would write it.
-        test: String,
-    },
+    ///
+    /// Boxed, as [`ForgeError::Validation`] is: its four parts would make it
+    /// the largest variant and every `Result<_, Refusal>` of the crate larger
+    /// with it.
+    #[error(transparent)]
+    UnionReadUnproven(Box<UnionReadUnproven>),
 
     /// Loose equality (`==` / `!=`) instead of strict.
     #[error("loose {operator} is not permitted in Extended SCXML. Use {strict} instead.")]
@@ -5845,6 +5835,27 @@ pub enum ExprError {
         "cannot lower this conditional expression to Go: neither the value it flows into nor its branches have a type Go can name"
     )]
     GoTernary,
+}
+
+/// The read [`ExprError::UnionReadUnproven`] refuses (docs/adr/0092, section
+/// 6.1): the read as written, the union, the cases that declare the field and
+/// the test that proves one.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "{read} reads a field of the union `{union}` that the case(s) {} declare, where the \
+     build has not proven the union in cases that each declare it with one type: test \
+     its tag first (`{test}` around the read)",
+    .declaring.join(", ")
+)]
+pub struct UnionReadUnproven {
+    /// The read as written (`when.count`).
+    pub read: String,
+    /// The alias the union is named by.
+    pub union: String,
+    /// The cases whose records declare the field, in the enum's order.
+    pub declaring: Vec<String>,
+    /// The test that proves one of them, as the author would write it.
+    pub test: String,
 }
 
 impl ExprError {

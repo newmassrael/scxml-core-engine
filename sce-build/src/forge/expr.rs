@@ -1097,12 +1097,14 @@ fn reject_unproven_union_reads(
                     property,
                     Some(&ctx.proven),
                 ) {
-                    return Err(ExprError::UnionReadUnproven {
-                        read,
-                        union: refusal.union,
-                        declaring: refusal.declaring,
-                        test: refusal.test,
-                    }
+                    return Err(ExprError::UnionReadUnproven(Box::new(
+                        crate::forge::error::UnionReadUnproven {
+                            read,
+                            union: refusal.union,
+                            declaring: refusal.declaring,
+                            test: refusal.test,
+                        },
+                    ))
                     .at(expr.span.clone()));
                 }
             }
