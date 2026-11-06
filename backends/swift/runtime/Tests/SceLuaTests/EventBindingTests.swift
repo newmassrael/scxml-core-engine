@@ -52,15 +52,38 @@ private func boundState(_ event: LuaEvent) throws -> LuaState {
 }
 
 @Test func theNextEventReplacesThePreviousOneWhole() throws {
-    let lua = try boundState(LuaEvent(name: "first", type: "external", sendID: "s1", data: #"{"a":1}"#))
+    let lua = try boundState(
+        LuaEvent(
+            name: "first", type: "external", sendID: "s1", origin: "#_scxml_a", originType: "scxml",
+            data: #"{"a":1}"#))
     #expect(try answers(lua.evaluate("_event.data.a"), ["number": 1.0]))
     try lua.bindCurrentEvent(LuaEvent(name: "second", type: "internal"))
     #expect(try lua.evaluate("_event.name") == .string("second"))
     #expect(try lua.evaluate("_event.data") == .nilValue)
     #expect(try lua.evaluate("_event.sendid") == .nilValue)
     #expect(try lua.evaluate("_event.raw") == .nilValue)
+    #expect(try lua.evaluate("_event.origin") == .string(""))
+    #expect(try lua.evaluate("_event.origintype") == .string(""))
 }
 
+// §scxml-5.10.1 (docs/adr/0090, section 1): an event no Event I/O Processor delivered has its
+// origin and origintype left blank. Blank is the empty text, which a guard `_event.origin === ''`
+// finds; absent would be undefined, which that guard does not, and the other engines bind the
+// empty text.
+@Test func anEventWithNoOriginReadsBothOriginFieldsAsTheEmptyText() throws {
+    let lua = try boundState(LuaEvent(name: "posted", type: "external"))
+    #expect(try lua.evaluate("_event.origin") == .string(""))
+    #expect(try lua.evaluate("_event.origintype") == .string(""))
+    #expect(try lua.evaluateCondition("_event.origin == '' and _event.origintype == ''"))
+
+    // An origin spelled out as empty reads as one left out.
+    try lua.bindCurrentEvent(LuaEvent(name: "reply", type: "external", origin: "", originType: ""))
+    #expect(try lua.evaluate("_event.origin") == .string(""))
+    #expect(try lua.evaluate("_event.origintype") == .string(""))
+}
+
+// `type`, `sendid` and `invokeid` are absent when empty; `origin` and `origintype` are the one pair
+// that reads as the empty text instead (`anEventWithNoOriginReadsBothOriginFieldsAsTheEmptyText`).
 @Test func theMetadataIsWhatTheEventCarriedAndAnEmptyFieldIsAbsent() throws {
     let lua = try boundState(
         LuaEvent(
