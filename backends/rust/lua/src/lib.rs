@@ -717,19 +717,28 @@ impl IScriptEngine for LuaEngine {
         if !event_type.is_empty() {
             event_table.set("type", event_type).map_err(map_lua_err)?;
         }
-        if !send_id.is_empty() {
-            event_table.set("sendid", send_id).map_err(map_lua_err)?;
-        }
-        // W3C SCXML 5.10.1: Always set origin/origintype so targetexpr="_event.origin"
-        // evaluates to empty string (not nil) when origin is unset (test 336).
-        event_table.set("origin", origin).map_err(map_lua_err)?;
-        event_table
-            .set("origintype", origin_type)
-            .map_err(map_lua_err)?;
-        if !invoke_id.is_empty() {
-            event_table
-                .set("invokeid", invoke_id)
-                .map_err(map_lua_err)?;
+        // §scxml-5.10.1 has the Processor leave four fields blank: `sendid`
+        // when the sender named none, `origin` and `origintype` for internal
+        // and platform events, `invokeid` when no invoked process returned the
+        // event. §scxml-B-2-8 makes blank ECMAScript undefined, not the empty
+        // string, and a Lua session holds undefined as nil. The engine
+        // interface carries "none" as the empty string, so an empty field is
+        // left unset here and `_event.origin === ''` answers false for an
+        // event no processor delivered (tests/ecmascript/event_blank_fields.json).
+        //
+        // `origin` and `origintype` used to be bound as "" whatever the event,
+        // so that `targetexpr="_event.origin"` read a string (test 336). That
+        // test reads the origin of an event the session sent itself, which
+        // carries its origin, so it never needed the blank one to be a string.
+        for (field, value) in [
+            ("sendid", send_id),
+            ("origin", origin),
+            ("origintype", origin_type),
+            ("invokeid", invoke_id),
+        ] {
+            if !value.is_empty() {
+                event_table.set(field, value).map_err(map_lua_err)?;
+            }
         }
 
         session
