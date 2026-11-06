@@ -524,9 +524,10 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
         }
     }
 
-    /// W3C SCXML 6.4.1 + 5.7.1: the value of an expression, already lowered to Lua, as the two spellings a
-    /// request to a host carries it in: the text a form carries (ECMAScript's `String(value)`), which
-    /// the request's `params` hold, and the JSON that keeps its type, which the request's event data holds.
+    /// W3C SCXML 6.4.1, 6.2.5 + 5.7.1: the value of an expression, already lowered to Lua, as the two
+    /// spellings a request to a host (an `<invoke>` it runs, a `<send>` it serves) carries it in: the
+    /// text a form carries (ECMAScript's `String(value)`), which the request's `params` hold, and the
+    /// JSON that keeps its type, which the request's event data holds.
     /// The expression is run once, so one with a side effect (`n++`) takes effect once and both
     /// spellings are the same value. One that cannot be run is nil (the caller's `error.execution`).
     private func evaluateWire(_ expression: String) -> (text: String, json: String)? {

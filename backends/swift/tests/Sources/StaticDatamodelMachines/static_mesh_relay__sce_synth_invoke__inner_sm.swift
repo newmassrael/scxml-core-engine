@@ -379,9 +379,7 @@ public final class StaticMeshRelaySceSynthInvokeInnerPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "inner.pong",
@@ -393,6 +391,7 @@ public final class StaticMeshRelaySceSynthInvokeInnerPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                 }
                 }
             default:

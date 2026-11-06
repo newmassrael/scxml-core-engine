@@ -538,6 +538,30 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolic
         }
     }
 
+    /// W3C SCXML 6.4.1, 6.2.5 + 5.7.1: the value of an expression, already lowered to Lua, as the two
+    /// spellings a request to a host (an `<invoke>` it runs, a `<send>` it serves) carries it in: the
+    /// text a form carries (ECMAScript's `String(value)`), which the request's `params` hold, and the
+    /// JSON that keeps its type, which the request's event data holds.
+    /// The expression is run once, so one with a side effect (`n++`) takes effect once and both
+    /// spellings are the same value. One that cannot be run is nil (the caller's `error.execution`).
+    private func evaluateWire(_ expression: String) -> (text: String, json: String)? {
+        do {
+            let session = try ensureLua()
+            try session.defineGlobal("_scxml_wire_value", as: expression, chunkName: "=wire")
+            defer { try? session.setGlobal("_scxml_wire_value", .nilValue) }
+            guard case .string(let text) = try session.evaluate("_scxml_tostring(_scxml_wire_value)", name: "=wire") else {
+                return nil
+            }
+            var json = "null"
+            if case .string(let written) = try session.evaluate("JSON.stringify(_scxml_wire_value)", name: "=wire") {
+                json = written
+            }
+            return (text, json)
+        } catch {
+            return nil
+        }
+    }
+
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
     /// `<data>` here, at document load, before the state that holds it is visited; late binding
     /// declares a state's own on its first entry (`executeEntryActions`).
@@ -791,15 +815,26 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolic
                         break sceBlock
                     }
                     let sendEventData = ""
-                    // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
-                    // a peer is not a local session. This runtime has no Mesh router to hand it to, so it
-                    // is what every channel does with no router registered: a send to a host processor
-                    // nobody serves, one error.execution, and the block goes on (the other targets of
-                    // the block are still this session's).
+                    // SCE_MESH.md §mesh-19: the evaluated target names a Mesh peer, which is not a local
+                    // session: the send is the host's Mesh router's, as a literal `#peer` is, and with
+                    // no router registered it is a send to a host processor nobody serves, one
+                    // error.execution (`performHostSend`). Any other value is routed below.
                     if isMeshTarget(sendTarget) {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.errorExecution, message: "<send type='sce:mesh'> names a processor the host declared but never registered")
-                        sendError.metadata.sendID = "__send_0"
-                        engine.raise(sendError)
+                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice.
+                    let sendRequest = HostSendRequest(
+                        processorType: "sce:mesh",
+                        eventName: "kAckNow",
+                        target: sendTarget,
+                        content: "",
+                        params: [:],
+                        sendID: "__send_0",
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+                    engine.performHostSend(sendRequest)
 
                     } else {
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
@@ -873,15 +908,26 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolic
                         break sceBlock
                     }
                     let sendEventData = ""
-                    // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
-                    // a peer is not a local session. This runtime has no Mesh router to hand it to, so it
-                    // is what every channel does with no router registered: a send to a host processor
-                    // nobody serves, one error.execution, and the block goes on (the other targets of
-                    // the block are still this session's).
+                    // SCE_MESH.md §mesh-19: the evaluated target names a Mesh peer, which is not a local
+                    // session: the send is the host's Mesh router's, as a literal `#peer` is, and with
+                    // no router registered it is a send to a host processor nobody serves, one
+                    // error.execution (`performHostSend`). Any other value is routed below.
                     if isMeshTarget(sendTarget) {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.errorExecution, message: "<send type='sce:mesh'> names a processor the host declared but never registered")
-                        sendError.metadata.sendID = "__send_1"
-                        engine.raise(sendError)
+                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice.
+                    let sendRequest = HostSendRequest(
+                        processorType: "sce:mesh",
+                        eventName: "kAckLater",
+                        target: sendTarget,
+                        content: "",
+                        params: [:],
+                        sendID: "__send_1",
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+                    engine.scheduleHostSend(delay: Duration.milliseconds(10), request: sendRequest, sender: self.sessionID)
 
                     } else {
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
@@ -955,15 +1001,26 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolic
                         break sceBlock
                     }
                     let sendEventData = ""
-                    // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
-                    // a peer is not a local session. This runtime has no Mesh router to hand it to, so it
-                    // is what every channel does with no router registered: a send to a host processor
-                    // nobody serves, one error.execution, and the block goes on (the other targets of
-                    // the block are still this session's).
+                    // SCE_MESH.md §mesh-19: the evaluated target names a Mesh peer, which is not a local
+                    // session: the send is the host's Mesh router's, as a literal `#peer` is, and with
+                    // no router registered it is a send to a host processor nobody serves, one
+                    // error.execution (`performHostSend`). Any other value is routed below.
                     if isMeshTarget(sendTarget) {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.errorExecution, message: "<send type='sce:mesh'> names a processor the host declared but never registered")
-                        sendError.metadata.sendID = "__send_2"
-                        engine.raise(sendError)
+                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice.
+                    let sendRequest = HostSendRequest(
+                        processorType: "sce:mesh",
+                        eventName: "sAckNow",
+                        target: sendTarget,
+                        content: "",
+                        params: [:],
+                        sendID: "__send_2",
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+                    engine.performHostSend(sendRequest)
 
                     } else {
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
@@ -1037,15 +1094,26 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolic
                         break sceBlock
                     }
                     let sendEventData = ""
-                    // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
-                    // a peer is not a local session. This runtime has no Mesh router to hand it to, so it
-                    // is what every channel does with no router registered: a send to a host processor
-                    // nobody serves, one error.execution, and the block goes on (the other targets of
-                    // the block are still this session's).
+                    // SCE_MESH.md §mesh-19: the evaluated target names a Mesh peer, which is not a local
+                    // session: the send is the host's Mesh router's, as a literal `#peer` is, and with
+                    // no router registered it is a send to a host processor nobody serves, one
+                    // error.execution (`performHostSend`). Any other value is routed below.
                     if isMeshTarget(sendTarget) {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.errorExecution, message: "<send type='sce:mesh'> names a processor the host declared but never registered")
-                        sendError.metadata.sendID = "__send_3"
-                        engine.raise(sendError)
+                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice.
+                    let sendRequest = HostSendRequest(
+                        processorType: "sce:mesh",
+                        eventName: "sAckLater",
+                        target: sendTarget,
+                        content: "",
+                        params: [:],
+                        sendID: "__send_3",
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+                    engine.scheduleHostSend(delay: Duration.milliseconds(10), request: sendRequest, sender: self.sessionID)
 
                     } else {
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as

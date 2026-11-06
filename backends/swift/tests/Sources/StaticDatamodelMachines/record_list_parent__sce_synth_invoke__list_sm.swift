@@ -3546,9 +3546,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.write",
@@ -3560,6 +3558,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -3626,9 +3625,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.write",
@@ -3640,6 +3637,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -3701,9 +3699,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.write",
@@ -3715,6 +3711,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -3781,9 +3778,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.write",
@@ -3795,6 +3790,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -3851,9 +3847,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.supersede",
@@ -3865,6 +3859,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -3936,9 +3931,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.supersede",
@@ -3950,6 +3943,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -4006,9 +4000,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.supersede",
@@ -4020,6 +4012,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -4091,9 +4084,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.supersede",
@@ -4105,6 +4096,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -5297,9 +5289,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.propose",
@@ -5311,6 +5301,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -5404,9 +5395,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.ack",
@@ -5418,6 +5407,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -5585,9 +5575,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.floor",
@@ -5599,6 +5587,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -5635,9 +5624,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.floor",
@@ -5649,6 +5636,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -5961,9 +5949,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.node",
@@ -5975,6 +5961,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -6031,9 +6018,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.node",
@@ -6045,6 +6030,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -6380,9 +6366,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.write",
@@ -6394,6 +6378,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -6455,9 +6440,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.write",
@@ -6469,6 +6452,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -6550,9 +6534,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.supersede",
@@ -6564,6 +6546,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -6620,9 +6603,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
                         eventName: "record_list.supersede",
@@ -6634,6 +6615,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         invokeID: engine.currentEventInvokeID
                     )
                     engine.performHostSend(sendRequest)
+
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
