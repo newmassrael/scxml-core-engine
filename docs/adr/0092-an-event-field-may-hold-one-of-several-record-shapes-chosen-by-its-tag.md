@@ -1,9 +1,9 @@
 # ADR 0092 — An event field may hold one of several record shapes, chosen by its tag
 
-- Status: Proposed (2026-11-06), a draft for the owner's acceptance. Written under the standing rule of 2026-10-26
-  and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. Nothing has
-  landed; "Landing order" lists the steps, and "Open questions" the choices left to the owner. Numbered 0092 because
-  0090 is taken on `main` and 0091 on a branch.
+- Status: Accepted (2026-11-06). The owner accepted it under the standing rule of 2026-10-26 and 2026-10-27, the
+  most long-term correct structure, textbook in its foundations, cost ignored, and took the recommendation of each
+  of the nine questions in "Open questions", which are therefore decided as recommended there. Nothing has landed
+  yet; "Landing order" lists the steps. Numbered 0092 because 0090 is taken on `main` and 0091 on a branch.
 - Date: 2026-11-06
 - Amends:
   - ADR 0086 section 1.1 (the type grammar gains `union:<alias>`), section 2.1 (the size calculus gains its row),
@@ -299,8 +299,17 @@ consumer's stored answers stay readable.
 2. **Exactly one case matches, by construction.** The `const` of each object's tag is a different name, so no value
    is an instance of two of the objects; `oneOf` and `anyOf` therefore accept the same values, and `oneOf` is written
    because it states what the type is, one case and only one. A grammar converter has no way to enforce the
-   exclusivity `oneOf` adds, and needs none here: llama.cpp's converter writes `oneOf` and `anyOf` as the same
-   alternation. `Keyword` (`value_type.rs`) gains `OneOf` and `Const`, `Const` before `Enum` and `OneOf` after
+   exclusivity `oneOf` adds, and needs none here. Checked against the two converters consumers use (2026-11-06):
+   llama.cpp's `common/json-schema-to-grammar.cpp` builds `oneOf` and `anyOf` as the same node and writes it as one
+   alternation (`_generate_union_rule`, `string_join(rules, " | ")`); llguidance (the constraint engine of LiteRT-LM,
+   pinned at 1.3.0 there) refuses a `oneOf` it cannot prove disjoint unless `coerce_one_of` is set (default false,
+   `process_one_of` in `parser/src/json/compiler.rs`), and its `normalize` (`parser/src/json/schema.rs`) turns a
+   `oneOf` into `anyOf` when every pair is verifiably disjoint, which two objects are when a key both require holds
+   different string `const` literals (`is_verifiably_disjoint_from`: the object arm over `required`, the literal arm
+   `lit1 != lit2`). The cases written here meet that test by construction: the tag is required in every case, its
+   `const` is a literal, the literals differ, and the cases are written inline (a `$ref` is never proven disjoint).
+   The schema emitter's tests therefore pin that the tag is in each case's `required` and is a string `const`, since
+   dropping either would turn the accepted `oneOf` into a refused one on llguidance. `Keyword` (`value_type.rs`) gains `OneOf` and `Const`, `Const` before `Enum` and `OneOf` after
    `AnyOf` in the one keyword order, and `schemas/sce-payload-schema.v1.schema.json` admits both, additively.
 3. **Example.** Three of the eleven cases of `date_expression`, revision 2:
 
@@ -714,6 +723,9 @@ Each test fails when the rule it pins is removed; the landing checks each once a
   the lift, with no pointer, and no grammar can state it.
 
 ## Open questions
+
+Decided (2026-11-06): the owner took each recommendation below; the questions stay as the record of what was chosen
+and why.
 
 1. **Is the tag's key declared by each union, or one key for every union of the language** (`kind`, `type` or
    `tag`)? **Recommendation: declared by each union**, as the `id` of its tag `<data>`. The date expression keeps
