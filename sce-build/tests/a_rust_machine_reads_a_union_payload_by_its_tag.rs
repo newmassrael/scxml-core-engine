@@ -124,6 +124,10 @@ fn each_read_is_spelled_by_the_cases_its_tests_leave() {
             "shape.kind()",
             "shape.proven_rect().width",
             "shape.proven_field_radius()",
+            // The present value of an optional union, read in place through
+            // the runtime's `proven_ref`, then by the case its test proves.
+            "sce_forge_runtime::optional::proven_ref(&ev.maybe).kind()",
+            "sce_forge_runtime::optional::proven_ref(&ev.maybe).proven_rect().width",
         ],
     );
     // No read of a case's field is left as a field of the sum.

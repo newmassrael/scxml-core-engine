@@ -28,6 +28,38 @@ fn shapes(one: &str, many: &[&str]) -> String {
     )
 }
 
+/// The present value of `maybe` is read where a test proves it present and in
+/// its case (docs/adr/0055, section 3; docs/adr/0092, section 6.1), and not
+/// where it is absent or in another case.
+#[test]
+fn the_present_value_of_an_optional_union_is_read_where_proven() {
+    let mut engine = machine();
+    deliver(
+        &mut engine,
+        r#"{"one":{"kind":"dot"},"many":[{"kind":"dot"}],"maybe":{"kind":"rect","width":6,"height":2}}"#,
+    );
+    assert_eq!(engine.policy().refusals(), 0);
+    assert_eq!(engine.policy().maybe_width(), 6);
+    deliver(
+        &mut engine,
+        r#"{"one":{"kind":"dot"},"many":[{"kind":"dot"}],"maybe":{"kind":"circle","radius":1}}"#,
+    );
+    assert_eq!(
+        engine.policy().maybe_width(),
+        6,
+        "another case reads nothing"
+    );
+    deliver(
+        &mut engine,
+        &shapes(r#"{"kind":"dot"}"#, &[r#"{"kind":"dot"}"#]),
+    );
+    assert_eq!(
+        engine.policy().maybe_width(),
+        6,
+        "an absent value reads nothing"
+    );
+}
+
 fn machine() -> Engine<StaticUnionPolicy> {
     let mut engine = Engine::new(StaticUnionPolicy::new());
     engine.initialize();

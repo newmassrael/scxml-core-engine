@@ -5,7 +5,8 @@
   enum; a chain of tests on it, each branch reading a field its case declares,
   `radius` under a test that leaves both cases that share it, a list `path`
   holds walked where its case is proven; and each shape of `many` narrowed by
-  the same tests on the loop's item. A delivery outside its type is refused
+  the same tests on the loop's item; and the present value of `maybe`, where a
+  test proves it present and in its case. A delivery outside its type is refused
   whole and counted. Every out variable is what a host reads back.
 
   The Rust backend lowers it; every other backend refuses the union by its own
@@ -36,6 +37,7 @@
     <data id="many_radius" sce:type="uint16" expr="0" sce:direction="out"/>
     <data id="many_width" sce:type="uint16" expr="0" sce:direction="out"/>
     <data id="many_shapes" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="maybe_width" sce:type="uint16" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
@@ -63,6 +65,9 @@
           <assign location="many_radius" expr="shape.radius"/>
         </if>
       </foreach>
+      <if cond="_event.data.maybe !== null &amp;&amp; _event.data.maybe.value.kind === Kind.rect">
+        <assign location="maybe_width" expr="_event.data.maybe.value.width"/>
+      </if>
     </transition>
     <!-- A delivery outside its type is refused whole: none of the content above
          runs, and error.execution says so once. -->
