@@ -1976,12 +1976,13 @@ mod tests {
         }
         // A composed type is written as the descriptor docs/adr/0086 section
         // 4.3 names, an object whose one key is its constructor: `field` knows
-        // each, and reads the part of the type each names. The emitter writes
+        // each, among them the union that reads a tag and then its case's record,
+        // and reads the part of the type each names. The emitter writes
         // an optional payload field's type `{optional: T}`
         // (`payload_optional_read`), read as absent for a delivered `null` and
         // as `T` at the same path otherwise.
         assert!(
-            text.contains("var keys = ['optional', 'list', 'record', 'string', 'bytes'];"),
+            text.contains("var keys = ['optional', 'list', 'record', 'union', 'string', 'bytes'];"),
             "`field` knows no constructor of a type descriptor"
         );
         assert!(
