@@ -92,6 +92,9 @@ const (
 	RefusalNotByteText
 	// RefusalNulInText: a text holding U+0000.
 	RefusalNulInText
+	// RefusalTooFew: a list short of the lower count its type states
+	// (docs/adr/0086, section 15).
+	RefusalTooFew
 )
 
 // refusalCodeNames are the names the enum declares the codes by, indexed by
@@ -110,6 +113,7 @@ var refusalCodeNames = [...]string{
 	RefusalUnknownVariant:  "unknownVariant",
 	RefusalNotByteText:     "notByteText",
 	RefusalNulInText:       "nulInText",
+	RefusalTooFew:          "tooFew",
 }
 
 // Name is the name the enum declares the code by; "" for a number it does not

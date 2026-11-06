@@ -438,7 +438,8 @@ class HostFeaturesTest {
             (cls.jsonObject.getValue("expect").jsonObject["why"] as? JsonObject)?.getValue("code")?.jsonPrimitive?.content
         }.toMutableSet()
         table.getValue("deferred").jsonArray.forEach { codes.add(it.jsonObject.getValue("code").jsonPrimitive.content) }
-        assertEquals(13, codes.size, "every refusal code is reached or deferred: $codes")
+        // The fourteen codes, tooFew the last (docs/adr/0086, section 15.11).
+        assertEquals(14, codes.size, "every refusal code is reached or deferred: $codes")
     }
 
     /**
@@ -599,7 +600,7 @@ class HostFeaturesTest {
             (it.getValue("expect").jsonObject["why"] as? JsonObject)?.getValue("code")?.jsonPrimitive?.content
         }
         val expectedCodes = (liftCodes + APPLICATION_CODES + deferred).toSortedSet()
-        assertEquals(14, expectedCodes.size, "the thirteen lift codes and the application's own: $expectedCodes")
+        assertEquals(15, expectedCodes.size, "the fourteen lift codes and the application's own: $expectedCodes")
         val neverReached = expectedCodes.filter { it !in codes && it !in deferred }
         assertTrue(neverReached.isEmpty(), "every refusal code is reached; never reached: $neverReached")
         val unknown = codes.filter { it !in expectedCodes }.sorted()
@@ -642,7 +643,7 @@ class HostFeaturesTest {
         )
 
         /**
-         * The codes of the application's own checks, after the thirteen of the lift its enum
+         * The codes of the application's own checks, after the fourteen of the lift its enum
          * repeats (enum_harness_code.scxml), each named for the class that reaches it.
          */
         val APPLICATION_CODES = listOf("notOffered")

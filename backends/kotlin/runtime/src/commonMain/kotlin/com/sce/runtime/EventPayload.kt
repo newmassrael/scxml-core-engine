@@ -90,6 +90,9 @@ object EventPayload {
 
         /** A text holding U+0000. */
         NUL_IN_TEXT(13, "nulInText"),
+
+        /** A list short of the lower count its type states (docs/adr/0086, section 15). */
+        TOO_FEW(14, "tooFew"),
         ;
 
         companion object {

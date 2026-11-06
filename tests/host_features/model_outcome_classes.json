@@ -50,7 +50,8 @@
   "deadline_ms": 1000,
   "bound": 2,
   "deferred": [
-    {"code": "tooMany", "why": "a list past its bound: no schema a lift reads holds a list until ADR 0086 step 3 (docs/adr/0087, section 7.1)"}
+    {"code": "tooMany", "why": "a list past its bound: no schema a lift reads holds a list until ADR 0086 step 3 (docs/adr/0087, section 7.1)"},
+    {"code": "tooFew", "why": "a list short of its lower count: no schema a lift reads holds a list until ADR 0086 step 3 (docs/adr/0086, section 15.11)"}
   ],
   "harness": {
     "machine": "static_model_harness",

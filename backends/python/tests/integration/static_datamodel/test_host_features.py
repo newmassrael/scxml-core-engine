@@ -398,10 +398,11 @@ def test_every_sequence_of_outcome_classes_is_read_as_its_classes_say() -> None:
     assert runs == sum(count**k for k in range(1, bound + 1))
     codes = {c["expect"]["why"]["code"] for c in table["classes"] if c["expect"]["why"]}
     codes |= {d["code"] for d in table["deferred"]}
-    assert len(codes) == 13, f"every refusal code is reached or deferred: {sorted(codes)}"
+    # The fourteen codes, tooFew the last (docs/adr/0086, section 15.11).
+    assert len(codes) == 14, f"every refusal code is reached or deferred: {sorted(codes)}"
 
 
-#: The codes of the application's own checks, after the thirteen of the lift its
+#: The codes of the application's own checks, after the fourteen of the lift its
 #: enum repeats (enum_harness_code.scxml), each named for the class that reaches it.
 _APPLICATION_CODES = ("notOffered",)
 
@@ -513,7 +514,7 @@ def test_every_sequence_of_outcome_classes_takes_every_row_of_the_reference_harn
     deferred = {entry["code"] for entry in table["deferred"]}
     expected = {cls["expect"]["why"]["code"] for cls in classes if cls["expect"]["why"]}
     expected |= set(_APPLICATION_CODES) | deferred
-    assert len(expected) == 14, f"the thirteen lift codes and the application's own: {sorted(expected)}"
+    assert len(expected) == 15, f"the fourteen lift codes and the application's own: {sorted(expected)}"
     never_reached = sorted(expected - codes - deferred)
     assert not never_reached, f"every refusal code is reached; never reached: {never_reached}"
     unknown = sorted(codes - expected)

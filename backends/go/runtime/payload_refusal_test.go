@@ -195,10 +195,11 @@ func TestEveryCodeIsTheVariantTheStandardEnumDeclares(t *testing.T) {
 		t.Fatalf("the standard refusal code: %v", err)
 	}
 	document := string(raw)
-	if declared := strings.Count(document, "<sce:variant "); declared != int(RefusalNulInText) {
-		t.Fatalf("the enum declares %d variants, this runtime %d codes", declared, RefusalNulInText)
+	// RefusalTooFew is the last code (docs/adr/0086, section 15.11).
+	if declared := strings.Count(document, "<sce:variant "); declared != int(RefusalTooFew) {
+		t.Fatalf("the enum declares %d variants, this runtime %d codes", declared, RefusalTooFew)
 	}
-	for code := RefusalNotJSON; code <= RefusalNulInText; code++ {
+	for code := RefusalNotJSON; code <= RefusalTooFew; code++ {
 		variant := fmt.Sprintf(`<sce:variant name="%s" value="%d"/>`, code.Name(), code)
 		if !strings.Contains(document, variant) {
 			t.Errorf("code %d: %s", code, variant)

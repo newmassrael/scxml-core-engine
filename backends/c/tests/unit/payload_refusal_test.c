@@ -283,11 +283,12 @@ static int check_codes(void) {
     for (const char *at = strstr(document, "<sce:variant "); at != NULL; at = strstr(at + 1, "<sce:variant ")) {
         declared++;
     }
-    if (declared != SCE_PAYLOAD_CODE_NUL_IN_TEXT) {
+    /* SCE_PAYLOAD_CODE_TOO_FEW is the last code (docs/adr/0086, section 15.11). */
+    if (declared != SCE_PAYLOAD_CODE_TOO_FEW) {
         fprintf(stderr, "FAIL: the enum declares %d variants\n", declared);
         failures++;
     }
-    for (uint8_t code = SCE_PAYLOAD_CODE_NOT_JSON; code <= SCE_PAYLOAD_CODE_NUL_IN_TEXT; ++code) {
+    for (uint8_t code = SCE_PAYLOAD_CODE_NOT_JSON; code <= SCE_PAYLOAD_CODE_TOO_FEW; ++code) {
         char variant[NAME_CAP];
         snprintf(variant, sizeof(variant), "<sce:variant name=\"%s\" value=\"%u\"/>", sce_payload_code_name(code),
                  (unsigned)code);

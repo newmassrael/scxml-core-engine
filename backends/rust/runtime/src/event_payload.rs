@@ -95,11 +95,14 @@ pub enum RefusalCode {
     NotByteText = 12,
     /// A text holding U+0000.
     NulInText = 13,
+    /// A list short of the lower count its type states (docs/adr/0086,
+    /// section 15).
+    TooFew = 14,
 }
 
 impl RefusalCode {
     /// Every code, in the order of their numbers.
-    pub const ALL: [RefusalCode; 13] = [
+    pub const ALL: [RefusalCode; 14] = [
         RefusalCode::NotJson,
         RefusalCode::NotObject,
         RefusalCode::TooDeep,
@@ -113,6 +116,7 @@ impl RefusalCode {
         RefusalCode::UnknownVariant,
         RefusalCode::NotByteText,
         RefusalCode::NulInText,
+        RefusalCode::TooFew,
     ];
 
     /// The number the enum declares the code at.
@@ -136,6 +140,7 @@ impl RefusalCode {
             RefusalCode::UnknownVariant => "unknownVariant",
             RefusalCode::NotByteText => "notByteText",
             RefusalCode::NulInText => "nulInText",
+            RefusalCode::TooFew => "tooFew",
         }
     }
 
@@ -153,7 +158,8 @@ impl RefusalCode {
 /// document's own handler can read it. Beside it the refusal carries what a
 /// statechart reads as data (docs/adr/0087, section 2.4): its code, the place
 /// as a strict RFC 6901 pointer, and the bound the value broke, for
-/// [`RefusalCode::TooLong`] and [`RefusalCode::TooMany`].
+/// [`RefusalCode::TooLong`], [`RefusalCode::TooMany`] and
+/// [`RefusalCode::TooFew`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PayloadRefusal {
     reason: String,

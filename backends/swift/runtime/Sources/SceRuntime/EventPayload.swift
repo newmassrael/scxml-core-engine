@@ -53,6 +53,8 @@ public enum RefusalCode: UInt8, CaseIterable, Equatable {
     case notByteText = 12
     /// A text holding U+0000.
     case nulInText = 13
+    /// A list short of the lower count its type states (docs/adr/0086, section 15).
+    case tooFew = 14
 
     /// The name the enum declares the code by: the case's own name.
     public var declaredName: String {

@@ -5,7 +5,7 @@
   Why the reference harness `static_model_harness.scxml` refused an answer
   (docs/adr/0087, section 6.1 item 2): the application's own numbered code enum.
 
-  It repeats the thirteen codes of sce:std/lift/refusal_code.scxml with the same
+  It repeats the fourteen codes of sce:std/lift/refusal_code.scxml with the same
   names and the same numbers, and adds its own after them, so that a lift's
   refusal is carried into the application's record by its number
   (`HarnessCode.fromNumber(LiftRefusalCode.toNumber(why.value.code))`) and one
@@ -33,7 +33,8 @@
       <sce:variant name="unknownVariant" value="11"/>
       <sce:variant name="notByteText" value="12"/>
       <sce:variant name="nulInText" value="13"/>
-      <sce:variant name="notOffered" value="14"/>
+      <sce:variant name="tooFew" value="14"/>
+      <sce:variant name="notOffered" value="15"/>
     </data>
   </datamodel>
 </scxml>

@@ -635,9 +635,10 @@ fn every_sequence_of_outcome_classes_is_read_as_its_classes_say() {
                 .filter_map(|deferred| deferred["code"].as_str()),
         )
         .collect();
+    // The fourteen codes, `tooFew` the last (docs/adr/0086, section 15.11).
     assert_eq!(
         reached.len(),
-        13,
+        14,
         "every code of sce:std/lift/refusal_code.scxml is reached or deferred: {reached:?}"
     );
 }
@@ -649,7 +650,7 @@ type HarnessRow = (StaticModelHarnessState, u32);
 /// The rows a transition observer is told, in the order it is told them.
 type HarnessSeen = Arc<Mutex<Vec<HarnessRow>>>;
 
-/// The codes of the application's own checks, after the thirteen of the lift
+/// The codes of the application's own checks, after the fourteen of the lift
 /// that its enum repeats (enum_harness_code.scxml), each named for the class that
 /// reaches it.
 const APPLICATION_CODES: [&str; 1] = ["notOffered"];
@@ -896,8 +897,8 @@ fn every_sequence_of_outcome_classes_takes_every_row_of_the_reference_harness() 
     expected.extend(deferred.iter().cloned());
     assert_eq!(
         expected.len(),
-        14,
-        "the thirteen lift codes and the application's own: {expected:?}"
+        15,
+        "the fourteen lift codes and the application's own: {expected:?}"
     );
     let never_reached: Vec<&String> = expected
         .iter()

@@ -39,6 +39,8 @@ enum class RefusalCode : uint8_t {
     UnknownVariant = 11,
     NotByteText = 12,
     NulInText = 13,
+    /** A list short of the lower count its type states (docs/adr/0086, section 15) */
+    TooFew = 14,
 };
 
 /**
@@ -112,7 +114,8 @@ public:
     static const char *codeName(RefusalCode code) {
         static const char *const names[] = {
             "",          "notJson",    "notObject", "tooDeep", "missing",        "nullNotOptional", "wrongKind",
-            "badNumber", "outOfRange", "tooLong",   "tooMany", "unknownVariant", "notByteText",     "nulInText"};
+            "badNumber", "outOfRange", "tooLong",   "tooMany", "unknownVariant", "notByteText",     "nulInText",
+            "tooFew"};
         const auto number = static_cast<size_t>(code);
         return number < sizeof(names) / sizeof(names[0]) ? names[number] : "";
     }

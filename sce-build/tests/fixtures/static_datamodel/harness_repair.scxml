@@ -7,7 +7,7 @@
   refusal's code, the pointer to the place refused and the answer refused.
 
   It takes a code of the application's enum (enum_harness_code.scxml), which
-  repeats the lift's thirteen codes and adds the application's own, so one
+  repeats the lift's fourteen codes and adds the application's own, so one
   template serves a lift's refusal and the application's checks (section 6.1
   item 2). The pointer and the answer are the model's own text, the pointer of a
   `tooDeep` refusal naming keys the schema does not declare among it, so both are

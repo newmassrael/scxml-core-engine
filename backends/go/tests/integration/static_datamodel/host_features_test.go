@@ -616,7 +616,8 @@ func TestEverySequenceOfOutcomeClassesIsReadAsItsClassesSay(t *testing.T) {
 	for _, raw := range table["deferred"].([]any) {
 		codes[raw.(map[string]any)["code"].(string)] = true
 	}
-	if len(codes) != 13 {
+	// The fourteen codes, tooFew the last (docs/adr/0086, section 15.11).
+	if len(codes) != 14 {
 		t.Fatalf("every code of sce:std/lift/refusal_code.scxml is reached or deferred: %v", codes)
 	}
 }
@@ -679,7 +680,7 @@ func TestTheReferenceHarnessRunsEachCaseOfItsScenario(t *testing.T) {
 type harnessRow = sce.TransitionTaken[static_model_harness.StaticModelHarnessState]
 
 // harnessApplicationCodes are the codes of the application's own checks, after the
-// thirteen of the lift its enum repeats (enum_harness_code.scxml), each named for
+// fourteen of the lift its enum repeats (enum_harness_code.scxml), each named for
 // the class that reaches it.
 var harnessApplicationCodes = []string{"notOffered"}
 
@@ -917,8 +918,8 @@ func TestEverySequenceOfOutcomeClassesTakesEveryRowOfTheReferenceHarness(t *test
 	for code := range deferred {
 		expectedCodes[code] = true
 	}
-	if len(expectedCodes) != 14 {
-		t.Fatalf("the thirteen lift codes and the application's own: %v", expectedCodes)
+	if len(expectedCodes) != 15 {
+		t.Fatalf("the fourteen lift codes and the application's own: %v", expectedCodes)
 	}
 	var neverReached, unknown []string
 	for code := range expectedCodes {

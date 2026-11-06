@@ -27,7 +27,9 @@
   - `tooMany`: a list past its bound;
   - `unknownVariant`: a name the enum does not declare;
   - `notByteText`: a byte string's text holds a character above U+00FF;
-  - `nulInText`: a text holds U+0000, which no text of SCE holds.
+  - `nulInText`: a text holds U+0000, which no text of SCE holds;
+  - `tooFew`: a list short of the lower count its type states (docs/adr/0086,
+    section 15).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="enum" name="refusal_code" sce:underlying-type="uint8">
@@ -46,6 +48,7 @@
       <sce:variant name="unknownVariant" value="11"/>
       <sce:variant name="notByteText" value="12"/>
       <sce:variant name="nulInText" value="13"/>
+      <sce:variant name="tooFew" value="14"/>
     </data>
   </datamodel>
 </scxml>

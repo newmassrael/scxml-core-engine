@@ -14,7 +14,7 @@ repository's tests replay, read in place. There is one copy of each document:
 | `sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml` | the harness statechart |
 | `lift_answer.scxml` | the answer schema the harness names (`sce:answer`) and lifts each answer into |
 | `harness_ask.scxml`, `harness_repair.scxml` | the two text templates: the prompt it asks with, and the one it asks again with after a refusal |
-| `harness_refusal.scxml`, `enum_harness_code.scxml` | the application's refusal record and its numbered code enum, which repeats the thirteen codes of the lift and adds the application's own (`notOffered`) |
+| `harness_refusal.scxml`, `enum_harness_code.scxml` | the application's refusal record and its numbered code enum, which repeats the fourteen codes of the lift and adds the application's own (`notOffered`) |
 | `harness_offer.scxml`, `harness_start.scxml` | the events that offer the harness an id and start it |
 
 ## What it does

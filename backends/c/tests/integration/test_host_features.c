@@ -1466,8 +1466,9 @@ static int every_outcome_class_sequence(void) {
                 codes[code_count++] = code->s;
             }
         }
-        if (code_count != 13u) {
-            (void)fprintf(stderr, "host_features: %zu refusal codes are reached or deferred, not 13\n", code_count);
+        /* The fourteen codes, tooFew the last (docs/adr/0086, section 15.11). */
+        if (code_count != 14u) {
+            (void)fprintf(stderr, "host_features: %zu refusal codes are reached or deferred, not 14\n", code_count);
             bad = 1;
         }
     }
@@ -1746,7 +1747,7 @@ static int every_harness_sequence(void) {
         }
     }
     if (!fatal) {
-        // The thirteen lift codes, reached by a class or deferred, and the application's own.
+        // The fourteen lift codes, reached by a class or deferred, and the application's own.
         char expected_codes[HARNESS_KEYS_MAX][HARNESS_NAME_MAX];
         size_t expected_count = 0;
         char deferred[HARNESS_KEYS_MAX][HARNESS_NAME_MAX];
@@ -1764,8 +1765,8 @@ static int every_harness_sequence(void) {
                 (void)harness_key_seen(expected_codes, &expected_count, jn_get(why, "code")->s, true);
             }
         }
-        if (expected_count != 14u) {
-            (void)fprintf(stderr, "host_features: %zu refusal codes, not the thirteen lift codes and notOffered\n",
+        if (expected_count != 15u) {
+            (void)fprintf(stderr, "host_features: %zu refusal codes, not the fourteen lift codes and notOffered\n",
                           expected_count);
             bad = 1;
         }

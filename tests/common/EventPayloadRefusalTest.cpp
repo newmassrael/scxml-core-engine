@@ -185,8 +185,9 @@ TEST(EventPayloadRefusal, EveryCodeIsTheVariantTheStandardEnumDeclares) {
          at = document.find("<sce:variant ", at + 1)) {
         ++declared;
     }
-    EXPECT_EQ(declared, 13u);
-    for (unsigned number = 1; number <= 13u; ++number) {
+    // The fourteen codes, tooFew the last (docs/adr/0086, section 15.11).
+    EXPECT_EQ(declared, 14u);
+    for (unsigned number = 1; number <= 14u; ++number) {
         const auto code = static_cast<RefusalCode>(number);
         const std::string variant = "<sce:variant name=\"" + std::string(Refusal::codeName(code)) + "\" value=\"" +
                                     std::to_string(number) + "\"/>";

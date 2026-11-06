@@ -302,7 +302,8 @@ TEST(AStandardHostScenario, EverySequenceOfOutcomeClassesIsReadAsItsClassesSay) 
     for (const auto &deferred : table.at("deferred")) {
         codes.insert(deferred.at("code").get<std::string>());
     }
-    EXPECT_EQ(codes.size(), 13u) << "every refusal code is reached or deferred";
+    // The fourteen codes, tooFew the last (docs/adr/0086, section 15.11).
+    EXPECT_EQ(codes.size(), 14u) << "every refusal code is reached or deferred";
 }
 
 namespace {
@@ -315,7 +316,7 @@ constexpr const char *kHarnessScenarios[] = {"static_model_harness_accepted", "s
                                              "static_model_harness_not_offered", "static_model_harness_repaired",
                                              "static_model_harness_timeout"};
 
-/// The codes of the application's own checks, after the thirteen of the lift its enum repeats
+/// The codes of the application's own checks, after the fourteen of the lift its enum repeats
 /// (enum_harness_code.scxml), each named for the class that reaches it.
 constexpr const char *kApplicationCodes[] = {"notOffered"};
 
@@ -544,7 +545,7 @@ TEST(AStandardHostScenario, EverySequenceOfOutcomeClassesTakesEveryRowOfTheRefer
             expectedCodes.insert(cls.at("expect").at("why").at("code").get<std::string>());
         }
     }
-    EXPECT_EQ(expectedCodes.size(), 14u) << "the thirteen lift codes and the application's own";
+    EXPECT_EQ(expectedCodes.size(), 15u) << "the fourteen lift codes and the application's own";
     std::string neverReached;
     for (const auto &code : expectedCodes) {
         if (codes.count(code) == 0 && deferred.count(code) == 0) {

@@ -87,7 +87,9 @@ typedef enum {
     SCE_PAYLOAD_CODE_TOO_MANY = 10,
     SCE_PAYLOAD_CODE_UNKNOWN_VARIANT = 11,
     SCE_PAYLOAD_CODE_NOT_BYTE_TEXT = 12,
-    SCE_PAYLOAD_CODE_NUL_IN_TEXT = 13
+    SCE_PAYLOAD_CODE_NUL_IN_TEXT = 13,
+    /* A list short of the lower count its type states (docs/adr/0086, section 15). */
+    SCE_PAYLOAD_CODE_TOO_FEW = 14
 } sce_payload_code_t;
 
 /* Each sentence is one array, so a refusal is told by the storage it points at and
@@ -209,14 +211,17 @@ SCE_C_UNUSED static inline uint8_t sce_payload_refusal_code(const char *refusal)
 SCE_C_UNUSED static inline const char *sce_payload_code_name(uint8_t code) {
     static const char *const names[] = {
         "",          "notJson",    "notObject", "tooDeep", "missing",        "nullNotOptional", "wrongKind",
-        "badNumber", "outOfRange", "tooLong",   "tooMany", "unknownVariant", "notByteText",     "nulInText"};
+        "badNumber", "outOfRange", "tooLong",   "tooMany", "unknownVariant", "notByteText",     "nulInText",
+        "tooFew"};
     return code < sizeof(names) / sizeof(names[0]) ? names[code] : "";
 }
 
 /* Whether a refusal of class `code` names the bound the value broke: the bound the
-   caller handed the reader, for a text or byte string (bytes) or a list (elements). */
+   caller handed the reader, for a text or byte string (bytes) or a list (elements: its
+   bound past which it holds too many, or its lower count short of which too few). */
 SCE_C_UNUSED static inline bool sce_payload_code_has_bound(uint8_t code) {
-    return code == SCE_PAYLOAD_CODE_TOO_LONG || code == SCE_PAYLOAD_CODE_TOO_MANY || code == SCE_PAYLOAD_CODE_TOO_DEEP;
+    return code == SCE_PAYLOAD_CODE_TOO_LONG || code == SCE_PAYLOAD_CODE_TOO_MANY || code == SCE_PAYLOAD_CODE_TOO_FEW ||
+           code == SCE_PAYLOAD_CODE_TOO_DEEP;
 }
 
 /* The fields an event's data names — a borrowed view, valid only while the

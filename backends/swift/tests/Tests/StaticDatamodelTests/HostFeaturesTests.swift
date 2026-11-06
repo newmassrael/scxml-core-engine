@@ -661,7 +661,8 @@ private func runSequence(_ table: JSONValue, _ classes: [JSONValue], _ sequence:
             codes.insert(code)
         }
     }
-    #expect(codes.count == 13, "every refusal code is reached or deferred: \(codes.sorted())")
+    // The fourteen codes, tooFew the last (docs/adr/0086, section 15.11).
+    #expect(codes.count == 14, "every refusal code is reached or deferred: \(codes.sorted())")
 }
 
 /// The cases of the reference harness's scenario (docs/adr/0087, section 9.1 item 8), one
@@ -730,7 +731,7 @@ private func harnessVariables(_ policy: StaticModelHarnessPolicy) -> [String: ()
     }
 }
 
-/// The codes of the application's own checks, after the thirteen of the lift its enum repeats
+/// The codes of the application's own checks, after the fourteen of the lift its enum repeats
 /// (enum_harness_code.scxml), each named for the class that reaches it.
 private let harnessApplicationCodes = ["notOffered"]
 
@@ -938,7 +939,7 @@ private func runHarness(_ table: JSONValue, _ classes: [JSONValue], _ sequence: 
             expectedCodes.insert(code)
         }
     }
-    #expect(expectedCodes.count == 14, "the thirteen lift codes and the application's own: \(expectedCodes.sorted())")
+    #expect(expectedCodes.count == 15, "the fourteen lift codes and the application's own: \(expectedCodes.sorted())")
     let neverReached = expectedCodes.subtracting(codes).subtracting(deferred).sorted()
     #expect(neverReached.isEmpty, "every refusal code is reached; never reached: \(neverReached)")
     let unknown = codes.subtracting(expectedCodes).sorted()

@@ -207,6 +207,8 @@ class RefusalCode(enum.IntEnum):
     UNKNOWN_VARIANT = 11
     NOT_BYTE_TEXT = 12
     NUL_IN_TEXT = 13
+    #: A list short of the lower count its type states (docs/adr/0086, section 15).
+    TOO_FEW = 14
 
     @property
     def declared_name(self) -> str:
