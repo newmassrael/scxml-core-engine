@@ -417,9 +417,10 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
        event. */
     sce_event_origin_t origin;
     /* 1 when the SCXML processor stamped `origin` for a sending session
-       (`sce_event_stamp_session`), the one event that has a sender; 0 for a
-       host's event whatever pair it spells, and for every other. One byte,
-       where the record's alignment pads it anyway. */
+       (`sce_event_stamp_session`), which on C11, running no remote child, is
+       the one event that has a sender; 0 for a host's event whatever pair it
+       spells, and for every other. One byte, where the record's alignment pads
+       it anyway. */
     uint8_t from_session;
     char send_id[SCE_MAX_ID_LEN];
     char type[SCE_MAX_EVENT_TYPE_LEN];

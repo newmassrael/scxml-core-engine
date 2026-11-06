@@ -554,15 +554,20 @@ SCE_C_UNUSED static inline void sce_event_stamp_session(sce_event_origin_t *orig
 
 /* docs/adr/0090, section 1: the session that sent an event, the id the
    session-keyed lookups (`<finalize>`, a saved state's `sender`) read, written
-   into `dst` of `cap` bytes.
+   into `dst` of `cap` bytes. The sender is the id of the session that sent the
+   event, written by the processor that delivered it from that session: the
+   SCXML processor for a local session, and the Mesh transport for a remote
+   child or parent, beside that session's endpoint.
 
-   Not stored beside the pair on this backend: only the SCXML processor sets a
-   sender, which it marks by `from_session` (`sce_event_stamp_session`), and the
-   sender it sets is exactly the session its location names, so the id is read
-   back out of the pair where it is needed instead of costing every queued
-   event a second copy. False, leaving `dst` empty, for an event no session
-   sent — a host's, whatever pair it spells, a Mesh peer's, one with no origin —
-   and for an id longer than `cap` holds. */
+   Not stored beside the pair on this backend, which is a bound of C11, not a
+   rule of the format: C11 runs no remote child, so the one processor here that
+   delivers an event from a session is the SCXML processor. It marks the event
+   by `from_session` (`sce_event_stamp_session`), and the sender it writes is
+   exactly the session its location names, so the id is read back out of the
+   pair where it is needed instead of costing every queued event a second copy.
+   False, leaving `dst` empty, for an event no session sent — a host's,
+   whatever pair it spells, a Mesh peer's, one with no origin — and for an id
+   longer than `cap` holds. */
 SCE_C_UNUSED static inline bool sce_event_origin_sender(const sce_event_origin_t *origin, uint8_t from_session,
                                                         char *dst, size_t cap) {
     if (cap == 0u) {

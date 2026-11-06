@@ -2,10 +2,10 @@
 <!--
   W3C SCXML 6.5 + docs/adr/0090, sections 1 and 6: `<finalize>` runs for an
   event the invoked child sent, found by the event's sender, and never for an
-  event the host posted, whatever origin the host spells for it. Only the SCXML
-  processor sets a sender, so a host that names a child's own location as the
-  origin of its event still posts an event no session sent, as on every other
-  engine.
+  event the host posted, whatever origin the host spells for it. A sender is
+  written only by the processor that delivered the event from a session, so a
+  host that names a child's own location as the origin of its event still posts
+  an event no session sent, as on every other engine.
 
   A document of the C11 channel alone, beside its C test: it is the C11
   machine that reads the sender back out of the pair, and so the one that could

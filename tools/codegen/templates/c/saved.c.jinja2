@@ -1663,8 +1663,10 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
             event.type = queued->type[0] != '\0' ? queued->type : "external";
             event.send_id = queued->send_id;
             /* docs/adr/0090, section 7: the pair as the delivering processor wrote it, and the
-               session that sent it, which only the SCXML processor sets and which is the session
-               its location names (`sce_event_origin_sender`, read into `sender`). */
+               session that sent it. On C11, which runs no remote child, the one processor that
+               delivers an event from a session is the SCXML processor, so the sender is the
+               session its location names (`sce_event_origin_sender`, read into `sender`): a bound
+               of this backend, not a rule of the format. */
             sent_by_session = sce_event_origin_sender(&queued->origin, queued->from_session, sender, sizeof(sender));
             event.origin = &queued->origin;
             event.sender = sent_by_session ? sender : NULL;
