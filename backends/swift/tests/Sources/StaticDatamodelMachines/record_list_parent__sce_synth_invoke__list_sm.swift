@@ -1227,6 +1227,17 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -2970,7 +2981,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_5",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -4809,7 +4820,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_25",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -4939,7 +4950,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_26",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -5055,7 +5066,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_27",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")

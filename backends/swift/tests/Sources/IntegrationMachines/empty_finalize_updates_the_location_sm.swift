@@ -184,6 +184,17 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -647,11 +658,13 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
                     name: name,
                     type: metadata.eventType.description,
                     sendID: metadata.sendID,
-                    // W3C SCXML C.1: the origin a document reads is the location the sender
-                    // published, an address its receiver can send back to (test 336), and the
-                    // engine's bare session id becomes that address here, where it becomes visible.
-                    origin: publishedOrigin(originSessionID: metadata.origin),
-                    originType: metadata.originType,
+                    // W3C SCXML 5.10.1 + C.1 (docs/adr/0090): `_event.origin` and
+                    // `_event.origintype` are the two fields of the one pair the delivering
+                    // processor wrote where it built the event, read here as they are: for an
+                    // event a session sent, the location the sender published (test 336). An
+                    // event no processor stamped reads both as the empty text (test 330).
+                    origin: metadata.originAddress,
+                    originType: metadata.originProcessor,
                     invokeID: metadata.invokeID,
                     data: metadata.data
                 ))
@@ -765,7 +778,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_absent` (W3C SCXML 6.4).
     private func sceStartInvokeInvAbsent(_ pending: PendingInvoke<EmptyFinalizeUpdatesTheLocationState>, engine: Engine<EmptyFinalizeUpdatesTheLocationPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy()
@@ -782,7 +795,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_absent"] = ChildSession(
@@ -832,7 +845,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_empty` (W3C SCXML 6.4).
     private func sceStartInvokeInvEmpty(_ pending: PendingInvoke<EmptyFinalizeUpdatesTheLocationState>, engine: Engine<EmptyFinalizeUpdatesTheLocationPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy()
@@ -849,7 +862,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_empty"] = ChildSession(
@@ -899,7 +912,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_unmatched` (W3C SCXML 6.4).
     private func sceStartInvokeInvUnmatched(_ pending: PendingInvoke<EmptyFinalizeUpdatesTheLocationState>, engine: Engine<EmptyFinalizeUpdatesTheLocationPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy()
@@ -916,7 +929,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_unmatched"] = ChildSession(
@@ -1031,11 +1044,12 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
     /// W3C SCXML 6.5: the `<finalize>` of the invocation an event came from runs before the
     /// parent selects transitions on that event, in the parent's data model, with `_event` the
     /// event the child sent. The invocation is the one whose session the event names as its
-    /// origin; an event from anywhere else (the host, this machine itself) finalizes nothing.
+    /// sender (docs/adr/0090: the session id travels beside the origin, and nothing reads the
+    /// origin's address to find a session); an event from anywhere else (the host, this
+    /// machine itself) finalizes nothing.
     public func executeFinalizeForChildEvent(_ event: inout EventWithMetadata<EmptyFinalizeUpdatesTheLocationEvent>, engine: Engine<EmptyFinalizeUpdatesTheLocationPolicy>) {
-        let origin = event.metadata.origin
-        guard !origin.isEmpty,
-            let child = activeInvokes.values.first(where: { $0.sessionID == origin && !$0.finalizeScript.isEmpty })
+        guard let sender = event.metadata.sender, !sender.isEmpty,
+            let child = activeInvokes.values.first(where: { $0.sessionID == sender && !$0.finalizeScript.isEmpty })
         else {
             return
         }
@@ -1054,21 +1068,21 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("inv_absent".utf8) {
             if let child = sceInvokeChildInvAbsent, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("inv_empty".utf8) {
             if let child = sceInvokeChildInvEmpty, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("inv_unmatched".utf8) {
             if let child = sceInvokeChildInvUnmatched, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -1121,17 +1135,17 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["inv_absent"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvAbsent {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["inv_empty"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvEmpty {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["inv_unmatched"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvUnmatched {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -1152,14 +1166,15 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
                     let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
                         // W3C SCXML 6.2: delayed to this session's external queue.
                         engine.scheduleEvent(
                             EmptyFinalizeUpdatesTheLocationEvent.timeoutAbsent,
                             delay: Duration.milliseconds(3000),
                             sendID: "__send_1",
                             eventData: sendEventData,
-                            origin: self.sessionID
+                            sender: self.sessionID
                         )
                     }
                 }
@@ -1184,14 +1199,15 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
                     let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
                         // W3C SCXML 6.2: delayed to this session's external queue.
                         engine.scheduleEvent(
                             EmptyFinalizeUpdatesTheLocationEvent.timeoutEmpty,
                             delay: Duration.milliseconds(3000),
                             sendID: "__send_0",
                             eventData: sendEventData,
-                            origin: self.sessionID
+                            sender: self.sessionID
                         )
                     }
                 }
@@ -1216,14 +1232,15 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
                     let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
                         // W3C SCXML 6.2: delayed to this session's external queue.
                         engine.scheduleEvent(
                             EmptyFinalizeUpdatesTheLocationEvent.timeoutUnmatched,
                             delay: Duration.milliseconds(3000),
                             sendID: "__send_2",
                             eventData: sendEventData,
-                            origin: self.sessionID
+                            sender: self.sessionID
                         )
                     }
                 }

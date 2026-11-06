@@ -240,7 +240,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(InvokePrecedesDequeueMidrunEvent.Go, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
+            send(InvokePrecedesDequeueMidrunEvent.Go, EventMetadata.sentBy(sessionId, sendId = "__send_0", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -271,7 +271,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(InvokePrecedesDequeueMidrunEvent.Kick, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
+            send(InvokePrecedesDequeueMidrunEvent.Kick, EventMetadata.sentBy(sessionId, sendId = "__send_2", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

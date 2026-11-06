@@ -632,6 +632,10 @@ pub struct StaticChildHostHybridPolicy<A: StaticChildHostHybridActions + 'static
     pub invoke_id: String,
     // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
+    // W3C SCXML C.1: the id of the session that invoked this one, whose
+    // published location reaches it as `#_parent` does (docs/adr/0090);
+    // empty for a session its host started.
+    pub parent_session_id: String,
 }
 
 impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPolicy<A> {
@@ -653,6 +657,7 @@ impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPolicy<A> {
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
+            parent_session_id: String::new(),
         }
     }
 
@@ -830,6 +835,9 @@ impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPolicy<A> {
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
+                    // W3C SCXML C.1: the id whose published location reaches this
+                    // session from the child, as `#_parent` does (docs/adr/0090).
+                    child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                     // W3C SCXML 6.4.1: Track active invoke session
                     self.active_invokes.insert(
@@ -906,6 +914,9 @@ impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPolicy<A> {
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
+                    // W3C SCXML C.1: the id whose published location reaches this
+                    // session from the child, as `#_parent` does (docs/adr/0090).
+                    child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                     // W3C SCXML 6.4.1: Track active invoke session
                     self.active_invokes.insert(
@@ -1162,6 +1173,9 @@ impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPolicy<A> {
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = child.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
+                // W3C SCXML C.1: the id whose published location reaches this
+                // session from the child, as `#_parent` does (docs/adr/0090).
+                child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                 self.active_invokes.insert("work".to_string(),
                     sce_rust_runtime::invoke::ChildSession {
@@ -1222,6 +1236,9 @@ impl<A: StaticChildHostHybridActions + 'static> StaticChildHostHybridPolicy<A> {
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = child.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
+                // W3C SCXML C.1: the id whose published location reaches this
+                // session from the child, as `#_parent` does (docs/adr/0090).
+                child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                 self.active_invokes.insert("work".to_string(),
                     sce_rust_runtime::invoke::ChildSession {
@@ -1727,6 +1744,7 @@ impl<A: StaticChildHostHybridActions + 'static> StatePolicy for StaticChildHostH
         invoke_id: &str,
         event_name: &str,
         event_data: &str,
+        sender: &str,
         engine: &mut Engine<Self>,
     ) -> bool {
         if invoke_id == "work" {
@@ -1735,7 +1753,7 @@ impl<A: StaticChildHostHybridActions + 'static> StatePolicy for StaticChildHostH
                 .as_mut()
                 .filter(|child| !child.is_in_final_state())
             {
-                child.deliver_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data, sender);
                 self.settle_child_work_0j_static_hosted_first(engine);
                 return true;
             }
@@ -1744,7 +1762,7 @@ impl<A: StaticChildHostHybridActions + 'static> StatePolicy for StaticChildHostH
                 .as_mut()
                 .filter(|child| !child.is_in_final_state())
             {
-                child.deliver_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data, sender);
                 self.settle_child_work_0j_static_hosted_second(engine);
                 return true;
             }
@@ -1790,6 +1808,15 @@ impl<A: StaticChildHostHybridActions + 'static> StatePolicy for StaticChildHostH
     // invoking parent installs is the link to it.
     fn has_parent_session(&self) -> bool {
         self.parent_external_queue.is_some()
+    }
+
+    // W3C SCXML C.1: whether `session_id` names the session that invoked this
+    // one — the location it publishes is a target, so a reply sent to the
+    // origin of an event the parent sent reaches it (docs/adr/0090).
+    fn is_parent_session(&self, session_id: &str) -> bool {
+        self.parent_external_queue.is_some()
+            && !session_id.is_empty()
+            && self.parent_session_id == session_id
     }
 
     // docs/adr/0045: this session's own id, as a saved state holds it.

@@ -513,6 +513,7 @@ func (p *StaticInvokeOptionalPolicy) resumeChildGiven(engine *sce.Engine[StaticI
 	childPolicy.InvokeID = child.InvokeID
 	childPolicy.ChildSessionID = childSessionID
 	childPolicy.SessionID = childSessionID
+	childPolicy.ParentSessionID = p.SessionID
 
 	p.activeInvokes["given"] = &sce.ChildSession{
 		SessionID:       childSessionID,
@@ -551,6 +552,7 @@ func (p *StaticInvokeOptionalPolicy) resumeChildLifted(engine *sce.Engine[Static
 	childPolicy.InvokeID = child.InvokeID
 	childPolicy.ChildSessionID = childSessionID
 	childPolicy.SessionID = childSessionID
+	childPolicy.ParentSessionID = p.SessionID
 
 	p.activeInvokes["lifted"] = &sce.ChildSession{
 		SessionID:       childSessionID,
@@ -589,6 +591,7 @@ func (p *StaticInvokeOptionalPolicy) resumeChildAbsent(engine *sce.Engine[Static
 	childPolicy.InvokeID = child.InvokeID
 	childPolicy.ChildSessionID = childSessionID
 	childPolicy.SessionID = childSessionID
+	childPolicy.ParentSessionID = p.SessionID
 
 	p.activeInvokes["absent"] = &sce.ChildSession{
 		SessionID:       childSessionID,
@@ -627,6 +630,7 @@ func (p *StaticInvokeOptionalPolicy) resumeChildReplaced(engine *sce.Engine[Stat
 	childPolicy.InvokeID = child.InvokeID
 	childPolicy.ChildSessionID = childSessionID
 	childPolicy.SessionID = childSessionID
+	childPolicy.ParentSessionID = p.SessionID
 
 	p.activeInvokes["replaced"] = &sce.ChildSession{
 		SessionID:       childSessionID,
@@ -665,6 +669,7 @@ func (p *StaticInvokeOptionalPolicy) resumeChildOver(engine *sce.Engine[StaticIn
 	childPolicy.InvokeID = child.InvokeID
 	childPolicy.ChildSessionID = childSessionID
 	childPolicy.SessionID = childSessionID
+	childPolicy.ParentSessionID = p.SessionID
 
 	p.activeInvokes["over"] = &sce.ChildSession{
 		SessionID:       childSessionID,
@@ -703,6 +708,7 @@ func (p *StaticInvokeOptionalPolicy) resumeChildFits(engine *sce.Engine[StaticIn
 	childPolicy.InvokeID = child.InvokeID
 	childPolicy.ChildSessionID = childSessionID
 	childPolicy.SessionID = childSessionID
+	childPolicy.ParentSessionID = p.SessionID
 
 	p.activeInvokes["fits"] = &sce.ChildSession{
 		SessionID:       childSessionID,
@@ -980,6 +986,10 @@ type StaticInvokeOptionalPolicy struct {
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
+	// W3C SCXML C.1: the id of the session that invoked this one, whose
+	// published location reaches it as `#_parent` does (docs/adr/0090); empty
+	// for a session its host started.
+	ParentSessionID    string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
 	// this machine's datamodel init so they override its `<data>` defaults.
 	pendingParams      map[string]interface{}
@@ -1093,6 +1103,9 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 			// W3C SCXML 6.4.1: hand the child its values before it initializes
 			{
@@ -1184,6 +1197,9 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 			// W3C SCXML 6.4.1: hand the child its values before it initializes
 			{
@@ -1275,6 +1291,9 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 			// W3C SCXML 6.4.1: hand the child its values before it initializes
 			{
@@ -1359,6 +1378,9 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 			// W3C SCXML 6.4.1: hand the child its values before it initializes
 			{
@@ -1440,6 +1462,9 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 			// W3C SCXML 6.4.1: hand the child its values before it initializes
 			{
@@ -1528,6 +1553,9 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 			// W3C SCXML 6.4.1: hand the child its values before it initializes
 			{
@@ -1888,46 +1916,48 @@ func (p *StaticInvokeOptionalPolicy) NextChildDeadline() (time.Duration, bool) {
 // wait is over, by name — a child need not declare every event its parent
 // sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
 // take it: one whose session has reached its final state has ended, and the
-// engine reports the send it could not deliver (W3C SCXML C.1).
-func (p *StaticInvokeOptionalPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+// engine reports the send it could not deliver (W3C SCXML C.1). sender is the
+// session that sent it, this one, whose location the child reads as
+// `_event.origin` (docs/adr/0090).
+func (p *StaticInvokeOptionalPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID, sender string) bool {
 	if invokeID == "given" {
 		if child := p.childGiven; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
 	}
 	if invokeID == "lifted" {
 		if child := p.childLifted; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
 	}
 	if invokeID == "absent" {
 		if child := p.childAbsent; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
 	}
 	if invokeID == "replaced" {
 		if child := p.childReplaced; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
 	}
 	if invokeID == "over" {
 		if child := p.childOver; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
 	}
 	if invokeID == "fits" {
 		if child := p.childFits; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
@@ -2009,32 +2039,32 @@ func (p *StaticInvokeOptionalPolicy) IsChildSessionRunning(childSessionID string
 // return means the address names no live child of ours and the event takes the
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
-func (p *StaticInvokeOptionalPolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
+func (p *StaticInvokeOptionalPolicy) DeliverToChildSession(childSessionID, eventName, eventData, sender string) bool {
 	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["given"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.childGiven, eventName, eventData)
+		sce.DeliverToChild(p.childGiven, eventName, eventData, sender)
 		return true
 	}
 	if cs, ok := p.activeInvokes["lifted"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.childLifted, eventName, eventData)
+		sce.DeliverToChild(p.childLifted, eventName, eventData, sender)
 		return true
 	}
 	if cs, ok := p.activeInvokes["absent"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.childAbsent, eventName, eventData)
+		sce.DeliverToChild(p.childAbsent, eventName, eventData, sender)
 		return true
 	}
 	if cs, ok := p.activeInvokes["replaced"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.childReplaced, eventName, eventData)
+		sce.DeliverToChild(p.childReplaced, eventName, eventData, sender)
 		return true
 	}
 	if cs, ok := p.activeInvokes["over"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.childOver, eventName, eventData)
+		sce.DeliverToChild(p.childOver, eventName, eventData, sender)
 		return true
 	}
 	if cs, ok := p.activeInvokes["fits"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.childFits, eventName, eventData)
+		sce.DeliverToChild(p.childFits, eventName, eventData, sender)
 		return true
 	}
 	return false
@@ -2189,6 +2219,13 @@ func (p *StaticInvokeOptionalPolicy) DeliverToParent(eventName, eventData string
 // the queue the invoking parent installs is the link to it.
 func (p *StaticInvokeOptionalPolicy) HasParentSession() bool {
 	return p.ParentExternalQueue != nil
+}
+
+// IsParentSession answers whether sessionID names the session that invoked this
+// one (W3C SCXML C.1): the location it publishes is a target, so a reply sent to
+// the origin of an event the parent sent reaches it (docs/adr/0090).
+func (p *StaticInvokeOptionalPolicy) IsParentSession(sessionID string) bool {
+	return p.ParentExternalQueue != nil && sessionID != "" && p.ParentSessionID == sessionID
 }
 
 // ======================================================================

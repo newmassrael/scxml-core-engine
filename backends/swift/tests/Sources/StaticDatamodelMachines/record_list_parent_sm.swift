@@ -611,6 +611,17 @@ public final class RecordListParentPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -1010,7 +1021,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `list` (W3C SCXML 6.4).
     private func sceStartInvokeList(_ pending: PendingInvoke<RecordListParentState>, engine: Engine<RecordListParentPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = RecordListParentSceSynthInvokeListPolicy()
@@ -1025,7 +1036,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["list"] = ChildSession(
@@ -1115,7 +1126,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("list".utf8) {
             if let child = sceInvokeChildList, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -1156,7 +1167,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["list"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildList {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -1405,7 +1416,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_0",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
@@ -1479,7 +1490,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_1",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
@@ -1545,7 +1556,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_2",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
@@ -1607,7 +1618,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_3",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
@@ -1665,7 +1676,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_4",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
@@ -1727,7 +1738,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_5",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
@@ -1805,7 +1816,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_6",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
@@ -1879,7 +1890,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_7",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
@@ -2418,7 +2429,7 @@ extension RecordListParentPolicy: SavedPolicy {
                 }
                 switch child.id {
                 case "list":
-                    resume.append(try sceJudgeSavedChildList(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildList(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 default:
                     break
                 }
@@ -2457,7 +2468,8 @@ extension RecordListParentPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildList(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<RecordListParentPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<RecordListParentPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "record_list_parent__sce_synth_invoke__list" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'list' does not start")
@@ -2466,7 +2478,7 @@ extension RecordListParentPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in

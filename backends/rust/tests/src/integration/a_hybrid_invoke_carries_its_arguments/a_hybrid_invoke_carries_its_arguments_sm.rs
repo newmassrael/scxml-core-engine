@@ -260,10 +260,10 @@ pub struct AHybridInvokeCarriesItsArgumentsPolicy {
     pending_event_type: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event sendid for _event.sendid binding
     pending_event_sendid: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10.1: Event origin for _event.origin binding
-    pending_event_origin: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10.1: Event origintype for _event.origintype binding
-    pending_event_origintype: ::sce_rust_runtime::SceString,
+    // W3C SCXML 5.10.1: Event origin for the _event.origin and
+    // _event.origintype binding — the one pair the delivering processor wrote
+    // (docs/adr/0090), None for an event it did not stamp
+    pending_event_origin: Option<::sce_rust_runtime::EventOrigin>,
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -326,6 +326,10 @@ pub struct AHybridInvokeCarriesItsArgumentsPolicy {
     pub invoke_id: String,
     // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
+    // W3C SCXML C.1: the id of the session that invoked this one, whose
+    // published location reaches it as `#_parent` does (docs/adr/0090);
+    // empty for a session its host started.
+    pub parent_session_id: String,
 }
 
 impl AHybridInvokeCarriesItsArgumentsPolicy {
@@ -453,8 +457,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
             pending_event_data: ::sce_rust_runtime::SceString::new(),
             pending_event_type: ::sce_rust_runtime::SceString::new(),
             pending_event_sendid: ::sce_rust_runtime::SceString::new(),
-            pending_event_origin: ::sce_rust_runtime::SceString::new(),
-            pending_event_origintype: ::sce_rust_runtime::SceString::new(),
+            pending_event_origin: None,
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
             script_engine_initialized: false,
@@ -476,6 +479,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
+            parent_session_id: String::new(),
         }
     }
 
@@ -783,16 +787,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
 
     // W3C SCXML 5.10: Set _event system variable for current event
     //
-    // W3C SCXML C.1: `_event.origin` is the sender's published
-    // `_ioprocessors` location, not its bare session id — and this is the one
-    // place that publishes `_event` to the document, so this is where the id
-    // becomes a location. The engine keeps the bare id in
-    // `EventMetadata::origin` because its session-keyed lookups match on it;
-    // converting at the raise would make one value serve two consumers that
-    // need different spellings. The conversion itself lives in
-    // `helpers::io_processors::published_origin`, the port of the
-    // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
-    // spelling of the rule is how the backends would stop agreeing.
+    // W3C SCXML 5.10.1 + C.1: `_event.origin` and `_event.origintype` are the
+    // one pair the processor that delivered the event wrote when it built it
+    // (docs/adr/0090) — the sender's published `_ioprocessors` location for a
+    // session's send — read here as they are, and both empty for none.
+    // Nothing converts at this boundary, so every backend answers the same.
     // Returns which rung of §scxml-B-2-8-1 the payload got, because the
     // binding is the only place that knows. This used to be `let _ = ...`:
     // the ladder decided between a DOM, a value and a space-normalized string,
@@ -809,14 +808,12 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
         event_data: &str,
         event_type: &str,
         send_id: &str,
-        origin: &str,
-        origin_type: &str,
+        origin: Option<&sce_rust_runtime::EventOrigin>,
         invoke_id: &str,
     ) -> sce_rust_runtime::PayloadReading {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let published = sce_rust_runtime::helpers::io_processors::published_origin(origin);
             se.set_current_event(
                 sid,
                 sce_rust_runtime::SetCurrentEventArgs {
@@ -824,8 +821,8 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     event_data,
                     event_type,
                     send_id,
-                    origin: &published,
-                    origin_type,
+                    origin: origin.map_or("", |origin| origin.address.as_str()),
+                    origin_type: origin.map_or("", |origin| origin.processor.as_str()),
                     invoke_id,
                 },
             )
@@ -1066,6 +1063,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
+                    // W3C SCXML C.1: the id whose published location reaches this
+                    // session from the child, as `#_parent` does (docs/adr/0090).
+                    child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                     // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
                     // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
@@ -1158,6 +1158,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
+                    // W3C SCXML C.1: the id whose published location reaches this
+                    // session from the child, as `#_parent` does (docs/adr/0090).
+                    child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                     // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
                     // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
@@ -1310,6 +1313,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
+                    // W3C SCXML C.1: the id whose published location reaches this
+                    // session from the child, as `#_parent` does (docs/adr/0090).
+                    child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                     // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
                     {
@@ -1476,6 +1482,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
+                    // W3C SCXML C.1: the id whose published location reaches this
+                    // session from the child, as `#_parent` does (docs/adr/0090).
+                    child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                     // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
                     {
@@ -1724,6 +1733,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
+                    // W3C SCXML C.1: the id whose published location reaches this
+                    // session from the child, as `#_parent` does (docs/adr/0090).
+                    child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                     // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
                     // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
@@ -1849,6 +1861,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
+                    // W3C SCXML C.1: the id whose published location reaches this
+                    // session from the child, as `#_parent` does (docs/adr/0090).
+                    child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
                     // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
                     // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
@@ -2462,7 +2477,6 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
             ::sce_rust_runtime::sce_string_from_str(metadata.event_type.as_str());
         self.pending_event_sendid = metadata.send_id.clone();
         self.pending_event_origin = metadata.origin.clone();
-        self.pending_event_origintype = metadata.origin_type.clone();
         self.pending_event_invokeid = metadata.invoke_id.clone();
     }
 
@@ -2474,8 +2488,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
         self.pending_event_data.clear();
         self.pending_event_type.clear();
         self.pending_event_sendid.clear();
-        self.pending_event_origin.clear();
-        self.pending_event_origintype.clear();
+        self.pending_event_origin = None;
         self.pending_event_invokeid.clear();
     }
 
@@ -2649,8 +2662,8 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
             // W3C SCXML 5.10: Set _event with all available metadata fields
             let ev_data: &str = &self.pending_event_data;
             let ev_sendid: &str = &self.pending_event_sendid;
-            let ev_origin: &str = &self.pending_event_origin;
-            let ev_origintype: &str = &self.pending_event_origintype;
+            let ev_origin: Option<&sce_rust_runtime::EventOrigin> =
+                self.pending_event_origin.as_ref();
             let ev_invokeid: &str = &self.pending_event_invokeid;
             // §scxml-B-2-8-1: the rung the payload got, handed to the engine
             // rather than dropped. This is the only frame that has both the
@@ -2661,7 +2674,6 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 event_type,
                 ev_sendid,
                 ev_origin,
-                ev_origintype,
                 ev_invokeid,
             );
             engine.note_payload_reading(event, payload_reading);
@@ -2955,6 +2967,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
         invoke_id: &str,
         event_name: &str,
         event_data: &str,
+        sender: &str,
         engine: &mut Engine<Self>,
     ) -> bool {
         if invoke_id == "_invoke_0" {
@@ -2963,7 +2976,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 .as_mut()
                 .filter(|child| !child.is_in_final_state())
             {
-                child.deliver_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data, sender);
                 self.settle_child_invoke_0_0j_keeper(engine);
                 return true;
             }
@@ -2972,7 +2985,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 .as_mut()
                 .filter(|child| !child.is_in_final_state())
             {
-                child.deliver_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data, sender);
                 self.settle_child_invoke_0_0j_bare(engine);
                 return true;
             }
@@ -2984,7 +2997,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 .as_mut()
                 .filter(|child| !child.is_in_final_state())
             {
-                child.deliver_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data, sender);
                 self.settle_child_invoke_1_0j_keeper(engine);
                 return true;
             }
@@ -2993,7 +3006,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 .as_mut()
                 .filter(|child| !child.is_in_final_state())
             {
-                child.deliver_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data, sender);
                 self.settle_child_invoke_1_0j_bare(engine);
                 return true;
             }
@@ -3005,7 +3018,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 .as_mut()
                 .filter(|child| !child.is_in_final_state())
             {
-                child.deliver_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data, sender);
                 self.settle_child_invoke_2_0j_keeper(engine);
                 return true;
             }
@@ -3014,7 +3027,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 .as_mut()
                 .filter(|child| !child.is_in_final_state())
             {
-                child.deliver_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data, sender);
                 self.settle_child_invoke_2_0j_bare(engine);
                 return true;
             }
@@ -3086,6 +3099,15 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
     // invoking parent installs is the link to it.
     fn has_parent_session(&self) -> bool {
         self.parent_external_queue.is_some()
+    }
+
+    // W3C SCXML C.1: whether `session_id` names the session that invoked this
+    // one — the location it publishes is a target, so a reply sent to the
+    // origin of an event the parent sent reaches it (docs/adr/0090).
+    fn is_parent_session(&self, session_id: &str) -> bool {
+        self.parent_external_queue.is_some()
+            && !session_id.is_empty()
+            && self.parent_session_id == session_id
     }
 
     // docs/adr/0045: this session's own id, as a saved state holds it.

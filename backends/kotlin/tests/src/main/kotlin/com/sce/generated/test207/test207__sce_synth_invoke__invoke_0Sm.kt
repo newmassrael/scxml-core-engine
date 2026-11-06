@@ -187,7 +187,7 @@ class Test207SceSynthInvokeInvoke0StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("foo", 1000L, Test207SceSynthInvokeInvoke0Event.Event1, EventMetadata.external(sendId = "foo", origin = sessionId, data = sendData))
+            scheduleSend("foo", 1000L, Test207SceSynthInvokeInvoke0Event.Event1, EventMetadata.sentBy(sessionId, sendId = "foo", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -199,7 +199,7 @@ class Test207SceSynthInvokeInvoke0StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", 1500L, Test207SceSynthInvokeInvoke0Event.Event2, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
+            scheduleSend("__send_2", 1500L, Test207SceSynthInvokeInvoke0Event.Event2, EventMetadata.sentBy(sessionId, sendId = "__send_2", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

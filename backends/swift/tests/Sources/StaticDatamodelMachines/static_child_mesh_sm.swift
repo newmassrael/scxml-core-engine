@@ -189,6 +189,17 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -436,7 +447,7 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -489,7 +500,7 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `list` (W3C SCXML 6.4).
     private func sceStartInvokeList(_ pending: PendingInvoke<StaticChildMeshState>, engine: Engine<StaticChildMeshPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticChildMeshSceSynthInvokeListPolicy()
@@ -499,7 +510,7 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["list"] = ChildSession(
@@ -604,14 +615,14 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("peer".utf8) {
             if let child = sceInvokeChildPeer, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("list".utf8) {
             if let child = sceInvokeChildList, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -658,12 +669,12 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["peer"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildPeer {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["list"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildList {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -980,9 +991,9 @@ extension StaticChildMeshPolicy: SavedPolicy {
                 }
                 switch child.id {
                 case "list":
-                    resume.append(try sceJudgeSavedChildList(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildList(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "peer":
-                    resume.append(try sceJudgeSavedChildPeer(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildPeer(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 default:
                     break
                 }
@@ -1028,7 +1039,8 @@ extension StaticChildMeshPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildList(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticChildMeshPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticChildMeshPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_child_mesh__sce_synth_invoke__list" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'list' does not start")
@@ -1037,7 +1049,7 @@ extension StaticChildMeshPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
@@ -1062,7 +1074,8 @@ extension StaticChildMeshPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildPeer(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticChildMeshPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticChildMeshPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
         switch child.document {
@@ -1071,7 +1084,7 @@ extension StaticChildMeshPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in

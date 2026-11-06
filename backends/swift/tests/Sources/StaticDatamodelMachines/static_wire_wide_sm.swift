@@ -251,6 +251,17 @@ public final class StaticWireWidePolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -571,8 +582,9 @@ public final class StaticWireWidePolicy: InvocablePolicy {
                     let sendEventData = payloadJSON(sendParts)
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
-                        var sendMetadata = EventMetadata.external(sendID: "__send_0", origin: self.sessionID)
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
+                        var sendMetadata = EventMetadata.external(sendID: "__send_0", sender: self.sessionID)
                         sendMetadata.data = sendEventData
                         engine.raiseExternalWithMeta(
                             EventWithMetadata(StaticWireWideEvent.wideRelayed, metadata: sendMetadata)

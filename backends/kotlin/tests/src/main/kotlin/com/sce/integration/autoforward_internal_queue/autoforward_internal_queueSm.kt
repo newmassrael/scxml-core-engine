@@ -332,7 +332,7 @@ class AutoforwardInternalQueueStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(AutoforwardInternalQueueEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
+            send(AutoforwardInternalQueueEvent.Probe, EventMetadata.sentBy(sessionId, sendId = "__send_1", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

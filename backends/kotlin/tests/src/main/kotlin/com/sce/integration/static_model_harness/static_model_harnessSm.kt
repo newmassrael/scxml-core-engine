@@ -1427,7 +1427,7 @@ class StaticModelHarnessStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("overall", 20000L, StaticModelHarnessEvent.Harness.Timeout, EventMetadata.external(sendId = "overall", origin = sessionId, data = sendData))
+            scheduleSend("overall", 20000L, StaticModelHarnessEvent.Harness.Timeout, EventMetadata.sentBy(sessionId, sendId = "overall", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

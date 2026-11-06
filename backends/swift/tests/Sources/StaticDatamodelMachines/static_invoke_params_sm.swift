@@ -187,6 +187,17 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -410,7 +421,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `control` (W3C SCXML 6.4).
     private func sceStartInvokeControl(_ pending: PendingInvoke<StaticInvokeParamsState>, engine: Engine<StaticInvokeParamsPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeParamsSceSynthInvokeControlPolicy()
@@ -420,7 +431,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["control"] = ChildSession(
@@ -470,7 +481,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `watcher` (W3C SCXML 6.4).
     private func sceStartInvokeWatcher(_ pending: PendingInvoke<StaticInvokeParamsState>, engine: Engine<StaticInvokeParamsPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeParamsSceSynthInvokeWatcherPolicy()
@@ -485,7 +496,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["watcher"] = ChildSession(
@@ -535,7 +546,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `worker` (W3C SCXML 6.4).
     private func sceStartInvokeWorker(_ pending: PendingInvoke<StaticInvokeParamsState>, engine: Engine<StaticInvokeParamsPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeParamsSceSynthInvokeWorkerPolicy()
@@ -553,7 +564,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["worker"] = ChildSession(
@@ -673,21 +684,21 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("control".utf8) {
             if let child = sceInvokeChildControl, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("watcher".utf8) {
             if let child = sceInvokeChildWatcher, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("worker".utf8) {
             if let child = sceInvokeChildWorker, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -740,17 +751,17 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["control"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildControl {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["watcher"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildWatcher {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["worker"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildWorker {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -1141,11 +1152,11 @@ extension StaticInvokeParamsPolicy: SavedPolicy {
                 }
                 switch child.id {
                 case "worker":
-                    resume.append(try sceJudgeSavedChildWorker(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildWorker(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "control":
-                    resume.append(try sceJudgeSavedChildControl(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildControl(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "watcher":
-                    resume.append(try sceJudgeSavedChildWatcher(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildWatcher(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 default:
                     break
                 }
@@ -1198,7 +1209,8 @@ extension StaticInvokeParamsPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildWorker(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_params__sce_synth_invoke__worker" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'worker' does not start")
@@ -1207,7 +1219,7 @@ extension StaticInvokeParamsPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
@@ -1232,7 +1244,8 @@ extension StaticInvokeParamsPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildControl(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_params__sce_synth_invoke__control" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'control' does not start")
@@ -1241,7 +1254,7 @@ extension StaticInvokeParamsPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
@@ -1266,7 +1279,8 @@ extension StaticInvokeParamsPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildWatcher(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeParamsPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_params__sce_synth_invoke__watcher" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'watcher' does not start")
@@ -1275,7 +1289,7 @@ extension StaticInvokeParamsPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in

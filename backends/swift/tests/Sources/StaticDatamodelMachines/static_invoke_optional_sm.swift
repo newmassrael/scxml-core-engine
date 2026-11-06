@@ -207,6 +207,17 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -471,7 +482,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `given` (W3C SCXML 6.4).
     private func sceStartInvokeGiven(_ pending: PendingInvoke<StaticInvokeOptionalState>, engine: Engine<StaticInvokeOptionalPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeGivenPolicy()
@@ -495,7 +506,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["given"] = ChildSession(
@@ -545,7 +556,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `lifted` (W3C SCXML 6.4).
     private func sceStartInvokeLifted(_ pending: PendingInvoke<StaticInvokeOptionalState>, engine: Engine<StaticInvokeOptionalPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeLiftedPolicy()
@@ -569,7 +580,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["lifted"] = ChildSession(
@@ -619,7 +630,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `absent` (W3C SCXML 6.4).
     private func sceStartInvokeAbsent(_ pending: PendingInvoke<StaticInvokeOptionalState>, engine: Engine<StaticInvokeOptionalPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeAbsentPolicy()
@@ -637,7 +648,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["absent"] = ChildSession(
@@ -687,7 +698,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `replaced` (W3C SCXML 6.4).
     private func sceStartInvokeReplaced(_ pending: PendingInvoke<StaticInvokeOptionalState>, engine: Engine<StaticInvokeOptionalPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeReplacedPolicy()
@@ -702,7 +713,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["replaced"] = ChildSession(
@@ -752,7 +763,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `over` (W3C SCXML 6.4).
     private func sceStartInvokeOver(_ pending: PendingInvoke<StaticInvokeOptionalState>, engine: Engine<StaticInvokeOptionalPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeOverPolicy()
@@ -773,7 +784,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["over"] = ChildSession(
@@ -823,7 +834,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `fits` (W3C SCXML 6.4).
     private func sceStartInvokeFits(_ pending: PendingInvoke<StaticInvokeOptionalState>, engine: Engine<StaticInvokeOptionalPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeFitsPolicy()
@@ -844,7 +855,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["fits"] = ChildSession(
@@ -1009,42 +1020,42 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("given".utf8) {
             if let child = sceInvokeChildGiven, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("lifted".utf8) {
             if let child = sceInvokeChildLifted, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("absent".utf8) {
             if let child = sceInvokeChildAbsent, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("replaced".utf8) {
             if let child = sceInvokeChildReplaced, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("over".utf8) {
             if let child = sceInvokeChildOver, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("fits".utf8) {
             if let child = sceInvokeChildFits, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -1115,32 +1126,32 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["given"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildGiven {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["lifted"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildLifted {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["absent"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildAbsent {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["replaced"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildReplaced {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["over"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildOver {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["fits"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildFits {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -1681,17 +1692,17 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
                 }
                 switch child.id {
                 case "given":
-                    resume.append(try sceJudgeSavedChildGiven(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildGiven(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "lifted":
-                    resume.append(try sceJudgeSavedChildLifted(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildLifted(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "absent":
-                    resume.append(try sceJudgeSavedChildAbsent(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildAbsent(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "replaced":
-                    resume.append(try sceJudgeSavedChildReplaced(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildReplaced(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "over":
-                    resume.append(try sceJudgeSavedChildOver(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildOver(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "fits":
-                    resume.append(try sceJudgeSavedChildFits(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildFits(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 default:
                     break
                 }
@@ -1765,7 +1776,8 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildGiven(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_optional__sce_synth_invoke__given" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'given' does not start")
@@ -1774,7 +1786,7 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
@@ -1799,7 +1811,8 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildLifted(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_optional__sce_synth_invoke__lifted" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'lifted' does not start")
@@ -1808,7 +1821,7 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
@@ -1833,7 +1846,8 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildAbsent(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_optional__sce_synth_invoke__absent" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'absent' does not start")
@@ -1842,7 +1856,7 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
@@ -1867,7 +1881,8 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildReplaced(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_optional__sce_synth_invoke__replaced" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'replaced' does not start")
@@ -1876,7 +1891,7 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
@@ -1901,7 +1916,8 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildOver(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_optional__sce_synth_invoke__over" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'over' does not start")
@@ -1910,7 +1926,7 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in
@@ -1935,7 +1951,8 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildFits(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeOptionalPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_invoke_optional__sce_synth_invoke__fits" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'fits' does not start")
@@ -1944,7 +1961,7 @@ extension StaticInvokeOptionalPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in

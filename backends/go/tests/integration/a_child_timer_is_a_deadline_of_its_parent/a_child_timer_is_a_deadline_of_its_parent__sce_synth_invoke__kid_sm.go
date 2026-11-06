@@ -184,6 +184,10 @@ type AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy struct {
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
+	// W3C SCXML C.1: the id of the session that invoked this one, whose
+	// published location reaches it as `#_parent` does (docs/adr/0090); empty
+	// for a session its host started.
+	ParentSessionID    string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
 	// this machine's datamodel init so they override its `<data>` defaults.
 	pendingParams      map[string]interface{}
@@ -228,6 +232,13 @@ func (p *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy) DeliverToPare
 // the queue the invoking parent installs is the link to it.
 func (p *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy) HasParentSession() bool {
 	return p.ParentExternalQueue != nil
+}
+
+// IsParentSession answers whether sessionID names the session that invoked this
+// one (W3C SCXML C.1): the location it publishes is a target, so a reply sent to
+// the origin of an event the parent sent reaches it (docs/adr/0090).
+func (p *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy) IsParentSession(sessionID string) bool {
+	return p.ParentExternalQueue != nil && sessionID != "" && p.ParentSessionID == sessionID
 }
 
 // ======================================================================
@@ -438,7 +449,7 @@ func (p *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy) ExecuteEntryA
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
 	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-	// origin is this session, as on the immediate path.
+	// sender is this session, as on the immediate path.
 	if delayEvt, delayOk := p.GetEventFromName("one"); delayOk {
 		engine.ScheduleEvent(delayEvt, time.Duration(200) * time.Millisecond, "__send_0", eventDataStr, p.SessionID)
 	}
@@ -459,7 +470,7 @@ func (p *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy) ExecuteEntryA
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
 	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-	// origin is this session, as on the immediate path.
+	// sender is this session, as on the immediate path.
 	if delayEvt, delayOk := p.GetEventFromName("two"); delayOk {
 		engine.ScheduleEvent(delayEvt, time.Duration(200) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	}

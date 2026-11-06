@@ -502,7 +502,7 @@ class StaticCancelExprStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("a", 200L, StaticCancelExprEvent.A.Due, EventMetadata.external(sendId = "a", origin = sessionId, data = sendData))
+            scheduleSend("a", 200L, StaticCancelExprEvent.A.Due, EventMetadata.sentBy(sessionId, sendId = "a", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -514,7 +514,7 @@ class StaticCancelExprStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("b", 200L, StaticCancelExprEvent.B.Due, EventMetadata.external(sendId = "b", origin = sessionId, data = sendData))
+            scheduleSend("b", 200L, StaticCancelExprEvent.B.Due, EventMetadata.sentBy(sessionId, sendId = "b", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

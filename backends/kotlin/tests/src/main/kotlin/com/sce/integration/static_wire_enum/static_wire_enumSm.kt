@@ -588,7 +588,7 @@ class StaticWireEnumStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticWireEnumEvent.View.Shown, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
+            send(StaticWireEnumEvent.View.Shown, EventMetadata.sentBy(sessionId, sendId = "__send_0", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -609,7 +609,7 @@ class StaticWireEnumStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticWireEnumEvent.View.Shown, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
+            send(StaticWireEnumEvent.View.Shown, EventMetadata.sentBy(sessionId, sendId = "__send_1", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -630,7 +630,7 @@ class StaticWireEnumStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticWireEnumEvent.View.Shown, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
+            send(StaticWireEnumEvent.View.Shown, EventMetadata.sentBy(sessionId, sendId = "__send_2", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

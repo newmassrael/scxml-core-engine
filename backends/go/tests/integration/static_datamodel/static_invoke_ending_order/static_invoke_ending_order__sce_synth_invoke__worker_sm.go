@@ -436,6 +436,10 @@ type StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy struct {
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
+	// W3C SCXML C.1: the id of the session that invoked this one, whose
+	// published location reaches it as `#_parent` does (docs/adr/0090); empty
+	// for a session its host started.
+	ParentSessionID    string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
 	// this machine's datamodel init so they override its `<data>` defaults.
 	pendingParams      map[string]interface{}
@@ -558,8 +562,10 @@ func (p *StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy) NextChildDeadline() 
 // wait is over, by name — a child need not declare every event its parent
 // sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
 // take it: one whose session has reached its final state has ended, and the
-// engine reports the send it could not deliver (W3C SCXML C.1).
-func (p *StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+// engine reports the send it could not deliver (W3C SCXML C.1). sender is the
+// session that sent it, this one, whose location the child reads as
+// `_event.origin` (docs/adr/0090).
+func (p *StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID, sender string) bool {
 	return false
 }
 
@@ -594,6 +600,13 @@ func (p *StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy) DeliverToParent(even
 // the queue the invoking parent installs is the link to it.
 func (p *StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy) HasParentSession() bool {
 	return p.ParentExternalQueue != nil
+}
+
+// IsParentSession answers whether sessionID names the session that invoked this
+// one (W3C SCXML C.1): the location it publishes is a target, so a reply sent to
+// the origin of an event the parent sent reaches it (docs/adr/0090).
+func (p *StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy) IsParentSession(sessionID string) bool {
+	return p.ParentExternalQueue != nil && sessionID != "" && p.ParentSessionID == sessionID
 }
 
 // ======================================================================

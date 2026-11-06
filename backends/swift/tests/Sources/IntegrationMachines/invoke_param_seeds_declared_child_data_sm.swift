@@ -199,6 +199,17 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -685,11 +696,13 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
                     name: name,
                     type: metadata.eventType.description,
                     sendID: metadata.sendID,
-                    // W3C SCXML C.1: the origin a document reads is the location the sender
-                    // published, an address its receiver can send back to (test 336), and the
-                    // engine's bare session id becomes that address here, where it becomes visible.
-                    origin: publishedOrigin(originSessionID: metadata.origin),
-                    originType: metadata.originType,
+                    // W3C SCXML 5.10.1 + C.1 (docs/adr/0090): `_event.origin` and
+                    // `_event.origintype` are the two fields of the one pair the delivering
+                    // processor wrote where it built the event, read here as they are: for an
+                    // event a session sent, the location the sender published (test 336). An
+                    // event no processor stamped reads both as the empty text (test 330).
+                    origin: metadata.originAddress,
+                    originType: metadata.originProcessor,
                     invokeID: metadata.invokeID,
                     data: metadata.data
                 ))
@@ -829,7 +842,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_infinite` (W3C SCXML 6.4).
     private func sceStartInvokeInvInfinite(_ pending: PendingInvoke<InvokeParamSeedsDeclaredChildDataState>, engine: Engine<InvokeParamSeedsDeclaredChildDataPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy()
@@ -846,7 +859,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_infinite"] = ChildSession(
@@ -896,7 +909,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_namelist` (W3C SCXML 6.4).
     private func sceStartInvokeInvNamelist(_ pending: PendingInvoke<InvokeParamSeedsDeclaredChildDataState>, engine: Engine<InvokeParamSeedsDeclaredChildDataPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy()
@@ -913,7 +926,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_namelist"] = ChildSession(
@@ -963,7 +976,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_shadow` (W3C SCXML 6.4).
     private func sceStartInvokeInvShadow(_ pending: PendingInvoke<InvokeParamSeedsDeclaredChildDataState>, engine: Engine<InvokeParamSeedsDeclaredChildDataPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy()
@@ -980,7 +993,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_shadow"] = ChildSession(
@@ -1030,7 +1043,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_sole` (W3C SCXML 6.4).
     private func sceStartInvokeInvSole(_ pending: PendingInvoke<InvokeParamSeedsDeclaredChildDataState>, engine: Engine<InvokeParamSeedsDeclaredChildDataPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy()
@@ -1047,7 +1060,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_sole"] = ChildSession(
@@ -1097,7 +1110,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_unmatched` (W3C SCXML 6.4).
     private func sceStartInvokeInvUnmatched(_ pending: PendingInvoke<InvokeParamSeedsDeclaredChildDataState>, engine: Engine<InvokeParamSeedsDeclaredChildDataPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy()
@@ -1111,7 +1124,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_unmatched"] = ChildSession(
@@ -1261,35 +1274,35 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("inv_infinite".utf8) {
             if let child = sceInvokeChildInvInfinite, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("inv_namelist".utf8) {
             if let child = sceInvokeChildInvNamelist, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("inv_shadow".utf8) {
             if let child = sceInvokeChildInvShadow, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("inv_sole".utf8) {
             if let child = sceInvokeChildInvSole, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("inv_unmatched".utf8) {
             if let child = sceInvokeChildInvUnmatched, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -1354,27 +1367,27 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["inv_infinite"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvInfinite {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["inv_namelist"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvNamelist {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["inv_shadow"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvShadow {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["inv_sole"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvSole {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["inv_unmatched"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvUnmatched {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false

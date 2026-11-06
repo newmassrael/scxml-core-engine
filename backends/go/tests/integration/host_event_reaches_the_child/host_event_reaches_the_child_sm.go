@@ -222,6 +222,10 @@ type HostEventReachesTheChildPolicy struct {
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
+	// W3C SCXML C.1: the id of the session that invoked this one, whose
+	// published location reaches it as `#_parent` does (docs/adr/0090); empty
+	// for a session its host started.
+	ParentSessionID    string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
 	// this machine's datamodel init so they override its `<data>` defaults.
 	pendingParams      map[string]interface{}
@@ -277,6 +281,9 @@ func (p *HostEventReachesTheChildPolicy) ExecutePendingInvokes(engine *sce.Engin
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 
 
@@ -436,11 +443,13 @@ func (p *HostEventReachesTheChildPolicy) ForwardToAutoforwardChildren(eventName 
 // wait is over, by name — a child need not declare every event its parent
 // sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
 // take it: one whose session has reached its final state has ended, and the
-// engine reports the send it could not deliver (W3C SCXML C.1).
-func (p *HostEventReachesTheChildPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+// engine reports the send it could not deliver (W3C SCXML C.1). sender is the
+// session that sent it, this one, whose location the child reads as
+// `_event.origin` (docs/adr/0090).
+func (p *HostEventReachesTheChildPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID, sender string) bool {
 	if invokeID == "inv_probe" {
 		if child := p.childInvProbe; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
@@ -482,12 +491,12 @@ func (p *HostEventReachesTheChildPolicy) IsChildSessionRunning(childSessionID st
 // return means the address names no live child of ours and the event takes the
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
-func (p *HostEventReachesTheChildPolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
+func (p *HostEventReachesTheChildPolicy) DeliverToChildSession(childSessionID, eventName, eventData, sender string) bool {
 	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_probe"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.childInvProbe, eventName, eventData)
+		sce.DeliverToChild(p.childInvProbe, eventName, eventData, sender)
 		return true
 	}
 	return false
@@ -535,6 +544,13 @@ func (p *HostEventReachesTheChildPolicy) DeliverToParent(eventName, eventData st
 // the queue the invoking parent installs is the link to it.
 func (p *HostEventReachesTheChildPolicy) HasParentSession() bool {
 	return p.ParentExternalQueue != nil
+}
+
+// IsParentSession answers whether sessionID names the session that invoked this
+// one (W3C SCXML C.1): the location it publishes is a target, so a reply sent to
+// the origin of an event the parent sent reaches it (docs/adr/0090).
+func (p *HostEventReachesTheChildPolicy) IsParentSession(sessionID string) bool {
+	return p.ParentExternalQueue != nil && sessionID != "" && p.ParentSessionID == sessionID
 }
 
 // ======================================================================
@@ -904,7 +920,9 @@ func (p *HostEventReachesTheChildPolicy) ExecuteTransitionContent(source HostEve
 	// A child whose session has reached its final state has ended, and is not
 	// there to address.
 	if child := p.childInvProbe; child != nil && !child.IsInFinalState() {
-		sce.DeliverToChild(child, "marker", eventDataStr)
+		// W3C SCXML C.1: this session is the sender, and the child reads the
+		// location it publishes as `_event.origin` (docs/adr/0090).
+		sce.DeliverToChild(child, "marker", eventDataStr, p.SessionID)
 		// docs/adr/0045: what the child sent in answer reaches this session within
 		// the delivery, so nothing is between the two when it returns.
 		p.SettleChildren(engine)

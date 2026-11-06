@@ -3121,6 +3121,10 @@ pub struct TodoPeerPolicy {
     pub invoke_id: String,
     // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
+    // W3C SCXML C.1: the id of the session that invoked this one, whose
+    // published location reaches it as `#_parent` does (docs/adr/0090);
+    // empty for a session its host started.
+    pub parent_session_id: String,
 }
 
 impl TodoPeerPolicy {
@@ -3350,6 +3354,7 @@ impl TodoPeerPolicy {
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
+            parent_session_id: String::new(),
         }
     }
 
@@ -8972,6 +8977,15 @@ if self.hub && ev.to == 2 {
     // invoking parent installs is the link to it.
     fn has_parent_session(&self) -> bool {
         self.parent_external_queue.is_some()
+    }
+
+    // W3C SCXML C.1: whether `session_id` names the session that invoked this
+    // one — the location it publishes is a target, so a reply sent to the
+    // origin of an event the parent sent reaches it (docs/adr/0090).
+    fn is_parent_session(&self, session_id: &str) -> bool {
+        self.parent_external_queue.is_some()
+            && !session_id.is_empty()
+            && self.parent_session_id == session_id
     }
 
     // docs/adr/0045: this session's own id, as a saved state holds it.

@@ -366,6 +366,17 @@ public final class PresencePeerPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -1069,14 +1080,15 @@ public final class PresencePeerPolicy: InvocablePolicy {
                     let sendEventData = payloadJSON(sendParts)
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
                         // W3C SCXML 6.2: delayed to this session's external queue.
                         engine.scheduleEvent(
                             PresencePeerEvent.presenceExpire,
                             delay: Duration.milliseconds(Int64(sendDelayMs)),
                             sendID: "__send_3",
                             eventData: sendEventData,
-                            origin: self.sessionID
+                            sender: self.sessionID
                         )
                     }
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a

@@ -160,6 +160,17 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -612,11 +623,13 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                     name: name,
                     type: metadata.eventType.description,
                     sendID: metadata.sendID,
-                    // W3C SCXML C.1: the origin a document reads is the location the sender
-                    // published, an address its receiver can send back to (test 336), and the
-                    // engine's bare session id becomes that address here, where it becomes visible.
-                    origin: publishedOrigin(originSessionID: metadata.origin),
-                    originType: metadata.originType,
+                    // W3C SCXML 5.10.1 + C.1 (docs/adr/0090): `_event.origin` and
+                    // `_event.origintype` are the two fields of the one pair the delivering
+                    // processor wrote where it built the event, read here as they are: for an
+                    // event a session sent, the location the sender published (test 336). An
+                    // event no processor stamped reads both as the empty text (test 330).
+                    origin: metadata.originAddress,
+                    originType: metadata.originProcessor,
                     invokeID: metadata.invokeID,
                     data: metadata.data
                 ))
@@ -704,7 +717,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
     /// Starts the session of `<invoke>` `kid` (W3C SCXML 6.4).
     private func sceStartInvokeKid(_ pending: PendingInvoke<ATargetExpressionIsRoutedAsItsLiteralIsState>, engine: Engine<ATargetExpressionIsRoutedAsItsLiteralIsPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy()
@@ -714,7 +727,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["kid"] = ChildSession(
@@ -804,7 +817,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("kid".utf8) {
             if let child = sceInvokeChildKid, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -845,7 +858,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
         }
         if let session = activeInvokes["kid"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildKid {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -920,7 +933,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: .zero,
                         sendID: "__send_7",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1008,7 +1021,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: Duration.milliseconds(10),
                         sendID: "__send_8",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1096,7 +1109,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: .zero,
                         sendID: "__send_9",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1184,7 +1197,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: Duration.milliseconds(10),
                         sendID: "__send_10",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1272,7 +1285,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: .zero,
                         sendID: "__send_11",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1360,7 +1373,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: Duration.milliseconds(10),
                         sendID: "__send_12",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1670,7 +1683,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: .zero,
                         sendID: "__send_0",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1748,7 +1761,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: Duration.milliseconds(10),
                         sendID: "__send_1",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1826,7 +1839,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: .zero,
                         sendID: "__send_2",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1904,7 +1917,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: Duration.milliseconds(10),
                         sendID: "__send_3",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -1982,7 +1995,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: .zero,
                         sendID: "__send_4",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -2060,7 +2073,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         delay: Duration.milliseconds(10),
                         sendID: "__send_5",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
@@ -2084,14 +2097,15 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                     let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
                         // W3C SCXML 6.2: delayed to this session's external queue.
                         engine.scheduleEvent(
                             ATargetExpressionIsRoutedAsItsLiteralIsEvent.settle,
                             delay: Duration.milliseconds(300),
                             sendID: "__send_6",
                             eventData: sendEventData,
-                            origin: self.sessionID
+                            sender: self.sessionID
                         )
                     }
                 }

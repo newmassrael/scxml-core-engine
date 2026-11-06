@@ -218,6 +218,17 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -535,7 +546,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -564,7 +575,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -648,7 +659,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -677,7 +688,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -754,7 +765,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -774,7 +785,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -858,7 +869,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -887,7 +898,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -1025,28 +1036,28 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("first_run".utf8) {
             if let child = sceInvokeChildFirstRun, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("lossy_run".utf8) {
             if let child = sceInvokeChildLossyRun, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("missing_run".utf8) {
             if let child = sceInvokeChildMissingRun, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
         }
         if invokeID.utf8.elementsEqual("second_run".utf8) {
             if let child = sceInvokeChildSecondRun, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -1105,22 +1116,22 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["first_run"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildFirstRun {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["lossy_run"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildLossyRun {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["missing_run"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildMissingRun {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         if let session = activeInvokes["second_run"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildSecondRun {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -1658,13 +1669,13 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
                 }
                 switch child.id {
                 case "first_run":
-                    resume.append(try sceJudgeSavedChildFirstRun(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildFirstRun(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "second_run":
-                    resume.append(try sceJudgeSavedChildSecondRun(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildSecondRun(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "lossy_run":
-                    resume.append(try sceJudgeSavedChildLossyRun(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildLossyRun(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 case "missing_run":
-                    resume.append(try sceJudgeSavedChildMissingRun(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildMissingRun(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 default:
                     break
                 }
@@ -1724,7 +1735,8 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildFirstRun(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
         switch child.document {
@@ -1733,7 +1745,7 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in
@@ -1758,7 +1770,7 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in
@@ -1787,7 +1799,8 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildSecondRun(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
         switch child.document {
@@ -1796,7 +1809,7 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in
@@ -1821,7 +1834,7 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in
@@ -1850,7 +1863,8 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildLossyRun(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
         switch child.document {
@@ -1859,7 +1873,7 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in
@@ -1884,7 +1898,7 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in
@@ -1913,7 +1927,8 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildMissingRun(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeHybridPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
         switch child.document {
@@ -1922,7 +1937,7 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in
@@ -1947,7 +1962,7 @@ extension StaticInvokeHybridPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in

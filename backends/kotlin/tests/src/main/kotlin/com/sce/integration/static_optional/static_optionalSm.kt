@@ -1080,7 +1080,7 @@ class StaticOptionalStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticOptionalEvent.Due.Sent, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
+            send(StaticOptionalEvent.Due.Sent, EventMetadata.sentBy(sessionId, sendId = "__send_0", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

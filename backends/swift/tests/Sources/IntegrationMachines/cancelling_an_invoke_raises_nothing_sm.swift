@@ -154,6 +154,17 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -553,11 +564,13 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
                     name: name,
                     type: metadata.eventType.description,
                     sendID: metadata.sendID,
-                    // W3C SCXML C.1: the origin a document reads is the location the sender
-                    // published, an address its receiver can send back to (test 336), and the
-                    // engine's bare session id becomes that address here, where it becomes visible.
-                    origin: publishedOrigin(originSessionID: metadata.origin),
-                    originType: metadata.originType,
+                    // W3C SCXML 5.10.1 + C.1 (docs/adr/0090): `_event.origin` and
+                    // `_event.origintype` are the two fields of the one pair the delivering
+                    // processor wrote where it built the event, read here as they are: for an
+                    // event a session sent, the location the sender published (test 336). An
+                    // event no processor stamped reads both as the empty text (test 330).
+                    origin: metadata.originAddress,
+                    originType: metadata.originProcessor,
                     invokeID: metadata.invokeID,
                     data: metadata.data
                 ))
@@ -645,7 +658,7 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `child` (W3C SCXML 6.4).
     private func sceStartInvokeChild(_ pending: PendingInvoke<CancellingAnInvokeRaisesNothingState>, engine: Engine<CancellingAnInvokeRaisesNothingPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = CancellingAnInvokeRaisesNothingSceSynthInvokeChildPolicy()
@@ -655,7 +668,7 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["child"] = ChildSession(
@@ -745,7 +758,7 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("child".utf8) {
             if let child = sceInvokeChildChild, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -786,7 +799,7 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["child"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildChild {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false

@@ -296,8 +296,9 @@ type SendParamPayloadPolicy struct {
 	pendingEventData string
 	pendingEventType string
 	pendingEventSendid string
-	pendingEventOrigin string
-	pendingEventOrigintype string
+	// W3C SCXML 5.10.1: the one pair the delivering processor wrote
+	// (docs/adr/0090), nil for an event it did not stamp.
+	pendingEventOrigin *sce.EventOrigin
 	pendingEventInvokeid string
 	// W3C SCXML 5.10: Session ID
 	SessionID string
@@ -322,6 +323,10 @@ type SendParamPayloadPolicy struct {
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
+	// W3C SCXML C.1: the id of the session that invoked this one, whose
+	// published location reaches it as `#_parent` does (docs/adr/0090); empty
+	// for a session its host started.
+	ParentSessionID    string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
 	// this machine's datamodel init so they override its `<data>` defaults.
 	pendingParams      map[string]interface{}
@@ -561,18 +566,13 @@ func (p *SendParamPayloadPolicy) setCurrentEvent(name string) sce.PayloadReading
 	data := p.pendingEventData
 	eventType := p.pendingEventType
 	sendID := p.pendingEventSendid
-	// W3C SCXML C.1: `_event.origin` is the sender's published
-	// `_ioprocessors` location, not its bare session id — and this is the one
-	// place that publishes `_event` to the document, so this is where the id
-	// becomes a location. The engine keeps the bare id in
-	// `EventMetadata.Origin` because its session-keyed lookups (<finalize>
-	// dispatch, cancelled-invoke filtering) match on it; converting at the
-	// raise would make one value serve two consumers that need different
-	// spellings. The conversion itself lives in `sce.PublishedOrigin`, the
-	// port of the `IOProcessorHelper::publishedOrigin` the C++ engines share:
-	// a second spelling of the rule is how the backends would stop agreeing.
-	origin := sce.PublishedOrigin(p.pendingEventOrigin)
-	originType := p.pendingEventOrigintype
+	// W3C SCXML 5.10.1 + C.1: `_event.origin` and `_event.origintype` are the
+	// one pair the processor that delivered the event wrote when it built it
+	// (docs/adr/0090) — the sender's published `_ioprocessors` location for a
+	// session's send — read here as they are, and both empty for none.
+	// Nothing converts at this boundary, so every backend answers the same.
+	origin := p.pendingEventOrigin.Address()
+	originType := p.pendingEventOrigin.Processor()
 	invokeID := p.pendingEventInvokeid
 	reading, err := engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
 		Name:       name,
@@ -662,6 +662,9 @@ func (p *SendParamPayloadPolicy) ExecutePendingInvokes(engine *sce.Engine[SendPa
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 
 
@@ -801,11 +804,13 @@ func (p *SendParamPayloadPolicy) NextChildDeadline() (time.Duration, bool) {
 // wait is over, by name — a child need not declare every event its parent
 // sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
 // take it: one whose session has reached its final state has ended, and the
-// engine reports the send it could not deliver (W3C SCXML C.1).
-func (p *SendParamPayloadPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+// engine reports the send it could not deliver (W3C SCXML C.1). sender is the
+// session that sent it, this one, whose location the child reads as
+// `_event.origin` (docs/adr/0090).
+func (p *SendParamPayloadPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID, sender string) bool {
 	if invokeID == "inv_emitter" {
 		if child := p.childInvEmitter; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
@@ -847,12 +852,12 @@ func (p *SendParamPayloadPolicy) IsChildSessionRunning(childSessionID string) bo
 // return means the address names no live child of ours and the event takes the
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
-func (p *SendParamPayloadPolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
+func (p *SendParamPayloadPolicy) DeliverToChildSession(childSessionID, eventName, eventData, sender string) bool {
 	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_emitter"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.childInvEmitter, eventName, eventData)
+		sce.DeliverToChild(p.childInvEmitter, eventName, eventData, sender)
 		return true
 	}
 	return false
@@ -900,6 +905,13 @@ func (p *SendParamPayloadPolicy) DeliverToParent(eventName, eventData string) bo
 // the queue the invoking parent installs is the link to it.
 func (p *SendParamPayloadPolicy) HasParentSession() bool {
 	return p.ParentExternalQueue != nil
+}
+
+// IsParentSession answers whether sessionID names the session that invoked this
+// one (W3C SCXML C.1): the location it publishes is a target, so a reply sent to
+// the origin of an event the parent sent reaches it (docs/adr/0090).
+func (p *SendParamPayloadPolicy) IsParentSession(sessionID string) bool {
+	return p.ParentExternalQueue != nil && sessionID != "" && p.ParentSessionID == sessionID
 }
 
 // ======================================================================
@@ -1130,7 +1142,6 @@ func (p *SendParamPayloadPolicy) PopulateEventMetadata(meta *sce.EventMetadata) 
 	p.pendingEventType = meta.EventType.String()
 	p.pendingEventSendid = meta.SendID
 	p.pendingEventOrigin = meta.Origin
-	p.pendingEventOrigintype = meta.OriginType
 	p.pendingEventInvokeid = meta.InvokeID
 }
 
@@ -1155,8 +1166,7 @@ func (p *SendParamPayloadPolicy) ClearEventMetadata() {
 	p.pendingEventData = ""
 	p.pendingEventType = ""
 	p.pendingEventSendid = ""
-	p.pendingEventOrigin = ""
-	p.pendingEventOrigintype = ""
+	p.pendingEventOrigin = nil
 	p.pendingEventInvokeid = ""
 }
 

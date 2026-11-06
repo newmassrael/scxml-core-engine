@@ -347,23 +347,17 @@ class Test156StateMachine(
             eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"
             else -> meta.type
         }
-        // W3C SCXML 5.10.1: C++ pattern — origin/origintype only for external events
-        // Internal events (<raise>) have empty origin; external events (<send>) have session ID
-        // W3C SCXML C.1: `_event.origin` is the sender's published
-        // `_ioprocessors` location, not its bare session id — and this is the
-        // one place that publishes `_event` to the document, so this is where
-        // the id becomes a location. The engine keeps the bare id in
-        // `EventMetadata.origin` because its session-keyed lookups (`<finalize>`
-        // dispatch, cancelled-invoke filtering) match on it; converting at the
-        // raise would make one value serve two consumers that need different
-        // spellings. The conversion itself lives in
-        // `com.sce.runtime.IoProcessors.publishedOrigin`, the port of the
-        // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
-        // spelling of the rule is how the backends would stop agreeing.
-        val effectiveOrigin = com.sce.runtime.IoProcessors.publishedOrigin(
-            if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
-        )
-        val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
+        // W3C SCXML 5.10.1 + C.1: `_event.origin` and `_event.origintype` are the
+        // reply address the processor that delivered the event wrote where it
+        // built it, as one value (docs/adr/0090): the SCXML processor's type and
+        // the sender's published `_ioprocessors` location for an event a session
+        // sent, a host's own pair for what a host named, the Mesh transport's
+        // for a peer. Read here as written, with no conversion. An event no
+        // processor stamped — an internal or platform event, a host-posted event
+        // or reply that names no party, a BasicHTTP request — has none and reads
+        // both fields as the empty string: nothing is filled in for it, neither
+        // this session's own address nor the SCXML processor's type.
+        val eventOrigin = meta.origin
         // §scxml-B-2-8-1: the binding answers which rung the payload got, and
         // that answer used to end here. The ladder decided between a DOM, a
         // value and a space-normalized string, and the decision was dropped —
@@ -382,8 +376,8 @@ class Test156StateMachine(
                 data = meta.data,
                 type = effectiveType,
                 sendId = meta.sendId,
-                origin = effectiveOrigin,
-                originType = effectiveOriginType,
+                origin = eventOrigin?.address ?: "",
+                originType = eventOrigin?.processor ?: "",
                 invokeId = meta.invokeId
             )
         )

@@ -462,7 +462,7 @@ class StaticSendDelayStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
+            scheduleSend("__send_0", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.sentBy(sessionId, sendId = "__send_0", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -496,7 +496,7 @@ class StaticSendDelayStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
+            scheduleSend("__send_1", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.sentBy(sessionId, sendId = "__send_1", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -527,7 +527,7 @@ class StaticSendDelayStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
+            scheduleSend("__send_2", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.sentBy(sessionId, sendId = "__send_2", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

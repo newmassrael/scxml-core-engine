@@ -160,6 +160,17 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -385,7 +396,7 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `inv_watch` (W3C SCXML 6.4).
     private func sceStartInvokeInvWatch(_ pending: PendingInvoke<InvokePrecedesDequeueMidrunState>, engine: Engine<InvokePrecedesDequeueMidrunPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy()
@@ -395,7 +406,7 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["inv_watch"] = ChildSession(
@@ -496,7 +507,7 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("inv_watch".utf8) {
             if let child = sceInvokeChildInvWatch, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -537,7 +548,7 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["inv_watch"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvWatch {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -558,8 +569,9 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
                     let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
-                        var sendMetadata = EventMetadata.external(sendID: "__send_0", origin: self.sessionID)
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
+                        var sendMetadata = EventMetadata.external(sendID: "__send_0", sender: self.sessionID)
                         sendMetadata.data = sendEventData
                         engine.raiseExternalWithMeta(
                             EventWithMetadata(InvokePrecedesDequeueMidrunEvent.go, metadata: sendMetadata)
@@ -576,8 +588,9 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
                     let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
-                        var sendMetadata = EventMetadata.external(sendID: "__send_2", origin: self.sessionID)
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
+                        var sendMetadata = EventMetadata.external(sendID: "__send_2", sender: self.sessionID)
                         sendMetadata.data = sendEventData
                         engine.raiseExternalWithMeta(
                             EventWithMetadata(InvokePrecedesDequeueMidrunEvent.kick, metadata: sendMetadata)
@@ -740,7 +753,7 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
                         delay: .zero,
                         sendID: "__send_1",
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(InvokePrecedesDequeueMidrunEvent.errorExecution, message: "<send> target is not a target")

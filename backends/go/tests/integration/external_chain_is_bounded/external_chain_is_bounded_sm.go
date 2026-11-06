@@ -240,9 +240,10 @@ type ExternalChainIsBoundedPolicy struct {
 	pendingEventData        string
 	pendingEventType        string
 	pendingEventSendid      string
-	pendingEventOrigin      string
-	pendingEventOrigintype  string
-	pendingEventInvokeid    string
+	// W3C SCXML 5.10.1: the one pair the delivering processor wrote
+	// (docs/adr/0090), nil for an event it did not stamp.
+	pendingEventOrigin   *sce.EventOrigin
+	pendingEventInvokeid string
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)
@@ -258,6 +259,10 @@ type ExternalChainIsBoundedPolicy struct {
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID            string
 	ChildSessionID      string
+	// W3C SCXML C.1: the id of the session that invoked this one, whose
+	// published location reaches it as `#_parent` does (docs/adr/0090); empty
+	// for a session its host started.
+	ParentSessionID string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
 	// this machine's datamodel init so they override its `<data>` defaults.
 	pendingParams map[string]interface{}
@@ -539,18 +544,13 @@ func (p *ExternalChainIsBoundedPolicy) setCurrentEvent(name string) sce.PayloadR
 	data := p.pendingEventData
 	eventType := p.pendingEventType
 	sendID := p.pendingEventSendid
-	// W3C SCXML C.1: `_event.origin` is the sender's published
-	// `_ioprocessors` location, not its bare session id — and this is the one
-	// place that publishes `_event` to the document, so this is where the id
-	// becomes a location. The engine keeps the bare id in
-	// `EventMetadata.Origin` because its session-keyed lookups (<finalize>
-	// dispatch, cancelled-invoke filtering) match on it; converting at the
-	// raise would make one value serve two consumers that need different
-	// spellings. The conversion itself lives in `sce.PublishedOrigin`, the
-	// port of the `IOProcessorHelper::publishedOrigin` the C++ engines share:
-	// a second spelling of the rule is how the backends would stop agreeing.
-	origin := sce.PublishedOrigin(p.pendingEventOrigin)
-	originType := p.pendingEventOrigintype
+	// W3C SCXML 5.10.1 + C.1: `_event.origin` and `_event.origintype` are the
+	// one pair the processor that delivered the event wrote when it built it
+	// (docs/adr/0090) — the sender's published `_ioprocessors` location for a
+	// session's send — read here as they are, and both empty for none.
+	// Nothing converts at this boundary, so every backend answers the same.
+	origin := p.pendingEventOrigin.Address()
+	originType := p.pendingEventOrigin.Processor()
 	invokeID := p.pendingEventInvokeid
 	reading, err := engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
 		Name:       name,
@@ -632,6 +632,13 @@ func (p *ExternalChainIsBoundedPolicy) DeliverToParent(eventName, eventData stri
 // the queue the invoking parent installs is the link to it.
 func (p *ExternalChainIsBoundedPolicy) HasParentSession() bool {
 	return p.ParentExternalQueue != nil
+}
+
+// IsParentSession answers whether sessionID names the session that invoked this
+// one (W3C SCXML C.1): the location it publishes is a target, so a reply sent to
+// the origin of an event the parent sent reaches it (docs/adr/0090).
+func (p *ExternalChainIsBoundedPolicy) IsParentSession(sessionID string) bool {
+	return p.ParentExternalQueue != nil && sessionID != "" && p.ParentSessionID == sessionID
 }
 
 // ======================================================================
@@ -838,7 +845,6 @@ func (p *ExternalChainIsBoundedPolicy) PopulateEventMetadata(meta *sce.EventMeta
 	p.pendingEventType = meta.EventType.String()
 	p.pendingEventSendid = meta.SendID
 	p.pendingEventOrigin = meta.Origin
-	p.pendingEventOrigintype = meta.OriginType
 	p.pendingEventInvokeid = meta.InvokeID
 }
 
@@ -863,8 +869,7 @@ func (p *ExternalChainIsBoundedPolicy) ClearEventMetadata() {
 	p.pendingEventData = ""
 	p.pendingEventType = ""
 	p.pendingEventSendid = ""
-	p.pendingEventOrigin = ""
-	p.pendingEventOrigintype = ""
+	p.pendingEventOrigin = nil
 	p.pendingEventInvokeid = ""
 }
 
@@ -890,7 +895,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					// W3C SCXML 6.2: External send
 					{
 						meta := sce.NewEventWithMetadata(ExternalChainIsBoundedEventLap)
-						meta.Metadata = sce.ExternalMetadata("__send_3", p.SessionID)
+						meta.Metadata = sce.SentBySession("__send_3", p.SessionID)
 						meta.Metadata.Data = eventDataStr
 						engine.RaiseExternalWithMeta(meta)
 					}
@@ -911,7 +916,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					// W3C SCXML 6.2: External send
 					{
 						meta := sce.NewEventWithMetadata(ExternalChainIsBoundedEventBeat)
-						meta.Metadata = sce.ExternalMetadata("__send_5", p.SessionID)
+						meta.Metadata = sce.SentBySession("__send_5", p.SessionID)
 						meta.Metadata.Data = eventDataStr
 						engine.RaiseExternalWithMeta(meta)
 					}
@@ -932,7 +937,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					// W3C SCXML 6.2: External send
 					{
 						meta := sce.NewEventWithMetadata(ExternalChainIsBoundedEventLink)
-						meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
+						meta.Metadata = sce.SentBySession("__send_1", p.SessionID)
 						meta.Metadata.Data = eventDataStr
 						engine.RaiseExternalWithMeta(meta)
 					}
@@ -952,7 +957,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("pulse"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(1)*time.Millisecond, "__send_10", eventDataStr, p.SessionID)
 					}
@@ -967,7 +972,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("pulse"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(2)*time.Millisecond, "__send_11", eventDataStr, p.SessionID)
 					}
@@ -982,7 +987,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("pulse"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(3)*time.Millisecond, "__send_12", eventDataStr, p.SessionID)
 					}
@@ -997,7 +1002,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("pulse"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(4)*time.Millisecond, "__send_13", eventDataStr, p.SessionID)
 					}
@@ -1012,7 +1017,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("pulse"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(5)*time.Millisecond, "__send_14", eventDataStr, p.SessionID)
 					}
@@ -1027,7 +1032,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("pulse"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(6)*time.Millisecond, "__send_15", eventDataStr, p.SessionID)
 					}
@@ -1042,7 +1047,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("pulse"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(7)*time.Millisecond, "__send_16", eventDataStr, p.SessionID)
 					}
@@ -1057,7 +1062,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("pulse"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(8)*time.Millisecond, "__send_17", eventDataStr, p.SessionID)
 					}
@@ -1078,7 +1083,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("blink"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(0)*time.Millisecond, "__send_7", eventDataStr, p.SessionID)
 					}
@@ -1121,7 +1126,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 					_ = eventDataStr
 					// W3C SCXML 6.2: External send
 					// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-					// origin is this session, as on the immediate path.
+					// sender is this session, as on the immediate path.
 					if delayEvt, delayOk := p.GetEventFromName("blink"); delayOk {
 						engine.ScheduleEvent(delayEvt, time.Duration(sendDelayMs)*time.Millisecond, "__send_9", eventDataStr, p.SessionID)
 					}
@@ -1449,7 +1454,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 						// W3C SCXML 6.2: External send
 						{
 							meta := sce.NewEventWithMetadata(ExternalChainIsBoundedEventLap)
-							meta.Metadata = sce.ExternalMetadata("__send_2", p.SessionID)
+							meta.Metadata = sce.SentBySession("__send_2", p.SessionID)
 							meta.Metadata.Data = eventDataStr
 							engine.RaiseExternalWithMeta(meta)
 						}
@@ -1517,7 +1522,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 						// W3C SCXML 6.2: External send
 						{
 							meta := sce.NewEventWithMetadata(ExternalChainIsBoundedEventBeat)
-							meta.Metadata = sce.ExternalMetadata("__send_4", p.SessionID)
+							meta.Metadata = sce.SentBySession("__send_4", p.SessionID)
 							meta.Metadata.Data = eventDataStr
 							engine.RaiseExternalWithMeta(meta)
 						}
@@ -1570,7 +1575,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 						// W3C SCXML 6.2: External send
 						{
 							meta := sce.NewEventWithMetadata(ExternalChainIsBoundedEventLink)
-							meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
+							meta.Metadata = sce.SentBySession("__send_0", p.SessionID)
 							meta.Metadata.Data = eventDataStr
 							engine.RaiseExternalWithMeta(meta)
 						}
@@ -1637,7 +1642,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 						_ = eventDataStr
 						// W3C SCXML 6.2: External send
 						// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-						// origin is this session, as on the immediate path.
+						// sender is this session, as on the immediate path.
 						if delayEvt, delayOk := p.GetEventFromName("blink"); delayOk {
 							engine.ScheduleEvent(delayEvt, time.Duration(0)*time.Millisecond, "__send_6", eventDataStr, p.SessionID)
 						}
@@ -1700,7 +1705,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 						_ = eventDataStr
 						// W3C SCXML 6.2: External send
 						// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-						// origin is this session, as on the immediate path.
+						// sender is this session, as on the immediate path.
 						if delayEvt, delayOk := p.GetEventFromName("blink"); delayOk {
 							engine.ScheduleEvent(delayEvt, time.Duration(sendDelayMs)*time.Millisecond, "__send_8", eventDataStr, p.SessionID)
 						}

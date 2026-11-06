@@ -1,0 +1,530 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 0125400724d34a5ee9bce084f6785c63966d24978039db308f85c151c02de257
+
+// GENERATED CODE — DO NOT EDIT
+// Source: integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:25 :: _machine
+
+package com.sce.integration.a_host_names_its_origin_in_its_own_terms
+
+import com.sce.runtime.*
+
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface AHostNamesItsOriginInItsOwnTermsState : State {
+    data object Done : AHostNamesItsOriginInItsOwnTermsState
+    data object Running : AHostNamesItsOriginInItsOwnTermsState
+}
+
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface AHostNamesItsOriginInItsOwnTermsEvent : Event {
+    sealed interface Done : AHostNamesItsOriginInItsOwnTermsEvent {
+        sealed interface Invoke : Done {
+            data object Self : Invoke
+            data object Job : Invoke
+        }
+    }
+    sealed interface Error : AHostNamesItsOriginInItsOwnTermsEvent {
+        data object Execution : Error
+    }
+}
+// --- State Machine (W3C SCXML) ---
+
+class AHostNamesItsOriginInItsOwnTermsStateMachine(
+    scriptEngine: ScxmlScriptEngine,
+) : StateMachineEngine<AHostNamesItsOriginInItsOwnTermsState, AHostNamesItsOriginInItsOwnTermsEvent>(scriptEngine) {
+
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+
+    /**
+     * §scxml-5.3: what the `hostNamed` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `hostNamed` was assigned a value of another type, or the engine refused.
+     */
+    fun hostNamed(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "hostNamed")
+
+    override val initialState: AHostNamesItsOriginInItsOwnTermsState = AHostNamesItsOriginInItsOwnTermsState.Running
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
+
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    override val needsParent: Boolean = false
+
+    // W3C SCXML B.1: Initialize script engine before entering initial state
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        super.enterInitialConfiguration()
+    }
+
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: AHostNamesItsOriginInItsOwnTermsState): Boolean = when (state) {
+        is AHostNamesItsOriginInItsOwnTermsState.Done -> true
+        else -> false
+    }
+
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<AHostNamesItsOriginInItsOwnTermsState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<AHostNamesItsOriginInItsOwnTermsState, HistoryId>> =
+            listOf(StateTarget(AHostNamesItsOriginInItsOwnTermsState.Running))
+    }
+
+    private object TransitionsPart0 {
+
+        // W3C SCXML 3.13: running's transition 0, as the microstep reads it.
+        val transitionRunningAt0 = EnabledTransition<AHostNamesItsOriginInItsOwnTermsState, HistoryId>(
+            AHostNamesItsOriginInItsOwnTermsState.Running,
+            listOf(StateTarget(AHostNamesItsOriginInItsOwnTermsState.Done)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
+
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): AHostNamesItsOriginInItsOwnTermsState? = when (stateId) {
+        "done" -> AHostNamesItsOriginInItsOwnTermsState.Done
+        "running" -> AHostNamesItsOriginInItsOwnTermsState.Running
+        else -> null
+    }
+
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: AHostNamesItsOriginInItsOwnTermsState): String = when (state) {
+        is AHostNamesItsOriginInItsOwnTermsState.Done -> "done"
+        is AHostNamesItsOriginInItsOwnTermsState.Running -> "running"
+    }
+
+
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
+    override fun documentOrderOf(state: AHostNamesItsOriginInItsOwnTermsState): Int = when (state) {
+        is AHostNamesItsOriginInItsOwnTermsState.Done -> 1
+        is AHostNamesItsOriginInItsOwnTermsState.Running -> 0
+    }
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): AHostNamesItsOriginInItsOwnTermsEvent? = when (name) {
+        "done.invoke" -> AHostNamesItsOriginInItsOwnTermsEvent.Done.Invoke.Self
+        "done.invoke.job" -> AHostNamesItsOriginInItsOwnTermsEvent.Done.Invoke.Job
+        "error.execution" -> AHostNamesItsOriginInItsOwnTermsEvent.Error.Execution
+        else -> null
+    }
+
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: AHostNamesItsOriginInItsOwnTermsEvent): String? = when (event) {
+        is AHostNamesItsOriginInItsOwnTermsEvent.Done.Invoke.Self -> "done.invoke"
+        is AHostNamesItsOriginInItsOwnTermsEvent.Done.Invoke.Job -> "done.invoke.job"
+        is AHostNamesItsOriginInItsOwnTermsEvent.Error.Execution -> "error.execution"
+    }
+
+
+    // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
+    // is accepted only through `completeHostInvoke`.
+    override val hostInvokeIds: Set<String> = setOf(
+        "job",
+    )
+
+
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML 5.3: the declaration hook `enterAt` reaches. Every other caller
+    // arrives through a guard, an assign or a script block, all of which run
+    // `ensureScriptEngine()` on their own way in; a resume runs none of them,
+    // and a host putting saved values back needs the variables to exist first.
+    override fun declareDatamodel() {
+        ensureScriptEngine()
+    }
+
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        engine.setupSystemVariables(
+            sid,
+            "a_host_names_its_origin_in_its_own_terms",
+            com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
+        )
+
+        declareVariablesPart0(engine, sid)
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // W3C SCXML 5.3: Initialize variable 'hostNamed' with expr
+        try {
+            val initResult_hostNamed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "hostNamed", initResult_hostNamed)
+        } catch (e: Exception) {
+            raisePlatformError(AHostNamesItsOriginInItsOwnTermsEvent.Error.Execution, "<data id='hostNamed'> expr failed to evaluate")
+        }
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean =
+        evaluateGuardRaising(guardExpr, "a <transition> cond failed to evaluate") ?: false
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond, evaluated and reported
+    // as a transition guard is. A failure also runs [onFailure]: the <if>
+    // still selects on `false`, and is then the element whose processing
+    // raised, so its block ends after it.
+    @Suppress("unused")
+    private inline fun evaluateIfCond(guardExpr: com.sce.runtime.ScriptSource, onFailure: () -> Unit): Boolean {
+        val result = evaluateGuardRaising(guardExpr, "an <if> cond failed to evaluate")
+        if (result == null) onFailure()
+        return result ?: false
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `null` says so, where a bare `false` could not.
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raisePlatformError(AHostNamesItsOriginInItsOwnTermsEvent.Error.Execution, reason)
+            null
+        }
+    }
+
+    // W3C SCXML B.2: the value of an inline `<content>` body, serialized
+    // for transport.
+    //
+    // The reading is decided at build time — `source` is already the
+    // expression or string literal the clause's ordered readings give —
+    // and this evaluates it *here*, at send time, rather than handing the
+    // expression to whatever reads `_event.data` later. That distinction
+    // is not academic: the two engines this backend runs on disagree
+    // about what a data string is. QuickJS tries a JS evaluation before
+    // falling back; Rhino goes straight from JSON to the normalized
+    // string, so an expression handed to it arrives as its own source
+    // text. `JSON.stringify` is what both of them can read back, and it
+    // is the same shape the C++ backend transports.
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
+        return try {
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
+        } catch (e: Exception) {
+            raisePlatformError(AHostNamesItsOriginInItsOwnTermsEvent.Error.Execution, "an expression could not be serialised to JSON")
+            ""
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.assign(sid, location, expr)
+            true
+        } catch (e: Exception) {
+            raisePlatformError(AHostNamesItsOriginInItsOwnTermsEvent.Error.Execution, "<assign> failed")
+            false
+        }
+    }
+
+    // W3C SCXML 5.8: Script block execution
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.executeScript(sid, script)
+            true
+        } catch (e: Exception) {
+            raisePlatformError(AHostNamesItsOriginInItsOwnTermsEvent.Error.Execution, "<script> failed to execute")
+            false
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: AHostNamesItsOriginInItsOwnTermsEvent) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val meta = currentEventMetadata
+        // §scxml-5.10: the name the event ARRIVED under, which is longer than its
+        // member's when a name the document does not write was matched through a
+        // prefix (§scxml-3.12.1).
+        val eventName = meta.name.ifEmpty { eventNameOf(event) ?: return }
+        // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
+        val effectiveType = when {
+            eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"
+            else -> meta.type
+        }
+        // W3C SCXML 5.10.1 + C.1: `_event.origin` and `_event.origintype` are the
+        // reply address the processor that delivered the event wrote where it
+        // built it, as one value (docs/adr/0090): the SCXML processor's type and
+        // the sender's published `_ioprocessors` location for an event a session
+        // sent, a host's own pair for what a host named, the Mesh transport's
+        // for a peer. Read here as written, with no conversion. An event no
+        // processor stamped — an internal or platform event, a host-posted event
+        // or reply that names no party, a BasicHTTP request — has none and reads
+        // both fields as the empty string: nothing is filled in for it, neither
+        // this session's own address nor the SCXML processor's type.
+        val eventOrigin = meta.origin
+        // §scxml-B-2-8-1: the binding answers which rung the payload got, and
+        // that answer used to end here. The ladder decided between a DOM, a
+        // value and a space-normalized string, and the decision was dropped —
+        // so a payload that announced structure and would not parse reached
+        // the document as raw characters, every `_event.data.<field>` read
+        // empty, and nothing anywhere could say so.
+        //
+        // Recorded on the spot rather than returned up: this class extends
+        // `StateMachineEngine`, so the frame that binds already holds both the
+        // reading and the event it belongs to — which is the pairing the count
+        // needs.
+        val payloadReading = engine.setCurrentEvent(
+            sid,
+            com.sce.runtime.SetCurrentEventArgs(
+                name = eventName,
+                data = meta.data,
+                type = effectiveType,
+                sendId = meta.sendId,
+                origin = eventOrigin?.address ?: "",
+                originType = eventOrigin?.processor ?: "",
+                invokeId = meta.invokeId
+            )
+        )
+        notePayloadReading(event, payloadReading)
+    }
+
+
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: AHostNamesItsOriginInItsOwnTermsEvent) {
+        setCurrentEventInScriptEngine(event)
+    }
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(state: AHostNamesItsOriginInItsOwnTermsState, event: AHostNamesItsOriginInItsOwnTermsEvent?): EnabledTransition<AHostNamesItsOriginInItsOwnTermsState, HistoryId>? = when (state) {
+        is AHostNamesItsOriginInItsOwnTermsState.Running -> firstEnabledTransitionOfRunning(state, event)
+        else -> null
+    }
+
+
+    // running's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfRunning(state: AHostNamesItsOriginInItsOwnTermsState, event: AHostNamesItsOriginInItsOwnTermsEvent?): EnabledTransition<AHostNamesItsOriginInItsOwnTermsState, HistoryId>? = when {
+        event is AHostNamesItsOriginInItsOwnTermsEvent.Done.Invoke.Job -> TransitionsPart0.transitionRunningAt0
+        else -> null
+    }
+
+
+
+
+
+    // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:25 :: _machine
+    override fun onEntry(state: AHostNamesItsOriginInItsOwnTermsState, isDefaultEntry: Boolean) {
+        when (state) {
+            is AHostNamesItsOriginInItsOwnTermsState.Done -> onEntryOfDone()
+            is AHostNamesItsOriginInItsOwnTermsState.Running -> onEntryOfRunning()
+        }
+    }
+
+
+    private fun onEntryOfDone() {
+                // SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:41 :: done :: _state_body
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+    }
+
+    private fun onEntryOfRunning() {
+                // SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:32 :: running :: _state_body
+                // W3C SCXML 6.4.1: the host declared this `type`, so the
+                // deferred closure STARTS the invocation rather than refusing
+                // it. Deferred like its sibling so §scxml-6.4 ordering holds —
+                // an invoke runs at macrostep end — and so a state that exits
+                // first never starts it at all.
+                //
+                // The id handed to the host is the DOCUMENT's, not the
+                // per-instance one the pending queue carries:
+                // `done.invoke.<id>` is the name the author wrote a transition
+                // for, so it is the name the host must answer on.
+                run {
+                    val generatedInvokeId = "running.${System.identityHashCode(this)}.job"
+                    deferInvoke(AHostNamesItsOriginInItsOwnTermsState.Running, generatedInvokeId) {
+                        val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
+                        val started = performHostInvoke(
+                            HostInvokeRequest(
+                                processorType = "x-sce-host",
+                                invokeId = "job",
+                                src = "motor://job",
+                                params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
+                                content = ""                            )
+                        )
+                        if (!started) {
+                            // W3C SCXML 6.4.1: declared but no invoker
+                            // registered. The document asked for a process to
+                            // be run and none was, which is the same fact as
+                            // an unsupported type — so the same event, rather
+                            // than a silence that reads as started.
+                            raisePlatformError(AHostNamesItsOriginInItsOwnTermsEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                        }
+                    }
+                }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:25 :: _machine
+    override fun onExit(state: AHostNamesItsOriginInItsOwnTermsState) {
+        when (state) {
+            is AHostNamesItsOriginInItsOwnTermsState.Done -> onExitOfDone()
+            is AHostNamesItsOriginInItsOwnTermsState.Running -> onExitOfRunning()
+        }
+    }
+
+
+    private fun onExitOfDone() {
+                // SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:41 :: done :: _state_body
+    }
+
+    private fun onExitOfRunning() {
+                // SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:32 :: running :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(AHostNamesItsOriginInItsOwnTermsState.Running)
+                // W3C SCXML 6.4: the host's invocation ends with the state
+                // that started it. Unconditional here: the engine knows
+                // whether this one ever started and stays silent when it did
+                // not, so the emitted chain needs no bookkeeping of its own.
+                cancelHostInvoke("x-sce-host", "job")
+    }
+
+
+
+    // Transition Content (W3C SCXML 3.13)
+    // SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:25 :: _machine
+    override fun executeTransitionContent(source: AHostNamesItsOriginInItsOwnTermsState, transitionIndex: Int) {
+        when (source) {
+            is AHostNamesItsOriginInItsOwnTermsState.Running -> transitionContentOfRunning(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `running`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfRunning(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfRunningAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfRunningAt0() {
+                // SCE-MAP: a_host_names_its_origin_in_its_own_terms.scxml:34 :: running :: _transition_0
+
+
+            var ifCondFailed1 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("((_event.origin == \"motor\") and (_event.origintype == \"x-sce-host\"))", "_event.origin === 'motor' && _event.origintype === 'x-sce-host'")) { ifCondFailed1 = true }) {
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("hostNamed", "hostNamed"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return
+            }
+            }
+            if (ifCondFailed1) {
+                return
+            }
+    }
+}

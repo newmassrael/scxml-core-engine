@@ -229,6 +229,17 @@ public final class StaticChildHostPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -442,7 +453,7 @@ public final class StaticChildHostPolicy: InvocablePolicy {
     /// Starts the session of `<invoke>` `worker` (W3C SCXML 6.4).
     private func sceStartInvokeWorker(_ pending: PendingInvoke<StaticChildHostState>, engine: Engine<StaticChildHostPolicy>) {
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticChildHostSceSynthInvokeWorkerPolicy(actions: self.actions.actionsForWorker())
@@ -452,7 +463,7 @@ public final class StaticChildHostPolicy: InvocablePolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["worker"] = ChildSession(
@@ -553,7 +564,7 @@ public final class StaticChildHostPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("worker".utf8) {
             if let child = sceInvokeChildWorker, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -594,7 +605,7 @@ public final class StaticChildHostPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["worker"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildWorker {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -890,7 +901,7 @@ extension StaticChildHostPolicy: SavedPolicy {
                 }
                 switch child.id {
                 case "worker":
-                    resume.append(try sceJudgeSavedChildWorker(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildWorker(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 default:
                     break
                 }
@@ -929,7 +940,8 @@ extension StaticChildHostPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildWorker(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticChildHostPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticChildHostPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         guard child.document == "static_child_host__sce_synth_invoke__worker" else {
             throw StateRefusal("invokes[\(index)] is of '\(child.document)', which 'worker' does not start")
@@ -938,7 +950,7 @@ extension StaticChildHostPolicy: SavedPolicy {
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: parentSessionID)
         )
         let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
         return { [self] in

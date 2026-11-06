@@ -1013,7 +1013,7 @@ class PresencePeerStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_3", sendDelayMs, PresencePeerEvent.Presence.Expire, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
+            scheduleSend("__send_3", sendDelayMs, PresencePeerEvent.Presence.Expire, EventMetadata.sentBy(sessionId, sendId = "__send_3", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

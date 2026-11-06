@@ -538,7 +538,7 @@ class StaticSchemaPendingStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("later", 1000L, StaticSchemaPendingEvent.Signal.Raised, EventMetadata.external(sendId = "later", origin = sessionId, data = sendData))
+            scheduleSend("later", 1000L, StaticSchemaPendingEvent.Signal.Raised, EventMetadata.sentBy(sessionId, sendId = "later", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

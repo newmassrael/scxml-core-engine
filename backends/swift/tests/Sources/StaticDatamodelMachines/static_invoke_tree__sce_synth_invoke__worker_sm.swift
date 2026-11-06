@@ -277,6 +277,17 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
         parentEventQueue != nil
     }
 
+    /// Whether `sessionID` names the session that invoked this one (W3C SCXML C.1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090). The queue the parent installed knows who installed it.
+    public func isParentSession(_ sessionID: String) -> Bool {
+        guard let parentEventQueue, !sessionID.isEmpty else {
+            return false
+        }
+        return parentEventQueue.parentSessionID.utf8.elementsEqual(sessionID.utf8)
+    }
+
     // ======================================================================
     // StatePolicy implementation
     // ======================================================================
@@ -531,7 +542,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -554,7 +565,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -664,7 +675,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
     public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
         if invokeID.utf8.elementsEqual("_invoke_0".utf8) {
             if let child = sceInvokeChildInvoke0, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -705,7 +716,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
         }
         if let session = activeInvokes["_invoke_0"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChildInvoke0 {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
         return false
@@ -896,7 +907,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                         delay: Duration.milliseconds(5000),
                         sendID: "report",
                         eventData: sendEventData,
-                        origin: self.sessionID,
+                        sender: self.sessionID,
                         route: ScheduledRoute(kind: .parent, eventName: "report")
                     )
                 }
@@ -1215,7 +1226,7 @@ extension StaticInvokeTreeSceSynthInvokeWorkerPolicy: SavedPolicy {
                 }
                 switch child.id {
                 case "_invoke_0":
-                    resume.append(try sceJudgeSavedChildInvoke0(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChildInvoke0(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
                 default:
                     break
                 }
@@ -1254,7 +1265,8 @@ extension StaticInvokeTreeSceSynthInvokeWorkerPolicy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChildInvoke0(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<StaticInvokeTreeSceSynthInvokeWorkerPolicy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<StaticInvokeTreeSceSynthInvokeWorkerPolicy>, wallNowMs: Int64
     ) throws -> () -> Void {
         // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.
         switch child.document {
@@ -1263,7 +1275,7 @@ extension StaticInvokeTreeSceSynthInvokeWorkerPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in
@@ -1288,7 +1300,7 @@ extension StaticInvokeTreeSceSynthInvokeWorkerPolicy: SavedPolicy {
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: parentSessionID)
             )
             let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
             return { [self] in

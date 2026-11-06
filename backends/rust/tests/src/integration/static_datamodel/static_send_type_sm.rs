@@ -514,6 +514,10 @@ pub struct StaticSendTypePolicy {
     pub invoke_id: String,
     // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
+    // W3C SCXML C.1: the id of the session that invoked this one, whose
+    // published location reaches it as `#_parent` does (docs/adr/0090);
+    // empty for a session its host started.
+    pub parent_session_id: String,
 }
 
 impl StaticSendTypePolicy {
@@ -532,6 +536,7 @@ impl StaticSendTypePolicy {
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
+            parent_session_id: String::new(),
         }
     }
 
@@ -925,8 +930,9 @@ impl StatePolicy for StaticSendTypePolicy {
                                 let mut meta = sce_rust_runtime::EventWithMetadata::new(
                                     StaticSendTypeEvent::Landed,
                                 );
-                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                // W3C SCXML 5.10.1 + C.1: External send — the sendid, and the pair the
+                                // SCXML processor writes for this session's send (docs/adr/0090)
+                                meta.metadata = sce_rust_runtime::EventMetadata::sent_by_session(
                                     send_id,
                                     self.session_id.as_deref().unwrap_or(""),
                                 );
@@ -1096,6 +1102,15 @@ impl StatePolicy for StaticSendTypePolicy {
     // invoking parent installs is the link to it.
     fn has_parent_session(&self) -> bool {
         self.parent_external_queue.is_some()
+    }
+
+    // W3C SCXML C.1: whether `session_id` names the session that invoked this
+    // one — the location it publishes is a target, so a reply sent to the
+    // origin of an event the parent sent reaches it (docs/adr/0090).
+    fn is_parent_session(&self, session_id: &str) -> bool {
+        self.parent_external_queue.is_some()
+            && !session_id.is_empty()
+            && self.parent_session_id == session_id
     }
 
     // docs/adr/0045: this session's own id, as a saved state holds it.

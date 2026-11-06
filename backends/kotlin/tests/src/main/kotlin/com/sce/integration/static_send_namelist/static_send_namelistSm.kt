@@ -568,7 +568,7 @@ class StaticSendNamelistStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticSendNamelistEvent.View.Shown, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
+            send(StaticSendNamelistEvent.View.Shown, EventMetadata.sentBy(sessionId, sendId = "__send_0", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -595,7 +595,7 @@ class StaticSendNamelistStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticSendNamelistEvent.View.Shown, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
+            send(StaticSendNamelistEvent.View.Shown, EventMetadata.sentBy(sessionId, sendId = "__send_1", data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

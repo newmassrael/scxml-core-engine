@@ -391,7 +391,7 @@ class StaticTimersStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("timer", 5000L, StaticTimersEvent.Timeout, EventMetadata.external(sendId = "timer", origin = sessionId, data = sendData))
+            scheduleSend("timer", 5000L, StaticTimersEvent.Timeout, EventMetadata.sentBy(sessionId, sendId = "timer", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -403,7 +403,7 @@ class StaticTimersStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", 2000L, StaticTimersEvent.Beat, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
+            scheduleSend("__send_0", 2000L, StaticTimersEvent.Beat, EventMetadata.sentBy(sessionId, sendId = "__send_0", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -415,7 +415,7 @@ class StaticTimersStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", 2000L, StaticTimersEvent.Echo, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
+            scheduleSend("__send_1", 2000L, StaticTimersEvent.Echo, EventMetadata.sentBy(sessionId, sendId = "__send_1", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
