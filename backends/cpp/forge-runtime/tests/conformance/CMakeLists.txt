@@ -260,7 +260,7 @@ add_test(NAME numerical_conformance COMMAND numerical_conformance_test)
 # at C++17, the standard the interface is for (docs/adr/0059 section 3), and
 # under the same blanket -Werror: which types are sources is asserted at compile
 # time, and that each writes the generated value's bytes at run time. It reads
-# two of the headers the harness's generation writes.
+# headers the harness's generation writes, so each codec it uses is a fixture.
 add_executable(codec_source_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/codec_source_generated_test.cpp")
 add_dependencies(codec_source_generated_test generate_forge_fixtures_cpp)
 set_target_properties(codec_source_generated_test PROPERTIES CXX_STANDARD 17)

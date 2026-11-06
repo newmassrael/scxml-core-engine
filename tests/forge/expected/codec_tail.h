@@ -159,6 +159,7 @@ struct CodecTail {
             /*status=*/status,
             /*payload=*/*_b_payload,
         };
+        // A tail field runs to the end of the frame, so the frame is consumed whole.
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return _decoded;
     }

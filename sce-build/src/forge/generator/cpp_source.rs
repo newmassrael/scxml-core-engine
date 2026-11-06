@@ -92,15 +92,13 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             Value::Text(_) => {}
             // A body is encoded over a source of its codec, which a codec the
             // printer prints has; it is written whole, every input it takes
-            // handed by what the parent binds to it.
+            // handed by what the parent binds to it. One a gate decides is
+            // presented as an optional value and written where it is present.
             Value::Body { codec } => {
                 if !held_printed(imports, codec) {
                     forms.push(format!(
                         "`{id}`, a body of a codec the printer does not print"
                     ));
-                }
-                if element.presence == Presence::Gated {
-                    forms.push(format!("`{id}`, a body a gate decides"));
                 }
                 if plan
                     .handed
@@ -166,10 +164,19 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // says (docs/adr/0065 §6 R4a) is read off it: off the field gated on it
     // alone, or off the body always there that says it in every value; one a
     // group, a variant or a list says is not yet.
+    let gated = |id: &str| {
+        plan.elements
+            .iter()
+            .any(|e| e.field.id == id && e.presence == Presence::Gated)
+    };
     for said in &plan.said {
         let name = &said.input.name;
         match &plan.roles.inputs[name] {
             InputSource::Gate { .. } => {}
+            // A body a gate leaves out says nothing of the input it forwards.
+            InputSource::Forward { embed, .. } if gated(embed) => {
+                forms.push(format!("`{name}`, a flag input a body a gate decides says"))
+            }
             InputSource::Forward { partly: false, .. } => {}
             InputSource::Forward { partly: true, .. } => forms.push(format!(
                 "`{name}`, a flag input a body says in some of its values only"
@@ -207,11 +214,7 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             .filter(|f| f.quantity.is_some())
             .map(|field| format!("`{}`, a physical quantity", field.id)),
     );
-    let gated_element = |f: &CodecField| {
-        plan.elements
-            .iter()
-            .any(|e| e.field.id == f.id && e.presence == Presence::Gated)
-    };
+    let gated_element = |f: &CodecField| gated(&f.id);
     for write in &plan.program {
         match write {
             // A fixed layout has no field a gate decides; were one there, its
@@ -494,7 +497,12 @@ fn said_input(plan: &EncodePlan<'_>, elements: &[Presented<'_>], input: &str, at
         InputSource::Gate { field, when_clear } => {
             let e = element(field);
             let present = match at {
-                Read::Encode => format!("_e_{}.has_value()", e.name),
+                Read::Encode => format!("{}.has_value()", e.local()),
+                // A body is presented as an optional source of its codec,
+                // which is tested as it is.
+                Read::Source if e.body.is_some() => {
+                    format!("source::{}(src).has_value()", e.name)
+                }
                 Read::Source => format!(
                     "static_cast<{}>(source::{}(src)).has_value()",
                     e.presented(),
@@ -691,6 +699,34 @@ impl<'p> Presented<'p> {
         self.bytes || self.optional
     }
 
+    /// The local the encode holds it in once read: a body or a list as the
+    /// source presents it (`_r_<name>`), anything else as what it is presented
+    /// as (`_e_<name>`). For an optional element it is what is tested present.
+    fn local(&self) -> String {
+        if self.body.is_some() || self.list.is_some() {
+            format!("_r_{}", self.name)
+        } else {
+            format!("_e_{}", self.name)
+        }
+    }
+
+    /// The trait, of the codec's namespace, that says whether what a source
+    /// presents for a body a gate decides is a `std::optional` of a source of
+    /// the body's codec; `None` for an element that is no such body.
+    fn body_trait(&self) -> Option<String> {
+        let held = self.body.as_ref().filter(|_| self.optional)?;
+        Some(format!(
+            "/// Whether `R` is what a source may present for `{name}`, a body a gate\n\
+             /// decides: a `std::optional` of a source of the body's codec.\n\
+             template <class R>\n\
+             struct is_{name}_body : std::false_type {{}};\n\
+             template <class B>\n\
+             struct is_{name}_body<std::optional<B>> : {ns}::is_source<B> {{}};\n\n",
+            name = self.name,
+            ns = held.namespace
+        ))
+    }
+
     fn of(
         element: &crate::forge::encode_plan::Element<'p>,
         l: &LangCtx,
@@ -811,6 +847,7 @@ impl<'p> Presented<'p> {
     fn source_requirement(&self) -> String {
         let read = format!("decltype(source::{}(std::declval<const S&>()))", self.name);
         match (&self.body, &self.list) {
+            (Some(_), _) if self.optional => format!("is_{}_body<std::decay_t<{read}>>", self.name),
             (Some(held), _) => format!("{}::is_source<std::decay_t<{read}>>", held.namespace),
             (None, Some(_)) => format!("is_{}_list<std::decay_t<{read}>>", self.name),
             (None, None) => format!("std::is_convertible<{read}, {}>", self.presented()),
@@ -823,6 +860,11 @@ impl<'p> Presented<'p> {
     fn nothrow_requirement(&self) -> String {
         let read = format!("source::{}(std::declval<const S&>())", self.name);
         match (&self.body, &self.list) {
+            // An optional body's value is read as a source of the body's codec.
+            (Some(held), _) if self.optional => format!(
+                "noexcept({read}) && {}::is_nothrow_source<typename std::decay_t<decltype({read})>::value_type>::value",
+                held.namespace
+            ),
             (Some(held), _) => format!(
                 "noexcept({read}) && {}::is_nothrow_source<std::decay_t<decltype({read})>>::value",
                 held.namespace
@@ -895,7 +937,10 @@ pub(super) fn render(
     before.push_str("}  // namespace source\n\n");
 
     let names: Vec<&str> = readers.clone();
-    for trait_text in elements.iter().filter_map(Presented::list_trait) {
+    for trait_text in elements
+        .iter()
+        .filter_map(|e| e.list_trait().or_else(|| e.body_trait()))
+    {
         before.push_str(&trait_text);
     }
     if let Some(variant) = &variant {
@@ -1056,11 +1101,15 @@ pub(super) fn render(
             (ElementId::Flag { field, flag }, Derive::Presence(presence)) => {
                 let (gated, when_clear) =
                     presence.of.first().expect("a presence flag gates a field");
-                let name = l.codec_field_id(&gated.id);
+                let local = elements
+                    .iter()
+                    .find(|e| e.field.id == gated.id)
+                    .expect("a presence flag gates an element the value presents")
+                    .local();
                 let test = if *when_clear {
-                    format!("!_e_{name}.has_value()")
+                    format!("!{local}.has_value()")
                 } else {
-                    format!("_e_{name}.has_value()")
+                    format!("{local}.has_value()")
                 };
                 folds.entry(field.as_str()).or_default().push(Fold {
                     flag: flag.clone(),
@@ -1369,16 +1418,29 @@ pub(super) fn render(
         let Measured::Encoded { body, .. } = &measure.of else {
             unreachable!("only an encoded length is counted here");
         };
-        let held = element(body)
-            .and_then(|e| e.body.as_ref())
+        let measured = element(body).expect("an encoded length measures a body the value presents");
+        let held = measured
+            .body
+            .as_ref()
             .expect("an encoded length measures a body the value presents");
         let name = l.codec_field_id(&body.id);
-        before.push_str(&format!(
-            "        ::SCE::Forge::CountingSink _k_{name};\n\
-             \x20       (void){}::Wire::encode_source(_r_{name}, _k_{name}{});\n",
+        // A body a gate leaves out encodes to nothing, so the count stays zero.
+        let count = format!(
+            "(void){}::Wire::encode_source({}, _k_{name}{});",
             held.namespace,
+            if measured.optional {
+                format!("*_r_{name}")
+            } else {
+                format!("_r_{name}")
+            },
             handed(&held.alias)
-        ));
+        );
+        before.push_str(&format!("        ::SCE::Forge::CountingSink _k_{name};\n"));
+        before.push_str(&if measured.optional {
+            format!("        if (_r_{name}) {{\n            {count}\n        }}\n")
+        } else {
+            format!("        {count}\n")
+        });
         match (element_id, &number.into) {
             (ElementId::Field(_), NumberInto::Field { field, .. }) => {
                 let ty = l.type_name(&field.sce_type);
@@ -1438,14 +1500,24 @@ pub(super) fn render(
                 let body = match &field.bit_size {
                     // A body, written by its codec's encode over the source the
                     // value read it as, with the inputs that codec is handed.
+                    // One a gate decides is written where it is present, as the
+                    // source it holds then.
                     BitSize::Embed => {
-                        let held = element(field)
-                            .and_then(|e| e.body.as_ref())
+                        let embedded = element(field)
                             .expect("an embedded field is a body the value presents");
+                        let held = embedded
+                            .body
+                            .as_ref()
+                            .expect("an embedded field is a body the value presents");
+                        let name = l.codec_field_id(&field.id);
+                        let read = if embedded.optional {
+                            format!("*_r_{name}")
+                        } else {
+                            format!("_r_{name}")
+                        };
                         format!(
-                            "        if (auto _e = {}::Wire::encode_source(_r_{}, w{}); _e) return _e;\n",
+                            "        if (auto _e = {}::Wire::encode_source({read}, w{}); _e) return _e;\n",
                             held.namespace,
-                            l.codec_field_id(&field.id),
                             handed(&held.alias)
                         )
                     }
@@ -1493,7 +1565,12 @@ pub(super) fn render(
                 before.push_str(&match guard {
                     Guard::Always => body,
                     // Where the value holds it.
-                    Guard::Present => guarded(format!("_e_{}", l.codec_field_id(&field.id)), body),
+                    Guard::Present => guarded(
+                        element(field)
+                            .expect("a field written where the value holds it is an element")
+                            .local(),
+                        body,
+                    ),
                     // Derived whole and gated: where its gate holds, as the
                     // carriers the encode writes say.
                     Guard::Gate => guarded(gate_test(field), body),
@@ -1595,12 +1672,18 @@ pub(super) fn render(
     for e in &elements {
         let name = &e.name;
         let held = member(name);
-        // A body is presented by reference: the value holds it whole.
+        // A body is presented by reference: the value holds it whole, as an
+        // optional value where a gate decides it.
         if e.body.is_some() {
+            let what = if e.optional {
+                "the body it holds where a gate leaves it in"
+            } else {
+                "the body it holds"
+            };
             members.push_str(&format!(
-                "    /// The `{name}` element, the body it holds.\n\
+                "    /// The `{name}` element, {what}.\n\
                  \x20   [[nodiscard]] const {}& {name}() const noexcept {{ return {held}; }}\n",
-                e.view
+                e.holds()
             ));
             continue;
         }

@@ -232,19 +232,19 @@ struct CodecZenohDeclaration {
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclSubscriber::CodecZenohUndeclSubscriber>(&body)) {
-            if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 7) & 0x1)); _e) return _e;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclQueryable::CodecZenohDeclQueryable>(&body)) {
             if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 5) & 0x1), static_cast<std::uint8_t>((this->header >> 7) & 0x1)); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable>(&body)) {
-            if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 7) & 0x1)); _e) return _e;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclToken::CodecZenohDeclToken>(&body)) {
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclToken::CodecZenohUndeclToken>(&body)) {
-            if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 7) & 0x1)); _e) return _e;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal>(&body)) {
             if (auto _e = _p->encode(w); _e) return _e;

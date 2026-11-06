@@ -453,6 +453,15 @@ old encode, the old encode and its templates are removed in the same landing.
    after every derived flag. A chain walks its entries setting on each but the last the flag they end on. The
    printed set is 81 codecs. A list of no stated bound and a list a gate decides wait for their own landing, which
    the extension chains of the Zenoh messages need.
+
+   *The tenth C++ landing, 2026-11-06:* a body a gate decides. The value holds it as a `std::optional` of the body's
+   value; a source presents it as a `std::optional` of any source of the body's codec (the trait
+   `is_<element>_body`), from which the encode derives the flag it is gated on and writes it where it is present.
+   A flag input such a body forwards still waits, since an absent body says nothing of it. The printed set is 86
+   codecs. Two defects of a template parent of a printed codec were found and closed with it: a C++ broadcast log
+   handed its element's encode the flags the element says, and a C++ decode of a codec whose last field is a
+   length-ref consumed the rest of the cursor, so that a codec holding it as a body could not decode on after it
+   (the Rust decode already consumed only what it read).
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

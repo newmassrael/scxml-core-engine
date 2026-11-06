@@ -1247,6 +1247,20 @@ entries are printed and end on a flag the chain sets (1 more codec of the resour
 - A printed codec a parent may set a flag of has `<Codec namespace>::Overrides`, and its `Wire::encode_source`
   takes one last (empty by default). Pass one to set that flag yourself where you write the codec as an entry by hand.
 
+## A printed C++ codec holds a body a gate decides as an optional value (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose
+bodies a gate decides (5 more codecs of the resources, 86 in all, the three undeclarations among them).
+
+- The body is `value.<element>()`, a `const std::optional<Body>&`, where it was the member `value.<element>`. The
+  value is made by its constructor with `std::nullopt` or the body.
+- The flag the body is gated on is derived from whether it is there: a parent that set it by hand drops that code.
+  A printed undeclaration's `encode` no longer takes `Z`.
+- A source presents the body as a `std::optional` of any source of the body's codec.
+- A C++ decode of a codec whose last field is a length-ref, with no tail field, consumes the bytes it read and no
+  more, as the Rust decode does. A caller that decoded such a codec from a cursor holding more bytes after it and
+  relied on the cursor being consumed reads `cursor.remaining()` instead.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

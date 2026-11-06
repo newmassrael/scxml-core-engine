@@ -138,7 +138,14 @@ struct CodecLengthRef {
             /*msgId=*/msgId,
             /*payload=*/*_b_payload,
         };
-        if (!cursor.advance(_frame_len)) return std::nullopt;
+        // The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode does): the
+        // end of the last length-ref field, at least the fixed fields' bytes, so that a
+        // codec holding this one as a body, an entry or an arm decodes on after it.
+        std::size_t _consumed = 2;
+        if (static_cast<std::size_t>(2 + len) > _consumed) {
+            _consumed = static_cast<std::size_t>(2 + len);
+        }
+        if (!cursor.advance(_consumed)) return std::nullopt;
         return _decoded;
     }
 

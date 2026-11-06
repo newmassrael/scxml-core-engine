@@ -30,6 +30,7 @@
 #include "codec_length_ref.h"
 #include "codec_length_ref_dotted_basic.h"
 #include "codec_little_endian.h"
+#include "codec_origin_envelope.h"
 #include "codec_present_if_basic.h"
 #include "codec_repeat_basic.h"
 #include "codec_simple_frame.h"
@@ -681,6 +682,104 @@ void a_chain_sets_the_flag_its_entries_end_on() {
           "a flag a parent sets replaces the one the entry presents");
 }
 
+namespace Envelope = ::SCE::Generated::CodecOriginEnvelope;
+using Leaf = ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf;
+using Note = decltype(std::declval<const Envelope::CodecOriginEnvelope &>().note());
+using Leaves = decltype(std::declval<const Envelope::CodecOriginEnvelope &>().items());
+
+// A holder of the consumer's own whose optional body is the generated body's
+// value where it is there; the header it presents claims the body is there,
+// which the encode does not believe.
+struct Holder {
+    bool there;
+    std::vector<Leaf> leaves;
+
+    [[nodiscard]] std::uint8_t hdr() const noexcept {
+        return 0x01;
+    }
+
+    [[nodiscard]] Note note() const noexcept {
+        return *Note::make(std::string_view());
+    }
+
+    [[nodiscard]] Leaf required() const {
+        return Leaf{};
+    }
+
+    [[nodiscard]] std::optional<Leaf> optional() const {
+        return there ? std::optional<Leaf>{Leaf{}} : std::nullopt;
+    }
+
+    [[nodiscard]] Leaves items() const {
+        return *Leaves::make(leaves);
+    }
+};
+
+// The same holder presenting the body as always there: no source of a codec
+// whose body a gate decides.
+struct HolderWithoutGate {
+    std::vector<Leaf> leaves;
+
+    [[nodiscard]] std::uint8_t hdr() const noexcept {
+        return 0;
+    }
+
+    [[nodiscard]] Note note() const noexcept {
+        return *Note::make(std::string_view());
+    }
+
+    [[nodiscard]] Leaf required() const {
+        return Leaf{};
+    }
+
+    [[nodiscard]] Leaf optional() const {
+        return Leaf{};
+    }
+
+    [[nodiscard]] Leaves items() const {
+        return *Leaves::make(leaves);
+    }
+};
+
+static_assert(Envelope::is_source<Holder>::value,
+              "a holder presenting a gated body as an optional source of its codec is a source");
+static_assert(!Envelope::is_source<HolderWithoutGate>::value,
+              "a holder presenting a gated body as always there is no source");
+
+void a_body_a_gate_decides_is_written_where_it_is_present() {
+    // The header's bit 0 says the optional body is there; the note's length and
+    // its no bytes follow, the count of the list, then the required body, the
+    // optional one where present, and the list. An empty leaf is its length of
+    // no bytes, one zero byte.
+    const std::vector<std::uint8_t> with{0x01, 0x00, 0x00, 0x00, 0x00};
+    const std::vector<std::uint8_t> without{0x00, 0x00, 0x00, 0x00};
+    const std::vector<Leaf> none;
+    const Note empty = *Note::make(std::string_view());
+    const Envelope::CodecOriginEnvelope present{0x00, empty, Leaf{}, Leaf{}, *Leaves::make(none)};
+    const Envelope::CodecOriginEnvelope absent{0x01, empty, Leaf{}, std::nullopt, *Leaves::make(none)};
+    CHECK(present.encode_to_vec() == with, "a present body is written and its flag set");
+    CHECK(absent.encode_to_vec() == without, "an absent body is not written and its flag cleared");
+
+    ::SCE::Forge::SceCursor cursor(with.data(), with.size());
+    const auto decoded = Envelope::CodecOriginEnvelope::decode(cursor);
+    CHECK(decoded.has_value() && decoded->optional().has_value(), "a decoded value holds the body it read");
+    ::SCE::Forge::SceCursor absent_cursor(without.data(), without.size());
+    const auto decoded_absent = Envelope::CodecOriginEnvelope::decode(absent_cursor);
+    CHECK(decoded_absent.has_value() && !decoded_absent->optional().has_value(),
+          "a decoded value holds no body it did not read");
+
+    const Holder holds_none{false, {}};
+    const Holder holds_one{true, {}};
+    std::vector<std::uint8_t> out_none;
+    ::SCE::Forge::VectorSink sink_none(out_none);
+    CHECK(!Envelope::Wire::encode_source(holds_none, sink_none).has_value() && out_none == without,
+          "the flag is derived from the optional the source presents, not from its header");
+    std::vector<std::uint8_t> out_one;
+    ::SCE::Forge::VectorSink sink_one(out_one);
+    CHECK(!Envelope::Wire::encode_source(holds_one, sink_one).has_value() && out_one == with,
+          "a body the source presents is written over the source it holds");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -704,6 +803,7 @@ int main() {
     a_list_is_written_entry_by_entry_and_its_count_derived();
     a_variant_derives_its_tag_from_the_arm_it_holds();
     a_chain_sets_the_flag_its_entries_end_on();
+    a_body_a_gate_decides_is_written_where_it_is_present();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);
