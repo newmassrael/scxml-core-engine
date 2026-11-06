@@ -20,6 +20,7 @@
 
 package com.sce.ecmascript
 
+import com.sce.runtime.ScriptSource
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
 import com.sce.scripting.RhinoScriptEngine
@@ -97,7 +98,11 @@ class EventBlankFieldsTest {
 
         table.cases.forEachIndexed { index, case ->
             val sessionId = "event_blank_field_$index"
+            // The Lua engine takes Lua through the language seam, as a generated machine hands it
+            // what the build-time frontend lowered; a bare string is the author's ECMAScript, which
+            // the frontend refuses when it is spelled in Lua (`== nil`, `and`).
             val source = if (lowered) case.lua else case.source
+            val script = if (lowered) ScriptSource.lua(case.lua, case.source) else ScriptSource.ecmascript(case.source)
             engine.createSession(sessionId)
             try {
                 engine.setupSystemVariables(sessionId, "event_blank_field")
@@ -105,7 +110,7 @@ class EventBlankFieldsTest {
                 asked++
                 val answered =
                     try {
-                        engine.evaluateExpr(sessionId, source)
+                        engine.evaluateExpr(sessionId, script)
                     } catch (failure: Exception) {
                         failures += "case $index: [$source] failed to evaluate: " +
                             "${failure.message} (${case.clause})"
