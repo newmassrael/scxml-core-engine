@@ -4147,9 +4147,9 @@ mod tests {
     }
 
     /// docs/adr/0090, section 7: the SCXML location prefix alone names no
-    /// session. A format-2 act that stored it is refused, since an act is a
-    /// session's send; a queued event that stored it is read as the pair as
-    /// saved, with no sender.
+    /// session. A format-1 or format-2 act that stored it is refused, since an
+    /// act is a session's send; a queued event that stored it is read as the
+    /// pair as saved, with no sender.
     #[test]
     fn a_format_2_origin_of_the_scxml_prefix_alone_names_no_session() {
         let format2 = |pending: &str, external: &str| {
@@ -4178,6 +4178,16 @@ mod tests {
                 "{act}"
             );
         }
+        // The same in format 1, whose one session's act is `raise`.
+        let refusal = SavedState::from_json(&with_pending(
+            r#"{"due":"1","act":"raise","event":"e","data":"","sendid":"","origin":"sce://scxml/"}"#,
+        ))
+        .expect_err("a format-1 raise act");
+        assert_eq!(
+            refusal.reason(),
+            "'pending[0].origin' is 'sce://scxml/', which names no session: a raise act is \
+             the send of a session"
+        );
         let state = SavedState::from_json(&format2(
             "",
             r#"{"name":"go","data":"","type":"external","sendid":"","origin":"sce://scxml/","origintype":"","invokeid":"","hostinvoketoken":null}"#,
