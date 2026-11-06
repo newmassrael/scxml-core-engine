@@ -664,7 +664,7 @@ class StaticDatamodelTest {
     private fun format1Fixture(machine: String): String =
         File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/format1/$machine.json").readText().trim()
 
-    /** The id the shared format-2 fixtures give their root. */
+    /** The id the shared fixtures give their root. */
     private val ROOT = "fixture-root"
 
     // Found by walking up rather than by a fixed depth, because Gradle's
@@ -881,7 +881,7 @@ class StaticDatamodelTest {
 
     /**
      * [text] restored into a machine given the root's id, so a format-1 text, which
-     * holds no id, saves again as the shared format-2 text does.
+     * holds no id, saves again as the shared text does.
      */
     private fun <T> withRevised(text: String, body: (StaticSchemaRevisionStateMachine) -> T): T {
         val sm = StaticSchemaRevisionStateMachine(sessionId = ROOT)
@@ -1779,7 +1779,7 @@ class StaticDatamodelTest {
 
     @Test
     fun aValueThatMayBeAbsentIsSavedAsNullOrAsItsPresentValue() {
-        // The same run the Rust suite makes, which writes the format-2 text.
+        // The same run the Rust suite makes, which writes the shared text.
         val sm = optionalRun()
         try {
             assertEquals(null, sm.due)

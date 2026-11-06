@@ -70,7 +70,7 @@ class AGeneratedMachinesWaitingHostSendSurvivesARestoreTest {
     }
 
     private fun machine(): StatechartStaticDelayedHostSendStateMachine {
-        // The id the shared format-2 fixtures give their root.
+        // The id the shared fixtures give their root.
         val sm = StatechartStaticDelayedHostSendStateMachine(sessionId = "fixture-root")
         sm.clock = ManualClock(0)
         return sm

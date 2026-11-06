@@ -61,7 +61,7 @@ class ASavedMeshRequestIsNotSentAgainAfterARestoreTest {
     }
 
     private fun machine(): StatechartStaticMeshRequestStateMachine {
-        // The id the shared format-2 fixtures give their root.
+        // The id the shared fixtures give their root.
         val sm = StatechartStaticMeshRequestStateMachine(sessionId = "fixture-root")
         sm.clock = ManualClock(0)
         return sm

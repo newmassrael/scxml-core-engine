@@ -42,7 +42,7 @@ import kotlin.test.assertTrue
 
 class ASavedTreeHoldsEverySessionWhereItStoodTest {
 
-    /** The session id the shared format-2 fixtures give their root. */
+    /** The session id the shared fixtures give their root. */
     private val root = "fixture-root"
 
     /** The wall-clock moment the tree is saved at. */
