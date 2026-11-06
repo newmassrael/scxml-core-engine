@@ -31,6 +31,8 @@
 
 #pragma once
 
+#include "common/IOProcessorHelper.h"
+#include "core/EventOrigin.h"
 #include "saved/SavedJson.h"
 #include "saved/SessionId.h"
 
@@ -50,15 +52,19 @@ namespace SCE::Saved {
 
 /// A state that names its running children by id alone.
 inline constexpr int kSavedFormat1 = 1;
-/// A tree of sessions, each running child saved inside its parent (docs/adr/0045).
+/// A tree of sessions, each running child saved inside its parent (docs/adr/0045), with an
+/// event's origin stored as two texts.
 inline constexpr int kSavedFormat2 = 2;
-/// The newest format version this runtime writes; it reads this one and format 1.
-inline constexpr int kSavedFormat = kSavedFormat2;
+/// Format 2's tree with an event's origin held as one pair and the sending session's id
+/// beside it (docs/adr/0090, section 7).
+inline constexpr int kSavedFormat3 = 3;
+/// The newest format version this runtime writes; it reads this one and formats 1 and 2.
+inline constexpr int kSavedFormat = kSavedFormat3;
 
 /// The stability status of the saved-state wire surface, held in lockstep with
-/// `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json` and
-/// `schemas/sce-saved-state.v2.schema.json` (SCE_WIRE_CONTRACTS.md). A flip to "stable"
-/// changes all three in one commit.
+/// `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`,
+/// `schemas/sce-saved-state.v2.schema.json` and `schemas/sce-saved-state.v3.schema.json`
+/// (SCE_WIRE_CONTRACTS.md). A flip to "stable" changes all four in one commit.
 inline constexpr const char *kSavedSchemaStatus = "pre-release";
 
 /// Why a saved state cannot be restored, or a machine cannot be saved.
@@ -126,15 +132,15 @@ struct SavedChild {
 };
 
 /// The running child sessions of a saved session, as the format it was written in holds
-/// them. `resumed` is format 2: each running child is saved with its whole state and a
-/// restore resumes it where it stood. In format 1 the text holds the id of each `<invoke>`
-/// whose child is running and nothing of the child, so a restore starts each again from its
-/// beginning.
+/// them. `resumed` is a tree, format 2 or 3: each running child is saved with its whole state
+/// and a restore resumes it where it stood. In format 1 the text holds the id of each
+/// `<invoke>` whose child is running and nothing of the child, so a restore starts each again
+/// from its beginning.
 struct SavedInvokes {
     bool resumed = false;
     /// Format 1's running invocations, by the id the document gives them.
     std::vector<std::string> ids;
-    /// Format 2's running children, in document order.
+    /// A tree's running children, in document order.
     std::vector<SavedChild> children;
 
     /// The id the document gives each running `<invoke>`, in order.
@@ -170,8 +176,13 @@ struct SavedEvent {
     std::string data;
     std::string type;
     std::string sendId;
-    std::string origin;
-    std::string originType;
+    /// `_event.origin` and `_event.origintype` as the one pair the processor that delivered
+    /// the event wrote (docs/adr/0090), nullopt for an event no processor stamped.
+    std::optional<Core::EventOrigin> origin;
+    /// The id of the session that sent the event, set only when the SCXML processor
+    /// delivered it and empty otherwise. When it is set, `origin` is that session's SCXML
+    /// pair (IOProcessorHelper::scxmlOrigin).
+    std::string sender;
     std::string invokeId;
     /// The token a host-run invocation's completion or failure was stamped with when it was
     /// accepted, nullopt for any other event. A completion that was accepted and is still
@@ -236,8 +247,13 @@ struct SavedAct {
     std::string data;
     /// The `<send>`'s id, which a `<cancel>` names.
     std::string sendId;
-    /// `_event.origin`.
-    std::string origin;
+    /// The origin the event a Raise, Parent or Child act delivers will carry: the SCXML pair
+    /// of the session that sent it. An Internal act's event is an internal event, which has
+    /// none, and a Host act holds none (docs/adr/0090, section 7).
+    std::optional<Core::EventOrigin> origin;
+    /// The id of the session that sent a Raise, Parent or Child act, beside its pair; empty
+    /// for any other act.
+    std::string sender;
     /// Names the child a Child act is for, and is `_event.invokeid` of the event a Host act
     /// was sent while processing.
     std::string invokeId;
@@ -338,11 +354,11 @@ struct SavedShape {
     /// that predates revisions knows only the first shape, so it refuses such a state rather
     /// than read it without the fields it does not know.
     std::string revised;
-    /// `first` as a format-2 state names it (docs/adr/0045, section 2): each enum-typed
+    /// `first` as a tree, of format 2 or 3, names it (docs/adr/0045, section 2): each enum-typed
     /// variable and record field spelled by its enum's document rather than by the alias it
     /// is imported under.
     std::string format2First;
-    /// `revised` as a format-2 state names it.
+    /// `revised` as a tree names it.
     std::string format2Revised;
     /// Each record schema a variable is of, by the event it declares, ordered by it.
     std::vector<RecordLineage> records;
@@ -390,7 +406,7 @@ struct SavedState {
     /// is the configuration that turns none on. A restore judges it before the shape
     /// (checkSavedFeatures).
     std::optional<std::vector<std::string>> features;
-    /// The session's own id (`_sessionid`). An XML Nmtoken in format 2; empty in a format-1
+    /// The session's own id (`_sessionid`). An XML Nmtoken in a tree; empty in a format-1
     /// state, which holds none.
     std::string sessionId;
     /// How many times each `<invoke>` of the document has started in this session, for each
@@ -406,18 +422,20 @@ struct SavedState {
         return *value;
     }
 
-    /// The format this state is of: kSavedFormat2 for a tree of sessions, kSavedFormat1 for
-    /// a state that names its running children by id alone.
+    /// The format this state is written in: kSavedFormat for a tree of sessions, kSavedFormat1
+    /// for a state that names its running children by id alone. A tree read from a format-2
+    /// text holds the pairs its origins are read as, and is written as format 3
+    /// (docs/adr/0090, section 7).
     [[nodiscard]] int format() const {
-        return invokes.resumed ? kSavedFormat2 : kSavedFormat1;
+        return invokes.resumed ? kSavedFormat : kSavedFormat1;
     }
 
-    /// The id a restore binds the session to: the saved one, for a format-2 state, since the
-    /// session carries on and every child's id and a peer's address name it (docs/adr/0045);
-    /// nullopt for a format-1 state, which holds none, so the restored machine keeps the id
-    /// it was created with.
+    /// The id a restore binds the session to: the saved one, for a tree, since the session
+    /// carries on and every child's id and a peer's address name it (docs/adr/0045); nullopt
+    /// for a format-1 state, which holds none, so the restored machine keeps the id it was
+    /// created with.
     [[nodiscard]] std::optional<std::string> boundSessionId() const {
-        if (format() == kSavedFormat2) {
+        if (invokes.resumed) {
             return sessionId;
         }
         return std::nullopt;
@@ -438,12 +456,12 @@ struct SavedState {
     /// with its `format`.
     [[nodiscard]] std::string toJson() const;
 
-    /// Reads `sce-saved-state` JSON, of format 1 or 2. The shape is not judged here; the
+    /// Reads `sce-saved-state` JSON, of format 1, 2 or 3. The shape is not judged here; the
     /// machine that restores it knows its own. Throws StateRefusal when the text is not one.
     [[nodiscard]] static SavedState fromJson(std::string_view text);
 
     /// The members of this session, in the order every backend writes them: format 1's, and
-    /// in format 2 `sessionid` after `shape` and `invokestarts` after `invokes`, each running
+    /// in a tree `sessionid` after `shape` and `invokestarts` after `invokes`, each running
     /// child's session written by the same rule.
     [[nodiscard]] JsonObject sessionMembers() const;
 };
@@ -478,7 +496,45 @@ inline JsonValue countText(std::int64_t count) {
     return JsonValue(std::to_string(count));
 }
 
-inline JsonValue sendToJson(const SavedSend &send) {
+/// An origin as format 3 writes it (docs/adr/0090, section 7): the pair, `processor` then
+/// `address`, or `null` for none.
+inline JsonValue originToJson(const std::optional<Core::EventOrigin> &origin) {
+    if (!origin.has_value()) {
+        return JsonValue();
+    }
+    JsonObject pair;
+    pair.set("processor", origin->processor);
+    pair.set("address", origin->address);
+    return JsonValue(std::move(pair));
+}
+
+/// A sender as format 3 writes it: the session's id, or `null` for none.
+inline JsonValue senderToJson(const std::string &sender) {
+    if (sender.empty()) {
+        return JsonValue();
+    }
+    return JsonValue(sender);
+}
+
+/// Writes the members that hold the origin and the sender of a record that carries them. A
+/// tree writes format 3's `origin` and `sender`; a format-1 state writes its `origin` text,
+/// the sender's id for a session's send and the address otherwise
+/// (IOProcessorHelper::storedOriginText), and an event's `origintype` beside it.
+inline void setOriginMembers(JsonObject &members, const std::optional<Core::EventOrigin> &origin,
+                             const std::string &sender, bool tree, bool withType) {
+    if (tree) {
+        members.set("origin", originToJson(origin));
+        members.set("sender", senderToJson(sender));
+        return;
+    }
+    members.set("origin", IOProcessorHelper::storedOriginText(origin, sender));
+    if (withType) {
+        members.set("origintype", Core::originProcessorOf(origin));
+    }
+}
+
+/// The waiting send `send` as the format of a tree (`tree`) or of format 1 writes it.
+inline JsonValue sendToJson(const SavedSend &send, bool tree) {
     JsonObject members;
     members.set("due", countText(send.due));
     const SavedAct &act = send.act;
@@ -486,18 +542,25 @@ inline JsonValue sendToJson(const SavedSend &send) {
     switch (act.kind) {
     case SavedActKind::Parent:
     case SavedActKind::Raise:
+        members.set("event", act.event);
+        members.set("data", act.data);
+        members.set("sendid", act.sendId);
+        setOriginMembers(members, act.origin, act.sender, tree, false);
+        break;
     case SavedActKind::Internal:
         members.set("event", act.event);
         members.set("data", act.data);
         members.set("sendid", act.sendId);
-        members.set("origin", act.origin);
+        // The event an internal act delivers is an internal event, which has no origin
+        // (docs/adr/0090, section 7), so neither member holds one, whatever the act was given.
+        setOriginMembers(members, std::nullopt, std::string(), tree, false);
         break;
     case SavedActKind::Child:
         members.set("invokeid", act.invokeId);
         members.set("event", act.event);
         members.set("data", act.data);
         members.set("sendid", act.sendId);
-        members.set("origin", act.origin);
+        setOriginMembers(members, act.origin, act.sender, tree, false);
         break;
     case SavedActKind::Host:
         members.set("type", act.processorType);
@@ -513,14 +576,14 @@ inline JsonValue sendToJson(const SavedSend &send) {
     return JsonValue(std::move(members));
 }
 
-inline JsonValue eventToJson(const SavedEvent &event) {
+/// The queued event `event` as the format of a tree (`tree`) or of format 1 writes it.
+inline JsonValue eventToJson(const SavedEvent &event, bool tree) {
     JsonObject members;
     members.set("name", event.name);
     members.set("data", event.data);
     members.set("type", event.type);
     members.set("sendid", event.sendId);
-    members.set("origin", event.origin);
-    members.set("origintype", event.originType);
+    setOriginMembers(members, event.origin, event.sender, tree, true);
     members.set("invokeid", event.invokeId);
     members.set("hostinvoketoken", optionalCount(event.hostInvokeToken));
     return JsonValue(std::move(members));
@@ -556,7 +619,7 @@ inline JsonObject SavedState::sessionMembers() const {
     members.set("history", std::move(recorded));
     JsonArray waiting;
     for (const SavedSend &send : pending) {
-        waiting.push_back(detail::sendToJson(send));
+        waiting.push_back(detail::sendToJson(send, invokes.resumed));
     }
     members.set("pending", std::move(waiting));
     if (invokes.resumed) {
@@ -588,7 +651,7 @@ inline JsonObject SavedState::sessionMembers() const {
     members.set("sendseq", detail::countText(autoSendSeq));
     JsonArray queued;
     for (const SavedEvent &event : external) {
-        queued.push_back(detail::eventToJson(event));
+        queued.push_back(detail::eventToJson(event, invokes.resumed));
     }
     members.set("external", std::move(queued));
     // Absent, not empty, when no record schema is past its first revision: the text of such a
@@ -796,7 +859,69 @@ inline SavedRevision savedRevisionFromJson(const std::string &key, const JsonVal
     return SavedRevision{key, static_cast<int>(revision), fields.asString()};
 }
 
-inline SavedEvent savedEventFromJson(const JsonValue &value, const std::string &what) {
+/// The `origin` and the `sender` of `what`, a record of format 3, as they are written
+/// (docs/adr/0090, section 7): neither is derived from the other. `origin` is `null` or a pair
+/// of a `processor` and an `address`, neither empty and with no other member; `sender` is
+/// `null` or a session id. Whether the two agree is the caller's to judge, once it has judged
+/// what kind of record it reads.
+inline StoredOrigin savedOriginPairFromJson(const JsonObject &members, const std::string &what) {
+    StoredOrigin read;
+    const JsonValue *origin = members.get("origin");
+    if (origin == nullptr) {
+        refuse("'" + what + "' has no 'origin'");
+    }
+    if (!origin->isNull()) {
+        const std::string where = what + ".origin";
+        if (!origin->isObject()) {
+            refuse("'" + where + "' is neither null nor a pair of a 'processor' and an 'address'");
+        }
+        const JsonObject &pair = origin->asObject();
+        for (const std::string &key : pair.keys()) {
+            if (key != "processor" && key != "address") {
+                refuse("'" + where + "' holds '" + key + "', and a pair holds a 'processor' and an 'address' alone");
+            }
+        }
+        std::string processor = memberText(pair, where, "processor");
+        if (processor.empty()) {
+            refuse("'" + where + ".processor' is empty");
+        }
+        std::string address = memberText(pair, where, "address");
+        if (address.empty()) {
+            refuse("'" + where + ".address' is empty");
+        }
+        read.origin = Core::EventOrigin(std::move(processor), std::move(address));
+    }
+    const JsonValue *sender = members.get("sender");
+    if (sender == nullptr) {
+        refuse("'" + what + "' has no 'sender'");
+    }
+    if (!sender->isNull()) {
+        if (!sender->isString()) {
+            refuse("'" + what + ".sender' is neither null nor a text");
+        }
+        if (SessionId::refusalOf(sender->asString()).has_value()) {
+            refuse("'" + what + ".sender' (" + sender->asString() + ") is not an XML Nmtoken, which a session id is");
+        }
+        read.sender = sender->asString();
+    }
+    return read;
+}
+
+/// Refuses `what` when it names a sender and its origin is not that session's SCXML pair: only
+/// the SCXML processor sets a sender, and it writes the sender's own location as the address
+/// (docs/adr/0090, section 7).
+inline void checkSenderOrigin(const StoredOrigin &read, const std::string &what) {
+    if (!read.sender.empty() && read.origin != IOProcessorHelper::scxmlOrigin(read.sender)) {
+        refuse("'" + what + "' has the sender '" + read.sender +
+               "', and its origin is not the SCXML pair of that session, whose address is " +
+               IOProcessorHelper::scxmlLocation(read.sender));
+    }
+}
+
+/// The queued event `value`, of a state of `format`. Formats 1 and 2 store the origin as two
+/// texts, which the stored-origin reader reads as the pair and the sender they stood for
+/// (IOProcessorHelper::readStoredOrigin); format 3 holds both as they are.
+inline SavedEvent savedEventFromJson(const JsonValue &value, const std::string &what, int format) {
     const JsonObject &members = memberObject(value, what);
     SavedEvent event;
     // The token is judged first, as every backend judges it.
@@ -805,8 +930,16 @@ inline SavedEvent savedEventFromJson(const JsonValue &value, const std::string &
     event.data = memberText(members, what, "data");
     event.type = memberText(members, what, "type");
     event.sendId = memberText(members, what, "sendid");
-    event.origin = memberText(members, what, "origin");
-    event.originType = memberText(members, what, "origintype");
+    StoredOrigin read;
+    if (format == kSavedFormat3) {
+        read = savedOriginPairFromJson(members, what);
+        checkSenderOrigin(read, what);
+    } else {
+        const std::string origin = memberText(members, what, "origin");
+        read = IOProcessorHelper::readStoredOrigin(origin, memberText(members, what, "origintype"));
+    }
+    event.origin = std::move(read.origin);
+    event.sender = std::move(read.sender);
     event.invokeId = memberText(members, what, "invokeid");
     return event;
 }
@@ -824,18 +957,55 @@ inline SavedHostInvoke savedHostInvokeFromJson(const JsonValue &value, const std
     return host;
 }
 
+/// The origin and the sender of `act`, a waiting send of a state of `format` that is not a
+/// host act, read from `members` (docs/adr/0090, section 7). A raise, parent or child act is
+/// a send of the session that saved it, so it carries that session's SCXML pair and id; an
+/// internal act's event is an internal event, which has no origin, and it carries neither.
+///
+/// Formats 1 and 2 store only `origin`, the sending session's id or its location as one
+/// backend stored it, read as that session's pair with the id as its sender
+/// (IOProcessorHelper::readStoredSender); an internal act's stored origin is not read.
+inline void savedActOriginFromJson(const JsonObject &members, const std::string &what, int format, SavedAct &act) {
+    const bool internal = act.kind == SavedActKind::Internal;
+    if (format != kSavedFormat3) {
+        const std::string stored = memberText(members, what, "origin");
+        if (!internal) {
+            act.sender = IOProcessorHelper::readStoredSender(stored);
+            act.origin = IOProcessorHelper::scxmlOriginOf(act.sender);
+        }
+        return;
+    }
+    StoredOrigin read = savedOriginPairFromJson(members, what);
+    if (internal) {
+        if (read.origin.has_value() || !read.sender.empty()) {
+            refuse("'" + what +
+                   "' is an internal act and holds an origin or a sender, and the internal event it delivers "
+                   "has neither");
+        }
+        return;
+    }
+    if (read.sender.empty()) {
+        refuse("'" + what + "' is a " + savedActName(act.kind) +
+               " act with no sender, and it is a send of the session that saved it");
+    }
+    checkSenderOrigin(read, what);
+    act.origin = std::move(read.origin);
+    act.sender = std::move(read.sender);
+}
+
 /// The waiting send `value`, of a state of `format`; a send to the parent or to a child is an
-/// act of format 2 only.
+/// act of a tree only.
 inline SavedSend savedSendFromJson(const JsonValue &value, const std::string &what, int format) {
     const JsonObject &members = memberObject(value, what);
     SavedSend send;
     send.due = readSavedMoment(memberText(members, what, "due"), what + ".due");
     const std::string name = memberText(members, what, "act");
     SavedAct &act = send.act;
-    // The members each act reads, in the order every backend reads them.
+    // The members each act reads, in the order every backend reads them; a session's act reads
+    // its origin and sender after them.
     std::vector<std::pair<std::string, std::string *>> reads;
     if (name == "parent" || name == "child") {
-        if (format != kSavedFormat2) {
+        if (format == kSavedFormat1) {
             refuse("'" + what + ".act' is '" + name + "', which is not raise, internal or host, the acts of format 1");
         }
         act.kind = name == "child" ? SavedActKind::Child : SavedActKind::Parent;
@@ -845,13 +1015,11 @@ inline SavedSend savedSendFromJson(const JsonValue &value, const std::string &wh
         reads.emplace_back("event", &act.event);
         reads.emplace_back("data", &act.data);
         reads.emplace_back("sendid", &act.sendId);
-        reads.emplace_back("origin", &act.origin);
     } else if (name == "raise" || name == "internal") {
         act.kind = name == "raise" ? SavedActKind::Raise : SavedActKind::Internal;
         reads.emplace_back("event", &act.event);
         reads.emplace_back("data", &act.data);
         reads.emplace_back("sendid", &act.sendId);
-        reads.emplace_back("origin", &act.origin);
     } else if (name == "host") {
         act.kind = SavedActKind::Host;
         reads.emplace_back("type", &act.processorType);
@@ -872,13 +1040,17 @@ inline SavedSend savedSendFromJson(const JsonValue &value, const std::string &wh
         act.sendId = memberText(members, what, "sendid");
         act.data = memberText(members, what, "data");
         act.invokeId = memberText(members, what, "invokeid");
+    } else {
+        savedActOriginFromJson(members, what, format, act);
     }
     return send;
 }
 
 inline SavedState savedSessionFromJson(const JsonObject &members, int format);
 
-inline SavedChild savedChildFromJson(const JsonValue &value, std::size_t index) {
+/// The `index`-th running child of a session of a tree of `format`, whose records the child's
+/// are read as: a child session does not state the format again.
+inline SavedChild savedChildFromJson(const JsonValue &value, std::size_t index, int format) {
     const std::string what = "invokes[" + std::to_string(index) + "]";
     const JsonObject &members = memberObject(value, what);
     const auto nonEmpty = [&](const std::string &key) {
@@ -901,7 +1073,7 @@ inline SavedChild savedChildFromJson(const JsonValue &value, std::size_t index) 
         refuse("'" + what + ".session' states a format, which only the root of a tree does");
     }
     try {
-        child.session = std::make_shared<SavedState>(savedSessionFromJson(session->asObject(), kSavedFormat2));
+        child.session = std::make_shared<SavedState>(savedSessionFromJson(session->asObject(), format));
     } catch (const StateRefusal &err) {
         throw refusalWithin(err, what + ".session");
     }
@@ -978,12 +1150,12 @@ inline SavedState savedSessionFromJson(const JsonObject &members, int format) {
     } else {
         state.invokes.resumed = true;
         for (std::size_t at = 0; at < listed.size(); ++at) {
-            state.invokes.children.push_back(savedChildFromJson(listed[at], at));
+            state.invokes.children.push_back(savedChildFromJson(listed[at], at, format));
         }
     }
 
-    // Format 2's own members: the session's id and its count of starts.
-    if (format == kSavedFormat2) {
+    // A tree's own members: the session's id and its count of starts.
+    if (format != kSavedFormat1) {
         const std::string sessionId = fieldText("sessionid");
         if (SessionId::refusalOf(sessionId).has_value()) {
             refuse("'sessionid' (" + sessionId + ") is not an XML Nmtoken, which a session id is");
@@ -1020,7 +1192,7 @@ inline SavedState savedSessionFromJson(const JsonObject &members, int format) {
 
     const JsonArray &external = fieldArray("external");
     for (std::size_t at = 0; at < external.size(); ++at) {
-        state.external.push_back(savedEventFromJson(external[at], "external[" + std::to_string(at) + "]"));
+        state.external.push_back(savedEventFromJson(external[at], "external[" + std::to_string(at) + "]", format));
     }
 
     // Optional, unlike every member above: a state whose record schemas are all in their
@@ -1084,9 +1256,12 @@ inline SavedState SavedState::fromJson(std::string_view text) {
         format = kSavedFormat1;
     } else if (written->isNumber() && written->asNumber().text == "2") {
         format = kSavedFormat2;
+    } else if (written->isNumber() && written->asNumber().text == "3") {
+        format = kSavedFormat3;
     } else {
         throw StateRefusal("the saved state is format " + writeJson(*written) + ", and this runtime reads formats " +
-                           std::to_string(kSavedFormat1) + " and " + std::to_string(kSavedFormat2));
+                           std::to_string(kSavedFormat1) + ", " + std::to_string(kSavedFormat2) + " and " +
+                           std::to_string(kSavedFormat3));
     }
     return detail::savedSessionFromJson(members, format);
 }
@@ -1298,10 +1473,12 @@ inline void checkWidenedHolder(const SavedState &saved, const RecordLineage &rec
 /// present type and no build wrote it absent (docs/adr/0055, section 6).
 inline SavedState upgradeSavedState(const SavedState &saved, const SavedShape &shape) {
     checkSavedFeatures(saved, shape.features);
-    // A format-2 state names an enum by its document and a format-1 state by the alias it is
-    // imported under, so each is judged against its own shape (docs/adr/0045, section 2).
-    const std::string &first = saved.format() == kSavedFormat2 ? shape.format2First : shape.first;
-    const std::string &revised = saved.format() == kSavedFormat2 ? shape.format2Revised : shape.revised;
+    // A tree names an enum by its document and a format-1 state by the alias it is imported
+    // under, so each is judged against its own shape (docs/adr/0045, section 2). Format 3 holds
+    // format 2's tree, so it is of format 2's shape (docs/adr/0090, section 7).
+    const bool tree = saved.format() != kSavedFormat1;
+    const std::string &first = tree ? shape.format2First : shape.first;
+    const std::string &revised = tree ? shape.format2Revised : shape.revised;
     if (saved.revisions.empty()) {
         checkSavedShape(saved, first);
     } else if (saved.shape == first) {

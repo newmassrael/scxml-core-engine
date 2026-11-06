@@ -2,13 +2,16 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // The saved-state model of the C++ runtime: the texts every backend reads (docs/adr/0045,
-// section 8), the refusals each member that breaks a format is held to, the value types a
-// state is made of, and the upgrade of a state saved before a record schema or an enum was
-// revised (docs/adr/0044). Cross-language siblings:
-// backends/go/runtime/saved_state_test.go and
+// section 8), the refusals each member that breaks a format is held to, an event's origin as
+// each format holds it (docs/adr/0090, section 7), the value types a state is made of, and the
+// upgrade of a state saved before a record schema or an enum was revised (docs/adr/0044).
+// Cross-language siblings: backends/go/runtime/saved_state_test.go and
 // backends/python/tests/saved_state/test_saved_state.py.
 
 #include "saved/SavedState.h"
+#include "common/IOProcessorHelper.h"
+#include "common/SCXMLConstants.h"
+#include "core/EventOrigin.h"
 #include "saved/SavedJson.h"
 #include "saved/SavedValues.h"
 #include "saved/SessionId.h"
@@ -20,6 +23,7 @@
 #include <optional>
 #include <regex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,8 +43,9 @@ std::string readTrimmed(const std::filesystem::path &path) {
     return text;
 }
 
-/// The shared saved-state texts every backend reads: format 2 in `saved/` and the unchanged
-/// format 1 in `saved/format1/`.
+/// The shared saved-state texts every backend reads and writes back as they are: format 3 in
+/// `saved/` and the unchanged format 1 in `saved/format1/`. The format-2 texts of
+/// `saved/format2/` are written back as format 3 (formatTwoReadingTexts).
 std::map<std::string, std::string> sharedSavedTexts() {
     const std::filesystem::path root = SCE_SAVED_FIXTURES_DIR;
     std::map<std::string, std::string> texts;
@@ -49,6 +54,21 @@ std::map<std::string, std::string> sharedSavedTexts() {
             if (entry.is_regular_file() && entry.path().extension() == ".json") {
                 texts[entry.path().string()] = readTrimmed(entry.path());
             }
+        }
+    }
+    return texts;
+}
+
+/// Each format-2 reading fixture of `saved/format2/`, by its file's name, with the format-3
+/// text of the same name in `saved/format2/read_as/` that it is read as (docs/adr/0090,
+/// section 7).
+std::map<std::string, std::pair<std::string, std::string>> formatTwoReadingTexts() {
+    const std::filesystem::path directory = std::filesystem::path(SCE_SAVED_FIXTURES_DIR) / "format2";
+    std::map<std::string, std::pair<std::string, std::string>> texts;
+    for (const auto &entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".json") {
+            const std::string name = entry.path().filename().string();
+            texts[name] = {readTrimmed(entry.path()), readTrimmed(directory / "read_as" / name)};
         }
     }
     return texts;
@@ -98,7 +118,7 @@ TEST(SavedState, AFormatOneTextIsOfFormatOneAndHoldsNoSession) {
 TEST(SavedState, ATreeTextHoldsEveryChildWithItsSession) {
     const std::filesystem::path root = SCE_SAVED_FIXTURES_DIR;
     const SavedState saved = SavedState::fromJson(readTrimmed(root / "static_invoke_tree_working.json"));
-    ASSERT_EQ(saved.format(), kSavedFormat2);
+    ASSERT_EQ(saved.format(), kSavedFormat3);
     ASSERT_FALSE(saved.invokes.children.empty());
     const SavedChild &child = saved.invokes.children[0];
     EXPECT_EQ(child.session->sessionId, saved.sessionId + "." + child.invokeId);
@@ -110,8 +130,8 @@ TEST(SavedState, ATextTheFormatsDoNotCarryIsRefusedForTheMemberThatBreaksIt) {
         {R"({"format":)", "the saved state is not JSON (it ends where a value was expected)"},
         {"[]", "the saved state is not an object"},
         {"{}", "the saved state has no 'format'"},
-        {R"({"format":3})", "the saved state is format 3, and this runtime reads formats 1 and 2"},
-        {R"({"format":"2"})", R"(the saved state is format "2", and this runtime reads formats 1 and 2)"},
+        {R"({"format":4})", "the saved state is format 4, and this runtime reads formats 1, 2 and 3"},
+        {R"({"format":"3"})", R"(the saved state is format "3", and this runtime reads formats 1, 2 and 3)"},
         {R"({"format":2,)" + replaceFirst(kMinimal, R"("root")", R"("a b")") + "}",
          "'sessionid' (a b) is not an XML Nmtoken, which a session id is"},
         {R"({"format":2,)" + replaceFirst(kMinimal, R"("invokestarts":{})", R"("invokestarts":{"w":"01"})") + "}",
@@ -152,6 +172,238 @@ TEST(SavedState, AChildThatStatesAFormatIsRefused) {
     const std::string text =
         R"({"format":2,)" + replaceFirst(kMinimal, R"("invokes":[])", R"("invokes":[)" + child + "]") + "}";
     EXPECT_EQ(refusalOf(text), "'invokes[0].session' states a format, which only the root of a tree does");
+}
+
+namespace {
+
+const std::string kScxmlType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
+
+/// A format-3 text of the minimal session whose external queue holds one event whose origin
+/// members are `origin`, the members between `sendid` and `invokeid`.
+std::string format3Queuing(const std::string &origin) {
+    return R"({"format":3,)" +
+           replaceFirst(kMinimal, R"("external":[])",
+                        R"("external":[{"name":"e","data":"","type":"external","sendid":"",)" + origin +
+                            R"(,"invokeid":"","hostinvoketoken":null}])") +
+           "}";
+}
+
+/// A format-3 text of the minimal session waiting on one send of `act`, whose members after
+/// `sendid` are `origin`.
+std::string format3Waiting(const std::string &act, const std::string &origin) {
+    const std::string head = act == "child" ? R"("act":"child","invokeid":"w",)" : R"("act":")" + act + R"(",)";
+    return R"({"format":3,)" +
+           replaceFirst(kMinimal, R"("pending":[])",
+                        R"("pending":[{"due":"5",)" + head + R"("event":"e","data":"","sendid":"",)" + origin + "}]") +
+           "}";
+}
+
+/// `{"processor":...,"address":...}` of the pair of `processor` and `address`.
+std::string pairText(const std::string &processor, const std::string &address) {
+    return R"({"processor":")" + processor + R"(","address":")" + address + R"("})";
+}
+
+}  // namespace
+
+// docs/adr/0090, section 7: a format-3 reader takes `origin` and `sender` as they are written
+// and refuses, naming the record, every text in which they are not a pair or null, a session
+// id or null, and in agreement with each other and with the act that holds them.
+TEST(SavedState, AFormatThreeOriginThatIsNotOneTheFormatHoldsIsRefusedNamingItsRecord) {
+    const std::string root = pairText(kScxmlType, "sce://scxml/root");
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {format3Queuing(R"("sender":null)"), "'external[0]' has no 'origin'"},
+        {format3Queuing(R"("origin":null)"), "'external[0]' has no 'sender'"},
+        {format3Queuing(R"("origin":"root","sender":"root")"),
+         "'external[0].origin' is neither null nor a pair of a 'processor' and an 'address'"},
+        {format3Queuing(R"("origin":{"processor":"x-sce-host"},"sender":null)"),
+         "'external[0].origin' has no 'address'"},
+        {format3Queuing(R"("origin":{"processor":1,"address":"motor"},"sender":null)"),
+         "'external[0].origin.processor' is not a text"},
+        {format3Queuing(R"("origin":)" + pairText("", "motor") + R"(,"sender":null)"),
+         "'external[0].origin.processor' is empty"},
+        {format3Queuing(R"("origin":)" + pairText("x-sce-host", "") + R"(,"sender":null)"),
+         "'external[0].origin.address' is empty"},
+        {format3Queuing(R"("origin":{"processor":"x-sce-host","address":"motor","port":"1"},"sender":null)"),
+         "'external[0].origin' holds 'port', and a pair holds a 'processor' and an 'address' alone"},
+        {format3Queuing(R"("origin":null,"sender":1)"), "'external[0].sender' is neither null nor a text"},
+        {format3Queuing(R"("origin":null,"sender":"a b")"),
+         "'external[0].sender' (a b) is not an XML Nmtoken, which a session id is"},
+        {format3Queuing(R"("origin":null,"sender":"root")"),
+         "'external[0]' has the sender 'root', and its origin is not the SCXML pair of that session, whose "
+         "address is sce://scxml/root"},
+        {format3Queuing(R"("origin":)" + pairText("x-sce-host", "motor") + R"(,"sender":"root")"),
+         "'external[0]' has the sender 'root', and its origin is not the SCXML pair of that session, whose "
+         "address is sce://scxml/root"},
+        // The address is the sender's id percent-encoded, byte for byte.
+        {format3Queuing(R"("origin":)" + pairText(kScxmlType, "sce://scxml/peer:1") + R"(,"sender":"peer:1")"),
+         "'external[0]' has the sender 'peer:1', and its origin is not the SCXML pair of that session, whose "
+         "address is sce://scxml/peer%3A1"},
+        {format3Waiting("raise", R"("origin":)" + root + R"(,"sender":null)"),
+         "'pending[0]' is a raise act with no sender, and it is a send of the session that saved it"},
+        {format3Waiting("parent", R"("origin":null,"sender":null)"),
+         "'pending[0]' is a parent act with no sender, and it is a send of the session that saved it"},
+        {format3Waiting("child", R"("origin":null)"), "'pending[0]' has no 'sender'"},
+        {format3Waiting("child", R"("origin":)" + pairText("x-sce-host", "motor") + R"(,"sender":"root")"),
+         "'pending[0]' has the sender 'root', and its origin is not the SCXML pair of that session, whose "
+         "address is sce://scxml/root"},
+        {format3Waiting("internal", R"("origin":null,"sender":"root")"),
+         "'pending[0]' is an internal act and holds an origin or a sender, and the internal event it delivers "
+         "has neither"},
+        {format3Waiting("internal", R"("origin":)" + root + R"(,"sender":null)"),
+         "'pending[0]' is an internal act and holds an origin or a sender, and the internal event it delivers "
+         "has neither"},
+        {format3Waiting("internal", R"("sender":null)"), "'pending[0]' has no 'origin'"},
+    };
+    for (const auto &[text, reason] : cases) {
+        EXPECT_EQ(refusalOf(text), reason) << text;
+    }
+}
+
+// docs/adr/0090, section 7: what format 3 holds is read as it is written, derived from nothing,
+// and written back byte for byte: an SCXML pair whose address names no session has no sender,
+// and a host's pair keeps its own type.
+TEST(SavedState, AFormatThreeOriginIsReadAsItIsWrittenAndWrittenBackAsItWas) {
+    const std::string mesh = format3Queuing(R"("origin":)" + pairText(kScxmlType, "mesh://ecu") + R"(,"sender":null)");
+    const SavedState meshRead = SavedState::fromJson(mesh);
+    ASSERT_EQ(meshRead.external.size(), 1U);
+    EXPECT_EQ(meshRead.external[0].origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin(kScxmlType, "mesh://ecu")));
+    EXPECT_EQ(meshRead.external[0].sender, "");
+    EXPECT_EQ(meshRead.toJson(), mesh);
+
+    const std::string host = format3Queuing(R"("origin":)" + pairText("x-sce-host", "motor") + R"(,"sender":null)");
+    const SavedState hostRead = SavedState::fromJson(host);
+    EXPECT_EQ(hostRead.external[0].origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin("x-sce-host", "motor")));
+    EXPECT_EQ(hostRead.toJson(), host);
+
+    const std::string sent =
+        format3Queuing(R"("origin":)" + pairText(kScxmlType, "sce://scxml/peer%3A1") + R"(,"sender":"peer:1")");
+    const SavedState sentRead = SavedState::fromJson(sent);
+    EXPECT_EQ(sentRead.external[0].origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("peer:1")));
+    EXPECT_EQ(sentRead.external[0].sender, "peer:1");
+    EXPECT_EQ(sentRead.toJson(), sent);
+
+    const std::string waiting =
+        format3Waiting("raise", R"("origin":)" + pairText(kScxmlType, "sce://scxml/root") + R"(,"sender":"root")");
+    const SavedState waitingRead = SavedState::fromJson(waiting);
+    ASSERT_EQ(waitingRead.pending.size(), 1U);
+    EXPECT_EQ(waitingRead.pending[0].act.sender, "root");
+    EXPECT_EQ(waitingRead.toJson(), waiting);
+}
+
+// docs/adr/0090, section 7: a tree is written as format 3 whatever its acts were given. An
+// internal act delivers an internal event, which has no origin, so it is written with neither
+// member even where the entry it was saved from kept a sender.
+TEST(SavedState, AnInternalActIsWrittenWithNoOriginAndNoSender) {
+    SavedState state;
+    state.shape = "s";
+    state.configuration = {"a"};
+    state.current = "a";
+    state.sessionId = "root";
+    state.invokes.resumed = true;
+    SavedSend send;
+    send.due = 5;
+    send.act.kind = SavedActKind::Internal;
+    send.act.event = "e";
+    send.act.sendId = "s";
+    send.act.origin = SCE::IOProcessorHelper::scxmlOrigin("root");
+    send.act.sender = "root";
+    state.pending.push_back(send);
+    const std::string text = state.toJson();
+    EXPECT_EQ(text.rfind(R"({"format":3,)", 0), 0U) << text;
+    EXPECT_NE(
+        text.find(R"({"due":"5","act":"internal","event":"e","data":"","sendid":"s","origin":null,"sender":null})"),
+        std::string::npos)
+        << text;
+    EXPECT_EQ(SavedState::fromJson(text).toJson(), text);
+}
+
+// docs/adr/0090, section 7: each format-2 reading fixture is read by the table of section 7 and
+// written back as the format-3 text of `saved/format2/read_as/`, byte for byte, by the model
+// alone. The machine that restores each is held to the same text in
+// AStateAnotherBackendSavedIsRestoredTest.cpp.
+TEST(SavedState, EveryFormatTwoTextIsWrittenBackAsTheFormatThreeTextItIsReadAs) {
+    const auto texts = formatTwoReadingTexts();
+    ASSERT_GE(texts.size(), 4U) << "the format-2 reading fixtures lost instances";
+    for (const auto &[name, read] : texts) {
+        const auto &[format2, format3] = read;
+        ASSERT_FALSE(format3.empty()) << name << " has no text in read_as/";
+        EXPECT_EQ(format2.rfind(R"({"format":2,)", 0), 0U) << name;
+        EXPECT_EQ(SavedState::fromJson(format2).toJson(), format3) << name;
+    }
+}
+
+// docs/adr/0090, section 7: the rows a reader can get wrong, asked of the model directly
+// (`saved/format2/README.md`). An unencoded SCXML location is read by the id it names; an
+// address with no scheme beside a type that is not the SCXML type is the host's own pair; an
+// internal act's stored sender is not read.
+TEST(SavedState, AFormatTwoOriginIsReadAsThePairTheTableGives) {
+    const std::filesystem::path format2 = std::filesystem::path(SCE_SAVED_FIXTURES_DIR) / "format2";
+    const SavedState origins = SavedState::fromJson(readTrimmed(format2 / "static_invoke_tree_working_origins.json"));
+    const auto named = [&](const std::string &name) -> const SavedEvent & {
+        for (const SavedEvent &event : origins.external) {
+            if (event.name == name) {
+                return event;
+            }
+        }
+        throw std::runtime_error("no queued event '" + name + "'");
+    };
+    EXPECT_EQ(named("stamped").origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("peer:1")));
+    EXPECT_EQ(named("stamped").sender, "peer:1");
+    EXPECT_EQ(named("rest").origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin("x-sce-host", "motor")));
+    EXPECT_EQ(named("rest").sender, "");
+    EXPECT_FALSE(named("swap").origin.has_value());
+    EXPECT_EQ(named("arm").origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin(kScxmlType, "mesh://ecu")));
+    EXPECT_EQ(named("arm").sender, "");
+
+    const SavedState timers = SavedState::fromJson(readTrimmed(format2 / "static_timers.json"));
+    ASSERT_FALSE(timers.pending.empty());
+    for (const SavedSend &send : timers.pending) {
+        if (send.act.kind == SavedActKind::Internal) {
+            EXPECT_FALSE(send.act.origin.has_value()) << send.act.event;
+            EXPECT_EQ(send.act.sender, "") << send.act.event;
+        } else {
+            EXPECT_EQ(send.act.origin,
+                      std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("fixture-root")))
+                << send.act.event;
+            EXPECT_EQ(send.act.sender, "fixture-root") << send.act.event;
+        }
+    }
+}
+
+// docs/adr/0090, section 7: a format-1 text holds `origin` and `origintype` with format 2's
+// meaning, and written back without a machine it stays format 1, its origins written by the
+// rule format 2 used: the sender's id for a session's send, the address otherwise, then the
+// pair's processor.
+TEST(SavedState, AFormatOneTextIsReadThroughTheTableAndWrittenBackAsFormatOne) {
+    const std::string text =
+        R"({"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},)"
+        R"("pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"t","origin":"root"}],"invokes":[],)"
+        R"("hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[)"
+        R"({"name":"a","data":"","type":"external","sendid":"","origin":"kid","origintype":")" +
+        kScxmlType +
+        R"(","invokeid":"","hostinvoketoken":null},)"
+        R"({"name":"b","data":"","type":"external","sendid":"","origin":"motor","origintype":"x-sce-host",)"
+        R"("invokeid":"","hostinvoketoken":null}]})";
+    const SavedState read = SavedState::fromJson(text);
+    ASSERT_EQ(read.format(), kSavedFormat1);
+    ASSERT_EQ(read.external.size(), 2U);
+    EXPECT_EQ(read.external[0].origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("kid")));
+    EXPECT_EQ(read.external[0].sender, "kid");
+    EXPECT_EQ(read.external[1].origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin("x-sce-host", "motor")));
+    EXPECT_EQ(read.external[1].sender, "");
+    ASSERT_EQ(read.pending.size(), 1U);
+    EXPECT_EQ(read.pending[0].act.origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("root")));
+    EXPECT_EQ(read.pending[0].act.sender, "root");
+    EXPECT_EQ(read.toJson(), text);
 }
 
 TEST(SavedState, AJsonNumberKeepsTheSpellingItWasWrittenIn) {

@@ -3,16 +3,18 @@
 //
 // SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0045, section 8): the
 // saved states the shared fixtures hold are the text every backend writes and reads, so
-// a state saved by one backend is one another restores. Each format-2 text is restored
+// a state saved by one backend is one another restores. Each format-3 text is restored
 // by the generated C++ machine of its document and saved again, which is the same text
-// byte for byte; each format-1 text, which every backend still reads, is restored.
+// byte for byte; and each format-1 text, which every backend still reads, is restored.
 //
 // The Rust, Kotlin, Go and Python halves are `static_datamodel.rs`,
 // `StaticDatamodelTest.kt`, `a_state_another_backend_saved_is_restored_test.go` and
 // `test_a_state_another_backend_saved_is_restored.py`; the shared texts are
 // `sce-build/tests/fixtures/static_datamodel/saved/`.
 
+#include "common/ForwardedEvent.h"
 #include "common/SceClock.h"
+#include "core/EventOrigin.h"
 #include "saved/SavedState.h"
 #include "static_enum_sm.h"
 #include "static_history_sm.h"
@@ -124,29 +126,52 @@ std::map<std::string, std::string> textsOf(const std::filesystem::path &director
 
 }  // namespace
 
-TEST(AStateAnotherBackendSavedIsRestored, AFormatTwoStateIsRestoredAndSavedAsItWas) {
+TEST(AStateAnotherBackendSavedIsRestored, AFormatThreeStateIsRestoredAndSavedAsItWas) {
     for (const auto &[name, text] : textsOf(kSaved)) {
         SCOPED_TRACE(name);
         EXPECT_EQ(machines().at(machineOf(name))(text), text);
     }
 }
 
-TEST(AStateAnotherBackendSavedIsRestored, EveryFormatTwoTextOfADocumentIsHeldToItsMachine) {
-    EXPECT_GE(textsOf(kSaved).size(), 8u) << "the shared format-2 texts lost instances";
+TEST(AStateAnotherBackendSavedIsRestored, EveryFormatThreeTextOfADocumentIsHeldToItsMachine) {
+    EXPECT_GE(textsOf(kSaved).size(), 8u) << "the shared format-3 texts lost instances";
 }
 
 TEST(AStateAnotherBackendSavedIsRestored, AFormatOneStateIsRestoredAndTakesTheMachinesOwnSession) {
     for (const auto &[name, text] : textsOf(kSaved / "format1")) {
         SCOPED_TRACE(name);
         // What a format-1 text holds is what a restore reads; saving it again writes
-        // format 2, with the machine's own session id.
+        // format 3, with the machine's own session id.
         const std::string again = machines().at(machineOf(name))(text);
-        EXPECT_EQ(again.rfind("{\"format\":2,", 0), 0u) << again;
+        EXPECT_EQ(again.rfind("{\"format\":3,", 0), 0u) << again;
     }
 }
 
 TEST(AStateAnotherBackendSavedIsRestored, EveryFormatOneTextOfADocumentIsHeldToItsMachine) {
     EXPECT_GE(textsOf(kSaved / "format1").size(), 10u) << "the shared format-1 texts lost instances";
+}
+
+// docs/adr/0090, section 7: only the SCXML processor sets a sender, and it writes the
+// sender's own location as the origin, so a queued event whose sender stands beside any
+// other origin is one format 3 cannot carry. The save refuses it rather than write a text
+// no reader takes or drop the session the event names.
+TEST(AStateAnotherBackendSavedIsRestored, AQueuedEventWhoseSenderStandsBesideAnotherOriginIsNotSaved) {
+    std::ifstream in(kSaved / "static_timers.json");
+    std::stringstream held;
+    held << in.rdbuf();
+    G::static_timers::static_timers machine;
+    machine.setClock(std::make_shared<SCE::ManualClock>(0));
+    machine.restoreAt(::SCE::Saved::SavedState::fromJson(held.str()), kSavedAtMs);
+    machine.raiseExternal(::SCE::Common::ForwardedEvent{
+        "beat", "", ::SCE::Core::EventOrigin("x-sce-mesh", "mesh://ecu"), "ecu", "", "external", ""});
+    try {
+        static_cast<void>(machine.saveAt(kSavedAtMs));
+        FAIL() << "the machine was saved";
+    } catch (const ::SCE::Saved::StateRefusal &refused) {
+        EXPECT_EQ(std::string(refused.what()),
+                  "the queued event 'beat' has the sender 'ecu' beside an origin the SCXML processor did not "
+                  "write, which a saved state does not carry");
+    }
 }
 
 }  // namespace Tests

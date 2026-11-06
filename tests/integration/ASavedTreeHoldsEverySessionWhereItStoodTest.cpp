@@ -47,7 +47,7 @@ using Machine = ::SCE::Generated::static_invoke_tree::static_invoke_tree;
 
 constexpr std::int64_t kSavedAtMs = 1'700'000'000'000;
 
-/// The session id the shared format-2 fixtures give their root.
+/// The session id the shared format-3 fixtures give their root.
 constexpr const char *kRoot = "fixture-root";
 /// The session `worker` is: the root's id and the id its first start is started under
 /// (`<state>.<start>.<invoke>`).

@@ -921,12 +921,13 @@ apply_sce_test_policies(json_text_test)
 add_test(NAME JsonText COMMAND json_text_test)
 
 # ============================================================================
-# The saved-state model (SCE Accepted Subset §2.15, docs/adr/0045): the ordered JSON
-# reader and writer, the format-1 and format-2 model, the value readers and writers, and
-# the session id, held to the shared texts under
-# sce-build/tests/fixtures/static_datamodel/saved/. Linked against googletest alone, for
-# the reason the target below gives: a generated machine compiles and links against
-# `sce/include` with no runtime library.
+# The saved-state model (SCE Accepted Subset §2.15, docs/adr/0045, docs/adr/0090): the
+# ordered JSON reader and writer, the model of formats 1, 2 and 3, the value readers and
+# writers, and the session id, held to the shared texts under
+# sce-build/tests/fixtures/static_datamodel/saved/. Linked against googletest and sce_base
+# alone: the model reads and writes an event's origin through the SCXML processor's address
+# codec (common/IOProcessorHelper.h), whose percent-encoding is compiled into sce_base, the
+# tier every generated machine already links for it.
 # ============================================================================
 add_executable(saved_state_test
     saved/SavedStateTest.cpp
@@ -939,6 +940,7 @@ target_include_directories(saved_state_test
 
 target_link_libraries(saved_state_test
     PRIVATE
+        sce_base
         GTest::gtest_main
 )
 

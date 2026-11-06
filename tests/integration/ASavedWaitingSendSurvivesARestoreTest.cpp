@@ -14,7 +14,7 @@
 //    it was armed with, so a restore hands the host the request the document made.
 //
 // Driven entirely on the engine's manual clock: no case sleeps. The shared texts are the
-// format-2 `saved/static_send_idlocation_armed.json` and
+// format-3 `saved/static_send_idlocation_armed.json` and
 // `saved/statechart_static_delayed_host_send_waiting.json` every backend writes
 // (docs/adr/0045), the format-1 texts under `saved/format1/` of the same runs still restore.
 
@@ -116,9 +116,9 @@ TEST(ASavedWaitingSendSurvivesARestore, AMachineThatArmedTwoSendsSavesTheIdsItGe
 }
 
 TEST(ASavedWaitingSendSurvivesARestore, ARestoredSendIsCancelledByTheIdTheDocumentHolds) {
-    // From the format-2 text, and from the format-1 text of the same run.
+    // From the format-3 text, and from the format-1 text of the same run.
     for (const bool format1 : {false, true}) {
-        SCOPED_TRACE(format1 ? "format 1" : "format 2");
+        SCOPED_TRACE(format1 ? "format 1" : "format 3");
         auto machine = restoredSendId(sharedArmed(format1));
         send(*machine, "cancel.first");
         machine->advanceTimeMs(250);

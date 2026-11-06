@@ -18,8 +18,8 @@
 //
 // Driven entirely on the engine's manual clock: no case sleeps, and none can be decided by
 // how loaded the build machine is. The shared instance
-// `saved/statechart_static_host_invoke_running.json` is the format-2 text every backend
-// writes (docs/adr/0045); the format-1 text of the same run, under `saved/format1/`, still
+// `saved/statechart_static_host_invoke_running.json` is the format-3 text every backend
+// writes (docs/adr/0045, docs/adr/0090); the format-1 text of the same run, under `saved/format1/`, still
 // restores. This is a machine with no `error.execution` event, so a restart nobody can run
 // raises nothing a document could answer, which the Python half's last case needs.
 
@@ -111,7 +111,7 @@ std::unique_ptr<Machine> fresh() {
 }
 
 /// A machine standing in `working`, its invocation started with token 0, given the session
-/// id the shared format-2 fixtures name their root by.
+/// id the shared format-3 fixtures name their root by.
 std::unique_ptr<Machine> working(Host &host) {
     auto machine = fresh();
     machine->bindSessionId("fixture-root");
@@ -170,9 +170,9 @@ TEST(ASavedHostInvocationIsStartedAgainAfterARestore, AMachineIsSavedWithTheRequ
 }
 
 TEST(ASavedHostInvocationIsStartedAgainAfterARestore, ARestoreAsksNothingOfTheHostUntilTheMachineIsDriven) {
-    // From the format-2 text, and from the format-1 text of the same run.
+    // From the format-3 text, and from the format-1 text of the same run.
     for (const bool format1 : {false, true}) {
-        SCOPED_TRACE(format1 ? "format 1" : "format 2");
+        SCOPED_TRACE(format1 ? "format 1" : "format 3");
         Host host;
         auto machine = restored(host, shared(format1), 1000);
         EXPECT_TRUE(host.log.empty()) << "the restore itself calls nobody";
@@ -300,8 +300,8 @@ TEST(ASavedHostInvocationIsStartedAgainAfterARestore,
     // one would.
     const std::string sharedText = shared();
     const std::string queued =
-        "\"external\":[{\"name\":\"done.invoke.h\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":\"\","
-        "\"origintype\":\"\",\"invokeid\":\"h\",\"hostinvoketoken\":null}]";
+        "\"external\":[{\"name\":\"done.invoke.h\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":null,"
+        "\"sender\":null,\"invokeid\":\"h\",\"hostinvoketoken\":null}]";
     const std::string empty = "\"external\":[]";
     std::string text = sharedText;
     const auto at = text.find(empty);

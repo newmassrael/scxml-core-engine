@@ -211,8 +211,8 @@ TEST(ASavedChildSessionIsResumedAfterARestore, AnEventSavedInTheChildsQueueIsTak
         "\"external\":[]";
     const std::string queued =
         replaced(empty, "\"external\":[]",
-                 "\"external\":[{\"name\":\"a\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":\"\","
-                 "\"origintype\":\"\",\"invokeid\":\"\",\"hostinvoketoken\":null}]");
+                 "\"external\":[{\"name\":\"a\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":null,"
+                 "\"sender\":null,\"invokeid\":\"\",\"hostinvoketoken\":null}]");
     auto machine = restored(replaced(text, empty, queued));
     for (int round = 0; round < 3; ++round) {
         machine->tick();
