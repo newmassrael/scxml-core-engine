@@ -277,6 +277,42 @@ func TestAFormatThreeOriginIsRefusedForTheMemberThatBreaksIt(t *testing.T) {
 	}
 }
 
+// docs/adr/0090, section 7: a format-3 `raise`, `parent` or `child` act is a
+// send of the session that holds it, so one that names another session as its
+// sender is refused, in the root and in every child session, and the refusal
+// names the session it is about.
+func TestAFormatThreeSendOfAnotherSessionIsRefused(t *testing.T) {
+	pairOf := func(id string) string {
+		return `"origin":{` + scxmlProcessorMember + `,"address":"sce://scxml/` + id + `"},"sender":"` + id + `"`
+	}
+	_, err := SavedStateFromJSON(withQueued("", waitingSend("raise", pairOf("other"))))
+	want := "'pending[0].sender' is 'other', and this session is 'root': a raise act is this session's own send"
+	if err == nil || err.Error() != want {
+		t.Errorf("the root's act is refused as %v, want %q", err, want)
+	}
+
+	child := strings.Replace(strings.Replace(minimalSession, `"sessionid":"root"`, `"sessionid":"root.w"`, 1),
+		`"pending":[]`, `"pending":[`+waitingSend("parent", pairOf("root"))+`]`, 1)
+	tree := `{"format":3,` + strings.Replace(minimalSession, `"invokes":[]`,
+		`"invokes":[{"id":"w","start":"1","invokeid":"w","document":"w","session":{`+child+`}}]`, 1) + `}`
+	_, err = SavedStateFromJSON(tree)
+	want = "the session at invokes[0].session: 'pending[0].sender' is 'root', and this session is 'root.w': " +
+		"a parent act is this session's own send"
+	if err == nil || err.Error() != want {
+		t.Errorf("the child's act is refused as %v, want %q", err, want)
+	}
+
+	// The same tree, each act sent by the session that holds it, is read.
+	own := strings.Replace(tree, `"parent","event":"e","data":"","sendid":"s",`+pairOf("root"),
+		`"parent","event":"e","data":"","sendid":"s",`+pairOf("root.w"), 1)
+	if own == tree {
+		t.Fatal("the child's act was not changed")
+	}
+	if _, err := SavedStateFromJSON(own); err != nil {
+		t.Errorf("a tree whose acts are each its session's own is refused: %v", err)
+	}
+}
+
 // docs/adr/0090, section 7: a format-3 reader takes both members as they are
 // written and derives neither from the other, and the text it read is the text
 // it writes. A queued event's sender is not tied to its address: the Mesh

@@ -744,12 +744,19 @@ func savedSessionFromJSON(members *JSONObject, format int) (*SavedState, error) 
 		// docs/adr/0090, section 7: a raise, parent or child act of a format-2 text
 		// whose stored `origin` is empty is a send of the session that holds it,
 		// and is read as that session's pair and id.
-		if format == SavedFormat2 {
-			for at := range state.Pending {
-				act := &state.Pending[at].Act
-				if act.Kind != SavedActInternal && act.Kind != SavedActHost && act.Sender == "" {
-					act.Origin, act.Sender = ScxmlOrigin(sessionID), sessionID
-				}
+		// In format 3 such an act names its sender, and it is this session: a
+		// session's waiting send is its own (docs/adr/0090, section 7).
+		for at := range state.Pending {
+			act := &state.Pending[at].Act
+			if act.Kind == SavedActInternal || act.Kind == SavedActHost {
+				continue
+			}
+			switch {
+			case format == SavedFormat2 && act.Sender == "":
+				act.Origin, act.Sender = ScxmlOrigin(sessionID), sessionID
+			case format == SavedFormat3 && act.Sender != sessionID:
+				return nil, refuse("'pending[%d].sender' is '%s', and this session is '%s': a %s act is this "+
+					"session's own send", at, act.Sender, sessionID, act.Kind)
 			}
 		}
 		counted, err := field("invokestarts")
