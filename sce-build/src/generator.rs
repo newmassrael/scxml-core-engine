@@ -4800,14 +4800,14 @@ fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
 /// and the other axes that rule names are not lowered. Without the rule a body would be dropped,
 /// which is the answer the document did not ask for.
 fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<String> {
-    // A processor the host serves owns delivery, and only a `sce-static` document's send is
-    // handed to it. Anywhere else the send would also be taken for a local event: the document
-    // would see the act twice, or a Mesh send would reach no router.
+    // A processor the host serves owns the whole send, whatever the data model: the template
+    // hands the request the document wrote to the host and delivers nothing locally. It is
+    // judged by the rule a `sce-static` document's is; the expressions it reads are judged below,
+    // as any send's are.
     if send.send_type_host_served {
-        return Some(format!(
-            "a <send type=\"{}\"> served by the host, which only a `sce-static` document sends",
-            send.send_type
-        ));
+        if let Some(what) = crate::forge::static_lowering::SwiftTarget::unlowered_host_send(send) {
+            return Some(what);
+        }
     }
     let over_http = send.send_type.contains("BasicHTTPEventProcessor");
     let expression = [

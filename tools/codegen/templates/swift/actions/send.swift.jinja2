@@ -1,16 +1,46 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
-{# W3C SCXML 6.2: Send event, to this session's own queues, to its parent and, over the
-   BasicHTTP processor, to a URL, under `datamodel="sce-static"`. Another processor type,
-   any other target and the axes of an HTTP send that are not lowered are refused by name
-   before this template runs (`SwiftTarget::unlowered_send`), so none is read here. #}
+{# W3C SCXML 6.2: Send event, to this session's own queues, to its parent, over the BasicHTTP
+   processor to a URL, and to a processor the host serves (a Mesh peer among them), under every
+   data model. Another processor type, any other target and the axes of a send that are not
+   lowered are refused by name before this template runs (`SwiftTarget::unlowered_send` for a
+   `sce-static` document, `swift_send_unlowered` for the others), so none is read here. #}
 {# The error an element raises, with the id of the send it names (W3C SCXML 6.2.4). #}
 {% macro send_error(code, message, send_id) %}
 {% if code in model.events %}
                         var sendError = EventWithMetadata.platformError({{ machine_name }}Event.{{ code | to_event_variant }}, message: {{ message }})
                         sendError.metadata.sendID = {{ send_id }}
                         engine.raise(sendError)
+{% endif %}
+{% endmacro %}
+{# W3C SCXML 6.2.5: the act a send to a processor the host serves performs, for `processor_type`.
+   One body for the two ways a send reaches it: a type the build saw served by the host
+   (`send_type_host_served`, a Mesh send the build lowered among them) and a `targetexpr` that
+   names a Mesh peer once it is evaluated (SCE_MESH.md §mesh-19). The whole send is the host's,
+   handed the request the document wrote, so the arm is the only delivery the element makes:
+   delivering the event locally as well would show the document the act twice. Its target is
+   passed through uninterpreted, a delay is a property of the send and not of the processor, and
+   the request is the one of this moment, its `_event.invokeid` included (SCE_MESH.md §10.7). #}
+{% macro host_send_arm(processor_type, event_name, target, content, params, send_id, delay) %}
+                    // W3C SCXML 6.2.5: "{{ processor_type }}" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice.
+                    let sendRequest = HostSendRequest(
+                        processorType: "{{ processor_type | escape_swift }}",
+                        eventName: {{ event_name }},
+                        target: {{ target }},
+                        content: {{ content }},
+                        params: {{ params }},
+                        sendID: {{ send_id }},
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+{% if delay %}
+                    engine.scheduleHostSend(delay: {{ delay }}, request: sendRequest, sender: self.sessionID)
+{% else %}
+                    engine.performHostSend(sendRequest)
 {% endif %}
 {% endmacro %}
 {% set send_id = action.id if action.id else action.auto_send_id %}
@@ -46,7 +76,16 @@
    of a Lua expression the engine computes (`evaluateJSON`, which keeps its type; over BasicHTTP
    `evaluateText`, the text a form carries). W3C SCXML 5.7.1 + 4.9: one that cannot be read is
    reported and its pair left out, and the message still goes. #}
-{% macro ecma_param(name, source, http) %}
+{# A send the host may be handed (`host`) carries the value twice, as the form's text and as the
+   pair's typed JSON, both read from the one evaluation `evaluateWire` makes (W3C SCXML 6.2.3: a
+   second reading of the data model could disagree with the first). #}
+{% macro ecma_param(name, source, http, host) %}
+{% if host %}
+                    if let paramWire = evaluateWire("{{ source | to_lua_expr | escape_swift }}") {
+                        appendFormParam(&sendForm, "{{ name | escape_swift }}", .text(paramWire.text))
+                        sendParts.append(PayloadPair.json("{{ name | escape_swift }}", rawJSON: paramWire.json))
+                    } else {
+{% else %}
                     if let paramValue = {{ 'evaluateText' if http else 'evaluateJSON' }}("{{ source | to_lua_expr | escape_swift }}") {
 {% if http %}
                         appendFormParam(&sendForm, "{{ name | escape_swift }}", .text(paramValue))
@@ -54,6 +93,7 @@
                         sendParts.append(PayloadPair.json("{{ name | escape_swift }}", rawJSON: paramValue))
 {% endif %}
                     } else {
+{% endif %}
 {% if 'error.execution' in model.events %}
                         engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ name | escape_swift }}> failed to evaluate"))
 {% endif %}
@@ -76,10 +116,20 @@
    `<param>`s as the form. Its other axes are refused by name before this template runs. #}
 {% set is_http = action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
 {# A send to a processor the host serves (W3C SCXML 6.2.5, and the Mesh router of SCE_MESH.md §19),
-   under `datamodel="sce-static"`: the whole send is the host's, handed the request the document
-   wrote. Its `<param>`s are both the event's data (the pairs, as a local delivery would carry
-   them) and the form the handler reads, evaluated once. #}
+   under any data model: the whole send is the host's, handed the request the document wrote. Its
+   `<param>`s are both the event's data (the pairs, as a local delivery would carry them) and the
+   form the handler reads, evaluated once. #}
 {% set is_host = action.send_type_host_served %}
+{# SCE_MESH.md §mesh-19: a `targetexpr` of the SCXML processor names a Mesh peer only once it is
+   evaluated, so the build could not lower it to a host-served send. The act the lowering arranges
+   for a literal `#peer` is chosen on the one evaluated target, ahead of every other route: a peer
+   is not a local session. The predicate the build's `may_name_a_mesh_peer` applies, and every other
+   backend's send template. A `sce-static` target is held to the routes the document declares,
+   none of which is a peer. #}
+{% set dynamic_mesh = ecma_target and not action.native_target and not action.typeexpr and not is_host and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
+{# Whether the request a host is handed may be made of this send: its form is then written beside
+   the event's data. #}
+{% set host_form = is_host or dynamic_mesh %}
 {% set computed_event = event_value %}
 {% set event_name_swift = 'sendEventName' if computed_event else '"' ~ (action.event | default('', true) | escape_swift) ~ '"' %}
 {% set send_prologue = delay_value or event_value or computed_target or ecma_typeexpr or namelist_bad.name %}
@@ -312,7 +362,7 @@
                     // pair left out, and the message still goes; the error ends the block once
                     // it has. Read at the end of this element.
                     var paramFailed = false
-{% if is_http or is_host %}
+{% if is_http or host_form %}
                     // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
                     // text each value spells, so a second reading of the data model cannot
                     // disagree with the first.
@@ -323,7 +373,7 @@
 {% endif %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-{% if is_http or is_host %}
+{% if is_http or host_form %}
                     appendFormParam(&sendForm, "{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}"))
 {% endif %}
 {% if not is_http %}
@@ -340,7 +390,7 @@
                         let sceValue: WireValue = {{ param.native_value }}
 {% if param.native_fails %}
                         if !sceFailure.failed {
-{% if is_http or is_host %}
+{% if is_http or host_form %}
                             appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
 {% endif %}
 {% if not is_http %}
@@ -353,7 +403,7 @@
                             paramFailed = true
                         }
 {% else %}
-{% if is_http or is_host %}
+{% if is_http or host_form %}
                         appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
 {% endif %}
 {% if not is_http %}
@@ -362,7 +412,7 @@
 {% endif %}
                     }
 {% elif ecmascript_datamodel and (param.expr or param.location) %}
-{{ ecma_param(param.name, param.expr or param.location, is_http) }}
+{{ ecma_param(param.name, param.expr or param.location, is_http, host_form) }}
 {% elif ecmascript_datamodel %}
                     // W3C SCXML 5.7.1: a `<param>` that names neither an `expr` nor a location, an
                     // empty `location`, names no location: error.execution, this pair is left out,
@@ -377,7 +427,7 @@
 {# W3C SCXML 6.2: each name of a namelist is a variable whose value goes by its own name. #}
 {% for namelist_id in action.namelist | split %}
 {% if namelist_id is declared_name %}
-{{ ecma_param(namelist_id, namelist_id, is_http) }}
+{{ ecma_param(namelist_id, namelist_id, is_http, host_form) }}
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -452,37 +502,22 @@
 {% else %}
                     let sendEventData = ""
 {% endif %}
+{# The request a host is handed, in the words the document wrote: the target uninterpreted, the
+   `<content>` as the text it spells (the document's own, or under `sce-static` the value read from
+   the machine's fields), and the form the `<param>`s and the namelist make. #}
+{% set host_target = 'sendTarget' if computed_target else '"' ~ (action.target | default('', true) | escape_swift) ~ '"' %}
+{% set host_content = 'contentValue.formText' if action.native_content_value else '"' ~ (action.content | default('', true) | escape_swift) ~ '"' %}
+{% set host_params = 'sendForm' if sends_params else '[:]' %}
 {% if is_host %}
-                    // W3C SCXML 6.2.5: "{{ action.send_type }}" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice. Its target is passed through uninterpreted, a delay is a property of the
-                    // send and not of the processor, and the request is the one of this moment, its
-                    // `_event.invokeid` included (SCE_MESH.md §10.7).
-                    let sendRequest = HostSendRequest(
-                        processorType: "{{ action.send_type | escape_swift }}",
-                        eventName: {{ event_name_swift }},
-                        target: {{ 'sendTarget' if computed_target else '"' ~ (action.target | default('', true) | escape_swift) ~ '"' }},
-                        content: {{ 'contentValue.formText' if action.native_content_value else '"' ~ (action.content | default('', true) | escape_swift) ~ '"' }},
-                        params: {{ 'sendForm' if sends_params else '[:]' }},
-                        sendID: {{ send_id_swift }},
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-{% if delay_swift %}
-                    engine.scheduleHostSend(delay: {{ delay_swift }}, request: sendRequest, sender: self.sessionID)
-{% else %}
-                    engine.performHostSend(sendRequest)
-{% endif %}
+{{ host_send_arm(action.send_type, event_name_swift, host_target, host_content, host_params, send_id_swift, delay_swift) }}
 {% elif (computed_target or routed_target) and not is_http %}
-{% if ecma_target %}
-                    // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
-                    // a peer is not a local session. This runtime has no Mesh router to hand it to, so it
-                    // is what every channel does with no router registered: a send to a host processor
-                    // nobody serves, one error.execution, and the block goes on (the other targets of
-                    // the block are still this session's).
+{% if dynamic_mesh %}
+                    // SCE_MESH.md §mesh-19: the evaluated target names a Mesh peer, which is not a local
+                    // session: the send is the host's Mesh router's, as a literal `#peer` is, and with
+                    // no router registered it is a send to a host processor nobody serves, one
+                    // error.execution (`performHostSend`). Any other value is routed below.
                     if isMeshTarget(sendTarget) {
-{{ send_error('error.execution', '"<send type=\'sce:mesh\'> names a processor the host declared but never registered"', send_id_swift) }}
+{{ host_send_arm('sce:mesh', event_name_swift, host_target, host_content, host_params, send_id_swift, delay_swift) }}
                     } else {
 {% endif %}
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
@@ -511,7 +546,7 @@
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
                     }
-{% if ecma_target %}
+{% if dynamic_mesh %}
                     }
 {% endif %}
 {% elif is_http and not action.target and not computed_target %}

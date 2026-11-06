@@ -13646,7 +13646,10 @@ impl SwiftTarget {
     /// content as the text it spells: the document's own, or the value an expression computes from
     /// the machine's fields when the send is made. A processor type an expression chooses is known
     /// only when the send runs.
-    fn unlowered_host_send(send: &Action) -> Option<String> {
+    ///
+    /// The rule an `ecmascript` or `null` document's host-served send is judged by too
+    /// (`generator::swift_send_unlowered`), since the template hands every one the same request.
+    pub(crate) fn unlowered_host_send(send: &Action) -> Option<String> {
         if !send.types.is_empty() {
             return Some(format!(
                 "a <send> to the host whose processor type an expression computes (\"{}\")",

@@ -2,14 +2,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 //! The Swift backend lowers a `<send>` to a processor the host serves (§scxml-6.2.5) of a
-//! `sce-static` statechart, and with it the Mesh send of SCE_MESH.md §19: a `<send target="#peer">`
-//! is lowered, as on every backend whose router is the host's, to a send of type `sce:mesh`. The
+//! statechart of any data model, and with it the Mesh send of SCE_MESH.md §19: a `<send
+//! target="#peer">` is lowered, as on every backend whose router is the host's, to a send of type
+//! `sce:mesh`, and a `targetexpr` that names a peer once it is evaluated reaches the same act. The
 //! machine hands the whole send to the handler the host registered: the event, the target
 //! uninterpreted, the `<param>`s as the form, the event's data computed once, at once or when the
 //! delay the document writes is over. It does not also deliver the event locally.
 //!
-//! `StaticDatamodelTests` holds what the engine does with the request; this file holds the text
-//! the generator writes and the line it refuses by name.
+//! `StaticDatamodelTests` and the integration drivers hold what the engine does with the request;
+//! this file holds the text the generator writes.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -30,6 +31,20 @@ fn repo_root() -> PathBuf {
 /// What `sce-codegen generate -l swift` made of `text`, written as `host_probe.scxml`: the exit
 /// status, the text of every file written by name, and what it said.
 fn generate(text: &str) -> (Option<i32>, Vec<(String, String)>, String) {
+    generate_with(text, &[])
+}
+
+/// [`generate`], with the `<send>` types the host declares it serves (`--host-processor`).
+fn generate_serving(text: &str, serves: &[&str]) -> (Option<i32>, Vec<(String, String)>, String) {
+    let declared: Vec<&str> = serves
+        .iter()
+        .flat_map(|served| ["--host-processor", *served])
+        .collect();
+    generate_with(text, &declared)
+}
+
+/// [`generate`], with `extra` arguments after the output directory.
+fn generate_with(text: &str, extra: &[&str]) -> (Option<i32>, Vec<(String, String)>, String) {
     let dir = tempdir().expect("tempdir");
     std::fs::write(dir.path().join("host_probe.scxml"), text).expect("write the document");
     let out_dir = tempdir().expect("tempdir");
@@ -41,6 +56,7 @@ fn generate(text: &str) -> (Option<i32>, Vec<(String, String)>, String) {
         .arg(dir.path().join("host_probe.scxml"))
         .arg("-o")
         .arg(out_dir.path())
+        .args(extra)
         .output()
         .expect("invoke sce-codegen");
     let mut files = Vec::new();
@@ -64,12 +80,17 @@ fn generate(text: &str) -> (Option<i32>, Vec<(String, String)>, String) {
     (out.status.code(), files, said)
 }
 
-/// A document of `datamodel` whose one transition runs `send`, with a variable `n` to read.
+/// A document of `datamodel` whose one transition runs `send`, with a variable `n` to read and,
+/// under `ecmascript`, a variable `peer` that names a Mesh peer.
 fn document(send: &str, datamodel: &str) -> String {
-    let data = if datamodel == "sce-static" {
-        r#"<datamodel><data id="n" sce:type="uint32" expr="7" sce:direction="out"/></datamodel>"#
-    } else {
-        ""
+    let data = match datamodel {
+        "sce-static" => {
+            r#"<datamodel><data id="n" sce:type="uint32" expr="7" sce:direction="out"/></datamodel>"#
+        }
+        "ecmascript" => {
+            r#"<datamodel><data id="n" expr="7"/><data id="peer" expr="'#hmi'"/></datamodel>"#
+        }
+        _ => "",
     };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -192,21 +213,171 @@ fn a_content_an_expression_computes_is_read_once_and_handed_on_as_text() {
     );
 }
 
-/// A send over another data model is not the static lowering's: it is named in a refusal and not
-/// written wrong, as the event would otherwise also be taken for a local one.
-#[test]
-fn a_send_to_a_peer_of_another_data_model_is_refused_by_name() {
-    let plain = r##"<send target="#server" event="ping"/>"##;
-    for datamodel in ["null", "ecmascript"] {
-        let (status, _, said) = generate(&document(plain, datamodel));
-        assert_eq!(
-            status,
-            Some(7),
-            "a `{datamodel}` send to a peer is refused: {said}"
-        );
+/// The calls by which a Swift machine delivers an event its send makes to a session of its own
+/// tree, at once or after a delay. A send the host serves makes none of them.
+const LOCAL_DELIVERIES: &[&str] = &[
+    "engine.raiseExternalWithMeta(",
+    "engine.sendToTarget(",
+    "engine.scheduleEvent(",
+    "engine.scheduleRoutedEvent(",
+    "engine.sendNamedExternal(",
+    "engine.sendNamedInternal(",
+    "self.deliverToParent(",
+    "EventMetadata.external(",
+];
+
+/// `code` hands the act to the host exactly once and delivers nothing locally: the request is made
+/// in one place and the event is not also put on a queue of this machine, where the document would
+/// see the act twice.
+fn hands_the_host_the_act_once(code: &str, datamodel: &str) {
+    assert_eq!(
+        code.matches("let sendRequest = HostSendRequest(").count(),
+        1,
+        "a `{datamodel}` send makes one request:\n{code}"
+    );
+    assert_eq!(
+        code.matches("engine.performHostSend(sendRequest)").count(),
+        1,
+        "a `{datamodel}` send is handed to the host once:\n{code}"
+    );
+    for local in LOCAL_DELIVERIES {
         assert!(
-            said.contains("served by the host, which only a `sce-static` document sends"),
-            "the refusal of a `{datamodel}` document names the host: {said}"
+            !code.contains(local),
+            "a `{datamodel}` send the host serves is not also delivered locally (`{local}`):\n{code}"
         );
     }
+}
+
+/// A send to a peer is the host's under every data model, not only `sce-static`: the build lowers it
+/// to a `sce:mesh` send, and the machine hands the router the request and delivers nothing itself.
+#[test]
+fn a_send_to_a_peer_of_any_data_model_is_handed_to_the_host_once() {
+    let plain = r##"<send target="#server" event="ping"/>"##;
+    for datamodel in ["null", "ecmascript"] {
+        let (status, files, said) = generate(&document(plain, datamodel));
+        assert_eq!(
+            status,
+            Some(0),
+            "a `{datamodel}` send to a peer is written: {said}"
+        );
+        let code = machine(&files);
+        holds_each(
+            code,
+            &["processorType: \"sce:mesh\",", "target: \"#server\","],
+        );
+        hands_the_host_the_act_once(code, datamodel);
+    }
+}
+
+/// §scxml-6.2.5: an `ecmascript` document's send to a type the host declared is the host's whole.
+/// A `<param>` is read once by the engine, and the one value is both the form the handler reads and
+/// the pair the event's data carries.
+#[test]
+fn an_ecmascript_send_to_a_declared_type_is_handed_to_the_host_once() {
+    let send = r#"<send type="x-sce-host" event="host.ask"><param name="n" expr="n + 1"/></send>"#;
+    let (status, files, said) = generate_serving(&document(send, "ecmascript"), &["x-sce-host"]);
+    assert_eq!(status, Some(0), "a send to the host is written: {said}");
+    let code = machine(&files);
+    holds_each(
+        code,
+        &[
+            "private func evaluateWire(_ expression: String) -> (text: String, json: String)?",
+            "var sendForm: [String: [String]] = [:]",
+            "var sendParts: [PayloadPair] = []",
+            "if let paramWire = evaluateWire(",
+            "appendFormParam(&sendForm, \"n\", .text(paramWire.text))",
+            "sendParts.append(PayloadPair.json(\"n\", rawJSON: paramWire.json))",
+            "let sendEventData = payloadJSON(sendParts)",
+            "processorType: \"x-sce-host\",",
+            "eventName: \"host.ask\",",
+            "target: \"\",",
+            "params: sendForm,",
+            "eventData: sendEventData,",
+            "invokeID: engine.currentEventInvokeID",
+        ],
+    );
+    assert!(
+        !code.contains("rawJSON: paramValue"),
+        "the param is not read a second time for the event's data:\n{code}"
+    );
+    hands_the_host_the_act_once(code, "ecmascript");
+}
+
+/// §scxml-6.2.4: a delay an `ecmascript` document computes is a property of the send, not of the
+/// processor it names: the request waits on the scheduler, where `<cancel>` reaches it.
+#[test]
+fn a_delayed_ecmascript_send_to_a_declared_type_is_handed_to_the_scheduler() {
+    let send = r#"<send type="x-sce-host" event="host.ask" delayexpr="'2s'"/>"#;
+    let (status, files, said) = generate_serving(&document(send, "ecmascript"), &["x-sce-host"]);
+    assert_eq!(
+        status,
+        Some(0),
+        "a delayed send to the host is written: {said}"
+    );
+    let code = machine(&files);
+    holds_each(
+        code,
+        &["engine.scheduleHostSend(delay: Duration.milliseconds(Int64(sendDelayMs)), request: sendRequest, sender: self.sessionID)"],
+    );
+    assert!(
+        !code.contains("engine.performHostSend(sendRequest)"),
+        "a delayed send is not also performed at once:\n{code}"
+    );
+    for local in LOCAL_DELIVERIES {
+        assert!(
+            !code.contains(local),
+            "a delayed send the host serves is not also delivered locally (`{local}`):\n{code}"
+        );
+    }
+}
+
+/// SCE_MESH.md §mesh-19: a `targetexpr` that names a peer once it is evaluated reaches the host's
+/// Mesh router as a literal `#peer` does, and with none registered it is a send to a host processor
+/// nobody serves (`performHostSend`'s `error.execution`). Any other value is routed as a target.
+#[test]
+fn a_peer_an_expression_names_is_handed_to_the_router() {
+    let send = r#"<send event="ping" targetexpr="peer"><param name="n" expr="n"/></send>"#;
+    let (status, files, said) = generate(&document(send, "ecmascript"));
+    assert_eq!(status, Some(0), "a computed target is written: {said}");
+    let code = machine(&files);
+    holds_each(
+        code,
+        &[
+            "private func evaluateWire(_ expression: String) -> (text: String, json: String)?",
+            "if isMeshTarget(sendTarget) {",
+            "processorType: \"sce:mesh\",",
+            "target: sendTarget,",
+            "appendFormParam(&sendForm, \"n\", .text(paramWire.text))",
+            "params: sendForm,",
+            "engine.performHostSend(sendRequest)",
+        ],
+    );
+    assert!(
+        !code.contains("declared but never registered"),
+        "a peer is handed to the router, not refused before it is asked:\n{code}"
+    );
+    assert_eq!(
+        code.matches("engine.performHostSend(sendRequest)").count(),
+        1,
+        "the peer is handed to the router once:\n{code}"
+    );
+    assert_eq!(
+        code.matches("engine.sendToTarget(").count(),
+        1,
+        "a value that names no peer is routed as a target, once:\n{code}"
+    );
+    let routed = code
+        .find("if isMeshTarget(sendTarget) {")
+        .expect("the peer branch is written");
+    let local = code
+        .find("engine.sendToTarget(")
+        .expect("the target branch is written");
+    let otherwise = code[routed..]
+        .find("} else {")
+        .map(|at| routed + at)
+        .expect("the peer branch has an else");
+    assert!(
+        routed < otherwise && otherwise < local,
+        "the local route is the else of the peer branch, so one send takes one of them:\n{code}"
+    );
 }
