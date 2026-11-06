@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0092, section 1.1: the smallest union that holds both kinds of
+     case, one holding a record and one empty, over the two-variant enum and
+     the one-field event schema of the sibling export fixtures. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="union" name="union_ast_export_min">
+  <sce:import kind="enum" src="enum_ast_export_min.scxml" as="Letter"/>
+  <sce:import kind="event-schema" src="event_schema_ast_export_min.scxml" as="Byte"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:Letter">
+      <sce:case variant="a" record="Byte"/>
+      <sce:case variant="b"/>
+    </data>
+  </datamodel>
+</scxml>

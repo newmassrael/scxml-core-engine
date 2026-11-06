@@ -211,6 +211,7 @@ The closed enum, in declaration order:
 | `queue` | `QueueModel` | First-in first-out hand-over between execution contexts; the document states the contract and the generator selects the algorithm. |
 | `feature-model` | `FeaturesModel` | The features of a product line and what each requires (ADR 0057); a declaration that emits nothing. |
 | `text-template` | `TextTemplateModel` | A text with typed holes and, for an untrusted hole, a fence (docs/adr/0087, section 3); rendered by one pure function on every backend. |
+| `union` | `UnionModel` | A value that is one of several shapes, told apart by a tag of a closed enum (docs/adr/0092, section 1): `tag` the key the tag is written under, `tag_enum` the alias of its enum, and one `cases` entry per variant, each with the `record` it holds or none. |
 
 The kinds cover SCE's full IR surface: the forge kinds plus
 the W3C SCXML statechart arm. `imports` and `externs` are always

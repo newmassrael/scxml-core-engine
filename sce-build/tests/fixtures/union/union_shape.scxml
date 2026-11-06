@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A shape: a dot, which carries nothing, a circle of a radius, or a rect of
+     a width and a height (docs/adr/0092, section 1.1). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="union" name="union_shape">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:ShapeKind">
+      <sce:case variant="rect" record="Rect"/>
+      <sce:case variant="dot"/>
+      <sce:case variant="circle" record="Radius"/>
+    </data>
+  </datamodel>
+</scxml>

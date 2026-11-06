@@ -4215,6 +4215,54 @@
             "parts"
           ],
           "type": "object"
+        },
+        {
+          "description": "A value that is one of several shapes, told by its tag. See [`UnionModel`].",
+          "properties": {
+            "cases": {
+              "description": "The cases in document order.",
+              "items": {
+                "$ref": "#/definitions/UnionCase"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "union"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the `<scxml sce:kind=\"union\">` root element, where a refusal of the whole document anchors."
+            },
+            "tag": {
+              "description": "The tag's key: the `id` of the one `<data>`, the key a value's tag is written under beside the case's fields.",
+              "type": "string"
+            },
+            "tag_enum": {
+              "description": "The alias of the imported enum the tag is a value of.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "cases",
+            "kind",
+            "name",
+            "tag",
+            "tag_enum"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -4629,6 +4677,13 @@
           "description": "A text with typed holes, rendered by one pure function on every backend — docs/adr/0087, section 3. A hole is a bounded text, a fixed-width integer or a value of a closed enum; a text hole says whether it is trusted, and an untrusted one is put between the document's two fence markers with every marker removed from its value. The build knows the longest text it renders (`MAX_LEN`), and a `sce-static` statechart renders it into a variable that holds it with `<sce:render>`.",
           "enum": [
             "text_template"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A value that is exactly one of several shapes, told apart by a tag of a closed enum — docs/adr/0092, section 1. The document names the tag's key and its enum, and one case per variant of that enum, each case a record of an imported event schema or none. A type of the language (`union:<alias>`), read by the documents that import it; no backend lowers it yet, so generation refuses it by name (`generate/unsupported-feature`).",
+          "enum": [
+            "union"
           ],
           "type": "string"
         }
@@ -7263,6 +7318,26 @@
         "target",
         "transition_index",
         "type"
+      ],
+      "type": "object"
+    },
+    "UnionCase": {
+      "description": "One `<sce:case>` of a [`UnionModel`].",
+      "properties": {
+        "record": {
+          "description": "The alias of the imported event schema whose record the case holds; `None` for an empty case, the tag alone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variant": {
+          "description": "The variant of the tag's enum the case is for.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "variant"
       ],
       "type": "object"
     },

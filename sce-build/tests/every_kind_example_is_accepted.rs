@@ -99,12 +99,12 @@ fn every_example_checks_as_its_kind_and_renders() {
         );
         checked += 1;
     }
-    // The catalog covers twenty-two kinds, and every one has an example
+    // The catalog covers twenty-three kinds, and every one has an example
     // today (worker's own check follows the link it imports, which
-    // imports the codec and buffer pool it names, from one file). A walk
-    // that checked far fewer found the catalog shrunk, not the examples
-    // sound.
-    assert_eq!(checked, 22, "only {checked} examples checked");
+    // imports the codec and buffer pool it names, from one file; union's
+    // follows the enum and event-schema examples beside it). A walk that
+    // checked far fewer found the catalog shrunk, not the examples sound.
+    assert_eq!(checked, 23, "only {checked} examples checked");
 }
 
 /// Every file in the example directory is the example of the kind it is

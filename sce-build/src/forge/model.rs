@@ -204,6 +204,14 @@ pub enum ForgeKind {
     /// `sce-static` statechart renders it into a variable that holds it with
     /// `<sce:render>`.
     TextTemplate,
+    /// A value that is exactly one of several shapes, told apart by a tag of
+    /// a closed enum — docs/adr/0092, section 1. The document names the tag's
+    /// key and its enum, and one case per variant of that enum, each case a
+    /// record of an imported event schema or none. A type of the language
+    /// (`union:<alias>`), read by the documents that import it; no backend
+    /// lowers it yet, so generation refuses it by name
+    /// (`generate/unsupported-feature`).
+    Union,
 }
 
 impl ForgeKind {
@@ -234,6 +242,7 @@ impl ForgeKind {
         "feature-model",
         "broadcast-log",
         "text-template",
+        "union",
     ];
 
     /// This kind's `sce:kind` attribute value — the inverse of
@@ -271,6 +280,7 @@ impl ForgeKind {
             Self::FeatureModel => "feature-model",
             Self::BroadcastLog => "broadcast-log",
             Self::TextTemplate => "text-template",
+            Self::Union => "union",
         }
     }
 
@@ -299,6 +309,7 @@ impl ForgeKind {
             "feature-model" => Some(Self::FeatureModel),
             "broadcast-log" => Some(Self::BroadcastLog),
             "text-template" => Some(Self::TextTemplate),
+            "union" => Some(Self::Union),
             _ => None,
         }
     }
@@ -379,6 +390,9 @@ impl ForgeKind {
             // docs/adr/0087, section 3.1: a template is a pure function of its
             // holes, rendered anew on each call.
             Self::TextTemplate => false,
+            // docs/adr/0092, section 7: a union is a value type, held by
+            // whoever holds a value of it; the document has no instance.
+            Self::Union => false,
         }
     }
 
@@ -455,6 +469,9 @@ impl ForgeKind {
             // language's forge runtime; a template with no untrusted hole calls
             // nothing of it.
             Self::TextTemplate => RuntimeDep::ForgeRuntime,
+            // docs/adr/0092: no backend lowers a union yet, so a union document
+            // emits nothing and depends on nothing.
+            Self::Union => RuntimeDep::None,
         }
     }
 
@@ -484,6 +501,7 @@ impl ForgeKind {
                 | Self::FeatureModel
                 | Self::BroadcastLog
                 | Self::TextTemplate
+                | Self::Union
         )
     }
 }
@@ -513,6 +531,7 @@ impl std::fmt::Display for ForgeKind {
             Self::FeatureModel => write!(f, "feature-model"),
             Self::BroadcastLog => write!(f, "broadcast-log"),
             Self::TextTemplate => write!(f, "text-template"),
+            Self::Union => write!(f, "union"),
         }
     }
 }
@@ -6646,6 +6665,10 @@ pub enum ForgeDocument {
     /// A text with typed holes. See [`TextTemplateModel`].
     #[serde(rename = "text-template")]
     TextTemplate(TextTemplateModel),
+    /// A value that is one of several shapes, told by its tag. See
+    /// [`UnionModel`].
+    #[serde(rename = "union")]
+    Union(UnionModel),
 }
 
 impl ForgeDocument {
@@ -6673,6 +6696,7 @@ impl ForgeDocument {
             Self::FeatureModel(m) => &m.name,
             Self::BroadcastLog(m) => &m.name,
             Self::TextTemplate(m) => &m.name,
+            Self::Union(m) => &m.name,
         }
     }
 
@@ -6700,6 +6724,7 @@ impl ForgeDocument {
             Self::FeatureModel(_) => ForgeKind::FeatureModel,
             Self::BroadcastLog(_) => ForgeKind::BroadcastLog,
             Self::TextTemplate(_) => ForgeKind::TextTemplate,
+            Self::Union(_) => ForgeKind::Union,
         }
     }
 
@@ -6777,6 +6802,9 @@ impl ForgeDocument {
             // A template is rendered by `<sce:render>`, which names its holes;
             // none of them is read through the alias as a field.
             Self::TextTemplate(_) => return None,
+            // A union is a type a field, a variable or a slot holds; its
+            // document is not read through its alias as a record.
+            Self::Union(_) => return None,
         })
     }
 
@@ -6866,7 +6894,70 @@ impl ForgeDocument {
                     RuntimeDep::None
                 }
             }
+            // No backend lowers a union yet: nothing is emitted.
+            Self::Union(_) => RuntimeDep::None,
         }
+    }
+}
+
+// ── Union kind ─────────────────────────────────────────────────
+
+/// Union document — docs/adr/0092, section 1.1: a value that is exactly one of
+/// several cases, told apart by a tag of a closed enum.
+///
+/// Schema (per `<scxml sce:kind="union">` body): a `<datamodel>` holding
+/// exactly one `<data id sce:type="enum:<alias>">`, the tag, whose `id` is the
+/// key a value's tag is written under; under it one `<sce:case variant
+/// [record]>` per variant of the tag's enum, the case holding the record of the
+/// imported event schema `record` names, or nothing. The parser holds the
+/// document to every rule it states alone; whether the cases and the enum's
+/// variants are one to one, whether the enum is closed, and whether a case's
+/// record declares the tag's key need the imported documents, and are asked
+/// where the imports are read ([`crate::forge::union_check`]).
+///
+/// A union declares no revision of its own: its revision is its tag enum's
+/// (docs/adr/0092, section 8).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct UnionModel {
+    pub name: String,
+    /// The tag's key: the `id` of the one `<data>`, the key a value's tag is
+    /// written under beside the case's fields.
+    pub tag: String,
+    /// The alias of the imported enum the tag is a value of.
+    pub tag_enum: String,
+    /// The cases in document order.
+    pub cases: Vec<UnionCase>,
+    /// Source line of the tag's `<data>`, where a refusal of the tag or of the
+    /// cases as a whole anchors.
+    #[serde(skip, default)]
+    pub tag_line: Option<u32>,
+    /// Post-preprocessor source position of the `<scxml sce:kind="union">`
+    /// root element, where a refusal of the whole document anchors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+/// One `<sce:case>` of a [`UnionModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct UnionCase {
+    /// The variant of the tag's enum the case is for.
+    pub variant: String,
+    /// The alias of the imported event schema whose record the case holds;
+    /// `None` for an empty case, the tag alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<String>,
+    /// Source line of the `<sce:case>` element, where a refusal of the case
+    /// anchors.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+impl UnionModel {
+    /// The case for `variant`, if the document gives it one.
+    pub fn case(&self, variant: &str) -> Option<&UnionCase> {
+        self.cases.iter().find(|case| case.variant == variant)
     }
 }
 
@@ -7078,7 +7169,7 @@ mod tests {
     fn forge_kind_attr_names_round_trip() {
         assert_eq!(
             ForgeKind::ALL_ATTR_NAMES.len(),
-            22,
+            23,
             "the kind vocabulary changed size — every arm below counts it"
         );
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();

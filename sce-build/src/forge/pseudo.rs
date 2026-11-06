@@ -336,7 +336,7 @@ use crate::forge::model::{
     TestVector, TestVectorValue, TextTemplateModel, TimerModel, TlvTerminateStrategy,
     TransformModel, ValidatorModel, WorkerModel,
 };
-use crate::forge::model::{HoleKind, TemplatePart};
+use crate::forge::model::{HoleKind, TemplatePart, UnionModel};
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
 
@@ -565,6 +565,7 @@ pub fn render_nodes(
         ForgeDocument::BroadcastLog(m) => Ok(render_broadcast_log(m)),
         ForgeDocument::FeatureModel(m) => Ok(render_feature_model(m)),
         ForgeDocument::TextTemplate(m) => Ok(render_text_template(m)),
+        ForgeDocument::Union(m) => Ok(render_union(m)),
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
@@ -2075,6 +2076,31 @@ fn render_text_template(m: &TextTemplateModel) -> Vec<Node> {
                 TemplatePart::Literal(literal) => out.line(&format!("text {}", text(literal))),
                 TemplatePart::Put(hole) => out.line(&format!("put {}", text(hole))),
             }
+        }
+    });
+    out.nodes
+}
+
+/// A union (docs/adr/0092, section 1.1): its tag, the key it is written under
+/// and the enum it is a value of, then one line per case in document order,
+/// with the record the case holds or nothing for an empty case. A key, an
+/// alias and a variant name have no space (each is an identifier), so each is
+/// one word wherever it stands.
+fn render_union(m: &UnionModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line(&format!(
+        "union {} tag {} enum:{}",
+        text(&m.name),
+        text(&m.tag),
+        text(&m.tag_enum)
+    ));
+    out.nested(|out| {
+        for case in &m.cases {
+            let line = match &case.record {
+                Some(record) => format!("case {} record:{}", text(&case.variant), text(record)),
+                None => format!("case {} empty", text(&case.variant)),
+            };
+            out.line(&line);
         }
     });
     out.nodes

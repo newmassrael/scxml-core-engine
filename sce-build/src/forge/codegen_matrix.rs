@@ -65,7 +65,8 @@ pub enum EmitOutcome {
     /// A kind whose document is valid on every backend and whose runtime row has
     /// not landed on this one ([`awaits_runtime`]): [`check`] lets it through to
     /// the dispatch, which refuses the document by name with the kind's own code
-    /// (`broadcast-log/runtime-missing`). Not an emitting backend, so
+    /// (`broadcast-log/runtime-missing`; for a union, which no backend lowers yet,
+    /// `generate/unsupported-feature`). Not an emitting backend, so
     /// [`emitting`] and the catalog's `backends` leave it out. A backend whose
     /// row and template have landed answers [`EmitOutcome::Emit`] for the same
     /// kind.
@@ -118,7 +119,11 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         | ForgeKind::BroadcastLog
         // docs/adr/0087, section 7.1: a text template is a pure function of
         // its holes, generated on every backend.
-        | ForgeKind::TextTemplate => KindClass::Generic,
+        | ForgeKind::TextTemplate
+        // docs/adr/0092, section 7: a union is a sum type on every backend.
+        // No backend lowers one yet, so each refuses it by name
+        // ([`awaits_runtime`]), not as a missing template.
+        | ForgeKind::Union => KindClass::Generic,
         // RFC §synth-5-C / §synth-5-J-4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language`. The (rust, *)
@@ -334,6 +339,17 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::C11
             | Language::Swift => true,
         },
+        // docs/adr/0092, landing order: the generated sum types land after the
+        // type and its document, so no backend has a template for a union yet.
+        ForgeKind::Union => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Go
+            | Language::Kotlin
+            | Language::Python
+            | Language::C11
+            | Language::Swift => false,
+        },
     }
 }
 
@@ -428,6 +444,11 @@ const fn lists(list: &[Language], lang: Language) -> bool {
 /// today: the answer is what a language added to [`Language::ALL`] gets until its row
 /// lands, and its dispatch arm builds
 /// `GenerateError::BroadcastLogRuntimeMissing` where the document is in hand.
+///
+/// Every language awaits the union's lowering (docs/adr/0092, landing order): a
+/// union document is valid and checked, and each dispatch arm refuses it by name
+/// with `generate/unsupported-feature`
+/// ([`crate::forge::union_check::document_unlowered`]).
 pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
     match kind {
         // A language that writes the log in part ([`ships_in_part`]) has its row: Swift's
@@ -436,6 +457,10 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
         ForgeKind::BroadcastLog => {
             !lists(BROADCAST_LOG_BACKENDS, lang) && !ships_in_part(ForgeKind::BroadcastLog, lang)
         }
+        // docs/adr/0092: a union document is read and checked on every backend,
+        // and no backend lowers a union yet, so each dispatch refuses it by name
+        // (`generate/unsupported-feature`, `crate::forge::union_check`).
+        ForgeKind::Union => !template_ships(ForgeKind::Union, lang),
         _ => false,
     }
 }
@@ -1022,19 +1047,38 @@ mod tests {
         }
     }
 
-    /// No kind but the broadcast log awaits a runtime, and no pair that ships
-    /// a template awaits one.
+    /// No kind but the broadcast log and the union awaits a runtime, and no
+    /// pair that ships a template awaits one.
     #[test]
     fn only_a_pair_with_no_template_awaits_its_runtime() {
         for name in ForgeKind::ALL_ATTR_NAMES {
             let kind = ForgeKind::from_attr(name).expect("every attribute name parses");
             for &lang in Language::ALL {
                 if awaits_runtime(kind, lang) {
-                    assert_eq!(kind, ForgeKind::BroadcastLog, "{kind:?} on {lang:?}");
+                    assert!(
+                        matches!(kind, ForgeKind::BroadcastLog | ForgeKind::Union),
+                        "{kind:?} on {lang:?}"
+                    );
                     assert!(!template_ships(kind, lang), "{kind:?} on {lang:?}");
                 }
             }
         }
+    }
+
+    /// docs/adr/0092, landing order: no backend lowers a union yet, so every
+    /// backend awaits it, lets it through the matrix to the dispatch that
+    /// refuses the document by name, and none is listed as emitting it.
+    #[test]
+    fn every_backend_awaits_the_union_and_none_emits_it() {
+        for &lang in Language::ALL {
+            assert_eq!(
+                lookup(ForgeKind::Union, lang),
+                EmitOutcome::RuntimeMissing,
+                "{lang:?}"
+            );
+            assert!(check(ForgeKind::Union, lang).is_ok(), "{lang:?}");
+        }
+        assert_eq!(emitting(ForgeKind::Union).count(), 0);
     }
 
     #[test]

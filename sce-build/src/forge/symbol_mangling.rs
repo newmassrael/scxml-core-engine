@@ -458,6 +458,7 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         ForgeDocument::FeatureModel(m) => &m.name,
         ForgeDocument::BroadcastLog(m) => &m.name,
         ForgeDocument::TextTemplate(m) => &m.name,
+        ForgeDocument::Union(m) => &m.name,
     }
 }
 

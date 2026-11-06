@@ -98,6 +98,8 @@
         "validation/text-template-fence",
         "validation/render-holes",
         "validation/render-bound",
+        "validation/union-cases",
+        "validation/union-tag-collision",
         "validation/mesh-rpc-reserved-param",
         "validation/mesh-rpc-missing-target",
         "validation/mesh-rpc-duplicate-target",

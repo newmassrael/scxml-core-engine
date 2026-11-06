@@ -1301,6 +1301,40 @@ pub enum ValidationError {
         max_len: u64,
     },
 
+    /// docs/adr/0092, section 1.1: the cases of a union document and the
+    /// variants of its tag's enum are not one to one — a variant with no case,
+    /// a case naming no variant, a variant given two cases — or the union
+    /// declares no case, or every case is empty, which makes the union its
+    /// enum. `document` is the union document's name, `variant` the first
+    /// variant the rule is broken at (the record's `actual`, empty where the
+    /// rule is about the cases as a whole), and `detail` names each.
+    ///
+    /// Wire code: `validation/union-cases`.
+    #[error("union '{document}': {detail}")]
+    UnionCases {
+        document: String,
+        variant: String,
+        detail: String,
+    },
+
+    /// docs/adr/0092, section 1.1: a case's record declares a field whose
+    /// `id` is the key the union's tag is written under, so the field and the
+    /// tag would stand under one key of one object.
+    ///
+    /// Wire code: `validation/union-tag-collision`.
+    #[error(
+        "union '{document}', case '{case}': the record '{record}' declares the field \
+         '{field}', the key the union's tag is written under — the tag and a case's fields \
+         stand beside each other in one object, so no case's record declares the tag's key: \
+         rename the field or the tag"
+    )]
+    UnionTagCollision {
+        document: String,
+        case: String,
+        record: String,
+        field: String,
+    },
+
     /// docs/adr/0087, section 4.1, item 2: an `sce:answer` that names no answer
     /// schema the build can write: on an `<invoke>` of a type other than
     /// `sce-host-model-generate`, empty, naming no event schema the document

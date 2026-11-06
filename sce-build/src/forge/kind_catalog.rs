@@ -744,6 +744,46 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
             ],
             example: Example::Document(include_str!("../../kind-examples/text-template.scxml")),
         },
+        K::Union => KindGuide {
+            role: KindRole::DataFormat,
+            summary: "A value that is exactly one of several shapes, told apart by a tag of a \
+                      closed enum: one case per variant, each case the record of an event \
+                      schema or nothing, so which fields a value has is stated by its type.",
+            choose_when: &[
+                "the text says a value is one of several kinds, and each kind carries fields \
+                 of its own",
+                "a record would hold fields that are meaningful only for some values of one of \
+                 its other fields, and null for the rest",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::Enum,
+                    "an enum is a closed set of names that carry nothing; a union's tag is an \
+                     enum, and each of its cases may carry a record",
+                ),
+                apart!(
+                    K::EventSchema,
+                    "an event schema is one record, holding every one of its fields; a union \
+                     holds the fields of exactly one case",
+                ),
+                apart!(
+                    K::Codec,
+                    "a codec's <sce:variant> describes the bytes of a frame another program \
+                     writes; a union is a value of the language, with a JSON form SCE writes",
+                ),
+            ],
+            notes: &[
+                "the tag is the one <data> of the <datamodel>: its id is the key the tag is \
+                 written under, and its sce:type an enum:<alias> of a closed enum the document \
+                 imports",
+                "one <sce:case variant record> per variant of that enum, record the alias of \
+                 an imported event schema or left out for an empty case; no case's record \
+                 declares the tag's key",
+                "a field, a variable or a slot holds one as union:<alias>; no backend lowers it \
+                 yet, so generation refuses it by name",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/union.scxml")),
+        },
     }
 }
 

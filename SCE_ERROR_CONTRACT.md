@@ -1035,6 +1035,8 @@ references against a real document and drift silently.
 | `validation/typed-invoke-request` | `validation` | no | SCE Accepted Subset §2.12 |
 | `validation/typed-invoke-schema` | `validation` | no | SCE Accepted Subset §2.12 |
 | `validation/unexpected-child-element` | `validation` | `replace_one_of` |  |
+| `validation/union-cases` | `validation` | no | ADR 0092 §1.1 |
+| `validation/union-tag-collision` | `validation` | no | ADR 0092 §1.1 |
 | `validation/unknown-sce-attribute` | `validation` | `replace_one_of` | SCE Accepted Subset §2.2 |
 | `validation/unknown-scxml-attribute` | `validation` | `remove_fields` | W3C SCXML §A.1 |
 | `validation/unresolved-placeholder` | `validation` | no |  |

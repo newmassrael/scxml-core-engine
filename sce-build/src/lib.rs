@@ -5047,6 +5047,12 @@ pub fn compile_forge_from_parsed(
     // default names a variant only the enum document can confirm.
     forge::schema_revision::check(parsed, base_dir, label.diagnostic_label)?;
 
+    // A union's cases are one to one with the variants of its tag's enum, the
+    // enum is closed, and no case's record declares the tag's key: what the
+    // parser could not ask without the documents the union imports
+    // (docs/adr/0092, section 1.1).
+    forge::union_check::check(parsed, base_dir, label.diagnostic_label)?;
+
     // A content-line codec reads a text off a line and names the variant whose
     // text it is, so an `enum:<alias>` entry needs an enum whose variants each
     // have a text a line can carry and no other variant has (docs/adr/0015).
@@ -7079,6 +7085,15 @@ fn validate_and_enrich_imports(
         //        member field types for stateful kinds) used by the typed
         //        expression transpiler pipeline in `forge::type_ctx`.
         if let Some(parsed) = source.parse()? {
+            // A union this one imports is held to the rules that read its own
+            // imports here, at the import, and refused in its own words
+            // (docs/adr/0092, section 1.1). Its imports are written relative
+            // to it.
+            forge::union_check::check(
+                &parsed,
+                source.path.parent().unwrap_or(base_dir),
+                &src_label,
+            )?;
             let mut doc = parsed.document;
             // A codec this one imports is sized by the same deployment
             // (docs/adr/0077 §7), where the tree is one deployment's.
@@ -9448,7 +9463,10 @@ fn discover_stateful_member_methods(
         | ForgeDocument::BroadcastLog(_)
         // A template is rendered by `<sce:render>`, never called on its alias
         // (docs/adr/0087, section 3.1).
-        | ForgeDocument::TextTemplate(_) => Vec::new(),
+        | ForgeDocument::TextTemplate(_)
+        // A union is a type a value is held in, never called on its alias
+        // (docs/adr/0092, section 1.1).
+        | ForgeDocument::Union(_) => Vec::new(),
     }
 }
 

@@ -439,6 +439,15 @@ impl Names {
                 }
                 Ok(())
             }
+            // A union names the enum its tag is a value of and the record each
+            // case holds (docs/adr/0092, section 1.1).
+            ForgeDocument::Union(m) => {
+                self.name(&m.tag_enum);
+                for case in &m.cases {
+                    self.opt_name(case.record.as_deref());
+                }
+                Ok(())
+            }
             // A field's type names each enum and each record it holds, at every
             // depth (docs/adr/0086): a record's import is otherwise used nowhere
             // a value is read.

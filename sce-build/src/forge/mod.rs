@@ -90,6 +90,7 @@ pub mod transform_dep_check;
 pub mod type_ctx;
 pub mod typed_invoke;
 pub mod types;
+pub mod union_check;
 pub mod unpseudo;
 pub mod validate;
 pub mod value_path;

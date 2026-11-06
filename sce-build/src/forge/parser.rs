@@ -947,6 +947,7 @@ fn parse_forge_from_node(
         ForgeKind::TextTemplate => {
             parse_text_template(root, label).map(ForgeDocument::TextTemplate)
         }
+        ForgeKind::Union => parse_union(root, label).map(ForgeDocument::Union),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -1588,6 +1589,181 @@ fn parse_text_template(
         holes,
         fence,
         parts,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
+    })
+}
+
+/// Read a `sce:kind="union"` document into a [`UnionModel`] (docs/adr/0092,
+/// section 1.1).
+///
+/// The tag is the one `<data>` of the `<datamodel>`: its `id` is the key the
+/// tag is written under, and its `sce:type` an `enum:<alias>` of an enum the
+/// document imports. A datamodel of no `<data>` or of two, and a tag of any
+/// other type, are refused (`validation/attribute-rule-violated`). The cases
+/// are the `<sce:case variant [record]>` children of the tag, each `record`
+/// the alias of an imported event schema. A variant given two cases, a union
+/// of no case and one whose every case is empty are refused here
+/// (`validation/union-cases`); whether the cases and the enum's variants are
+/// one to one, whether the enum is closed, and whether a case's record
+/// declares the tag's key need the imported documents, and are asked where the
+/// imports are read ([`crate::forge::union_check`]).
+fn parse_union(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<UnionModel, Located<ForgeError>> {
+    let document = label.identifier.to_string();
+    let cases_error = |node: &roxmltree::Node, variant: &str, detail: &str| {
+        located(
+            node,
+            label.diagnostic_label,
+            ValidationError::UnionCases {
+                document: document.clone(),
+                variant: variant.to_string(),
+                detail: detail.to_string(),
+            },
+        )
+    };
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Union,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
+
+    // The tag: exactly one `<data>`, a value of an imported enum.
+    let one_tag = "exactly one <data>, the tag: a union is told apart by one tag, whose key \
+                   stands beside the fields of its case";
+    let tags: Vec<roxmltree::Node> = data_children(&datamodel).collect();
+    let Some(tag_node) = tags.first() else {
+        return Err(located(
+            &datamodel,
+            label.diagnostic_label,
+            ValidationError::AttributeRuleViolated {
+                element: "<datamodel> of a union".into(),
+                attr: "<data>".into(),
+                value: String::new(),
+                rule: one_tag.into(),
+            },
+        ));
+    };
+    if let Some(second) = tags.get(1) {
+        return Err(located(
+            second,
+            label.diagnostic_label,
+            ValidationError::AttributeRuleViolated {
+                element: "<datamodel> of a union".into(),
+                attr: "<data>".into(),
+                value: second.attribute("id").unwrap_or_default().to_string(),
+                rule: one_tag.into(),
+            },
+        ));
+    }
+    let (tag, type_str) = field_id_and_type(tag_node, label.diagnostic_label)?;
+    let element = format!("the tag <data id=\"{tag}\">");
+    let (tag_type, _, _) =
+        read_schema_value_type(tag_node, label.diagnostic_label, &element, &type_str)?;
+    let ValueType::Scalar(SceType::Enum(reference)) = tag_type else {
+        return Err(located(
+            tag_node,
+            label.diagnostic_label,
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:type".into(),
+                value: type_str,
+                rule: "a value of a closed enum the document imports (`enum:<alias>`): a \
+                       union's cases are the variants of its tag's enum, one case each"
+                    .into(),
+            },
+        ));
+    };
+
+    // The cases: one `<sce:case>` per variant, each naming an imported event
+    // schema's record or none.
+    let records = import_aliases_of(root, ForgeKind::EventSchema);
+    let mut cases: Vec<UnionCase> = Vec::new();
+    for node in sce_children(tag_node, "case") {
+        let variant = node
+            .attribute("variant")
+            .ok_or_else(|| {
+                located(
+                    &node,
+                    label.diagnostic_label,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:case>".into(),
+                        attr: "variant".into(),
+                    },
+                )
+            })?
+            .trim()
+            .to_string();
+        if variant.is_empty() {
+            return Err(located(
+                &node,
+                label.diagnostic_label,
+                ValidationError::EmptyValue {
+                    element: "<sce:case>".into(),
+                    attr: "variant".into(),
+                },
+            ));
+        }
+        let record = match node.attribute("record").map(str::trim) {
+            None => None,
+            Some(alias) if records.iter().any(|r| r == alias) => Some(alias.to_string()),
+            Some(alias) => {
+                return Err(located(
+                    &node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:case>".into(),
+                        attr: "record".into(),
+                        value: alias.to_string(),
+                        allowed: records.clone(),
+                    },
+                ));
+            }
+        };
+        if cases.iter().any(|case| case.variant == variant) {
+            return Err(cases_error(
+                &node,
+                &variant,
+                &format!(
+                    "the variant '{variant}' is given two cases: each variant of the tag's enum \
+                     has exactly one"
+                ),
+            ));
+        }
+        cases.push(UnionCase {
+            variant,
+            record,
+            source_line: Some(row_of(&node)),
+        });
+    }
+    if cases.is_empty() {
+        return Err(cases_error(
+            tag_node,
+            "",
+            "declares no <sce:case>: a union has one case for each variant of its tag's enum",
+        ));
+    }
+    if cases.iter().all(|case| case.record.is_none()) {
+        return Err(cases_error(
+            tag_node,
+            "",
+            "every case is empty, which makes the union its tag's enum: a fact has one \
+             spelling, and that type is the enum (`enum:<alias>`)",
+        ));
+    }
+
+    Ok(UnionModel {
+        name: label.identifier.to_string(),
+        tag,
+        tag_enum: reference.alias,
+        cases,
+        tag_line: Some(row_of(tag_node)),
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }

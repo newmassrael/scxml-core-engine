@@ -224,6 +224,10 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         // A template's holes are named by `<sce:put>` and `<sce:set>`, never by
         // an expression, and their uniqueness is the template parser's.
         | ForgeDocument::TextTemplate(_)
+        // A union's tag and cases are named by the type `union:<alias>` and
+        // by their variants, never by an expression, and the uniqueness of a
+        // case is the union parser's.
+        | ForgeDocument::Union(_)
         | ForgeDocument::Statechart(_) => {}
     }
     out

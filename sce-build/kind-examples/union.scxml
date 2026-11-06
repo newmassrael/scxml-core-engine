@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- union: a value that is one of several shapes, told apart by its tag. A
+     job's outcome is ok or timeout, each carrying the elapsed time, or error,
+     carrying nothing. The tag's enum and the record a case holds are the
+     enum and event-schema examples beside this file. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="union" name="job_outcome">
+  <sce:import kind="enum" src="enum.scxml" as="Result"/>
+  <sce:import kind="event-schema" src="event-schema.scxml" as="JobCompleted"/>
+  <datamodel>
+    <data id="status" sce:type="enum:Result">
+      <sce:case variant="ok" record="JobCompleted"/>
+      <sce:case variant="error"/>
+      <sce:case variant="timeout" record="JobCompleted"/>
+    </data>
+  </datamodel>
+</scxml>

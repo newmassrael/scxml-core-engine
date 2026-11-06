@@ -1992,6 +1992,11 @@ pub fn generate_cpp_with_imports_and_externs(
         }
         // A declaration writes no file (`KindClass::Declaration`).
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // docs/adr/0092: no backend lowers a union yet, so its document is
+        // refused by name on every backend, here and in each dispatch below.
+        ForgeDocument::Union(m) => {
+            return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -24663,6 +24668,10 @@ pub fn generate_kotlin_with_imports(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // Union: see cpp dispatch.
+        ForgeDocument::Union(m) => {
+            return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -24883,6 +24892,10 @@ pub fn generate_rust_with_imports_and_externs(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // Union: see cpp dispatch.
+        ForgeDocument::Union(m) => {
+            return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -29256,6 +29269,10 @@ pub fn generate_go_with_imports(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // Union: see cpp dispatch.
+        ForgeDocument::Union(m) => {
+            return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -29502,6 +29519,10 @@ pub fn generate_python_with_imports(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // Union: see cpp dispatch.
+        ForgeDocument::Union(m) => {
+            return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
     };
     let code = import_the_algorithm_runtime(code);
 
@@ -29719,6 +29740,10 @@ pub fn generate_swift_with_imports(
         // A template's holes are texts, integers and enum names, each a `String`
         // or an integer of the standard library (docs/adr/0087, section 3.1).
         ForgeDocument::TextTemplate(_) => None,
+        // docs/adr/0092: no backend lowers a union yet (see the cpp dispatch).
+        ForgeDocument::Union(m) => {
+            return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -30610,6 +30635,10 @@ pub fn generate_c11_with_imports_and_externs(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
+        // Union: see cpp dispatch.
+        ForgeDocument::Union(m) => {
+            return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -40136,7 +40165,9 @@ impl StatelessFunction {
             | ForgeDocument::BroadcastLog(_)
             // A template is rendered by `<sce:render>`, which names its holes;
             // it is no function an expression calls (docs/adr/0087, section 3.2).
-            | ForgeDocument::TextTemplate(_) => None,
+            | ForgeDocument::TextTemplate(_)
+            // A union is a type a value is held in (docs/adr/0092, section 1.1).
+            | ForgeDocument::Union(_) => None,
         }
     }
 

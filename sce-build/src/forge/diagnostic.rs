@@ -894,6 +894,15 @@ pub enum DiagnosticCode {
     /// `MAX_LEN`.
     #[serde(rename = "validation/render-bound")]
     ValidationRenderBound,
+    /// A union document (docs/adr/0092, section 1.1): cases that are not one
+    /// to one with the variants of the tag's enum, no case, or every case
+    /// empty.
+    #[serde(rename = "validation/union-cases")]
+    ValidationUnionCases,
+    /// A union document (docs/adr/0092, section 1.1): a case's record that
+    /// declares a field under the tag's key.
+    #[serde(rename = "validation/union-tag-collision")]
+    ValidationUnionTagCollision,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3837,6 +3846,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationTextTemplateFence,
         ValidationRenderHoles,
         ValidationRenderBound,
+        ValidationUnionCases,
+        ValidationUnionTagCollision,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4584,6 +4595,9 @@ impl DiagnosticCode {
             | ValidationTextTemplateFence
             | ValidationRenderHoles
             | ValidationRenderBound => Some("ADR 0087 §3.1"),
+
+            // ── A union document's cases and its tag (docs/adr/0092, section 1.1) ──
+            ValidationUnionCases | ValidationUnionTagCollision => Some("ADR 0092 §1.1"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam
@@ -5496,6 +5510,8 @@ impl DiagnosticCode {
             | ValidationTextTemplateFence
             | ValidationRenderHoles
             | ValidationRenderBound
+            | ValidationUnionCases
+            | ValidationUnionTagCollision
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -5998,6 +6014,8 @@ impl DiagnosticCode {
             ValidationTextTemplateFence => "validation/text-template-fence",
             ValidationRenderHoles => "validation/render-holes",
             ValidationRenderBound => "validation/render-bound",
+            ValidationUnionCases => "validation/union-cases",
+            ValidationUnionTagCollision => "validation/union-tag-collision",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -8265,6 +8283,40 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 location.clone(),
                 bound.to_string(),
                 max_len.to_string(),
+            ],
+        },
+        // docs/adr/0092, section 1.1. The variant or the field the rule is
+        // broken at is what the row spells; each repair is the author's choice
+        // (add a case, remove one, rename a field or the tag), so neither
+        // `expected` nor `fix`.
+        ValidationError::UnionCases {
+            document,
+            variant,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationUnionCases,
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!variant.is_empty()).then(|| variant.clone()),
+            fix: None,
+            key_fragments: vec![document.clone(), variant.clone(), detail.clone()],
+        },
+        ValidationError::UnionTagCollision {
+            document,
+            case,
+            record,
+            field,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationUnionTagCollision,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(field.clone()),
+            fix: None,
+            key_fragments: vec![
+                document.clone(),
+                case.clone(),
+                record.clone(),
+                field.clone(),
             ],
         },
         ValidationError::MeshRpcReservedParam { param, detail } => DiagnosticPayload {
@@ -13517,7 +13569,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log","text-template"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log","text-template","union"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -13836,6 +13888,33 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2751e7a9f9ec8031","code":"validation/render-bound","stage":"validation","spec":"ADR 0087 §3.1","message":"<sce:render template=\"AskDate\" location=\"prompt\">: prompt holds at most 64 bytes, and the template renders a text of up to 595 bytes (its MAX_LEN): declare prompt with a bound of at least 595, or shorten a hole","actual":"64"}"#,
+            ),
+            (
+                // A variant given two cases (docs/adr/0092, section 1.1): the
+                // variant is `actual`.
+                "forge/union-cases",
+                ValidationError::UnionCases {
+                    document: "date_expression".into(),
+                    variant: "relativeWeeks".into(),
+                    detail: "the variant 'relativeWeeks' is given two cases: each variant of the \
+                             tag's enum has exactly one"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fbf3fadece3bb9b8","code":"validation/union-cases","stage":"validation","spec":"ADR 0092 §1.1","message":"union 'date_expression': the variant 'relativeWeeks' is given two cases: each variant of the tag's enum has exactly one","actual":"relativeWeeks"}"#,
+            ),
+            (
+                // A case's record that declares the tag's key (docs/adr/0092,
+                // section 1.1): the field is `actual`.
+                "forge/union-tag-collision",
+                ValidationError::UnionTagCollision {
+                    document: "date_expression".into(),
+                    case: "absolute".into(),
+                    record: "CivilDate".into(),
+                    field: "kind".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4a393eeefed3dd8c","code":"validation/union-tag-collision","stage":"validation","spec":"ADR 0092 §1.1","message":"union 'date_expression', case 'absolute': the record 'CivilDate' declares the field 'kind', the key the union's tag is written under — the tag and a case's fields stand beside each other in one object, so no case's record declares the tag's key: rename the field or the tag","actual":"kind"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -19712,6 +19791,8 @@ mod tests {
             | ValidationTextTemplateFence
             | ValidationRenderHoles
             | ValidationRenderBound
+            | ValidationUnionCases
+            | ValidationUnionTagCollision
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -20704,6 +20785,7 @@ mod tests {
                 | ValidationNativeActionSignatureConflict | ValidationNativeActionRelease
                 | ValidationTextTemplateHole | ValidationTextTemplateFence
                 | ValidationRenderHoles | ValidationRenderBound
+                | ValidationUnionCases | ValidationUnionTagCollision
                 | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
@@ -21121,9 +21203,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            503,
+            505,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 503 distinct variants to match the DiagnosticCode \
+             expected 505 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21777,6 +21859,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationTextTemplateFence
             | ValidationRenderHoles
             | ValidationRenderBound
+            | ValidationUnionCases
+            | ValidationUnionTagCollision
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget

@@ -60,6 +60,9 @@ const PICTURES: &[(&str, &[&str])] = &[
     ("text-template", &[]),
     ("timer", &["timeline.svg"]),
     ("transform", &["dataflow.svg"]),
+    // A union is a tag and its cases; its reading is the pseudocode page,
+    // where each case is a line.
+    ("union", &[]),
     ("validator", &["dataflow.svg"]),
     ("worker", &["structure.svg"]),
 ];

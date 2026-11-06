@@ -358,6 +358,9 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     // docs/adr/0087, section 3: a text template with a trusted and an
     // untrusted hole and its fence.
     ("text-template", "text_template_ast_export_min.scxml"),
+    // docs/adr/0092, section 1.1: a union of a case that holds a record and
+    // an empty one.
+    ("union", "union_ast_export_min.scxml"),
 ];
 
 #[test]

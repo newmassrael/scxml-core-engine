@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The record a rect case holds: two fields. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="shape_rect"
+       sce:event-name="shape.rect">
+  <datamodel>
+    <data id="width" sce:type="uint16" sce:direction="in"/>
+    <data id="height" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+</scxml>

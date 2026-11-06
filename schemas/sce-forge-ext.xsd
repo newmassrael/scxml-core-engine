@@ -94,6 +94,11 @@
            one pure function on every backend; an untrusted hole is put
            between the document's fence markers. -->
       <xs:enumeration value="text-template"/>
+      <!-- docs/adr/0092, section 1 — a value that is exactly one of several
+           shapes, told apart by a tag of a closed enum: one `<sce:case>` per
+           variant, each holding the record of an imported event schema or
+           nothing. A type of the language (`union:<alias>`). -->
+      <xs:enumeration value="union"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -813,6 +818,21 @@
     <xs:complexType>
       <xs:attribute name="name" type="xs:string" use="required"/>
       <xs:attribute name="requires" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- docs/adr/0092, section 1.1 — one case of a `sce:kind="union"`
+       document, a child of its tag `<data>`. `variant` names a variant of
+       the tag's enum; `record`, when present, the alias of an imported
+       event schema whose record the case holds, and an empty case has none.
+       That the cases and the variants are one to one, and that no case's
+       record declares the tag's key, are the parser's and the import
+       check's rules (`validation/union-cases`,
+       `validation/union-tag-collision`), each with its own diagnostic. -->
+  <xs:element name="case">
+    <xs:complexType>
+      <xs:attribute name="variant" type="xs:string" use="required"/>
+      <xs:attribute name="record" type="xs:NCName"/>
     </xs:complexType>
   </xs:element>
 

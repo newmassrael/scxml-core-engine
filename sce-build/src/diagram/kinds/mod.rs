@@ -97,6 +97,8 @@ pub fn pictures(
         ForgeDocument::BroadcastLog(_) => Ok(Vec::new()),
         // A text template is a text with holes; the pseudocode page carries it.
         ForgeDocument::TextTemplate(_) => Ok(Vec::new()),
+        // A union is a tag and its cases; the pseudocode page carries it.
+        ForgeDocument::Union(_) => Ok(Vec::new()),
     }
 }
 

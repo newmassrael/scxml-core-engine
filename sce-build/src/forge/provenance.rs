@@ -347,6 +347,7 @@ fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<Sou
             &m.name,
             &m.source_location,
         ),
+        ForgeDocument::Union(m) => ("<scxml sce:kind=\"union\">", &m.name, &m.source_location),
     }
 }
 

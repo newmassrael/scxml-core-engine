@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A record with a field under the key the shape unions write their tag
+     under, so no case of theirs may hold it (docs/adr/0092, section 1.1). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="shape_kinded"
+       sce:event-name="shape.kinded">
+  <datamodel>
+    <data id="width" sce:type="uint16" sce:direction="in"/>
+    <data id="kind" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

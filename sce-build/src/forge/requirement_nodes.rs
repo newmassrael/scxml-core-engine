@@ -210,6 +210,7 @@ pub fn requirement_nodes(doc: &ForgeDocument) -> ReviewScope {
         ForgeDocument::TextTemplate(_) => ReviewScope::NoAnnotationSite {
             kind: "text-template",
         },
+        ForgeDocument::Union(_) => ReviewScope::NoAnnotationSite { kind: "union" },
     }
 }
 

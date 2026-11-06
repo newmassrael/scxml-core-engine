@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A shape with no case for the rect variant of its tag's enum. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="union" name="union_shape_missing_case">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:ShapeKind">
+      <sce:case variant="dot"/>
+      <sce:case variant="circle" record="Radius"/>
+    </data>
+  </datamodel>
+</scxml>

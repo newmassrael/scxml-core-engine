@@ -127,6 +127,11 @@
       "prose": "When a reply arrives, the device shows a notice: the sender's name, the reply's number and the words the sender wrote. The words come from another person and must be marked where they begin and end, so that nothing in them reads as part of the notice. The notice is never longer than its display line allows, and it is the same text on every device."
     },
     {
+      "id": "reminder-time",
+      "kind": "union",
+      "prose": "A reminder's time is one of three kinds. At a clock time, it gives the hour and the minute. Before an event, it gives the number of minutes before the event starts. Never, it gives nothing more. Which kind a reminder is decides which of these numbers it has, and a reminder never carries a number its kind does not use."
+    },
+    {
       "id": "client-only-build",
       "kind": "feature-model",
       "prose": "The session code is built in two shapes. A client build opens sessions and never accepts one; a server build also accepts incoming sessions. Accepting is only possible in a build that has sessions at all. The build options must name both capabilities so that a client build leaves the accepting code out entirely."

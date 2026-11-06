@@ -480,7 +480,7 @@ producer side really holds is that it says when it did not validate.
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-twenty-two variants of `ForgeKind`, written in the `sce:kind` attribute
+twenty-three variants of `ForgeKind`, written in the `sce:kind` attribute
 as the kebab-case tokens below (source of truth:
 `sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
 `forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
@@ -492,8 +492,28 @@ codec        validator   filter      interpolation
 timer        observer    algorithm   link         worker
 buffer-pool  bounded-collection      enum         event-schema
 queue        feature-model            broadcast-log
-text-template
+text-template                         union
 ```
+
+`union` (docs/adr/0092, section 1) is a value that is exactly one of several shapes,
+told apart by a tag of a closed enum. Its `<datamodel>` holds exactly one `<data>`, the
+tag: the `id` is the key the tag is written under, and the `sce:type` an
+`enum:<alias>` of a closed enum the document imports. Under the tag, one
+`<sce:case variant="v" record="R"/>` per variant of that enum, in any order: `record`
+names an imported event schema whose record the case holds, and a case without it is
+empty, its tag alone; two cases may hold one record. A datamodel of no `<data>` or of
+two, a tag of another type, and a tag whose enum is open
+(`sce:strict-variants="false"`) are `validation/attribute-rule-violated`; a `record`
+that names no imported event schema is `validation/invalid-attribute` with the
+candidates. Cases that are not one to one with the enum's variants (a variant with no
+case, a case naming no variant, a variant given two cases), a union of no case, and
+one whose every case is empty (which is its enum) are `validation/union-cases`, naming
+each; a case's record that declares a field whose `id` is the tag's key is
+`validation/union-tag-collision`. A union declares no revision of its own: its
+revision is its tag enum's. A field, a variable or an algorithm's slot names one as
+`union:<alias>`, through `<sce:import kind="union">`. No backend lowers a union yet:
+generating a union document, and every position that holds a union, is refused by
+name (`generate/unsupported-feature`).
 
 `text-template` (docs/adr/0087, section 3) is a text with typed holes, rendered by
 one pure function into the same bytes on every backend. Its holes are the `<data>`
@@ -9248,7 +9268,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (503 codes)
+## Appendix — `DiagnosticCode` index (505 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9341,6 +9361,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/text-template-fence` | Validation |
 | `validation/render-holes` | Validation |
 | `validation/render-bound` | Validation |
+| `validation/union-cases` | Validation |
+| `validation/union-tag-collision` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |
