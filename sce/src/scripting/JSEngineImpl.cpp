@@ -519,6 +519,15 @@ static ParsedEventData parseEventData(JSContext *ctx, const std::string &dataStr
     return {JS_NewString(ctx, normalized.c_str()), SCE::payloadReadingOfText(dataStr)};
 }
 
+// One `_event` field the Processor may leave blank (`sendid`, `origin`,
+// `origintype`, `invokeid`): the event carries a blank one as the empty
+// string, and this data model reads blank as ECMAScript undefined, so the
+// empty string is bound as undefined. The clauses are cited where
+// `setCurrentEventInternal` binds the fields.
+static ::JSValue blankableEventField(JSContext *ctx, const std::string &value) {
+    return value.empty() ? JS_UNDEFINED : JS_NewString(ctx, value.c_str());
+}
+
 SetCurrentEventResult JSEngine::setCurrentEventInternal(const std::string &sessionId,
                                                         const std::shared_ptr<Event> &event) {
     SessionContext *session = getSession(sessionId);
@@ -540,13 +549,15 @@ SetCurrentEventResult JSEngine::setCurrentEventInternal(const std::string &sessi
         // §scxml-B-2-8: _event is an object with one property per field of §scxml-5.10.1 —
         // name, type, sendid, origin, origintype and invokeid are Strings while data may
         // hold any type; a field this specification leaves unset is ECMAScript undefined.
-        // Set event properties
+        // §scxml-5.10.1 leaves sendid, origin, origintype and invokeid blank in named
+        // cases; the event carries a blank one as the empty string, which
+        // `blankableEventField` binds as undefined. name and type always have a value.
         JS_SetPropertyStr(ctx, eventObj, "name", JS_NewString(ctx, event->getName().c_str()));
         JS_SetPropertyStr(ctx, eventObj, "type", JS_NewString(ctx, event->getType().c_str()));
-        JS_SetPropertyStr(ctx, eventObj, "sendid", JS_NewString(ctx, event->getSendId().c_str()));
-        JS_SetPropertyStr(ctx, eventObj, "origin", JS_NewString(ctx, event->getOrigin().c_str()));
-        JS_SetPropertyStr(ctx, eventObj, "origintype", JS_NewString(ctx, event->getOriginType().c_str()));
-        JS_SetPropertyStr(ctx, eventObj, "invokeid", JS_NewString(ctx, event->getInvokeId().c_str()));
+        JS_SetPropertyStr(ctx, eventObj, "sendid", blankableEventField(ctx, event->getSendId()));
+        JS_SetPropertyStr(ctx, eventObj, "origin", blankableEventField(ctx, event->getOrigin()));
+        JS_SetPropertyStr(ctx, eventObj, "origintype", blankableEventField(ctx, event->getOriginType()));
+        JS_SetPropertyStr(ctx, eventObj, "invokeid", blankableEventField(ctx, event->getInvokeId()));
 
         // Set event data
         if (event->hasData()) {
@@ -566,13 +577,13 @@ SetCurrentEventResult JSEngine::setCurrentEventInternal(const std::string &sessi
         // Store event in session
         session->currentEvent = event;
     } else {
-        // Clear event
+        // Clear event: no event, so every field that can be blank is undefined.
         JS_SetPropertyStr(ctx, eventObj, "name", JS_NewString(ctx, ""));
         JS_SetPropertyStr(ctx, eventObj, "type", JS_NewString(ctx, ""));
-        JS_SetPropertyStr(ctx, eventObj, "sendid", JS_NewString(ctx, ""));
-        JS_SetPropertyStr(ctx, eventObj, "origin", JS_NewString(ctx, ""));
-        JS_SetPropertyStr(ctx, eventObj, "origintype", JS_NewString(ctx, ""));
-        JS_SetPropertyStr(ctx, eventObj, "invokeid", JS_NewString(ctx, ""));
+        JS_SetPropertyStr(ctx, eventObj, "sendid", JS_UNDEFINED);
+        JS_SetPropertyStr(ctx, eventObj, "origin", JS_UNDEFINED);
+        JS_SetPropertyStr(ctx, eventObj, "origintype", JS_UNDEFINED);
+        JS_SetPropertyStr(ctx, eventObj, "invokeid", JS_UNDEFINED);
         JS_SetPropertyStr(ctx, eventObj, "data", JS_UNDEFINED);
 
         session->currentEvent.reset();
@@ -612,10 +623,10 @@ SetCurrentEventResult JSEngine::setCurrentEventInternal(const std::string &sessi
         // Set event properties on the internal data object
         JS_SetPropertyStr(ctx, eventDataProperty, "name", JS_NewString(ctx, event->getName().c_str()));
         JS_SetPropertyStr(ctx, eventDataProperty, "type", JS_NewString(ctx, event->getType().c_str()));
-        JS_SetPropertyStr(ctx, eventDataProperty, "sendid", JS_NewString(ctx, event->getSendId().c_str()));
-        JS_SetPropertyStr(ctx, eventDataProperty, "origin", JS_NewString(ctx, event->getOrigin().c_str()));
-        JS_SetPropertyStr(ctx, eventDataProperty, "origintype", JS_NewString(ctx, event->getOriginType().c_str()));
-        JS_SetPropertyStr(ctx, eventDataProperty, "invokeid", JS_NewString(ctx, event->getInvokeId().c_str()));
+        JS_SetPropertyStr(ctx, eventDataProperty, "sendid", blankableEventField(ctx, event->getSendId()));
+        JS_SetPropertyStr(ctx, eventDataProperty, "origin", blankableEventField(ctx, event->getOrigin()));
+        JS_SetPropertyStr(ctx, eventDataProperty, "origintype", blankableEventField(ctx, event->getOriginType()));
+        JS_SetPropertyStr(ctx, eventDataProperty, "invokeid", blankableEventField(ctx, event->getInvokeId()));
 
         // Parse and set event data as JSON or DOM object for XML
         if (event->hasData()) {
@@ -644,10 +655,13 @@ SetCurrentEventResult JSEngine::setCurrentEventInternal(const std::string &sessi
             JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, ""));
         }
     } else {
-        // Reset all event properties to empty/undefined values
-        const char *props[] = {"name", "type", "sendid", "origin", "origintype", "invokeid"};
-        for (int i = 0; i < 6; i++) {
-            JS_SetPropertyStr(ctx, eventDataProperty, props[i], JS_NewString(ctx, ""));
+        // Reset the event: `name` and `type` to the empty string, and every
+        // field §scxml-5.10.1 can leave blank to undefined (§scxml-B-2-8).
+        JS_SetPropertyStr(ctx, eventDataProperty, "name", JS_NewString(ctx, ""));
+        JS_SetPropertyStr(ctx, eventDataProperty, "type", JS_NewString(ctx, ""));
+        const char *blankable[] = {"sendid", "origin", "origintype", "invokeid"};
+        for (const char *field : blankable) {
+            JS_SetPropertyStr(ctx, eventDataProperty, field, JS_UNDEFINED);
         }
         JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
         // W3C SCXML testing extension: Reset _event.raw to empty string on event clear

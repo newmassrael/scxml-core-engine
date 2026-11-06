@@ -1263,6 +1263,42 @@ apply_sce_test_policies(event_data_readings_test)
 add_test(NAME EventDataReadings COMMAND event_data_readings_test)
 
 # ============================================================================
+# Event blank fields (§scxml-5.10.1, §scxml-B-2-8)
+#
+# Separate target for the reason event_data_readings_test is: it names
+# LuaEngine and JSEngine as well as reading the provider, so the engine this
+# build did not select is still run. The table is shared with every backend.
+# ============================================================================
+add_executable(event_blank_fields_test
+    engine/EventBlankFieldsTest.cpp
+)
+
+target_include_directories(event_blank_fields_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(event_blank_fields_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+# Injected rather than resolved from the working directory, so the test reads
+# the same shared table under ctest, CI and an IDE run.
+target_compile_definitions(event_blank_fields_test
+    PRIVATE
+        SCE_EVENT_BLANK_FIELDS_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/event_blank_fields.json"
+)
+
+apply_sce_test_policies(event_blank_fields_test)
+
+add_test(NAME EventBlankFields COMMAND event_blank_fields_test)
+
+# ============================================================================
 # The script-engine language seam
 #
 # Separate target for the reason its two neighbours above are separate: it

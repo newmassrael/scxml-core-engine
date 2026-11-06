@@ -610,14 +610,17 @@ void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
         (function() {
             var sessionId = ')" + sessionId +
                                  R"(';
-            // Global event data object that C++ can access directly
+            // Global event data object that C++ can access directly. A
+            // field the Processor leaves blank reads as ECMAScript
+            // undefined, never as the empty string, as
+            // setCurrentEventInternal binds it.
             this.__eventData = {
                 name: '',
                 type: '',
-                sendid: '',
-                origin: '',
-                origintype: '',
-                invokeid: '',
+                sendid: undefined,
+                origin: undefined,
+                origintype: undefined,
+                invokeid: undefined,
                 data: null,
                 raw: ''  // W3C SCXML testing extension for event data inspection
             };

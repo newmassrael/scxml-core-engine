@@ -103,6 +103,21 @@ void pushGlobalFuncClosure(lua_State *L, const GlobalFuncCallback &func) {
     lua_pushcclosure(L, globalFuncCall, 1);
 }
 
+// Set one `_event` field that the Processor may leave blank (`sendid`,
+// `origin`, `origintype`, `invokeid`) on the table at the top of the stack.
+// The event carries a blank field as the empty string; the ECMAScript data
+// model reads blank as undefined, which Lua holds as nil, so an empty value
+// leaves the field nil rather than binding ''. The clauses are cited where
+// `LuaEngine::setCurrentEvent` binds the fields.
+void setBlankableEventField(lua_State *L, const char *field, const std::string &value) {
+    if (value.empty()) {
+        lua_pushnil(L);
+    } else {
+        lua_pushstring(L, value.c_str());
+    }
+    lua_setfield(L, -2, field);
+}
+
 }  // anonymous namespace
 
 namespace SCE {
@@ -1195,17 +1210,10 @@ std::future<SetCurrentEventResult> LuaEngine::setCurrentEvent(const std::string 
         lua_pushstring(L, event->getType().c_str());
         lua_setfield(L, -2, "type");
 
-        lua_pushstring(L, event->getSendId().c_str());
-        lua_setfield(L, -2, "sendid");
-
-        lua_pushstring(L, event->getOrigin().c_str());
-        lua_setfield(L, -2, "origin");
-
-        lua_pushstring(L, event->getOriginType().c_str());
-        lua_setfield(L, -2, "origintype");
-
-        lua_pushstring(L, event->getInvokeId().c_str());
-        lua_setfield(L, -2, "invokeid");
+        setBlankableEventField(L, "sendid", event->getSendId());
+        setBlankableEventField(L, "origin", event->getOrigin());
+        setBlankableEventField(L, "origintype", event->getOriginType());
+        setBlankableEventField(L, "invokeid", event->getInvokeId());
 
         pushScriptValue(L, event->getTypedData().value());
         lua_setfield(L, -2, "data");
@@ -1263,17 +1271,13 @@ std::future<SetCurrentEventResult> LuaEngine::setCurrentEvent(const std::string 
     lua_pushstring(L, eventType.c_str());
     lua_setfield(L, -2, "type");
 
-    lua_pushstring(L, sendId.c_str());
-    lua_setfield(L, -2, "sendid");
-
-    lua_pushstring(L, origin.c_str());
-    lua_setfield(L, -2, "origin");
-
-    lua_pushstring(L, originType.c_str());
-    lua_setfield(L, -2, "origintype");
-
-    lua_pushstring(L, invokeId.c_str());
-    lua_setfield(L, -2, "invokeid");
+    // §scxml-5.10: a field the Processor left blank is nil, which is how this
+    // engine holds the undefined the ECMAScript data model (§scxml-B-2) reads
+    // blank as; never the empty string.
+    setBlankableEventField(L, "sendid", sendId);
+    setBlankableEventField(L, "origin", origin);
+    setBlankableEventField(L, "origintype", originType);
+    setBlankableEventField(L, "invokeid", invokeId);
 
     // §scxml-B-2-8-1: parse event data as an XML DOM, as JSON, or as a
     // space-normalized string — those three readings and no fourth.

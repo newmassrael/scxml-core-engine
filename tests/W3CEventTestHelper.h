@@ -112,11 +112,15 @@ public:
         auto checkResult = engine_->evaluateExpression(sessionId_, checkScript).get();
         ASSERT_TRUE(checkResult.isSuccess()) << "Failed to evaluate _event." << prop << " after modification attempt";
 
-        // Properties should still have their default values
-        if (prop == "data") {
-            auto dataCheck = engine_->evaluateExpression(sessionId_, "_event.data === undefined").get();
-            ASSERT_TRUE(dataCheck.isSuccess()) << "Failed to check if _event.data is undefined";
-            EXPECT_TRUE(dataCheck.getValue<bool>()) << "_event.data should remain undefined after modification attempt";
+        // Properties should still have their default values. `data` and the
+        // fields W3C SCXML 5.10.1 leaves blank read as undefined (B.2.8), so
+        // they are asked as undefined rather than through getValue<std::string>,
+        // which answers "" for undefined too.
+        if (prop == "data" || prop == "sendid" || prop == "origin" || prop == "origintype" || prop == "invokeid") {
+            auto blankCheck = engine_->evaluateExpression(sessionId_, "_event." + prop + " === undefined").get();
+            ASSERT_TRUE(blankCheck.isSuccess()) << "Failed to check if _event." << prop << " is undefined";
+            EXPECT_TRUE(blankCheck.getValue<bool>())
+                << "_event." << prop << " should remain undefined after modification attempt";
         } else {
             EXPECT_EQ(checkResult.getValue<std::string>(), "")
                 << "_event." << prop << " should remain empty string after modification attempt";
