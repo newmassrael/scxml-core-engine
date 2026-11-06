@@ -2613,6 +2613,109 @@ impl<'a> Judge<'a> {
         self.record_starts(ctx, schema, ordered)
     }
 
+    /// An `<assign>` that writes a union whole or writes its tag
+    /// (docs/adr/0092, section 6.1 items 5 and 6); `None` for any other, a
+    /// write of a case's field among them, which is judged as a write of a
+    /// field is, where the read of it must stand.
+    ///
+    /// The tag alone is refused: it would leave the fields of the old case
+    /// under the new tag, and the case changes by a whole assignment. A union
+    /// variable takes `null` where it may be absent, and otherwise a union a
+    /// place holds by its name (a variable, a payload field, a `<foreach>`
+    /// item, the present value of an optional one) of the same union, or, into
+    /// an optional one, an optional value of it; nothing in an expression
+    /// makes a union.
+    fn union_assign(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Option<Result<(), Located<ForgeError>>> {
+        use crate::forge::value_type::ValueType;
+        let location = action.location.trim();
+        let at_location = action.spellings.get("location");
+        if let Some((holder, member)) = location.rsplit_once('.') {
+            let place = ctx.value_of(holder)?;
+            let (union, _) = crate::forge::value_path::union_of(ctx.value_scope, &place)?;
+            if member.trim() != union.tag {
+                return None;
+            }
+            return Some(Err(self.rule_at(
+                format!("<assign location=\"{location}\">"),
+                &format!(
+                    "the tag of a union is never written alone: it would leave the fields of \
+                     the old case under the new tag. Change the case by a whole assignment of \
+                     `{holder}`"
+                ),
+                at_location.map(|s| s.row()),
+                at_location.map(|s| s.col()),
+                state,
+                location,
+            )));
+        }
+        let var = self.scope.variables.iter().find(|v| v.id == location)?;
+        let (alias, optional) = match var.value_type.as_ref()? {
+            crate::forge::model::AlgorithmValueType::Union { alias } => (alias, false),
+            crate::forge::model::AlgorithmValueType::Optional { elem } => match &**elem {
+                crate::forge::model::AlgorithmValueType::Union { alias } => (alias, true),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let at_expr = action.spellings.get("expr");
+        let written = action.expr.trim();
+        let refused = |rule: &str| {
+            self.rule_at(
+                format!("<assign location=\"{location}\" expr=\"{written}\">"),
+                rule,
+                at_expr.map(|s| s.row()),
+                at_expr.map(|s| s.col()),
+                state,
+                written,
+            )
+        };
+        if is_null_literal(written) {
+            return Some(if optional {
+                Ok(())
+            } else {
+                Err(refused(&format!(
+                    "`{location}` holds union:{alias}, which is never absent: declare it \
+                     optional<union:{alias}> to hold `null`"
+                )))
+            });
+        }
+        if let Err(refusal) =
+            self.expr(ctx, written, at_expr, Expected::Hint(InferredType::Unknown))
+        {
+            return Some(Err(refusal));
+        }
+        let takes = |held: &crate::forge::value_path::Place| -> bool {
+            let from = match (&held.ty, optional) {
+                (ValueType::Union { alias }, _) => alias,
+                (ValueType::Optional { elem }, true) => match &**elem {
+                    ValueType::Union { alias } => alias,
+                    _ => return false,
+                },
+                _ => return false,
+            };
+            let base = &self.scope.type_scope;
+            let names = ScopedNames {
+                from: crate::forge::value_path::scope_at(base, &held.scope),
+                to: Some(base),
+            };
+            crate::forge::value_type::TypeIdentity::same_union(&names, from, alias)
+        };
+        Some(match self.whole_place(ctx, written) {
+            Some(held) if takes(&held) => Ok(()),
+            _ => Err(refused(&format!(
+                "a union is put into one whole from another value of union:{alias} by its \
+                 name (a variable, a payload field, a <foreach> item, the present value of an \
+                 optional one{}); nothing in an expression makes a union",
+                if optional { ", or `null`" } else { "" }
+            ))),
+        })
+    }
+
     /// An `optional<union:<alias>>` variable (docs/adr/0092, amendment of
     /// 2026-11-07): it starts absent, as an optional record does, so its `expr`
     /// is `null`, and a union is put into it whole where the machine runs.
@@ -4200,6 +4303,12 @@ impl<'a> Judge<'a> {
                             ),
                         self.diag_label,
                     ));
+                }
+                // A union is put into one whole, and its tag is never written
+                // alone (docs/adr/0092, section 6.1 items 5 and 6); a field of
+                // one is a write judged below, where its case must be proven.
+                if let Some(judged) = self.union_assign(ctx, action, state) {
+                    return judged;
                 }
                 // Nothing in an expression makes a record, so a whole record is
                 // assigned from one that exists, by its name: a record

@@ -15670,6 +15670,50 @@ fn lower_action(
                 action.native_fails = false;
                 return Ok(reads_payload);
             }
+            // ... and a union variable takes a union a place holds whole, or
+            // `null` where it may be absent (docs/adr/0092, section 6.1 item 5).
+            if let Some(copy) = whole_union_copy(action, ctx, renames, rewrites)? {
+                rewrites.note(&action.expr, action.spellings.get("expr"), &copy);
+                let location = action.location.trim();
+                let name = renames.get(location).copied().unwrap_or(location);
+                action.native_code = target.assign(name, &copy);
+                action.native_fails = false;
+                return Ok(reads_payload);
+            }
+            // ... and a field of a union is written where its case is proven
+            // (section 6.1 item 6), through the place the cases left give it; a
+            // text or a byte string held to the field's bound, as a record's is.
+            if let Some((place, field)) =
+                union_field_place(&action.location, ctx, renames, rewrites)?
+            {
+                let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
+                    .unwrap_or(InferredType::Unknown);
+                let value = match field.ty {
+                    crate::forge::value_type::ValueType::Text { max } => {
+                        let value = lower_bounded(&action.expr, slot)?;
+                        Receiving {
+                            text: target.bounded_string(&value.text, max.max),
+                            can_fail: true,
+                        }
+                    }
+                    crate::forge::value_type::ValueType::Bytes { max } => {
+                        let value = lower_bounded(&action.expr, slot)?;
+                        Receiving {
+                            text: target.bounded_bytes(&value.text, max.max),
+                            can_fail: true,
+                        }
+                    }
+                    _ => lower(&action.expr, slot)?,
+                };
+                rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
+                (action.native_code, action.native_fails) = statement(
+                    &value,
+                    slot,
+                    &|v| target.assign(&place, v),
+                    format!("<assign location='{}'>", action.location.trim()),
+                );
+                return Ok(reads_payload);
+            }
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let location = action.location.trim();
@@ -16715,6 +16759,143 @@ fn whole_list_copy(
         })
         .map_err(refused)?;
     Ok(Some(copy))
+}
+
+/// The value a union variable takes when an `<assign>` puts a whole union into
+/// it (docs/adr/0092, section 6.1 item 5): `null` into one that may be absent,
+/// or a copy of the union a place holds (a variable, a payload field, a loop's
+/// item, the present value of an optional one) in the variable's own type,
+/// which the value's fits, as the judge proved. `None` for an `<assign>` whose
+/// location is no union variable. Refused by name for a target that spells no
+/// composed value, and for a union reached through an index.
+fn whole_union_copy(
+    action: &Action,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<Option<String>, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    use crate::forge::value_type::ValueType;
+    let location = action.location.trim();
+    let Some(to) = ctx.value_of(location).filter(|to| {
+        let held = match &to.ty {
+            ValueType::Optional { elem } => &**elem,
+            other => other,
+        };
+        location.split('.').count() == 1 && matches!(held, ValueType::Union { .. })
+    }) else {
+        return Ok(None);
+    };
+    let target = rewrites.target;
+    let refused = |why: String| {
+        GenerateError::unsupported(format!(
+            "<assign location=\"{location}\" expr=\"{}\">: {why} (docs/adr/0092, section 7)",
+            action.expr.trim()
+        ))
+    };
+    if is_null_literal(&action.expr) {
+        let ValueType::Optional { elem } = &to.ty else {
+            return Err(refused(
+                "a union that is never absent takes no `null`".into(),
+            ));
+        };
+        let (Some(names), Some(spelling)) = (
+            rewrites.composed.as_ref(),
+            target.composed_spelling(rewrites.machine),
+        ) else {
+            return Err(refused(format!("{} spells no union", target.name())));
+        };
+        let present = composed::machine_type(elem, None, &names.records, &names.enums, &*spelling)
+            .map_err(&refused)?;
+        return absent_value(target, &present, location).map(Some);
+    }
+    let Some((path, from)) = crate::forge::expr::written_place(&action.expr)
+        .and_then(|path| ctx.value_of(&path).map(|place| (path, place)))
+    else {
+        return Err(refused(
+            "a union is put into one whole from another value of the same union, by its \
+             name"
+                .into(),
+        ));
+    };
+    let (Some(names), Some(spelling)) = (
+        rewrites.composed.as_ref(),
+        target.composed_spelling(rewrites.machine),
+    ) else {
+        return Err(refused(format!("{} spells no union", target.name())));
+    };
+    if path.contains(crate::forge::value_path::ELEMENT) {
+        return Err(refused(format!(
+            "a union read through an index has no {} lowering of a whole copy yet",
+            target.name()
+        )));
+    }
+    let within =
+        |place: &crate::forge::value_path::Place| composed::within_of(&place.scope, &names.records);
+    within(&from)
+        .and_then(|from_within| {
+            let to_within = within(&to)?;
+            let held = place_text(&path, ctx, renames, target, &*spelling)?;
+            composed::copier(
+                &from.ty,
+                from_within.as_deref(),
+                &to.ty,
+                to_within.as_deref(),
+                &names.records,
+                &names.enums,
+                &*spelling,
+                &composed::Held::place(held),
+            )
+        })
+        .map(Some)
+        .map_err(refused)
+}
+
+/// The place an `<assign>` to `location` writes where `location` names a field
+/// of a union value (docs/adr/0092, section 6.1 item 6), as the cases the
+/// facts of `ctx` leave the union in give it, with the place of the field
+/// (whose type a text or a byte string is held to). `None` for a location that
+/// is no field of a union. The judge proved the cases left each declare the
+/// field; a write the target has no place for is refused by name.
+fn union_field_place(
+    location: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<Option<(String, crate::forge::value_path::Place)>, GenerateError> {
+    let location = location.trim();
+    let Some((holder, member)) = location.rsplit_once('.') else {
+        return Ok(None);
+    };
+    let Some(place) = ctx.value_of(holder) else {
+        return Ok(None);
+    };
+    let Some((union, _)) = crate::forge::value_path::union_of(ctx.value_scope, &place) else {
+        return Ok(None);
+    };
+    let target = rewrites.target;
+    let refused = |why: String| {
+        GenerateError::unsupported(format!(
+            "<assign location=\"{location}\">: {why} (docs/adr/0092, section 6.1 item 6)"
+        ))
+    };
+    let Some(spelling) = target.composed_spelling(rewrites.machine) else {
+        return Err(refused(format!("{} spells no union", target.name())));
+    };
+    let field = ctx
+        .value_of(location)
+        .ok_or_else(|| refused(format!("`{member}` is no field of `union:{}`", union.name)))?;
+    let left = crate::forge::value_path::cases_left(
+        ctx.value_scope,
+        union,
+        Some(holder),
+        Some(&ctx.proven),
+    );
+    let holder_text = place_text(holder, ctx, renames, target, &*spelling).map_err(&refused)?;
+    let written = spelling
+        .union_member_place(&holder_text, union, &left, member.trim())
+        .map_err(&refused)?;
+    Ok(Some((written, field)))
 }
 
 /// The expression the place `path` is reached by, a path of fields with no

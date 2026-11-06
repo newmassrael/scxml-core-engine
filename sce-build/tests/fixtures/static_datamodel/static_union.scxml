@@ -6,8 +6,10 @@
   `radius` under a test that leaves both cases that share it, a list `path`
   holds walked where its case is proven; and each shape of `many` narrowed by
   the same tests on the loop's item; and the present value of `maybe`, where a
-  test proves it present and in its case. A delivery outside its type is refused
-  whole and counted. Every out variable is what a host reads back.
+  test proves it present and in its case. A union variable built where it is
+  declared has a field of its case written where the case is proven, and an
+  optional one takes the payload's `one` whole. A delivery outside its type is
+  refused whole and counted. Every out variable is what a host reads back.
 
   The Rust backend lowers it; every other backend refuses the union by its own
   name until it lowers one (section 7). Rust compile+run gate:
@@ -26,7 +28,17 @@
   <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>
   <sce:import kind="event-schema" src="shape_label.scxml" as="Label"/>
   <sce:import kind="event-schema" src="shape_path.scxml" as="Path"/>
+  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
   <datamodel>
+    <!-- A union variable is built where it is declared, a case and each of its
+         fields; one with no case to start at is optional and starts absent
+         (docs/adr/0092, section 6.1 item 5, and its amendment of 2026-11-07). -->
+    <data id="built" sce:type="union:Shape" sce:direction="out">
+      <sce:set name="kind" expr="Kind.rect"/>
+      <sce:set name="width" expr="1"/>
+      <sce:set name="height" expr="2"/>
+    </data>
+    <data id="kept" sce:type="optional&lt;union:Shape&gt;" expr="null" sce:direction="out"/>
     <data id="last_kind" sce:type="enum:Kind" expr="Kind.dot" sce:direction="out"/>
     <data id="radius" sce:type="uint16" expr="0" sce:direction="out"/>
     <data id="width" sce:type="uint16" expr="0" sce:direction="out"/>
@@ -68,6 +80,12 @@
       <if cond="_event.data.maybe !== null &amp;&amp; _event.data.maybe.value.kind === Kind.rect">
         <assign location="maybe_width" expr="_event.data.maybe.value.width"/>
       </if>
+      <!-- A field is written where its case is proven, and a union is put
+           into a variable whole (section 6.1 items 5 and 6). -->
+      <if cond="built.kind === Kind.rect">
+        <assign location="built.width" expr="built.width + 1"/>
+      </if>
+      <assign location="kept" expr="_event.data.one"/>
     </transition>
     <!-- A delivery outside its type is refused whole: none of the content above
          runs, and error.execution says so once. -->

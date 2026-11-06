@@ -21,6 +21,16 @@ fn fixtures() -> PathBuf {
 /// A `sce-static` statechart named `union_vars` that imports the shape union,
 /// its tag's enum and the record of each case, and declares `data`.
 fn statechart(data: &str) -> String {
+    statechart_with(data, "")
+}
+
+/// [`statechart`] whose one state runs `entry` when it is entered.
+fn statechart_with(data: &str, entry: &str) -> String {
+    let state = if entry.is_empty() {
+        "<state id=\"idle\"/>".to_string()
+    } else {
+        format!("<state id=\"idle\">\n    <onentry>\n{entry}\n    </onentry>\n  </state>")
+    };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -32,7 +42,7 @@ fn statechart(data: &str) -> String {
   <datamodel>
 {data}
   </datamodel>
-  <state id="idle"/>
+  {state}
 </scxml>
 "#
     )
@@ -301,6 +311,99 @@ fn a_backend_that_holds_no_union_variable_refuses_it_by_name() {
             "generate/unsupported-feature",
             "<data id=\\\"shape\\\">: `union:Shape` in a statechart's variable",
             "kotlin lowering of its union",
+        ],
+    );
+}
+
+/// Pinned by `Judge::union_assign` (`sce-build/src/forge/static_datamodel.rs`):
+/// the tag is never written alone, since it would leave the old case's fields
+/// under the new tag (docs/adr/0092, section 6.1 item 6).
+#[test]
+fn the_tag_of_a_union_is_never_written_alone() {
+    let (ok, text) = checked(
+        "rust",
+        &statechart_with(
+            CIRCLE,
+            r#"      <assign location="shape.kind" expr="Kind.rect"/>"#,
+        ),
+    );
+    assert!(!ok, "a tag written alone is refused:\n{text}");
+    refused_with(
+        &text,
+        &[
+            "scxml/static-datamodel-rule",
+            "the tag of a union is never written alone",
+            "a whole assignment of `shape`",
+        ],
+    );
+}
+
+/// Pinned by the read judged at an `<assign>`'s location and by
+/// `union_field_place` (`sce-build/src/forge/static_lowering.rs`): a field of
+/// a case is written where a test proves the case, through the case's mutable
+/// proven read, and refused where none does.
+#[test]
+fn a_field_of_a_union_variable_is_written_where_its_case_is_proven() {
+    let proven = r#"      <if cond="shape.kind === Kind.circle">
+        <assign location="shape.radius" expr="9"/>
+      </if>"#;
+    let code = rust_machine(&statechart_with(CIRCLE, proven));
+    assert!(
+        code.contains("self.shape.proven_circle_mut().radius = "),
+        "expected the write through the proven case in:\n{code}"
+    );
+    let (ok, text) = checked(
+        "rust",
+        &statechart_with(
+            CIRCLE,
+            r#"      <assign location="shape.radius" expr="9"/>"#,
+        ),
+    );
+    assert!(
+        !ok,
+        "a write where no test proves the case is refused:\n{text}"
+    );
+    refused_with(&text, &["expression/union-read-unproven", "radius"]);
+}
+
+/// Pinned by `Judge::union_assign` and `whole_union_copy`: a union variable
+/// takes another value of its union whole, and `null` only where it may be
+/// absent; nothing in an expression makes a union.
+#[test]
+fn a_union_variable_is_put_whole_from_a_value_of_its_union() {
+    let whole = format!("{CIRCLE}\n{DOT}\n{LAST}");
+    let code = rust_machine(&statechart_with(
+        &whole,
+        r#"      <assign location="mark" expr="shape"/>
+      <assign location="last" expr="shape"/>
+      <assign location="last" expr="null"/>"#,
+    ));
+    for line in [
+        "self.mark = self.shape.clone();",
+        "self.last = Some(self.shape.clone());",
+        "self.last = None;",
+    ] {
+        assert!(code.contains(line), "expected `{line}` in:\n{code}");
+    }
+    let (ok, text) = checked(
+        "rust",
+        &statechart_with(&whole, r#"      <assign location="shape" expr="null"/>"#),
+    );
+    assert!(!ok, "a union that is never absent takes no null:\n{text}");
+    refused_with(
+        &text,
+        &["scxml/static-datamodel-rule", "which is never absent"],
+    );
+    let (ok, text) = checked(
+        "rust",
+        &statechart_with(&whole, r#"      <assign location="shape" expr="3"/>"#),
+    );
+    assert!(!ok, "a number is no union:\n{text}");
+    refused_with(
+        &text,
+        &[
+            "scxml/static-datamodel-rule",
+            "nothing in an expression makes a union",
         ],
     );
 }

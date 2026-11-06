@@ -4654,7 +4654,15 @@ empty case takes its tag alone, and the variable takes no `expr`. One with no
 variant literal, and a field after an empty case are `scxml/static-datamodel-rule`; a
 field of the case missing, unknown or repeated is `validation/attribute-rule-violated`,
 as for a record variable. A variable with no case to start at is
-`optional<union:Shape>`, which starts at `null` and only there. The Rust machine holds
+`optional<union:Shape>`, which starts at `null` and only there. A field of a case is
+written where the tests leave the variable in cases that each declare it, as it is read
+(`<assign location="shape.radius">` under `shape.kind === Kind.circle`), and is
+`expression/union-read-unproven` elsewhere; the tag is never written alone
+(`scxml/static-datamodel-rule`), since it would leave the old case's fields under the
+new tag. The case changes by a whole assignment from another value of the same union
+by its name (a variable, a payload field, a `<foreach>` item, the present value of an
+optional one), or `null` into an optional one; any other value is
+`scxml/static-datamodel-rule`. The Rust machine holds
 either in its own sum (or `Option` of it), lent to a host by reference; a saved state
 holds the value as one object, its tag beside its case's fields, and the saved shape
 names the union's document and each case's record. Every other backend refuses the

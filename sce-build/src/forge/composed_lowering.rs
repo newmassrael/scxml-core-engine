@@ -411,6 +411,22 @@ pub trait ComposedSpelling {
         left: &[&ScopedCase],
         member: &str,
     ) -> Result<String, String>;
+    /// The accessor of the place a read of a union (a case's record, a shared
+    /// field) is written through, beside the read named `read`
+    /// (docs/adr/0092, section 6.1 item 6).
+    fn union_place_of(&self, read: &str) -> String;
+    /// The place of the field `member` of `holder`, a value of `union`, where
+    /// it may be in the cases `left` (docs/adr/0092, section 6.1 item 6): the
+    /// field of the one case left, or a field the cases left share. `Err` for
+    /// the tag, which is never written alone, and for a field this backend has
+    /// no place of.
+    fn union_member_place(
+        &self,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
+    ) -> Result<String, String>;
 }
 
 /// One case of a union's declaration ([`UnionDef`]).
@@ -613,6 +629,48 @@ pub(crate) fn rust_union_member(
                 .join(", ")
         )),
     }
+}
+
+/// The Rust method a read of a machine's union (`proven_<case>`,
+/// `proven_field_<f>`) is written through: the read's name with `_mut`, a
+/// mutable reference to the same place.
+pub(crate) fn rust_union_place_of(read: &str) -> String {
+    format!("{read}_mut")
+}
+
+/// The Rust place of the field `member` of the union value `holder` where it
+/// may be in the cases `left` ([`ComposedSpelling::union_member_place`]): the
+/// field of the one case left, through that case's mutable proven read, or
+/// the place a field several cases share is written through
+/// ([`shared_plain_field`]). `Err` for the tag, which is never written alone
+/// (docs/adr/0092, section 6.1 item 6), and for a field the cases left share
+/// whose value is not copied as it is read, which no accessor answers yet.
+pub(crate) fn rust_union_member_place(
+    holder: &str,
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    if member == union.tag {
+        return Err(format!(
+            "the tag `{member}` of `union:{}` is never written alone: the case changes by a \
+             whole assignment (docs/adr/0092, section 6.1 item 6)",
+            union.name
+        ));
+    }
+    // The read stands exactly where the write does: one case left that
+    // declares the field, or several that share it.
+    rust_union_member(union, left, member)?;
+    Ok(match left {
+        [case] => format!(
+            "{holder}.{}().{member}",
+            rust_union_place_of(&rust_case_read(&case.variant.name))
+        ),
+        _ => format!(
+            "*{holder}.{}()",
+            rust_union_place_of(&rust_shared_read(member))
+        ),
+    })
 }
 
 /// Whether a value of `ty` is copied as it is read, which a copy says
@@ -849,12 +907,16 @@ pub fn union_definition(
             }
         };
         let proven = spelling.union_case_read(variant);
-        if record.is_some() && !methods.insert(proven.clone()) {
-            return Err(format!(
-                "`union:{}`: the case `{variant}` is read by `{proven}`, which another read \
-                 of the union is named too",
-                union.name
-            ));
+        if record.is_some() {
+            for method in [proven.clone(), spelling.union_place_of(&proven)] {
+                if !methods.insert(method.clone()) {
+                    return Err(format!(
+                        "`union:{}`: the case `{variant}` is read by `{method}`, which another \
+                         read of the union is named too",
+                        union.name
+                    ));
+                }
+            }
         }
         cases.push(UnionCaseDef {
             ident: spelling.union_case_ident(variant),
@@ -879,12 +941,14 @@ pub fn union_definition(
                 continue;
             }
             let accessor = spelling.union_shared_read(field);
-            if !methods.insert(accessor.clone()) {
-                return Err(format!(
-                    "`union:{}`: the field `{field}` several cases share is read by \
-                     `{accessor}`, which another read of the union is named too",
-                    union.name
-                ));
+            for method in [accessor.clone(), spelling.union_place_of(&accessor)] {
+                if !methods.insert(method.clone()) {
+                    return Err(format!(
+                        "`union:{}`: the field `{field}` several cases share is read by \
+                         `{method}`, which another read of the union is named too",
+                        union.name
+                    ));
+                }
             }
             let within = case_records.get(&case.variant.name).copied();
             shared.push(SharedFieldDef {
@@ -1457,6 +1521,14 @@ impl ComposedSpelling for RustComposed<'_> {
                         case.proven,
                         others(1, &case.variant)
                     ));
+                    // The place a field of the case is written through where
+                    // the case is proven (docs/adr/0092, section 6.1 item 6).
+                    proven.push_str(&format!(
+                        "\n    pub fn {}(&mut self) -> &mut {record} {{\n        match self {{\n            \
+                         Self::{ident}(record) => record,\n{}        }}\n    }}\n",
+                        rust_union_place_of(&case.proven),
+                        others(1, &case.variant)
+                    ));
                 }
                 None => {
                     variants.push_str(&format!("    {ident},\n"));
@@ -1478,10 +1550,24 @@ impl ComposedSpelling for RustComposed<'_> {
                         format!("            Self::{ident}(record) => record.{},\n", field.field)
                     })
                     .collect();
+                let places: String = field
+                    .cases
+                    .iter()
+                    .map(|ident| {
+                        format!(
+                            "            Self::{ident}(record) => &mut record.{},\n",
+                            field.field
+                        )
+                    })
+                    .collect();
                 format!(
                     "\n    pub fn {}(&self) -> {} {{\n        match self {{\n{arms}{}        }}\n    \
-                     }}\n",
+                     }}\n\n    pub fn {}(&mut self) -> &mut {} {{\n        match self \
+                     {{\n{places}{}        }}\n    }}\n",
                     field.accessor,
+                    field.ty,
+                    others(field.cases.len(), &field.field),
+                    rust_union_place_of(&field.accessor),
                     field.ty,
                     others(field.cases.len(), &field.field)
                 )
@@ -1564,6 +1650,18 @@ impl ComposedSpelling for RustComposed<'_> {
         member: &str,
     ) -> Result<String, String> {
         rust_union_member(union, left, member)
+    }
+    fn union_place_of(&self, read: &str) -> String {
+        rust_union_place_of(read)
+    }
+    fn union_member_place(
+        &self,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
+    ) -> Result<String, String> {
+        rust_union_member_place(holder, union, left, member)
     }
 }
 
@@ -1874,11 +1972,44 @@ mod tests {
             "            Self::Circle(record) => record,\n",
             "    pub fn proven_field_radius(&self) -> u16 {\n",
             "            Self::Disc(record) => record.radius,\n",
+            // ... and the place each is written through (section 6.1 item 6).
+            "    pub fn proven_circle_mut(&mut self) -> &mut MRadiusRecord {\n",
+            "    pub fn proven_field_radius_mut(&mut self) -> &mut u16 {\n",
+            "            Self::Disc(record) => &mut record.radius,\n",
         ] {
             assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
         }
         assert!(!text.contains("proven_dot"), "{text}");
-        assert_eq!(text.matches("unreachable!(").count(), 3, "{text}");
+        assert_eq!(text.matches("unreachable!(").count(), 6, "{text}");
+    }
+
+    /// A write of a union's field (docs/adr/0092, section 6.1 item 6): through
+    /// the mutable proven read of the one case left, or the place of a field
+    /// two cases share; the tag is never written alone.
+    #[test]
+    fn a_proven_write_is_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let case = |name: &str| {
+            union
+                .cases
+                .iter()
+                .find(|case| case.variant.name == name)
+                .expect("a case")
+        };
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        assert_eq!(
+            rust_union_member_place("self.s", union, &[case("disc")], "radius"),
+            Ok("self.s.proven_disc_mut().radius".into())
+        );
+        assert_eq!(
+            rust_union_member_place("self.s", union, &[case("circle"), case("disc")], "radius"),
+            Ok("*self.s.proven_field_radius_mut()".into())
+        );
+        assert!(rust_union_member_place("self.s", union, &all, "kind")
+            .unwrap_err()
+            .contains("never written alone"));
+        assert!(rust_union_member_place("self.s", union, &[case("dot")], "radius").is_err());
     }
 
     /// The reader reads the tag by the enum's reader and then the record of

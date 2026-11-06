@@ -14,9 +14,10 @@
 // case is stepped over; a tag no variant names and a field its case lacks are
 // refused whole, naming the place.
 
-use sce_rust_runtime::{Engine, StatePolicy};
+use sce_rust_runtime::saved_state::SavedState;
+use sce_rust_runtime::{Engine, SceClock, StatePolicy};
 use sce_rust_tests::integration::static_datamodel::static_union_sm::{
-    StaticUnionEvent, StaticUnionPolicy,
+    StaticUnionEvent, StaticUnionPersist, StaticUnionPolicy,
 };
 
 /// A delivery of `shapes.sent`: `one` and the elements of `many` as written,
@@ -57,6 +58,87 @@ fn the_present_value_of_an_optional_union_is_read_where_proven() {
         engine.policy().maybe_width(),
         6,
         "an absent value reads nothing"
+    );
+}
+
+/// A union variable starts at the case it builds where it is declared, a
+/// field of it is written where its case is proven, and an optional one starts
+/// absent and takes the payload's union whole (docs/adr/0092, section 6.1
+/// items 5 and 6, and its amendment of 2026-11-07).
+#[test]
+fn a_union_variable_is_built_written_where_proven_and_taken_whole() {
+    let mut engine = machine();
+    assert_eq!(engine.policy().built().kind().sce_name(), "rect");
+    assert_eq!(engine.policy().built().proven_rect().width, 1);
+    assert_eq!(engine.policy().built().proven_rect().height, 2);
+    assert!(engine.policy().kept().is_none(), "it starts absent");
+    deliver(
+        &mut engine,
+        &shapes(r#"{"kind":"circle","radius":7}"#, &[r#"{"kind":"dot"}"#]),
+    );
+    assert_eq!(engine.policy().refusals(), 0);
+    assert_eq!(
+        engine.policy().built().proven_rect().width,
+        2,
+        "written where the case is proven"
+    );
+    assert_eq!(engine.policy().built().proven_rect().height, 2);
+    let kept = engine.policy().kept().clone().expect("taken whole");
+    assert_eq!(kept.kind().sce_name(), "circle");
+    assert_eq!(kept.proven_circle().radius, 7);
+}
+
+/// A saved state holds a union variable as one object, its tag beside its
+/// case's fields, an absent one as `null`, and a restore reads each back by its
+/// tag (docs/adr/0092, section 6.1 item 7).
+#[test]
+fn a_saved_state_holds_a_union_variable_as_its_tag_beside_its_case() {
+    let mut engine = machine();
+    let text = engine.save_at(0).expect("saves").to_json();
+    assert!(text.contains(r#""kept":null"#), "{text}");
+    deliver(
+        &mut engine,
+        &shapes(r#"{"kind":"circle","radius":7}"#, &[r#"{"kind":"dot"}"#]),
+    );
+    let saved = engine.save_at(0).expect("saves");
+    let text = saved.to_json();
+    assert!(
+        text.contains(r#""built":{"kind":"rect","width":2,"height":2}"#),
+        "{text}"
+    );
+    assert!(
+        text.contains(r#""kept":{"kind":"circle","radius":7}"#),
+        "{text}"
+    );
+    let restored = Engine::<StaticUnionPolicy>::restore_with(
+        StaticUnionPolicy::new(),
+        &SavedState::from_json(&text).expect("reads back"),
+        SceClock::Manual(0),
+        0,
+    )
+    .expect("restores");
+    assert_eq!(restored.policy().built(), engine.policy().built());
+    assert_eq!(restored.policy().kept(), engine.policy().kept());
+    // A tag no case of the union names is refused, naming the variable.
+    let stray = text.replace(
+        r#""kind":"circle","radius":7"#,
+        r#""kind":"oval","radius":7"#,
+    );
+    let refusal = match Engine::<StaticUnionPolicy>::restore_with(
+        StaticUnionPolicy::new(),
+        &SavedState::from_json(&stray).expect("reads back"),
+        SceClock::Manual(0),
+        0,
+    ) {
+        Ok(_) => panic!("a tag of no case is refused"),
+        Err(refusal) => refusal,
+    };
+    assert!(
+        refusal
+            .reason()
+            .contains("'kept' (oval) is not a case of union_shape"),
+        "{}",
+        refusal.reason()
     );
 }
 

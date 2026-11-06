@@ -134,3 +134,28 @@ fn each_read_is_spelled_by_the_cases_its_tests_leave() {
     assert!(!code.contains("ev.one.radius"), "{code}");
     assert!(!code.contains("shape.width"), "{code}");
 }
+
+/// Pinned by `union_field_place` and `whole_union_copy`
+/// (`sce-build/src/forge/static_lowering.rs`) and by
+/// `rust_union_member_place` (`sce-build/src/forge/composed_lowering.rs`): a
+/// field of a union variable is written through the mutable proven read of the
+/// case its test proves, and an optional union variable takes the payload's
+/// union whole, a copy lifted into its present value (docs/adr/0092, section
+/// 6.1 items 5 and 6).
+#[test]
+fn a_union_variable_is_written_where_its_case_is_proven_and_taken_whole() {
+    let code = machine();
+    holds(
+        &code,
+        &[
+            &format!("let built: {UNION} = {UNION}::Rect(StaticUnionRectRecord {{ width: "),
+            &format!("let kept: Option<{UNION}> = None;"),
+            "self.built.proven_rect_mut().width = ",
+            "self.built.proven_rect().width",
+            "self.kept = Some(ev.one.clone());",
+            "    pub fn proven_rect_mut(&mut self) -> &mut StaticUnionRectRecord {",
+        ],
+    );
+    // The tag is never written as a field of the sum.
+    assert!(!code.contains("self.built.kind ="), "{code}");
+}
