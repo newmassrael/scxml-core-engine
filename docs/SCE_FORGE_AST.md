@@ -212,6 +212,16 @@ The closed enum, in declaration order:
 | `feature-model` | `FeaturesModel` | The features of a product line and what each requires (ADR 0057); a declaration that emits nothing. |
 | `text-template` | `TextTemplateModel` | A text with typed holes and, for an untrusted hole, a fence (docs/adr/0087, section 3); rendered by one pure function on every backend. |
 | `union` | `UnionModel` | A value that is one of several shapes, told apart by a tag of a closed enum (docs/adr/0092, section 1): `tag` the key the tag is written under, `tag_enum` the alias of its enum, and one `cases` entry per variant, each with the `record` it holds or none. |
+| `test-template` | `TestTemplateModel` | A template of the test profile (docs/SCE_TEST_PROFILE.md §11.4): `template_type` the root's `sce:type`, `parameters` its formal parameters, and `matcher` its one matcher, a tree whose `form` is tagged by `matcher` with the element's local name. |
+| `test-port-type` | `TestPortTypeModel` | A port type of the test profile (§11.3): one `messages` entry per message, the `schema` alias of its event schema and its `direction`. |
+| `test-configuration` | `TestConfigurationModel` | A test configuration (§11.6): the `mtc` component alias, the `ptcs`, the `system_ports`, and the `maps` and `connects` that join ports. |
+| `test-case` | `TestCaseModel` | A test case (§11.7): the `configuration` alias it runs in. |
+| `test-suite` | `TestSuiteModel` | A test suite (§11.8): the `features` alias, the `module_parameters` and the `executes` in run order, each with its `guard_us` and `requires`. |
+
+A `test-component` (§11.5) is a statechart and is exported through the `statechart` arm:
+its ports, timers, module parameters, statements and PTC invocations are under
+`test_component`, a transition's branch under its `test_branch`, and a send's template under
+its `test_template`.
 
 The kinds cover SCE's full IR surface: the forge kinds plus
 the W3C SCXML statechart arm. `imports` and `externs` are always

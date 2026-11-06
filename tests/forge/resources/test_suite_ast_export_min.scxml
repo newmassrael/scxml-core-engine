@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.8: the smallest suite that carries a module
+     parameter and a guard, running the test case of the sibling fixture. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="test_suite_ast_export_min">
+  <sce:import kind="test-case" src="test_case_ast_export_min.scxml" as="ByteCase"/>
+  <sce:module-parameter id="limit" type="uint8" value="200"/>
+  <sce:execute test-case="ByteCase" guard="1.5s"/>
+</scxml>

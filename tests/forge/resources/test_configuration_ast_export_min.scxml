@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.6: the smallest configuration, a main test
+     component whose one port is mapped to the one port of the test system
+     interface, of the sibling component and port type fixtures. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration"
+       name="test_configuration_ast_export_min">
+  <sce:import kind="test-component" src="test_component_ast_export_min.scxml" as="Tester"/>
+  <sce:import kind="test-port-type" src="test_port_type_ast_export_min.scxml" as="BytePort"/>
+  <sce:mtc type="Tester"/>
+  <sce:system-port id="sut" type="BytePort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>

@@ -280,6 +280,17 @@
           },
           "type": "array"
         },
+        "test_template": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TemplateUse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The template a `<send>` of a `test-component` sends and the variables bound to its parameters (`sce:test-template`, `sce:template-args`; docs/SCE_TEST_PROFILE.md §11.5). `None` on every other action, and on every action of a document that is not a `test-component`."
+        },
         "then_actions": {
           "items": {
             "$ref": "#/definitions/Action"
@@ -2849,6 +2860,17 @@
               },
               "type": "object"
             },
+            "test_component": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TestComponentProfile"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The test profile's declarations when the document is a `sce:kind=\"test-component\"` (docs/SCE_TEST_PROFILE.md §11.5): its ports, timers and module parameters, the statements the profile adds and the PTCs it invokes. `None` for every other statechart, which reads none of the profile's attributes."
+            },
             "transition_function_declared": {
               "description": "`<scxml sce:transition-function=\"emit\">`: the document is also generated as a pure function of (leaf state, event), in a file beside the machine that depends on no SCE runtime (`docs/SCE_TRANSITION_FUNCTION.md`, `TransitionFunction`). The declaration holds the document to the subset such a function can represent (SCE Accepted Subset §2.21). A fact of the document and not of the build, so it is inside the source set the machine's `source-hash` covers. Absent, nothing is emitted and nothing is refused, and the generated files are byte-identical to what they were before the declaration existed.",
               "type": "boolean"
@@ -4263,6 +4285,255 @@
             "tag_enum"
           ],
           "type": "object"
+        },
+        {
+          "description": "A template of the test profile. See [`TestTemplateModel`].",
+          "properties": {
+            "kind": {
+              "enum": [
+                "test-template"
+              ],
+              "type": "string"
+            },
+            "matcher": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/TestMatcher"
+                }
+              ],
+              "description": "The template's one matcher."
+            },
+            "name": {
+              "type": "string"
+            },
+            "parameters": {
+              "description": "The formal parameters (`<data sce:direction=\"in\">`), in document order: value parameters, bound in order by a reference's arguments.",
+              "items": {
+                "$ref": "#/definitions/TestTemplateParameter"
+              },
+              "type": "array"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the root element."
+            },
+            "template_type": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ValueType"
+                }
+              ],
+              "description": "The root's `sce:type`, in the type grammar of an event schema's fields."
+            }
+          },
+          "required": [
+            "kind",
+            "matcher",
+            "name",
+            "parameters",
+            "template_type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A port type of the test profile. See [`TestPortTypeModel`].",
+          "properties": {
+            "kind": {
+              "enum": [
+                "test-port-type"
+              ],
+              "type": "string"
+            },
+            "messages": {
+              "description": "The `<sce:message>` children, in document order.",
+              "items": {
+                "$ref": "#/definitions/TestPortMessage"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the root element."
+            }
+          },
+          "required": [
+            "kind",
+            "messages",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A test configuration. See [`TestConfigurationModel`].",
+          "properties": {
+            "connects": {
+              "description": "The `<sce:connect>` children.",
+              "items": {
+                "$ref": "#/definitions/TestConnect"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "test-configuration"
+              ],
+              "type": "string"
+            },
+            "maps": {
+              "description": "The `<sce:map>` children.",
+              "items": {
+                "$ref": "#/definitions/TestMap"
+              },
+              "type": "array"
+            },
+            "mtc": {
+              "description": "The alias of the imported `test-component` the MTC is.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ptcs": {
+              "description": "The `<sce:ptc>` children, in document order.",
+              "items": {
+                "$ref": "#/definitions/TestPtc"
+              },
+              "type": "array"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the root element."
+            },
+            "system_ports": {
+              "description": "The `<sce:system-port>` children: the ports of the test system interface.",
+              "items": {
+                "$ref": "#/definitions/TestSystemPort"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "connects",
+            "kind",
+            "maps",
+            "mtc",
+            "name",
+            "ptcs",
+            "system_ports"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A test case. See [`TestCaseModel`].",
+          "properties": {
+            "configuration": {
+              "description": "The root's `sce:configuration`: the alias of the imported `test-configuration`.",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "test-case"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the root element."
+            }
+          },
+          "required": [
+            "configuration",
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A test suite. See [`TestSuiteModel`].",
+          "properties": {
+            "executes": {
+              "description": "The `<sce:execute>` children, in run order.",
+              "items": {
+                "$ref": "#/definitions/TestExecute"
+              },
+              "type": "array"
+            },
+            "features": {
+              "description": "The alias of the one imported `feature-model` the selections are over, when the suite imports one.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "test-suite"
+              ],
+              "type": "string"
+            },
+            "module_parameters": {
+              "description": "The `<sce:module-parameter>` children, in document order.",
+              "items": {
+                "$ref": "#/definitions/TestModuleParameter"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the root element."
+            }
+          },
+          "required": [
+            "executes",
+            "kind",
+            "module_parameters",
+            "name"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -4684,6 +4955,48 @@
           "description": "A value that is exactly one of several shapes, told apart by a tag of a closed enum — docs/adr/0092, section 1. The document names the tag's key and its enum, and one case per variant of that enum, each case a record of an imported event schema or none. A type of the language (`union:<alias>`), read by the documents that import it; no backend lowers it yet, so generation refuses it by name (`generate/unsupported-feature`).",
           "enum": [
             "union"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A template of the test profile — docs/adr/0091, section 2; docs/SCE_TEST_PROFILE.md §11.4. One matcher over a value of the template's type, with value parameters; a send names a specific one, a receive branch any one.",
+          "enum": [
+            "test_template"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A port type of the test profile — docs/adr/0091, section 2; docs/SCE_TEST_PROFILE.md §11.3. The messages a port of the type carries, each an imported event schema with its direction.",
+          "enum": [
+            "test_port_type"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A component type of the test profile — docs/adr/0091, section 2; docs/SCE_TEST_PROFILE.md §11.5. A `sce-static` statechart, read by the statechart parser, that declares its ports, timers and module parameters, sends through its ports and branches on receives and timeouts.",
+          "enum": [
+            "test_component"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A test configuration — docs/adr/0091, answer 10; docs/SCE_TEST_PROFILE.md §11.6. The MTC, the PTCs, the ports of the test system interface, and the `connect` and `map` that join ports.",
+          "enum": [
+            "test_configuration"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A test case — docs/adr/0091, section 2; docs/SCE_TEST_PROFILE.md §11.7. Names the configuration it runs in; its body is the MTC.",
+          "enum": [
+            "test_case"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A test suite — docs/adr/0091, answer 4; docs/SCE_TEST_PROFILE.md §11.8. Its test cases in run order, each with its guard and its selection, and the module parameters the components read.",
+          "enum": [
+            "test_suite"
           ],
           "type": "string"
         }
@@ -6911,6 +7224,790 @@
         }
       ]
     },
+    "TemplateUse": {
+      "description": "The template a send sends, or a receive branch matches with, and the component variables bound in order to its formal parameters (`sce:test-template`, `sce:template-args`; docs/SCE_TEST_PROFILE.md §11.5), as written.",
+      "properties": {
+        "args": {
+          "description": "The variables, in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "template": {
+          "description": "The alias of the imported `test-template`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TestBranch": {
+      "description": "What makes a transition a branch of a test component (docs/SCE_TEST_PROFILE.md §4.2): the port it receives on, the timer whose timeout it takes, and the template it matches with, as written. A transition that is a done branch names `done.invoke.<id>` in its `event`, and carries none of these.",
+      "properties": {
+        "receive": {
+          "description": "`sce:receive`: the port.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "template": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TemplateUse"
+            }
+          ],
+          "description": "`sce:test-template` and `sce:template-args`."
+        },
+        "timeout": {
+          "description": "`sce:timeout`: the timer.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TestComponentProfile": {
+      "description": "The declarations, statements and PTCs of a test component, in document order.",
+      "properties": {
+        "invocations": {
+          "description": "The `<invoke>` of each PTC the component creates.",
+          "items": {
+            "$ref": "#/definitions/TestInvocation"
+          },
+          "type": "array"
+        },
+        "module_parameters": {
+          "description": "The `id` of each `<data sce:module-parameter=\"true\">`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ports": {
+          "description": "The `<sce:test-port>` declarations.",
+          "items": {
+            "$ref": "#/definitions/TestPort"
+          },
+          "type": "array"
+        },
+        "statements": {
+          "description": "The statements the profile adds to executable content.",
+          "items": {
+            "$ref": "#/definitions/TestStatement"
+          },
+          "type": "array"
+        },
+        "timers": {
+          "description": "The `<sce:test-timer>` declarations.",
+          "items": {
+            "$ref": "#/definitions/TestTimer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "invocations",
+        "module_parameters",
+        "ports",
+        "statements",
+        "timers"
+      ],
+      "type": "object"
+    },
+    "TestConnect": {
+      "description": "One `<sce:connect>` of a [`TestConfigurationModel`]: two component ports joined to each other.",
+      "properties": {
+        "endpoints": {
+          "description": "The two `<sce:endpoint>` children, in document order.",
+          "items": {
+            "$ref": "#/definitions/TestEndpoint"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "endpoints"
+      ],
+      "type": "object"
+    },
+    "TestEndpoint": {
+      "description": "One `<sce:endpoint component port>` of a [`TestConnect`].",
+      "properties": {
+        "component": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "port"
+      ],
+      "type": "object"
+    },
+    "TestExecute": {
+      "description": "One `<sce:execute test-case guard requires>` of a [`TestSuiteModel`].",
+      "properties": {
+        "guard_us": {
+          "description": "The guard: the test case's time limit, in microseconds.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "requires": {
+          "description": "The selection: a feature condition over the suite's feature model, as written (ADR 0057 §3).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "test_case": {
+          "description": "The alias of the imported `test-case`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "test_case"
+      ],
+      "type": "object"
+    },
+    "TestInvocation": {
+      "description": "One `<invoke type=\"http://sce.dev/ext/test-component\">`: the creation of a PTC, in the state that invokes it (P9).",
+      "properties": {
+        "id": {
+          "description": "The `id`: the PTC's name in the configuration.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "src": {
+          "description": "The `src`: the test component the PTC is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "TestMap": {
+      "description": "One `<sce:map component port system-port>` of a [`TestConfigurationModel`]: a component port joined to a port of the test system interface.",
+      "properties": {
+        "component": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        },
+        "system_port": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "port",
+        "system_port"
+      ],
+      "type": "object"
+    },
+    "TestMatcher": {
+      "description": "One matcher of a [`TestTemplateModel`] (docs/SCE_TEST_PROFILE.md §11.4): its form, and the attributes every matcher may carry.",
+      "properties": {
+        "field": {
+          "description": "`field`: the field of the enclosing `record-match` this matcher is for. Present exactly on a child of a `record-match`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "form": {
+          "$ref": "#/definitions/TestMatcherForm"
+        },
+        "ifpresent": {
+          "description": "`ifpresent=\"true\"`: an absent optional field matches too.",
+          "type": "boolean"
+        },
+        "length_max": {
+          "description": "`length-max`: the most characters, octets or elements.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "length_min": {
+          "description": "`length-min`: the fewest characters, octets or elements.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "form"
+      ],
+      "type": "object"
+    },
+    "TestMatcherForm": {
+      "description": "What a matcher matches with: one variant per element of docs/SCE_TEST_PROFILE.md §11.4, named by the element's local name.",
+      "oneOf": [
+        {
+          "description": "`<sce:specific>`: one value, a literal or a formal parameter.",
+          "properties": {
+            "matcher": {
+              "enum": [
+                "specific"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/TestValue"
+            }
+          },
+          "required": [
+            "matcher",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:record-match>`: one matcher per field of the record, each named by its `field`.",
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/TestMatcher"
+              },
+              "type": "array"
+            },
+            "matcher": {
+              "enum": [
+                "record-match"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "fields",
+            "matcher"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:list-match>`: one matcher per element of the list, in order.",
+          "properties": {
+            "elements": {
+              "items": {
+                "$ref": "#/definitions/TestMatcher"
+              },
+              "type": "array"
+            },
+            "matcher": {
+              "enum": [
+                "list-match"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "elements",
+            "matcher"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:union-match variant>`: the case `variant`, and the matcher of its record when the case holds one.",
+          "properties": {
+            "case": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TestMatcher"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matcher": {
+              "enum": [
+                "union-match"
+              ],
+              "type": "string"
+            },
+            "variant": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "matcher",
+            "variant"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:value-list>`: the value matches one of the items.",
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/definitions/TestMatcher"
+              },
+              "type": "array"
+            },
+            "matcher": {
+              "enum": [
+                "value-list"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "items",
+            "matcher"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:complement>`: the value matches none of the items.",
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/definitions/TestMatcher"
+              },
+              "type": "array"
+            },
+            "matcher": {
+              "enum": [
+                "complement"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "items",
+            "matcher"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:any-value/>`: any value.",
+          "properties": {
+            "matcher": {
+              "enum": [
+                "any-value"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "matcher"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:any-value-or-none/>`: any value of an optional field, or none.",
+          "properties": {
+            "matcher": {
+              "enum": [
+                "any-value-or-none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "matcher"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:value-range>`: an integer within the bounds, each inclusive, a missing bound unbounded.",
+          "properties": {
+            "lower": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TestValue"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matcher": {
+              "enum": [
+                "value-range"
+              ],
+              "type": "string"
+            },
+            "upper": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TestValue"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "matcher"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:omit/>`: the optional field is absent.",
+          "properties": {
+            "matcher": {
+              "enum": [
+                "omit"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "matcher"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:template-ref template args>`: the imported template, its formal parameters bound in order to this template's own parameters.",
+          "properties": {
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "matcher": {
+              "enum": [
+                "template-ref"
+              ],
+              "type": "string"
+            },
+            "template": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args",
+            "matcher",
+            "template"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TestMessageDirection": {
+      "description": "Which way a message of a port type travels, seen from the component that owns a port of the type (docs/SCE_TEST_PROFILE.md §11.3).",
+      "enum": [
+        "in",
+        "out",
+        "inout"
+      ],
+      "type": "string"
+    },
+    "TestModuleParameter": {
+      "description": "One `<sce:module-parameter id type value>` of a [`TestSuiteModel`].",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "parameter_type": {
+          "$ref": "#/definitions/ValueType"
+        },
+        "value": {
+          "description": "The default, a literal of `parameter_type` as written.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "parameter_type",
+        "value"
+      ],
+      "type": "object"
+    },
+    "TestPort": {
+      "description": "One `<sce:test-port id type>`: a port of an imported `test-port-type`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "port_type": {
+          "description": "The alias of the imported `test-port-type`.",
+          "type": "string"
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "port_type"
+      ],
+      "type": "object"
+    },
+    "TestPortMessage": {
+      "description": "One `<sce:message type direction>` of a [`TestPortTypeModel`].",
+      "properties": {
+        "direction": {
+          "$ref": "#/definitions/TestMessageDirection"
+        },
+        "schema": {
+          "description": "The alias of the imported event schema the message is a value of.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction",
+        "schema"
+      ],
+      "type": "object"
+    },
+    "TestPtc": {
+      "description": "One `<sce:ptc id type>` of a [`TestConfigurationModel`].",
+      "properties": {
+        "component": {
+          "description": "The alias of the imported `test-component` the PTC is.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The PTC's name, the `id` of the `<invoke>` that creates it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "id"
+      ],
+      "type": "object"
+    },
+    "TestStatement": {
+      "description": "A statement the profile adds to executable content, and the state whose executable content holds it.",
+      "properties": {
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string"
+        },
+        "statement": {
+          "$ref": "#/definitions/TestStatementKind"
+        }
+      },
+      "required": [
+        "state",
+        "statement"
+      ],
+      "type": "object"
+    },
+    "TestStatementKind": {
+      "description": "What a [`TestStatement`] does, one variant per element, named by the element's local name.",
+      "oneOf": [
+        {
+          "description": "`<sce:setverdict value reason>` (P12): `reason` is a `sce-static` expression of type `string`, as written.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "setverdict"
+              ],
+              "type": "string"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verdict": {
+              "$ref": "#/definitions/Verdict"
+            }
+          },
+          "required": [
+            "kind",
+            "verdict"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:start-timer timer duration>` (P7): `duration` as written.",
+          "properties": {
+            "duration": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "start-timer"
+              ],
+              "type": "string"
+            },
+            "timer": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "timer"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:stop-timer timer>` (P7).",
+          "properties": {
+            "kind": {
+              "enum": [
+                "stop-timer"
+              ],
+              "type": "string"
+            },
+            "timer": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "timer"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TestSystemPort": {
+      "description": "One `<sce:system-port id type>` of a [`TestConfigurationModel`].",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "port_type": {
+          "description": "The alias of the imported `test-port-type` the port is of.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "port_type"
+      ],
+      "type": "object"
+    },
+    "TestTemplateParameter": {
+      "description": "One formal parameter of a [`TestTemplateModel`].",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "parameter_type": {
+          "$ref": "#/definitions/ValueType"
+        }
+      },
+      "required": [
+        "id",
+        "parameter_type"
+      ],
+      "type": "object"
+    },
+    "TestTimer": {
+      "description": "One `<sce:test-timer id duration>`: a one-shot timer (P7).",
+      "properties": {
+        "duration": {
+          "description": "The default duration, as written.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "TestValue": {
+      "description": "A value a matcher names (docs/SCE_TEST_PROFILE.md §11.4): a literal as written, which its position's type reads, or a formal parameter.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "param": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "param"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "TestVector": {
       "description": "Single `<sce:test-vector hex value/>` row (RFC §synth-5-B). Captures the declared input bytes and expected output literal; the emitter pairs these with the algorithm's signature to render an idiomatic per-backend test function.",
       "properties": {
@@ -7284,6 +8381,17 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "test_branch": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TestBranch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What makes this transition a branch of a `test-component` (docs/SCE_TEST_PROFILE.md §4.2, §11.5): its `sce:receive`, `sce:timeout`, `sce:test-template` and `sce:template-args`, as written. `None` on a transition that carries none of them, and on every transition of a document that is not a `test-component`."
         },
         "transition_index": {
           "description": "Original index within parent state's transition list. This index is unique only WITHIN the parent state, never machine-wide — see [`native_guard`](Self::native_guard) for why that distinction matters.",
@@ -7664,6 +8772,16 @@
         "value"
       ],
       "type": "object"
+    },
+    "Verdict": {
+      "description": "A verdict a document sets (docs/SCE_TEST_PROFILE.md §5.1). `error` is the runtime's alone (§5.2), so a document has no way to write it.",
+      "enum": [
+        "pass",
+        "inconclusive",
+        "fail",
+        "none"
+      ],
+      "type": "string"
     },
     "WrittenType": {
       "anyOf": [

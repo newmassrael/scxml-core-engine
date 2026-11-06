@@ -148,11 +148,62 @@ fn envelope_top_level_required_fields_frozen() {
 /// `enum ForgeDocument`. Every variant of `ForgeKind::ALL_ATTR_NAMES`
 /// carries a matching `ForgeDocument` arm — including `Statechart`,
 /// which the AST-export v1 second atomic added so the envelope covers
-/// SCE's full IR surface (15 forge kinds + 1 statechart). No filter is
-/// applied: the test fails loudly if a future kind addition lands in
-/// `ForgeKind` without a matching `ForgeDocument` variant.
+/// SCE's full IR surface (15 forge kinds + 1 statechart). One filter is
+/// applied, and it is a fact of the model rather than a list: a kind the
+/// statechart parser reads other than the statechart itself — a
+/// `test-component` (docs/SCE_TEST_PROFILE.md §11.5) — is exported through
+/// the statechart arm, its profile under `test_component`, and has no arm
+/// of its own ([`a_test_component_is_exported_through_the_statechart_arm`]).
+/// The test fails loudly if a future kind addition lands in `ForgeKind`
+/// without a matching `ForgeDocument` variant.
 fn emittable_kind_attr_names() -> Vec<&'static str> {
-    ForgeKind::ALL_ATTR_NAMES.to_vec()
+    ForgeKind::ALL_ATTR_NAMES
+        .iter()
+        .copied()
+        .filter(|name| {
+            ForgeKind::from_attr(name)
+                .is_some_and(|kind| kind == ForgeKind::Statechart || !kind.reads_as_statechart())
+        })
+        .collect()
+}
+
+/// A `test-component` is a statechart (docs/SCE_TEST_PROFILE.md §11.5): its
+/// envelope is the statechart arm's, valid against the same schema, and the
+/// profile it declares is under `test_component`.
+#[test]
+fn a_test_component_is_exported_through_the_statechart_arm() {
+    let schema_value = load_schema();
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema_value)
+        .expect("checked-in schema must be valid JSON Schema");
+    let parsed = parse_fixture(&fixture("test_component_ast_export_min.scxml"));
+    let mut buf = Vec::new();
+    write_envelope(&mut buf, &parsed).expect("write_envelope succeeds");
+    let json: Value = serde_json::from_slice(&buf).expect("emitted envelope re-parses as JSON");
+    if let Err(errors) = validator.validate(&json) {
+        let collected: Vec<String> = errors
+            .map(|e| format!("  - {} at {}", e, e.instance_path))
+            .collect();
+        panic!(
+            "the test component's envelope fails JSON Schema validation:\n{}",
+            collected.join("\n")
+        );
+    }
+    let document = &json["ast"]["document"];
+    assert_eq!(document["kind"], Value::from("statechart"));
+    assert_eq!(
+        document["test_component"]["ports"][0]["id"],
+        Value::from("sut")
+    );
+    assert_eq!(
+        document["test_component"]["timers"][0]["duration"],
+        Value::from("500ms")
+    );
+    assert_eq!(
+        document["test_component"]["statements"][0]["statement"]["kind"],
+        Value::from("start-timer")
+    );
 }
 
 #[test]
@@ -361,6 +412,16 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     // docs/adr/0092, section 1.1: a union of a case that holds a record and
     // an empty one.
     ("union", "union_ast_export_min.scxml"),
+    // docs/SCE_TEST_PROFILE.md §11: the declaration kinds of the test
+    // profile, each in the smallest shape that carries what its model holds.
+    ("test-template", "test_template_ast_export_min.scxml"),
+    ("test-port-type", "test_port_type_ast_export_min.scxml"),
+    (
+        "test-configuration",
+        "test_configuration_ast_export_min.scxml",
+    ),
+    ("test-case", "test_case_ast_export_min.scxml"),
+    ("test-suite", "test_suite_ast_export_min.scxml"),
 ];
 
 #[test]
