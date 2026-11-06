@@ -349,6 +349,7 @@ fn collect_signatures(
     // the document's scope, not only a payload field (SCE Accepted Subset
     // §2.15), so the arguments are judged against that scope.
     let static_scope = crate::forge::type_ctx::StaticScope::of(scxml);
+    let received = scxml.received_events();
 
     for state in scxml.states.values() {
         // Eventless positions: <onentry>/<onexit> blocks, an <initial>
@@ -373,11 +374,14 @@ fn collect_signatures(
         }
 
         for transition in &state.transitions {
+            // The event whose payload the content reads: the one the
+            // transition names, or the message a receive branch takes.
+            let trigger = transition.payload_event(&received);
             let mut proven = facts_of_condition(transition);
             for action in &transition.actions {
                 let scope = PayloadScope::Transition {
-                    event: &transition.event,
-                    schema: imported_schemas.get(&transition.event),
+                    event: trigger,
+                    schema: imported_schemas.get(trigger),
                     proven: proven.clone(),
                 };
                 check_placement(

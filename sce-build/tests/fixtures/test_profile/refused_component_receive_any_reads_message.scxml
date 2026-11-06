@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: _event read in the content of a receive any branch, which
+     matches no template and stores no message (ES 201 873-1 §22.2.2,
+     restriction d; docs/SCE_TEST_PROFILE.md §4.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_receive_any_reads_message"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="event-schema" src="job_status.scxml" as="Status"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="waiting">
+    <transition sce:receive="sut" target="done">
+      <assign location="count" expr="_event.data.count"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

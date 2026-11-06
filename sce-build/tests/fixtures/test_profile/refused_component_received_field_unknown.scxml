@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a receive branch reads a field the record of its template does
+     not have. The message is typed by that record (docs/SCE_TEST_PROFILE.md
+     §11.5), so the read is held to its fields as any payload read is. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_received_field_unknown"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="test-template" src="every_matcher.scxml" as="EveryMatcher"/>
+  <sce:import kind="event-schema" src="job_status.scxml" as="Status"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+    <data id="count" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="waiting">
+    <transition sce:receive="sut" sce:test-template="EveryMatcher"
+                sce:template-args="limit" target="done">
+      <assign location="count" expr="_event.data.attempts"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

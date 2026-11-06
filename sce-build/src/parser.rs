@@ -3489,9 +3489,11 @@ impl SCXMLParser {
         if let Some(dir) = import_dir.as_deref() {
             // docs/SCE_TEST_PROFILE.md §11.5: what a test component asks of
             // the port types, templates and components it names, read from
-            // the same directory every reader below reads. Nothing for any
+            // the same directory every reader below reads, and the record each
+            // template a receive branch matches with is of. Nothing for any
             // other statechart.
-            crate::test_component::rules::check_imports(&root, &model, dir, diag_label)?;
+            model.received_records =
+                crate::test_component::rules::read_imports(&root, &model, dir, diag_label)?;
             let (schemas_by_stem, enums_by_stem) =
                 Self::parse_imported_forge_siblings(&model, dir, diag_label)?;
             model.imported_event_schemas =

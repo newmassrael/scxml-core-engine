@@ -250,6 +250,25 @@ pub struct Transition {
 }
 
 impl Transition {
+    /// The event whose payload this transition's `_event.data` is: the event it
+    /// names, or, for a receive branch of a test component, the event of the
+    /// message it takes, the record its template is of
+    /// (docs/SCE_TEST_PROFILE.md §11.5). `received` is the document's
+    /// [`SCXMLModel::received_events`]; a receive branch whose template is not
+    /// there names no event, which no schema is of.
+    pub fn payload_event<'a>(
+        &'a self,
+        received: &'a std::collections::BTreeMap<String, String>,
+    ) -> &'a str {
+        let message = self
+            .test_branch
+            .as_ref()
+            .filter(|branch| branch.receive.is_some())
+            .and_then(|branch| branch.template.template.as_ref())
+            .and_then(|template| received.get(template));
+        message.unwrap_or(&self.event)
+    }
+
     /// Whether this transition's guard is emitted as backend code rather than
     /// folded to a constant or read by a script engine: written with a
     /// `cpp:`/`kt:` prefix, or lowered at generate time into
@@ -4187,6 +4206,15 @@ pub struct SCXMLModel {
     /// reads none of the profile's attributes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test_component: Option<crate::test_component::TestComponentProfile>,
+    /// For each `test-template` a receive branch of a test component matches
+    /// with, the alias the component imports the template's record under
+    /// (docs/SCE_TEST_PROFILE.md §11.5): the message such a branch takes is an
+    /// event of that record's name, read through that record
+    /// ([`Self::received_events`]). Read where the document is parsed
+    /// ([`crate::test_component::rules::read_imports`]); empty for every other
+    /// statechart and without sibling files, and not serialized.
+    #[serde(skip)]
+    pub received_records: std::collections::BTreeMap<String, String>,
     /// EventSchema MCU native lowering —
     /// the statechart's `<sce:import kind="event-schema">` declarations
     /// resolved to their `EventSchemaModel`, keyed by SCXML event name
@@ -5307,6 +5335,24 @@ impl SCXMLModel {
         &self,
     ) -> std::collections::BTreeMap<String, crate::forge::model::EntrySchema> {
         crate::forge::model::entry_views(&self.imported_event_schemas)
+    }
+
+    /// For each `test-template` a receive branch of a test component matches
+    /// with, the event of the record the template is of, which is the event
+    /// name a message of that record travels under (docs/SCE_TEST_PROFILE.md
+    /// §11.5, a send): what [`Transition::payload_event`] reads. A template
+    /// whose record the component does not import is not here, and a branch
+    /// that matches with it reads no message
+    /// ([`crate::test_component::rules::read_imports`]).
+    pub fn received_events(&self) -> std::collections::BTreeMap<String, String> {
+        self.received_records
+            .iter()
+            .filter_map(|(template, record)| {
+                self.imported_records
+                    .get(record)
+                    .map(|schema| (template.clone(), schema.event_name.clone()))
+            })
+            .collect()
     }
 
     /// Each imported record, by alias, as a reader that holds one entry per

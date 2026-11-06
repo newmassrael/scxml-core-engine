@@ -11,14 +11,17 @@
 //!   rule of the data model or of the statechart is asked, so that a
 //!   construct the profile has no place for is refused as the profile's:
 //!   the elements a component does not hold, native code, `_event` read
-//!   outside a receive branch, the forms of a send, of a PTC's invocation and
-//!   of a branch, a done branch that keeps its state, a module parameter
-//!   given a value, the durations and the names its declarations and
-//!   references write.
-//! - [`check_imports`] holds what needs the documents the component names:
+//!   outside a receive branch or in a receive any branch, the forms of a
+//!   send, of a PTC's invocation and of a branch, a done branch that keeps
+//!   its state, a module parameter given a value, the durations and the
+//!   names its declarations and references write.
+//! - [`read_imports`] holds what needs the documents the component names:
 //!   the arguments a template is given, the port a template's message
 //!   travels on, a send's template being specific, a PTC being a test
-//!   component. A document read with no directory has none of them to read.
+//!   component, a message read through the record the component imports. It
+//!   returns the record each received template is of, through which the data
+//!   model types the message a receive branch reads. A document read with no
+//!   directory has none of them to read.
 //! - [`refuse_script_engine`] holds the analysis of the parsed model to the
 //!   manifest a test component must show: `needs_script_engine = false`.
 //!
@@ -33,7 +36,7 @@
 //! that is not a string (the expression codes, asked where every expression
 //! of the data model is typed: `crate::forge::static_datamodel`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::{
@@ -420,16 +423,28 @@ fn native_condition(node: &roxmltree::Node, c: &Component) -> Result<(), Located
 /// docs/SCE_TEST_PROFILE.md §4.4 (P4) and docs/adr/0091 §3: `_event`, the
 /// message a receive branch took, is read in the executable content of that
 /// branch and nowhere else; its `cond` among the places it is not read,
-/// since whether a message matches is its template's question alone.
+/// since whether a message matches is its template's question alone. A
+/// receive any branch matches no template, and a message it takes is not
+/// stored (ES 201 873-1 §22.2.2, restriction d), so its content reads none.
 fn message_read(node: &roxmltree::Node, c: &Component) -> Result<(), Located<ForgeError>> {
-    let in_a_receive = node
+    let receive = node
         .ancestors()
         .skip(1)
         .find(|ancestor| is_scxml(ancestor, "transition"))
-        .is_some_and(|branch| sce_attribute(&branch, "receive").is_some());
-    if in_a_receive {
-        return Ok(());
-    }
+        .filter(|branch| sce_attribute(branch, "receive").is_some());
+    let why = match receive {
+        Some(branch) if sce_attribute(&branch, "test-template").is_some() => return Ok(()),
+        Some(_) => {
+            "a receive any branch matches no template, and the message it takes is not \
+             stored (ES 201 873-1 §22.2.2, restriction d), so its content reads no _event \
+             (docs/SCE_TEST_PROFILE.md §4.4)"
+        }
+        None => {
+            "the message a receive branch takes is matched by its template alone, and is \
+             read only in the executable content of that branch (docs/SCE_TEST_PROFILE.md \
+             §4.4)"
+        }
+    };
     for attr in EXPRESSION_ATTRIBUTES {
         let Some(written) = node.attribute(*attr) else {
             continue;
@@ -439,15 +454,22 @@ fn message_read(node: &roxmltree::Node, c: &Component) -> Result<(), Located<For
                 node,
                 TestProfileRule::MessageRead,
                 written,
-                format!(
-                    "{attr}=\"{written}\" reads _event: the message a receive branch takes is \
-                     matched by its template alone, and is read only in the executable \
-                     content of that branch (docs/SCE_TEST_PROFILE.md §4.4)"
-                ),
+                format!("{attr}=\"{written}\" reads _event: {why}"),
             ));
         }
     }
     Ok(())
+}
+
+/// Whether the executable content of `branch` reads `_event`.
+fn content_reads_message(branch: &roxmltree::Node) -> bool {
+    branch.descendants().skip(1).any(|node| {
+        node.is_element()
+            && EXPRESSION_ATTRIBUTES.iter().any(|attr| {
+                node.attribute(*attr)
+                    .is_some_and(crate::forge::expr::references_event_lexically)
+            })
+    })
 }
 
 /// docs/SCE_TEST_PROFILE.md §11.5: a module parameter's value is the suite's,
@@ -984,18 +1006,24 @@ enum Direction {
 /// kind; `sce:template-args` binds as many variables as the template has
 /// formal parameters, each of its parameter's type; a template's record is on
 /// its port's `out` list for a send and `in` list for a receive; a send's
-/// template is specific; an `<invoke>`'s `src` is a test component.
+/// template is specific; an `<invoke>`'s `src` is a test component; a
+/// receive branch whose content reads the message imports the event-schema
+/// of its template's record.
+///
+/// Returns, for each template a receive branch matches with, the alias the
+/// component imports its record under ([`SCXMLModel::received_records`]).
 ///
 /// Nothing for a statechart that is no test component. A name
 /// [`check_document`] refused never reaches here.
-pub(crate) fn check_imports(
+pub(crate) fn read_imports(
     root: &roxmltree::Node,
     model: &SCXMLModel,
     dir: &Path,
     diag_label: &str,
-) -> Result<(), Located<ForgeError>> {
+) -> Result<BTreeMap<String, String>, Located<ForgeError>> {
+    let mut received = BTreeMap::new();
     let Some(profile) = &model.test_component else {
-        return Ok(());
+        return Ok(received);
     };
     let c = Component {
         document: &model.name,
@@ -1094,6 +1122,30 @@ pub(crate) fn check_imports(
                 &c,
             )?;
         }
+        if matches!(direction, Direction::In) {
+            match received_record(template, &component) {
+                Some(record) => {
+                    received.insert(alias.to_string(), record);
+                }
+                None if content_reads_message(&node) => {
+                    return Err(c.refused(
+                        &node,
+                        TestProfileRule::MessageRead,
+                        alias,
+                        format!(
+                            "the receive branch reads the message it takes with the template \
+                             '{alias}', of {}, whose event-schema the component does not \
+                             import: a component reads a message through the record it \
+                             imports, as a value redirect stores into a variable of a type \
+                             its module imports (ES 201 873-1 §8.2.3, §22.2.2; \
+                             docs/SCE_TEST_PROFILE.md §11.5)",
+                            template.model.template_type
+                        ),
+                    ));
+                }
+                None => {}
+            }
+        }
         if matches!(direction, Direction::Out) {
             let scope = template.scope();
             if !crate::forge::test_template_check::is_specific(
@@ -1114,7 +1166,27 @@ pub(crate) fn check_imports(
             }
         }
     }
-    Ok(())
+    Ok(received)
+}
+
+/// The alias under which `component` imports the event-schema that is the
+/// record of `template`, or `None` when the template is of no record or the
+/// component imports its record under no alias. The record is the one
+/// document both name, whatever alias each gives it.
+fn received_record(
+    template: &Imported<TestTemplateModel>,
+    component: &ImportScope,
+) -> Option<String> {
+    let TypeOf::Record { alias: record } = &template.model.template_type else {
+        return None;
+    };
+    let record = template.scope().document(record)?;
+    let found = component
+        .imports
+        .iter()
+        .filter(|import| matches!(import.kind, ForgeKind::EventSchema))
+        .find(|import| component.document(&import.alias).as_deref() == Some(record.as_str()));
+    found.map(|import| import.alias.clone())
 }
 
 /// docs/SCE_TEST_PROFILE.md §11.5: `sce:template-args` lists one variable of

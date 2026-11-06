@@ -2,7 +2,8 @@
 <!-- docs/SCE_TEST_PROFILE.md §11.5: the main test component. It creates a
      helper, sends a report through its port to the system under test, and
      waits for a status the template accepts within a limit the suite
-     supplies; the helper is told over the control port. -->
+     supplies, keeping the elapsed time the status reports; the helper is
+     told over the control port. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-component" name="job_tester"
@@ -10,12 +11,14 @@
   <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
   <sce:import kind="test-template" src="job_report.scxml" as="JobReport"/>
   <sce:import kind="test-template" src="every_matcher.scxml" as="EveryMatcher"/>
+  <sce:import kind="event-schema" src="job_status.scxml" as="Status"/>
   <sce:test-port id="sut" type="JobPort"/>
   <sce:test-port id="control" type="JobPort"/>
   <sce:test-timer id="reply" duration="2s"/>
   <sce:test-timer id="settle"/>
   <datamodel>
     <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+    <data id="elapsed" sce:type="uint32" expr="0"/>
   </datamodel>
   <state id="requesting">
     <invoke type="http://sce.dev/ext/test-component" src="helper.scxml" id="helper"/>
@@ -26,6 +29,7 @@
     <transition sce:receive="sut" sce:test-template="EveryMatcher"
                 sce:template-args="limit" target="settling">
       <sce:stop-timer timer="reply"/>
+      <assign location="elapsed" expr="_event.data.elapsed_ms"/>
       <send type="http://sce.dev/ext/test-port" target="control" sce:test-template="JobReport"/>
     </transition>
     <transition sce:timeout="reply" target="failed">

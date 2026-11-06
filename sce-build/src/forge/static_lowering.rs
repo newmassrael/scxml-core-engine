@@ -4904,6 +4904,7 @@ pub fn lower(
     // ([`crate::forge::event_schema_check::check_composed_uses`]).
     let schemas = model.entry_event_schemas();
     let records = model.entry_records();
+    let received = model.received_events();
     // The events whose schema holds a composition, each with its schema's name:
     // `_event.data` on a transition taken on one is typed by walking its
     // record's type at any depth, as a schema of entries is, for a target that
@@ -5749,16 +5750,19 @@ pub fn lower(
             }
         }
         for transition in &mut state.transitions {
-            let schema = schemas.get(&transition.event);
+            // The event whose payload `_event.data` is: the one the transition
+            // names, or the message a receive branch takes.
+            let trigger = transition.payload_event(&received).to_string();
+            let schema = schemas.get(&trigger);
             // The schema `_event.data` is a record of, of entries or holding a
             // composition alike.
             let payload = schema
                 .map(|schema| schema.name.as_str())
-                .or_else(|| composed_payloads.get(&transition.event).map(String::as_str));
+                .or_else(|| composed_payloads.get(&trigger).map(String::as_str));
             rewrites.open_payload(schema);
             let paths = scope.paths(payload);
             let ctx = lowering_ctx(&scope, target, machine, &paths, &enums);
-            let accessor = target.payload_accessor(&transition.event);
+            let accessor = target.payload_accessor(&trigger);
             let payload_reads = payload_enum_reads(target, schema, &accessor, &held_enums);
             let mut renames = renames(&names, payload.map(|_| accessor.as_str()), target);
             renames.extend(
@@ -5795,7 +5799,7 @@ pub fn lower(
                 let reads_payload = payload.is_some()
                     && crate::forge::expr::references_event_data_lexically(&transition.cond);
                 let value = if reads_payload && target.payload_guards_the_value() {
-                    target.payload_guard(machine, &transition.event, &cond.text)
+                    target.payload_guard(machine, &trigger, &cond.text)
                 } else {
                     cond.text
                 };
@@ -5815,11 +5819,11 @@ pub fn lower(
                 // for a guard lowered at generate time; `cond_kt` stays the
                 // author's `kt:` text.
                 transition.native_guard = if reads_payload {
-                    payload_events.insert(transition.event.clone());
+                    payload_events.insert(trigger.clone());
                     if target.payload_guards_the_value() {
                         lowered
                     } else {
-                        target.payload_guard(machine, &transition.event, &lowered)
+                        target.payload_guard(machine, &trigger, &lowered)
                     }
                 } else {
                     lowered
@@ -5844,7 +5848,7 @@ pub fn lower(
                 &rewrites,
             )? && payload.is_some()
             {
-                payload_events.insert(transition.event.clone());
+                payload_events.insert(trigger);
                 transition.content_reads_payload = true;
             }
         }

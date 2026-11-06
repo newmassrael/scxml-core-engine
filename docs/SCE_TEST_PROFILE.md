@@ -191,7 +191,8 @@ component's variables (-4 §9.3.2). A `cond` may not read the received message (
   
   The component is then waiting again, or it has reached a top-level final state and terminates (§4.10).
 - In the executable content of a receive branch, `_event.data` is the received message. Reading it there is the
-  value redirect of a receive operation (-4 §9.37.3); reading it in a `cond` is refused.
+  value redirect of a receive operation (-4 §9.37.3); reading it in a `cond` is refused. A receive any branch stores
+  no message (-1 §22.2.2, restriction d), so its content reads no `_event`.
 - **Adopts**: the statement block of a selected alternative (-4 §9.3.2); a receive with assignment (-4 §9.37.3).
 
 ### 4.5 P5 — Defaults are ancestor transitions
@@ -647,6 +648,12 @@ inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle
   list. The event name of the sent message is that of the template's record type.
 - **A receive branch** names a port whose `in` list contains the template's type. A receive any branch names a port
   and no template.
+- **The received message.** The message a receive branch takes is an event of its template's record, under that
+  record's event name, as a send sends one. Its content reads it as `_event.data`, typed by the record, which the
+  component imports as an `event-schema` like any statechart that reads a payload: a value redirect stores into a
+  variable whose type the module sees (-1 §8.2.3, §22.2.2). A branch that reads the message of a record the component
+  does not import is refused (`test-profile/message-read`), and a read of a field the record does not have is refused
+  as any payload read of one is.
 - **A PTC** is `<invoke type="http://sce.dev/ext/test-component" src="<test-component document>" id="<id>"/>`, with
   a literal `id` and no `idlocation`, `autoforward`, `<param>`, `<content>` or `<finalize>`. The id is the PTC's name in
   the configuration (§11.6).

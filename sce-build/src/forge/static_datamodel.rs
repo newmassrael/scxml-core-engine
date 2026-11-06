@@ -191,6 +191,7 @@ pub fn check(
     // ([`crate::forge::event_schema_check::check_composed_uses`]).
     let records = model.entry_records();
     let event_schemas = model.entry_event_schemas();
+    let received = model.received_events();
     let judge = Judge {
         scope: &scope,
         enums,
@@ -292,11 +293,13 @@ pub fn check(
         judge.actions(&plain, &state.initial_history_default_actions, &state.id)?;
         for transition in &state.transitions {
             // The payload is the triggering event's, so each transition
-            // judges against its own.
-            let schema = event_schemas.get(&transition.event);
+            // judges against its own: the event it names, or the message a
+            // receive branch of a test component takes.
+            let trigger = transition.payload_event(&received);
+            let schema = event_schemas.get(trigger);
             // `_event.data` is a record of the schema whole, whatever its
             // fields hold, and is read at any depth (docs/adr/0086, section 6).
-            let whole = model.imported_event_schemas.get(&transition.event);
+            let whole = model.imported_event_schemas.get(trigger);
             let paths = scope.paths(whole.map(|schema| schema.name.as_str()));
             let ctx = judge.ctx(&paths);
             // An enum field of the payload is a value of the enum the schema

@@ -755,6 +755,25 @@ const COMPONENT_REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
         DiagnosticCode::TestProfileMessageRead,
         Some("_event.data.count"),
     ),
+    // ES 201 873-1 §22.2.2, restriction d: a receive any branch stores no
+    // message.
+    (
+        "refused_component_receive_any_reads_message.scxml",
+        DiagnosticCode::TestProfileMessageRead,
+        Some("_event.data.count"),
+    ),
+    // §11.5: a message is read through the record the component imports, and
+    // held to that record's fields.
+    (
+        "refused_component_received_record_unimported.scxml",
+        DiagnosticCode::TestProfileMessageRead,
+        Some("EveryMatcher"),
+    ),
+    (
+        "refused_component_received_field_unknown.scxml",
+        DiagnosticCode::ExpressionUnknownMember,
+        Some("_event.data.attempts"),
+    ),
     // §8.2, §11.5: the send.
     (
         "refused_component_send_type.scxml",
@@ -1008,6 +1027,38 @@ fn the_accepted_test_components_hold_every_rule() {
     SCXMLParser::new()
         .parse_file(example.to_str().expect("a UTF-8 path"))
         .unwrap_or_else(|e| panic!("the test-component example: {e:?}"));
+}
+
+/// docs/SCE_TEST_PROFILE.md §11.5: the message a receive branch takes is an
+/// event of its template's record, read through the record the component
+/// imports, whatever alias each gives it; the branch's `_event.data` is that
+/// record, and every other transition's payload stays its own event's.
+#[test]
+fn a_receive_branch_reads_the_message_as_its_templates_record() {
+    let model = statechart("job_tester.scxml").unwrap_or_else(|e| panic!("parses: {e:?}"));
+    assert_eq!(
+        model
+            .received_records
+            .iter()
+            .map(|(t, r)| (t.as_str(), r.as_str()))
+            .collect::<Vec<_>>(),
+        [("EveryMatcher", "Status")]
+    );
+    let received = model.received_events();
+    let triggers: Vec<(&str, &str)> = model.states["requesting"]
+        .transitions
+        .iter()
+        .map(|t| {
+            let branch = t.test_branch.as_ref().expect("a branch");
+            let kind = if branch.receive.is_some() {
+                "receive"
+            } else {
+                "timeout"
+            };
+            (kind, t.payload_event(&received))
+        })
+        .collect();
+    assert_eq!(triggers, [("receive", "job.status"), ("timeout", "")]);
 }
 
 /// In a statechart that is not a test component nothing reads the profile's

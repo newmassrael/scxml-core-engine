@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a receive branch reads the message it takes, and the component
+     does not import the event-schema of its template's record, through which
+     the message is read (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_received_record_unimported"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="test-template" src="every_matcher.scxml" as="EveryMatcher"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+    <data id="count" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="waiting">
+    <transition sce:receive="sut" sce:test-template="EveryMatcher"
+                sce:template-args="limit" target="done">
+      <assign location="count" expr="_event.data.count"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
