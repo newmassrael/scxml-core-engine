@@ -40,7 +40,7 @@ tree `../static_invoke_tree_working.json`. `static_timers.json` is read as `../s
 | origins | root's `external[6]` `arm` | `mesh://ecu` | empty | 4 | `{SCXML, mesh://ecu}` | `null` |
 | origins | root's `external[7]` `rest` | `motor` | `x-sce-host` | 4 | `{x-sce-host, motor}` | `null` |
 | origins | root's `external[8]` `back` | `mesh://ecu` | `SCXML` | 4 | `{SCXML, mesh://ecu}` | `null` |
-| origins | root's `external[9]` `go` | `sce://scxml/` | `SCXML` | 4 | `{SCXML, sce://scxml/}` | `null` |
+| origins | root's `external[9]` `question` | `sce://scxml/` | `SCXML` | 4 | `{SCXML, sce://scxml/}` | `null` |
 
 Three rows pin points that a reader can get wrong:
 
@@ -48,8 +48,12 @@ Three rows pin points that a reader can get wrong:
   session publishes it.
 - `rest` is an address with no scheme beside a type that is not the SCXML type. It is the host's own pair, not a
   session's id.
-- The last `go` is the prefix alone. Row 3 needs an id after the prefix, and row 2 a text with no `://`, so it is
+- `question` is the prefix alone. Row 3 needs an id after the prefix, and row 2 a text with no `://`, so it is
   row 4: the pair as saved, with no sender. It is never a sender of the text `sce://scxml/`.
+
+Every root event of `static_invoke_tree_working_origins.json` has a name of its own. A test that keys the queue by
+name reads all ten rows. `question` is an event the root document sends to its child, so every backend's root
+machine knows the name.
 
 ### Waiting sends (`pending`)
 
