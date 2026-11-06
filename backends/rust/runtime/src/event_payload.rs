@@ -28,7 +28,10 @@
 //! values, each calling the reader of its part:
 //! [`PayloadValue::list`](crate::event_payload::PayloadValue::list),
 //! [`PayloadValue::optional`](crate::event_payload::PayloadValue::optional) and
-//! [`PayloadValue::record`](crate::event_payload::PayloadValue::record). The
+//! [`PayloadValue::record`](crate::event_payload::PayloadValue::record); a
+//! fourth, [`PayloadValue::union`](crate::event_payload::PayloadValue::union),
+//! reads a union's tag and then its case's record from the same object
+//! (docs/adr/0092, section 4). The
 //! links name the whole path because these lines are merged with the module's
 //! outer docs in `lib.rs`, and rustdoc resolves the merged text from the crate
 //! root. A value outside its type is refused before
@@ -1071,6 +1074,40 @@ impl<'a> PayloadValue<'a> {
         };
         read(&record)
     }
+
+    /// A value of a union type (docs/adr/0092, section 4): one object holding
+    /// its tag under the key `tag` and the fields of the case the tag names
+    /// beside it.
+    ///
+    /// The tag is read first, by `read_tag`, the reader of the tag's enum,
+    /// wherever it stands in the object; `read_case` is then handed the case
+    /// the tag named and this same value, and reads the case's record from it
+    /// with [`Self::record`] (an empty case reads nothing). The refusals come
+    /// in one order on every runtime: a value that is not an object; the tag
+    /// absent ([`RefusalCode::Missing`] at the tag's pointer), then whatever
+    /// the enum's reader refuses of it (`null`, not a text, a name the enum
+    /// does not declare); then the case's record. A key the case does not
+    /// declare is never asked for, so it is stepped over, as a record steps
+    /// over one, and a text that carries another case's keys, or `null` under
+    /// them, reads as the case its tag names.
+    pub fn union<E, T>(
+        &self,
+        tag: &str,
+        read_tag: impl FnOnce(&PayloadValue<'_>) -> Result<E, PayloadRefusal>,
+        read_case: impl FnOnce(E, &PayloadValue<'a>) -> Result<T, PayloadRefusal>,
+    ) -> Result<T, PayloadRefusal> {
+        let Value::Object(members) = self.value else {
+            return Err(self.wrong_kind("is not a union"));
+        };
+        let object = PayloadRecord {
+            members,
+            defaults: None,
+            prefix: &self.path,
+            pointer: &self.pointer,
+        };
+        let case = read_tag(&object.field(tag)?)?;
+        read_case(case, self)
+    }
 }
 
 /// The members of a schema's defaults, which the generator spells as one JSON
@@ -1198,10 +1235,22 @@ pub fn record_json(mut members: Vec<(&str, String)>) -> String {
     out
 }
 
+/// The JSON spelling of one union value (docs/adr/0092, section 2.1): the tag
+/// under the key `tag`, its value `variant`, the case's name as its enum spells
+/// it, beside `members`, the fields of the case's record, each an id and the
+/// JSON its value is spelled as (none for an empty case). The object writes the
+/// tag among the fields, every key ascending by its UTF-8 bytes, as
+/// [`record_json`] writes a record.
+pub fn union_json<'k>(tag: &'k str, variant: &str, mut members: Vec<(&'k str, String)>) -> String {
+    members.push((tag, quote(variant)));
+    record_json(members)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        list_json, optional_json, quote, record_json, PayloadFields, PayloadRefusal, RefusalCode,
+        list_json, optional_json, quote, record_json, union_json, PayloadFields, PayloadRefusal,
+        RefusalCode,
     };
 
     const DEFAULTS: &str = r#"{"layout":"week","count":"7","urgent":true}"#;
@@ -1368,6 +1417,30 @@ mod tests {
                         }
                         Ok(())
                     });
+                }
+                if let Some(described) = ty.member("union") {
+                    // The tag's enum is the cases' names; an empty case is `null`,
+                    // any other the record it holds (docs/adr/0092, section 4).
+                    let (Some(Value::Text(tag)), Some(Value::Object(cases))) =
+                        (described.member("tag"), described.member("cases"))
+                    else {
+                        panic!("a union names its tag and its cases: {described:?}");
+                    };
+                    return v.union(
+                        tag,
+                        |named| {
+                            let name = named.name()?;
+                            cases
+                                .iter()
+                                .find(|(declared, _)| declared.as_str() == name)
+                                .map(|(_, case)| case)
+                                .ok_or_else(|| named.unknown_variant(name, "Described"))
+                        },
+                        |case, object| match case {
+                            Value::Null => Ok(()),
+                            record => read_described(record, object),
+                        },
+                    );
                 }
                 panic!("a type of the table names no constructor: {ty:?}")
             }
@@ -1844,6 +1917,128 @@ mod tests {
                 ("B", "3".into())
             ]),
             r#"{"B":3,"aa":1,"b":2}"#
+        );
+    }
+
+    /// The tag of [`ShapeKind`], read as a generated reader of an enum reads it.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum ShapeKind {
+        Dot,
+        Circle,
+        Disc,
+    }
+
+    /// A union over [`ShapeKind`] whose `circle` and `disc` both hold one
+    /// record, as a generated sum holds a case's record in its constructor.
+    #[derive(Debug, PartialEq)]
+    enum Shape {
+        Dot,
+        Circle(u16),
+        Disc(u16),
+    }
+
+    fn read_shape(data: &str) -> Result<Shape, PayloadRefusal> {
+        let fields = PayloadFields::decode(data).expect("the text is an object");
+        fields.field("s")?.union(
+            "kind",
+            |tag| {
+                tag.name().and_then(|name| match name {
+                    "dot" => Ok(ShapeKind::Dot),
+                    "circle" => Ok(ShapeKind::Circle),
+                    "disc" => Ok(ShapeKind::Disc),
+                    other => Err(tag.unknown_variant(other, "ShapeKind")),
+                })
+            },
+            |kind, object| {
+                let radius = || object.record(None, |r| r.field("radius")?.unsigned::<u16>());
+                match kind {
+                    ShapeKind::Dot => Ok(Shape::Dot),
+                    ShapeKind::Circle => radius().map(Shape::Circle),
+                    ShapeKind::Disc => radius().map(Shape::Disc),
+                }
+            },
+        )
+    }
+
+    /// A union's tag is read first, wherever it stands, and names the case
+    /// whose record is read from the same object (docs/adr/0092, section 4):
+    /// two cases that hold one record stay apart by their tag, a key or a
+    /// `null` the case does not declare is stepped over, and each refusal
+    /// points at the tag or at the case's field.
+    #[test]
+    fn a_union_reads_its_tag_first_and_then_the_record_of_its_case() {
+        assert_eq!(read_shape(r#"{"s":{"kind":"dot"}}"#), Ok(Shape::Dot));
+        assert_eq!(
+            read_shape(r#"{"s":{"radius":2,"kind":"disc"}}"#),
+            Ok(Shape::Disc(2))
+        );
+        assert_eq!(
+            read_shape(r#"{"s":{"kind":"circle","radius":2,"width":null,"text":"x"}}"#),
+            Ok(Shape::Circle(2))
+        );
+        assert_eq!(
+            read_shape(r#"{"s":{"kind":"dot","radius":null}}"#),
+            Ok(Shape::Dot)
+        );
+        let refused = |data: &str| {
+            read_shape(data)
+                .map(|_| ())
+                .map_err(|r| (r.code(), r.pointer().to_string()))
+        };
+        assert_eq!(
+            refused(r#"{"s":[]}"#),
+            Err((RefusalCode::WrongKind, "/s".into()))
+        );
+        assert_eq!(
+            refused(r#"{"s":null}"#),
+            Err((RefusalCode::NullNotOptional, "/s".into()))
+        );
+        assert_eq!(
+            refused(r#"{"s":{"radius":2}}"#),
+            Err((RefusalCode::Missing, "/s/kind".into()))
+        );
+        assert_eq!(
+            refused(r#"{"s":{"kind":null,"radius":null}}"#),
+            Err((RefusalCode::NullNotOptional, "/s/kind".into()))
+        );
+        assert_eq!(
+            refused(r#"{"s":{"kind":3,"radius":"x"}}"#),
+            Err((RefusalCode::WrongKind, "/s/kind".into()))
+        );
+        assert_eq!(
+            refused(r#"{"s":{"kind":"oval","radius":2}}"#),
+            Err((RefusalCode::UnknownVariant, "/s/kind".into()))
+        );
+        assert_eq!(
+            refused(r#"{"s":{"kind":"circle","width":2}}"#),
+            Err((RefusalCode::Missing, "/s/radius".into()))
+        );
+        assert_eq!(
+            refused(r#"{"s":{"kind":"disc","radius":null}}"#),
+            Err((RefusalCode::NullNotOptional, "/s/radius".into()))
+        );
+    }
+
+    /// A union is written as one object, its tag among the fields of its case,
+    /// every key ascending by its bytes (docs/adr/0092, section 2.1).
+    #[test]
+    fn a_union_is_written_with_its_tag_among_the_fields_of_its_case() {
+        assert_eq!(union_json("kind", "none", Vec::new()), r#"{"kind":"none"}"#);
+        assert_eq!(
+            union_json("kind", "relativeWeeks", vec![("count", "2".into())]),
+            r#"{"count":2,"kind":"relativeWeeks"}"#
+        );
+        assert_eq!(
+            union_json(
+                "kind",
+                "absolute",
+                vec![
+                    ("year", "2027".into()),
+                    ("month", "3".into()),
+                    ("day", "3".into())
+                ]
+            ),
+            r#"{"day":3,"kind":"absolute","month":3,"year":2027}"#
         );
     }
 
