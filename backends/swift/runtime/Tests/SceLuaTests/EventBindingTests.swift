@@ -62,28 +62,62 @@ private func boundState(_ event: LuaEvent) throws -> LuaState {
     #expect(try lua.evaluate("_event.data") == .nilValue)
     #expect(try lua.evaluate("_event.sendid") == .nilValue)
     #expect(try lua.evaluate("_event.raw") == .nilValue)
-    #expect(try lua.evaluate("_event.origin") == .string(""))
-    #expect(try lua.evaluate("_event.origintype") == .string(""))
+    #expect(try lua.evaluate("_event.origin") == .nilValue)
+    #expect(try lua.evaluate("_event.origintype") == .nilValue)
+}
+
+// What a blank field reads as (§scxml-B-2-8: ECMAScript undefined, which Lua holds as nil), by the
+// table every SCE script engine reads. A member a case leaves out of its `event` is a field the
+// Processor left blank, handed to the binding as the empty text, as the engine interface carries it.
+@Test func everyBlankFieldReadsTheWayTheSharedTableSays() throws {
+    let table = try cases(of: "event_blank_fields.json")
+    // A floor, not an equality: adding a case must not have to touch this number, but a table that
+    // stopped being read must not pass either.
+    #expect(table.count >= 11, "the shared blank-field table produced only \(table.count) case(s)")
+
+    var asked = 0
+    var failures: [String] = []
+    for (index, expected) in table.enumerated() {
+        let event = expected["event"] as? [String: Any] ?? [:]
+        func field(_ key: String) -> String { event[key] as? String ?? "" }
+        let expression = expected["lua"] as? String ?? ""
+        do {
+            let lua = try boundState(
+                LuaEvent(
+                    name: field("name"), type: field("type"), sendID: field("sendid"),
+                    origin: field("origin"), originType: field("origintype"),
+                    invokeID: field("invokeid")))
+            asked += 1
+            let actual = try lua.evaluate(expression, name: "=expression")
+            if try !answers(actual, expected["expect"] as? [String: Any] ?? [:]) {
+                failures.append("case \(index): \(expression) answered \(actual), the table says \(expected["expect"] ?? "?")")
+            }
+        } catch {
+            failures.append("case \(index): \(expression): \(error)")
+        }
+    }
+    // A case that was never asked is not a case that passed.
+    #expect(asked == table.count, "asked \(asked) of the \(table.count) cases the shared table holds")
+    #expect(failures.isEmpty, "\(failures.joined(separator: "\n"))")
 }
 
 // §scxml-5.10.1 (docs/adr/0090, section 1): an event no Event I/O Processor delivered has its
-// origin and origintype left blank. Blank is the empty text, which a guard `_event.origin === ''`
-// finds; absent would be undefined, which that guard does not, and the other engines bind the
-// empty text.
-@Test func anEventWithNoOriginReadsBothOriginFieldsAsTheEmptyText() throws {
+// origin and origintype left blank, and §scxml-B-2-8 makes blank undefined: nil here, which a guard
+// `_event.origin === undefined` finds and `_event.origin === ''` does not.
+@Test func anEventWithNoOriginLeavesBothOriginFieldsAbsent() throws {
     let lua = try boundState(LuaEvent(name: "posted", type: "external"))
-    #expect(try lua.evaluate("_event.origin") == .string(""))
-    #expect(try lua.evaluate("_event.origintype") == .string(""))
-    #expect(try lua.evaluateCondition("_event.origin == '' and _event.origintype == ''"))
+    #expect(try lua.evaluate("_event.origin") == .nilValue)
+    #expect(try lua.evaluate("_event.origintype") == .nilValue)
+    #expect(try lua.evaluateCondition("_event.origin == nil and _event.origintype == nil"))
 
     // An origin spelled out as empty reads as one left out.
     try lua.bindCurrentEvent(LuaEvent(name: "reply", type: "external", origin: "", originType: ""))
-    #expect(try lua.evaluate("_event.origin") == .string(""))
-    #expect(try lua.evaluate("_event.origintype") == .string(""))
+    #expect(try lua.evaluate("_event.origin") == .nilValue)
+    #expect(try lua.evaluate("_event.origintype") == .nilValue)
 }
 
-// `type`, `sendid` and `invokeid` are absent when empty; `origin` and `origintype` are the one pair
-// that reads as the empty text instead (`anEventWithNoOriginReadsBothOriginFieldsAsTheEmptyText`).
+// `type`, `sendid`, `origin`, `origintype` and `invokeid` are absent when empty
+// (`anEventWithNoOriginLeavesBothOriginFieldsAbsent`).
 @Test func theMetadataIsWhatTheEventCarriedAndAnEmptyFieldIsAbsent() throws {
     let lua = try boundState(
         LuaEvent(

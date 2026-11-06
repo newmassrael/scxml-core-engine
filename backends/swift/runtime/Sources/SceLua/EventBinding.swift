@@ -3,8 +3,8 @@
 
 // `_event`, the system variable a document reads the event being handled through (§scxml-5.10): its
 // name and metadata, and the payload under `data`. The binding is rebuilt from nothing on every
-// dequeue, so a field the new event does not carry is never the previous event's: `origin` and
-// `origintype` read as the empty text, and the other fields are absent.
+// dequeue, so a field the new event does not carry is never the previous event's: it is absent,
+// which is the nil that ECMAScript's undefined lowers to (§scxml-B-2-8).
 
 /// The event a state machine is about to handle, as the engine hands it to the script engine.
 public struct LuaEvent: Equatable, Sendable {
@@ -15,11 +15,11 @@ public struct LuaEvent: Equatable, Sendable {
     public var type: String?
     /// `_event.sendid`; absent for an event no `<send>` produced.
     public var sendID: String?
-    /// `_event.origin` and `_event.origintype`: where a reply can be sent. Both read as the
-    /// empty text when the event has no origin, `nil` and `""` alike: §scxml-5.10.1 has the
-    /// processor leave them blank for an event no Event I/O Processor delivered (docs/adr/0090,
-    /// section 1), and every other engine binds the two as strings, so `_event.origin === ''`
-    /// holds for such an event.
+    /// `_event.origin` and `_event.origintype`: where a reply can be sent. Both are absent when
+    /// the event has no origin, `nil` and `""` alike: §scxml-5.10.1 has the processor leave them
+    /// blank for an event no Event I/O Processor delivered (docs/adr/0090, section 1), and
+    /// §scxml-B-2-8 makes blank ECMAScript undefined, so `_event.origin === undefined` holds for
+    /// such an event and `_event.origin === ''` does not.
     public var origin: String?
     public var originType: String?
     /// `_event.invokeid`; absent for an event no invoked session produced.
@@ -131,22 +131,18 @@ extension LuaState {
     @discardableResult
     public func bindCurrentEvent(_ event: LuaEvent) throws -> PayloadReading {
         func text(_ value: String?) -> LuaValue {
-            // An empty string is no value: an event no `<send>` produced has no `sendid`, and Lua
-            // reads that as nil, which ECMAScript surfaces as the same `undefined`.
+            // An empty string is no value: §scxml-5.10.1 leaves `sendid`, `origin`, `origintype`
+            // and `invokeid` blank for some events, and §scxml-B-2-8 makes blank ECMAScript
+            // undefined, which Lua holds as nil. The empty text is never bound.
             guard let value, !value.isEmpty else { return .nilValue }
             return .string(value)
-        }
-        func blank(_ value: String?) -> LuaValue {
-            // §scxml-5.10.1: an event with no origin has its `origin` and `origintype` left
-            // blank, the empty text and not undefined (docs/adr/0090, section 1).
-            .string(value ?? "")
         }
         do {
             try setGlobal("_sce_event_name", .string(event.name))
             try setGlobal("_sce_event_type", text(event.type))
             try setGlobal("_sce_event_sendid", text(event.sendID))
-            try setGlobal("_sce_event_origin", blank(event.origin))
-            try setGlobal("_sce_event_origintype", blank(event.originType))
+            try setGlobal("_sce_event_origin", text(event.origin))
+            try setGlobal("_sce_event_origintype", text(event.originType))
             try setGlobal("_sce_event_invokeid", text(event.invokeID))
             try setGlobal("_sce_event_raw", text(event.data))
             let rung = try evaluate(Self.bindingChunk, name: "=bindCurrentEvent")

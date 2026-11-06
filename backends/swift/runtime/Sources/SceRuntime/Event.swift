@@ -86,8 +86,8 @@ public struct EventMetadata {
     public var sendID: String
 
     /// `_event.origin` and `_event.origintype` as the one pair the delivering processor
-    /// wrote (docs/adr/0090); nil for an event no processor stamped, which reads both
-    /// fields as the empty text (§scxml-5.10.1).
+    /// wrote (docs/adr/0090); nil for an event no processor stamped, whose two fields
+    /// the binding leaves blank (§scxml-5.10.1), which a document reads as undefined.
     public var origin: EventOrigin?
 
     /// The id of the session that sent the event, written by the processor that
