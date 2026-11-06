@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ad4bedcb756956ce54bdaf3d75bb21306a16abe1845fd50a6c67924ec38392a8
+// source-hash: 3e662d3bbddd658a2d3b6f6a012f7bf4d21db1a4e6f0de7d35c1bd71b309f5a0
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_union.scxml:16 :: _machine"]
-// SCE-MAP: static_union.scxml:16 :: _machine
+#![doc = "SCE-MAP: static_union.scxml:19 :: _machine"]
+// SCE-MAP: static_union.scxml:19 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -544,7 +544,27 @@ impl StaticUnionUnionShapeUnion {
         }
     }
 
+    pub fn proven_circle_mut(&mut self) -> &mut StaticUnionRadiusRecord {
+        match self {
+            Self::Circle(record) => record,
+            _ => unreachable!(
+                "a value of {} read as {} is in another case",
+                "union_shape", "circle"
+            ),
+        }
+    }
+
     pub fn proven_disc(&self) -> &StaticUnionRadiusRecord {
+        match self {
+            Self::Disc(record) => record,
+            _ => unreachable!(
+                "a value of {} read as {} is in another case",
+                "union_shape", "disc"
+            ),
+        }
+    }
+
+    pub fn proven_disc_mut(&mut self) -> &mut StaticUnionRadiusRecord {
         match self {
             Self::Disc(record) => record,
             _ => unreachable!(
@@ -564,7 +584,27 @@ impl StaticUnionUnionShapeUnion {
         }
     }
 
+    pub fn proven_rect_mut(&mut self) -> &mut StaticUnionRectRecord {
+        match self {
+            Self::Rect(record) => record,
+            _ => unreachable!(
+                "a value of {} read as {} is in another case",
+                "union_shape", "rect"
+            ),
+        }
+    }
+
     pub fn proven_label(&self) -> &StaticUnionLabelRecord {
+        match self {
+            Self::Label(record) => record,
+            _ => unreachable!(
+                "a value of {} read as {} is in another case",
+                "union_shape", "label"
+            ),
+        }
+    }
+
+    pub fn proven_label_mut(&mut self) -> &mut StaticUnionLabelRecord {
         match self {
             Self::Label(record) => record,
             _ => unreachable!(
@@ -584,10 +624,31 @@ impl StaticUnionUnionShapeUnion {
         }
     }
 
+    pub fn proven_path_mut(&mut self) -> &mut StaticUnionPathRecord {
+        match self {
+            Self::Path(record) => record,
+            _ => unreachable!(
+                "a value of {} read as {} is in another case",
+                "union_shape", "path"
+            ),
+        }
+    }
+
     pub fn proven_field_radius(&self) -> u16 {
         match self {
             Self::Circle(record) => record.radius,
             Self::Disc(record) => record.radius,
+            _ => unreachable!(
+                "a value of {} read as {} is in another case",
+                "union_shape", "radius"
+            ),
+        }
+    }
+
+    pub fn proven_field_radius_mut(&mut self) -> &mut u16 {
+        match self {
+            Self::Circle(record) => &mut record.radius,
+            Self::Disc(record) => &mut record.radius,
             _ => unreachable!(
                 "a value of {} read as {} is in another case",
                 "union_shape", "radius"
@@ -603,6 +664,8 @@ impl StaticUnionUnionShapeUnion {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticUnionData {
+    pub built: StaticUnionUnionShapeUnion,
+    pub kept: Option<StaticUnionUnionShapeUnion>,
     pub last_kind: StaticUnionKindEnum,
     pub radius: u16,
     pub width: u16,
@@ -613,6 +676,7 @@ pub struct StaticUnionData {
     pub many_radius: u16,
     pub many_width: u16,
     pub many_shapes: u32,
+    pub maybe_width: u16,
     pub refusals: u32,
 }
 
@@ -643,6 +707,8 @@ impl StaticUnionObserve for Engine<StaticUnionPolicy> {
         StaticUnionSnapshot {
             configuration: self.get_active_states(),
             data: StaticUnionData {
+                built: policy.built.clone(),
+                kept: policy.kept.clone(),
                 last_kind: policy.last_kind,
                 radius: policy.radius,
                 width: policy.width,
@@ -653,6 +719,7 @@ impl StaticUnionObserve for Engine<StaticUnionPolicy> {
                 many_radius: policy.many_radius,
                 many_width: policy.many_width,
                 many_shapes: policy.many_shapes,
+                maybe_width: policy.maybe_width,
                 refusals: policy.refusals,
             },
             truncated: self.last_macrostep_truncated(),
@@ -768,6 +835,94 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticUnionLabelRecord {
     }
 }
 
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticUnionPathRecord {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![(
+            "points".to_string(),
+            ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.points),
+        )])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+            points: ::sce_rust_runtime::saved_state::record_field(value, what, "points")?,
+        })
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticUnionUnionShapeUnion {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        match self {
+            Self::Dot => ::sce_rust_runtime::saved_state::union_to_saved("kind", "dot", None),
+            Self::Circle(record) => ::sce_rust_runtime::saved_state::union_to_saved(
+                "kind",
+                "circle",
+                Some(::sce_rust_runtime::saved_state::SavedValue::to_saved(
+                    record,
+                )),
+            ),
+            Self::Disc(record) => ::sce_rust_runtime::saved_state::union_to_saved(
+                "kind",
+                "disc",
+                Some(::sce_rust_runtime::saved_state::SavedValue::to_saved(
+                    record,
+                )),
+            ),
+            Self::Rect(record) => ::sce_rust_runtime::saved_state::union_to_saved(
+                "kind",
+                "rect",
+                Some(::sce_rust_runtime::saved_state::SavedValue::to_saved(
+                    record,
+                )),
+            ),
+            Self::Label(record) => ::sce_rust_runtime::saved_state::union_to_saved(
+                "kind",
+                "label",
+                Some(::sce_rust_runtime::saved_state::SavedValue::to_saved(
+                    record,
+                )),
+            ),
+            Self::Path(record) => ::sce_rust_runtime::saved_state::union_to_saved(
+                "kind",
+                "path",
+                Some(::sce_rust_runtime::saved_state::SavedValue::to_saved(
+                    record,
+                )),
+            ),
+        }
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match ::sce_rust_runtime::saved_state::union_tag(value, what, "kind")? {
+            "dot" => Ok(Self::Dot),
+            "circle" => Ok(Self::Circle(
+                ::sce_rust_runtime::saved_state::SavedValue::from_saved(value, what)?,
+            )),
+            "disc" => Ok(Self::Disc(
+                ::sce_rust_runtime::saved_state::SavedValue::from_saved(value, what)?,
+            )),
+            "rect" => Ok(Self::Rect(
+                ::sce_rust_runtime::saved_state::SavedValue::from_saved(value, what)?,
+            )),
+            "label" => Ok(Self::Label(
+                ::sce_rust_runtime::saved_state::SavedValue::from_saved(value, what)?,
+            )),
+            "path" => Ok(Self::Path(
+                ::sce_rust_runtime::saved_state::SavedValue::from_saved(value, what)?,
+            )),
+            other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' ({other}) is not a case of union_shape"
+            ))),
+        }
+    }
+}
+
 /// A running machine saved at a macrostep boundary, and restored into a new
 /// process in place of `initialize` — every variable, the machine's own
 /// included, and where the machine stands. The saved state is JSON
@@ -870,10 +1025,10 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "a647a910a97c46daf339ba54a63e601ddee02d137d1eb12cff0dedf3d2865120",
-            revised: "221db4a7216e82ecae73cfe3b2b2b980db44f62a61d0ad9ac05d0e6f16c337f2",
-            format2_first: "37a02de2e18b057f69f9c43371ec3cece900dc29458205cf6c9bf7852bc200f4",
-            format2_revised: "f09725d2dea6aa7ef416f82d9b8642498b660120946b44e85ca177629805e1c9",
+            first: "1b8d00af799d87ba32fffd5ed8320ba1e9d9c5db9d1c9eb99fff63ac47c82eca",
+            revised: "e17980d2ea730707b4a13d6ad0c05eb9ba5f646d6ad7610cb4ec2b2793bd54d8",
+            format2_first: "7a58c9f3a5d64957dd119c985fb9671cf4a104bfc20b708658ef360c7394ff81",
+            format2_revised: "c515fe78996f0db614984333ec4ace2c41eeebff1f51859183f92ad78f86e5a0",
             records: &[],
             enums: &[::sce_rust_runtime::saved_state::EnumLineage {
                 key: "enum:enum_shape_kind.scxml",
@@ -905,6 +1060,14 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
             self,
             &Self::SHAPE,
             vec![
+                (
+                    "built".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.built),
+                ),
+                (
+                    "kept".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.kept),
+                ),
                 (
                     "last_kind".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.last_kind),
@@ -946,6 +1109,10 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.many_shapes),
                 ),
                 (
+                    "maybe_width".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.maybe_width),
+                ),
+                (
                     "refusals".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
                 ),
@@ -968,6 +1135,16 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
             saved,
             Self::HISTORIES,
         )?;
+        let _: StaticUnionUnionShapeUnion =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("built")?,
+                "built",
+            )?;
+        let _: Option<StaticUnionUnionShapeUnion> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("kept")?,
+                "kept",
+            )?;
         let _: StaticUnionKindEnum = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("last_kind")?,
             "last_kind",
@@ -1008,6 +1185,10 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
             saved.variable("many_shapes")?,
             "many_shapes",
         )?;
+        let _: u16 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("maybe_width")?,
+            "maybe_width",
+        )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("refusals")?,
             "refusals",
@@ -1031,6 +1212,14 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
         ::sce_rust_runtime::saved_state::restore_history::<StaticUnionPolicy>(
             saved,
             Self::HISTORIES,
+        )?;
+        policy.built = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("built")?,
+            "built",
+        )?;
+        policy.kept = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("kept")?,
+            "kept",
         )?;
         policy.last_kind = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("last_kind")?,
@@ -1072,6 +1261,10 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
             saved.variable("many_shapes")?,
             "many_shapes",
         )?;
+        policy.maybe_width = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("maybe_width")?,
+            "maybe_width",
+        )?;
         policy.refusals = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("refusals")?,
             "refusals",
@@ -1094,6 +1287,7 @@ pub struct StaticUnionInvokeParams {
     pub many_radius: Option<u16>,
     pub many_width: Option<u16>,
     pub many_shapes: Option<u32>,
+    pub maybe_width: Option<u16>,
     pub refusals: Option<u32>,
 }
 
@@ -1106,6 +1300,10 @@ pub struct StaticUnionPolicy {
     // event, stored by `populate_event_payload` and read by native
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticUnionPayload,
+    /// W3C SCXML 5.2: the `built` datamodel variable, published (`sce:direction="out"`).
+    built: StaticUnionUnionShapeUnion,
+    /// W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`).
+    kept: Option<StaticUnionUnionShapeUnion>,
     /// W3C SCXML 5.2: the `last_kind` datamodel variable, published (`sce:direction="out"`).
     last_kind: StaticUnionKindEnum,
     /// W3C SCXML 5.2: the `radius` datamodel variable, published (`sce:direction="out"`).
@@ -1126,6 +1324,8 @@ pub struct StaticUnionPolicy {
     many_width: u16,
     /// W3C SCXML 5.2: the `many_shapes` datamodel variable, published (`sce:direction="out"`).
     many_shapes: u32,
+    /// W3C SCXML 5.2: the `maybe_width` datamodel variable, published (`sce:direction="out"`).
+    maybe_width: u16,
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
     refusals: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -1153,6 +1353,12 @@ pub struct StaticUnionPolicy {
 
 impl StaticUnionPolicy {
     fn build(session_id: String) -> Self {
+        let built: StaticUnionUnionShapeUnion =
+            StaticUnionUnionShapeUnion::Rect(StaticUnionRectRecord {
+                width: 1,
+                height: 2,
+            });
+        let kept: Option<StaticUnionUnionShapeUnion> = None;
         let last_kind: StaticUnionKindEnum = StaticUnionKindEnum::Dot;
         let radius: u16 = 0;
         let width: u16 = 0;
@@ -1163,9 +1369,12 @@ impl StaticUnionPolicy {
         let many_radius: u16 = 0;
         let many_width: u16 = 0;
         let many_shapes: u32 = 0;
+        let maybe_width: u16 = 0;
         let refusals: u32 = 0;
         Self {
             pending_payload: StaticUnionPayload::default(),
+            built,
+            kept,
             last_kind,
             radius,
             width,
@@ -1176,6 +1385,7 @@ impl StaticUnionPolicy {
             many_radius,
             many_width,
             many_shapes,
+            maybe_width,
             refusals,
             session_id: Some(session_id),
             parent_external_queue: None,
@@ -1266,9 +1476,24 @@ impl StaticUnionPolicy {
         if let Some(value) = params.many_shapes {
             self.many_shapes = value;
         }
+        if let Some(value) = params.maybe_width {
+            self.maybe_width = value;
+        }
         if let Some(value) = params.refusals {
             self.refusals = value;
         }
+    }
+
+    /// W3C SCXML 5.2: what the published `built` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn built(&self) -> &StaticUnionUnionShapeUnion {
+        &self.built
+    }
+
+    /// W3C SCXML 5.2: what the published `kept` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn kept(&self) -> &Option<StaticUnionUnionShapeUnion> {
+        &self.kept
     }
 
     /// W3C SCXML 5.2: what the published `last_kind` datamodel variable
@@ -1329,6 +1554,12 @@ impl StaticUnionPolicy {
     /// holds now. Only the machine writes it.
     pub fn many_shapes(&self) -> u32 {
         self.many_shapes
+    }
+
+    /// W3C SCXML 5.2: what the published `maybe_width` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn maybe_width(&self) -> u16 {
+        self.maybe_width
     }
 
     /// W3C SCXML 5.2: what the published `refusals` datamodel variable
@@ -1775,8 +2006,8 @@ impl StatePolicy for StaticUnionPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_union.scxml:16 :: _machine"]
-    // SCE-MAP: static_union.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_union.scxml:19 :: _machine"]
+    // SCE-MAP: static_union.scxml:19 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1792,8 +2023,8 @@ impl StatePolicy for StaticUnionPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_union.scxml:16 :: _machine"]
-    // SCE-MAP: static_union.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_union.scxml:19 :: _machine"]
+    // SCE-MAP: static_union.scxml:19 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1811,8 +2042,8 @@ impl StatePolicy for StaticUnionPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_union.scxml:16 :: _machine"]
-    // SCE-MAP: static_union.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_union.scxml:19 :: _machine"]
+    // SCE-MAP: static_union.scxml:19 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1842,8 +2073,8 @@ impl StatePolicy for StaticUnionPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_union.scxml:16 :: _machine"]
-    // SCE-MAP: static_union.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_union.scxml:19 :: _machine"]
+    // SCE-MAP: static_union.scxml:19 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -1852,7 +2083,7 @@ impl StatePolicy for StaticUnionPolicy {
         match transition.0 {
             // idle, transition 0
             0 => {
-                // SCE-MAP: static_union.scxml:42 :: idle :: _transition_0
+                // SCE-MAP: static_union.scxml:56 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticUnionPayload::ShapesSent(ev) => ev.clone(),
@@ -1955,11 +2186,43 @@ impl StatePolicy for StaticUnionPolicy {
                             self.many_radius = shape.proven_field_radius();
                         }
                     }
+
+                    // W3C SCXML 5.9: cond="_event.data.maybe !== null && _event.data.maybe.value.kind === Kind.rect"
+                    if ev.maybe.is_some()
+                        && sce_forge_runtime::optional::proven_ref(&ev.maybe).kind()
+                            == StaticUnionKindEnum::Rect
+                    {
+                        // W3C SCXML 5.3: <assign location="maybe_width">
+                        self.maybe_width = sce_forge_runtime::optional::proven_ref(&ev.maybe)
+                            .proven_rect()
+                            .width;
+                    }
+
+                    // W3C SCXML 5.9: cond="built.kind === Kind.rect"
+                    if self.built.kind() == StaticUnionKindEnum::Rect {
+                        // W3C SCXML 5.3: <assign location="built.width">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.built.proven_rect_mut().width = sce_forge_runtime::algorithm::add::<u16>(self.built.proven_rect().width, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='built.width'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
+
+                    // W3C SCXML 5.3: <assign location="kept">
+                    self.kept = Some(ev.one.clone());
                 }
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: static_union.scxml:69 :: idle :: _transition_1
+                // SCE-MAP: static_union.scxml:92 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
