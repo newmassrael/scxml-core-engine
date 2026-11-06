@@ -26,6 +26,13 @@ public func isReservedProcessorType(_ processorType: String) -> Bool {
     processorType.utf8.starts(with: reservedProcessorTypePrefix.utf8)
 }
 
+/// The text of the `error.execution` a `<send>` to `processorType` raises when the host declared the
+/// type to the build and registered no handler for it: the sentence the Rust and Kotlin engines
+/// raise for the same fact.
+public func unregisteredHostProcessorMessage(_ processorType: String) -> String {
+    "<send type='\(processorType)'> names a processor the host declared but never registered"
+}
+
 /// Why a registration was refused.
 public enum HostRegistrationError: Error, Equatable, Sendable {
     /// The type is under the prefix SCE keeps (`reservedProcessorTypePrefix`); `call` is the
@@ -159,18 +166,22 @@ extension Engine {
     /// request and each event it answers is raised on the external queue, in the order it answered.
     ///
     /// A type nobody registered raises `error.execution` and nothing else: an act nobody performed.
-    /// The handler is the only dispatch there is; the engine has no knowledge of what a processor
-    /// does.
+    /// The error names the send that caused it by the request's `sendID`, the id the document wrote
+    /// or the one the machine generated for it (§scxml-6.2.4 + §scxml-5.10, test 332), whether the
+    /// send was made now or its delay is over: a delayed send reaches here from the scheduler with
+    /// the request it made. The handler is the only dispatch there is; the engine has no knowledge
+    /// of what a processor does.
     public func performHostSend(_ request: HostSendRequest) {
         guard let handler = hostSends.handlers[request.processorType] else {
             if let errorEvent = policy.getEventFromName("error.execution") {
-                raise(
-                    .platformError(
-                        errorEvent,
-                        message:
-                            "<send type='\(request.processorType)' id='\(request.sendID)'>: no processor is registered for the type"
-                    )
+                // The sentence every backend's engine raises for this fact, so a consumer matching on
+                // it does not have to know which engine ran the send or whether it carried a delay.
+                var unserved = EventWithMetadata.platformError(
+                    errorEvent,
+                    message: unregisteredHostProcessorMessage(request.processorType)
                 )
+                unserved.metadata.sendID = request.sendID
+                raise(unserved)
             }
             return
         }

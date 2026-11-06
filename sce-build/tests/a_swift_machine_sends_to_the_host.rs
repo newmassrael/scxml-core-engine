@@ -381,3 +381,34 @@ fn a_peer_an_expression_names_is_handed_to_the_router() {
         "the local route is the else of the peer branch, so one send takes one of them:\n{code}"
     );
 }
+
+/// §scxml-6.2.4 + §scxml-5.10 (test 332): the request a host is handed names the send by the id an
+/// error the send causes carries, which the engine reads from the request (`performHostSend`): the
+/// id the document wrote, the one the machine generates for an `idlocation` before it reads
+/// anything else, or the one the build gives a send that names none. A request with no id would
+/// raise an error that names no send.
+#[test]
+fn a_host_send_hands_the_host_the_id_its_error_names() {
+    let written = r#"<send type="x-sce-host" event="host.ask" id="mine"/>"#;
+    let generated = r#"<send type="x-sce-host" event="host.ask" idlocation="n"/>"#;
+    let unnamed = r#"<send type="x-sce-host" event="host.ask"/>"#;
+    for (send, needles) in [
+        (written, &["sendID: \"mine\","][..]),
+        (
+            generated,
+            &["let sendID = generateSendID()", "sendID: sendID,"][..],
+        ),
+        (unnamed, &["sendID: \"__send_"][..]),
+    ] {
+        let (status, files, said) =
+            generate_serving(&document(send, "ecmascript"), &["x-sce-host"]);
+        assert_eq!(status, Some(0), "`{send}` is written: {said}");
+        let code = machine(&files);
+        holds_each(code, needles);
+        assert!(
+            !code.contains("sendID: \"\","),
+            "`{send}` hands the host a request that names no send:\n{code}"
+        );
+        hands_the_host_the_act_once(code, "ecmascript");
+    }
+}

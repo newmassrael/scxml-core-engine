@@ -94,6 +94,59 @@ private func makeHostSendEngine() throws -> (Engine<ScriptedPolicy>, RecordingPr
     #expect(processor.requests.isEmpty)
 }
 
+/// What `_event.sendid` and `_event.data` the `error.execution` the engine raises carry, read by the
+/// transition that takes it out of `idle`: `nil` until one is taken.
+private final class ErrorSeen {
+    var sendID: String?
+    var data: String?
+}
+
+/// A machine whose `error.execution` from `idle` records what the event carries, and no processor
+/// registered: every host send it is handed is an act nobody performs.
+private func makeErrorRecordingEngine() -> (Engine<ScriptedPolicy>, ErrorSeen, ManualClock) {
+    let seen = ErrorSeen()
+    let (engine, _, clock) = makeEngine { policy in
+        policy.transitions[.idle] = [
+            FlatTransition(
+                event: .errorExecution, target: .busy,
+                content: { engine in
+                    seen.sendID = engine.policy.eventSendID
+                    seen.data = engine.policy.eventData
+                }),
+        ]
+    }
+    engine.initialize()
+    return (engine, seen, clock)
+}
+
+/// §scxml-6.2.4 + §scxml-5.10 (test 332): the error a send to a type nobody registered raises names
+/// that send by its id, as every other backend's does, and says what failed in the sentence they use.
+@Test func theErrorOfASendNobodyServesCarriesItsSendID() {
+    let (engine, seen, _) = makeErrorRecordingEngine()
+    engine.performHostSend(request("x-unregistered", sendID: "__send_3"))
+    engine.tick()
+    #expect(engine.getCurrentState() == .busy)
+    #expect(seen.sendID == "__send_3", "the error names the send that caused it")
+    #expect(seen.data == unregisteredHostProcessorMessage("x-unregistered"))
+}
+
+/// The same error for a delayed send, raised when its wait is over: the request the scheduler holds
+/// is the one the send made, its id included.
+@Test func theErrorOfADelayedSendNobodyServesCarriesItsSendID() {
+    let (engine, seen, clock) = makeErrorRecordingEngine()
+    engine.scheduleHostSend(
+        delay: .milliseconds(100), request: request("x-unregistered", sendID: "late"), sender: "o")
+    engine.tick()
+    #expect(seen.sendID == nil, "nothing is raised while the send waits")
+    clock.advance(100)
+    // One tick performs the act and a second takes whatever it raised, however the engine orders
+    // its scheduler and its queues inside one tick; a second tick with nothing to take does nothing.
+    engine.tick()
+    engine.tick()
+    #expect(engine.getCurrentState() == .busy)
+    #expect(seen.sendID == "late", "the error names the delayed send that caused it")
+}
+
 @Test func registeringATypeTwiceReplacesTheHandler() throws {
     let (engine, first, _) = try makeHostSendEngine()
     let second = RecordingProcessor()
