@@ -25,6 +25,10 @@
   two statements of the previous amendment: Titan's own encoding engines cannot write either of SCE's codec
   formats (answer 1), and Titan reads the time at two functions, not one (answer 3). It also showed what
   Titan's logger passes for a message value (answer 8). Answer 1 now lists the licence facts that were checked.
+  Amended once more when the operational semantics was written (`docs/SCE_TEST_PROFILE.md`, order of work step 1).
+  That specification found two things the decision needs:
+  - a scheduler: -4 leaves the order of components free, and C3 needs one run (answer 3);
+  - refusals for SCXML constructs that have no TTCN-3 meaning in a test component (§3).
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer
@@ -192,7 +196,14 @@ row (`acceptance_doc_covers_every_code`):
 - `<donedata>` used as a verdict carrier;
 - a receive branch whose template is not one of the port's declared incoming types;
 - a `test-case` that requires a feature its suite's `feature-model` does not declare. This is the existing
-  `validation/feature-requirement-undeclared` of ADR 0057, applied to a test case. It is not a new variant.
+  `validation/feature-requirement-undeclared` of ADR 0057, applied to a test case. It is not a new variant;
+- the constructs the operational semantics needs refused in a `test-component` (`docs/SCE_TEST_PROFILE.md` §8.2):
+  - `<raise>` and a `<send>` to `#_internal`;
+  - a `<send>` whose target is not one of the component's ports;
+  - a `<send>` with a delay, and `<cancel>`;
+  - an `<invoke>` of anything but a test component;
+  - a transition that is not one branch kind;
+  - a done branch whose target keeps the invoking state active.
 
 As ADR 0057 requires, every rule is classified by how it behaves under feature derivation, so that every world of the
 features of a suite is itself a valid suite.
@@ -516,6 +527,16 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      delivery. The native runtime and the TTCN-3 side therefore see the same timeouts by construction: their order
      is never a race.
    - The same clock is the time domain of answer 11's timed conformance relation.
+   - **Time alone does not make a run unique.** -4's selection phase may run components in any order, so with PTCs
+     one input trace has many runs, and C3 could not tell a defect from a different legal schedule. The profile
+     therefore runs in rounds (`docs/SCE_TEST_PROFILE.md` §3):
+     - at quiescence, every waiting component takes its snapshot at once;
+     - each component then runs the branch it selects to the end of its macrostep;
+     - messages sent in a round are seen in the next.
+
+     Every such run is one -4 permits, so the profile stays a subset of TTCN-3, and the run is a function of the
+     input trace. Titan's Main Controller grants rounds by the same quiescence condition by which it advances the
+     clock; one protocol carries both (below).
    - **In Titan the clock is part of the runtime.** Titan has wall-clock time only. Its runtime reads the time,
      from `gettimeofday`, at two functions:
      - `TTCN_Snapshot::time_now()` (`core/Snapshot.cc`), which the timers, the test case's guard timer, the
