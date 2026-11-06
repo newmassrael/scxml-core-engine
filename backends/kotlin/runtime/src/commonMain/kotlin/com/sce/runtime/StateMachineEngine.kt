@@ -173,10 +173,15 @@ data class EventMetadata(
     // an event no processor stamped, which reads both fields as the empty
     // string.
     val origin: EventOrigin? = null,
-    // The id of the session that sent the event, set only by the SCXML Event
-    // I/O Processor. Not an `_event` field: `<finalize>` finds the invocation an
-    // event came from by it ([executeFinalizeForChildEvent]), and nothing reads
-    // the origin's address to find a session.
+    // The id of the session that sent the event, written by the processor that
+    // delivered it from that session: the SCXML Event I/O Processor for a local
+    // session, the Mesh transport for a remote child or parent (SCE_MESH.md,
+    // Child Sessions in Mesh); `null` for any other sender (docs/adr/0090).
+    // This runtime's Mesh transport delivers only peers, so here the SCXML
+    // processor is the one that writes it. Not an `_event` field: `<finalize>`
+    // finds the invocation an event came from by it
+    // ([executeFinalizeForChildEvent]), and nothing reads the origin's address
+    // to find a session.
     val sender: String? = null,
     val invokeId: String = "",
     // §scxml-6.4: the token of the host-run invocation this event completes,
@@ -3276,7 +3281,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     type = queued.metadata.type,
                     sendId = queued.metadata.sendId,
                     // docs/adr/0090, section 7: the pair the delivering processor
-                    // wrote, and the sender the SCXML processor names beside it.
+                    // wrote, and the sending session it named, if any.
                     origin = queued.metadata.origin,
                     sender = queued.metadata.sender,
                     invokeId = queued.metadata.invokeId,
@@ -5847,9 +5852,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun executeFinalizeForChildEvent(event: E) {
         val metadata = currentEventMetadata
         // The invocation an event came from is found by the session that sent it,
-        // which only the SCXML Event I/O Processor names (docs/adr/0090, section
-        // 1): an event a host or a Mesh peer delivered has an origin and no
-        // sender, and never runs a `<finalize>`.
+        // which the processor that delivered it from that session names
+        // (docs/adr/0090, section 1): an event a host or a Mesh peer that is no
+        // session of ours delivered has an origin and no sender, and never runs a
+        // `<finalize>`.
         val sender = metadata.sender ?: return
         // A `<finalize>` is script text, so a run of it needs an engine and nothing
         // else does. A machine of `datamodel="sce-static"` has no engine and no
