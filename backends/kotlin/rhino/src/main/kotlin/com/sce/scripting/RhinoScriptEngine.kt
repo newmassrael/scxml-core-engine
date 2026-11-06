@@ -676,6 +676,11 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             is Undefined -> null
             Scriptable.NOT_FOUND -> null
             is org.mozilla.javascript.Wrapper -> value.unwrap()
+            // Rhino joins two strings lazily, into a ConsString that is a CharSequence and not a
+            // String. The engine now keeps an assigned value inside itself, so a variable that held
+            // `'a' + b` reaches the host as that CharSequence; a reader that asks for a String got
+            // none. Every other engine hands the host a String, and so does this one.
+            is CharSequence -> value.toString()
             else -> value
         }
     }
