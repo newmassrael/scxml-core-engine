@@ -90,6 +90,8 @@ pub(crate) fn unit_type(
             .record(alias)
             .ok_or_else(|| format!("`record:{alias}` names no event schema the document imports"))
     };
+    // No unit holds a union yet (docs/adr/0092, section 7): refused by name.
+    let unlowered = crate::forge::value_type::union_unlowered;
     let inner = |elem: &ValueType, c11: &mut C11Declarations| unit_type(lang, elem, names, c11);
     Ok(match lang {
         Language::Rust => match ty {
@@ -98,6 +100,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { max } => format!("::sce_portable_bytes::SceBytes<{}>", max.max),
             ValueType::Optional { elem } => format!("Option<{}>", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
+            ValueType::Union { alias } => return Err(unlowered(alias)),
             ValueType::List { elem, max } => format!(
                 "::sce_portable_bytes::BoundedList<{}, {}>",
                 inner(elem, c11)?,
@@ -110,6 +113,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "ByteArray".to_string(),
             ValueType::Optional { elem } => format!("{}?", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
+            ValueType::Union { alias } => return Err(unlowered(alias)),
             ValueType::List { elem, .. } => format!("List<{}>", inner(elem, c11)?),
         },
         Language::Cpp => match ty {
@@ -118,6 +122,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "std::vector<uint8_t>".to_string(),
             ValueType::Optional { elem } => format!("std::optional<{}>", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
+            ValueType::Union { alias } => return Err(unlowered(alias)),
             ValueType::List { elem, .. } => format!("std::vector<{}>", inner(elem, c11)?),
         },
         Language::Go => match ty {
@@ -126,6 +131,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "[]byte".to_string(),
             ValueType::Optional { elem } => format!("optional.Of[{}]", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
+            ValueType::Union { alias } => return Err(unlowered(alias)),
             ValueType::List { elem, .. } => format!("[]{}", inner(elem, c11)?),
         },
         Language::Python => match ty {
@@ -134,6 +140,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "bytes".to_string(),
             ValueType::Optional { elem } => format!("Optional[{}]", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
+            ValueType::Union { alias } => return Err(unlowered(alias)),
             ValueType::List { elem, .. } => format!("list[{}]", inner(elem, c11)?),
         },
         Language::Swift => match ty {
@@ -142,6 +149,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "[UInt8]".to_string(),
             ValueType::Optional { elem } => format!("{}?", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
+            ValueType::Union { alias } => return Err(unlowered(alias)),
             ValueType::List { elem, .. } => format!("[{}]", inner(elem, c11)?),
         },
         Language::C11 => match ty {
@@ -162,6 +170,7 @@ pub(crate) fn unit_type(
                 )
             }
             ValueType::Record { alias } => record(alias)?,
+            ValueType::Union { alias } => return Err(unlowered(alias)),
             ValueType::List { elem, max } => {
                 let item = inner(elem, c11)?;
                 c11.declare(
@@ -194,6 +203,10 @@ fn c11_mangle(ty: &ValueType, names: &dyn UnitNames) -> String {
                 .unwrap_or_else(|| alias.to_string())
                 .trim_end_matches("_t")
         ),
+        // By its alias, as a record is by its type. [`unit_type`] refuses a
+        // union before it names a composition that holds one, so no unit
+        // declares this name yet (docs/adr/0092, section 7).
+        ValueType::Union { alias } => format!("union_{alias}"),
         ValueType::List { elem, max } => format!("list_{}_{}", max.max, c11_mangle(elem, names)),
     }
 }
@@ -210,6 +223,7 @@ pub(crate) fn swift_zero(ty: &ValueType, names: &dyn UnitNames) -> Result<String
                 format!("`record:{alias}` names no event schema the document imports")
             })?
         ),
+        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
         ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
             return Err(format!(
                 "`{ty}` is one entry, which the unit spells where it spells every entry"

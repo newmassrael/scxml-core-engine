@@ -42,15 +42,16 @@ impl Place {
         }
     }
 
-    /// Whether the value is composed: a list, a record, or an optional value of
-    /// either. Such a value is read through its fields, its elements and its
-    /// length, and is never an operand.
+    /// Whether the value is composed: a list, a record, a union, or an optional
+    /// value of one. Such a value is read through its fields, its elements and
+    /// its length, and is never an operand.
     pub fn is_composed(&self) -> bool {
         match &self.ty {
-            ValueType::List { .. } | ValueType::Record { .. } => true,
-            ValueType::Optional { elem } => {
-                matches!(**elem, ValueType::List { .. } | ValueType::Record { .. })
-            }
+            ValueType::List { .. } | ValueType::Record { .. } | ValueType::Union { .. } => true,
+            ValueType::Optional { elem } => matches!(
+                **elem,
+                ValueType::List { .. } | ValueType::Record { .. } | ValueType::Union { .. }
+            ),
             ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => false,
         }
     }

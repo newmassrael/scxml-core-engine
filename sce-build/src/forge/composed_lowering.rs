@@ -274,6 +274,7 @@ fn plain(ty: &ValueType) -> bool {
         ValueType::Text { .. }
         | ValueType::Bytes { .. }
         | ValueType::Record { .. }
+        | ValueType::Union { .. }
         | ValueType::List { .. } => false,
     }
 }
@@ -368,6 +369,8 @@ pub fn machine_type(
             max.max,
         ),
         ValueType::Record { alias } => spelling.record_type(records.record(within, alias)?.alias),
+        // docs/adr/0092, section 7: no machine holds a union yet.
+        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
     })
 }
 
@@ -412,6 +415,7 @@ pub fn held_records(
                 reached.records.push(held.alias.to_string());
             }
         }
+        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
     }
     Ok(())
 }
@@ -476,6 +480,7 @@ pub fn reader(
                 &fields,
             )
         }
+        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
     })
 }
 
@@ -532,6 +537,7 @@ pub fn writer(
             let record = records.record(within, alias)?;
             spelling.write_record(&field_writers(record, records, spelling, held)?)
         }
+        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
     })
 }
 

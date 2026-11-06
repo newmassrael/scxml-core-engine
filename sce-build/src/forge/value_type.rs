@@ -11,9 +11,15 @@
 //!     | string[B] | bytes[B]
 //!     | optional<T>
 //!     | record:<alias>
+//!     | union:<alias>
 //!     | list<T>[B]
 //! B ::= <positive integer> | <limit name>=<positive integer>
 //! ```
+//!
+//! A record is a product, holding every one of its fields; a union is a sum,
+//! holding exactly one of the cases its document declares, told apart by a tag
+//! of a closed enum (docs/adr/0092, section 1). Each names its document by an
+//! alias, and its shape is read from that document through [`TypeEnv`].
 //!
 //! Every constructor takes every type, and a bound is written in the type it
 //! bounds, at every depth: `list<list<string[8]>[4]>[3]` is at most 3 lists of
@@ -136,11 +142,11 @@ impl schemars::JsonSchema for Bound {
 /// Serialized as the model's other types are: a scalar is the bare string it
 /// always was (`"int64"`), and each other constructor an object keyed by its
 /// own name, its bound beside it: `{"string": 8}`, `{"bytes": 4}`,
-/// `{"optional": "int64"}`, `{"record": "Item"}`, `{"list": "uint8", "max":
-/// 2}`. A text, byte string or list whose bound is not written (an
-/// algorithm's parameter, whose outermost bound is its argument's) is the
-/// shape it had before a type held bounds: `"string"`, `"bytes"`,
-/// `{"list": "uint8"}`.
+/// `{"optional": "int64"}`, `{"record": "Item"}`, `{"union": "Shape"}`,
+/// `{"list": "uint8", "max": 2}`. A text, byte string or list whose bound is
+/// not written (an algorithm's parameter, whose outermost bound is its
+/// argument's) is the shape it had before a type held bounds: `"string"`,
+/// `"bytes"`, `{"list": "uint8"}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeOf<B> {
     /// A fixed-width number, `bool`, or `enum:<alias>`.
@@ -154,6 +160,11 @@ pub enum TypeOf<B> {
     Optional { elem: Box<TypeOf<B>> },
     /// `record:<alias>`: a value of the struct the aliased event schema declares.
     Record { alias: String },
+    /// `union:<alias>`: a value of exactly one case of the union the aliased
+    /// document declares, its tag naming which (docs/adr/0092, section 1).
+    /// Like a record it states no bound of its own: its largest value is its
+    /// largest case.
+    Union { alias: String },
     /// `list<T>[B]`: an ordered sequence of at most `max` values of `elem`.
     List { elem: Box<TypeOf<B>>, max: B },
 }
@@ -188,6 +199,13 @@ impl<B: BoundSlot> Serialize for TypeOf<B> {
             Self::Record { alias } => {
                 let mut map = serializer.serialize_map(Some(1))?;
                 map.serialize_entry("record", alias)?;
+                map.end()
+            }
+            // docs/adr/0092, section 1.1, item 4: a type that holds no union
+            // exports as it always did.
+            Self::Union { alias } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("union", alias)?;
                 map.end()
             }
             Self::List { elem, max } => {
@@ -241,6 +259,7 @@ impl<B: BoundSlot> schemars::JsonSchema for TypeOf<B> {
                 {"type": "object", "required": ["bytes"], "properties": {"bytes": bound}},
                 {"type": "object", "required": ["optional"], "properties": {"optional": this}},
                 {"type": "object", "required": ["record"], "properties": {"record": {"type": "string"}}},
+                {"type": "object", "required": ["union"], "properties": {"union": {"type": "string"}}},
                 {
                     "type": "object",
                     "required": list_required,
@@ -315,6 +334,7 @@ impl<B: BoundSlot> fmt::Display for TypeOf<B> {
             }
             Self::Optional { elem } => write!(f, "optional<{elem}>"),
             Self::Record { alias } => write!(f, "record:{alias}"),
+            Self::Union { alias } => write!(f, "union:{alias}"),
             Self::List { elem, max } => {
                 write!(f, "list<{elem}>")?;
                 bracket(f, max)
@@ -325,8 +345,8 @@ impl<B: BoundSlot> fmt::Display for TypeOf<B> {
 
 impl<B> TypeOf<B> {
     /// The name of the constructor at the top of the type, as a refusal names
-    /// it: `list`, `optional`, `record`, `string`, `bytes`, or the scalar's own
-    /// spelling.
+    /// it: `list`, `optional`, `record`, `union`, `string`, `bytes`, or the
+    /// scalar's own spelling.
     pub fn constructor(&self) -> String {
         match self {
             Self::Scalar(t) => t.as_attr(),
@@ -334,8 +354,22 @@ impl<B> TypeOf<B> {
             Self::Bytes { .. } => "bytes".to_string(),
             Self::Optional { .. } => "optional".to_string(),
             Self::Record { .. } => "record".to_string(),
+            Self::Union { .. } => "union".to_string(),
             Self::List { .. } => "list".to_string(),
         }
+    }
+
+    /// The aliases of every union the type names, in the order they are
+    /// written, at every depth. The records a union's cases hold are its own
+    /// document's, and are not among them.
+    pub fn union_aliases(&self) -> Vec<&str> {
+        let mut out = Vec::new();
+        self.walk(&mut |ty| {
+            if let Self::Union { alias } = ty {
+                out.push(alias.as_str());
+            }
+        });
+        out
     }
 
     /// The aliases of every enum the type names, in the order they are
@@ -367,7 +401,11 @@ impl<B> TypeOf<B> {
         visit(self);
         match self {
             Self::Optional { elem } | Self::List { elem, .. } => elem.walk(visit),
-            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => {}
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::Union { .. } => {}
         }
     }
 
@@ -376,7 +414,11 @@ impl<B> TypeOf<B> {
     pub fn depth(&self) -> usize {
         match self {
             Self::Optional { elem } | Self::List { elem, .. } => 1 + elem.depth(),
-            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => 1,
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::Union { .. } => 1,
         }
     }
 }
@@ -399,7 +441,7 @@ pub enum TypeRefusal {
     /// A bracket that is not a positive 32-bit integer or `name=N`.
     BadBound { place: String, written: String },
     /// A bracket on a type that has no bound: a number, `bool`, an enum, a
-    /// record or an optional.
+    /// record, a union or an optional.
     BoundOnUnboundable { place: String },
     /// `optional<optional<T>>`.
     NestedOptional { place: String },
@@ -444,7 +486,7 @@ impl TypeRefusal {
             Self::Unknown { written } => format!(
                 "`{written}` names no type: a type is a number (uint8 to uint64, int8 to \
                  int64, float32, float64), bool, enum:<alias>, string[N], bytes[N], \
-                 optional<T>, record:<alias> or list<T>[N]"
+                 optional<T>, record:<alias>, union:<alias> or list<T>[N]"
             ),
             Self::Malformed { place, expected } => {
                 format!("the type is not complete after `{place}`: {expected}")
@@ -591,7 +633,7 @@ impl WrittenType {
         match self {
             Self::Text { max } | Self::Bytes { max } | Self::List { max, .. } => Some(max),
             Self::Optional { elem } => elem.outer_bound(),
-            Self::Scalar(_) | Self::Record { .. } => None,
+            Self::Scalar(_) | Self::Record { .. } | Self::Union { .. } => None,
         }
     }
 
@@ -602,7 +644,7 @@ impl WrittenType {
         match self {
             Self::Text { .. } | Self::Bytes { .. } | Self::List { .. } => Some(self),
             Self::Optional { elem } => elem.outermost_bounded(),
-            Self::Scalar(_) | Self::Record { .. } => None,
+            Self::Scalar(_) | Self::Record { .. } | Self::Union { .. } => None,
         }
     }
 
@@ -633,9 +675,11 @@ impl WrittenType {
             Self::Optional { elem } => Ok(Self::Optional {
                 elem: Box::new(elem.set_outer(bound, place)?),
             }),
-            Self::Scalar(_) | Self::Record { .. } => Err(TypeRefusal::NothingToBound {
-                place: place.to_string(),
-            }),
+            Self::Scalar(_) | Self::Record { .. } | Self::Union { .. } => {
+                Err(TypeRefusal::NothingToBound {
+                    place: place.to_string(),
+                })
+            }
         }
     }
 
@@ -659,6 +703,7 @@ impl WrittenType {
                 max: required(max)?,
             },
             Self::Record { alias } => ValueType::Record { alias },
+            Self::Union { alias } => ValueType::Union { alias },
             Self::Optional { elem } => ValueType::Optional {
                 elem: Box::new(elem.bounded()?),
             },
@@ -707,7 +752,11 @@ impl WrittenType {
     /// not written, while every bound inside it is.
     pub fn unbounded_inside(&self) -> Option<TypeRefusal> {
         match self {
-            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => None,
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::Union { .. } => None,
             Self::Optional { elem } => elem.unbounded_inside(),
             Self::List { elem, .. } => (**elem).clone().bounded().err(),
         }
@@ -731,6 +780,7 @@ impl WrittenType {
         match self {
             Self::Scalar(t) => Self::Scalar(t),
             Self::Record { alias } => Self::Record { alias },
+            Self::Union { alias } => Self::Union { alias },
             Self::Text { max } => Self::Text { max: bound(max) },
             Self::Bytes { max } => Self::Bytes { max: bound(max) },
             Self::Optional { elem } => Self::Optional {
@@ -754,7 +804,10 @@ fn value_leaf(ty: &ValueType) -> Option<(SceType, Option<&Bound>)> {
         ValueType::Scalar(t) => Some((t.clone(), None)),
         ValueType::Text { max } => Some((SceType::String, Some(max))),
         ValueType::Bytes { max } => Some((SceType::Bytes, Some(max))),
-        ValueType::Optional { .. } | ValueType::Record { .. } | ValueType::List { .. } => None,
+        ValueType::Optional { .. }
+        | ValueType::Record { .. }
+        | ValueType::Union { .. }
+        | ValueType::List { .. } => None,
     }
 }
 
@@ -776,6 +829,7 @@ impl ValueType {
             | Self::Text { .. }
             | Self::Bytes { .. }
             | Self::Record { .. }
+            | Self::Union { .. }
             | Self::List { .. } => Err(Composition::of(self)),
         }
     }
@@ -797,7 +851,11 @@ impl ValueType {
         match self {
             Self::Scalar(SceType::Enum(reference)) => Some(reference),
             Self::Optional { elem } | Self::List { elem, .. } => elem.enum_leaf(),
-            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => None,
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::Union { .. } => None,
         }
     }
 
@@ -806,7 +864,11 @@ impl ValueType {
         match self {
             Self::Scalar(SceType::Enum(reference)) => Some(reference),
             Self::Optional { elem } | Self::List { elem, .. } => elem.enum_leaf_mut(),
-            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => None,
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::Union { .. } => None,
         }
     }
 
@@ -818,7 +880,7 @@ impl ValueType {
         match self {
             Self::Text { max } | Self::Bytes { max } | Self::List { max, .. } => Some((max, self)),
             Self::Optional { elem } => elem.outermost_bound(),
-            Self::Scalar(_) | Self::Record { .. } => None,
+            Self::Scalar(_) | Self::Record { .. } | Self::Union { .. } => None,
         }
     }
 
@@ -837,6 +899,9 @@ impl ValueType {
                 elem: Box::new(elem.written()),
             },
             Self::Record { alias } => WrittenType::Record {
+                alias: alias.clone(),
+            },
+            Self::Union { alias } => WrittenType::Union {
                 alias: alias.clone(),
             },
             Self::List { elem, max } => WrittenType::List {
@@ -880,11 +945,12 @@ fn read_type(cursor: &mut Cursor<'_>) -> Result<WrittenType, TypeRefusal> {
             let max = read_bracket(cursor, start, Counted::Bytes)?;
             return Ok(WrittenType::Bytes { max });
         }
-        "enum" | "record" => {
+        "enum" | "record" | "union" => {
             if cursor.peek() != Some(':') {
                 return Err(TypeRefusal::Malformed {
                     place: cursor.since(start),
-                    expected: "an alias follows `:`, as in `enum:Level` or `record:Item`",
+                    expected: "an alias follows `:`, as in `enum:Level`, `record:Item` or \
+                               `union:Shape`",
                 });
             }
             cursor.pos += 1;
@@ -894,14 +960,16 @@ fn read_type(cursor: &mut Cursor<'_>) -> Result<WrittenType, TypeRefusal> {
                     written: cursor.since(start),
                 });
             }
-            if word == "enum" {
-                WrittenType::Scalar(SceType::Enum(crate::forge::model::EnumRef {
+            match word {
+                "enum" => WrittenType::Scalar(SceType::Enum(crate::forge::model::EnumRef {
                     alias: alias.to_string(),
-                }))
-            } else {
-                WrittenType::Record {
+                })),
+                "record" => WrittenType::Record {
                     alias: alias.to_string(),
-                }
+                },
+                _ => WrittenType::Union {
+                    alias: alias.to_string(),
+                },
             }
         }
         other => match fixed_scalar(other) {
@@ -1113,6 +1181,17 @@ impl Composition {
     }
 }
 
+/// The sentence of the refusal of `union:<alias>` by a walk of a type that
+/// does not lower a union yet (docs/adr/0092, section 7): what each such walk
+/// answers, one wording for all, as [`Composition::sentence`] is for a slot.
+pub fn union_unlowered(alias: &str) -> String {
+    format!(
+        "`{}{alias}`: {}",
+        WrittenType::UNION_PREFIX,
+        crate::forge::union_check::NOT_LOWERED_YET
+    )
+}
+
 // ── A slot: an algorithm's parameter, return and local, a statechart's variable ──
 
 /// The scalar a text reads as through [`WrittenType::scalar`].
@@ -1126,6 +1205,9 @@ impl WrittenType {
 
     /// The prefix of a record type's spelling, `record:<alias>`.
     pub const RECORD_PREFIX: &'static str = "record:";
+
+    /// The prefix of a union type's spelling, `union:<alias>`.
+    pub const UNION_PREFIX: &'static str = "union:";
 
     /// The prefix of a list type's spelling, `list<T>`.
     pub const LIST_PREFIX: &'static str = "list<";
@@ -1175,14 +1257,17 @@ impl WrittenType {
 
     /// The type as one scalar: a fixed-width number, `bool` or an enum, or a
     /// text or a byte string read as `string` or `bytes`; `None` for a list,
-    /// a record or an optional value. An optional scalar is not a scalar: a
-    /// value of it may be absent.
+    /// a record, a union or an optional value. An optional scalar is not a
+    /// scalar: a value of it may be absent.
     pub fn scalar(&self) -> Option<&SceType> {
         match self {
             Self::Scalar(t) => Some(t),
             Self::Text { .. } => Some(&TEXT_SCALAR),
             Self::Bytes { .. } => Some(&BYTES_SCALAR),
-            Self::List { .. } | Self::Record { .. } | Self::Optional { .. } => None,
+            Self::List { .. }
+            | Self::Record { .. }
+            | Self::Union { .. }
+            | Self::Optional { .. } => None,
         }
     }
 
@@ -1194,6 +1279,7 @@ impl WrittenType {
             | Self::Text { .. }
             | Self::Bytes { .. }
             | Self::Record { .. }
+            | Self::Union { .. }
             | Self::Optional { .. } => None,
         }
     }
@@ -1206,6 +1292,7 @@ impl WrittenType {
             Self::Scalar(_)
             | Self::Text { .. }
             | Self::Bytes { .. }
+            | Self::Union { .. }
             | Self::List { .. }
             | Self::Optional { .. } => None,
         }
@@ -1219,7 +1306,8 @@ impl WrittenType {
             | Self::Text { .. }
             | Self::Bytes { .. }
             | Self::List { .. }
-            | Self::Record { .. } => None,
+            | Self::Record { .. }
+            | Self::Union { .. } => None,
         }
     }
 
@@ -1251,12 +1339,14 @@ impl WrittenType {
     /// type is a composition those lowerings do not hold yet, named by the
     /// part of it they stop at, so that a lowering refuses it by name
     /// (docs/adr/0086, section 7.3), as [`ValueType::entry`] does for an
-    /// event schema's field.
+    /// event schema's field. No slot holds a union yet (docs/adr/0092, landing
+    /// order), at any depth.
     pub fn slot_view(&self) -> Result<&Self, Composition> {
         match self {
             Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => {
                 Ok(self)
             }
+            Self::Union { .. } => Err(Composition::of(self)),
             Self::List { elem, .. } => match &**elem {
                 Self::Scalar(t) if Self::list_elem_admitted(t) => Ok(self),
                 Self::Record { .. } => Ok(self),
@@ -1304,7 +1394,7 @@ impl WrittenType {
                     max,
                 )
             }
-            other @ (Self::Scalar(_) | Self::Record { .. }) => (other, None),
+            other @ (Self::Scalar(_) | Self::Record { .. } | Self::Union { .. }) => (other, None),
         }
     }
 }
@@ -1343,6 +1433,12 @@ pub trait TypeEnv {
     fn record_name(&self, alias: &str) -> String {
         alias.to_string()
     }
+    /// The union `alias` names (docs/adr/0092, section 1.1): the key its tag
+    /// is written under, each case with its variant's declared name and
+    /// number and the alias of the record it holds, in the tag enum's
+    /// declaration order, and the scope its own document names those records
+    /// in; `None` when no union goes by that alias.
+    fn union_type(&self, alias: &str) -> Option<&ScopedUnion>;
 }
 
 /// An enum, as a size reads it: its variants, its underlying type, and whether
@@ -1380,15 +1476,58 @@ pub struct ScopedRecord {
     pub scope: TypeScope,
 }
 
-/// The enums and records one document's aliases name, each record with the
-/// scope of its own document: the environment a type of that document is
-/// sized in ([`TypeEnv`]). A record's fields are read with its own document's
-/// aliases, at every depth, so a record that names its enum `Level` is sized
-/// by its enum whatever the document that holds the record calls it.
+/// A union, as a size reads it (docs/adr/0092, section 1.1): the document it
+/// is (its identity), the name that document gives itself, the key its tag is
+/// written under, the alias of its tag's enum, each case in the enum's
+/// declaration order, and the scope its own document names the enum and the
+/// cases' records in.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ScopedUnion {
+    pub identity: String,
+    /// The document's `<scxml name>`.
+    pub name: String,
+    /// The key the tag is written under, beside the case's fields.
+    pub tag: String,
+    /// The alias, in [`Self::scope`], of the enum the tag is a value of.
+    pub tag_enum: String,
+    /// One case per variant of the tag's enum, in the enum's declaration
+    /// order.
+    pub cases: Vec<ScopedCase>,
+    pub scope: TypeScope,
+}
+
+/// A case of a [`ScopedUnion`]: the variant of the tag's enum it is for, by
+/// its declared name and number, and the alias, in the union's scope, of the
+/// record it holds, or `None` for an empty case, its tag alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopedCase {
+    pub variant: ScopedVariant,
+    pub record: Option<String>,
+}
+
+impl ScopedUnion {
+    /// What tells this union from every other record and union, across the
+    /// documents its cases are read in: its identity, or `alias` where none
+    /// was read (a table of one set of aliases).
+    fn key(&self, alias: &str) -> String {
+        if self.identity.is_empty() {
+            format!("{}{alias}", WrittenType::UNION_PREFIX)
+        } else {
+            self.identity.clone()
+        }
+    }
+}
+
+/// The enums, records and unions one document's aliases name, each record and
+/// union with the scope of its own document: the environment a type of that
+/// document is sized in ([`TypeEnv`]). A record's fields are read with its own
+/// document's aliases, at every depth, so a record that names its enum `Level`
+/// is sized by its enum whatever the document that holds the record calls it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TypeScope {
     pub enums: std::collections::BTreeMap<String, ScopedEnum>,
     pub records: std::collections::BTreeMap<String, ScopedRecord>,
+    pub unions: std::collections::BTreeMap<String, ScopedUnion>,
 }
 
 impl TypeEnv for TypeScope {
@@ -1410,6 +1549,9 @@ impl TypeEnv for TypeScope {
         self.records
             .get(alias)
             .map_or_else(|| alias.to_string(), |r| r.name.clone())
+    }
+    fn union_type(&self, alias: &str) -> Option<&ScopedUnion> {
+        self.unions.get(alias)
     }
 }
 
@@ -1628,7 +1770,65 @@ fn size(
             records.pop();
             Ok(total)
         }
+        // docs/adr/0092, section 5.1: the largest case, each counted with its
+        // own variant's name and number, so the size is tight.
+        ValueType::Union { alias } => {
+            let union = enter_union(alias, env, records)?;
+            let mut largest = 0u64;
+            for case in &union.cases {
+                largest = largest.max(case_size(union, case, measure, records)?);
+            }
+            records.pop();
+            Ok(largest)
+        }
     }
+}
+
+/// `J` or `C` of the case `case` of `union` (docs/adr/0092, section 5.1): one
+/// object of the tag under its key, whose value is the case's variant (its
+/// quoted name on JSON, its declared number on CBOR, as an enum's value is
+/// signed, docs/adr/0086 section 9.2), and the fields of the record the case
+/// holds, none for an empty case.
+///
+/// - `J`: 2 + (`J(quoted t)` + 1 + 2 + the escaped length of the variant's
+///   name) + Σ (`J(quoted id)` + 1 + `J(Tf)`) + m, a comma between each two of
+///   the m + 1 members;
+/// - `C`: h(1 + m) + `C(t)` + the head of the variant's number + Σ (`C(id)` +
+///   `C(Tf)`).
+fn case_size(
+    union: &ScopedUnion,
+    case: &ScopedCase,
+    measure: Measure,
+    records: &mut Vec<String>,
+) -> Result<u64, SizeError> {
+    let (fields, inner) = enter_case(union, case, records)?;
+    let m = fields.len() as u64;
+    let tag = union.tag.len() as u64;
+    let mut total = match measure {
+        // The braces, the quoted tag, its colon and the quoted variant name,
+        // and a comma between each two members.
+        Measure::Json => {
+            2 + (2 + json_escaped_len(&union.tag) + 1 + 2 + json_escaped_len(&case.variant.name))
+                + m
+        }
+        Measure::Cbor => {
+            let number = cbor_integer_len(case.variant.value).ok_or(SizeError::Overflow)?;
+            add(cbor_head_len(1 + m) + cbor_head_len(tag) + tag, number)?
+        }
+    };
+    for (id, field) in &fields {
+        let key = match measure {
+            // The quoted key and its colon.
+            Measure::Json => 2 + json_escaped_len(id) + 1,
+            Measure::Cbor => {
+                let len = id.len() as u64;
+                cbor_head_len(len) + len
+            }
+        };
+        total = add(add(total, key)?, size(field, measure, inner, records)?)?;
+    }
+    leave_case(case, records);
+    Ok(total)
 }
 
 /// `J(T)`: the length of the largest JSON text of a value of `ty`, as the wire
@@ -1676,6 +1876,9 @@ pub fn payload_json_max_len(
         fn record_name(&self, alias: &str) -> String {
             self.env.record_name(alias)
         }
+        fn union_type(&self, alias: &str) -> Option<&ScopedUnion> {
+            self.env.union_type(alias)
+        }
     }
     json_max_len(
         &ValueType::Record {
@@ -1712,6 +1915,18 @@ pub fn contains_itself(alias: &str, env: &dyn TypeEnv) -> Option<Vec<String>> {
             for inner in ty.record_aliases() {
                 if let Some(cycle) = visit(inner, scope, path) {
                     return Some(cycle);
+                }
+            }
+            // A union holds the records of its cases, named by its own
+            // document's aliases (docs/adr/0092, section 1.1, item 3).
+            for union in ty.union_aliases() {
+                let Some(held) = scope.union_type(union) else {
+                    continue;
+                };
+                for record in held.cases.iter().filter_map(|c| c.record.as_deref()) {
+                    if let Some(cycle) = visit(record, &held.scope, path) {
+                        return Some(cycle);
+                    }
                 }
             }
         }
@@ -1755,6 +1970,58 @@ fn enter_record<'e>(
     Ok((fields, env.record_scope(alias).unwrap_or(env)))
 }
 
+/// A union a fold enters (docs/adr/0092, section 1.1): the union the
+/// environment reads it as, or the refusal of an alias no union goes by, of a
+/// union of no case, and of a union that holds itself through the records of
+/// its cases. `records` holds each record and union on the way by its key,
+/// which the caller pops.
+fn enter_union<'e>(
+    alias: &str,
+    env: &'e dyn TypeEnv,
+    records: &mut Vec<String>,
+) -> Result<&'e ScopedUnion, SizeError> {
+    let unresolved = || SizeError::Unresolved {
+        alias: alias.to_string(),
+    };
+    let union = env.union_type(alias).ok_or_else(unresolved)?;
+    // A union with no case holds no value: it was not read from its
+    // document, which declares at least one.
+    if union.cases.is_empty() {
+        return Err(unresolved());
+    }
+    let key = union.key(alias);
+    if records.contains(&key) {
+        let mut cycle = records.clone();
+        cycle.push(key);
+        return Err(SizeError::ContainsItself { cycle });
+    }
+    records.push(key);
+    Ok(union)
+}
+
+/// The fields of the record the case `case` of `union` holds, none for an
+/// empty case, and the environment they are read in. `records` gains the
+/// record's key where the case holds one, which [`leave_case`] pops.
+fn enter_case<'e>(
+    union: &'e ScopedUnion,
+    case: &ScopedCase,
+    records: &mut Vec<String>,
+) -> Result<EnteredRecord<'e>, SizeError> {
+    // The cases' records are named by the union's own document's aliases.
+    let scope: &'e dyn TypeEnv = &union.scope;
+    match &case.record {
+        Some(record) => enter_record(record, scope, records),
+        None => Ok((Vec::new(), scope)),
+    }
+}
+
+/// Leave what [`enter_case`] entered.
+fn leave_case(case: &ScopedCase, records: &mut Vec<String>) {
+    if case.record.is_some() {
+        records.pop();
+    }
+}
+
 fn depth_at(
     ty: &ValueType,
     env: &dyn TypeEnv,
@@ -1769,6 +2036,22 @@ fn depth_at(
             let mut deepest = 0u32;
             for (_, field) in &fields {
                 deepest = deepest.max(depth_at(field, inner, records)?);
+            }
+            records.pop();
+            Ok(deepest.saturating_add(1))
+        }
+        // docs/adr/0092, section 4.1, item 3: one level, as a record is, and
+        // the deepest field of any case; the tag is a value of an enum, no
+        // container.
+        ValueType::Union { alias } => {
+            let union = enter_union(alias, env, records)?;
+            let mut deepest = 0u32;
+            for case in &union.cases {
+                let (fields, inner) = enter_case(union, case, records)?;
+                for (_, field) in &fields {
+                    deepest = deepest.max(depth_at(field, inner, records)?);
+                }
+                leave_case(case, records);
             }
             records.pop();
             Ok(deepest.saturating_add(1))
@@ -1817,6 +2100,29 @@ fn pointer_at(
                 if len > longest.1 {
                     longest = (format!("/{token}{below}"), len);
                 }
+            }
+            records.pop();
+            Ok(longest)
+        }
+        // docs/adr/0092, section 4.1, item 3: the union adds no level and no
+        // key of its own, so a place it declares is its tag or a field of a
+        // case, each one token below the union's pointer. The tag comes first,
+        // as it stands first in each case's grammar.
+        ValueType::Union { alias } => {
+            let union = enter_union(alias, env, records)?;
+            let tag = pointer_token(&union.tag);
+            let mut longest = (format!("/{tag}"), add(1, tag.len() as u64)?);
+            for case in &union.cases {
+                let (fields, inner) = enter_case(union, case, records)?;
+                for (id, field) in &fields {
+                    let (below, below_len) = pointer_at(field, inner, records)?;
+                    let token = pointer_token(id);
+                    let len = add(add(1, token.len() as u64)?, below_len)?;
+                    if len > longest.1 {
+                        longest = (format!("/{token}{below}"), len);
+                    }
+                }
+                leave_case(case, records);
             }
             records.pop();
             Ok(longest)
@@ -1870,6 +2176,11 @@ pub enum GrammarError {
     /// Two records of different documents under one document name, which a
     /// JSON Schema's `$defs` would name alike.
     SharedName { name: String },
+    /// A union, whose rows of the two grammars (a `oneOf` of one object per
+    /// case, an alternation of one rule per case) are a later step of its
+    /// landing (docs/adr/0092, section 3 and landing order): refused by name
+    /// until they land, not left to a wrong grammar.
+    UnionUnlowered { alias: String },
 }
 
 impl fmt::Display for GrammarError {
@@ -1902,6 +2213,11 @@ impl fmt::Display for GrammarError {
                 f,
                 "two records of different documents are named `{name}`, which the schema's \
                  `$defs` would name alike"
+            ),
+            Self::UnionUnlowered { alias } => write!(
+                f,
+                "`union:{alias}` has no JSON Schema or GBNF grammar yet: {}",
+                crate::forge::union_check::NOT_LOWERED_YET
             ),
         }
     }
@@ -2480,6 +2796,11 @@ fn json_schema(
             let reference = format!("#/$defs/{}", pointer_token(&record.name));
             SchemaObject::default().with(Keyword::Ref, SchemaNode::value(reference))
         }
+        ValueType::Union { alias } => {
+            return Err(GrammarError::UnionUnlowered {
+                alias: alias.clone(),
+            })
+        }
     })
 }
 
@@ -2879,6 +3200,11 @@ fn gbnf(
             rules.named[slot].1 = body;
             rule
         }
+        ValueType::Union { alias } => {
+            return Err(GrammarError::UnionUnlowered {
+                alias: alias.clone(),
+            })
+        }
     })
 }
 
@@ -2947,6 +3273,9 @@ pub trait TypeIdentity {
     fn same_record(&self, from: &str, to: &str) -> bool;
     /// Whether the enum `from` names is the enum `to` names.
     fn same_enum(&self, from: &str, to: &str) -> bool;
+    /// Whether the union `from` names is the union `to` names: one document,
+    /// or two revisions of one union (docs/adr/0092, section 6.1, item 7).
+    fn same_union(&self, from: &str, to: &str) -> bool;
 }
 
 /// Why a value of one type may not stand where another is expected: the
@@ -2981,7 +3310,7 @@ pub enum MisfitReason {
     LowerCount,
     /// The value may be absent and the place expected may not.
     MayBeAbsent,
-    /// Two records, or two enums, of different documents.
+    /// Two records, two enums or two unions, of different documents.
     Identity,
 }
 
@@ -3026,7 +3355,9 @@ impl Misfit {
 /// - `optional<S>` fits `optional<T>` when `S` fits `T`, and `S` fits
 ///   `optional<T>` when `S` fits `T`;
 /// - `record:R` fits `record:Q` when both are one record
-///   ([`TypeIdentity::same_record`]).
+///   ([`TypeIdentity::same_record`]);
+/// - `union:U` fits `union:V` when both are one union
+///   ([`TypeIdentity::same_union`], docs/adr/0092, section 6.1, item 7).
 ///
 /// Every bound is the number the build holds, after its limit name and
 /// `--limit` ([`WrittenType::resolve_limits`]), so the relation is the one a
@@ -3093,12 +3424,20 @@ fn fits_at(
                 Err(misfit(MisfitReason::Identity))
             }
         }
+        (ValueType::Union { alias: u }, ValueType::Union { alias: v }) => {
+            if identity.same_union(u, v) {
+                Ok(())
+            } else {
+                Err(misfit(MisfitReason::Identity))
+            }
+        }
         (
             ValueType::Scalar(_)
             | ValueType::Text { .. }
             | ValueType::Bytes { .. }
             | ValueType::List { .. }
-            | ValueType::Record { .. },
+            | ValueType::Record { .. }
+            | ValueType::Union { .. },
             _,
         ) => Err(misfit(MisfitReason::Constructor)),
     }
@@ -3898,11 +4237,12 @@ mod tests {
 
     // ── The size calculus ─────────────────────────────────────────────────
 
-    /// A table of records and enums.
+    /// A table of records, enums and unions.
     #[derive(Default)]
     struct Table {
         records: BTreeMap<String, Vec<(String, ValueType)>>,
         enums: BTreeMap<String, ScopedEnum>,
+        unions: BTreeMap<String, ScopedUnion>,
     }
 
     impl TypeEnv for Table {
@@ -3911,6 +4251,9 @@ mod tests {
         }
         fn enum_type(&self, alias: &str) -> Option<&ScopedEnum> {
             self.enums.get(alias)
+        }
+        fn union_type(&self, alias: &str) -> Option<&ScopedUnion> {
+            self.unions.get(alias)
         }
     }
 
@@ -4133,6 +4476,30 @@ mod tests {
                     .collect();
                 format!("{{{}}}", members.join(","))
             }
+            // The longest of the cases, each the tag beside the case's fields
+            // (docs/adr/0092, section 2.1). The cases' records here hold no
+            // enum, so the table reads their fields as their own scope would.
+            ValueType::Union { alias } => {
+                let union = &env.unions[alias];
+                union
+                    .cases
+                    .iter()
+                    .map(|case| {
+                        let mut members =
+                            vec![format!("\"{}\":\"{}\"", union.tag, case.variant.name)];
+                        if let Some(record) = &case.record {
+                            members.extend(
+                                union.scope.records[record]
+                                    .fields
+                                    .iter()
+                                    .map(|(id, f)| format!("\"{id}\":{}", maximal_json(f, env))),
+                            );
+                        }
+                        format!("{{{}}}", members.join(","))
+                    })
+                    .max_by_key(String::len)
+                    .unwrap()
+            }
         }
     }
 
@@ -4277,6 +4644,38 @@ mod tests {
                     v.extend(maximal_cbor(f, env));
                 }
                 v
+            }
+            // The longest of the cases, each a map of the tag, whose value is
+            // the variant's declared number, and the case's fields
+            // (docs/adr/0092, section 5.3).
+            ValueType::Union { alias } => {
+                let union = &env.unions[alias];
+                union
+                    .cases
+                    .iter()
+                    .map(|case| {
+                        let fields: &[(String, ValueType)] = match &case.record {
+                            Some(record) => &union.scope.records[record].fields,
+                            None => &[],
+                        };
+                        let mut v = cbor_head(5, 1 + fields.len() as u64);
+                        v.extend(cbor_head(3, union.tag.len() as u64));
+                        v.extend(union.tag.as_bytes());
+                        let number = case.variant.value;
+                        v.extend(if number < 0 {
+                            cbor_head(1, (-1 - number) as u64)
+                        } else {
+                            cbor_head(0, number as u64)
+                        });
+                        for (id, f) in fields {
+                            v.extend(cbor_head(3, id.len() as u64));
+                            v.extend(id.as_bytes());
+                            v.extend(maximal_cbor(f, env));
+                        }
+                        v
+                    })
+                    .max_by_key(Vec::len)
+                    .unwrap()
             }
         }
     }
@@ -4465,7 +4864,8 @@ mod tests {
     // ── "fits", held to the values each type holds ────────────────────────
 
     /// The documents behind the aliases: `R` and `R2` are two revisions of one
-    /// schema and `Q` another schema; `E` and `E2` one enum and `F` another.
+    /// schema and `Q` another schema; `E` and `E2` one enum and `F` another;
+    /// `U` and `U2` one union and `V` another.
     struct Documents;
 
     fn document_of(alias: &str) -> &str {
@@ -4477,6 +4877,9 @@ mod tests {
             document_of(from) == document_of(to)
         }
         fn same_enum(&self, from: &str, to: &str) -> bool {
+            document_of(from) == document_of(to)
+        }
+        fn same_union(&self, from: &str, to: &str) -> bool {
             document_of(from) == document_of(to)
         }
     }
@@ -4494,6 +4897,7 @@ mod tests {
             }
             ValueType::Scalar(s) => [s.as_attr()].into(),
             ValueType::Record { alias } => [format!("record:{}", document_of(alias))].into(),
+            ValueType::Union { alias } => [format!("union:{}", document_of(alias))].into(),
             ValueType::Text { max } => (0..=max.max).map(|n| format!("s{n}")).collect(),
             ValueType::Bytes { max } => (0..=max.max).map(|n| format!("b{n}")).collect(),
             ValueType::Optional { elem } => {
@@ -5431,5 +5835,339 @@ mod tests {
         assert!(is_rule_name("item-12"));
         assert!(!is_rule_name(""));
         assert!(!is_rule_name("( a )"));
+    }
+
+    // ── A union (docs/adr/0092) ───────────────────────────────────────────
+
+    /// A record of `fields`, read in a scope of no import, as a case holds it.
+    fn case_record(identity: &str, fields: &[(&str, &str)]) -> ScopedRecord {
+        ScopedRecord {
+            identity: identity.to_string(),
+            name: identity.to_string(),
+            fields: fields
+                .iter()
+                .map(|(id, written)| (id.to_string(), ty(written)))
+                .collect(),
+            scope: TypeScope::default(),
+        }
+    }
+
+    /// A shape, in the manner of docs/adr/0092 section 12.1: a dot of no
+    /// field, a circle and a disc that hold one record, a rect of two fields,
+    /// and a label of a text and a list; its tag is written under `kind`.
+    fn shape_union() -> ScopedUnion {
+        let variants: &[(&str, i128)] = &[
+            ("dot", 0),
+            ("circle", 1),
+            ("disc", 2),
+            ("rect", 3),
+            ("label", 4),
+        ];
+        let mut scope = TypeScope::default();
+        scope
+            .enums
+            .insert("ShapeKind".into(), closed_enum(SceType::Uint8, variants));
+        scope.records.insert(
+            "Radius".into(),
+            case_record("radius", &[("radius", "uint16")]),
+        );
+        scope.records.insert(
+            "Rect".into(),
+            case_record("rect", &[("width", "uint16"), ("height", "uint16")]),
+        );
+        scope.records.insert(
+            "Label".into(),
+            case_record(
+                "label",
+                &[("text", "string[4]"), ("points", "list<uint8>[3]")],
+            ),
+        );
+        let record = |variant: &str| match variant {
+            "circle" | "disc" => Some("Radius".to_string()),
+            "rect" => Some("Rect".to_string()),
+            "label" => Some("Label".to_string()),
+            _ => None,
+        };
+        ScopedUnion {
+            identity: "shape".into(),
+            name: "shape".into(),
+            tag: "kind".into(),
+            tag_enum: "ShapeKind".into(),
+            cases: variants
+                .iter()
+                .map(|(name, value)| ScopedCase {
+                    variant: ScopedVariant {
+                        name: name.to_string(),
+                        value: *value,
+                    },
+                    record: record(*name),
+                })
+                .collect(),
+            scope,
+        }
+    }
+
+    /// The batch item's table, and the shape under `Shape`.
+    fn union_table() -> Table {
+        let mut env = table();
+        env.unions.insert("Shape".into(), shape_union());
+        env
+    }
+
+    #[test]
+    fn a_union_is_a_type_of_the_grammar_named_by_its_alias() {
+        let written = WrittenType::read("list<optional<union:Shape>>[3]").unwrap();
+        assert_eq!(written.to_string(), "list<optional<union:Shape>>[3]");
+        assert_eq!(written.union_aliases(), ["Shape"]);
+        assert!(written.record_aliases().is_empty());
+        let union = WrittenType::read("union:Shape").unwrap();
+        assert_eq!(union.constructor(), "union");
+        assert_eq!(union.depth(), 1);
+        assert_eq!(
+            serde_json::to_value(&union).unwrap(),
+            serde_json::json!({"union": "Shape"})
+        );
+        assert_eq!(
+            union.clone().bounded().unwrap(),
+            ValueType::Union {
+                alias: "Shape".into()
+            }
+        );
+        // A union states no bound of its own: a bracket on it and an attribute
+        // beside it are refused as on a record, and so is a missing alias.
+        assert!(matches!(
+            WrittenType::read("union:Shape[3]"),
+            Err(TypeRefusal::BoundOnUnboundable { .. })
+        ));
+        assert!(matches!(
+            union.clone().with_outer_bound(Bound::of(3)),
+            Err(TypeRefusal::NothingToBound { .. })
+        ));
+        assert!(matches!(
+            WrittenType::read("union"),
+            Err(TypeRefusal::Malformed { .. })
+        ));
+        assert!(matches!(
+            WrittenType::read("union:"),
+            Err(TypeRefusal::Unknown { .. })
+        ));
+        // No slot holds one yet, at any depth, and none is one entry: each
+        // refusal names the union by its constructor.
+        assert_eq!(union.slot_view().unwrap_err().constructor, "union");
+        assert_eq!(
+            WrittenType::read("list<union:Shape>[2]")
+                .unwrap()
+                .slot_view()
+                .unwrap_err()
+                .place,
+            "union:Shape"
+        );
+        assert_eq!(
+            ty("optional<union:Shape>").entry().unwrap_err().constructor,
+            "union"
+        );
+        assert!(union_unlowered("Shape").starts_with("`union:Shape`: "));
+    }
+
+    #[test]
+    fn a_union_is_as_large_as_its_largest_case_counted_with_its_own_variant() {
+        let env = union_table();
+        let shape = ty("union:Shape");
+        // `{"kind":"label","text":"…","points":[255,255,255]}`, each byte of
+        // the text at its worst escape.
+        assert_eq!(json_max_len(&shape, &env), Ok(73));
+        assert_eq!(cbor_max_len(&shape, &env), Ok(31));
+        // Each case by its own variant's name and number (docs/adr/0092,
+        // section 5.1): the disc is two bytes shorter than the circle on
+        // JSON, and as long on CBOR.
+        let union = &env.unions["Shape"];
+        let per_case = |measure: Measure| -> Vec<u64> {
+            union
+                .cases
+                .iter()
+                .map(|case| case_size(union, case, measure, &mut Vec::new()).unwrap())
+                .collect()
+        };
+        assert_eq!(per_case(Measure::Json), [14, 32, 30, 44, 73]);
+        assert_eq!(per_case(Measure::Cbor), [7, 17, 17, 26, 31]);
+        // Tight: a maximal value is exactly as long, alone and inside a
+        // composition.
+        for text in [
+            "union:Shape",
+            "optional<union:Shape>",
+            "list<union:Shape>[2]",
+        ] {
+            let t = ty(text);
+            assert_eq!(
+                json_max_len(&t, &env).unwrap(),
+                maximal_json(&t, &env).len() as u64,
+                "J({text})"
+            );
+            assert_eq!(
+                cbor_max_len(&t, &env).unwrap(),
+                maximal_cbor(&t, &env).len() as u64,
+                "C({text})"
+            );
+        }
+        assert_eq!(
+            json_max_len(&ty("union:Nope"), &env),
+            Err(SizeError::Unresolved {
+                alias: "Nope".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_union_is_one_level_and_its_longest_pointer_is_its_tag_or_a_field_of_a_case() {
+        let env = union_table();
+        // The label's list is a container inside the union's own level.
+        assert_eq!(container_depth(&ty("union:Shape"), &env), Ok(2));
+        assert_eq!(container_depth(&ty("list<union:Shape>[2]"), &env), Ok(3));
+        assert_eq!(
+            longest_pointer(&ty("union:Shape"), &env),
+            Ok(("/points/2".to_string(), 9))
+        );
+        assert_eq!(
+            longest_pointer(&ty("list<union:Shape>[2]"), &env),
+            Ok(("/1/points/2".to_string(), 11))
+        );
+        // A tag longer than every field of every case is the longest place a
+        // value declares, since a refusal of the tag points at it.
+        let mut env = union_table();
+        let mut flat = shape_union();
+        flat.tag = "shape_category".into();
+        flat.cases
+            .retain(|case| case.record.as_deref() != Some("Label"));
+        env.unions.insert("Flat".into(), flat);
+        assert_eq!(
+            longest_pointer(&ty("union:Flat"), &env),
+            Ok(("/shape_category".to_string(), 15))
+        );
+        assert_eq!(container_depth(&ty("union:Flat"), &env), Ok(1));
+    }
+
+    #[test]
+    fn a_union_that_holds_itself_through_a_case_has_no_size() {
+        // `N` holds `union:U`, whose one case holds `N` again: each read in its
+        // own document's scope, they are the same two documents.
+        let mut inner = TypeScope::default();
+        inner
+            .enums
+            .insert("K".into(), closed_enum(SceType::Uint8, &[("a", 0)]));
+        inner
+            .records
+            .insert("N".into(), case_record("n", &[("id", "uint8")]));
+        let looping = ScopedUnion {
+            identity: "u".into(),
+            name: "u".into(),
+            tag: "k".into(),
+            tag_enum: "K".into(),
+            cases: vec![ScopedCase {
+                variant: ScopedVariant {
+                    name: "a".into(),
+                    value: 0,
+                },
+                record: Some("N".into()),
+            }],
+            scope: inner,
+        };
+        let mut node_scope = TypeScope::default();
+        node_scope.unions.insert("U".into(), looping);
+        let mut env = TypeScope::default();
+        env.records.insert(
+            "N".into(),
+            ScopedRecord {
+                identity: "n".into(),
+                name: "n".into(),
+                fields: vec![("next".into(), ty("optional<union:U>"))],
+                scope: node_scope,
+            },
+        );
+        assert_eq!(
+            contains_itself("N", &env),
+            Some(vec!["N".to_string(), "N".into()])
+        );
+        assert_eq!(
+            json_max_len(&ty("record:N"), &env),
+            Err(SizeError::ContainsItself {
+                cycle: vec!["n".into(), "u".into(), "n".into()]
+            })
+        );
+    }
+
+    #[test]
+    fn a_union_fits_only_a_union_of_its_own_document() {
+        assert_eq!(fits(&ty("union:U"), &ty("union:U2"), &Documents), Ok(()));
+        assert_eq!(
+            fits(&ty("union:U"), &ty("optional<union:U>"), &Documents),
+            Ok(())
+        );
+        assert_eq!(
+            fits(
+                &ty("list<union:U2>[2]"),
+                &ty("list<union:U>[3]"),
+                &Documents
+            ),
+            Ok(())
+        );
+        let refused = |from: &str, to: &str| fits(&ty(from), &ty(to), &Documents).unwrap_err();
+        assert_eq!(refused("union:U", "union:V").why, MisfitReason::Identity);
+        assert_eq!(
+            refused("union:U", "record:U").why,
+            MisfitReason::Constructor
+        );
+        assert_eq!(
+            refused("record:R", "union:U").why,
+            MisfitReason::Constructor
+        );
+        assert_eq!(
+            refused("optional<union:U>", "union:U").why,
+            MisfitReason::MayBeAbsent
+        );
+        // Held to the values each type holds, as every other constructor is.
+        let universe: Vec<ValueType> = [
+            "union:U",
+            "union:U2",
+            "union:V",
+            "record:U",
+            "uint8",
+            "optional<union:U>",
+            "optional<union:V>",
+            "list<union:U>[1]",
+            "list<union:U2>[2]",
+        ]
+        .into_iter()
+        .map(ty)
+        .collect();
+        for from in &universe {
+            for to in &universe {
+                let oracle = values_of(from).is_subset(&values_of(to));
+                assert_eq!(
+                    fits(from, to, &Documents).is_ok(),
+                    oracle,
+                    "{from} into {to}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_union_has_no_grammar_until_its_rows_land() {
+        let env = union_table();
+        let refusal =
+            json_schema_of(&ty("union:Shape"), &env, &mut SchemaDefs::default()).unwrap_err();
+        assert_eq!(
+            refusal,
+            GrammarError::UnionUnlowered {
+                alias: "Shape".into()
+            }
+        );
+        assert_eq!(
+            gbnf_of(&ty("list<union:Shape>[2]"), &env, &mut GbnfRules::default()).unwrap_err(),
+            refusal
+        );
+        assert!(refusal
+            .to_string()
+            .contains("no backend lowers a union yet"));
     }
 }

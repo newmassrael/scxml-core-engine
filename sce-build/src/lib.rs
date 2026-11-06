@@ -9083,7 +9083,8 @@ fn algorithm_record_slots(
                 }
                 (None, None) => None,
             },
-            AlgorithmValueType::List { .. } => None,
+            // No algorithm's slot holds a union yet (docs/adr/0092, section 7).
+            AlgorithmValueType::List { .. } | AlgorithmValueType::Union { .. } => None,
             AlgorithmValueType::Record { alias } => {
                 schema(alias).map(|(id, qualified_type)| CalleeSlot::Record { id, qualified_type })
             }

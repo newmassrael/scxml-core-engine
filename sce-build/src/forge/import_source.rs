@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 
 use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge};
-use crate::forge::value_type::{ScopedEnum, ScopedRecord, ScopedVariant, TypeScope};
+use crate::forge::value_type::{
+    ScopedCase, ScopedEnum, ScopedRecord, ScopedUnion, ScopedVariant, TypeScope,
+};
 use crate::DocumentLabel;
 
 /// An imported document's text, and the path it was read from.
@@ -186,10 +188,11 @@ fn scoped_record_at(
     }
 }
 
-/// Each enum and event schema `imports` (written relative to `base_dir`)
-/// names, by alias, each record with the scope of its own document at every
-/// depth: the scope a document's types are read in (docs/adr/0086, sections 2
-/// and 6.2). Silent as [`parse_quietly`] is, for the same reason.
+/// Each enum, event schema and union `imports` (written relative to
+/// `base_dir`) names, by alias, each record and union with the scope of its own
+/// document at every depth: the scope a document's types are read in
+/// (docs/adr/0086, sections 2 and 6.2; docs/adr/0092, section 1.1). Silent as
+/// [`parse_quietly`] is, for the same reason.
 pub fn type_scope(imports: &[ForgeImport], base_dir: &Path) -> TypeScope {
     type_scope_at(imports, base_dir, &mut Vec::new())
 }
@@ -237,8 +240,79 @@ fn type_scope_at(
                 on_path.pop();
                 scope.records.insert(import.alias.clone(), record);
             }
+            // docs/adr/0092, section 1.1: a union, with its own document's
+            // scope, read as a record is.
+            ForgeKind::Union => {
+                let Ok(source) = ImportSource::read(base_dir, import) else {
+                    continue;
+                };
+                if on_path.contains(&source.path) {
+                    continue;
+                }
+                let Ok(Some(parsed)) = source.parse() else {
+                    continue;
+                };
+                let ForgeDocument::Union(model) = &parsed.document else {
+                    continue;
+                };
+                let dir = source.path.parent().unwrap_or(base_dir);
+                on_path.push(source.path.clone());
+                let union = scoped_union_at(&source.path, model, &parsed.imports, dir, on_path);
+                on_path.pop();
+                if let Some(union) = union {
+                    scope.unions.insert(import.alias.clone(), union);
+                }
+            }
             _ => {}
         }
     }
     scope
+}
+
+/// The union a union document is, as a type that holds it is sized
+/// (docs/adr/0092, sections 1.1 and 5.1): its identity, its tag's key, each
+/// case in its tag enum's declaration order with the variant's declared name
+/// and number, and the scope its own imports name the enum and the cases'
+/// records in. `None` when its tag's enum cannot be read, which the import
+/// pass reports: a type that names the union then has no size.
+pub fn scoped_union(
+    path: &Path,
+    model: &crate::forge::model::UnionModel,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+) -> Option<ScopedUnion> {
+    let mut on_path = vec![path.to_path_buf()];
+    scoped_union_at(path, model, imports, base_dir, &mut on_path)
+}
+
+fn scoped_union_at(
+    path: &Path,
+    model: &crate::forge::model::UnionModel,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    on_path: &mut Vec<PathBuf>,
+) -> Option<ScopedUnion> {
+    let scope = type_scope_at(imports, base_dir, on_path);
+    let tag_enum = scope.enums.get(&model.tag_enum)?;
+    // The enum's order, each variant's case as the document gives it; a
+    // variant with no case is refused where the union is checked
+    // (`crate::forge::union_check`), so it holds no case here.
+    let cases = tag_enum
+        .variants
+        .iter()
+        .filter_map(|variant| {
+            model.case(&variant.name).map(|case| ScopedCase {
+                variant: variant.clone(),
+                record: case.record.clone(),
+            })
+        })
+        .collect();
+    Some(ScopedUnion {
+        identity: crate::forge::stdlib::identity(path),
+        name: model.name.clone(),
+        tag: model.tag.clone(),
+        tag_enum: model.tag_enum.clone(),
+        cases,
+        scope,
+    })
 }

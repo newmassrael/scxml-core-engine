@@ -379,6 +379,10 @@ impl OptionalElem {
             ValueType::Text { .. } => Self::Str,
             ValueType::Bytes { .. } => Self::Bytes,
             ValueType::Record { .. } => Self::Record,
+            // A union, like a record, has no operand type and is read through
+            // its fields; no statechart holds one yet (docs/adr/0092, section
+            // 7), so it is refused by name before an expression is typed.
+            ValueType::Union { .. } => Self::Record,
             ValueType::List { elem, .. } => Self::List(ListElem::of_value(elem)),
             ValueType::Optional { elem } => Self::of_element(elem),
         }
@@ -835,7 +839,9 @@ impl InferredType {
             ValueType::Text { .. } => Self::Str,
             ValueType::Bytes { .. } => Self::Bytes,
             ValueType::Optional { elem } => Self::Optional(OptionalElem::of_element(elem)),
-            ValueType::Record { .. } => Self::Unknown,
+            // A union is read through its tag and its cases' fields, as a
+            // record is through its fields (docs/adr/0092, section 6.1).
+            ValueType::Record { .. } | ValueType::Union { .. } => Self::Unknown,
             ValueType::List { elem, .. } => Self::List(ListElem::of_value(elem)),
         }
     }

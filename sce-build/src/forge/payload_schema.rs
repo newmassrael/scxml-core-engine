@@ -189,7 +189,7 @@ mod tests {
     use super::*;
     use crate::forge::model::{ForgeDocument, SceType};
     use crate::forge::value_type::{
-        ScopedEnum, ScopedRecord, ScopedVariant, TypeScope, WrittenType,
+        ScopedEnum, ScopedRecord, ScopedUnion, ScopedVariant, TypeScope, WrittenType,
     };
     use sce_rust_runtime::json::{number_text, parse, write, Value};
     use std::path::PathBuf;
@@ -769,8 +769,14 @@ mod tests {
             ValueType::List { elem, max } => {
                 Value::Array(vec![largest(elem, env, fill); max.max as usize])
             }
+            ValueType::Union { .. } => unreachable!("{NO_UNION_GRAMMAR}"),
         }
     }
+
+    /// Why the walks of a value below meet no union: a union has no grammar
+    /// until its rows land (docs/adr/0092, section 3), so no fixture schema
+    /// holds one.
+    const NO_UNION_GRAMMAR: &str = "no fixture schema holds a union, which has no grammar yet";
 
     /// The value of `ty` that holds least: a list as many of its element's
     /// smallest as its lower count needs (docs/adr/0086, section 15).
@@ -796,6 +802,7 @@ mod tests {
             ValueType::List { elem, max } => {
                 Value::Array(vec![smallest(elem, env); max.min as usize])
             }
+            ValueType::Union { .. } => unreachable!("{NO_UNION_GRAMMAR}"),
         }
     }
 
@@ -874,6 +881,7 @@ mod tests {
                 }
                 out
             }
+            ValueType::Union { .. } => unreachable!("{NO_UNION_GRAMMAR}"),
         }
     }
 
@@ -901,6 +909,9 @@ mod tests {
             } else {
                 self.scope.record_scope(alias)
             }
+        }
+        fn union_type(&self, alias: &str) -> Option<&ScopedUnion> {
+            self.scope.union_type(alias)
         }
     }
 

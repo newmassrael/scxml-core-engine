@@ -258,6 +258,9 @@ fn shape(ty: &BuildType, scope: &TypeScope) -> Shape {
             elem: Box::leak(Box::new(mirror(elem, scope))),
             max: max.max,
         },
+        // The encoder maps a union once its deterministic CBOR lands
+        // (docs/adr/0092, section 5.3); no type of this test holds one.
+        BuildType::Union { .. } => panic!("the encoder holds no union yet"),
     }
 }
 

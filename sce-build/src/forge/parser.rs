@@ -12006,8 +12006,15 @@ fn read_field_revision(
         }
         (Some(_), None) if matches!(field.sce_type, ValueType::List { .. }) => {}
         // A record has no literal a delivery that lacks it could take: one a later
-        // revision adds is an optional record, which reads absent.
-        (Some(added), None) if matches!(field.sce_type, ValueType::Record { .. }) => {
+        // revision adds is an optional record, which reads absent. A union is
+        // a record of the case its tag names, and is held to the same rule
+        // (docs/adr/0092, section 1.1).
+        (Some(added), None)
+            if matches!(
+                field.sce_type,
+                ValueType::Record { .. } | ValueType::Union { .. }
+            ) =>
+        {
             return Err(located(
                 data,
                 doc_name,
@@ -12110,6 +12117,7 @@ fn read_field_revision(
         | ValueType::Text { .. }
         | ValueType::Bytes { .. }
         | ValueType::Record { .. }
+        | ValueType::Union { .. }
         | ValueType::List { .. } => None,
     };
     field.since = since;
@@ -12829,7 +12837,14 @@ fn read_written_type(
         .record_aliases()
         .into_iter()
         .any(|alias| !records.iter().any(|r| r.as_str() == alias));
-    if optional && (unknown_enum || unknown_record) {
+    // A union is named through `<sce:import kind="union">` (docs/adr/0092,
+    // section 1.1, item 2).
+    let unions = import_aliases_of(node, ForgeKind::Union);
+    let unknown_union = written
+        .union_aliases()
+        .into_iter()
+        .any(|alias| !unions.iter().any(|u| u.as_str() == alias));
+    if optional && (unknown_enum || unknown_record || unknown_union) {
         return Err(optional_elem_refusal(
             node,
             doc_name,
@@ -12850,6 +12865,21 @@ fn read_written_type(
                 allowed: records
                     .iter()
                     .map(|alias| format!("{}{alias}", AlgorithmValueType::RECORD_PREFIX))
+                    .collect(),
+            },
+        ));
+    }
+    if unknown_union {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: element.to_string(),
+                attr: attr.into(),
+                value: text.to_string(),
+                allowed: unions
+                    .iter()
+                    .map(|alias| format!("{}{alias}", AlgorithmValueType::UNION_PREFIX))
                     .collect(),
             },
         ));

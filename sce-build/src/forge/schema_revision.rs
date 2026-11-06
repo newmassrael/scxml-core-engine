@@ -178,7 +178,8 @@ pub fn composed_defaults_wire(
                     ValueType::Scalar(_)
                     | ValueType::Text { .. }
                     | ValueType::Bytes { .. }
-                    | ValueType::Record { .. } => return None,
+                    | ValueType::Record { .. }
+                    | ValueType::Union { .. } => return None,
                 },
             };
             Some(format!("{}:{default}", json_text(&f.id)))

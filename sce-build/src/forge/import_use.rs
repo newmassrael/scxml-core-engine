@@ -134,6 +134,8 @@ impl Names {
             AlgorithmValueType::Scalar(t) => self.ty(t),
             AlgorithmValueType::Text { .. } | AlgorithmValueType::Bytes { .. } => {}
             AlgorithmValueType::Record { alias } => self.name(alias),
+            // A union names its union import (docs/adr/0092, section 1.1).
+            AlgorithmValueType::Union { alias } => self.name(alias),
             // A list and an optional value name what their element names
             // (docs/adr/0055), at every depth.
             AlgorithmValueType::List { elem, .. } | AlgorithmValueType::Optional { elem } => {
@@ -457,6 +459,7 @@ impl Names {
                     .enum_aliases()
                     .into_iter()
                     .chain(f.sce_type.record_aliases())
+                    .chain(f.sce_type.union_aliases())
                 {
                     self.name(alias);
                 }

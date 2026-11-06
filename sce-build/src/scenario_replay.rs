@@ -765,6 +765,10 @@ impl Holds {
                 None => Self::Present,
             },
             Some(AlgorithmValueType::Record { alias }) => record(alias),
+            // No statechart holds a union yet (docs/adr/0092, section 7); its
+            // replay reading lands with its lowering, and a document that
+            // declares one is refused by name before a scenario is replayed.
+            Some(AlgorithmValueType::Union { .. }) => Self::Present,
             Some(AlgorithmValueType::Optional { elem }) => {
                 Self::Optional(Box::new(match elem.record_alias() {
                     Some(alias) => record(alias),

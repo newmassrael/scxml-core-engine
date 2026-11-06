@@ -950,12 +950,14 @@ pub(crate) fn resolve_imports(
     // for one, so that is where the one refusal every kind gets for it is raised,
     // before an identity is read. What an import of a kind it does write in part
     // names is refused where its renderer reads the imports
-    // (`swift_algorithm_unlowered`).
+    // (`swift_algorithm_unlowered`). A kind no backend lowers yet, a union, is
+    // valid to import, and a type that names it is refused by name where it is
+    // read (docs/adr/0092, section 7), on this backend as on every other.
     if !crate::forge::codegen_matrix::emits_anything(*lang) {
-        if let Some(imp) = imports
-            .iter()
-            .find(|imp| !crate::forge::codegen_matrix::ships_in_part(imp.kind, *lang))
-        {
+        if let Some(imp) = imports.iter().find(|imp| {
+            !crate::forge::codegen_matrix::ships_in_part(imp.kind, *lang)
+                && !crate::forge::codegen_matrix::awaits_runtime(imp.kind, *lang)
+        }) {
             return Err(crate::forge::codegen_matrix::emit_missing(imp.kind, *lang).into());
         }
     }
@@ -4135,9 +4137,10 @@ fn render_event_schema(
                 ValueType::Text { .. } => ("UTF-8 bytes", "MAX_SIZE", "MaxSize"),
                 ValueType::Bytes { .. } => ("bytes", "MAX_SIZE", "MaxSize"),
                 ValueType::List { .. } => ("elements", "MAX_COUNT", "MaxCount"),
-                ValueType::Scalar(_) | ValueType::Optional { .. } | ValueType::Record { .. } => {
-                    return None
-                }
+                ValueType::Scalar(_)
+                | ValueType::Optional { .. }
+                | ValueType::Record { .. }
+                | ValueType::Union { .. } => return None,
             };
             Some(serde_json::json!({
                 "id": id,
@@ -30346,6 +30349,16 @@ fn swift_event_schema_refusal(m: &EventSchemaModel, construct: &str) -> String {
 /// field of an enum Swift does not write, a field that may be absent, and a name
 /// Swift reserves are named here until each is spelled.
 fn swift_event_schema_unlowered(m: &EventSchemaModel, imports: &[ImportContext]) -> Option<String> {
+    // A union is lowered by no backend yet (docs/adr/0092, section 7), and is
+    // named by the field that holds it before the union's import is.
+    if let Some((field, alias)) = m.fields.iter().find_map(|f| {
+        f.sce_type
+            .union_aliases()
+            .first()
+            .map(|alias| (f.id.as_str(), alias.to_string()))
+    }) {
+        return Some(format!("the field `{field}` of `union:{alias}`"));
+    }
     // The two kinds of document a schema imports are an enum, the type a field holds
     // a value in, and an event schema, the record a field holds (docs/adr/0086,
     // section 1.8).
@@ -35786,6 +35799,7 @@ fn c11_algorithm_optional(
         )),
         AlgorithmValueType::Bytes { .. }
         | AlgorithmValueType::List { .. }
+        | AlgorithmValueType::Union { .. }
         | AlgorithmValueType::Optional { .. } => Err(refused("")),
         AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
             // Named by the document, as the machine that holds one of the enum

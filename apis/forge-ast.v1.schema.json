@@ -7473,6 +7473,17 @@
         },
         {
           "properties": {
+            "union": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "union"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "list": {
               "$ref": "#/definitions/ValueType"
             },
@@ -7704,6 +7715,17 @@
           },
           "required": [
             "record"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "union": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "union"
           ],
           "type": "object"
         },

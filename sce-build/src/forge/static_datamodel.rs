@@ -764,6 +764,9 @@ impl crate::forge::value_type::TypeIdentity for StatechartNames {
     fn same_enum(&self, from: &str, to: &str) -> bool {
         from == to
     }
+    fn same_union(&self, from: &str, to: &str) -> bool {
+        from == to
+    }
 }
 
 /// The names a value read through a record of another document gives the
@@ -800,6 +803,19 @@ impl crate::forge::value_type::TypeIdentity for ScopedNames<'_> {
             (None, None) => from == to,
             _ => false,
         }
+    }
+    // Two unions are one type when their aliases resolve to one union
+    // document, as two records are (docs/adr/0092, section 6.1, item 7).
+    fn same_union(&self, from: &str, to: &str) -> bool {
+        let identity = |scope: Option<&crate::forge::value_type::TypeScope>, alias: &str| {
+            scope
+                .and_then(|scope| scope.unions.get(alias))
+                .map(|union| union.identity.clone())
+        };
+        matches!(
+            (identity(self.from, from), identity(self.to, to)),
+            (Some(a), Some(b)) if a == b
+        )
     }
 }
 

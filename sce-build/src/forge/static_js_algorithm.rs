@@ -891,6 +891,8 @@ fn holds(ty: &AlgorithmValueType) -> bool {
             _ => false,
         },
         AlgorithmValueType::Record { .. } => true,
+        // No slot holds a union yet (docs/adr/0092, section 7).
+        AlgorithmValueType::Union { .. } => false,
         // A value that may be absent is `null` or its present value
         // (docs/adr/0055): a number, a `bool`, a text, a value of an enum (its
         // declared name) or a record (a plain object). A byte string is the array
@@ -908,7 +910,9 @@ fn holds_optional(elem: &AlgorithmValueType) -> bool {
         | AlgorithmValueType::Text { .. }
         | AlgorithmValueType::Bytes { .. } => elem.scalar().is_some_and(has_a_value_form),
         AlgorithmValueType::Record { .. } => true,
-        AlgorithmValueType::List { .. } | AlgorithmValueType::Optional { .. } => false,
+        AlgorithmValueType::List { .. }
+        | AlgorithmValueType::Optional { .. }
+        | AlgorithmValueType::Union { .. } => false,
     }
 }
 
@@ -982,8 +986,11 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         Some(ty @ (AlgorithmValueType::Scalar(_) | AlgorithmValueType::Text { .. })) => ty
             .scalar()
             .map_or(InferredType::Unknown, InferredType::from_sce_type),
-        // A list is returned by name, never judged as an operand.
-        Some(AlgorithmValueType::List { .. }) => InferredType::Unknown,
+        // A list is returned by name, never judged as an operand. A union is
+        // refused by the guard above, as no slot holds one yet.
+        Some(AlgorithmValueType::List { .. } | AlgorithmValueType::Union { .. }) => {
+            InferredType::Unknown
+        }
         // An optional return takes `null`, a value of its element or an optional
         // value (docs/adr/0055).
         Some(AlgorithmValueType::Optional { elem }) => {
