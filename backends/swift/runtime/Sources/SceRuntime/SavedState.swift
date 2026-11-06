@@ -807,17 +807,18 @@ extension SavedSend {
                 return id
             }
             let written = try field("origin")
-            // The prefix of an SCXML location with no id after it names no session, and `readStoredSender` would
-            // take it for a bare id. A queued event that stored it is read as the pair as saved; a session's own
-            // send cannot have been sent by it.
-            if written.utf8.elementsEqual(scxmlLocationPrefix.utf8) {
+            let stored = readStoredSender(written)
+            if stored.isEmpty { return sessionID.isEmpty ? nil : sessionID }
+            // A stored origin that is not empty names the session that made the send, so what it reads as is a
+            // session id, an XML Nmtoken, as a format-3 `sender` is. The prefix of an SCXML location alone is one
+            // origin this refuses: it reads as itself, and '/' is no name character. A queued event's stored
+            // origin is read by the section-7 table instead, and is not held to this.
+            if !isNmtoken(stored) {
                 throw StateRefusal(
-                    "'\(what).origin' is '\(written)', an SCXML location that names no session, and a \(name) act is a session's own send"
+                    "'\(what).origin' is '\(written)', which names no session: a \(name) act is a session's own send, and its stored origin is that session's id or its SCXML location"
                 )
             }
-            let stored = readStoredSender(written)
-            if !stored.isEmpty { return stored }
-            return sessionID.isEmpty ? nil : sessionID
+            return stored
         }
         // An `internal` act delivers an internal event, which has no origin (§scxml-5.10.1): format 3 writes
         // both members `null` and refuses either one set; the `origin` text formats 1 and 2 stored beside it is

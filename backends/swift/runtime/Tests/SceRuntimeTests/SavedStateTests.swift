@@ -420,22 +420,38 @@ private func queuedText(origin: String, sender: String) -> String {
     )
 }
 
-@Test func aStoredSendWhoseOriginIsTheSCXMLPrefixAloneIsRefusedAndAQueuedEventIsReadAsSaved() throws {
-    // The prefix with no id after it names no session: a session's own send that stored it is refused, in
-    // format 2 and in format 1, and a queued event that stored it is the pair as saved, with no sender.
+@Test func aStoredSendWhoseOriginNamesNoSessionIsRefusedAndAQueuedEventIsReadAsSaved() throws {
+    // A session's own send that stored an origin names the session that made it: what the origin reads as is a
+    // session id, an XML Nmtoken, in format 2 and in format 1. The prefix alone reads as itself, another
+    // processor's address as itself, and `a%20b` decodes to `a b`, so each is refused; a queued event that
+    // stored the prefix alone is the pair as saved, with no sender.
     let state = SavedState(
         shape: String(repeating: "a", count: 64), configuration: ["a"], current: "a", variables: [],
         pending: [SavedSend(due: 5, act: .raise(event: "e", data: "", sendID: "s", sender: "root"))],
         invokes: .resumed([]), sessionID: "root")
-    let stored = state.toJSON()
-        .replacingOccurrences(of: #"{"format":3,"#, with: #"{"format":2,"#)
-        .replacingOccurrences(of: #""origin":\#(scxmlPairText("root")),"sender":"root""#, with: #""origin":"sce://scxml/""#)
-    #expect(stored.contains(#""sendid":"s","origin":"sce://scxml/"}"#), "\(stored)")
-    let refused =
-        "'pending[0].origin' is 'sce://scxml/', an SCXML location that names no session, and a raise act is a session's own send"
-    #expect(refusal(stored) == refused)
-    let unnamed = #"{"due":"5","act":"raise","event":"e","data":"","sendid":"s","origin":"sce://scxml/"}"#
-    #expect(refusal(format1().replacingOccurrences(of: #""pending":[]"#, with: #""pending":[\#(unnamed)]"#)) == refused)
+    func format2(_ origin: String) -> String {
+        state.toJSON()
+            .replacingOccurrences(of: #"{"format":3,"#, with: #"{"format":2,"#)
+            .replacingOccurrences(of: #""origin":\#(scxmlPairText("root")),"sender":"root""#, with: #""origin":"\#(origin)""#)
+    }
+    func format1Text(_ origin: String) -> String {
+        let act = #"{"due":"5","act":"raise","event":"e","data":"","sendid":"s","origin":"\#(origin)"}"#
+        return format1().replacingOccurrences(of: #""pending":[]"#, with: #""pending":[\#(act)]"#)
+    }
+    #expect(format2("sce://scxml/").contains(#""sendid":"s","origin":"sce://scxml/"}"#), "\(format2("sce://scxml/"))")
+    for origin in ["sce://scxml/", "mesh://elsewhere", "sce://scxml/a%20b"] {
+        let refused =
+            "'pending[0].origin' is '\(origin)', which names no session: a raise act is a session's own send, and its stored origin is that session's id or its SCXML location"
+        #expect(refusal(format2(origin)) == refused)
+        #expect(refusal(format1Text(origin)) == refused)
+    }
+    // A neighbour that names a session is read as its sender: the id, or the id its SCXML location names.
+    for origin in ["peer:1", "sce://scxml/peer%3A1"] {
+        let two = try SavedState.fromJSON(format2(origin))
+        #expect(two.pending.map(\.act) == [.raise(event: "e", data: "", sendID: "s", sender: "peer:1")])
+        let one = try SavedState.fromJSON(format1Text(origin))
+        #expect(one.pending.map(\.act) == [.raise(event: "e", data: "", sendID: "s", sender: "peer:1")])
+    }
     let queued = #"{"name":"go","data":"","type":"external","sendid":"","origin":"sce://scxml/","origintype":"","invokeid":"","hostinvoketoken":null}"#
     let read = try SavedState.fromJSON(
         format1().replacingOccurrences(of: #""external":[]"#, with: #""external":[\#(queued)]"#))
