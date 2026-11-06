@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 274
+engine-documents 275
 native-prefix-documents 2
-datamodel-variable-init 474
+datamodel-variable-init 502
 transition-guard 258
-assign-action 412
-child-invoke-needs-script-engine 57
+assign-action 429
+child-invoke-needs-script-engine 59
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 96
+send-dynamic-attr 102
 send-content-expr 1
 foreach-action 20
 static-invoke-namelist 11
@@ -114,7 +114,7 @@ donedata-param 10
 donedata-content 5
 inline-script-action 3
 send-namelist 10
-if-condition 19
+if-condition 26
 elseif-condition 4
 global-script 3
 mesh-rpc-srcexpr 3
@@ -129,6 +129,26 @@ means editing this table in the same commit that causes it. A row whose
 population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
+
+⚠ **2026-11-06, deliberately:** the event-origin pair (docs/adr/0090) is held
+by documents that read `_event.origin` and `_event.origintype` and keep what
+they read, so each is an engine document by construction.
+- `integration_resources/an_origin_is_the_address_its_sender_published`,
+  `an_event_no_processor_delivered_has_no_origin` and
+  `a_host_names_its_origin_in_its_own_terms` (tests 1 to 3), and C11's
+  `backends/c/tests/integration_resources/a_host_pair_runs_no_finalize` and
+  `a_type_alias_names_its_processor`.
+- `tests/mesh/parent_session_f_reply.scxml` and `worker_session_f_reply.scxml`
+  answer a remote child and its parent at the origin each sent from, and
+  `tests/mesh/brake_invoke.scxml` now guards its `done.invoke` on the origin
+  the transport wrote (test 4).
+- `sce-build/tests/fixtures/codegen_smoke/keyword_names.scxml` gives its
+  reserved-word data ids to an engine, whose readers each backend escapes.
+
+These nine are engine documents that were not. Over the whole change the
+census measured `engine-documents` up by one, `datamodel-variable-init` by 28,
+`assign-action` by 17, `if-condition` by seven, `send-dynamic-attr` by six and
+`child-invoke-needs-script-engine` by two.
 
 ⚠ **2026-11-05, deliberately, one day late:** three fixtures landed on
 2026-11-04 without this table, and each exists to need an engine.
