@@ -623,9 +623,10 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
         // sent, a host's own pair for what a host named, the Mesh transport's
         // for a peer. Read here as written, with no conversion. An event no
         // processor stamped — an internal or platform event, a host-posted event
-        // or reply that names no party, a BasicHTTP request — has none and reads
-        // both fields as the empty string: nothing is filled in for it, neither
-        // this session's own address nor the SCXML processor's type.
+        // or reply that names no party, a BasicHTTP request — has none and is
+        // handed over as the empty string, which the binding surfaces as blank
+        // (undefined, §scxml-B-2-8): nothing is filled in for it, neither this
+        // session's own address nor the SCXML processor's type.
         val eventOrigin = meta.origin
         // §scxml-B-2-8-1: the binding answers which rung the payload got, and
         // that answer used to end here. The ladder decided between a DOM, a

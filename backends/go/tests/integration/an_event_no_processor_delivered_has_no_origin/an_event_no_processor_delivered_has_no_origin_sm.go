@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 68da1104715ab45d6e1df24940bfb444f4c0a05e84c3988046d6b510545d05e6
+// source-hash: f576ad10a806b284571c9123127c92b949bc019c71120be9972de65e7a576d15
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:26 :: _machine
+// SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:27 :: _machine
 
 package an_event_no_processor_delivered_has_no_origin
 
@@ -694,12 +694,12 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line an_event_no_processor_delivered_has_no_origin.scxml:26
+//line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteEntryActions(state AnEventNoProcessorDeliveredHasNoOriginState, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case AnEventNoProcessorDeliveredHasNoOriginStateAsking:
-//line an_event_no_processor_delivered_has_no_origin.scxml:42
+//line an_event_no_processor_delivered_has_no_origin.scxml:43
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -755,7 +755,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteEntryActions(state
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line an_event_no_processor_delivered_has_no_origin.scxml:26
+//line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -763,7 +763,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteHistoryDefaultCont
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line an_event_no_processor_delivered_has_no_origin.scxml:26
+//line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteExitActions(state AnEventNoProcessorDeliveredHasNoOriginState, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent], configurationBeforeExit []AnEventNoProcessorDeliveredHasNoOriginState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -781,7 +781,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteExitActions(state 
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line an_event_no_processor_delivered_has_no_origin.scxml:26
+//line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) BindCurrentEvent(event AnEventNoProcessorDeliveredHasNoOriginEvent, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent]) {
 	if event != AnEventNoProcessorDeliveredHasNoOriginEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -804,7 +804,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) BindCurrentEvent(event An
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line an_event_no_processor_delivered_has_no_origin.scxml:26
+//line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) FirstEnabledTransition(state AnEventNoProcessorDeliveredHasNoOriginState, event AnEventNoProcessorDeliveredHasNoOriginEvent, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent]) (sce.EnabledTransition[AnEventNoProcessorDeliveredHasNoOriginState, sce.HistoryID], bool) {
 	switch state {
 	case AnEventNoProcessorDeliveredHasNoOriginStateAsking:
@@ -837,20 +837,20 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) FirstEnabledTransition(st
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line an_event_no_processor_delivered_has_no_origin.scxml:26
+//line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteTransitionContent(source AnEventNoProcessorDeliveredHasNoOriginState, transitionIndex int, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case AnEventNoProcessorDeliveredHasNoOriginStateAsking:
 		switch transitionIndex {
 		case 0:
-//line an_event_no_processor_delivered_has_no_origin.scxml:46
+//line an_event_no_processor_delivered_has_no_origin.scxml:47
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
 	{
 	ifCondFailed := false
-	if p.evaluateIfCond(`((_event.origin == "") and (_event.origintype == ""))`, engine, &ifCondFailed) {
+	if p.evaluateIfCond(`((_event.origin == nil) and (_event.origintype == nil))`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="replyBlank" expr="1">
 	if err := p.assignVariable(`replyBlank`, `1`); err != nil {
@@ -869,13 +869,13 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteTransitionContent(
 	case AnEventNoProcessorDeliveredHasNoOriginStateWaiting:
 		switch transitionIndex {
 		case 0:
-//line an_event_no_processor_delivered_has_no_origin.scxml:35
+//line an_event_no_processor_delivered_has_no_origin.scxml:36
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
 	{
 	ifCondFailed := false
-	if p.evaluateIfCond(`((_event.origin == "") and (_event.origintype == ""))`, engine, &ifCondFailed) {
+	if p.evaluateIfCond(`((_event.origin == nil) and (_event.origintype == nil))`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="postedBlank" expr="1">
 	if err := p.assignVariable(`postedBlank`, `1`); err != nil {

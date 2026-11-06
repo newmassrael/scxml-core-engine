@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
+// source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
+// SCE-MAP: autoforward_event_fields.scxml:33 :: _machine
 
 package autoforward_event_fields
 
@@ -939,12 +939,12 @@ func (p *AutoforwardEventFieldsPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line autoforward_event_fields.scxml:30
+//line autoforward_event_fields.scxml:33
 func (p *AutoforwardEventFieldsPolicy) ExecuteEntryActions(state AutoforwardEventFieldsState, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case AutoforwardEventFieldsStatePhase:
-//line autoforward_event_fields.scxml:33
+//line autoforward_event_fields.scxml:36
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -967,7 +967,7 @@ func (p *AutoforwardEventFieldsPolicy) ExecuteEntryActions(state AutoforwardEven
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line autoforward_event_fields.scxml:30
+//line autoforward_event_fields.scxml:33
 func (p *AutoforwardEventFieldsPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -975,7 +975,7 @@ func (p *AutoforwardEventFieldsPolicy) ExecuteHistoryDefaultContent(history sce.
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line autoforward_event_fields.scxml:30
+//line autoforward_event_fields.scxml:33
 func (p *AutoforwardEventFieldsPolicy) ExecuteExitActions(state AutoforwardEventFieldsState, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent], configurationBeforeExit []AutoforwardEventFieldsState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1011,7 +1011,7 @@ func (p *AutoforwardEventFieldsPolicy) ExecuteExitActions(state AutoforwardEvent
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line autoforward_event_fields.scxml:30
+//line autoforward_event_fields.scxml:33
 func (p *AutoforwardEventFieldsPolicy) BindCurrentEvent(event AutoforwardEventFieldsEvent, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {
 	if event != AutoforwardEventFieldsEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -1034,7 +1034,7 @@ func (p *AutoforwardEventFieldsPolicy) BindCurrentEvent(event AutoforwardEventFi
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line autoforward_event_fields.scxml:30
+//line autoforward_event_fields.scxml:33
 func (p *AutoforwardEventFieldsPolicy) FirstEnabledTransition(state AutoforwardEventFieldsState, event AutoforwardEventFieldsEvent, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) (sce.EnabledTransition[AutoforwardEventFieldsState, sce.HistoryID], bool) {
 	switch state {
 	case AutoforwardEventFieldsStatePhase:
@@ -1087,7 +1087,7 @@ func (p *AutoforwardEventFieldsPolicy) FirstEnabledTransition(state AutoforwardE
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line autoforward_event_fields.scxml:30
+//line autoforward_event_fields.scxml:33
 func (p *AutoforwardEventFieldsPolicy) ExecuteTransitionContent(source AutoforwardEventFieldsState, transitionIndex int, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {
 	// W3C SCXML 3.13: no transition in this document has content.
 }

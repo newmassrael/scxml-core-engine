@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 68da1104715ab45d6e1df24940bfb444f4c0a05e84c3988046d6b510545d05e6
+// source-hash: f576ad10a806b284571c9123127c92b949bc019c71120be9972de65e7a576d15
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:26 :: _machine
+// SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:27 :: _machine
 
 package com.sce.integration.an_event_no_processor_delivered_has_no_origin
 
@@ -371,9 +371,10 @@ class AnEventNoProcessorDeliveredHasNoOriginStateMachine(
         // sent, a host's own pair for what a host named, the Mesh transport's
         // for a peer. Read here as written, with no conversion. An event no
         // processor stamped — an internal or platform event, a host-posted event
-        // or reply that names no party, a BasicHTTP request — has none and reads
-        // both fields as the empty string: nothing is filled in for it, neither
-        // this session's own address nor the SCXML processor's type.
+        // or reply that names no party, a BasicHTTP request — has none and is
+        // handed over as the empty string, which the binding surfaces as blank
+        // (undefined, §scxml-B-2-8): nothing is filled in for it, neither this
+        // session's own address nor the SCXML processor's type.
         val eventOrigin = meta.origin
         // §scxml-B-2-8-1: the binding answers which rung the payload got, and
         // that answer used to end here. The ladder decided between a DOM, a
@@ -440,7 +441,7 @@ class AnEventNoProcessorDeliveredHasNoOriginStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:26 :: _machine
+    // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:27 :: _machine
     override fun onEntry(state: AnEventNoProcessorDeliveredHasNoOriginState, isDefaultEntry: Boolean) {
         when (state) {
             is AnEventNoProcessorDeliveredHasNoOriginState.Asking -> onEntryOfAsking()
@@ -451,7 +452,7 @@ class AnEventNoProcessorDeliveredHasNoOriginStateMachine(
 
 
     private fun onEntryOfAsking() {
-                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:42 :: asking :: _state_body
+                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:43 :: asking :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -496,17 +497,17 @@ class AnEventNoProcessorDeliveredHasNoOriginStateMachine(
     }
 
     private fun onEntryOfDone() {
-                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:53 :: done :: _state_body
+                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:54 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfWaiting() {
-                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:34 :: waiting :: _state_body
+                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:35 :: waiting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:26 :: _machine
+    // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:27 :: _machine
     override fun onExit(state: AnEventNoProcessorDeliveredHasNoOriginState) {
         when (state) {
             is AnEventNoProcessorDeliveredHasNoOriginState.Asking -> onExitOfAsking()
@@ -517,21 +518,21 @@ class AnEventNoProcessorDeliveredHasNoOriginStateMachine(
 
 
     private fun onExitOfAsking() {
-                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:42 :: asking :: _state_body
+                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:43 :: asking :: _state_body
     }
 
     private fun onExitOfDone() {
-                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:53 :: done :: _state_body
+                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:54 :: done :: _state_body
     }
 
     private fun onExitOfWaiting() {
-                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:34 :: waiting :: _state_body
+                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:35 :: waiting :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:26 :: _machine
+    // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:27 :: _machine
     override fun executeTransitionContent(source: AnEventNoProcessorDeliveredHasNoOriginState, transitionIndex: Int) {
         when (source) {
             is AnEventNoProcessorDeliveredHasNoOriginState.Asking -> transitionContentOfAsking(transitionIndex)
@@ -555,11 +556,11 @@ class AnEventNoProcessorDeliveredHasNoOriginStateMachine(
 
 
     private fun transitionContentOfAskingAt0() {
-                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:46 :: asking :: _transition_0
+                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:47 :: asking :: _transition_0
 
 
             var ifCondFailed2 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("((_event.origin == \"\") and (_event.origintype == \"\"))", "_event.origin === '' && _event.origintype === ''")) { ifCondFailed2 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("((_event.origin == nil) and (_event.origintype == nil))", "_event.origin === undefined && _event.origintype === undefined")) { ifCondFailed2 = true }) {
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("replyBlank", "replyBlank"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
@@ -585,11 +586,11 @@ class AnEventNoProcessorDeliveredHasNoOriginStateMachine(
 
 
     private fun transitionContentOfWaitingAt0() {
-                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:35 :: waiting :: _transition_0
+                // SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:36 :: waiting :: _transition_0
 
 
             var ifCondFailed1 = false
-            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("((_event.origin == \"\") and (_event.origintype == \"\"))", "_event.origin === '' && _event.origintype === ''")) { ifCondFailed1 = true }) {
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("((_event.origin == nil) and (_event.origintype == nil))", "_event.origin === undefined && _event.origintype === undefined")) { ifCondFailed1 = true }) {
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("postedBlank", "postedBlank"), com.sce.runtime.ScriptSource.lua("1", "1"))) {

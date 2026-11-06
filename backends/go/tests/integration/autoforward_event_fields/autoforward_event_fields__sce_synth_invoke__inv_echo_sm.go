@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
+// source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -762,7 +762,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) FirstEnabledTransiti
 	switch state {
 	case AutoforwardEventFieldsSceSynthInvokeInvEchoStateEmit:
 		if event == AutoforwardEventFieldsSceSynthInvokeInvEchoEventChildToParent {
-			if p.evaluateGuard(`(((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= "")) and (_event.invokeid ~= ""))`, engine) {
+			if p.evaluateGuard(`(((((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= nil)) and (_event.origin ~= "")) and (_event.invokeid ~= nil)) and (_event.invokeid ~= ""))`, engine) {
 				return sce.EnabledTransition[AutoforwardEventFieldsSceSynthInvokeInvEchoState, sce.HistoryID]{
 					Source:          state,
 					Targets:         transitionTargetsOfAutoforwardEventFieldsSceSynthInvokeInvEcho[state][0],

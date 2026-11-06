@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
+// source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_event_fields/autoforward_event_fields__sce_synth_invoke__inv_echo.scxml
@@ -323,9 +323,10 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
         // sent, a host's own pair for what a host named, the Mesh transport's
         // for a peer. Read here as written, with no conversion. An event no
         // processor stamped — an internal or platform event, a host-posted event
-        // or reply that names no party, a BasicHTTP request — has none and reads
-        // both fields as the empty string: nothing is filled in for it, neither
-        // this session's own address nor the SCXML processor's type.
+        // or reply that names no party, a BasicHTTP request — has none and is
+        // handed over as the empty string, which the binding surfaces as blank
+        // (undefined, §scxml-B-2-8): nothing is filled in for it, neither this
+        // session's own address nor the SCXML processor's type.
         val eventOrigin = meta.origin
         // §scxml-B-2-8-1: the binding answers which rung the payload got, and
         // that answer used to end here. The ladder decided between a DOM, a
@@ -375,7 +376,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
     // emit's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfEmit(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState, event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent?): EnabledTransition<AutoforwardEventFieldsSceSynthInvokeInvEchoState, HistoryId>? = when {
-        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= \"\")) and (_event.invokeid ~= \"\"))", "_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> TransitionsPart0.transitionEmitAt0
+        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= nil)) and (_event.origin ~= \"\")) and (_event.invokeid ~= nil)) and (_event.invokeid ~= \"\"))", "_event.data && _event.data.value === 42                                           && _event.origin !== undefined && _event.origin !== ''                                           && _event.invokeid !== undefined && _event.invokeid !== ''")) -> TransitionsPart0.transitionEmitAt0
         event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> TransitionsPart0.transitionEmitAt1
         else -> null
     }

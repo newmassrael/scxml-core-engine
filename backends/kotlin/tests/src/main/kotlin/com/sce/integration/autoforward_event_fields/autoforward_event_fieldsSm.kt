@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
+// source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_event_fields/autoforward_event_fields.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
+// SCE-MAP: autoforward_event_fields.scxml:33 :: _machine
 
 package com.sce.integration.autoforward_event_fields
 
@@ -348,9 +348,10 @@ class AutoforwardEventFieldsStateMachine(
         // sent, a host's own pair for what a host named, the Mesh transport's
         // for a peer. Read here as written, with no conversion. An event no
         // processor stamped — an internal or platform event, a host-posted event
-        // or reply that names no party, a BasicHTTP request — has none and reads
-        // both fields as the empty string: nothing is filled in for it, neither
-        // this session's own address nor the SCXML processor's type.
+        // or reply that names no party, a BasicHTTP request — has none and is
+        // handed over as the empty string, which the binding surfaces as blank
+        // (undefined, §scxml-B-2-8): nothing is filled in for it, neither this
+        // session's own address nor the SCXML processor's type.
         val eventOrigin = meta.origin
         // §scxml-B-2-8-1: the binding answers which rung the payload got, and
         // that answer used to end here. The ladder decided between a DOM, a
@@ -412,7 +413,7 @@ class AutoforwardEventFieldsStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
+    // SCE-MAP: autoforward_event_fields.scxml:33 :: _machine
     override fun onEntry(state: AutoforwardEventFieldsState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardEventFieldsState.Fail -> onEntryOfFail()
@@ -423,19 +424,19 @@ class AutoforwardEventFieldsStateMachine(
 
 
     private fun onEntryOfFail() {
-                // SCE-MAP: autoforward_event_fields.scxml:65 :: fail :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:68 :: fail :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfPass() {
-                // SCE-MAP: autoforward_event_fields.scxml:64 :: pass :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:67 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfPhase() {
-                // SCE-MAP: autoforward_event_fields.scxml:33 :: phase :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:36 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 deferStaticInvoke("inv_echo", AutoforwardEventFieldsState.Phase)
     }
@@ -477,7 +478,7 @@ class AutoforwardEventFieldsStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
+    // SCE-MAP: autoforward_event_fields.scxml:33 :: _machine
     override fun onExit(state: AutoforwardEventFieldsState) {
         when (state) {
             is AutoforwardEventFieldsState.Fail -> onExitOfFail()
@@ -488,15 +489,15 @@ class AutoforwardEventFieldsStateMachine(
 
 
     private fun onExitOfFail() {
-                // SCE-MAP: autoforward_event_fields.scxml:65 :: fail :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:68 :: fail :: _state_body
     }
 
     private fun onExitOfPass() {
-                // SCE-MAP: autoforward_event_fields.scxml:64 :: pass :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:67 :: pass :: _state_body
     }
 
     private fun onExitOfPhase() {
-                // SCE-MAP: autoforward_event_fields.scxml:33 :: phase :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:36 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(AutoforwardEventFieldsState.Phase)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -506,7 +507,7 @@ class AutoforwardEventFieldsStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
+    // SCE-MAP: autoforward_event_fields.scxml:33 :: _machine
     override fun executeTransitionContent(source: AutoforwardEventFieldsState, transitionIndex: Int) {
         when (source) {
             else -> {}

@@ -564,7 +564,8 @@ public final class DiscardedEventIsObservablePolicy: InvocablePolicy {
                     // `_event.origintype` are the two fields of the one pair the delivering
                     // processor wrote where it built the event, read here as they are: for an
                     // event a session sent, the location the sender published (test 336). An
-                    // event no processor stamped reads both as the empty text (test 330).
+                    // event no processor stamped hands both over as the empty text, which the
+                    // binding leaves blank: undefined to the document, never `''`.
                     origin: metadata.originAddress,
                     originType: metadata.originProcessor,
                     invokeID: metadata.invokeID,

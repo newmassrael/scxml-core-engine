@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
+// source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
+// SCE-MAP: autoforward_event_fields.scxml:33 :: _machine
 
 import SceRuntime
 import SceLua
@@ -564,7 +564,8 @@ public final class AutoforwardEventFieldsPolicy: InvocablePolicy {
                     // `_event.origintype` are the two fields of the one pair the delivering
                     // processor wrote where it built the event, read here as they are: for an
                     // event a session sent, the location the sender published (test 336). An
-                    // event no processor stamped reads both as the empty text (test 330).
+                    // event no processor stamped hands both over as the empty text, which the
+                    // binding leaves blank: undefined to the document, never `''`.
                     origin: metadata.originAddress,
                     originType: metadata.originProcessor,
                     invokeID: metadata.invokeID,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 68da1104715ab45d6e1df24940bfb444f4c0a05e84c3988046d6b510545d05e6
+// source-hash: f576ad10a806b284571c9123127c92b949bc019c71120be9972de65e7a576d15
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:26 :: _machine
+// SCE-MAP: an_event_no_processor_delivered_has_no_origin.scxml:27 :: _machine
 
 import SceRuntime
 import SceLua
@@ -583,7 +583,8 @@ public final class AnEventNoProcessorDeliveredHasNoOriginPolicy: InvocablePolicy
                     // `_event.origintype` are the two fields of the one pair the delivering
                     // processor wrote where it built the event, read here as they are: for an
                     // event a session sent, the location the sender published (test 336). An
-                    // event no processor stamped reads both as the empty text (test 330).
+                    // event no processor stamped hands both over as the empty text, which the
+                    // binding leaves blank: undefined to the document, never `''`.
                     origin: metadata.originAddress,
                     originType: metadata.originProcessor,
                     invokeID: metadata.invokeID,
@@ -752,7 +753,7 @@ public final class AnEventNoProcessorDeliveredHasNoOriginPolicy: InvocablePolicy
                 sceBlock: do {
 
                 var ifCondFailed2 = false
-                if evaluateIfCond("((_event.origin == \"\") and (_event.origintype == \"\"))", failed: &ifCondFailed2, engine: engine) {
+                if evaluateIfCond("((_event.origin == nil) and (_event.origintype == nil))", failed: &ifCondFailed2, engine: engine) {
 
                 // W3C SCXML 5.4: <assign location="replyBlank">
                 if !assignData("replyBlank", "1") {
@@ -776,7 +777,7 @@ public final class AnEventNoProcessorDeliveredHasNoOriginPolicy: InvocablePolicy
                 sceBlock: do {
 
                 var ifCondFailed1 = false
-                if evaluateIfCond("((_event.origin == \"\") and (_event.origintype == \"\"))", failed: &ifCondFailed1, engine: engine) {
+                if evaluateIfCond("((_event.origin == nil) and (_event.origintype == nil))", failed: &ifCondFailed1, engine: engine) {
 
                 // W3C SCXML 5.4: <assign location="postedBlank">
                 if !assignData("postedBlank", "1") {

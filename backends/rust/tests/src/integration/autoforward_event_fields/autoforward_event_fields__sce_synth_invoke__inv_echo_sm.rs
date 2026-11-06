@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
+// source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: autoforward_event_fields.scxml:36 :: _machine"]
-// SCE-MAP: autoforward_event_fields.scxml:36 :: _machine
+#![doc = "SCE-MAP: autoforward_event_fields.scxml:39 :: _machine"]
+// SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -779,8 +779,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: autoforward_event_fields.scxml:36 :: _machine"]
-    // SCE-MAP: autoforward_event_fields.scxml:36 :: _machine
+    #[doc = "SCE-MAP: autoforward_event_fields.scxml:39 :: _machine"]
+    // SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -789,7 +789,7 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
     ) {
         match state {
             AutoforwardEventFieldsSceSynthInvokeInvEchoState::Emit => {
-                // SCE-MAP: autoforward_event_fields.scxml:38 :: emit :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:41 :: emit :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -878,8 +878,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: autoforward_event_fields.scxml:36 :: _machine"]
-    // SCE-MAP: autoforward_event_fields.scxml:36 :: _machine
+    #[doc = "SCE-MAP: autoforward_event_fields.scxml:39 :: _machine"]
+    // SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -895,8 +895,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: autoforward_event_fields.scxml:36 :: _machine"]
-    // SCE-MAP: autoforward_event_fields.scxml:36 :: _machine
+    #[doc = "SCE-MAP: autoforward_event_fields.scxml:39 :: _machine"]
+    // SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -948,8 +948,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: autoforward_event_fields.scxml:36 :: _machine"]
-    // SCE-MAP: autoforward_event_fields.scxml:36 :: _machine
+    #[doc = "SCE-MAP: autoforward_event_fields.scxml:39 :: _machine"]
+    // SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -959,7 +959,7 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
         match state {
             AutoforwardEventFieldsSceSynthInvokeInvEchoState::Emit => {
                 if event == AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ChildToParent {
-                    if self.safe_evaluate_guard("(((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= \"\")) and (_event.invokeid ~= \"\"))", engine) {
+                    if self.safe_evaluate_guard("(((((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= nil)) and (_event.origin ~= \"\")) and (_event.invokeid ~= nil)) and (_event.invokeid ~= \"\"))", engine) {
                         // emit, transition 0
                         return Some(::sce_rust_runtime::TransitionId(0));
                     }
@@ -979,8 +979,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: autoforward_event_fields.scxml:36 :: _machine"]
-    // SCE-MAP: autoforward_event_fields.scxml:36 :: _machine
+    #[doc = "SCE-MAP: autoforward_event_fields.scxml:39 :: _machine"]
+    // SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -989,7 +989,7 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
         match transition.0 {
             // emit, transition 0
             0 => {
-                // SCE-MAP: autoforward_event_fields.scxml:44 :: emit :: _transition_0
+                // SCE-MAP: autoforward_event_fields.scxml:47 :: emit :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1020,7 +1020,7 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
             }
             // emit, transition 1
             1 => {
-                // SCE-MAP: autoforward_event_fields.scxml:51 :: emit :: _transition_1
+                // SCE-MAP: autoforward_event_fields.scxml:54 :: emit :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
