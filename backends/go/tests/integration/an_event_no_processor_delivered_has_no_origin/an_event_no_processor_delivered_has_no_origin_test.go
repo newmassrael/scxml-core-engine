@@ -4,8 +4,8 @@
 // W3C SCXML 5.10.1 (docs/adr/0090, test 2): an event no Event I/O Processor
 // delivered has no origin — Go AOT path. The host raises `posted` naming no
 // party, and its processor answers `host.ask` with `host.reply` naming none; the
-// document reads `_event.origin` and `_event.origintype` as the empty string
-// for both.
+// document finds `_event.origin` and `_event.origintype` blank for both, which
+// the ECMAScript data model reads as undefined (nil in the Lua it lowers to).
 //
 // Fixture: integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml
 // (canonical, shared with every channel).

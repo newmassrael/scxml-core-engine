@@ -4,8 +4,9 @@
 delivered has no origin — Python AOT.
 
 An event the host posts itself and the reply a host processor answers a
-``<send>`` with, both naming no party, read ``_event.origin`` and
-``_event.origintype`` as ``''``. No engine invents an origin for them: neither
+``<send>`` with, both naming no party, find ``_event.origin`` and
+``_event.origintype`` blank, which the ECMAScript data model reads as
+undefined (nil in the Lua it lowers to). No engine invents an origin for them: neither
 the receiving session's own address nor the SCXML processor's type.
 ``Engine.send_external`` used to give a host-posted event the SCXML processor's
 type with an empty address.
