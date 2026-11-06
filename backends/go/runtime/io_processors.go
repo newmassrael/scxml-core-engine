@@ -128,7 +128,8 @@ func ReadStoredSender(origin string) string {
 // processor that delivered it wrote (ScxmlOrigin), so nothing converts at the
 // read. It is the Go statement of the rule the C++
 // IOProcessorHelper::publishedOrigin states, which docs/adr/0090 removes from
-// every runtime at once (its step 7). A value that already carries a scheme is
+// every runtime at once (its step 7). §scxml-C-1 has the origin match the
+// location the sender published: a value that already carries a scheme is
 // passed through, and anything else is wrapped as an SCXML location.
 func PublishedOrigin(originSessionID string) string {
 	if originSessionID == "" {

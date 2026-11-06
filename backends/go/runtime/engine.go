@@ -913,6 +913,9 @@ func (e *Engine[S, E]) Raise(event EventWithMetadata[E]) {
 //
 // Matches Rust Engine::raise_external.
 func (e *Engine[S, E]) RaiseExternal(event E, eventData string) {
+	// §scxml-5.10.1: what the host hands the external queue is typed
+	// "external" where it enters that queue, and no processor stamped it, so
+	// it carries no origin.
 	e.RaiseExternalFrom(event, eventData, nil)
 }
 
@@ -980,6 +983,8 @@ func (e *Engine[S, E]) ResolveEventByName(name string) (E, bool) {
 // The event names no party, so `_event.origin` and `_event.origintype` read
 // empty (docs/adr/0090, section 3); RaiseExternalByNameFrom names one.
 func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
+	// §scxml-5.10.1: what a host hands the external queue is typed "external"
+	// where it enters that queue, under the name it gave, and with no origin.
 	e.RaiseExternalByNameFrom(eventName, eventData, nil)
 }
 
