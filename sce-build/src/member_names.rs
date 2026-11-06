@@ -26,6 +26,16 @@
 //! renders documents through every backend and reads the members back, so a
 //! template that gains or renames one fails there rather than here.
 //!
+//! **A keyword is escaped in the spelling, not refused.** A state id is an
+//! XML Name, so `self` is a conforming state, and Rust spelled it the variant
+//! `Self`, which does not parse. The filters a family calls escape a word the
+//! backend reserves where it writes the member bare (`Self_` in Rust, `self_`
+//! or a backticked word in Swift), so what this module compares is the
+//! escaped spelling, and an escape that met another name would be refused
+//! here like any other fold. None does: an escape either adds a `_` to a
+//! spelling that has none, or puts in backticks the identifier the name is
+//! spelled as already.
+//!
 //! **Refused for every backend at once**, as a reserved code identifier is
 //! (`docs/SCE_ACCEPTED_SUBSET.md` §2.14.1): a document can be generated in
 //! any of the six, and whether SCE accepts it must not depend on which one a

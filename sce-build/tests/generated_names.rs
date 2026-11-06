@@ -27,7 +27,8 @@ use sce_build::forge::codegen_matrix::{emitting, emitting_in_part};
 use sce_build::forge::error::ForgeError;
 use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
-use sce_build::member_names::{Clash, Enumeration};
+use sce_build::member_names::{Clash, Declared, Enumeration};
+use sce_build::reader_names::{reserved_in, Case, Spellings, UnreadableReason, NOT_DECLARED};
 use sce_build::scxml_semantic::ScxmlSemanticError;
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
 
@@ -345,16 +346,18 @@ fn rendered(language: Language, label: &str, files: &[(String, String)]) -> BTre
             enumerators(block("enum names_history_e {", "}"), "NAMES_HIST_")
         }
         (Language::C11, "Event") => enumerators(block("enum names_event_e {", "}"), "NAMES_EVENT_"),
+        // A case or a static may be a reserved word in backticks, which is
+        // how the spelling declares it (`filters::to_swift_variant`).
         (Language::Swift, "State" | "Event") => capture(
             &block(
                 &format!("public enum Names{label}: Int, Hashable, Sendable {{"),
                 "\n}",
             ),
-            r"(?m)^    case (\w+) = \d+",
+            r"(?m)^    case (`?\w+`?) = \d+",
         ),
         (Language::Swift, "History") => capture(
             &block("public enum NamesHistory {", "\n}"),
-            r"(?m)^    public static let (\w+) = HistoryID\(",
+            r"(?m)^    public static let (`?\w+`?) = HistoryID\(",
         ),
         (Language::C11, "on_entry") => capture(&all, r"names_on_entry_(\w+)_block_\d+\("),
         (Language::C11, "on_exit") => capture(&all, r"names_on_exit_(\w+)_block_\d+\("),
@@ -474,4 +477,255 @@ fn a_dotted_and_a_dashed_state_become_valid_identifiers_in_every_backend() {
             );
         }
     }
+}
+
+// ── A keyword is escaped, never declared bare ─────────────────────────
+
+/// State ids, a history id, event names and data ids that are words some
+/// backend reserves: the codegen smoke fixture, which every compile check of
+/// `codegen_smoke` also builds, read here so both ask one document.
+fn keyword_names() -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/codegen_smoke/keyword_names.scxml");
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+/// The keyword document, written as `names.scxml` (the machine every reader
+/// above looks for), parsed and analyzed as the generator does.
+fn keyword_model(dir: &Path) -> (PathBuf, sce_build::model::SCXMLModel) {
+    let path = write(dir, &keyword_names());
+    let path_str = path.to_str().expect("a UTF-8 path").to_string();
+    let mut model = sce_build::parser::SCXMLParser::new()
+        .parse_file(&path_str)
+        .expect("the keyword document parses");
+    sce_build::analyzer::analyze(&mut model, &path_str);
+    (path, model)
+}
+
+/// Whether `language` reserves `spelled`, asked of the one keyword list
+/// `reader_names` keeps for every backend.
+fn reserved_word(language: Language, spelled: &str) -> bool {
+    let mut spellings: Spellings = NOT_DECLARED;
+    let column = Language::ALL
+        .iter()
+        .position(|l| *l == language)
+        .expect("a language of Language::ALL");
+    spellings[column] = &[Case::Verbatim];
+    reserved_in(spelled, &spellings).is_some()
+}
+
+/// Whether a family's members stand alone in the source. Go writes each after
+/// `<Machine>State`, `<Machine>Event` or `<Machine>History`, C11 after its
+/// machine prefix, and Kotlin a history as `history<X>`, so no member of
+/// theirs can be a keyword.
+fn written_bare(language: Language, label: &str) -> bool {
+    !matches!(
+        (language, label),
+        (Language::Go | Language::C11, _) | (Language::Kotlin, "History")
+    )
+}
+
+/// The members `language` declares for one family of the document.
+fn members_of<'a>(
+    declared: &'a [Declared],
+    language: Language,
+    label: &str,
+) -> &'a BTreeSet<String> {
+    &declared
+        .iter()
+        .find(|d| d.language == language && d.label == label)
+        .unwrap_or_else(|| panic!("{language:?} declares no {label} family"))
+        .members
+}
+
+/// The words Swift's grammar reads after a `.`, which a backtick does not
+/// escape where the template names a case (`filters::to_swift_variant`).
+const SWIFT_WORDS_AFTER_A_DOT: [&str; 5] = ["Protocol", "Self", "Type", "init", "self"];
+
+#[test]
+fn a_keyword_is_spelled_as_a_member_every_backend_can_declare() {
+    let dir = tempdir().expect("tempdir");
+    let (_, model) = keyword_model(dir.path());
+    assert!(
+        sce_build::member_names::first_collision(&model).is_none(),
+        "no escaped spelling may meet another name of the document"
+    );
+    let declared = sce_build::member_names::declared(&model);
+    let identifier = Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*$").unwrap();
+    let mut asked = 0usize;
+    for family in declared
+        .iter()
+        .filter(|f| written_bare(f.language, f.label))
+    {
+        for member in &family.members {
+            let quoted = member.strip_prefix('`').and_then(|m| m.strip_suffix('`'));
+            match quoted {
+                // A backticked word is Swift's escape: only a word Swift
+                // reserves takes it, and never one it reads after a `.`.
+                Some(word) => {
+                    assert_eq!(family.language, Language::Swift, "`{member}`");
+                    assert!(identifier.is_match(word), "`{member}`");
+                    assert!(
+                        reserved_word(Language::Swift, word),
+                        "Swift {}: `{member}` is quoted but no reserved word",
+                        family.label
+                    );
+                    assert!(
+                        !SWIFT_WORDS_AFTER_A_DOT.contains(&word),
+                        "Swift {}: `{member}` is a word a backtick does not reach after a `.`",
+                        family.label
+                    );
+                }
+                None => {
+                    assert!(
+                        identifier.is_match(member),
+                        "{:?} {} declares `{member}`, which is not an identifier",
+                        family.language,
+                        family.label
+                    );
+                    assert!(
+                        !reserved_word(family.language, member),
+                        "{:?} {} declares `{member}`, a word the language reserves",
+                        family.language,
+                        family.label
+                    );
+                }
+            }
+            asked += 1;
+        }
+    }
+    assert!(asked > 0, "no member was asked, so this measured nothing");
+
+    // Each escape where it is needed, and the bare word nowhere beside it.
+    for (language, label, escaped, bare) in [
+        (Language::Rust, "State", "Self_", "Self"),
+        (Language::Rust, "Event", "Self_", "Self"),
+        (Language::Kotlin, "State", "Self_", "Self"),
+        (Language::Go, "State", "Self_", "Self"),
+        (Language::Go, "Event", "Self_", "Self"),
+        (Language::Swift, "State", "self_", "`self`"),
+        (Language::Swift, "State", "init_", "`init`"),
+        (Language::Swift, "Event", "Self_", "`Self`"),
+        (Language::Swift, "Event", "init_", "`init`"),
+        (Language::Swift, "State", "`in`", "in"),
+        (Language::Swift, "State", "`default`", "default"),
+        (Language::Swift, "History", "`is`", "is"),
+        (Language::Swift, "Event", "`operator`", "operator"),
+    ] {
+        let spelled = members_of(&declared, language, label);
+        assert!(
+            spelled.contains(escaped) && !spelled.contains(bare),
+            "{language:?} {label}: expected `{escaped}` and no `{bare}` in {spelled:?}"
+        );
+    }
+    // Where no keyword has the shape of the spelling, the name is spelled as
+    // it always was: C++ capitalises, Python and C11 write capitals.
+    for (language, label, spelled) in [
+        (Language::Cpp, "State", "Self"),
+        (Language::Cpp, "Event", "Self"),
+        (Language::Cpp, "State", "None"),
+        (Language::Python, "State", "SELF"),
+        (Language::Python, "State", "NONE"),
+        (Language::Python, "Event", "IN"),
+        (Language::C11, "State", "SELF"),
+        (Language::Rust, "State", "None"),
+        (Language::Rust, "History", "Is"),
+    ] {
+        assert!(
+            members_of(&declared, language, label).contains(spelled),
+            "{language:?} {label}: expected `{spelled}`"
+        );
+    }
+}
+
+/// The generated source of every backend declares the escaped members: the
+/// spelling the test above asks is the one each template writes.
+#[test]
+fn every_member_a_backend_declares_for_a_keyword_is_the_spelling_the_refusal_asks() {
+    every_member_is_the_spelling_the_refusal_asks(&keyword_names(), Language::ALL.to_vec());
+}
+
+#[test]
+fn a_keyword_data_id_is_read_through_an_escaped_reader_or_has_none() {
+    let dir = tempdir().expect("tempdir");
+    let (path, model) = keyword_model(dir.path());
+    let reader = |id: &str| {
+        model
+            .readable_variables
+            .iter()
+            .find(|v| v.id == id)
+            .and_then(|v| v.reader.clone())
+            .unwrap_or_else(|| panic!("`{id}` has a reader"))
+    };
+    assert_eq!(reader("fn").rust, "r#fn");
+    assert_eq!(reader("match").rust, "r#match");
+    assert_eq!(reader("when").kotlin, "`when`");
+    assert_eq!(reader("lambda").python, "lambda_");
+    assert_eq!(reader("guard").swift, "`guard`");
+    assert_eq!(reader("chan").go, "Chan");
+
+    // A word no escape reaches in one backend has a reader in none, and says
+    // which backend and why.
+    let mut withheld: Vec<(String, UnreadableReason, Option<&str>)> = model
+        .unreadable_variables
+        .iter()
+        .map(|u| (u.var.clone(), u.reason, u.language))
+        .collect();
+    withheld.sort();
+    assert_eq!(
+        withheld,
+        vec![
+            ("Self".to_string(), UnreadableReason::Keyword, Some("rust")),
+            ("auto".to_string(), UnreadableReason::Keyword, Some("cpp")),
+        ]
+    );
+
+    // Every reader that is not escaped is a word its language leaves free.
+    // C11's is the tail of a prefixed name, so it is not asked.
+    for var in &model.readable_variables {
+        let names = var
+            .reader
+            .as_ref()
+            .expect("a readable variable has a reader");
+        for &language in Language::ALL {
+            if language == Language::C11 {
+                continue;
+            }
+            let spelled = names.get(language);
+            if spelled.starts_with("r#") || spelled.starts_with('`') {
+                continue;
+            }
+            assert!(
+                !reserved_word(language, spelled),
+                "{language:?}: the reader of `{}` is `{spelled}`, a reserved word",
+                var.id
+            );
+        }
+    }
+
+    // And the generated source declares the escaped readers, and no reader
+    // for the word Rust cannot escape.
+    let path_str = path.to_str().unwrap();
+    let source = |language: Language| -> String {
+        compile_scxml_lang_typed(path_str, &find_template_dir_for(language), language)
+            .unwrap_or_else(|e| panic!("{language:?} refused the keyword document: {e:?}"))
+            .files
+            .into_iter()
+            .map(|(_, code)| code)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let rust = source(Language::Rust);
+    assert!(rust.contains("pub fn r#fn(&self)"), "{rust}");
+    assert!(rust.contains("pub fn r#match(&self)"), "{rust}");
+    assert!(
+        !rust.contains("r#self") && !rust.contains("r#Self"),
+        "{rust}"
+    );
+    let kotlin = source(Language::Kotlin);
+    assert!(kotlin.contains("fun `when`()"), "{kotlin}");
+    let python = source(Language::Python);
+    assert!(python.contains("def lambda_(self)"), "{python}");
+    let go = source(Language::Go);
+    assert!(go.contains("Policy) Chan() ("), "{go}");
 }

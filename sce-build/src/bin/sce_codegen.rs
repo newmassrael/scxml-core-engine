@@ -9252,7 +9252,8 @@ fn detect_pass_state(model: &SCXMLModel) -> Option<String> {
         .filter(|s| !s.eq_ignore_ascii_case("fail"))
         .collect();
     if non_fail.len() == 1 {
-        return Some(to_pascal_case(non_fail[0]));
+        // The member the machine declares for the state, keyword escape included.
+        return Some(filters::to_state_variant(non_fail[0].to_string()));
     }
     None
 }

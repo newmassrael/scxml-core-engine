@@ -3494,6 +3494,23 @@ is a mismatch at the rest. The spelling asked is each template's own
 so what this rule refuses and what generation would have written cannot
 disagree.
 
+A name of the right shape can also be a word a backend reserves where it
+writes the member bare. `self` is a conforming state id, and Rust spelled
+it the variant `Self`, which does not parse. Such a name is escaped, not
+refused, and the escape is part of the one spelling every site of a
+backend calls, so a member is not escaped where it is declared and bare
+where it is used. The PascalCase spelling Rust, Go and Kotlin share writes
+Rust's `Self` with a trailing `_` (`r#Self` is no identifier), so a state
+`self` is `Self_` there. Swift writes a word it reserves in backticks
+(`` `in` ``), except the words its grammar reads after a `.` (`self`,
+`Self`, `init`, `Type`, `Protocol`), which take a trailing `_`. C++,
+Python and C11 need no escape for these members: C++ capitalises the
+first letter, Python writes `UPPER_SNAKE` and C11 writes a prefix, and
+none of their keywords has that shape. An escape either adds a `_` to a
+spelling that holds none or puts in backticks the identifier the name is
+spelled as already, so it cannot meet another name, and the collision
+rule above compares the escaped spellings.
+
 Measured 2026-09-29, before the rule existed: `idle` beside `Idle`
 passed `check --lint` and `generate` with exit status 0 in all six
 backends, and C++ generated `enum class State : uint8_t { Idle, Idle };`.

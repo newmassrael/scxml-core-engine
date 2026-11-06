@@ -54,6 +54,7 @@ const FIXTURES: &[&str] = &[
     "send_param_adversarial_literals",
     "send_param_adversarial_literals_scripted",
     "descriptor_matches_no_event",
+    "keyword_names",
 ];
 
 /// Path to the `sce-codegen` binary built for this integration test.

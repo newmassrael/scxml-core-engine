@@ -338,10 +338,34 @@ fn to_rust_string_expr(expr: String) -> String {
     }
 }
 
-/// Convert dot-separated SCXML event name to Rust enum variant PascalCase.
-/// Identical to to_pascal_case — both split on dot/underscore/hyphen delimiters.
+/// Convert dot-separated SCXML event name to Rust enum variant PascalCase:
+/// [`to_pascal_case`], with a keyword escaped as [`pascal_member`] says.
 pub fn to_event_variant(name: String) -> String {
-    to_pascal_case(name)
+    pascal_member(to_pascal_case(name))
+}
+
+/// A document name spelled PascalCase as the member of a generated type — a
+/// Rust variant, a Kotlin object or enum entry, the tail of a Go constant —
+/// with a keyword escaped.
+///
+/// A PascalCase spelling begins with a capital or a digit, so of the words
+/// the backends that write it bare reserve (Rust and Kotlin), only Rust's
+/// `Self` can be one: a state `self` was the variant `Self`, which does not
+/// parse. `r#Self` is no identifier either (Rust refuses the raw form of
+/// `self`, `Self`, `super` and `crate`), so the escape is a trailing `_`.
+///
+/// The escape cannot meet another name: [`to_pascal_case`] drops every `_` it
+/// reads, so no name of a document is spelled with one, and two names that
+/// differ are escaped to spellings that differ. Every site that writes such a
+/// member calls this one spelling, Go's and Kotlin's included, so a member is
+/// named alike where it is declared and wherever it is used.
+fn pascal_member(spelled: String) -> String {
+    let reserved = |language| crate::reader_names::is_reserved_word(language, &spelled);
+    if reserved(crate::generator::Language::Rust) || reserved(crate::generator::Language::Kotlin) {
+        format!("{spelled}_")
+    } else {
+        spelled
+    }
 }
 
 /// Convert SCXML state ID to Rust enum variant PascalCase.
@@ -351,9 +375,10 @@ pub fn to_event_variant(name: String) -> String {
 /// identifier. It used to split on `_` and `-` only, a leftover of byte
 /// parity with an earlier generator, and a state `a.b` became the variant
 /// `A.b` in Rust, Go and Kotlin, none of which compiled (measured
-/// 2026-09-29; `sce-build/tests/generated_names.rs`).
+/// 2026-09-29; `sce-build/tests/generated_names.rs`). A keyword is escaped as
+/// [`pascal_member`] says: a state `self` is the variant `Self_`.
 pub fn to_state_variant(name: String) -> String {
-    to_pascal_case(name)
+    pascal_member(to_pascal_case(name))
 }
 
 /// Render a value as a Rust literal expression.
@@ -1350,10 +1375,9 @@ pub fn register_go_filters(env: &mut minijinja::Environment, scope: &Arc<Documen
 /// Register all Swift-specific filters on the minijinja environment.
 ///
 /// A state or an event is a case of the policy's own enum, spelled lowerCamel as
-/// every Swift enum case is ([`to_swift_variant`]). No keyword filter is
-/// registered: a document id that spells a Swift keyword is refused at parse for
-/// every backend at once (`validation/reserved-code-identifier`,
-/// [`crate::reader_names`]), so no id reaches a template as one.
+/// every Swift enum case is, with a keyword escaped ([`to_swift_variant`]). No
+/// separate keyword filter is registered: the spelling filter is the escape, so
+/// a template cannot write the case one way and name it another.
 pub fn register_swift_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     // The build-time ECMAScript to Lua lowering, which the `SceLua` module's engine runs
     // (docs/SCE_LUA_TRANSLATION_SEAM.md): the same family every other Lua backend registers.
@@ -1389,14 +1413,30 @@ pub fn register_swift_filters(env: &mut minijinja::Environment, scope: &Arc<Docu
 /// A name Swift reserves is written in backticks, which declare it and name it
 /// again wherever the template writes it (`case `break``, `.`break``): an event a
 /// document calls `break` is a case, not a refusal.
+///
+/// Except the words in [`SWIFT_WORDS_AFTER_A_DOT`]: the template names a case
+/// after a `.` (`.idle`, `State.idle`), and there Swift's grammar gives each of
+/// them a meaning of its own, which a backtick is not known to reach (an enum
+/// case `init` is read as the initializer where a leading dot names it). Each
+/// is spelled with a trailing `_`, a name and no word: a state `self` is the
+/// case `self_`. [`to_camel_case`] drops every `_` it reads, so no other name
+/// of a document is spelled so, and the escape cannot meet another case.
 pub fn to_swift_variant(name: String) -> String {
     let spelled = to_camel_case(name);
-    if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, &spelled) {
+    if SWIFT_WORDS_AFTER_A_DOT.contains(&spelled.as_str()) {
+        format!("{spelled}_")
+    } else if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, &spelled) {
         format!("`{spelled}`")
     } else {
         spelled
     }
 }
+
+/// The reserved words Swift's grammar reads after a `.`: `.self` (a postfix
+/// self expression), `.init` (an initializer expression), `.Type` and
+/// `.Protocol` (a metatype), and `Self`, the type an enum's own body names
+/// itself by.
+const SWIFT_WORDS_AFTER_A_DOT: &[&str] = &["Protocol", "Self", "Type", "init", "self"];
 
 /// Transform C++ In() predicate code to Swift: a call on the policy itself.
 fn to_in_predicate_swift(cond_cpp: String) -> String {
@@ -2580,8 +2620,8 @@ pub fn to_kotlin_event_segment(segment: &str) -> String {
         .collect::<String>()
 }
 
-/// Convert SCXML state ID to Kotlin PascalCase class name.
-/// Identical to to_state_variant — both split on underscore/hyphen only.
+/// Convert SCXML state ID to Kotlin PascalCase class name: the spelling of
+/// [`to_state_variant`], keyword escape included.
 pub fn to_state_class_name(name: String) -> String {
     to_state_variant(name)
 }

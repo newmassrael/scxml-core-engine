@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: state ids, a history id, event names and data ids
+  that are words some backend reserves.
+
+  Each is a conforming name: a state or history id is an XML Name, an event
+  name a dotted token, a data id an XML Name. Each backend writes a state, a
+  history and an event as a member of a generated type, and Rust spelled the
+  state `self` as the variant `Self`, which does not parse. The member
+  spelling now escapes such a word (`Self_` in Rust, `self_` or a backticked
+  word in Swift), and a data id's reader is escaped or withheld as before.
+  Every backend must generate this document, and the output must compile
+  where a checker runs. `sce-build/tests/generated_names.rs` reads the members
+  each backend declares for it back out of the generated source.
+
+  `self` is a state and `Self` an event: two states, or two events, that
+  differ only in case are one member everywhere and are refused. The data ids
+  are words no state or history takes, since all of them are one document's
+  ids.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="self">
+  <datamodel>
+    <data id="Self" expr="1"/>
+    <data id="auto" expr="2"/>
+    <data id="fn" expr="3"/>
+    <data id="match" expr="4"/>
+    <data id="when" expr="5"/>
+    <data id="lambda" expr="6"/>
+    <data id="guard" expr="7"/>
+    <data id="chan" expr="8"/>
+  </datamodel>
+  <state id="self">
+    <onentry><raise event="Self"/></onentry>
+    <transition event="Self" target="super"/>
+  </state>
+  <state id="super"><transition event="super" target="crate"/></state>
+  <state id="crate"><transition event="crate" target="type"/></state>
+  <state id="type"><transition event="type" target="fun"/></state>
+  <state id="fun"><transition event="fun" target="func"/></state>
+  <state id="func"><transition event="func" target="class"/></state>
+  <state id="class" initial="struct">
+    <history id="is"><transition target="struct"/></history>
+    <state id="struct"><transition event="struct" target="def"/></state>
+    <state id="def"><transition event="def" target="None"/></state>
+    <transition event="class" target="is"/>
+  </state>
+  <state id="None"><transition event="nil" target="nil"/></state>
+  <state id="nil"><transition event="in" target="in"/></state>
+  <state id="in"><transition event="is" target="as"/></state>
+  <state id="as"><transition event="as" target="default"/></state>
+  <state id="default"><transition event="default" target="operator"/></state>
+  <state id="operator"><transition event="operator" target="init"/></state>
+  <state id="init"><transition event="init" target="done"/></state>
+  <final id="done"/>
+</scxml>
