@@ -56,6 +56,19 @@ class PayloadRefusalTest {
                         read(field, fields.field(id as String))
                     }
                 }
+                // The tag's enum is the cases' names; an empty case is null, any
+                // other the record it holds (docs/adr/0092, section 4).
+                type.containsKey("union") -> {
+                    val described = type["union"] as Map<*, *>
+                    val cases = described["cases"] as Map<*, *>
+                    v.union(described["tag"] as String, { tag ->
+                        val name = tag.name()
+                        if (!cases.containsKey(name)) {
+                            throw tag.unknownVariant(name, "Described")
+                        }
+                        name
+                    }) { name, objectValue -> cases[name]?.let { read(it, objectValue) } }
+                }
                 else -> fail("a type of the table names no constructor: $type")
             }
             else -> fail("a type of the table is a name, a list or an object: $type")

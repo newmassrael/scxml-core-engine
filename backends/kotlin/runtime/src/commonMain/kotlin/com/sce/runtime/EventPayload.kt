@@ -447,6 +447,32 @@ object EventPayload {
             val fallback = if (defaults == null) emptyMap() else defaultsOf(defaults)
             return read(Fields(fallback + members, path, pointer))
         }
+
+        /**
+         * A value of a union type (docs/adr/0092, section 4): one object holding
+         * its tag under the key [tag] and the fields of the case the tag names
+         * beside it.
+         *
+         * The tag is read first, by [readTag], the reader of the tag's enum,
+         * wherever it stands in the object; [readCase] is then handed the case
+         * the tag named and this same value, and reads the case's record from it
+         * with [record] (an empty case reads nothing). The refusals come in one
+         * order on every runtime: a value that is not an object; the tag absent
+         * ([RefusalCode.MISSING] at the tag's pointer), then whatever the enum's
+         * reader refuses of it (`null`, not a text, a name the enum does not
+         * declare); then the case's record. A key the case does not declare is
+         * never asked for, so it is stepped over, as a record steps over one, and
+         * a text that carries another case's keys, or `null` under them, reads as
+         * the case its tag names.
+         */
+        fun <E, T> union(tag: String, readTag: (Value) -> E, readCase: (E, Value) -> T): T {
+            if (raw !is Map<*, *>) {
+                throw wrongKind("is not a union")
+            }
+            @Suppress("UNCHECKED_CAST")
+            val members = raw as Map<String, Any?>
+            return readCase(readTag(Fields(members, path, pointer).field(tag)), this)
+        }
     }
 
     /**
@@ -775,6 +801,16 @@ object EventPayload {
         val sorted = members.entries.sortedWith { l, r -> Json.compareKeys(l.key, r.key) }
         return Raw(sorted.joinToString(",", "{", "}") { (key, value) -> "${Json.quote(key)}:${literal(value)}" })
     }
+
+    /**
+     * The JSON spelling of one union value (docs/adr/0092, section 2.1): the tag
+     * under the key [tag], its value [variant], the case's name as its enum spells
+     * it, beside [members], the fields of the case's record (none for an empty
+     * case). The object writes the tag among the fields, every key ascending by
+     * its UTF-8 bytes, as [recordJson] writes a record.
+     */
+    fun unionJson(tag: String, variant: String, members: Map<String, Any?>): Raw =
+        recordJson(members + (tag to variant))
 
     /** The JSON spelling of one list: an array of what [write] spells each element as, in order. */
     fun <T> listJson(items: List<T>, write: (T) -> Raw): Raw =
