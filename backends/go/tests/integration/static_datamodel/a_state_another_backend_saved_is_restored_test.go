@@ -4,9 +4,11 @@
 // SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0045, section 8):
 // the saved states the shared fixtures hold are the text every backend writes
 // and reads, so a state saved by one backend is one another restores. Each
-// format-2 text is restored by the generated Go machine of its document and
+// format-3 text is restored by the generated Go machine of its document and
 // saved again, which is the same text byte for byte; each format-1 text, which
-// every backend still reads, is restored.
+// every backend still reads, is restored. Each format-2 reading fixture in
+// `saved/format2/` is restored and saved at once, which is the format-3 text
+// `saved/format2/read_as/` holds for it (docs/adr/0090, section 7).
 //
 // The Rust and Kotlin halves are `static_datamodel.rs` and
 // `StaticDatamodelTest.kt`; the shared texts are
@@ -24,6 +26,7 @@ import (
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_tree"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional_record"
@@ -164,7 +167,7 @@ func sharedSavedTexts(t *testing.T, format1 bool) map[string]string {
 	return texts
 }
 
-func TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas(t *testing.T) {
+func TestAFormatThreeStateAnotherBackendSavedIsRestoredAndSavedAsItWas(t *testing.T) {
 	checked := 0
 	for name, text := range sharedSavedTexts(t, false) {
 		stem := machineOfSavedText(name)
@@ -189,7 +192,7 @@ func TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas(t *testing.
 		checked++
 	}
 	if checked < 8 {
-		t.Fatalf("only %d of the shared format-2 texts were held to a machine", checked)
+		t.Fatalf("only %d of the shared format-3 texts were held to a machine", checked)
 	}
 }
 
@@ -206,18 +209,116 @@ func TestAFormatOneStateIsRestoredAndTakesTheMachinesOwnSession(t *testing.T) {
 			continue
 		}
 		// What a format-1 text holds is what a restore reads; saving it again writes
-		// format 2, with the machine's own session id.
+		// format 3, with the machine's own session id, and a text this runtime
+		// reads: a waiting send the format-1 text stored with no sender is the
+		// send of the session that resumed it (docs/adr/0090, section 7).
 		again, err := machinesBySavedStem[stem](saved, savedAtMs)
 		if err != nil {
 			t.Errorf("%s: restoring was refused: %v", name, err)
 			continue
 		}
-		if !strings.HasPrefix(again, `{"format":2,`) {
-			t.Errorf("%s: saved again as %s, which is not format 2", name, again)
+		if !strings.HasPrefix(again, `{"format":3,`) {
+			t.Errorf("%s: saved again as %s, which is not format 3", name, again)
+		}
+		if _, err := sce.SavedStateFromJSON(again); err != nil {
+			t.Errorf("%s: saved again as a text that is refused: %v\n%s", name, err, again)
 		}
 		checked++
 	}
 	if checked < 10 {
 		t.Fatalf("only %d of the shared format-1 texts were held to a machine", checked)
+	}
+}
+
+// docs/adr/0090, section 7: a waiting send is saved with the origin and the
+// sender its event carries when it is delivered. `static_timers` arms its four
+// sends on entering `waiting`, as the session `fixture-root`: each `raise` act
+// carries that session's pair and id, and the `internal` act carries neither,
+// though its scheduled entry keeps the sender, since the event it delivers is an
+// internal event. The text is the shared one, byte for byte, as the Rust and
+// Kotlin suites save it.
+func TestAWaitingSendIsSavedWithTheOriginItsEventWillCarry(t *testing.T) {
+	policy := static_timers.NewStaticTimersPolicy()
+	if err := policy.SetSessionID("fixture-root"); err != nil {
+		t.Fatal(err)
+	}
+	engine := sce.NewEngine[static_timers.StaticTimersState, static_timers.StaticTimersEvent](&policy)
+	engine.SetClock(sce.NewManualClock(0))
+	engine.Initialize()
+	saved, err := static_timers.StaticTimersSaveAt(engine, savedAtMs)
+	if err != nil {
+		t.Fatalf("saves: %v", err)
+	}
+	if got, want := saved.ToJSON(), sharedSavedTexts(t, false)["static_timers"]; got != want {
+		t.Errorf("saved as\n%s\nthe shared text is\n%s", got, want)
+	}
+}
+
+// restoredTreeAgain restores saved into a fresh tree of `static_invoke_tree` and
+// saves it at the moment it was restored at.
+func restoredTreeAgain(saved *sce.SavedState, wall int64) (string, error) {
+	policy := static_invoke_tree.NewStaticInvokeTreePolicy()
+	engine, err := static_invoke_tree.StaticInvokeTreeRestoreAt(&policy, saved, sce.NewManualClock(0), wall)
+	return restoreAndSave(engine, err, static_invoke_tree.StaticInvokeTreeSaveAt, wall)
+}
+
+// docs/adr/0090, section 7: a format-2 text is read by the table of section 7
+// and a state read from it is written back as format 3. Each reading fixture in
+// `saved/format2/` is restored by a machine of its document at the moment the
+// shared fixtures were saved at, saved at once, and is, byte for byte, the
+// format-3 text `saved/format2/read_as/` holds under the same name: the shared
+// tree as the backends other than C11 stored it and as C11 stored it, a tree
+// whose queue holds an event for each row of the table, and the timers whose
+// internal act stored a sender.
+func TestAFormatTwoStateIsRestoredAndSavedAsTheFormatThreeTextItIsReadAs(t *testing.T) {
+	directory := filepath.Join(sharedSavedDir(t, false), "format2")
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatalf("the format-2 reading fixtures: %v", err)
+	}
+	checked := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".json")
+		// The trees are of `static_invoke_tree`, whose texts the tree tests hold;
+		// every other fixture is of a machine machinesBySavedStem holds.
+		restore := machinesBySavedStem[machineOfSavedText(name)]
+		if strings.HasPrefix(name, "static_invoke_tree_working") {
+			restore = restoredTreeAgain
+		}
+		if restore == nil {
+			t.Errorf("%s: no machine of its document is held here", name)
+			continue
+		}
+		var texts [2]string
+		for at, path := range []string{
+			filepath.Join(directory, entry.Name()),
+			filepath.Join(directory, "read_as", entry.Name()),
+		} {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			texts[at] = strings.TrimSpace(string(raw))
+		}
+		saved, err := sce.SavedStateFromJSON(texts[0])
+		if err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+			continue
+		}
+		again, err := restore(saved, savedAtMs)
+		if err != nil {
+			t.Errorf("%s: restoring and saving at once was refused: %v", name, err)
+			continue
+		}
+		if again != texts[1] {
+			t.Errorf("%s: saved at once as\n%s\nread_as/ holds\n%s", name, again, texts[1])
+		}
+		checked++
+	}
+	if checked < 4 {
+		t.Fatalf("only %d of the format-2 reading fixtures were held to a machine", checked)
 	}
 }

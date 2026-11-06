@@ -14,7 +14,7 @@
 // `working`. A child that had taken `a` is resumed at `second`, so `b` alone
 // ends it.
 //
-// The shared instance `saved/static_invoke_working.json` is the format-2 text of
+// The shared instance `saved/static_invoke_working.json` is the format-3 text of
 // the machine just started, its root given the id the fixtures name it by. A
 // format-1 text holds the child's id alone, and the build that wrote it promised
 // to start the child again from its beginning:
@@ -111,7 +111,7 @@ func TestAMachineIsSavedWithTheWholeStateOfTheChildItIsRunning(t *testing.T) {
 	engine, _ := invokeStarted(t)
 	saved := invokeSaved(t, engine)
 	if !saved.Invokes.Resumed || len(saved.Invokes.Children) != 1 {
-		t.Fatalf("a format-2 state with one running child: %+v", saved.Invokes)
+		t.Fatalf("a tree with one running child: %+v", saved.Invokes)
 	}
 	child := saved.Invokes.Children[0]
 	if child.ID != "worker" || child.Start != 1 {
@@ -235,7 +235,7 @@ func TestAnEventSavedInTheChildsQueueIsTakenByTheResumedChild(t *testing.T) {
 	empty := `"configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],` +
 		`"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]`
 	queued := strings.Replace(empty, `"external":[]`,
-		`"external":[{"name":"a","data":"","type":"external","sendid":"","origin":"","origintype":"","invokeid":"","hostinvoketoken":null}]`, 1)
+		`"external":[{"name":"a","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}]`, 1)
 	text := strings.Replace(shared, empty, queued, 1)
 	if text == shared {
 		t.Fatal("the child's queue was changed")

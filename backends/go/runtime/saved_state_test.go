@@ -13,7 +13,9 @@ import (
 )
 
 // The shared saved-state texts every backend reads (docs/adr/0045, section 8):
-// format 2 in `saved/` and the unchanged format 1 in `saved/format1/`.
+// format 3 in `saved/` and the unchanged format 1 in `saved/format1/`. The
+// format-2 texts in `saved/format2/` are read as other texts, which
+// sharedFormat2Texts gives.
 func sharedSavedTexts(t *testing.T) map[string]string {
 	t.Helper()
 	root := filepath.Join("..", "..", "..", "sce-build", "tests", "fixtures", "static_datamodel", "saved")
@@ -76,7 +78,7 @@ func TestATreeTextHoldsEveryChildWithItsSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.Format() != SavedFormat2 || len(saved.Invokes.Children) == 0 {
+	if saved.Format() != SavedFormat3 || len(saved.Invokes.Children) == 0 {
 		t.Fatalf("format %d with %d children", saved.Format(), len(saved.Invokes.Children))
 	}
 	child := saved.Invokes.Children[0]
@@ -98,21 +100,24 @@ func TestATextTheFormatsDoNotCarryIsRefusedForTheMemberThatBreaksIt(t *testing.T
 		{"not JSON", `{"format":`, "the saved state is not JSON (it ends where a value was expected)"},
 		{"not an object", `[]`, "the saved state is not an object"},
 		{"no format", `{}`, "the saved state has no 'format'"},
-		{"a format of the future", `{"format":3}`,
-			"the saved state is format 3, and this runtime reads formats 1 and 2"},
-		{"format as a text", `{"format":"2"}`,
-			`the saved state is format "2", and this runtime reads formats 1 and 2`},
+		{"a format of the future", `{"format":4}`,
+			"the saved state is format 4, and this runtime reads formats 1, 2 and 3"},
+		{"format as a text", `{"format":"3"}`,
+			`the saved state is format "3", and this runtime reads formats 1, 2 and 3`},
 		{"a session id that is no Nmtoken",
+			`{"format":3,` + strings.Replace(minimalSession, `"root"`, `"a b"`, 1) + `}`,
+			"'sessionid' (a b) is not an XML Nmtoken, which a session id is"},
+		{"a session id that is no Nmtoken in format 2",
 			`{"format":2,` + strings.Replace(minimalSession, `"root"`, `"a b"`, 1) + `}`,
 			"'sessionid' (a b) is not an XML Nmtoken, which a session id is"},
 		{"a count with a leading zero",
-			`{"format":2,` + strings.Replace(minimalSession, `"invokestarts":{}`, `"invokestarts":{"w":"01"}`, 1) + `}`,
+			`{"format":3,` + strings.Replace(minimalSession, `"invokestarts":{}`, `"invokestarts":{"w":"01"}`, 1) + `}`,
 			"'invokestarts.w' (01) is not a count of starts, a whole number from 1"},
 		{"a token that is no digits",
-			`{"format":2,` + strings.Replace(minimalSession, `"hostinvoketoken":"0"`, `"hostinvoketoken":"x"`, 1) + `}`,
+			`{"format":3,` + strings.Replace(minimalSession, `"hostinvoketoken":"0"`, `"hostinvoketoken":"x"`, 1) + `}`,
 			"'hostinvoketoken' (x) is not a whole number a token can be"},
 		{"revisions that name nothing",
-			`{"format":2,` + minimalSession + `,"revisions":{}}`,
+			`{"format":3,` + minimalSession + `,"revisions":{}}`,
 			"'revisions' names no schema; a state whose record schemas are all in their first revision leaves it out"},
 		{"a send to the parent in format 1",
 			`{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},` +
@@ -120,7 +125,7 @@ func TestATextTheFormatsDoNotCarryIsRefusedForTheMemberThatBreaksIt(t *testing.T
 				`"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]}`,
 			"'pending[0].act' is 'parent', which is not raise, internal or host, the acts of format 1"},
 		{"an act no format names",
-			`{"format":2,` + strings.Replace(minimalSession, `"pending":[]`,
+			`{"format":3,` + strings.Replace(minimalSession, `"pending":[]`,
 				`"pending":[{"due":"5","act":"fax"}]`, 1) + `}`,
 			"'pending[0].act' is 'fax', which is not raise, internal, host, parent or child"},
 	}
@@ -144,12 +149,12 @@ func TestAChildSessionIsRefusedByItsPath(t *testing.T) {
 		return strings.Replace(minimalSession, `"invokes":[]`, `"invokes":[`+child+`]`, 1)
 	}
 	bad := withSession(strings.Replace(minimalSession, `"configuration":["a"]`, `"configuration":[1]`, 1))
-	_, err := SavedStateFromJSON(`{"format":2,` + holding(bad) + `}`)
+	_, err := SavedStateFromJSON(`{"format":3,` + holding(bad) + `}`)
 	want := "the session at invokes[0].session: 'configuration' is not a text"
 	if err == nil || err.Error() != want {
 		t.Fatalf("refused as %v, want %q", err, want)
 	}
-	_, err = SavedStateFromJSON(`{"format":2,` + holding(withSession(holding(bad))) + `}`)
+	_, err = SavedStateFromJSON(`{"format":3,` + holding(withSession(holding(bad))) + `}`)
 	want = "the session at invokes[0].session.invokes[0].session: 'configuration' is not a text"
 	if err == nil || err.Error() != want {
 		t.Fatalf("a grandchild is refused as %v, want %q", err, want)
@@ -157,12 +162,276 @@ func TestAChildSessionIsRefusedByItsPath(t *testing.T) {
 }
 
 func TestAChildThatStatesAFormatIsRefused(t *testing.T) {
-	child := `{"id":"w","start":"1","invokeid":"w","document":"w","session":{"format":2,` + minimalSession + `}}`
-	text := `{"format":2,` + strings.Replace(minimalSession, `"invokes":[]`, `"invokes":[`+child+`]`, 1) + `}`
+	child := `{"id":"w","start":"1","invokeid":"w","document":"w","session":{"format":3,` + minimalSession + `}}`
+	text := `{"format":3,` + strings.Replace(minimalSession, `"invokes":[]`, `"invokes":[`+child+`]`, 1) + `}`
 	_, err := SavedStateFromJSON(text)
 	want := "'invokes[0].session' states a format, which only the root of a tree does"
 	if err == nil || err.Error() != want {
 		t.Fatalf("refused as %v, want %q", err, want)
+	}
+}
+
+// scxmlProcessorMember is the `processor` member of the SCXML processor's pair.
+const scxmlProcessorMember = `"processor":"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"`
+
+// queuedEvent is an element of `external` named name, with origin as its
+// `origin` and `sender` members.
+func queuedEvent(name, origin string) string {
+	return `{"name":"` + name + `","data":"","type":"external","sendid":"",` + origin +
+		`,"invokeid":"","hostinvoketoken":null}`
+}
+
+// withQueued is a format-3 session whose queue holds events and whose
+// `pending` holds sends, each list written as its members.
+func withQueued(events, sends string) string {
+	session := strings.Replace(minimalSession, `"external":[]`, `"external":[`+events+`]`, 1)
+	return `{"format":3,` + strings.Replace(session, `"pending":[]`, `"pending":[`+sends+`]`, 1) + `}`
+}
+
+// waitingSend is a waiting send of act, with origin as its `origin` and
+// `sender` members; a `child` act is for the child `w`.
+func waitingSend(act, origin string) string {
+	invokeID := ""
+	if act == "child" {
+		invokeID = `"invokeid":"w",`
+	}
+	return `{"due":"5","act":"` + act + `",` + invokeID + `"event":"e","data":"","sendid":"s",` + origin + `}`
+}
+
+// docs/adr/0090, section 7: a format-3 reader refuses, naming the record, an
+// origin that is neither null nor a pair, a pair with a member missing, empty
+// or added, a sender that is not a session id, a sender beside an origin other
+// than its SCXML pair, a session's act with no sender, and an internal act that
+// holds either member.
+func TestAFormatThreeOriginIsRefusedForTheMemberThatBreaksIt(t *testing.T) {
+	rootPair := `{` + scxmlProcessorMember + `,"address":"sce://scxml/root"}`
+	meshPair := `{` + scxmlProcessorMember + `,"address":"mesh://ecu"}`
+	queued := func(origin string) string { return withQueued(queuedEvent("e", origin), "") }
+	waiting := func(act, origin string) string { return withQueued("", waitingSend(act, origin)) }
+	notTheSendersPair := func(what string) string {
+		return "'" + what + ".origin' is not the SCXML pair of its sender 'root', which is the origin the SCXML " +
+			"processor writes for an event a session sent"
+	}
+	const internalHolds = "'pending[0]' is an internal act, whose event is an internal event and has no origin, " +
+		"and it holds an origin or a sender"
+	cases := []struct{ name, text, reason string }{
+		{"an origin that is a text", queued(`"origin":"root","sender":"root"`),
+			"'external[0].origin' is neither null nor a pair of 'processor' and 'address'"},
+		{"an origin that is a list", queued(`"origin":[],"sender":null`),
+			"'external[0].origin' is neither null nor a pair of 'processor' and 'address'"},
+		{"a pair with no member", queued(`"origin":{},"sender":null`),
+			"'external[0].origin' has no 'processor'"},
+		{"a pair with no address", queued(`"origin":{` + scxmlProcessorMember + `},"sender":null`),
+			"'external[0].origin' has no 'address'"},
+		{"a pair with an empty processor", queued(`"origin":{"processor":"","address":"motor"},"sender":null`),
+			"'external[0].origin.processor' is empty, and a pair is whole or null"},
+		{"a pair with an empty address", queued(`"origin":{"processor":"x-sce-host","address":""},"sender":null`),
+			"'external[0].origin.address' is empty, and a pair is whole or null"},
+		{"a pair with a member added",
+			queued(`"origin":{"processor":"x-sce-host","address":"motor","sender":"root"},"sender":null`),
+			"'external[0].origin' holds 'sender', and a pair holds 'processor' and 'address' alone"},
+		{"a pair whose processor is not a text", queued(`"origin":{"processor":1,"address":"motor"},"sender":null`),
+			"'external[0].origin.processor' is not a text"},
+		{"an event with no origin", queued(`"sender":null`), "'external[0]' has no 'origin'"},
+		{"an event with no sender", queued(`"origin":null`), "'external[0]' has no 'sender'"},
+		{"an event with the origin of format 2", withQueued(`{"name":"e","data":"","type":"external","sendid":"",`+
+			`"origin":"","origintype":"","invokeid":"","hostinvoketoken":null}`, ""),
+			"'external[0].origin' is neither null nor a pair of 'processor' and 'address'"},
+		{"a sender that is no session id", queued(`"origin":null,"sender":"a b"`),
+			"'external[0].sender' (a b) is not an XML Nmtoken, which a session id is"},
+		{"a sender that is not a text", queued(`"origin":null,"sender":1`),
+			"'external[0].sender' is neither a text nor null"},
+		{"a sender beside no origin", queued(`"origin":null,"sender":"root"`), notTheSendersPair("external[0]")},
+		{"a sender beside another address", queued(`"origin":` + meshPair + `,"sender":"root"`),
+			notTheSendersPair("external[0]")},
+		{"a sender beside another processor",
+			queued(`"origin":{"processor":"x-sce-host","address":"sce://scxml/root"},"sender":"root"`),
+			notTheSendersPair("external[0]")},
+		{"a raise act with no sender", waiting("raise", `"origin":null,"sender":null`),
+			"'pending[0]' is a raise act, a send of this session, and names no sender"},
+		{"a parent act with an origin and no sender", waiting("parent", `"origin":`+meshPair+`,"sender":null`),
+			"'pending[0]' is a parent act, a send of this session, and names no sender"},
+		{"a child act with no sender", waiting("child", `"origin":null,"sender":null`),
+			"'pending[0]' is a child act, a send of this session, and names no sender"},
+		{"a waiting send with no sender", waiting("raise", `"origin":`+rootPair),
+			"'pending[0]' has no 'sender'"},
+		{"a waiting send with the origin of format 2", waiting("raise", `"origin":"root"`),
+			"'pending[0].origin' is neither null nor a pair of 'processor' and 'address'"},
+		{"a waiting send whose sender is beside another origin", waiting("raise", `"origin":`+meshPair+`,"sender":"root"`),
+			notTheSendersPair("pending[0]")},
+		{"an internal act that holds a sender", waiting("internal", `"origin":`+rootPair+`,"sender":"root"`),
+			internalHolds},
+		{"an internal act that holds an origin", waiting("internal", `"origin":`+meshPair+`,"sender":null`),
+			internalHolds},
+	}
+	for _, c := range cases {
+		_, err := SavedStateFromJSON(c.text)
+		if err == nil {
+			t.Errorf("%s: read", c.name)
+			continue
+		}
+		if err.Error() != c.reason {
+			t.Errorf("%s: refused as\n  %s\nwant\n  %s", c.name, err.Error(), c.reason)
+		}
+	}
+}
+
+// docs/adr/0090, section 7: a format-3 reader takes both members as they are
+// written and derives neither from the other, and the text it read is the text
+// it writes.
+func TestAFormatThreeOriginIsReadAsItIsWrittenAndWrittenBack(t *testing.T) {
+	events := strings.Join([]string{
+		queuedEvent("sent", `"origin":{`+scxmlProcessorMember+`,"address":"sce://scxml/peer%3A1"},"sender":"peer:1"`),
+		queuedEvent("hosted", `"origin":{"processor":"x-sce-host","address":"motor"},"sender":null`),
+		queuedEvent("meshed", `"origin":{`+scxmlProcessorMember+`,"address":"mesh://ecu"},"sender":null`),
+		queuedEvent("posted", `"origin":null,"sender":null`),
+	}, ",")
+	sends := strings.Join([]string{
+		waitingSend("raise", `"origin":{`+scxmlProcessorMember+`,"address":"sce://scxml/root"},"sender":"root"`),
+		waitingSend("internal", `"origin":null,"sender":null`),
+	}, ",")
+	text := withQueued(events, sends)
+	saved, err := SavedStateFromJSON(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for at, want := range []struct {
+		origin *EventOrigin
+		sender string
+	}{
+		{ScxmlOrigin("peer:1"), "peer:1"},
+		{NewEventOrigin("x-sce-host", "motor"), ""},
+		{NewEventOrigin(SCXMLEventProcessorType, "mesh://ecu"), ""},
+		{nil, ""},
+	} {
+		event := saved.External[at]
+		if !event.Origin.Equal(want.origin) || event.Sender != want.sender {
+			t.Errorf("external[%d] is read as (%+v, %q), want (%+v, %q)",
+				at, event.Origin, event.Sender, want.origin, want.sender)
+		}
+	}
+	if raise := saved.Pending[0].Act; !raise.Origin.Equal(ScxmlOrigin("root")) || raise.Sender != "root" {
+		t.Errorf("the raise act is read as (%+v, %q)", raise.Origin, raise.Sender)
+	}
+	if internal := saved.Pending[1].Act; internal.Origin != nil || internal.Sender != "" {
+		t.Errorf("the internal act is read as (%+v, %q)", internal.Origin, internal.Sender)
+	}
+	if written := saved.ToJSON(); written != text {
+		t.Errorf("written back as\n%s\nthe text is\n%s", written, text)
+	}
+}
+
+// docs/adr/0090, section 7, "What a format-3 build writes": a format-1 text
+// read and written back without a machine stays format 1, its origin read by
+// the table and written by the format-2 rule: the sender's id for a session's
+// send, the address otherwise, then the pair's processor, both empty for none.
+// An internal act's stored origin is not read.
+func TestAFormatOneTextIsWrittenBackInFormatOne(t *testing.T) {
+	session := func(events, sends string) string {
+		return `{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},` +
+			`"pending":[` + sends + `],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0",` +
+			`"external":[` + events + `]}`
+	}
+	stored := func(name, origin, originType string) string {
+		return queuedEvent(name, `"origin":"`+origin+`","origintype":"`+originType+`"`)
+	}
+	send := func(act, origin string) string {
+		return `{"due":"5","act":"` + act + `","event":"e","data":"","sendid":"s","origin":"` + origin + `"}`
+	}
+	text := session(strings.Join([]string{
+		stored("sent", "peer", SCXMLEventProcessorType),
+		stored("hosted", "motor", "x-sce-host"),
+		stored("posted", "", ""),
+	}, ","), strings.Join([]string{send("raise", "root"), send("raise", "")}, ","))
+	saved, err := SavedStateFromJSON(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent := saved.External[0]; !sent.Origin.Equal(ScxmlOrigin("peer")) || sent.Sender != "peer" {
+		t.Errorf("a session's id with the SCXML type is read as (%+v, %q)", sent.Origin, sent.Sender)
+	}
+	if raise := saved.Pending[0].Act; !raise.Origin.Equal(ScxmlOrigin("root")) || raise.Sender != "root" {
+		t.Errorf("a raise act's stored id is read as (%+v, %q)", raise.Origin, raise.Sender)
+	}
+	if written := saved.ToJSON(); written != text {
+		t.Errorf("written back as\n%s\nthe text is\n%s", written, text)
+	}
+
+	internal, err := SavedStateFromJSON(session("", send("internal", "root")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if act := internal.Pending[0].Act; act.Origin != nil || act.Sender != "" {
+		t.Errorf("an internal act's stored origin is read as (%+v, %q), and it is not read", act.Origin, act.Sender)
+	}
+	if written, want := internal.ToJSON(), session("", send("internal", "")); written != want {
+		t.Errorf("an internal act is written back as\n%s\nwant\n%s", written, want)
+	}
+}
+
+// sharedFormat2Root is the directory of the format-2 reading fixtures
+// (docs/adr/0090, section 7, "The fixtures").
+var sharedFormat2Root = filepath.Join("..", "..", "..", "sce-build", "tests", "fixtures", "static_datamodel", "saved",
+	"format2")
+
+// sharedFormat2Texts is each format-2 reading fixture by its name, with the
+// format-3 text `read_as/` holds for it under the same name.
+func sharedFormat2Texts(t *testing.T) map[string][2]string {
+	t.Helper()
+	entries, err := os.ReadDir(sharedFormat2Root)
+	if err != nil {
+		t.Fatalf("the format-2 reading fixtures: %v", err)
+	}
+	texts := map[string][2]string{}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		var pair [2]string
+		for at, path := range []string{
+			filepath.Join(sharedFormat2Root, entry.Name()),
+			filepath.Join(sharedFormat2Root, "read_as", entry.Name()),
+		} {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("%s: %v", path, err)
+			}
+			pair[at] = strings.TrimSpace(string(raw))
+		}
+		texts[entry.Name()] = pair
+	}
+	if len(texts) < 4 {
+		t.Fatalf("the format-2 reading fixtures lost instances: %d read", len(texts))
+	}
+	return texts
+}
+
+// docs/adr/0090, section 7: a format-2 text is read by the table of section 7,
+// each queued event's origin and each waiting send's as the pair and the sender
+// the table gives, and is written back as format 3: the text `read_as/` holds.
+// That text is format 3, and reads and writes back as itself.
+func TestAFormatTwoTextIsReadByTheTableAndWrittenBackAsFormatThree(t *testing.T) {
+	for name, texts := range sharedFormat2Texts(t) {
+		format2, readAs := texts[0], texts[1]
+		saved, err := SavedStateFromJSON(format2)
+		if err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+			continue
+		}
+		if saved.Format() != SavedFormat3 {
+			t.Errorf("%s: a tree read from format 2 is written as format %d", name, saved.Format())
+		}
+		if written := saved.ToJSON(); written != readAs {
+			t.Errorf("%s: written back as\n%s\nread_as/ holds\n%s", name, written, readAs)
+		}
+		again, err := SavedStateFromJSON(readAs)
+		if err != nil {
+			t.Errorf("read_as/%s: refused: %v", name, err)
+			continue
+		}
+		if written := again.ToJSON(); written != readAs {
+			t.Errorf("read_as/%s: written back as\n%s\nthe text is\n%s", name, written, readAs)
+		}
 	}
 }
 
@@ -516,7 +785,7 @@ func TestARefusalInsideAChildNamesTheSessionItIsAbout(t *testing.T) {
 	}
 }
 
-// featuredSession is a format-2 session of shape standing in `a`, holding
+// featuredSession is a tree's session of shape standing in `a`, holding
 // nothing, taken in the configuration features.
 func featuredSession(shape string, features []string) *SavedState {
 	return &SavedState{

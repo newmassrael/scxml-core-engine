@@ -71,11 +71,12 @@ func ScxmlOriginOf(sender string) *EventOrigin {
 	return ScxmlOrigin(sender)
 }
 
-// StoredOriginText is the `origin` text a saved state stores for an event's
-// origin and sender: the sending session's id for an event a session sent, the
-// address otherwise, and empty for none — what every backend writes as a
-// format-2 `origin` (docs/adr/0090, "Until step 6"). The `origintype` beside it
-// is the pair's processor.
+// StoredOriginText is the `origin` text a format-1 saved state stores for an
+// event's origin and sender: the sending session's id for an event a session
+// sent, the address otherwise, and empty for none (docs/adr/0090, section 7,
+// "What a format-3 build writes"). The `origintype` beside it is the pair's
+// processor. Format 3 holds the pair itself, and a format-1 text is the one
+// text still written this way: one read and written back without a machine.
 func StoredOriginText(origin *EventOrigin, sender string) string {
 	if sender != "" {
 		return sender
@@ -83,8 +84,9 @@ func StoredOriginText(origin *EventOrigin, sender string) string {
 	return origin.Address()
 }
 
-// ReadStoredOrigin is the origin and sender a stored `origin` and `origintype`
-// are read as (docs/adr/0090, section 7).
+// ReadStoredOrigin is the origin and sender the `origin` and `origintype` a
+// format-1 or format-2 text stores for a queued event are read as
+// (docs/adr/0090, section 7).
 //
 // An empty `origin` is none whatever type was stored beside it: an empty
 // address answers nothing, and format 2 wrote the SCXML type beside it for
@@ -111,9 +113,11 @@ func ReadStoredOrigin(origin, originType string) (*EventOrigin, string) {
 	return NewEventOrigin(processor, origin), ""
 }
 
-// ReadStoredSender is the sender a stored waiting send's `origin` names
-// (docs/adr/0090, section 7): a waiting send is always a session's, so a bare
-// id is that id and an SCXML location names it.
+// ReadStoredSender is the sender a format-1 or format-2 waiting send's stored
+// `origin` names (docs/adr/0090, section 7): a waiting send is always a
+// session's, so a bare id is that id and an SCXML location names it. An
+// `internal` act's stored `origin` is not read: the event it delivers is an
+// internal event, which has no origin.
 func ReadStoredSender(origin string) string {
 	if located := SessionIDFromScxmlLocation(origin); located != "" {
 		return located

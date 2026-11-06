@@ -29,9 +29,9 @@ type SavedPolicy[S comparable, E comparable] interface {
 	// it by. Empty for a policy never given one.
 	OwnSessionID() string
 
-	// BindSessionID makes id this session's own: a restore of a format-2 state
-	// carries on under the id it was saved with, which every child's id and a
-	// peer's address name.
+	// BindSessionID makes id this session's own: a restore of a tree (format 2
+	// or 3) carries on under the id it was saved with, which every child's id
+	// and a peer's address name.
 	BindSessionID(id string)
 
 	// RunningInvokes is the id the document gives each `<invoke>` whose child
@@ -51,7 +51,7 @@ type SavedPolicy[S comparable, E comparable] interface {
 	// run (§scxml-6.4.1).
 	HostInvokeOwner(processorType, id string) (S, bool)
 
-	// JudgeChild refuses child, a running child a format-2 state lists, unless
+	// JudgeChild refuses child, a running child a tree lists, unless
 	// its session is a state of the document the child names, to any depth
 	// (docs/adr/0045, section 3, step 1). It builds nothing.
 	JudgeChild(child SavedChild) error
@@ -275,9 +275,9 @@ func NothingInTransit(queue *ParentEventQueue, invokeID string) error {
 // each such revision in `revisions` and writes the revised shape; any other
 // writes the first shape and no `revisions`. A machine built for a configuration
 // of a product line records it in `features` (docs/adr/0057 §7); any other writes
-// none. The state is format 2: the machine's own id, how many times each
-// `<invoke>` has started, and children, each running child with its whole state,
-// which the generated machine saved through the child's own document, in
+// none. The state is a tree (SavedFormat): the machine's own id, how many times
+// each `<invoke>` has started, and children, each running child with its whole
+// state, which the generated machine saved through the child's own document, in
 // document order.
 //
 // Refused for a machine that is not running (never started, or ended at a
@@ -382,16 +382,16 @@ func SaveSession[S comparable, E comparable](
 		if name == "" {
 			name = policy.GetEventName(queued.Event)
 		}
-		// docs/adr/0090, "Until step 6": format 2 as every backend writes it,
-		// the sender for a session's send and the address otherwise.
+		// docs/adr/0090, section 7: the pair the processor that delivered the
+		// event wrote, and the sender beside it, as the event holds them.
 		event := SavedEvent{
-			Name:       name,
-			Data:       queued.Metadata.Data,
-			Type:       queued.Metadata.EventType.String(),
-			SendID:     queued.Metadata.SendID,
-			Origin:     StoredOriginText(queued.Metadata.Origin, queued.Metadata.Sender),
-			OriginType: queued.Metadata.OriginProcessor(),
-			InvokeID:   queued.Metadata.InvokeID,
+			Name:     name,
+			Data:     queued.Metadata.Data,
+			Type:     queued.Metadata.EventType.String(),
+			SendID:   queued.Metadata.SendID,
+			Origin:   queued.Metadata.Origin,
+			Sender:   queued.Metadata.Sender,
+			InvokeID: queued.Metadata.InvokeID,
 		}
 		if token := queued.Metadata.HostInvokeToken; token != nil {
 			saved := int64(*token)
@@ -476,21 +476,24 @@ func savePending[S comparable, E comparable](
 			// §scxml-5.10: a send is saved under its member's name. A name the
 			// document computed (`<send eventexpr>`) needs a script engine, which no
 			// saved machine has, so none is waiting here.
-			// docs/adr/0090, "Until step 6": a waiting send is a session's, and
-			// format 2 stores the sending session's id as its `origin`.
+			// docs/adr/0090, section 7: a waiting send is this session's, and is
+			// saved with the pair and the sender its event carries when it is
+			// delivered, the SCXML pair of the session that sent it.
 			saved = SavedAct{Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,
-				SendID: act.SendID, Origin: act.Sender}
+				SendID: act.SendID, Origin: ScxmlOriginOf(act.Sender), Sender: act.Sender}
 		case act.Route.Kind == RouteInternalQueue:
+			// The event it delivers is an internal event, which has no origin: the
+			// sender the entry keeps is not saved.
 			saved = SavedAct{Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,
-				SendID: act.SendID, Origin: act.Sender}
+				SendID: act.SendID}
 		// docs/adr/0045: the parent and a child of this session are sessions the
 		// saved tree holds.
 		case act.Route.Kind == RouteParent:
 			saved = SavedAct{Kind: SavedActParent, Event: act.Route.EventName, Data: act.Data,
-				SendID: act.SendID, Origin: act.Sender}
+				SendID: act.SendID, Origin: ScxmlOriginOf(act.Sender), Sender: act.Sender}
 		case act.Route.Kind == RouteInvocation:
 			saved = SavedAct{Kind: SavedActChild, InvokeID: act.Route.InvokeID, Event: act.Route.EventName,
-				Data: act.Data, SendID: act.SendID, Origin: act.Sender}
+				Data: act.Data, SendID: act.SendID, Origin: ScxmlOriginOf(act.Sender), Sender: act.Sender}
 		default:
 			return nil, refuse("the delayed send '%s' is routed to the session '%s', a session a saved state does "+
 				"not carry", act.SendID, act.Route.SessionID)
@@ -679,8 +682,9 @@ func judgeSession[S comparable, E comparable](
 		queued.Metadata.Data = event.Data
 		queued.Metadata.EventType = eventType
 		queued.Metadata.SendID = event.SendID
-		// docs/adr/0090, section 7: the pair a format-2 origin is read as.
-		queued.Metadata.Origin, queued.Metadata.Sender = ReadStoredOrigin(event.Origin, event.OriginType)
+		// docs/adr/0090, section 7: the pair and the sender the text holds, a
+		// format-1 or format-2 origin already read as its pair.
+		queued.Metadata.Origin, queued.Metadata.Sender = event.Origin, event.Sender
 		queued.Metadata.InvokeID = event.InvokeID
 		if event.HostInvokeToken != nil {
 			token := uint64(*event.HostInvokeToken)
@@ -760,7 +764,7 @@ func eventTypeOfName(name string) (EventType, bool) {
 	return EventTypeInternal, false
 }
 
-// judgeChildEntry refuses child, the index-th running child of the format-2
+// judgeChildEntry refuses child, the index-th running child of the tree's
 // session parent, unless it is the child that session could be running
 // (docs/adr/0045, section 3, step 1): its start is the count the session holds
 // for its `<invoke>`, its session id is the session's and the id it was started
@@ -833,9 +837,9 @@ func readPendingSend[S comparable, E comparable](
 //
 // A format-1 state's running children are started again from their beginning,
 // last, so what a child sends as it starts stands behind what was already
-// waiting. A format-2 state's are judged with the rest before anything is built,
-// and resumed, each where it stood, once this session stands where it did
-// (SavedPolicy.ResumeChildren).
+// waiting. A tree's (format 2 or 3) are judged with the rest before anything
+// is built, and resumed, each where it stood, once this session stands where it
+// did (SavedPolicy.ResumeChildren).
 func EnterSession[S comparable, E comparable](
 	policy SavedPolicy[S, E],
 	saved *SavedState,
@@ -859,7 +863,7 @@ func EnterSession[S comparable, E comparable](
 	for _, queued := range judged.external {
 		engine.externalQueue.Raise(queued)
 	}
-	armPending(engine, judged.pending, wallNowMs)
+	armPending(engine, judged.pending, wallNowMs, policy.OwnSessionID())
 	rearmHostInvokes(engine, saved.HostInvokes, wallNowMs)
 	engine.nextHostInvokeToken = uint64(saved.HostInvokeToken)
 	engine.autoSendSeq = uint64(saved.AutoSendSeq)
@@ -904,11 +908,17 @@ func rearmHostInvokes[S comparable, E comparable](engine *Engine[S, E], hosts []
 }
 
 // armPending arms each of pending, already read, in the order a saved state
-// lists them: each comes due `due - wallNowMs` after the engine's now, and one
-// that came due while the machine was away comes due now. Entries due at the same
-// moment are armed in order and the scheduler delivers those in the order they
-// were armed, which is how the saved machine would have.
-func armPending[S comparable, E comparable](engine *Engine[S, E], pending []readSend[E], wallNowMs int64) {
+// lists them, as sends of the session sessionID: each comes due `due -
+// wallNowMs` after the engine's now, and one that came due while the machine
+// was away comes due now. Entries due at the same moment are armed in order and
+// the scheduler delivers those in the order they were armed, which is how the
+// saved machine would have.
+func armPending[S comparable, E comparable](
+	engine *Engine[S, E],
+	pending []readSend[E],
+	wallNowMs int64,
+	sessionID string,
+) {
 	now := engine.NowMs()
 	readyAt := func(due int64) int64 {
 		wait := due - wallNowMs
@@ -919,9 +929,16 @@ func armPending[S comparable, E comparable](engine *Engine[S, E], pending []read
 	}
 	for _, read := range pending {
 		act := read.act
-		// docs/adr/0090, section 7: a waiting send is a session's, so its stored
-		// `origin` names the sender by id, or by location as one backend wrote it.
-		sender := ReadStoredSender(act.Origin)
+		// docs/adr/0090, section 7: a raise, parent or child act is this
+		// session's own send, armed with the sender the text names. A format-1
+		// text written by a machine that held no session id names none, and its
+		// send is armed as the send of the session that resumes it, so it is
+		// delivered, and saved again, with this session's pair. An internal act
+		// has no sender.
+		sender := act.Sender
+		if sender == "" && act.Kind != SavedActInternal {
+			sender = sessionID
+		}
 		switch act.Kind {
 		case SavedActRaise:
 			engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, sender)
