@@ -452,6 +452,40 @@ TEST(SavedState, AFormatTwoActWithAnEmptyOriginIsTheSendOfTheSessionThatHoldsIt)
     EXPECT_EQ(SavedState::fromJson(text).toJson(), text);
 }
 
+// docs/adr/0090, section 7: a format-2 act whose stored origin is the SCXML location prefix
+// alone names no session, and a raise, parent or child act is the send of one, so it is
+// refused. A queued event stored with that origin is read as the pair as saved, with no
+// sender: the prefix names no session to be its sender.
+TEST(SavedState, TheScxmlPrefixAloneIsNoSenderOfAFormatTwoAct) {
+    const auto acting = [](const std::string &act) {
+        const std::string head = act == "child" ? R"("act":"child","invokeid":"w",)" : R"("act":")" + act + R"(",)";
+        return R"({"format":2,)" +
+               replaceFirst(kMinimal, R"("pending":[])",
+                            R"("pending":[{"due":"5",)" + head +
+                                R"("event":"e","data":"","sendid":"","origin":"sce://scxml/"}])") +
+               "}";
+    };
+    for (const std::string act : {"raise", "parent", "child"}) {
+        EXPECT_EQ(refusalOf(acting(act)), "'pending[0].origin' is 'sce://scxml/', the SCXML location prefix with no "
+                                          "session after it, and a " +
+                                              act + " act is the send of a session")
+            << act;
+    }
+    // An internal act's stored origin is not read.
+    EXPECT_EQ(refusalOf(acting("internal")), "");
+
+    const SavedState queued = SavedState::fromJson(
+        R"({"format":2,)" +
+        replaceFirst(kMinimal, R"("external":[])",
+                     R"("external":[{"name":"go","data":"","type":"external","sendid":"","origin":"sce://scxml/",)"
+                     R"("origintype":"","invokeid":"","hostinvoketoken":null}])") +
+        "}");
+    ASSERT_EQ(queued.external.size(), 1U);
+    EXPECT_EQ(queued.external[0].origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin(kScxmlType, "sce://scxml/")));
+    EXPECT_EQ(queued.external[0].sender, "");
+}
+
 // docs/adr/0090, section 7: a format-1 text holds `origin` and `origintype` with format 2's
 // meaning, and written back without a machine it stays format 1, its origins written by the
 // rule format 2 used: the sender's id for a session's send, the address otherwise, then the
