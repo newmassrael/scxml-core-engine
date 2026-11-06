@@ -41,6 +41,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .event_origin import EventOrigin, origin_processor_of
 from .io_processors import (
+    SCXML_LOCATION_PREFIX,
     read_stored_origin,
     read_stored_sender,
     scxml_origin,
@@ -961,14 +962,15 @@ def _saved_act_origin_from_json(
     A raise, parent or child act is this session's own send, which the SCXML
     processor delivers, so its origin is the SCXML pair of its sender; an
     internal act's event is internal and has no origin. Format 3 holds both as
-    written, and refuses a raise, parent or child act with no sender or with an
-    origin other than its sender's pair, and an internal act that holds either.
-    Formats 1 and 2 store the sending session's id, or its location, as
-    ``origin``, which is read as that session's pair with the id as its sender;
-    an internal act's is not read. A format-2 act whose stored origin is empty
-    was sent by the session that holds it. A format-1 text holds no session id,
-    so such an act is read with neither, and the machine that restores it arms
-    it as its own send."""
+    written, and refuses a raise, parent or child act with no sender, with a
+    sender other than ``session_id``, or with an origin other than its sender's
+    pair, and an internal act that holds either. Formats 1 and 2 store the
+    sending session's id, or its location, as ``origin``, which is read as that
+    session's pair with the id as its sender; an internal act's is not read, and
+    the SCXML prefix alone, which names no session, is refused. A format-2 act
+    whose stored origin is empty was sent by the session that holds it. A
+    format-1 text holds no session id, so such an act is read with neither, and
+    the machine that restores it arms it as its own send."""
     if form == SAVED_FORMAT_3:
         origin, sender = _saved_origin_from_json(members, what)
         if kind == ACT_INTERNAL:
@@ -978,12 +980,22 @@ def _saved_act_origin_from_json(
                 )
         elif sender is None:
             raise StateRefusal(f"'{what}' is a {kind} act with no 'sender', and the session that sent it is its sender")
+        elif sender != session_id:
+            raise StateRefusal(
+                f"'{what}.sender' is '{sender}', and this session is '{session_id}': a {kind} act is this "
+                "session's own send"
+            )
         elif origin != scxml_origin(sender):
             raise StateRefusal(f"'{what}.sender' is '{sender}', and its 'origin' is not the SCXML pair of that session")
         return origin, sender
     stored = _member_text(members, what, "origin")
     if kind == ACT_INTERNAL:
         return None, None
+    if stored == SCXML_LOCATION_PREFIX:
+        raise StateRefusal(
+            f"'{what}.origin' is '{stored}', the SCXML prefix alone, which names no session: a {kind} act is "
+            "a session's own send"
+        )
     sender = read_stored_sender(stored) or session_id
     return scxml_origin_of(sender), (sender or None)
 

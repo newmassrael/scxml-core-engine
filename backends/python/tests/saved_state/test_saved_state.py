@@ -288,6 +288,26 @@ _MINIMAL = (
             '{"format":3,' + _MINIMAL.replace('"pending":[]', '"pending":[{"due":"5","act":"fax"}]', 1) + "}",
             "'pending[0].act' is 'fax', which is not raise, internal, host, parent or child",
         ),
+        # A stored origin that is the SCXML prefix alone names no session, and a
+        # session's own send names the session that sent it.
+        (
+            '{"format":2,'
+            + _MINIMAL.replace(
+                '"pending":[]',
+                '"pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"","origin":"sce://scxml/"}]',
+                1,
+            )
+            + "}",
+            "'pending[0].origin' is 'sce://scxml/', the SCXML prefix alone, which names no session: a raise act "
+            "is a session's own send",
+        ),
+        (
+            '{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},'
+            '"pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"","origin":"sce://scxml/"}],'
+            '"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]}',
+            "'pending[0].origin' is 'sce://scxml/', the SCXML prefix alone, which names no session: a raise act "
+            "is a session's own send",
+        ),
     ],
 )
 def test_a_text_the_formats_do_not_carry_is_refused_for_the_member_that_breaks_it(text: str, reason: str) -> None:
@@ -416,7 +436,13 @@ def _holding_act(act: str, origin: str, sender: str) -> str:
         # whose address may be any reply address.
         (
             _holding_act("raise", _ROOT_PAIR, '"other"'),
-            "'pending[0].sender' is 'other', and its 'origin' is not the SCXML pair of that session",
+            "'pending[0].sender' is 'other', and this session is 'root': a raise act is this session's own send",
+        ),
+        (
+            _holding_act(
+                "raise", '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"sce://scxml/other"}', '"other"'
+            ),
+            "'pending[0].sender' is 'other', and this session is 'root': a raise act is this session's own send",
         ),
         (
             _holding_act(
@@ -534,6 +560,29 @@ def test_a_child_session_is_read_in_the_format_of_its_root() -> None:
     assert str(refused.value) == (
         "the session at invokes[0].session: 'external[0].origin' is neither null nor a pair of "
         "'processor' and 'address'"
+    )
+
+
+def test_a_childs_own_send_names_the_child_and_not_its_parent() -> None:
+    # A child's `parent` act is the child's own send: it carries the child's pair
+    # and id, and one that names the root is refused by the child's path.
+    def holding_parent_act(origin: str, sender: str) -> str:
+        send = (
+            '{"due":"5","act":"parent","event":"e","data":"","sendid":"","origin":' + origin + ',"sender":'
+            + sender + "}"
+        )
+        child_session = _MINIMAL.replace('"root"', '"root.w"', 1).replace('"pending":[]', '"pending":[' + send + "]", 1)
+        child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{' + child_session + "}}"
+        return '{"format":3,' + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1) + "}"
+
+    child_pair = '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"sce://scxml/root.w"}'
+    (report,) = saved_state_from_json(holding_parent_act(child_pair, '"root.w"')).invokes.children[0].session.pending
+    assert (report.act.origin, report.act.sender) == (scxml_origin("root.w"), "root.w")
+    with pytest.raises(StateRefusal) as refused:
+        saved_state_from_json(holding_parent_act(_ROOT_PAIR, '"root"'))
+    assert str(refused.value) == (
+        "the session at invokes[0].session: 'pending[0].sender' is 'root', and this session is 'root.w': "
+        "a parent act is this session's own send"
     )
 
 

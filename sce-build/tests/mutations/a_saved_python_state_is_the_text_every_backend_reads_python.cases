@@ -21,6 +21,8 @@
 #   a count of starts is written one more than the session holds;
 #   a saved child is written under the invoke's own id, not the id its start was made under;
 #   a session's own send is read beside an origin that is not its pair;
+#   a session's own send may name another session as its sender;
+#   a session's own send stored as the SCXML prefix alone is read;
 #   a sender is read beside no reply address;
 #   a format-2 act with an empty origin is read as sent by no session;
 #   a pair may hold a member of no pair;
@@ -125,6 +127,25 @@ mutation_case "a session's own send is read beside an origin that is not its pai
 edit("backends/python/runtime/sce_runtime/saved_state.py",
      "        elif origin != scxml_origin(sender):",
      "        elif False:")
+PY
+
+# The two rows of the same test whose `raise` act names `other` in the session `root`, and
+# `test_a_childs_own_send_names_the_child_and_not_its_parent`.
+
+mutation_case "a session's own send may name another session as its sender" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "        elif sender != session_id:",
+     "        elif False:")
+PY
+
+# The format-2 and format-1 rows of
+# `test_a_text_the_formats_do_not_carry_is_refused_for_the_member_that_breaks_it` whose `raise`
+# act stores the SCXML prefix alone, which would be read as a sender.
+
+mutation_case "a session's own send stored as the SCXML prefix alone is read" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "    if stored == SCXML_LOCATION_PREFIX:",
+     "    if False:")
 PY
 
 # The rows of the same test whose queued event and whose `raise` act hold a sender beside a

@@ -112,6 +112,12 @@ def test_a_format2_origin_is_read_as_the_pair_it_stood_for() -> None:
         EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://motor"),
         None,
     )
+    # The SCXML prefix alone names no session: a queued event keeps it as the
+    # pair as stored, with no sender.
+    assert read_stored_origin("sce://scxml/", SCXML_EVENT_PROCESSOR_URI) == (
+        EventOrigin(SCXML_EVENT_PROCESSOR_URI, "sce://scxml/"),
+        None,
+    )
 
 
 def test_a_waiting_sends_stored_origin_is_read_as_the_session_it_names() -> None:

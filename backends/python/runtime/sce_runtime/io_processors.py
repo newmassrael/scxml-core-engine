@@ -27,6 +27,10 @@ SCXML_ALIAS = "scxml"
 #: Alias the Basic HTTP Event I/O Processor is indexed under by SCXML documents.
 BASIC_HTTP_ALIAS = "basichttp"
 
+#: What every location the SCXML Event I/O Processor publishes begins with,
+#: before the session id it names. Alone, it names no session.
+SCXML_LOCATION_PREFIX = "sce://scxml/"
+
 
 @dataclass(frozen=True)
 class IoProcessorDescriptor:
@@ -49,7 +53,7 @@ def scxml_location(session_id: str) -> str:
     """
     # §scxml-C-1 — this builds the location the SCXML Event I/O Processor
     # publishes for a session, which is the address `<send>` may target.
-    return "sce://scxml/" + quote(session_id, safe="-_.~")
+    return SCXML_LOCATION_PREFIX + quote(session_id, safe="-_.~")
 
 
 def session_id_from_scxml_location(uri: str) -> str:
@@ -61,7 +65,7 @@ def session_id_from_scxml_location(uri: str) -> str:
     """
     # §scxml-C-1 — reads a session id back out of a published location; the
     # routing requirement itself is realised by the location builder above.
-    prefix = "sce://scxml/"
+    prefix = SCXML_LOCATION_PREFIX
     if not uri.startswith(prefix) or len(uri) <= len(prefix):
         return ""
     return unquote(uri[len(prefix):])
