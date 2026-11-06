@@ -383,15 +383,23 @@ static void a_format_three_origin_that_is_not_whole_is_refused(void) {
         {"\"origin\":null,\"sender\":7", "'external[0].sender' is neither null nor a session id"},
         {"\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/kid\"},\"sender\":\"a b\"",
          "'external[0].sender' (a b) is not an XML Nmtoken, which a session id is"},
-        // A sender beside an origin other than the SCXML pair of that id, byte for byte.
+        // A session that sent an event has a reply address: a sender beside a null origin.
         {"\"origin\":null,\"sender\":\"kid\"",
-         "'external[0].sender' is 'kid', and 'external[0].origin' is not the SCXML pair of that session"},
+         "'external[0]' names the sender 'kid' and no origin: a session that sent an event has a reply address"},
+        // This build holds a sender only as the id of the SCXML location its pair names, byte for
+        // byte: a bound of C11, which runs no remote child, not a rule of the format.
         {"\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"sce://scxml/kid\"},\"sender\":\"kid\"",
-         "'external[0].sender' is 'kid', and 'external[0].origin' is not the SCXML pair of that session"},
+         "'external[0].origin' is not the SCXML location of its sender 'kid': C11 holds a sender only as the id of "
+         "its SCXML location"},
         {"\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/other\"},\"sender\":\"kid\"",
-         "'external[0].sender' is 'kid', and 'external[0].origin' is not the SCXML pair of that session"},
+         "'external[0].origin' is not the SCXML location of its sender 'kid': C11 holds a sender only as the id of "
+         "its SCXML location"},
+        {"\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"mesh://dev/machine/kid\"},\"sender\":\"kid\"",
+         "'external[0].origin' is not the SCXML location of its sender 'kid': C11 holds a sender only as the id of "
+         "its SCXML location"},
         {"\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/peer:1\"},\"sender\":\"peer:1\"",
-         "'external[0].sender' is 'peer:1', and 'external[0].origin' is not the SCXML pair of that session"},
+         "'external[0].origin' is not the SCXML location of its sender 'peer:1': C11 holds a sender only as the id "
+         "of its SCXML location"},
         // Both members are in every record that carries the pair.
         {"\"origin\":null", "'external[0]' has no 'sender'"},
         {"\"sender\":null", "'external[0]' has no 'origin'"},
@@ -448,6 +456,18 @@ static void a_format_three_act_holds_what_its_event_will_carry(void) {
          "'pending[0]' is a parent act, this session's own send, and it names no sender"},
         {"child", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/x\"},\"sender\":null",
          "'pending[0]' is a child act, this session's own send, and it names no sender"},
+        // It carries this session's pair: the SCXML pair of its sender, and its sender is this
+        // session (`x`).
+        {"raise", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/y\"},\"sender\":\"x\"",
+         "'pending[0].origin' is not the SCXML pair of its sender 'x': a raise act is this session's own send, which "
+         "carries this session's pair"},
+        {"parent", "\"origin\":null,\"sender\":\"x\"",
+         "'pending[0].origin' is not the SCXML pair of its sender 'x': a parent act is this session's own send, "
+         "which carries this session's pair"},
+        {"raise", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/y\"},\"sender\":\"y\"",
+         "'pending[0].sender' is 'y', and this session is 'x': a raise act is this session's own send"},
+        {"child", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/y\"},\"sender\":\"y\"",
+         "'pending[0].sender' is 'y', and this session is 'x': a child act is this session's own send"},
         // An internal act delivers an internal event, which has no origin.
         {"internal", "\"origin\":null,\"sender\":null", NULL},
         {"internal", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/x\"},\"sender\":\"x\"",
@@ -489,6 +509,9 @@ static void a_format_three_act_holds_what_its_event_will_carry(void) {
 
     // A format-2 act stores the sending session's id, and an internal act's is not read.
     pending_of("internal", "\"origin\":\"fixture-root\"", pending, sizeof(pending));
+    CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
+    // A format-2 session's act stored with an empty origin is sent by the session that holds it.
+    pending_of("raise", "\"origin\":\"\"", pending, sizeof(pending));
     CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
     pending_of("raise", "\"origin\":null", pending, sizeof(pending));
     CHECK(!tree_holding(2, pending, "[]", &session, &err) &&

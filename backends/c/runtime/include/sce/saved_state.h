@@ -533,26 +533,25 @@ static inline bool sce_saved_pair_member_(sce_jv_t pair, const char *what, const
 }
 
 /* The members `origin` and `sender` of the format-3 record `v`, which `what` names in a refusal,
- * read as they are written, neither derived from the other (docs/adr/0090, section 7). `origin`
- * is null for none, or the pair `{"processor", "address"}`: two texts, neither empty, and no other
- * member. `sender` is null, or a session id beside the SCXML pair of that id, byte for byte, which
- * `*from_session` marks: the id is then the one that pair's location names
- * (`sce_event_origin_sender`), so it is held once. Anything else is refused, never repaired.
+ * each read as it is written, neither derived from the other (docs/adr/0090, section 7), into
+ * `origin`, and into `sender` of `sender_cap` bytes, empty for null. `origin` is null for none, or
+ * the pair `{"processor", "address"}`: two texts, neither empty, and no other member. `sender` is
+ * null or a session id. Anything else is refused, never repaired; what the two must be beside each
+ * other is the record's to judge.
  *
- * The pair is held in the room `sce_event_origin_t` has and the id in `SCE_MAX_SESSION_ID_LEN`
- * bytes, and one that does not fit is refused rather than cut. Nothing is written to `origin` or
- * `*from_session` unless the record is read whole. */
-static inline bool sce_saved_pair_read(sce_jv_t v, const char *what, sce_event_origin_t *origin, uint8_t *from_session,
-                                       sce_saved_error_t *err) {
+ * The pair is held in the room `sce_event_origin_t` has and the id in `sender_cap` bytes, and one
+ * that does not fit is refused rather than cut. Nothing is written to `origin` unless both
+ * members are read whole. */
+static inline bool sce_saved_origin_members_(sce_jv_t v, const char *what, sce_event_origin_t *origin, char *sender,
+                                             size_t sender_cap, sce_saved_error_t *err) {
     sce_jv_t pair;
-    sce_jv_t sender;
+    sce_jv_t named;
     sce_event_origin_t held;
     sce_saved_error_t why;
     char at[SCE_SAVED_AT_LEN];
-    char id[SCE_MAX_SESSION_ID_LEN];
-    char location[SCE_MAX_URI_LEN];
     sce_event_origin_clear(&held);
-    if (!sce_saved_member_(v, what, "origin", &pair, err) || !sce_saved_member_(v, what, "sender", &sender, err)) {
+    sender[0] = '\0';
+    if (!sce_saved_member_(v, what, "origin", &pair, err) || !sce_saved_member_(v, what, "sender", &named, err)) {
         return false;
     }
     sce_saved_path_field(at, sizeof(at), what, "origin");
@@ -569,33 +568,66 @@ static inline bool sce_saved_pair_read(sce_jv_t v, const char *what, sce_event_o
         }
     }
     sce_saved_path_field(at, sizeof(at), what, "sender");
-    if (sce_jv_is_null(sender)) {
-        *origin = held;
-        *from_session = 0u;
-        return true;
-    }
-    if (sce_jv_kind(sender) != SCE_JSON_STRING) {
-        return sce_saved_refuse(err, "'%s' is neither null nor a session id", at);
-    }
-    if (!sce_saved_text_into(sender, at, id, sizeof(id), err)) {
-        return false;
-    }
-    if (!sce_saved_session_id_ok(id, &why)) {
-        return sce_saved_refuse(err, "'%s' (%s) is not an XML Nmtoken, which a session id is", at, id);
-    }
-    if (!sce_scxml_location(location, sizeof(location), id)) {
-        return sce_saved_refuse(err,
-                                "'%s' (%s) is published at a location of %lu bytes, past the %lu a URI is bounded by "
-                                "(SCE_MAX_URI_LEN)",
-                                at, id, (unsigned long)sce_scxml_location_len(id),
-                                (unsigned long)(SCE_MAX_URI_LEN - 1));
-    }
-    if (strcmp(held.processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0 || strcmp(held.address, location) != 0) {
-        return sce_saved_refuse(err, "'%s' is '%s', and '%s.origin' is not the SCXML pair of that session", at, id,
-                                what);
+    if (!sce_jv_is_null(named)) {
+        if (sce_jv_kind(named) != SCE_JSON_STRING) {
+            return sce_saved_refuse(err, "'%s' is neither null nor a session id", at);
+        }
+        if (!sce_saved_text_into(named, at, sender, sender_cap, err)) {
+            sender[0] = '\0';
+            return false;
+        }
+        if (!sce_saved_session_id_ok(sender, &why)) {
+            (void)sce_saved_refuse(err, "'%s' (%s) is not an XML Nmtoken, which a session id is", at, sender);
+            sender[0] = '\0';
+            return false;
+        }
     }
     *origin = held;
-    *from_session = 1u;
+    return true;
+}
+
+/* Whether `origin` is the SCXML pair of the session `id`: the SCXML processor's type URI at the
+ * location that session publishes (`sce_scxml_location`). False for a location this build cannot
+ * hold, which no pair it holds can be. */
+static inline bool sce_saved_is_scxml_pair_of_(const sce_event_origin_t *origin, const char *id) {
+    char location[SCE_MAX_URI_LEN];
+    return sce_scxml_location(location, sizeof(location), id) &&
+           strcmp(origin->processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) == 0 && strcmp(origin->address, location) == 0;
+}
+
+/* The members `origin` and `sender` of the format-3 queued event `v`, which `what` names in a
+ * refusal, read as they are written (`sce_saved_origin_members_`). A session that sent an event
+ * always has a reply address, so a sender beside a null origin is refused (docs/adr/0090,
+ * section 7). `*from_session` marks a sender.
+ *
+ * The format ties no address to the sender: a remote child's event, delivered by the Mesh
+ * transport, carries its sender beside the child's endpoint. This backend holds no sender of its
+ * own: it reads it out of the SCXML location the pair names (`sce_event_origin_sender`), and it
+ * runs no remote child. So a sender beside any other pair is refused here as a bound of this
+ * build, in words that say so, never as a text the format rules out. */
+static inline bool sce_saved_pair_read(sce_jv_t v, const char *what, sce_event_origin_t *origin, uint8_t *from_session,
+                                       sce_saved_error_t *err) {
+    sce_event_origin_t held;
+    char id[SCE_MAX_SESSION_ID_LEN];
+    if (!sce_saved_origin_members_(v, what, &held, id, sizeof(id), err)) {
+        return false;
+    }
+    if (id[0] != '\0') {
+        if (sce_event_origin_is_none(&held)) {
+            return sce_saved_refuse(err,
+                                    "'%s' names the sender '%s' and no origin: a session that sent an event has "
+                                    "a reply address",
+                                    what, id);
+        }
+        if (!sce_saved_is_scxml_pair_of_(&held, id)) {
+            return sce_saved_refuse(err,
+                                    "'%s.origin' is not the SCXML location of its sender '%s': C11 holds a sender "
+                                    "only as the id of its SCXML location",
+                                    what, id);
+        }
+    }
+    *origin = held;
+    *from_session = id[0] != '\0' ? 1u : 0u;
     return true;
 }
 
@@ -664,30 +696,69 @@ static inline bool sce_saved_send_read(sce_jv_t v, const char *what, int form, s
     }
     if (form != SCE_SAVED_FORMAT_3) {
         /* The sending session's id, or its location as this backend once stored it, and always
-         * this session's: a session's act is its own send, and an `internal` act's is not read,
-         * since its event has no origin (docs/adr/0090, section 7). */
+         * this session's: a session's act is its own send, so one stored empty is read as sent by
+         * the session that holds it, and an `internal` act's is not read, since its event has no
+         * origin (docs/adr/0090, section 7). The machine that restores it arms it as its own. */
         return sce_saved_member_text_(v, what, "origin", &out->origin, err);
     }
     {
         sce_event_origin_t pair;
-        uint8_t from_session = 0u;
+        char sender[SCE_MAX_SESSION_ID_LEN];
         sce_event_origin_clear(&pair);
-        if (!sce_saved_pair_read(v, what, &pair, &from_session, err)) {
+        if (!sce_saved_origin_members_(v, what, &pair, sender, sizeof(sender), err)) {
             return false;
         }
         (void)sce_jv_get(v, "origin", &out->origin);
         (void)sce_jv_get(v, "sender", &out->sender);
         if (out->act == SCE_SAVED_ACT_INTERNAL) {
-            if (!sce_event_origin_is_none(&pair) || from_session != 0u) {
+            if (!sce_event_origin_is_none(&pair) || sender[0] != '\0') {
                 return sce_saved_refuse(err,
                                         "'%s' is an internal act, whose event is internal and has no origin, and it "
                                         "holds an origin or a sender",
                                         what);
             }
-        } else if (from_session == 0u) {
+        } else if (sender[0] == '\0') {
             return sce_saved_refuse(err, "'%s' is a %s act, this session's own send, and it names no sender", what,
                                     name);
+        } else if (!sce_saved_is_scxml_pair_of_(&pair, sender)) {
+            /* The act rule, not a bound of this build: the pair of a session's own send is the
+             * SCXML pair its sender publishes. */
+            return sce_saved_refuse(err,
+                                    "'%s.origin' is not the SCXML pair of its sender '%s': a %s act is this "
+                                    "session's own send, which carries this session's pair",
+                                    what, sender, name);
         }
+    }
+    return true;
+}
+
+/* Refuses a format-3 act of `pending`, the waiting sends of the session `session_id`, whose sender
+ * is another session: a `raise`, `parent` or `child` act is this session's own send, so the pair
+ * and the id it carries are this session's (docs/adr/0090, section 7). Each send was read whole
+ * before. */
+static inline bool sce_saved_acts_are_own_(sce_jv_t pending, sce_jv_t session_id, sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    size_t at;
+    (void)sce_jv_iter(pending, &it);
+    for (at = 0u; sce_jiter_element(&it, &item); ++at) {
+        sce_saved_send_t send;
+        sce_saved_error_t ignored;
+        char what[SCE_SAVED_WHAT_LEN];
+        char sender[SCE_SAVED_QUOTE_LEN];
+        char own[SCE_SAVED_QUOTE_LEN];
+        (void)snprintf(what, sizeof(what), "pending[%lu]", (unsigned long)at);
+        if (!sce_saved_send_read(item, what, SCE_SAVED_FORMAT_3, &send, &ignored) ||
+            sce_saved_is_nothing_(send.sender) || sce_jv_kind(send.sender) != SCE_JSON_STRING ||
+            sce_jv_string_equal(send.sender, session_id)) {
+            continue;
+        }
+        sce_saved_quote_(send.sender, sender, sizeof(sender));
+        sce_saved_quote_(session_id, own, sizeof(own));
+        return sce_saved_refuse(err,
+                                "'%s.sender' is '%s', and this session is '%s': a %s act is this session's own "
+                                "send",
+                                what, sender, own, sce_saved_act_name(send.act));
     }
     return true;
 }
@@ -957,6 +1028,9 @@ static inline bool sce_saved_session_read(sce_jv_t members, int form, sce_saved_
             return sce_saved_refuse(err, "'sessionid' is not a text");
         }
         if (!sce_saved_session_id_view_ok(out->session_id, err)) {
+            return false;
+        }
+        if (form == SCE_SAVED_FORMAT_3 && !sce_saved_acts_are_own_(out->pending, out->session_id, err)) {
             return false;
         }
         if (!sce_jv_get(members, "invokestarts", &counted)) {
