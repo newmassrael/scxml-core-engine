@@ -59,6 +59,25 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
                 try readDescribed(field, try record.field(id))
             }
         }
+    } else if let union = described["union"] as? [String: Any], let tag = union["tag"] as? String,
+        let cases = union["cases"] as? [String: Any]
+    {
+        // The tag's enum is the cases' names; an empty case is null, any other the
+        // record it holds (docs/adr/0092, section 4).
+        try v.union(
+            tag: tag,
+            { named in
+                let name = try named.name()
+                guard cases[name] != nil else {
+                    throw named.unknownVariant(name, alias: "Described")
+                }
+                return name
+            },
+            { name, object in
+                if let record = cases[name], !(record is NSNull) {
+                    try readDescribed(record, object)
+                }
+            })
     } else {
         Issue.record("a type of the table names no constructor: \(described)")
     }

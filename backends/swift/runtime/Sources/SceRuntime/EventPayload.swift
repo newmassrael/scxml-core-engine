@@ -758,6 +758,30 @@ public struct PayloadValue {
         }
         return try read(fields)
     }
+
+    /// A value of a union type (docs/adr/0092, section 4): one object holding its tag
+    /// under the key `tag` and the fields of the case the tag names beside it.
+    ///
+    /// The tag is read first, by `readTag`, the reader of the tag's enum, wherever it
+    /// stands in the object; `readCase` is then handed the case the tag named and this
+    /// same value, and reads the case's record from it with `record(defaults:_:)` (an
+    /// empty case reads nothing). The refusals come in one order on every runtime: a
+    /// value that is not an object; the tag absent (`missing` at the tag's pointer),
+    /// then whatever the enum's reader refuses of it (`null`, not a text, a name the
+    /// enum does not declare); then the case's record. A key the case does not declare
+    /// is never asked for, so it is stepped over, as a record steps over one.
+    public func union<E, T>(
+        tag: String,
+        _ readTag: (PayloadValue) throws -> E,
+        _ readCase: (E, PayloadValue) throws -> T
+    ) throws -> T {
+        guard case .object(let members) = value else {
+            throw wrongKind("is not a union")
+        }
+        let object = PayloadFields(fields: members, prefix: path, pointer: pointer)
+        let chosen = try readTag(try object.field(tag))
+        return try readCase(chosen, self)
+    }
 }
 
 /// `segment` below `prefix`, as a JSON Pointer's reference tokens are joined.
@@ -1063,6 +1087,15 @@ public func listJSON<T>(_ items: [T], _ write: (T) -> String) -> String {
 public func recordJSON(_ members: [PayloadPair]) -> String {
     let sorted = members.sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
     return "{" + sorted.map { quoteJSON($0.name) + ":" + $0.json }.joined(separator: ",") + "}"
+}
+
+/// The JSON spelling of one union value (docs/adr/0092, section 2.1): the tag under the
+/// key `tag`, its value `variant`, the case's name as its enum spells it, beside
+/// `members`, the fields of the case's record (none for an empty case). The object
+/// writes the tag among the fields, every key ascending by its UTF-8 bytes, as
+/// `recordJSON` writes a record.
+public func unionJSON(tag: String, variant: String, _ members: [PayloadPair]) -> String {
+    recordJSON(members + [.text(tag, variant)])
 }
 
 /// The text of the digits a 64-bit signed integer crosses as.
