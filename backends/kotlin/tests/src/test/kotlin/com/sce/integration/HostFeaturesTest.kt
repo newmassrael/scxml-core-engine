@@ -46,6 +46,7 @@ import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
 import com.sce.runtime.TransitionTaken
 import java.io.File
+import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -63,6 +64,7 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
 class HostFeaturesTest {
 
@@ -539,8 +541,15 @@ class HostFeaturesTest {
      * The harness makes at most `bound` calls and the provider answers a call by its
      * position alone, so every sequence of fewer classes the harness can consume is a
      * prefix of a sequence run here, and none is asked past.
+     *
+     * The runs are the classes of the table to the power of `bound`, so the test's cost grows
+     * with every class the table gains (24 classes and a bound of 3 are 13,824 runs, a little
+     * under a millisecond each) and not with the suite's other tests. The suite's ten-second
+     * default is the guard of a test that should finish in milliseconds, and this one is
+     * measured against the work it is told to do: a hang still ends it, after two minutes.
      */
     @Test
+    @Timeout(value = 2, unit = TimeUnit.MINUTES)
     fun everySequenceOfOutcomeClassesTakesEveryRowOfTheReferenceHarness() {
         val table = Json.parseToJsonElement(
             File(repoRoot(), "tests/host_features/model_outcome_classes.json").readText(),
