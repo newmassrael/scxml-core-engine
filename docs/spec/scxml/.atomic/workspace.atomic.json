@@ -5039,11 +5039,6 @@
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "originType",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "sendId",
           "kind": "references"
         },
@@ -5086,11 +5081,6 @@
           "file": "sce/src/scripting/SessionRegistry.cpp",
           "symbol": "SessionRegistry::getInvokeIdForChildSession",
           "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "originSessionId",
-          "kind": "references"
         },
         {
           "file": "sce-build/src/forge/diagnostic.rs",
@@ -5840,6 +5830,16 @@
           "file": "backends/rust/runtime/src/helpers/event_queue.rs",
           "symbol": "QueuedEvent",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "origin",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "sender",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5919,11 +5919,6 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "originType",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raise",
           "kind": "references"
         },
@@ -5959,16 +5954,6 @@
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "currentOriginSessionId_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "currentOriginType_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/ActionExecutorImpl.h",
           "symbol": "currentSendId_",
           "kind": "references"
         },
@@ -5990,11 +5975,6 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "origin",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "originType",
           "kind": "references"
         },
         {
@@ -6266,6 +6246,16 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "take_external_event",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.h",
+          "symbol": "currentOrigin_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.h",
+          "symbol": "currentSender_",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11218,11 +11208,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "sendByName",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "sendByNameWithData",
           "kind": "implements"
         },
@@ -11878,6 +11863,11 @@
         {
           "file": "sce/include/core/HostInvokeLedger.h",
           "symbol": "started_",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "handToChild",
           "kind": "implements"
         }
       ],
@@ -22512,6 +22502,48 @@
       "target_kind": "section",
       "target_id": "scxml-5.5",
       "reason": "uncalled once donedata Literal was retired; file removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "ADR 0090 replaced the free strings with the origin pair and its sender"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "ADR 0090 replaced the free strings with the origin pair and its sender"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "ADR 0090 replaced the free strings with the origin pair and its sender"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "ADR 0090 replaced the free strings with the origin pair and its sender"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "ADR 0090 replaced the free strings with the origin pair and its sender"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "ADR 0090 replaced the free strings with the origin pair and its sender"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "the parent-to-child door is handToChild since ADR 0090"
     }
   ],
   "frames": {},

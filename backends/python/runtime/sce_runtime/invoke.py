@@ -247,7 +247,7 @@ class ScxmlInvoke(Invoke):
         # §scxml-6.4: the copy is exact, so every field the parent saw
         # travels with it, the origin and its sender among them. A
         # `<send target="#_<invokeid>">` arrives with the pair the SCXML Event
-        # I/O Processor wrote for the parent where the send built the event
+        # I/O Processor wrote for the parent (§scxml-C-1) where the send built the event
         # (docs/adr/0090, section 2), so nothing is filled in here: an
         # autoforwarded event that had no origin keeps none. Imported lazily
         # to avoid a cycle.

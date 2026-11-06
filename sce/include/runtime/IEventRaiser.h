@@ -84,8 +84,8 @@ public:
      * location, and `event.sender` the sender's session id (docs/adr/0090). The queue
      * is chosen by the sender: an event another session sent goes on the external
      * queue, and one with no sender on the internal queue. The origin's address is
-     * never read to choose it, and `<finalize>` and a cancelled invocation's filter
-     * find the child by the sender too. `event.type` is not read: `_event.type` is
+     * never read to choose it, and `<finalize>` (§scxml-6.4) and a cancelled
+     * invocation's filter find the child by the sender too. `event.type` is not read: `_event.type` is
      * decided by the queue the event is taken from.
      *
      * @return true if the event was successfully queued, false if the raiser is not ready
