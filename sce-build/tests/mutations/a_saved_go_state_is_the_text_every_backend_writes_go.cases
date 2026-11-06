@@ -61,7 +61,7 @@ PY
 # `static_timers`, whose waiting `beat` and `echo` are sent from `fixture-root`.
 mutation_case "a waiting event is saved without the origin it was sent from" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
-     "Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: act.Origin}",
+     "Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: act.Sender}",
      "Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID}")
 PY
 
@@ -69,15 +69,15 @@ PY
 # `static_timers`, whose waiting `inner` is an internal event sent under `__send_2`.
 mutation_case "a waiting internal event is saved without its send id" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
-     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: act.Origin}",
-     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tOrigin: act.Origin}")
+     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: act.Sender}",
+     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tOrigin: act.Sender}")
 PY
 
 # Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
 # `static_timers`: the restored `beat` and `echo` are saved again with an empty origin.
 mutation_case "a restored waiting event loses its origin" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
-     "engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, act.Origin)",
+     "engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, sender)",
      'engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, "")')
 PY
 
