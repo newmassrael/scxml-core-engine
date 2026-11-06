@@ -55,7 +55,7 @@ struct ForwardedEvent {
     std::string name;
     std::string data;  // serialized payload
     std::optional<Core::EventOrigin> origin;
-    std::string sender;  // the sending session's id; empty unless an SCXML session sent it
+    std::string sender;  // the sending session's id; empty unless a session sent it
     std::string sendId;
     std::string type;
     std::string invokeId;

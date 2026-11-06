@@ -79,7 +79,7 @@ public:
      */
     struct EventContext {
         std::optional<Core::EventOrigin> origin;  // _event.origin and _event.origintype, one pair
-        std::string sender;                       // the sending session's id, set by the SCXML processor only
+        std::string sender;                       // the sending session's id, set by its delivering processor
         std::string sendId;                       // §scxml-5.10: _event.sendid
         std::string invokeId;                     // §scxml-5.10: _event.invokeid
         std::string eventType;                    // §scxml-5.10: "internal"/"platform"/"external"

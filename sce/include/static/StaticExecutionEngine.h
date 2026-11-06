@@ -405,9 +405,11 @@ public:
         // delivering processor wrote (docs/adr/0090); none for an event no
         // processor stamped, which reads both fields as the empty string.
         std::optional<Core::EventOrigin> origin;
-        // The id of the session that sent the event, set only by the SCXML
-        // processor. Not an `_event` field: `<finalize>` and a remote child's
-        // admission find the child by it, never by the origin's address.
+        // The id of the session that sent the event, written by the processor
+        // that delivered it from that session: the SCXML processor for a local
+        // session, the Mesh transport for a remote child or parent; empty for
+        // any other sender. Not an `_event` field: `<finalize>` and a remote
+        // child's admission find the child by it, never by the origin's address.
         std::string sender;
         std::string sendId;                    // §scxml-5.10.1: _event.sendid
         std::string type;                      // §scxml-5.10.1: _event.type

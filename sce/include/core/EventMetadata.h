@@ -31,10 +31,12 @@ namespace SCE::Core {
  * - data: Event payload data
  *
  * `sender` is not an `_event` field. It is the id of the session that sent the
- * event, set only by the SCXML Event I/O Processor, and it is what the
- * session-keyed lookups read (`<finalize>`, a cancelled invocation's events,
- * the Interpreter's queue choice). Nothing reads the origin's address to find
- * a session.
+ * event, written by the processor that delivered it from that session: the
+ * SCXML Event I/O Processor for a local session, and the Mesh transport for a
+ * remote child or parent (SCE_MESH.md). Any other sender leaves it empty. It
+ * is what the session-keyed lookups read (`<finalize>`, a cancelled
+ * invocation's events, the Interpreter's queue choice). Nothing reads the
+ * origin's address to find a session, and no rule ties that address to it.
  */
 struct EventMetadata {
     std::string name;                      ///< Event name (required)
@@ -43,7 +45,7 @@ struct EventMetadata {
     std::string sendId;                    ///< Send ID from <send> element
     std::string invokeId;                  ///< Invoke ID from <invoke> element
     std::optional<EventOrigin> origin;     ///< `_event.origin` and `_event.origintype`, none when unstamped
-    std::string sender;                    ///< Sending session's id, empty unless an SCXML session sent it
+    std::string sender;                    ///< Sending session's id, empty unless a session sent it
     std::optional<ScriptValue> typedData;  ///< Typed event data (engine-agnostic, avoids JSON round-trip)
 
     /**
