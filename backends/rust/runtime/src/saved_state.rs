@@ -959,7 +959,9 @@ impl SavedSend {
         // stored none is read as sent by the session that holds it. A format-1
         // text holds no session id, and its machine arms such an act as its own
         // ([`arm_pending`]).
-        let sender = || -> Result<String, StateRefusal> {
+        // A format-3 act names this session as its sender, and no other: the
+        // act is this session's own send, in the root and in every child.
+        let sender = |act: &str| -> Result<String, StateRefusal> {
             if format == FORMAT_3 {
                 let origin = read_origin(value, what)?;
                 let sender = read_sender(value, what)?;
@@ -969,6 +971,12 @@ impl SavedSend {
                     )));
                 }
                 check_own_pair(origin.as_ref(), &sender, what)?;
+                if sender != session_id {
+                    return Err(StateRefusal::new(format!(
+                        "'{what}.sender' is '{sender}', and this session is '{session_id}': a \
+                         {act} act is this session's own send"
+                    )));
+                }
                 Ok(sender)
             } else {
                 let stored = read_stored_sender(&text("origin")?);
@@ -985,20 +993,20 @@ impl SavedSend {
                 event: text("event")?,
                 data: text("data")?,
                 send_id: text("sendid")?,
-                sender: sender()?,
+                sender: sender("parent")?,
             },
             "child" if format != FORMAT_1 => SavedAct::Child {
                 invoke_id: text("invokeid")?,
                 event: text("event")?,
                 data: text("data")?,
                 send_id: text("sendid")?,
-                sender: sender()?,
+                sender: sender("child")?,
             },
             "raise" => SavedAct::Raise {
                 event: text("event")?,
                 data: text("data")?,
                 send_id: text("sendid")?,
-                sender: sender()?,
+                sender: sender("raise")?,
             },
             "internal" => {
                 // The event it delivers is an internal event, which has no
@@ -4031,6 +4039,40 @@ mod tests {
             let refusal = SavedState::from_json(&text).expect_err(what);
             assert!(refusal.reason().contains(wanted), "{what}: {refusal}");
         }
+    }
+
+    /// docs/adr/0090, section 7: a format-3 `raise`, `parent` or `child` act is
+    /// this session's own send, so one that names another session as its
+    /// sender is refused, even with that session's own pair beside it, in the
+    /// root and in a child session.
+    #[test]
+    fn a_format_3_act_that_names_another_session_as_its_sender_is_refused() {
+        for act in ["raise", "parent", "child"] {
+            let text = with_origins(&send_with(act, &scxml_pair("s2"), r#""s2""#), "");
+            let refusal = SavedState::from_json(&text).expect_err(act);
+            assert_eq!(
+                refusal.reason(),
+                format!(
+                    "'pending[0].sender' is 's2', and this session is 's1': a {act} act is \
+                     this session's own send"
+                ),
+                "{act}"
+            );
+        }
+        // The child's send to its parent, written as the parent's own.
+        let text = tree().to_json();
+        let changed = text.replacen(
+            r#""address":"sce://scxml/planner-1.worker"},"sender":"planner-1.worker"}"#,
+            r#""address":"sce://scxml/planner-1"},"sender":"planner-1"}"#,
+            1,
+        );
+        assert_ne!(changed, text, "the change did not apply");
+        let refusal = SavedState::from_json(&changed).expect_err("the parent's id in the child");
+        assert_eq!(
+            refusal.reason(),
+            "the session at invokes[0].session: 'pending[0].sender' is 'planner-1', and this \
+             session is 'planner-1.worker': a parent act is this session's own send"
+        );
     }
 
     /// docs/adr/0090, section 7: a format-1 state written back without a
