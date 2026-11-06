@@ -124,7 +124,8 @@ func sendRequest(_ event: String, target: String = "#server", sendID: String = "
         let raised = try takeEvents(endpoint)
         #expect(raised.count == 1)
         #expect(raised.first?.name == "done")
-        #expect(raised.first?.metadata.originAddress == "mesh://server")
+        #expect(raised.first?.metadata.origin == EventOrigin(processor: scxmlEventProcessorType, address: "mesh://server"))
+        #expect(raised.first?.metadata.sender == nil, "no session sent it")
         #expect(endpoint.takeHostErrors().isEmpty)
         link.close()
     }
