@@ -249,11 +249,16 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
                     let source = ImportSource::read_src(&base, &reference.src)
                         .map_err(|error| at_site(error.into()))?;
                     // What the importer's own generation refuses, refused
-                    // here first: a statechart is not a unit an import names.
+                    // here first: a statechart is not a unit an import names,
+                    // save a `test-component`, the statechart a test
+                    // configuration imports as its MTC or a PTC
+                    // (docs/SCE_TEST_PROFILE.md §11.6), which is a unit of its
+                    // own as any statechart is.
                     if matches!(
                         crate::classify_document(&source.content),
                         crate::Pipeline::Scxml
-                    ) {
+                    ) && !source.is_test_component()
+                    {
                         return Err(at_site(
                             ImportError::NotForge {
                                 src: reference.src.clone(),
@@ -849,6 +854,67 @@ mod tests {
             Path::new("com/sce/generated/door")
         );
         assert_eq!(machine.directory(Language::Python, None), Path::new(""));
+    }
+
+    /// A test configuration imports its components, which are statecharts
+    /// (docs/SCE_TEST_PROFILE.md §11.6): each is a statechart's unit of the
+    /// run, where any other statechart an import names is refused.
+    #[test]
+    fn a_test_component_an_import_names_is_a_unit_and_a_plain_statechart_is_not() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write(
+            dir.path(),
+            "probe_component.scxml",
+            &format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{SCXML_HEAD} version=\"1.0\" \
+                 sce:kind=\"test-component\" name=\"probe_component\" \
+                 datamodel=\"sce-static\" initial=\"done\">\n  <final id=\"done\"/>\n\
+                 </scxml>\n"
+            ),
+        );
+        write(dir.path(), "plain.scxml", &statechart("plain", ""));
+        let configuration = |component: &str| {
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{SCXML_HEAD} version=\"1.0\" \
+                 sce:kind=\"test-configuration\" name=\"probe\">\n  <sce:import \
+                 kind=\"test-component\" src=\"{component}\" as=\"Probe\"/>\n  <sce:mtc \
+                 type=\"Probe\"/>\n</scxml>\n"
+            )
+        };
+
+        let named = write(
+            dir.path(),
+            "probe_configuration.scxml",
+            &configuration("probe_component.scxml"),
+        );
+        let units = walked(std::slice::from_ref(&named));
+        let reached: Vec<(&str, UnitKind, &Role)> = units
+            .iter()
+            .map(|unit| (unit.name.as_str(), unit.kind, &unit.role))
+            .collect();
+        assert_eq!(
+            reached,
+            [
+                ("probe_configuration", UnitKind::Forge, &Role::Named),
+                ("probe_component", UnitKind::Statechart, &Role::Imported),
+            ]
+        );
+
+        let named = write(
+            dir.path(),
+            "plain_configuration.scxml",
+            &configuration("plain.scxml"),
+        );
+        let refusal = walk(std::slice::from_ref(&named), WalkOptions::default())
+            .expect_err("a plain statechart is no unit an import names");
+        assert!(
+            matches!(
+                refusal.error.error,
+                ForgeError::Import(ImportError::NotForge { .. })
+            ),
+            "{}",
+            refusal.error
+        );
     }
 
     #[test]

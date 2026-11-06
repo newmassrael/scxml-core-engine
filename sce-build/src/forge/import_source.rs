@@ -101,6 +101,35 @@ impl ImportSource {
     pub fn parse(&self) -> Result<Option<ParsedForge>, Located<ForgeError>> {
         crate::forge::parser::parse_forge_with_imports(&self.content, self.label())
     }
+
+    /// Whether the document is a `test-component` (docs/SCE_TEST_PROFILE.md
+    /// §11.5): a statechart, which [`Self::parse`] leaves to the statechart
+    /// parser, and which a test configuration names by an `<sce:import>`
+    /// (§11.6).
+    pub fn is_test_component(&self) -> bool {
+        matches!(
+            crate::forge::parser::detect_kind(&self.content),
+            Ok(Some(ForgeKind::TestComponent))
+        )
+    }
+
+    /// The document read by the statechart parser when it is a
+    /// `test-component`, or `None` when it is of another kind: the record a
+    /// test configuration reads of a component it names, its ports, the PTCs
+    /// it invokes and the module parameters it reads
+    /// ([`crate::test_component`]). Read from its path, as every statechart
+    /// is, so its fragments are expanded and a standard document is read from
+    /// the library.
+    pub fn parse_test_component(
+        &self,
+    ) -> Result<Option<crate::model::SCXMLModel>, Located<ForgeError>> {
+        if !self.is_test_component() {
+            return Ok(None);
+        }
+        crate::parser::SCXMLParser::new()
+            .parse_file(&self.path.to_string_lossy())
+            .map(Some)
+    }
 }
 
 /// The document `import` names, parsed — or `None` when it cannot be
@@ -339,4 +368,70 @@ pub fn union_in_scope(
         cases,
         scope,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SCXML_HEAD: &str =
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext""#;
+
+    /// A test component is a statechart (docs/SCE_TEST_PROFILE.md §11.5): an
+    /// import of one reads it with the statechart parser, with the profile's
+    /// record of what it declares; a forge document is no test component.
+    #[test]
+    fn a_test_component_is_read_by_the_statechart_parser() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join("probe_component.scxml"),
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{SCXML_HEAD} version=\"1.0\" \
+                 sce:kind=\"test-component\" name=\"probe_component\" \
+                 datamodel=\"sce-static\" initial=\"waiting\">\n  <sce:test-timer id=\"wait\" \
+                 duration=\"1s\"/>\n  <state id=\"waiting\">\n    <invoke \
+                 type=\"http://sce.dev/ext/test-component\" src=\"probe_component.scxml\" \
+                 id=\"again\"/>\n    <onentry>\n      <sce:start-timer timer=\"wait\"/>\n    \
+                 </onentry>\n    <transition sce:timeout=\"wait\" target=\"done\"/>\n  \
+                 </state>\n  <final id=\"done\"/>\n</scxml>\n"
+            ),
+        )
+        .expect("write the component");
+        std::fs::write(
+            dir.path().join("probe_features.scxml"),
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{SCXML_HEAD} version=\"1.0\" \
+                 sce:kind=\"feature-model\" name=\"probe_features\">\n  <sce:feature \
+                 name=\"probe\"/>\n</scxml>\n"
+            ),
+        )
+        .expect("write the feature model");
+
+        let component =
+            ImportSource::read_src(dir.path(), "probe_component.scxml").expect("it reads");
+        assert!(component.is_test_component());
+        assert!(
+            component
+                .parse()
+                .unwrap_or_else(|e| panic!("{e:?}"))
+                .is_none(),
+            "the forge parser leaves a statechart to the statechart parser"
+        );
+        let model = component
+            .parse_test_component()
+            .unwrap_or_else(|e| panic!("the component parses: {e:?}"))
+            .expect("a test component");
+        let profile = model.test_component.as_ref().expect("its profile");
+        assert_eq!(profile.timers.len(), 1);
+        assert_eq!(profile.invocations.len(), 1);
+        assert_eq!(profile.invocations[0].id.as_deref(), Some("again"));
+
+        let features =
+            ImportSource::read_src(dir.path(), "probe_features.scxml").expect("it reads");
+        assert!(!features.is_test_component());
+        assert!(features
+            .parse_test_component()
+            .unwrap_or_else(|e| panic!("{e:?}"))
+            .is_none());
+    }
 }
