@@ -40,26 +40,19 @@ set_source_files_properties(${LUA_SOURCES} PROPERTIES
 # ---------------------------------------------------------------------------
 # QuickJS + JNI bridge
 # ---------------------------------------------------------------------------
-set(QUICKJS_SOURCES
-    ${QUICKJS_SRC_DIR}/quickjs.c
-    ${QUICKJS_SRC_DIR}/cutils.c
-    ${QUICKJS_SRC_DIR}/libregexp.c
-    ${QUICKJS_SRC_DIR}/libunicode.c
-    ${QUICKJS_SRC_DIR}/xsum.c
-)
+# QuickJS's own `qjs` library, as sce/CMakeLists.txt and the desktop JNI build
+# (quickjs/src/main/cpp/CMakeLists.txt) take it: the sources, definitions and
+# system libraries the QuickJS release names. The core library only: no libc
+# module, no CLI tools, nothing installed. It is linked into a shared library,
+# so it is compiled position-independent.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(QJS_BUILD_LIBC OFF CACHE BOOL "" FORCE)
+set(QJS_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(${QUICKJS_SRC_DIR} ${CMAKE_CURRENT_BINARY_DIR}/quickjs EXCLUDE_FROM_ALL)
 
 add_library(sce_quickjs_jni SHARED
-    ${QUICKJS_SOURCES}
     ${QUICKJS_JNI_DIR}/quickjs_jni.cpp
 )
 
-target_include_directories(sce_quickjs_jni PRIVATE
-    ${QUICKJS_SRC_DIR}
-)
-
-target_compile_definitions(sce_quickjs_jni PRIVATE _GNU_SOURCE)
-target_link_libraries(sce_quickjs_jni PRIVATE m log)
-
-set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES
-    COMPILE_FLAGS "-w"
-)
+target_link_libraries(sce_quickjs_jni PRIVATE qjs log)

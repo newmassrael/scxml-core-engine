@@ -26,8 +26,9 @@ are not MIT.
 
 - **Purpose:** JavaScript engine for ECMAScript expression evaluation (W3C SCXML 5.3)
 - **License:** MIT License
-- **Copyright:** 2017-2021 Fabrice Bellard, Charlie Gordon
-- **Website:** https://bellard.org/quickjs/
+- **Copyright:** 2017-2026 Fabrice Bellard, 2017-2024 Charlie Gordon, 2023-2026 Ben Noordhuis,
+  2023-2026 Saúl Ibarra Corretgé (`third_party/quickjs/LICENSE`)
+- **Website:** https://github.com/quickjs-ng/quickjs (QuickJS-ng, the QuickJS fork the submodule pins)
 - **Used in:** Static Hybrid AOT tests, Interpreter engine
 
 **License Text:**
@@ -320,7 +321,7 @@ Include this file (LICENSE-THIRD-PARTY.md) or equivalent attribution in:
 
 ```
 SCE uses the following third-party libraries:
-- QuickJS (MIT) - Copyright Fabrice Bellard, Charlie Gordon
+- QuickJS (MIT) - Copyright Fabrice Bellard, Charlie Gordon, Ben Noordhuis, Saúl Ibarra Corretgé
 - Lua 5.4 (MIT) - Copyright Lua.org, PUC-Rio
 - spdlog (MIT) - Copyright Gabi Melman
 - cpp-httplib (MIT) - Copyright Yuji Hirose
@@ -334,7 +335,7 @@ SCE uses the following third-party libraries:
 
 All dependencies are open source. Sources available at:
 
-- **QuickJS:** https://bellard.org/quickjs/ (or third_party/quickjs)
+- **QuickJS:** https://github.com/quickjs-ng/quickjs (or third_party/quickjs)
 - **Lua 5.4:** https://www.lua.org/ (or third_party/lua)
 - **spdlog:** https://github.com/gabime/spdlog (or third_party/spdlog)
 - **cpp-httplib:** https://github.com/yhirose/cpp-httplib (or third_party/cpp-httplib)

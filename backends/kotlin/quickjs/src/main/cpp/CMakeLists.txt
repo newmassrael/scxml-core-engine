@@ -35,34 +35,22 @@ foreach(sce_jni_header jni.h jni_md.h)
     endif()
 endforeach()
 
-# QuickJS core sources only (no libc, no CLI tools — sandboxed by default)
-set(QUICKJS_SOURCES
-    ${QUICKJS_SRC_DIR}/quickjs.c
-    ${QUICKJS_SRC_DIR}/cutils.c
-    ${QUICKJS_SRC_DIR}/libregexp.c
-    ${QUICKJS_SRC_DIR}/libunicode.c
-)
+# QuickJS's own `qjs` library, as sce/CMakeLists.txt takes it: its sources,
+# definitions and system libraries are the ones the QuickJS release names, so
+# a release that renames a source file needs no edit here. The core library
+# only: no libc module, no CLI tools, nothing installed.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(QJS_BUILD_LIBC OFF CACHE BOOL "" FORCE)
+set(QJS_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(${QUICKJS_SRC_DIR} ${CMAKE_CURRENT_BINARY_DIR}/quickjs EXCLUDE_FROM_ALL)
 
 # Build shared library: quickjs + JNI bridge
 add_library(sce_quickjs_jni SHARED
-    ${QUICKJS_SOURCES}
     quickjs_jni.cpp
 )
 
 target_include_directories(sce_quickjs_jni PRIVATE
-    ${QUICKJS_SRC_DIR}
     ${SCE_JNI_INCLUDE_DIRS}
 )
 
-# QuickJS requires _GNU_SOURCE on Linux for certain features
-if(UNIX AND NOT APPLE)
-    target_compile_definitions(sce_quickjs_jni PRIVATE _GNU_SOURCE)
-    target_link_libraries(sce_quickjs_jni PRIVATE m dl pthread)
-elseif(APPLE)
-    target_link_libraries(sce_quickjs_jni PRIVATE m)
-endif()
-
-# Suppress warnings in QuickJS third-party sources
-set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES
-    COMPILE_FLAGS "-w"
-)
+target_link_libraries(sce_quickjs_jni PRIVATE qjs)
