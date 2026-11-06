@@ -40,7 +40,8 @@ struct IOProcessorDescriptor {
  * @brief An event's origin and sender as one text pair spells them back
  *
  * What `IOProcessorHelper::readStoredOrigin` answers for an `origin` and
- * `origintype` stored as text (saved state format 2, a queue snapshot).
+ * `origintype` stored as text (saved state formats 1 and 2, a queue
+ * snapshot), and what a format-3 saved state holds as written.
  */
 struct StoredOrigin {
     std::optional<Core::EventOrigin> origin;
@@ -149,10 +150,10 @@ public:
     /**
      * @brief The `origin` text that stores an event's origin and sender
      *
-     * docs/adr/0090, "Until step 6": the sending session's id for an event a
-     * session sent, the address otherwise, and empty for none — what every
-     * backend writes as a saved state's format-2 `origin`. The `origintype`
-     * beside it is the pair's processor.
+     * docs/adr/0090, section 7: the sending session's id for an event a
+     * session sent, the address otherwise, and empty for none — what a saved
+     * state read from a format-1 text is written back with, as format 2 wrote
+     * its `origin`. The `origintype` beside it is the pair's processor.
      */
     static std::string storedOriginText(const std::optional<Core::EventOrigin> &origin, const std::string &sender) {
         return sender.empty() ? Core::originAddressOf(origin) : sender;
