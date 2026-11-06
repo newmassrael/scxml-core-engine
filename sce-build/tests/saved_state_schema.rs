@@ -314,11 +314,27 @@ fn read_format_2_event(event: &json::Value) -> json::Value {
     )
 }
 
-/// A format-2 waiting send as format 3 writes it. Its stored `origin` is the
-/// sending session's id, or that session's location as C11 stored it; an
-/// `internal` act's event is internal and carries none; a `host` act carries
-/// neither member in either format.
-fn read_format_2_act(act: &json::Value) -> json::Value {
+/// The sender a format-2 `raise`, `parent` or `child` act of the session
+/// `holder` names by its stored `origin` (docs/adr/0090, section 7): the
+/// holder for an empty one, the session a location names, and a bare id as it
+/// is. `None` for the prefix `sce://scxml/` alone, which names no session and
+/// is no id: a reader refuses the text.
+fn format_2_act_sender(stored: &str, holder: &str) -> Option<String> {
+    if stored.is_empty() {
+        return Some(holder.to_string());
+    }
+    if let Some(session) = located_session(stored) {
+        return Some(session);
+    }
+    (stored != SCXML_LOCATION).then(|| stored.to_string())
+}
+
+/// A format-2 waiting send of the session `holder` as format 3 writes it. Its
+/// stored `origin` is the sending session's id, or that session's location as
+/// C11 stored it, and an empty one is the holder's own send (docs/adr/0090,
+/// section 7); an `internal` act's event is internal and carries none; a
+/// `host` act carries neither member in either format.
+fn read_format_2_act(act: &json::Value, holder: &str) -> json::Value {
     let kind = member_text(act, "act");
     if kind == "host" {
         return act.clone();
@@ -327,7 +343,9 @@ fn read_format_2_act(act: &json::Value) -> json::Value {
         (json::Value::Null, json::Value::Null)
     } else {
         let stored = member_text(act, "origin");
-        sent_by(&located_session(stored).unwrap_or_else(|| stored.to_string()))
+        let sender = format_2_act_sender(stored, holder)
+            .unwrap_or_else(|| panic!("a reader refuses the act stored as {stored:?}"));
+        sent_by(&sender)
     };
     let mut read = Vec::new();
     for (key, value) in members(act) {
@@ -365,6 +383,7 @@ fn read_format_2_child(child: &json::Value) -> json::Value {
 /// format 3 writes it: every member as it was but the format, the queued
 /// events, the waiting sends and each running child.
 fn read_format_2_session(session: &json::Value) -> json::Value {
+    let holder = member_text(session, "sessionid");
     json::Value::Object(
         members(session)
             .iter()
@@ -372,7 +391,14 @@ fn read_format_2_session(session: &json::Value) -> json::Value {
                 let read = match key.as_str() {
                     "format" => json::Value::Number("3".to_string()),
                     "external" => read_format_2_items(value, read_format_2_event),
-                    "pending" => read_format_2_items(value, read_format_2_act),
+                    "pending" => match value {
+                        json::Value::Array(acts) => json::Value::Array(
+                            acts.iter()
+                                .map(|act| read_format_2_act(act, holder))
+                                .collect(),
+                        ),
+                        other => panic!("not an array: {other:?}"),
+                    },
                     "invokes" => read_format_2_items(value, read_format_2_child),
                     _ => value.clone(),
                 };
@@ -449,6 +475,38 @@ fn each_format_2_reading_fixture_is_read_as_the_table_of_section_7_says() {
     }
 }
 
+#[test]
+fn the_scxml_prefix_alone_names_no_session_in_a_format_2_text() {
+    // docs/adr/0090, section 7. A queued event stored with the prefix and no id
+    // is row 4: row 3 needs an id after the prefix, and row 2 a text without
+    // `://`. It is read as the pair it stores, sent by no session (the last
+    // `go` of `saved/format2/static_invoke_tree_working_origins.json`).
+    assert_eq!(
+        read_format_2_origin(SCXML_LOCATION, SCXML_PROCESSOR),
+        (pair(SCXML_PROCESSOR, SCXML_LOCATION), json::Value::Null)
+    );
+    assert_eq!(
+        read_format_2_origin(SCXML_LOCATION, ""),
+        (pair(SCXML_PROCESSOR, SCXML_LOCATION), json::Value::Null)
+    );
+    // A session's own waiting send must name a session: the prefix alone names
+    // none and is no id, so a reader refuses it rather than take it as a sender.
+    assert_eq!(format_2_act_sender(SCXML_LOCATION, "fixture-root"), None);
+    // The neighbours it must not be confused with.
+    assert_eq!(
+        format_2_act_sender("", "fixture-root").as_deref(),
+        Some("fixture-root")
+    );
+    assert_eq!(
+        format_2_act_sender("sce://scxml/peer%3A1", "fixture-root").as_deref(),
+        Some("peer:1")
+    );
+    assert_eq!(
+        format_2_act_sender("peer:1", "fixture-root").as_deref(),
+        Some("peer:1")
+    );
+}
+
 /// The members of a queued event, in the order every backend writes them.
 const EVENT_MEMBERS: [&str; 8] = [
     "name",
@@ -481,19 +539,23 @@ fn keys(record: &json::Value) -> Vec<&str> {
 }
 
 /// Hold one origin to the text form: `null`, or the pair with `processor`
-/// first and `address` second; and the SCXML pair of the sender beside it,
-/// byte for byte, where there is one.
-fn holds_one_origin(record: &json::Value, what: &str) {
+/// first and `address` second, and never a sender beside no pair. A session's
+/// own waiting send (`own_send`) carries the SCXML pair of its sender, byte for
+/// byte; a queued event's pair is the reply address the delivering processor
+/// wrote, which no rule ties to its sender (docs/adr/0090, section 1).
+fn holds_one_origin(record: &json::Value, what: &str, own_send: bool) {
     match (record.member("origin"), record.member("sender")) {
         (Some(json::Value::Null), Some(json::Value::Null)) => {}
         (Some(origin), Some(sender)) if matches!(origin, json::Value::Object(_)) => {
             assert_eq!(keys(origin), ["processor", "address"], "{what}: the pair");
             if let json::Value::Text(sender) = sender {
-                assert_eq!(
-                    origin,
-                    &sent_by(sender).0,
-                    "{what}: a sender's origin is the location it publishes"
-                );
+                if own_send {
+                    assert_eq!(
+                        origin,
+                        &sent_by(sender).0,
+                        "{what}: a session's own send carries the location it publishes"
+                    );
+                }
             } else {
                 assert_eq!(sender, &json::Value::Null, "{what}: the sender");
             }
@@ -508,7 +570,7 @@ fn holds_the_text_form(session: &json::Value, what: &str) {
         for (i, event) in events.iter().enumerate() {
             let at = format!("{what}external[{i}]");
             assert_eq!(keys(event), EVENT_MEMBERS, "{at}: its members");
-            holds_one_origin(event, &at);
+            holds_one_origin(event, &at, false);
         }
     }
     if let Some(json::Value::Array(acts)) = session.member("pending") {
@@ -524,7 +586,7 @@ fn holds_the_text_form(session: &json::Value, what: &str) {
                     matches!(act.member("sender"), Some(json::Value::Text(_))),
                     "{at}: a session's own send names it"
                 );
-                holds_one_origin(act, &at);
+                holds_one_origin(act, &at, true);
             }
         }
     }
@@ -1138,7 +1200,9 @@ fn scxml_origin(id: &str) -> serde_json::Value {
 /// its pair and its sender. The root holds a child's event (the SCXML pair and
 /// the child as sender), a host invocation's ending (the host's own pair and no
 /// sender), an event relayed from an address that names no session (the SCXML
-/// pair and no sender) and an event no processor stamped (neither); it waits on
+/// pair and no sender), an event no processor stamped (neither) and a Mesh
+/// remote child's event (the SCXML type at the child's session endpoint, and
+/// the child's id as sender: docs/adr/0090, section 1); it waits on
 /// a send to the child, one to itself, one to its internal queue (neither
 /// member) and a host's (no member at all). The child waits on a send to the
 /// root and holds an event no processor stamped.
@@ -1183,6 +1247,14 @@ fn a_format_3_tree() -> serde_json::Value {
         {
             "name": "tick", "data": "", "type": "external", "sendid": "",
             "origin": null, "sender": null, "invokeid": "", "hostinvoketoken": null
+        },
+        // The C++ Mesh transport's remote child (§mesh-9.6.3): its session id
+        // is `<parent machine>:<invokeid>`, and its endpoint names that id,
+        // percent-encoded, under the device and machine that run it.
+        {
+            "name": "progress", "data": "", "type": "external", "sendid": "",
+            "origin": {"processor": SCXML_PROCESSOR, "address": "mesh://ecu/motor/planner%3Aremote"},
+            "sender": "planner:remote", "invokeid": "remote", "hostinvoketoken": null
         }
     ]);
     let child = &mut tree["invokes"][0]["session"];
@@ -1283,18 +1355,14 @@ fn the_format_3_schema_refuses_what_no_backend_writes() {
         ("a pair with a member it does not have", |t| {
             t["external"][1]["origin"]["sender"] = serde_json::json!("planner-1")
         }),
-        // A sender is set only by the SCXML processor, which writes the
-        // sender's own location.
-        ("a sender beside a host's pair", |t| {
-            t["external"][1]["sender"] = serde_json::json!("planner-1.worker")
-        }),
-        ("a sender beside no origin", |t| {
+        // A session that sent an event always has a reply address
+        // (docs/adr/0090, section 7, "Text form").
+        ("a queued event with a sender beside a null origin", |t| {
             t["external"][3]["sender"] = serde_json::json!("planner-1")
         }),
-        (
-            "a sender beside an SCXML pair at an address that names no session",
-            |t| t["external"][2]["sender"] = serde_json::json!("planner-1"),
-        ),
+        ("a remote child's event that lost its reply address", |t| {
+            t["external"][4]["origin"] = serde_json::json!(null)
+        }),
         ("an empty sender", |t| {
             t["external"][0]["sender"] = serde_json::json!("")
         }),
@@ -1309,6 +1377,10 @@ fn the_format_3_schema_refuses_what_no_backend_writes() {
         ("a send to itself with no origin", |t| {
             t["pending"][1]["origin"] = serde_json::json!(null)
         }),
+        (
+            "a send to itself whose sender is the SCXML prefix alone",
+            |t| t["pending"][1]["sender"] = serde_json::json!(SCXML_LOCATION),
+        ),
         (
             "a send to itself whose origin is a text, as format 2 wrote it",
             |t| t["pending"][1]["origin"] = serde_json::json!("planner-1"),
@@ -1339,6 +1411,33 @@ fn the_format_3_schema_refuses_what_no_backend_writes() {
         assert!(
             !errors(&validator, &instance).is_empty(),
             "the format-3 schema admitted {what}"
+        );
+    }
+
+    // `origin` is the reply address and `sender` the identity of the sending
+    // session, and no rule ties them on a queued event (docs/adr/0090,
+    // section 1): each of these is a text a backend writes, so the schema
+    // admits it.
+    let kept: [(&str, Change); 3] = [
+        ("a sender beside a host's pair", |t| {
+            t["external"][1]["sender"] = serde_json::json!("planner-1.worker")
+        }),
+        (
+            "a sender beside an SCXML pair at an address that names no session",
+            |t| t["external"][2]["sender"] = serde_json::json!("planner-1"),
+        ),
+        ("a remote child's event with no sender", |t| {
+            t["external"][4]["sender"] = serde_json::json!(null)
+        }),
+    ];
+    for (what, change) in kept {
+        let mut instance = good.clone();
+        change(&mut instance);
+        let found = errors(&validator, &instance);
+        assert!(
+            found.is_empty(),
+            "the format-3 schema refused {what}: {}",
+            found.join("\n")
         );
     }
 }

@@ -80,9 +80,21 @@ the type is constructed whole, and `none` is the only way to express absence. Th
 `_event.origin = address` and `_event.origintype = processor`. With no origin, both fields read as the empty string,
 which is what §scxml-5.10.1 asks of internal and platform events and what test 330 requires to be present.
 
-The session id of the sender is a separate field, `sender: SessionId?`, set only by the SCXML processor. `<finalize>`,
-cancelled-invoke filtering and the Interpreter's queue choice read `sender`. Nothing reads `address` to find a
-session.
+The session id of the sender is a separate field, `sender: SessionId?`. `origin` is the reply address and `sender`
+is the identity of the sending session: two independent fields, and no rule ties one to the other. The processor
+that delivered the event from that session writes `sender`:
+
+- the SCXML processor, for a local session;
+- the Mesh transport, for a remote child or parent (§mesh-9.6.3). Its address beside the sender is the session's
+  endpoint `mesh://<device>/<machine>/<session>`.
+
+`sender` is null for every other sender: a host, BasicHTTP, or a Mesh peer that is not a session of this tree.
+`<finalize>`, cancelled-invoke filtering and the Interpreter's queue choice read `sender`. Nothing reads `address`
+to find a session. §scxml-6.4 is about the invoked child, not about which processor carried its event.
+
+(Amended 2026-11-06. The first text said "set only by the SCXML processor". The C++ Mesh transport writes the remote
+child's id as `sender` beside its mesh endpoint, so that `<finalize>` and the cancelled-invoke filter find the child.
+Under the first text, a machine that holds such an event could not be saved.)
 
 ### 2. The processor that delivers an event writes its origin, once, when it builds the event
 
@@ -108,7 +120,7 @@ The origin is computed where the event is made, by the processor that delivers i
 - **Mesh transport.** The Mesh transport writes the pair for every event it delivers: peer events, RPC replies and
   events from a remote child. Its values are those SCE_MESH.md gives for reaching that peer. The C++ RPC reply gains
   the address the other six runtimes already give. A remote child's events carry the transport's pair, never a
-  wrapping of `source:invoke`.
+  wrapping of `source:invoke`. Their `sender` is the child's session id (section 1).
 - **Platform and internal events** (`done.*`, `error.*`, `<raise>`) have none, including `done.invoke` from an SCXML
   child (§scxml-5.10.1).
 
@@ -171,6 +183,23 @@ with the id as its `sender`. An `internal` act is the one exception, because the
 event, and an internal event has no origin (§scxml-5.10.1, section 2). Its stored `origin` is therefore not read,
 and the act is read as having no origin and no sender.
 
+A `raise`, `parent` or `child` act of a format-2 text whose stored `origin` is empty is read as sent by the session
+that holds it: the `sessionid` of the session record the act sits in. The act is that session's own send whatever
+was stored, and this one rule replaces the different choices the backends made. It also makes a format-2 text that
+a runtime reads and writes back readable again. A format-1 act with an empty `origin` has no session id in its text,
+so the machine that restores it arms it as its own send, under the id that machine runs as.
+
+The prefix `sce://scxml/` stored alone, with no id after it, names no session, and no writer stored it:
+
+- **In a queued event** it is the table's fourth row. The third row needs an id after the prefix, and the second a
+  text without `://`. It is read as the pair it stores, `{its saved type or the SCXML type, "sce://scxml/"}`, sent
+  by no session, which is how the stored-origin readers already read it. A reply sent there reaches no session, as
+  it would have before the text was saved.
+- **In a `raise`, `parent` or `child` act** it is refused. Such an act is a session's own send and its stored
+  `origin` must name that session, by an id, by a location with an id, or by nothing (the holder, above). The
+  prefix alone is none of these, and it is not an Nmtoken. Reading it as a sender would give the act a sender that
+  is no session id.
+
 This reading is one function, shared by every backend: the stored-origin reader each runtime already holds. It is
 `IOProcessorHelper::readStoredOrigin` and `readStoredSender` in C++, with their ports in the other runtimes and
 `sce_saved_origin_read` in C11. Two builds therefore read one format-2 text as the same pairs. A build that reads
@@ -223,9 +252,18 @@ the shared instances hold.
   session id, with each byte outside `A-Z a-z 0-9 - . _ ~` written as `%` and two uppercase hexadecimal digits.
   This is the same function that writes the session's `_ioprocessors` entry. `fixture-root` is written
   `sce://scxml/fixture-root`, and `peer:1` is written `sce://scxml/peer%3A1`.
-- **`sender`** is the session id as a JSON string, or `null`. It is set only when the SCXML processor delivered the
-  event. When it is set, `origin` is the SCXML pair of that id, byte for byte. An SCXML pair whose address names
-  no session has `sender` `null`: the `mesh://ecu` row of a format-2 text is read that way.
+- **`sender`** is the session id as a JSON string, or `null` (section 1). It is the id of the session that sent the
+  event, written by the processor that delivered it from that session. That processor is the SCXML processor for a
+  local session, and the Mesh transport for a remote child or parent. No rule ties `sender` to the address beside
+  it:
+  - a local session's event carries `scxmlLocation(sender)`;
+  - a remote child's event carries the SCXML type and the child's endpoint, `mesh://<device>/<machine>/<session>`
+    with each segment percent-encoded. The C++ child id is `<parent machine>:<invokeid>`, so its `:` is written
+    `%3A` there.
+
+  A session that sent an event always has a reply address, so a `sender` never stands beside a `null` origin. An
+  SCXML pair with no session behind it has `sender` `null`: the `mesh://ecu` row of a format-2 text is read that
+  way.
 - **A waiting send.**
   - A `raise`, `parent` or `child` act is always this session's own send, and the SCXML processor delivers it. It
     carries this session's pair and this session's id.
@@ -258,11 +296,19 @@ names the record, in these cases:
 - an `origin` that is neither `null` nor a pair;
 - a pair with a member missing, empty or added;
 - a `sender` that is not a session id;
-- a `sender` beside an `origin` other than the SCXML pair of that id;
-- a `raise`, `parent` or `child` act with no `sender`;
+- a queued event with a `sender` beside a `null` origin;
+- a `raise`, `parent` or `child` act with no `sender`, or with an `origin` other than the SCXML pair of that
+  sender, `{SCXML type, scxmlLocation(sender)}`, byte for byte;
 - an `internal` act that holds either member.
 
 The reader refuses these texts and does not repair them, as it refuses every other text that it cannot read whole.
+A queued event whose `sender` stands beside any pair is read as written, the pair as the address and the sender as
+the identity. The writer never refuses a queued event for the combination of its `sender` and its `origin`.
+
+One backend narrows this by what it can hold. C11 derives a sender from an SCXML location and cannot hold a sender
+beside another address. C11 runs no Mesh remote child, so no C11 machine holds such an event. It refuses a text
+with a `sender` beside an address other than `scxmlLocation(sender)`, and names that as the reason. Every other
+backend reads such a text.
 
 A build that reads format 3 refuses any other `format` with one reason on every backend: `the saved state is
 format <the member as written>, and this runtime reads formats 1, 2 and 3`. This is the format-2 reason, with the
@@ -285,11 +331,15 @@ list of formats grown.
   - Every other instance changes only its `format`.
 - `sce-build/tests/fixtures/static_datamodel/saved/format2/` holds the format-2 reading fixtures:
   - the shared tree as the backends other than C11 wrote it before this ADR;
-  - the same tree as C11 stores a queued event's origin, the location `sce://scxml/<id>`;
-  - a tree whose root queue holds one event for each row of the table and each type beside it;
+  - the same tree as the C11 writer before step 5 (cb4ca22e06^) stored a queued event's origin, the location
+    `sce://scxml/<id>`. From step 5 on, C11 wrote the bare id, as the other backends did;
+  - a tree whose root queue holds one event for each row of the table and each type beside it, the bare prefix
+    `sce://scxml/` among them. Its two session-to-session acts are stored with an empty `origin`, and each is read
+    by the `sessionid` of the session that holds it;
   - the shared timers, whose `internal` act stored the sender.
 - `saved/format2/read_as/` holds, under the same name, the format-3 text that each fixture is read as. Every
-  backend restores each fixture, saves at once, and gets that text.
+  backend restores each fixture, saves at once, and gets that text. A backend picks the machine that restores a
+  fixture by its name, so every name starts with `static_invoke_tree_working` or `static_timers`.
   - The C11 tree and the tree of the other backends are both read as the shared format-3 tree.
   - The timers are read as the shared format-3 timers.
 - `saved/format2/README.md` lists the pair and the sender that each record is read as.

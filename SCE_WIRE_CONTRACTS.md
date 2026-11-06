@@ -361,8 +361,9 @@ promises it does not make and enforcement that does not exist.
      changes to the tree it first shows valid, down to a grandchild) and
      `the_format_3_schema_refuses_what_no_backend_writes` (twenty-five
      changes to the format-3 tree it first shows valid: format 2's members
-     kept, half a pair, a sender beside another's origin, an internal send
-     that carries an origin)
+     kept, half a pair, a sender beside no origin, a session's own send at
+     another address, an internal send that carries an origin; and three a
+     backend writes that it must keep admitting, a sender beside any pair)
    - Kind catalog — `the_catalog_schema_rejects_a_kind_the_product_does_not_have`
    - Authoring profile — `the_profile_schema_rejects_a_setting_the_product_does_not_know`
    - Scenario set — `the_wire_schema_rejects_what_the_reader_does_not_accept`

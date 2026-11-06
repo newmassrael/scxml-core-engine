@@ -184,7 +184,7 @@
         "type": "object",
         "required": ["name", "data", "type", "sendid", "origin", "sender", "invokeid", "hostinvoketoken"],
         "additionalProperties": false,
-        "allOf": [{ "$ref": "#/definitions/aSenderIsReachedWhereItPublished" }],
+        "allOf": [{ "$ref": "#/definitions/aSenderHasAReplyAddress" }],
         "properties": {
           "name": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
           "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
@@ -225,17 +225,17 @@
       }
     },
     "sender": {
-      "description": "The id of the session that sent the event, set only for an event the SCXML Event I/O Processor delivered (docs/adr/0090, section 1), and null otherwise. What <finalize>, the filtering of a cancelled invocation's events and a session's routing read; nothing reads `origin.address` to find a session.",
+      "description": "The id of the session that sent the event, written by the processor that delivered it from that session: the SCXML processor for a local session, the Mesh transport for a remote child or parent (docs/adr/0090, section 1). Null for every other sender: a host, BasicHTTP, a Mesh peer that is no session of the tree. Independent of `origin`: the address beside it is the reply address that processor wrote, a local SCXML location or a Mesh session endpoint, and no rule ties the two. What <finalize>, the filtering of a cancelled invocation's events and a session's routing read; nothing reads `origin.address` to find a session.",
       "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/sessionid" }]
     },
-    "aSenderIsReachedWhereItPublished": {
-      "description": "An event with a `sender` was delivered by the SCXML processor, which writes the sender's own location as its origin: such an event's `origin` is the SCXML pair. That the address is the sender's id percent-encoded is checked by the readers, which a pattern cannot say. The converse does not hold: an SCXML pair at an address that names no session (a format-2 origin read by the table of docs/adr/0090, section 7) has no sender.",
+    "aSenderHasAReplyAddress": {
+      "description": "A session that sent an event always has a reply address, so a non-null `sender` requires a non-null `origin`. Which pair stands beside it is not constrained: the SCXML processor writes the sender's local location, the Mesh transport a remote session's endpoint. The converse does not hold: a pair with no session behind it has no sender.",
       "if": {
         "required": ["sender"],
         "properties": { "sender": { "type": "string" } }
       },
       "then": {
-        "properties": { "origin": { "$ref": "#/definitions/scxmlOrigin" } }
+        "properties": { "origin": { "$ref": "#/definitions/originPair" } }
       }
     },
     "count": {
