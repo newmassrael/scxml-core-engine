@@ -43,8 +43,8 @@ use super::{
 use crate::forge::error::{ForgeError, ImportError, Located, TestProfileRule, ValidationError};
 use crate::forge::import_source::ImportSource;
 use crate::forge::model::{
-    ForgeDocument, ForgeImport, ForgeKind, SceType, TestMatcher, TestMatcherForm,
-    TestPortTypeModel, TestTemplateModel, SCE_NAMESPACE,
+    ForgeDocument, ForgeImport, ForgeKind, SceType, TestPortTypeModel, TestTemplateModel,
+    SCE_NAMESPACE,
 };
 use crate::forge::value_type::{TypeOf, ValueType};
 use crate::model::SCXMLModel;
@@ -969,64 +969,6 @@ fn same_type(a: &ValueType, a_scope: &ImportScope, b: &ValueType, b_scope: &Impo
     }
 }
 
-/// The aliases of the templates `matcher` and every matcher inside it
-/// reference.
-fn references<'a>(matcher: &'a TestMatcher, out: &mut Vec<&'a str>) {
-    if let TestMatcherForm::TemplateRef { template, .. } = &matcher.form {
-        out.push(template);
-    }
-    for inner in matcher.children() {
-        references(inner, out);
-    }
-}
-
-/// Whether `template` is specific (docs/SCE_TEST_PROFILE.md §6.2) through
-/// every template it references, each read from the imports of the template
-/// that references it.
-///
-/// Asked here, against the documents themselves, because
-/// [`TestTemplateModel::is_specific`] answers for one document and counts a
-/// reference as specific; this is the same question carried through the
-/// references, and is to be one public answer the template checks give
-/// every reader. A reference already in `seen` is not read again: a cycle of
-/// references is the template checks' refusal, not this one's.
-fn specific_through_references(
-    template: &TestTemplateModel,
-    scope: &ImportScope,
-    seen: &mut BTreeSet<String>,
-    refuse: Refuse<'_>,
-) -> Result<bool, Located<ForgeError>> {
-    if !template.is_specific() {
-        return Ok(false);
-    }
-    let mut referenced = Vec::new();
-    references(&template.matcher, &mut referenced);
-    for alias in referenced {
-        let Some(import) = scope
-            .imports
-            .iter()
-            .find(|i| i.alias == alias && i.kind == ForgeKind::TestTemplate)
-        else {
-            continue;
-        };
-        let (document, imports, path) = read_imported(import, scope.dir, refuse)?;
-        if !seen.insert(crate::forge::stdlib::identity(&path)) {
-            continue;
-        }
-        let ForgeDocument::TestTemplate(inner) = document else {
-            continue;
-        };
-        let inner_scope = ImportScope {
-            dir: path.parent().unwrap_or(Path::new("")),
-            imports: &imports,
-        };
-        if !specific_through_references(&inner, &inner_scope, seen, refuse)? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
 /// Which way a template's message travels on its port.
 #[derive(Clone, Copy)]
 enum Direction {
@@ -1153,12 +1095,12 @@ pub(crate) fn check_imports(
             )?;
         }
         if matches!(direction, Direction::Out) {
-            let refuse = |error: ForgeError| at_element(&node, diag_label, error);
-            let mut seen = BTreeSet::from([crate::forge::stdlib::identity(&template.path)]);
             let scope = template.scope();
-            let specific =
-                specific_through_references(&template.model, &scope, &mut seen, &refuse)?;
-            if !specific {
+            if !crate::forge::test_template_check::is_specific(
+                &template.model,
+                scope.imports,
+                scope.dir,
+            ) {
                 return Err(c.refused(
                     &node,
                     TestProfileRule::SpecificTemplate,
