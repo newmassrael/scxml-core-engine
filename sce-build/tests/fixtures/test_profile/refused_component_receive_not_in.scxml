@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a receive with a template of the job's completion, which its
+     port only sends: the completion is on the port type's out list and not
+     on its in list (docs/SCE_TEST_PROFILE.md §11.3, §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_receive_not_in"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="test-template" src="../../../kind-examples/test-template.scxml"
+              as="CompletedWithin"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="waiting">
+    <transition sce:receive="sut" sce:test-template="CompletedWithin" sce:template-args="limit"
+                target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

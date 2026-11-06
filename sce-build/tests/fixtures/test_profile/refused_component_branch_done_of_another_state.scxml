@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a done branch of a PTC its own state does not invoke; the PTC is
+     the invocation of the branch's state (docs/SCE_TEST_PROFILE.md §4.2,
+     §8.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_branch_done_of_another_state"
+       datamodel="sce-static" initial="running">
+  <state id="running" initial="first">
+    <invoke type="http://sce.dev/ext/test-component" src="helper.scxml" id="helper"/>
+    <state id="first">
+      <transition event="done.invoke.helper" target="done"/>
+    </state>
+  </state>
+  <final id="done"/>
+</scxml>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: an assignment to a module parameter, whose value is the suite's
+     (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_module_parameter_assigned"
+       datamodel="sce-static" initial="waiting">
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="waiting">
+    <onentry>
+      <assign location="limit" expr="3"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

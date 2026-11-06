@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a send of a test component through another processor than the
+     test-port processor (docs/SCE_TEST_PROFILE.md §11.1, §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_send_type"
+       datamodel="sce-static" initial="sending">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="test-template" src="job_report.scxml" as="JobReport"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <state id="sending">
+    <onentry>
+      <send type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor" target="sut"
+            sce:test-template="JobReport"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

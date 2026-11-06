@@ -2729,6 +2729,26 @@ pub(crate) fn references_event_data_lexically(expr: &str) -> bool {
     })
 }
 
+/// `true` iff `expr` names `_event` itself — any member of it, or the event
+/// whole — decided on the token stream for the reasons
+/// [`references_event_data_lexically`] gives: a `_event` inside a string
+/// literal is no read of it, and a member of another value that happens to be
+/// spelt `_event` (`x._event`) is none either.
+///
+/// What a test component asks of every expression it holds
+/// (docs/SCE_TEST_PROFILE.md §4.4): the received message is read only in the
+/// executable content of a receive branch. An expression that does not
+/// tokenize reads as `false`, and is refused where it is typed.
+pub(crate) fn references_event_lexically(expr: &str) -> bool {
+    let Ok(tokens) = tokenize(expr.trim()) else {
+        return false;
+    };
+    tokens.iter().enumerate().any(|(at, token)| {
+        matches!(token, Token::Ident(s) if s == "_event")
+            && (at == 0 || tokens[at - 1] != Token::Dot)
+    })
+}
+
 /// Whether `location` is the shape of an assignment target — a variable, or
 /// a field of one — before any type is asked of it
 /// ([`transpile_lvalue`] holds a location to the same rule when it lowers

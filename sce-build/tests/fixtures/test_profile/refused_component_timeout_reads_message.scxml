@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: _event read in the content of a timeout branch, which took no
+     message: it is read only in the content of a receive branch
+     (docs/SCE_TEST_PROFILE.md §4.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_timeout_reads_message"
+       datamodel="sce-static" initial="waiting">
+  <sce:test-timer id="reply" duration="2s"/>
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="waiting">
+    <onentry>
+      <sce:start-timer timer="reply"/>
+    </onentry>
+    <transition sce:timeout="reply" target="done">
+      <assign location="count" expr="_event.data.count"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

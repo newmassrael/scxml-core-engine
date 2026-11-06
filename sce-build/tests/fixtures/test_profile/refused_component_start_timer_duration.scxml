@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a timer started for a duration with no unit, which is no delay
+     (docs/SCE_TEST_PROFILE.md §4.7, §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_start_timer_duration"
+       datamodel="sce-static" initial="waiting">
+  <sce:test-timer id="reply" duration="2s"/>
+  <state id="waiting">
+    <onentry>
+      <sce:start-timer timer="reply" duration="2"/>
+    </onentry>
+    <transition sce:timeout="reply" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

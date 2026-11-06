@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §6.2, §11.4: a template of values alone but for
+     one field, which references a template with a value range. Specific in
+     itself, and no specific template through its reference. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="report_within"
+       sce:type="record:JobStatus">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:import kind="test-template" src="elapsed_at_most.scxml" as="ElapsedAtMost"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:specific field="elapsed_ms" value="0"/>
+    <sce:specific field="note" value="started on time"/>
+    <sce:list-match field="codes">
+      <sce:specific value="7"/>
+    </sce:list-match>
+    <sce:omit field="tag"/>
+    <sce:omit field="retry"/>
+    <sce:template-ref field="count" template="ElapsedAtMost" args="limit"/>
+  </sce:record-match>
+</scxml>

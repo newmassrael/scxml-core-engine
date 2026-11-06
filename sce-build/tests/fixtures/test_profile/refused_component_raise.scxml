@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a <raise> in a test component, where an internal event has no
+     form (docs/SCE_TEST_PROFILE.md §8.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_raise"
+       datamodel="sce-static" initial="waiting">
+  <state id="waiting">
+    <onentry>
+      <raise event="next"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

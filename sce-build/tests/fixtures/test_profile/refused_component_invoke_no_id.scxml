@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a PTC's invocation with no id, the PTC's name in the
+     configuration (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_invoke_no_id"
+       datamodel="sce-static" initial="running">
+  <state id="running">
+    <invoke type="http://sce.dev/ext/test-component" src="helper.scxml"/>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

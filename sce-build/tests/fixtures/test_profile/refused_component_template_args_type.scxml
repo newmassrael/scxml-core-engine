@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a template argument of another type than the formal parameter
+     it is bound to: a text where the template takes a uint32
+     (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_template_args_type"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="test-template" src="every_matcher.scxml" as="EveryMatcher"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <datamodel>
+    <data id="label" sce:type="string[8]" expr="'nightly'"/>
+  </datamodel>
+  <state id="waiting">
+    <transition sce:receive="sut" sce:test-template="EveryMatcher" sce:template-args="label"
+                target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

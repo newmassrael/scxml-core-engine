@@ -22,14 +22,17 @@
 //! What this module refuses is what makes a record of the document
 //! impossible: a data model other than `sce-static` (§11.2), a declaration or
 //! a statement without the attribute it is named by, a verdict outside the
-//! four. The rules of the profile for a component (docs/SCE_TEST_PROFILE.md
-//! §8.2, §11.5) are asked of this record.
+//! four. The rules of the profile for a component (docs/adr/0091 §3;
+//! docs/SCE_TEST_PROFILE.md §8.2, §11.5) are asked by the submodule `rules`,
+//! of the document and of this record.
 
 use serde::Serialize;
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, TestProfileRule, ValidationError};
 use crate::forge::model::{ForgeKind, SCE_NAMESPACE};
 use crate::model::{Datamodel, SCXML_NAMESPACE};
+
+pub(crate) mod rules;
 
 /// The type URI of the Event I/O Processor whose addresses are ports: the
 /// `type` of every `<send>` of a test component (docs/SCE_TEST_PROFILE.md
@@ -89,6 +92,12 @@ pub struct TestStatement {
     pub statement: TestStatementKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// The `reason` of a `<sce:setverdict>` as written and where, so a
+    /// refusal of the expression is placed on it. `None` on every other
+    /// statement. Not part of the IR, as [`crate::model::Transition::cond_spelling`]
+    /// is not.
+    #[serde(skip)]
+    pub reason_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// What a [`TestStatement`] does, one variant per element, named by the
@@ -372,10 +381,17 @@ pub(crate) fn read(
             });
         }
         if let Some(statement) = read_statement(&node, diag_label)? {
+            let reason_spelling = match statement {
+                TestStatementKind::Setverdict {
+                    reason: Some(_), ..
+                } => crate::attribute_spelling::AttributeSpelling::of(&node, None, "reason"),
+                _ => None,
+            };
             profile.statements.push(TestStatement {
                 state: crate::parser::owning_state(&node),
                 statement,
                 source_location: crate::parser::source_location_of(&node, diag_label),
+                reason_spelling,
             });
         }
         let mut children: Vec<roxmltree::Node> =

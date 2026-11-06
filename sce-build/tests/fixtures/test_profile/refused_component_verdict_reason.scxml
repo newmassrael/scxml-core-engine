@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a verdict whose reason is a number; a reason is an sce-static
+     expression of type string (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_verdict_reason"
+       datamodel="sce-static" initial="listening">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:test-port id="control" type="JobPort"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="listening">
+    <transition sce:receive="control" target="done">
+      <sce:setverdict value="fail" reason="limit"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a <history> in a test component (docs/SCE_TEST_PROFILE.md
+     §8.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_history"
+       datamodel="sce-static" initial="outer">
+  <state id="outer" initial="inner">
+    <history id="last">
+      <transition target="inner"/>
+    </history>
+    <state id="inner">
+      <transition target="done"/>
+    </state>
+  </state>
+  <final id="done"/>
+</scxml>

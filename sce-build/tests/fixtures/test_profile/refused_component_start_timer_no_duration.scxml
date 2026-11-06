@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a timer started with no duration, whose declaration gives no
+     default (docs/SCE_TEST_PROFILE.md §4.7, §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_start_timer_no_duration"
+       datamodel="sce-static" initial="waiting">
+  <sce:test-timer id="settle"/>
+  <state id="waiting">
+    <onentry>
+      <sce:start-timer timer="settle"/>
+    </onentry>
+    <transition sce:timeout="settle" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

@@ -954,6 +954,47 @@ pub enum DiagnosticCode {
     /// §11.8).
     #[serde(rename = "test-profile/module-parameter")]
     TestProfileModuleParameter,
+    /// A native expression in a test component (docs/adr/0091 §3).
+    #[serde(rename = "test-profile/native-code")]
+    TestProfileNativeCode,
+    /// A test component that needs a script engine (docs/adr/0091 §3).
+    #[serde(rename = "test-profile/script-engine")]
+    TestProfileScriptEngine,
+    /// An element a test component does not hold (docs/SCE_TEST_PROFILE.md
+    /// §8.2).
+    #[serde(rename = "test-profile/component-construct")]
+    TestProfileComponentConstruct,
+    /// `_event` read outside the executable content of a receive branch
+    /// (docs/SCE_TEST_PROFILE.md §4.4).
+    #[serde(rename = "test-profile/message-read")]
+    TestProfileMessageRead,
+    /// A `<send>` of a test component that is not the profile's send
+    /// (docs/SCE_TEST_PROFILE.md §8.2, §11.5).
+    #[serde(rename = "test-profile/send")]
+    TestProfileSend,
+    /// An `<invoke>` of a test component that is not the creation of a PTC
+    /// (docs/SCE_TEST_PROFILE.md §8.2, §11.5).
+    #[serde(rename = "test-profile/invoke")]
+    TestProfileInvoke,
+    /// A transition of a test component that is not one branch kind
+    /// (docs/SCE_TEST_PROFILE.md §8.2).
+    #[serde(rename = "test-profile/branch")]
+    TestProfileBranch,
+    /// A done branch that leaves the invoking state active
+    /// (docs/SCE_TEST_PROFILE.md §8.2).
+    #[serde(rename = "test-profile/done-branch")]
+    TestProfileDoneBranch,
+    /// A module parameter given a value in the test component
+    /// (docs/SCE_TEST_PROFILE.md §11.5).
+    #[serde(rename = "test-profile/module-parameter-written")]
+    TestProfileModuleParameterWritten,
+    /// A template whose type is not on its port's list for the direction it
+    /// travels (docs/SCE_TEST_PROFILE.md §11.5).
+    #[serde(rename = "test-profile/port-direction")]
+    TestProfilePortDirection,
+    /// A send whose template is not specific (docs/SCE_TEST_PROFILE.md §6.2).
+    #[serde(rename = "test-profile/specific-template")]
+    TestProfileSpecificTemplate,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3916,6 +3957,17 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         TestProfilePortLists,
         TestProfilePtcInvocation,
         TestProfileModuleParameter,
+        TestProfileNativeCode,
+        TestProfileScriptEngine,
+        TestProfileComponentConstruct,
+        TestProfileMessageRead,
+        TestProfileSend,
+        TestProfileInvoke,
+        TestProfileBranch,
+        TestProfileDoneBranch,
+        TestProfileModuleParameterWritten,
+        TestProfilePortDirection,
+        TestProfileSpecificTemplate,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4675,13 +4727,23 @@ impl DiagnosticCode {
             | TestProfileTemplateParameter
             | TestProfileTemplateFloat => Some("SCE Test Profile §11.4"),
             TestProfileDuration => Some("SCE Test Profile §4.7"),
-            TestProfilePortConnection => Some("SCE Test Profile §11.6"),
             TestProfileRecordFields => Some("SCE Test Profile §11.4"),
             TestProfilePortConnection | TestProfilePortLists | TestProfilePtcInvocation => {
                 Some("SCE Test Profile §11.6")
             }
             TestProfileMessageEventName => Some("SCE Test Profile §11.3"),
             TestProfileModuleParameter => Some("SCE Test Profile §11.8"),
+            TestProfileNativeCode | TestProfileScriptEngine => Some("ADR 0091 §3"),
+            TestProfileComponentConstruct
+            | TestProfileSend
+            | TestProfileInvoke
+            | TestProfileBranch
+            | TestProfileDoneBranch => Some("SCE Test Profile §8.2"),
+            TestProfileMessageRead => Some("SCE Test Profile §4.4"),
+            TestProfileModuleParameterWritten | TestProfilePortDirection => {
+                Some("SCE Test Profile §11.5")
+            }
+            TestProfileSpecificTemplate => Some("SCE Test Profile §6.2"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam
@@ -5611,6 +5673,17 @@ impl DiagnosticCode {
             | TestProfilePortLists
             | TestProfilePtcInvocation
             | TestProfileModuleParameter
+            | TestProfileNativeCode
+            | TestProfileScriptEngine
+            | TestProfileComponentConstruct
+            | TestProfileMessageRead
+            | TestProfileSend
+            | TestProfileInvoke
+            | TestProfileBranch
+            | TestProfileDoneBranch
+            | TestProfileModuleParameterWritten
+            | TestProfilePortDirection
+            | TestProfileSpecificTemplate
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -6128,6 +6201,17 @@ impl DiagnosticCode {
             TestProfilePortLists => "test-profile/port-lists",
             TestProfilePtcInvocation => "test-profile/ptc-invocation",
             TestProfileModuleParameter => "test-profile/module-parameter",
+            TestProfileNativeCode => "test-profile/native-code",
+            TestProfileScriptEngine => "test-profile/script-engine",
+            TestProfileComponentConstruct => "test-profile/component-construct",
+            TestProfileMessageRead => "test-profile/message-read",
+            TestProfileSend => "test-profile/send",
+            TestProfileInvoke => "test-profile/invoke",
+            TestProfileBranch => "test-profile/branch",
+            TestProfileDoneBranch => "test-profile/done-branch",
+            TestProfileModuleParameterWritten => "test-profile/module-parameter-written",
+            TestProfilePortDirection => "test-profile/port-direction",
+            TestProfileSpecificTemplate => "test-profile/specific-template",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -8455,6 +8539,19 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 TestProfileRule::PortLists => DiagnosticCode::TestProfilePortLists,
                 TestProfileRule::PtcInvocation => DiagnosticCode::TestProfilePtcInvocation,
                 TestProfileRule::ModuleParameter => DiagnosticCode::TestProfileModuleParameter,
+                TestProfileRule::NativeCode => DiagnosticCode::TestProfileNativeCode,
+                TestProfileRule::ScriptEngine => DiagnosticCode::TestProfileScriptEngine,
+                TestProfileRule::ComponentConstruct => DiagnosticCode::TestProfileComponentConstruct,
+                TestProfileRule::MessageRead => DiagnosticCode::TestProfileMessageRead,
+                TestProfileRule::Send => DiagnosticCode::TestProfileSend,
+                TestProfileRule::Invoke => DiagnosticCode::TestProfileInvoke,
+                TestProfileRule::Branch => DiagnosticCode::TestProfileBranch,
+                TestProfileRule::DoneBranch => DiagnosticCode::TestProfileDoneBranch,
+                TestProfileRule::ModuleParameterWritten => {
+                    DiagnosticCode::TestProfileModuleParameterWritten
+                }
+                TestProfileRule::PortDirection => DiagnosticCode::TestProfilePortDirection,
+                TestProfileRule::SpecificTemplate => DiagnosticCode::TestProfileSpecificTemplate,
             },
             stage: Stage::Validation,
             expected: None,
@@ -14277,6 +14374,196 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:42d2febe0241c2b3","code":"test-profile/module-parameter","stage":"validation","spec":"SCE Test Profile §11.8","message":"test-suite 'ping_suite': the module parameter 'limit' is declared of type uint16, and the component 'tester', which the test case 'pings_and_pongs' runs, reads it as uint32: a module parameter is declared with the type its components read it as","actual":"uint16"}"#,
+                // A native condition in a test component (docs/adr/0091 §3):
+                // the condition is `actual`.
+                "forge/test-profile-native-code",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::NativeCode,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "cpp:ready()".into(),
+                    detail: "cond \"cpp:ready()\" is native code of one backend: a test \
+                             component holds sce-static expressions alone, so that every \
+                             runtime and the TTCN-3 export read one test (docs/adr/0091 §3)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:3d696fa0bdb45e34","code":"test-profile/native-code","stage":"validation","spec":"ADR 0091 §3","message":"test-component 'job_tester': cond \"cpp:ready()\" is native code of one backend: a test component holds sce-static expressions alone, so that every runtime and the TTCN-3 export read one test (docs/adr/0091 §3)","actual":"cpp:ready()"}"#,
+            ),
+            (
+                // A test component that needs a script engine (docs/adr/0091
+                // §3): the cause's wire kind is `actual`.
+                "forge/test-profile-script-engine",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::ScriptEngine,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "global-script".into(),
+                    detail: "needs a script engine (global-script): a test component runs on \
+                             none, so that every runtime and the TTCN-3 export read one test \
+                             (docs/adr/0091 §3)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8516c8932f2f662d","code":"test-profile/script-engine","stage":"validation","spec":"ADR 0091 §3","message":"test-component 'job_tester': needs a script engine (global-script): a test component runs on none, so that every runtime and the TTCN-3 export read one test (docs/adr/0091 §3)","actual":"global-script"}"#,
+            ),
+            (
+                // A `<raise>` in a test component (docs/SCE_TEST_PROFILE.md
+                // §8.2): the element is `actual`.
+                "forge/test-profile-component-construct",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::ComponentConstruct,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "raise".into(),
+                    detail: "<raise>: an internal event has no TTCN-3 form; a test component \
+                             writes states and eventless transitions for it \
+                             (docs/SCE_TEST_PROFILE.md §8.2)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8c5e4611252c2db3","code":"test-profile/component-construct","stage":"validation","spec":"SCE Test Profile §8.2","message":"test-component 'job_tester': <raise>: an internal event has no TTCN-3 form; a test component writes states and eventless transitions for it (docs/SCE_TEST_PROFILE.md §8.2)","actual":"raise"}"#,
+            ),
+            (
+                // A branch's `cond` that reads the message
+                // (docs/SCE_TEST_PROFILE.md §4.4): the expression is `actual`.
+                "forge/test-profile-message-read",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::MessageRead,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "_event.data.count > 0".into(),
+                    detail: "cond=\"_event.data.count > 0\" reads _event: the message a \
+                             receive branch takes is matched by its template alone, and is read \
+                             only in the executable content of that branch \
+                             (docs/SCE_TEST_PROFILE.md §4.4)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:efb6d0391e523e1a","code":"test-profile/message-read","stage":"validation","spec":"SCE Test Profile §4.4","message":"test-component 'job_tester': cond=\"_event.data.count > 0\" reads _event: the message a receive branch takes is matched by its template alone, and is read only in the executable content of that branch (docs/SCE_TEST_PROFILE.md §4.4)","actual":"_event.data.count > 0"}"#,
+            ),
+            (
+                // A send with a delay (docs/SCE_TEST_PROFILE.md §8.2): the
+                // attribute is `actual`.
+                "forge/test-profile-send",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::Send,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "delay".into(),
+                    detail: "<send> writes delay: a send of a test component has exactly type, \
+                             target, sce:test-template and sce:template-args, and a send has no \
+                             delay: a delay is a timer (P7) (docs/SCE_TEST_PROFILE.md §11.5)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d6f593e5b5d86a35","code":"test-profile/send","stage":"validation","spec":"SCE Test Profile §8.2","message":"test-component 'job_tester': <send> writes delay: a send of a test component has exactly type, target, sce:test-template and sce:template-args, and a send has no delay: a delay is a timer (P7) (docs/SCE_TEST_PROFILE.md §11.5)","actual":"delay"}"#,
+            ),
+            (
+                // A PTC's invocation that forwards events
+                // (docs/SCE_TEST_PROFILE.md §11.5): the attribute is `actual`.
+                "forge/test-profile-invoke",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::Invoke,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "autoforward".into(),
+                    detail: "<invoke> writes autoforward: a PTC is created with a literal id \
+                             and a src, and is handed nothing (docs/SCE_TEST_PROFILE.md §11.5)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:60346b4aa4b29701","code":"test-profile/invoke","stage":"validation","spec":"SCE Test Profile §8.2","message":"test-component 'job_tester': <invoke> writes autoforward: a PTC is created with a literal id and a src, and is handed nothing (docs/SCE_TEST_PROFILE.md §11.5)","actual":"autoforward"}"#,
+            ),
+            (
+                // A transition on an event a test component has no branch for
+                // (docs/SCE_TEST_PROFILE.md §8.2): the event is `actual`.
+                "forge/test-profile-branch",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::Branch,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "go".into(),
+                    detail: "<transition event=\"go\">: a transition of a test component is a \
+                             receive, timeout or done branch, or eventless, and the event of a \
+                             done branch is done.invoke.<id> of an <invoke> of its own state, \
+                             which invokes nothing (docs/SCE_TEST_PROFILE.md §8.2)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:94481c77011f243c","code":"test-profile/branch","stage":"validation","spec":"SCE Test Profile §8.2","message":"test-component 'job_tester': <transition event=\"go\">: a transition of a test component is a receive, timeout or done branch, or eventless, and the event of a done branch is done.invoke.<id> of an <invoke> of its own state, which invokes nothing (docs/SCE_TEST_PROFILE.md §8.2)","actual":"go"}"#,
+            ),
+            (
+                // A done branch that targets the invoking state
+                // (docs/SCE_TEST_PROFILE.md §8.2): the target is `actual`.
+                "forge/test-profile-done-branch",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::DoneBranch,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "running".into(),
+                    detail: "<transition event=\"done.invoke.helper\"> targets 'running', which \
+                             is 'running' or a state inside it, so 'running' stays active: the \
+                             PTC stays done, and a done branch that does not exit the state that \
+                             invoked it would match again on every snapshot \
+                             (docs/SCE_TEST_PROFILE.md §8.2)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:413b5f93d619e896","code":"test-profile/done-branch","stage":"validation","spec":"SCE Test Profile §8.2","message":"test-component 'job_tester': <transition event=\"done.invoke.helper\"> targets 'running', which is 'running' or a state inside it, so 'running' stays active: the PTC stays done, and a done branch that does not exit the state that invoked it would match again on every snapshot (docs/SCE_TEST_PROFILE.md §8.2)","actual":"running"}"#,
+            ),
+            (
+                // An assignment to a module parameter
+                // (docs/SCE_TEST_PROFILE.md §11.5): the location is `actual`.
+                "forge/test-profile-module-parameter-written",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::ModuleParameterWritten,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "limit".into(),
+                    detail: "<assign> writes the module parameter 'limit' (location=\"limit\"): \
+                             a module parameter's value is the one the suite declares, and the \
+                             component does not assign it (docs/SCE_TEST_PROFILE.md §11.5)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:63c255a941c08cf6","code":"test-profile/module-parameter-written","stage":"validation","spec":"SCE Test Profile §11.5","message":"test-component 'job_tester': <assign> writes the module parameter 'limit' (location=\"limit\"): a module parameter's value is the one the suite declares, and the component does not assign it (docs/SCE_TEST_PROFILE.md §11.5)","actual":"limit"}"#,
+            ),
+            (
+                // A send of a message its port's out list does not hold
+                // (docs/SCE_TEST_PROFILE.md §11.5): the template is `actual`.
+                "forge/test-profile-port-direction",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::PortDirection,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "JobReport".into(),
+                    detail: "<send> sends the template 'JobReport', of record:JobStatus, on the \
+                             port 'sut', whose type 'StatusIn' has no message on its out list: a \
+                             message a component sends is on its port's out list \
+                             (docs/SCE_TEST_PROFILE.md §11.5)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:cfaf77a64538c564","code":"test-profile/port-direction","stage":"validation","spec":"SCE Test Profile §11.5","message":"test-component 'job_tester': <send> sends the template 'JobReport', of record:JobStatus, on the port 'sut', whose type 'StatusIn' has no message on its out list: a message a component sends is on its port's out list (docs/SCE_TEST_PROFILE.md §11.5)","actual":"JobReport"}"#,
+            ),
+            (
+                // A send of a template that is not specific
+                // (docs/SCE_TEST_PROFILE.md §6.2): the template is `actual`.
+                "forge/test-profile-specific-template",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::SpecificTemplate,
+                    kind: ForgeKind::TestComponent,
+                    document: "job_tester".into(),
+                    actual: "EveryMatcher".into(),
+                    detail: "<send> sends the template 'EveryMatcher', which holds a matching \
+                             mechanism, itself or in a template it references: a send's template \
+                             is specific, values alone, every parameter bound \
+                             (docs/SCE_TEST_PROFILE.md §6.2)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e4abee1ecb50b99d","code":"test-profile/specific-template","stage":"validation","spec":"SCE Test Profile §6.2","message":"test-component 'job_tester': <send> sends the template 'EveryMatcher', which holds a matching mechanism, itself or in a template it references: a send's template is specific, values alone, every parameter bound (docs/SCE_TEST_PROFILE.md §6.2)","actual":"EveryMatcher"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -20184,6 +20471,17 @@ mod tests {
             | TestProfilePortLists
             | TestProfilePtcInvocation
             | TestProfileModuleParameter
+            | TestProfileNativeCode
+            | TestProfileScriptEngine
+            | TestProfileComponentConstruct
+            | TestProfileMessageRead
+            | TestProfileSend
+            | TestProfileInvoke
+            | TestProfileBranch
+            | TestProfileDoneBranch
+            | TestProfileModuleParameterWritten
+            | TestProfilePortDirection
+            | TestProfileSpecificTemplate
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -21186,6 +21484,12 @@ mod tests {
                 | TestProfileRecordFields
                 | TestProfileMessageEventName | TestProfilePortLists
                 | TestProfilePtcInvocation | TestProfileModuleParameter
+                | TestProfileNativeCode | TestProfileScriptEngine
+                | TestProfileComponentConstruct | TestProfileMessageRead
+                | TestProfileSend | TestProfileInvoke
+                | TestProfileBranch | TestProfileDoneBranch
+                | TestProfileModuleParameterWritten | TestProfilePortDirection
+                | TestProfileSpecificTemplate
                 | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
@@ -21604,9 +21908,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            517,
+            528,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 517 distinct variants to match the DiagnosticCode \
+             expected 528 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -22274,6 +22578,17 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | TestProfilePortLists
             | TestProfilePtcInvocation
             | TestProfileModuleParameter
+            | TestProfileNativeCode
+            | TestProfileScriptEngine
+            | TestProfileComponentConstruct
+            | TestProfileMessageRead
+            | TestProfileSend
+            | TestProfileInvoke
+            | TestProfileBranch
+            | TestProfileDoneBranch
+            | TestProfileModuleParameterWritten
+            | TestProfilePortDirection
+            | TestProfileSpecificTemplate
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget

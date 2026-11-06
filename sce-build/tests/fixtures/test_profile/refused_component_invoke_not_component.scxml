@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a PTC whose src is a port type, not a test component
+     (docs/SCE_TEST_PROFILE.md §4.9, §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_invoke_not_component"
+       datamodel="sce-static" initial="running">
+  <state id="running">
+    <invoke type="http://sce.dev/ext/test-component" src="job_port.scxml" id="helper"/>
+    <transition event="done.invoke.helper" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

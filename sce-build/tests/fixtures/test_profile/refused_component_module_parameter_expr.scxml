@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a module parameter given a value in the component; its value is
+     the suite's (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_module_parameter_expr"
+       datamodel="sce-static" initial="done">
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true" expr="5"/>
+  </datamodel>
+  <final id="done"/>
+</scxml>

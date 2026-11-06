@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a template on a timeout branch, which takes no message to match
+     (docs/SCE_TEST_PROFILE.md §4.2, §8.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_branch_template_without_receive"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-template" src="job_report.scxml" as="JobReport"/>
+  <sce:test-timer id="reply" duration="2s"/>
+  <state id="waiting">
+    <onentry>
+      <sce:start-timer timer="reply"/>
+    </onentry>
+    <transition sce:timeout="reply" sce:test-template="JobReport" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

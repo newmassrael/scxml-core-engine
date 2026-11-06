@@ -561,6 +561,40 @@ creates, and an `<invoke>` of a component that names no declared PTC, are
 model does not declare is `validation/feature-undeclared` (ADR 0057 §3), and a module
 parameter a component of one of its test cases reads that the suite does not declare,
 or declares of another type, is `test-profile/module-parameter`.
+A `test-component` is held to the refusals of docs/adr/0091 §3 and
+`docs/SCE_TEST_PROFILE.md` §8.2 and §11.5 before any rule of the data model or of the
+statechart is asked of it. A native condition (`cpp:`, `kt:`) is
+`test-profile/native-code`; a cause the script-engine analysis names is
+`test-profile/script-engine`; `<parallel>`, `<history>`, `<script>`, `<donedata>`,
+`<raise>` and `<cancel>` are `test-profile/component-construct`; `_event` read anywhere
+but in the executable content of a receive branch, a branch's `cond` among those places,
+is `test-profile/message-read`. A `<send>` is exactly `type` (the test-port processor),
+`target` (a declared port), `sce:test-template` and `sce:template-args`: another type, a
+target of `#_internal`, `event`, `eventexpr`, `targetexpr`, `typeexpr`, `delay`,
+`delayexpr`, `namelist`, `id`, `idlocation`, a `<param>` or a `<content>` is
+`test-profile/send`. An `<invoke>` is a PTC, `type` the test-component invocation with a
+literal `id` and a `src` that is a test component: another type, `typeexpr`, `srcexpr`,
+`idlocation`, `namelist`, `autoforward`, a `<param>`, a `<content>`, a `<finalize>` or a
+`src` of another kind is `test-profile/invoke`. A transition with an `event` other than
+`done.invoke.<id>` of an `<invoke>` of its own state, with more than one of `event`,
+`sce:receive` and `sce:timeout`, or with a template and no `sce:receive` is
+`test-profile/branch`; a done branch with no target, or one that targets the invoking
+state or a state inside it, is `test-profile/done-branch`. A module parameter with an
+`expr`, or written by `<assign>`, `<foreach>`, `<sce:append>`, `<sce:clear>`, `<sce:lift>`
+or `<sce:render>`, is `test-profile/module-parameter-written`. A timer's default or a
+`<sce:start-timer>` duration that is not a delay in whole microseconds is
+`test-profile/duration`. Read with the documents it names: `sce:template-args` whose count
+or whose variables' types differ from the template's formal parameters is
+`test-profile/template-parameter`; a sent template whose record is not on its port type's
+`out` list, or a received one not on its `in` list, is `test-profile/port-direction`; a
+sent template that is not specific, through every template it references, is
+`test-profile/specific-template`. A port or a timer declared twice, a reference to a
+port, timer, port type, template or variable the component does not declare or import,
+and a `<send>` or `<invoke>` without an attribute its form needs, or a
+`<sce:start-timer>` without a duration of a timer that declares no default, take the
+shape codes (`validation/duplicate-id`, `validation/invalid-attribute`,
+`validation/missing-attribute`); a verdict's `reason` that is not a string is refused by
+the expression codes, where every expression of the data model is typed.
 
 `union` (docs/adr/0092, section 1) is a value that is exactly one of several shapes,
 told apart by a tag of a closed enum. Its `<datamodel>` holds exactly one `<data>`, the
@@ -9361,7 +9395,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (517 codes)
+## Appendix — `DiagnosticCode` index (528 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9468,6 +9502,17 @@ Codes that the author can avoid by writing a better SCXML /
 | `test-profile/port-lists` | Validation |
 | `test-profile/ptc-invocation` | Validation |
 | `test-profile/module-parameter` | Validation |
+| `test-profile/native-code` | Validation |
+| `test-profile/script-engine` | Validation |
+| `test-profile/component-construct` | Validation |
+| `test-profile/message-read` | Validation |
+| `test-profile/send` | Validation |
+| `test-profile/invoke` | Validation |
+| `test-profile/branch` | Validation |
+| `test-profile/done-branch` | Validation |
+| `test-profile/module-parameter-written` | Validation |
+| `test-profile/port-direction` | Validation |
+| `test-profile/specific-template` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

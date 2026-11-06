@@ -944,16 +944,28 @@ references against a real document and drift silently.
 | `scxml/unknown-session-role-kind` | `validation` | `replace_one_of` |  |
 | `scxml/unreachable-state` | `validation` | no |  |
 | `scxml/unsupported-datamodel` | `validation` | `replace_one_of` | W3C SCXML §3.2 |
+| `test-profile/branch` | `validation` | no | SCE Test Profile §8.2 |
+| `test-profile/component-construct` | `validation` | no | SCE Test Profile §8.2 |
 | `test-profile/datamodel` | `validation` | no | SCE Test Profile §11.2 |
+| `test-profile/done-branch` | `validation` | no | SCE Test Profile §8.2 |
 | `test-profile/duration` | `validation` | no | SCE Test Profile §4.7 |
+| `test-profile/invoke` | `validation` | no | SCE Test Profile §8.2 |
 | `test-profile/literal` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/matcher-type` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/message-event-name` | `validation` | no | SCE Test Profile §11.3 |
+| `test-profile/message-read` | `validation` | no | SCE Test Profile §4.4 |
+| `test-profile/module-parameter-written` | `validation` | no | SCE Test Profile §11.5 |
 | `test-profile/module-parameter` | `validation` | no | SCE Test Profile §11.8 |
+| `test-profile/native-code` | `validation` | no | ADR 0091 §3 |
 | `test-profile/port-connection` | `validation` | no | SCE Test Profile §11.6 |
+| `test-profile/port-connection` | `validation` | no | SCE Test Profile §11.6 |
+| `test-profile/port-direction` | `validation` | no | SCE Test Profile §11.5 |
 | `test-profile/port-lists` | `validation` | no | SCE Test Profile §11.6 |
 | `test-profile/ptc-invocation` | `validation` | no | SCE Test Profile §11.6 |
 | `test-profile/record-fields` | `validation` | no | SCE Test Profile §11.4 |
+| `test-profile/script-engine` | `validation` | no | ADR 0091 §3 |
+| `test-profile/send` | `validation` | no | SCE Test Profile §8.2 |
+| `test-profile/specific-template` | `validation` | no | SCE Test Profile §6.2 |
 | `test-profile/template-float` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/template-parameter` | `validation` | no | SCE Test Profile §11.4 |
 | `timer/period-below-tick-rate` | `validation` | no | SCE Protocol-Synthesis RFC §5.D |

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a send of the job status on a port whose type only receives it:
+     the status is not on the port type's out list
+     (docs/SCE_TEST_PROFILE.md §11.3, §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_send_not_out"
+       datamodel="sce-static" initial="sending">
+  <sce:import kind="test-port-type" src="status_in_port.scxml" as="StatusIn"/>
+  <sce:import kind="test-template" src="job_report.scxml" as="JobReport"/>
+  <sce:test-port id="sut" type="StatusIn"/>
+  <state id="sending">
+    <onentry>
+      <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="JobReport"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

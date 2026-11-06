@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a done branch with no target, which leaves the state that
+     invoked the PTC active (docs/SCE_TEST_PROFILE.md §4.4, §8.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_done_branch_no_target"
+       datamodel="sce-static" initial="running">
+  <state id="running">
+    <invoke type="http://sce.dev/ext/test-component" src="helper.scxml" id="helper"/>
+    <transition event="done.invoke.helper">
+      <sce:setverdict value="pass"/>
+    </transition>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

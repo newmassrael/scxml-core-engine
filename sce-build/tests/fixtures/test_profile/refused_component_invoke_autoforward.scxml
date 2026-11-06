@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a PTC's invocation that forwards events; it is handed nothing
+     (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_invoke_autoforward"
+       datamodel="sce-static" initial="running">
+  <state id="running">
+    <invoke type="http://sce.dev/ext/test-component" src="helper.scxml" id="helper"
+            autoforward="true"/>
+    <transition event="done.invoke.helper" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

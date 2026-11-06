@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a port declared twice (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_port_twice"
+       datamodel="sce-static" initial="done">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <final id="done"/>
+</scxml>

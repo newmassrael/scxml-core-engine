@@ -623,7 +623,9 @@ pub enum TestProfileRule {
     /// parameter's default. Wire code `test-profile/literal`.
     Literal,
     /// §11.4: a `param` or an `args` entry that is not a formal parameter of
-    /// the template, or whose type is not its position's. Wire code
+    /// the template, or whose type is not its position's; §11.5: a
+    /// `sce:template-args` whose count or whose variables' types differ from
+    /// the template's formal parameters. Wire code
     /// `test-profile/template-parameter`.
     TemplateParameter,
     /// §11.4 and §8.1: a template whose type holds `float32` or `float64`.
@@ -657,6 +659,49 @@ pub enum TestProfileRule {
     /// reads and the suite does not declare, or declares of another type.
     /// Wire code `test-profile/module-parameter`.
     ModuleParameter,
+    /// docs/adr/0091 §3: a native expression (`cpp:`, `kt:`) in a
+    /// `test-component`. Wire code `test-profile/native-code`.
+    NativeCode,
+    /// docs/adr/0091 §3: a `test-component` that needs a script engine, by
+    /// any cause the script-engine analysis names. Wire code
+    /// `test-profile/script-engine`.
+    ScriptEngine,
+    /// §8.2: an element a `test-component` does not hold: `<parallel>`,
+    /// `<history>`, `<script>`, `<donedata>`, `<raise>`, `<cancel>`. Wire
+    /// code `test-profile/component-construct`.
+    ComponentConstruct,
+    /// §4.4 (P4) and docs/adr/0091 §3: `_event` read anywhere but in the
+    /// executable content of a receive branch, a `cond` among them. Wire
+    /// code `test-profile/message-read`.
+    MessageRead,
+    /// §8.2 and §11.5: a `<send>` that is not the send of the profile: a type
+    /// other than the test-port processor, a target of `#_internal`, an
+    /// attribute or a child the form does not take. Wire code
+    /// `test-profile/send`.
+    Send,
+    /// §8.2 and §11.5: an `<invoke>` that is not the creation of a PTC: a
+    /// type other than the test-component invocation, an attribute or a
+    /// child the form does not take, a `src` that is no test component. Wire
+    /// code `test-profile/invoke`.
+    Invoke,
+    /// §8.2: a transition that is not one branch kind: an `event` other than
+    /// `done.invoke.<id>` of an invocation of its own state, more than one of
+    /// `event`, `sce:receive` and `sce:timeout`, or a template on a
+    /// transition that receives nothing. Wire code `test-profile/branch`.
+    Branch,
+    /// §8.2: a done branch that leaves the invoking state active. Wire code
+    /// `test-profile/done-branch`.
+    DoneBranch,
+    /// §11.5: a module parameter given a value in the component, by an
+    /// `expr` or by a write. Wire code `test-profile/module-parameter-written`.
+    ModuleParameterWritten,
+    /// §11.5: a send whose template's type is not on its port's `out` list,
+    /// or a receive whose template's type is not on its port's `in` list.
+    /// Wire code `test-profile/port-direction`.
+    PortDirection,
+    /// §6.2 and §11.5: a send whose template is not specific. Wire code
+    /// `test-profile/specific-template`.
+    SpecificTemplate,
 }
 
 /// Semantic validation errors from kind-specific parsing.

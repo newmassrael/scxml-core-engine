@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a receive with a template the component does not import
+     (docs/SCE_TEST_PROFILE.md §11.5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_unimported_template"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="test-template" src="job_report.scxml" as="JobReport"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <state id="waiting">
+    <transition sce:receive="sut" sce:test-template="JobReprot" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

@@ -537,7 +537,7 @@ fn is_null_datamodel_condition(cond: &str) -> bool {
 /// ⚠ `cond` only. Every native-prefix branch in this tree is a condition
 /// or a guard; no `expr=` / `location=` attribute has one. Widening this
 /// to the value-expression attributes would admit text nothing lowers.
-fn is_native_condition(cond: &str) -> bool {
+pub(crate) fn is_native_condition(cond: &str) -> bool {
     // The prefix alone is not a guard. `cond="cpp:"` and `cond="cpp:   "`
     // carry no expression for the backend to lower, and every site that
     // lowers one pastes the stripped body straight into an `if (…)` —
@@ -3271,12 +3271,21 @@ impl SCXMLParser {
         // they are parsed below, because this is set. In any other statechart
         // nothing reads them, and the read ledger refuses each as unread.
         if declared_kind == crate::forge::model::ForgeKind::TestComponent {
-            model.test_component = Some(crate::test_component::read(
+            let profile =
+                crate::test_component::read(&root, &model.name, model.datamodel, diag_label)?;
+            // docs/adr/0091 §3; docs/SCE_TEST_PROFILE.md §8.2, §11.5: what a
+            // test component refuses of what it writes itself, before any
+            // rule of the data model or of the statechart is asked, so a
+            // construct the profile has no place for is refused as the
+            // profile's and not as one of those.
+            crate::test_component::rules::check_document(
                 &root,
+                &profile,
+                &model.forge_imports,
                 &model.name,
-                model.datamodel,
                 diag_label,
-            )?);
+            )?;
+            model.test_component = Some(profile);
         }
 
         // Every reader below takes the one directory `import_dir` chooses, so
@@ -3478,6 +3487,11 @@ impl SCXMLParser {
         //
         // Every reader below takes the one directory `import_dir` chose above.
         if let Some(dir) = import_dir.as_deref() {
+            // docs/SCE_TEST_PROFILE.md §11.5: what a test component asks of
+            // the port types, templates and components it names, read from
+            // the same directory every reader below reads. Nothing for any
+            // other statechart.
+            crate::test_component::rules::check_imports(&root, &model, dir, diag_label)?;
             let (schemas_by_stem, enums_by_stem) =
                 Self::parse_imported_forge_siblings(&model, dir, diag_label)?;
             model.imported_event_schemas =
@@ -3600,6 +3614,9 @@ impl SCXMLParser {
         // a state where the flag and its own explanation disagree.
         model.script_engine_causes = crate::script_engine_analyzer::analyze(&model);
         model.needs_script_engine = !model.script_engine_causes.is_empty();
+        // docs/adr/0091 §3: a test component needs no script engine, by any
+        // cause, so its manifest shows `needs_script_engine = false`.
+        crate::test_component::rules::refuse_script_engine(&model, diag_label)?;
 
         // Beside the script-engine walk and for the same reason: both
         // answer "what does the host have to supply?", and both are
@@ -7202,7 +7219,7 @@ fn local_name(node: &roxmltree::Node) -> String {
 /// not a state: taken for one, a foreign first child became the default
 /// initial state (§scxml-3.6) of a document that has no state by that id,
 /// and the document was refused (measured 2026-09-24).
-fn is_scxml_state_element(node: &roxmltree::Node) -> bool {
+pub(crate) fn is_scxml_state_element(node: &roxmltree::Node) -> bool {
     is_scxml_ns(node) && STATE_ELEMENT_TAGS.contains(&node.tag_name().name())
 }
 

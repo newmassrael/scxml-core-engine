@@ -9,8 +9,10 @@
 //! the profile by name until its runtime lands.
 //!
 //! The documents are under `sce-build/tests/fixtures/test_profile/`: one per
-//! accepted form, and one per refusal, each named for what it refuses. The
-//! rules that need an imported document are not this file's.
+//! accepted form, and one per refusal, each named for what it refuses. Of the
+//! rules that need an imported document, a test component's are here (the
+//! arguments, the port and the specificity of a template it uses, the PTC it
+//! invokes); the declaration kinds' are not this file's.
 
 use std::path::{Path, PathBuf};
 
@@ -575,6 +577,11 @@ fn every_refusal_fixture_is_judged() {
         .iter()
         .map(|(name, _, _)| (*name).to_string())
         .chain(
+            COMPONENT_REFUSALS
+                .iter()
+                .map(|(name, _, _)| (*name).to_string()),
+        )
+        .chain(
             [
                 "refused_component_datamodel.scxml",
                 "refused_statechart_receive.scxml",
@@ -692,6 +699,315 @@ fn a_test_component_declares_the_static_data_model() {
     let (code, actual, _) = record(&err);
     assert_eq!(code, DiagnosticCode::TestProfileDatamodel.as_str());
     assert_eq!(actual.as_deref(), Some("ecmascript"));
+}
+
+/// Every refusal of a test component (docs/adr/0091 §3;
+/// docs/SCE_TEST_PROFILE.md §8.2, §11.5), by the fixture that breaks it: its
+/// code, and the value the record names as `actual` where the rule names one.
+/// Each fixture is read from its directory, so the rules that read the port
+/// types, templates and components it names are asked too.
+const COMPONENT_REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
+    // §8.2: the elements a component does not hold.
+    (
+        "refused_component_parallel.scxml",
+        DiagnosticCode::TestProfileComponentConstruct,
+        Some("parallel"),
+    ),
+    (
+        "refused_component_history.scxml",
+        DiagnosticCode::TestProfileComponentConstruct,
+        Some("history"),
+    ),
+    (
+        "refused_component_script.scxml",
+        DiagnosticCode::TestProfileComponentConstruct,
+        Some("script"),
+    ),
+    (
+        "refused_component_donedata.scxml",
+        DiagnosticCode::TestProfileComponentConstruct,
+        Some("donedata"),
+    ),
+    (
+        "refused_component_raise.scxml",
+        DiagnosticCode::TestProfileComponentConstruct,
+        Some("raise"),
+    ),
+    (
+        "refused_component_cancel.scxml",
+        DiagnosticCode::TestProfileComponentConstruct,
+        Some("cancel"),
+    ),
+    // ADR 0091 §3 and §4.4: native code, and the message read outside a
+    // receive branch's content.
+    (
+        "refused_component_native_condition.scxml",
+        DiagnosticCode::TestProfileNativeCode,
+        Some("cpp:ready()"),
+    ),
+    (
+        "refused_component_cond_reads_message.scxml",
+        DiagnosticCode::TestProfileMessageRead,
+        Some("_event.data.count > 0"),
+    ),
+    (
+        "refused_component_timeout_reads_message.scxml",
+        DiagnosticCode::TestProfileMessageRead,
+        Some("_event.data.count"),
+    ),
+    // §8.2, §11.5: the send.
+    (
+        "refused_component_send_type.scxml",
+        DiagnosticCode::TestProfileSend,
+        Some("http://www.w3.org/TR/scxml/#SCXMLEventProcessor"),
+    ),
+    (
+        "refused_component_send_internal.scxml",
+        DiagnosticCode::TestProfileSend,
+        Some("#_internal"),
+    ),
+    (
+        "refused_component_send_delay.scxml",
+        DiagnosticCode::TestProfileSend,
+        Some("delay"),
+    ),
+    (
+        "refused_component_send_event.scxml",
+        DiagnosticCode::TestProfileSend,
+        Some("event"),
+    ),
+    (
+        "refused_component_send_param.scxml",
+        DiagnosticCode::TestProfileSend,
+        Some("param"),
+    ),
+    (
+        "refused_component_send_unknown_port.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("sutt"),
+    ),
+    (
+        "refused_component_send_no_template.scxml",
+        DiagnosticCode::ValidationMissingAttribute,
+        None,
+    ),
+    // §8.2, §11.5: the invocation of a PTC.
+    (
+        "refused_component_invoke_type.scxml",
+        DiagnosticCode::TestProfileInvoke,
+        Some("http://www.w3.org/TR/scxml/"),
+    ),
+    (
+        "refused_component_invoke_autoforward.scxml",
+        DiagnosticCode::TestProfileInvoke,
+        Some("autoforward"),
+    ),
+    (
+        "refused_component_invoke_idlocation.scxml",
+        DiagnosticCode::TestProfileInvoke,
+        Some("idlocation"),
+    ),
+    (
+        "refused_component_invoke_finalize.scxml",
+        DiagnosticCode::TestProfileInvoke,
+        Some("finalize"),
+    ),
+    (
+        "refused_component_invoke_no_id.scxml",
+        DiagnosticCode::ValidationMissingAttribute,
+        None,
+    ),
+    (
+        "refused_component_invoke_not_component.scxml",
+        DiagnosticCode::TestProfileInvoke,
+        Some("job_port.scxml"),
+    ),
+    // §4.2, §8.2: the branches.
+    (
+        "refused_component_branch_event.scxml",
+        DiagnosticCode::TestProfileBranch,
+        Some("go"),
+    ),
+    (
+        "refused_component_branch_two_kinds.scxml",
+        DiagnosticCode::TestProfileBranch,
+        Some("sce:timeout"),
+    ),
+    (
+        "refused_component_branch_done_of_another_state.scxml",
+        DiagnosticCode::TestProfileBranch,
+        Some("done.invoke.helper"),
+    ),
+    (
+        "refused_component_branch_template_without_receive.scxml",
+        DiagnosticCode::TestProfileBranch,
+        Some("sce:test-template"),
+    ),
+    (
+        "refused_component_done_branch_stays.scxml",
+        DiagnosticCode::TestProfileDoneBranch,
+        Some("running"),
+    ),
+    (
+        "refused_component_done_branch_no_target.scxml",
+        DiagnosticCode::TestProfileDoneBranch,
+        None,
+    ),
+    // §11.5: the declarations and what names them.
+    (
+        "refused_component_port_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("sut"),
+    ),
+    (
+        "refused_component_timer_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("reply"),
+    ),
+    (
+        "refused_component_port_type_unimported.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("JobPrt"),
+    ),
+    (
+        "refused_component_timer_duration.scxml",
+        DiagnosticCode::TestProfileDuration,
+        Some("0.0000005s"),
+    ),
+    (
+        "refused_component_start_timer_duration.scxml",
+        DiagnosticCode::TestProfileDuration,
+        Some("2"),
+    ),
+    (
+        "refused_component_start_timer_no_duration.scxml",
+        DiagnosticCode::ValidationMissingAttribute,
+        None,
+    ),
+    (
+        "refused_component_unknown_timer.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("replay"),
+    ),
+    (
+        "refused_component_unknown_receive_port.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("ctl"),
+    ),
+    (
+        "refused_component_unimported_template.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("JobReprot"),
+    ),
+    (
+        "refused_component_unknown_template_argument.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("limt"),
+    ),
+    (
+        "refused_component_module_parameter_expr.scxml",
+        DiagnosticCode::TestProfileModuleParameterWritten,
+        Some("5"),
+    ),
+    (
+        "refused_component_module_parameter_assigned.scxml",
+        DiagnosticCode::TestProfileModuleParameterWritten,
+        Some("limit"),
+    ),
+    // §6.2, §11.5: a template against the documents it is used with.
+    (
+        "refused_component_template_args_count.scxml",
+        DiagnosticCode::TestProfileTemplateParameter,
+        Some("limit"),
+    ),
+    (
+        "refused_component_template_args_type.scxml",
+        DiagnosticCode::TestProfileTemplateParameter,
+        Some("label"),
+    ),
+    (
+        "refused_component_receive_not_in.scxml",
+        DiagnosticCode::TestProfilePortDirection,
+        Some("CompletedWithin"),
+    ),
+    (
+        "refused_component_send_not_out.scxml",
+        DiagnosticCode::TestProfilePortDirection,
+        Some("JobReport"),
+    ),
+    (
+        "refused_component_send_not_specific.scxml",
+        DiagnosticCode::TestProfileSpecificTemplate,
+        Some("EveryMatcher"),
+    ),
+    (
+        "refused_component_send_not_specific_by_reference.scxml",
+        DiagnosticCode::TestProfileSpecificTemplate,
+        Some("ReportWithin"),
+    ),
+    // §11.5: a verdict's reason is an expression of type string, typed where
+    // every expression of the data model is.
+    (
+        "refused_component_verdict_reason.scxml",
+        DiagnosticCode::ExpressionTypeMismatch,
+        Some("limit"),
+    ),
+];
+
+#[test]
+fn each_rule_of_a_test_component_is_refused_with_its_own_code() {
+    let mut wrong: Vec<String> = Vec::new();
+    for (name, code, actual) in COMPONENT_REFUSALS {
+        let err = match statechart(name) {
+            Ok(_) => {
+                wrong.push(format!("{name}: accepted"));
+                continue;
+            }
+            Err(err) => err,
+        };
+        let (got_code, got_actual, line) = record(&err);
+        if got_code != code.as_str() {
+            wrong.push(format!(
+                "{name}: {got_code}, expected {}: {err:?}",
+                code.as_str()
+            ));
+            continue;
+        }
+        if got_actual.as_deref() != *actual {
+            wrong.push(format!(
+                "{name}: actual {got_actual:?}, expected {actual:?}"
+            ));
+        }
+        if line.is_none() {
+            wrong.push(format!("{name}: placed on no line"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// A refusal of a test component is placed on the row of what it names: the
+/// element a component does not hold, and the attribute that names an
+/// undeclared timer.
+#[test]
+fn a_test_components_refusal_is_placed_on_its_own_row() {
+    let row = |name: &str| statechart(name).expect_err("refused").location.line;
+    assert_eq!(row("refused_component_raise.scxml"), Some(10));
+    assert_eq!(row("refused_component_unknown_timer.scxml"), Some(14));
+    assert_eq!(row("refused_component_done_branch_stays.scxml"), Some(11));
+}
+
+/// The components the profile's examples are, and the fixtures every other
+/// test reads, hold to every rule a test component is asked: what they write
+/// and what the port types, templates and components they name say.
+#[test]
+fn the_accepted_test_components_hold_every_rule() {
+    for name in ["job_tester.scxml", "helper.scxml"] {
+        statechart(name).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+    }
+    let example = example("test-component");
+    SCXMLParser::new()
+        .parse_file(example.to_str().expect("a UTF-8 path"))
+        .unwrap_or_else(|e| panic!("the test-component example: {e:?}"));
 }
 
 /// In a statechart that is not a test component nothing reads the profile's
