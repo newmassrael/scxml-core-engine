@@ -5,7 +5,9 @@
 // saved states the shared fixtures hold are the text every backend writes and reads, so
 // a state saved by one backend is one another restores. Each format-3 text is restored
 // by the generated C++ machine of its document and saved again, which is the same text
-// byte for byte; and each format-1 text, which every backend still reads, is restored.
+// byte for byte; each format-1 text, which every backend still reads, is restored; and
+// each format-2 text a build before format 3 wrote is restored and saved as the format-3
+// text it is read as (docs/adr/0090, section 7).
 //
 // The Rust, Kotlin, Go and Python halves are `static_datamodel.rs`,
 // `StaticDatamodelTest.kt`, `a_state_another_backend_saved_is_restored_test.go` and
@@ -149,6 +151,25 @@ TEST(AStateAnotherBackendSavedIsRestored, AFormatOneStateIsRestoredAndTakesTheMa
 
 TEST(AStateAnotherBackendSavedIsRestored, EveryFormatOneTextOfADocumentIsHeldToItsMachine) {
     EXPECT_GE(textsOf(kSaved / "format1").size(), 10u) << "the shared format-1 texts lost instances";
+}
+
+// docs/adr/0090, section 7: a format-2 text, which every build before format 3 wrote, is
+// restored at the moment the shared fixtures were saved at and saved at once, and the text
+// is the format-3 text of the same name in `saved/format2/read_as/`, byte for byte: each
+// origin read by the table of section 7, and written back as the pair and the sender.
+TEST(AStateAnotherBackendSavedIsRestored, AFormatTwoStateIsRestoredAndSavedAsTheFormatThreeTextItIsReadAs) {
+    const std::map<std::string, std::string> written = textsOf(kSaved / "format2");
+    const std::map<std::string, std::string> readAs = textsOf(kSaved / "format2" / "read_as");
+    for (const auto &[name, text] : written) {
+        SCOPED_TRACE(name);
+        ASSERT_EQ(readAs.count(name), 1u) << "no text in read_as/ for " << name;
+        EXPECT_EQ(text.rfind("{\"format\":2,", 0), 0u) << text;
+        EXPECT_EQ(machines().at(machineOf(name))(text), readAs.at(name));
+    }
+}
+
+TEST(AStateAnotherBackendSavedIsRestored, EveryFormatTwoReadingTextIsHeldToItsMachine) {
+    EXPECT_GE(textsOf(kSaved / "format2").size(), 4u) << "the format-2 reading texts lost instances";
 }
 
 // docs/adr/0090, section 7: only the SCXML processor sets a sender, and it writes the
