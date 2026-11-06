@@ -768,7 +768,8 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    checked where the value crosses (Flanagan, "Hybrid Type Checking", POPL 2006). A host's injected value is checked
    where it is made, beside its upper bound (section 5.4): Kotlin `ValueBounds.listWithin` in `init`, Python
    `check_value` in `__post_init__`, the generated check of Go (`CheckListWithin`), C++
-   (`EventPayloadBounds::listWithin`) and Swift (`checkList(least:bound:)`), and Rust's `check_count`. The lower count
+   (`EventPayloadBounds::listWithin`) and Swift (`checkList(least:bound:)`), Rust's `check_count`, and C11's
+   `<name>_holds_at_least` beside `<name>_within` (one C11 layout serves a bound of every lower count). The lower count
    is not held in a Rust type, against the grain of section 7.4: a type with a lower count has no empty value, and
    every list a machine builds passes through counts below it, one append at a time, so the type that holds a list
    while it is built cannot be the type that states the count. Section 7.4's reason holds for the upper bound, which
