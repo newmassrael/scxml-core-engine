@@ -3856,14 +3856,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 }
                 // docs/adr/0090, section 7: a waiting send to this session's queue
                 // is this session's own, so the act names its sender, whose pair
-                // the SCXML processor writes again; an internal event carries
-                // neither.
+                // the SCXML processor writes again. One of a format-1 text names
+                // none, since that text holds no session id, and is armed as this
+                // machine's own. An internal event carries neither.
                 is SavedAct.Raise -> ScheduledSendEntry(
                     fireTimeMs = 0L,
                     sequenceNum = 0L,
                     sendId = act.sendId,
                     event = event(act.event),
-                    metadata = EventMetadata.sentBy(act.sender, sendId = act.sendId, data = act.data),
+                    metadata = EventMetadata.sentBy(act.sender ?: sessionIdentity, sendId = act.sendId, data = act.data),
                 )
                 is SavedAct.Internal -> ScheduledSendEntry(
                     fireTimeMs = 0L,

@@ -27,7 +27,9 @@ package com.sce.integration
 import com.sce.runtime.EnabledTransition
 import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata
+import com.sce.runtime.EventOrigin
 import com.sce.runtime.HistoryId
+import com.sce.runtime.IoProcessors
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedAct
 import com.sce.runtime.SavedSend
@@ -62,8 +64,14 @@ private class WaitingMachine : StateMachineEngine<WaitingState, WaitEvent>() {
     /** The events the machine took, in order: what a delivery is observed by. */
     val taken = mutableListOf<WaitEvent>()
 
+    /** The origin each event in [taken] arrived with, in the same order. */
+    val origins = mutableListOf<EventOrigin?>()
+
     override fun firstEnabledTransition(state: WaitingState, event: WaitEvent?): EnabledTransition<WaitingState, HistoryId>? {
-        if (event != null) taken.add(event)
+        if (event != null) {
+            taken.add(event)
+            origins.add(currentEventMetadata.origin)
+        }
         return null
     }
 
@@ -264,6 +272,25 @@ class ASavedDelayedSendIsDeliveredAfterARestoreTest {
                 "the order the saved machine would have delivered them in",
             )
             assertEquals(listOf(0L to richRequest()), calls.asked)
+        }
+    }
+
+    @Test
+    fun aWaitingSendOfAFormat1StateIsArmedAsTheRestoringMachinesOwn() {
+        // A format-1 text holds no session id, so its raise act names no sender;
+        // the machine that restores it sends it as its own (docs/adr/0090,
+        // section 7), with its own pair as the origin.
+        val saved = SavedState(
+            shape = WaitingMachine.SHAPE.first,
+            configuration = listOf("waiting"),
+            current = "waiting",
+            variables = emptyMap(),
+            pending = listOf(SavedSend(savedAtMs + 10, SavedAct.Raise("probe", "", "f1", null))),
+        )
+        restored(saved, 0) { machine, _, _ ->
+            machine.advanceTimeMs(10)
+            assertEquals(listOf<WaitEvent>(WaitEvent.Probe), machine.taken)
+            assertEquals(listOf(IoProcessors.scxmlOrigin(machine.sessionId)), machine.origins)
         }
     }
 

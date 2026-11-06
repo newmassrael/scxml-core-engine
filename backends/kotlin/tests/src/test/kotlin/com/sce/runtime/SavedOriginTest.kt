@@ -5,10 +5,12 @@
 // pair, processor then address, and its sender beside it, `null` where there is
 // none. A reader takes both as they are written and refuses, naming the record,
 // an origin that is neither `null` nor a whole pair, a sender that is not a
-// session id or stands beside an origin other than its SCXML pair, a session's
-// own send with no sender, and an internal act that holds either member. A text
-// of any other format is refused by its `format` alone. A format-1 text, which
-// has no place for the pair, is written back as format 1.
+// session id, a queued event's sender beside no origin, a session's own send
+// with no sender or with another pair than its sender's, and an internal act
+// that holds either member. A queued event's sender is not tied to its address.
+// A format-2 send that stored no origin is the send of the session holding it.
+// A text of any other format is refused by its `format` alone. A format-1 text,
+// which has no place for the pair, is written back as format 1.
 //
 // The shared instances and the format-2 reading fixtures are held by
 // `com.sce.integration.StaticDatamodelTest`; these are the texts no run writes.
@@ -114,19 +116,60 @@ class SavedOriginTest {
     }
 
     @Test
-    fun `a sender that is not a session id or stands beside another origin is refused naming its record`() {
+    fun `a sender that is not a session id or stands beside no origin is refused naming its record`() {
         val cases = listOf(
             Triple(pair("root"), "5", "'external[0].sender' is neither a text nor null"),
             Triple(pair("a b"), "\"a b\"", "'external[0].sender' (a b) is not a session id"),
-            // The SCXML processor writes the sender's own pair whenever it names one.
-            Triple(host, "\"motor\"", "'external[0]' names the sender 'motor' beside an origin that is not its SCXML pair"),
-            Triple(pair("other"), "\"root\"", "'external[0]' names the sender 'root' beside an origin"),
-            Triple("null", "\"root\"", "'external[0]' names the sender 'root' beside an origin"),
+            // A session that sends an event always has a reply address.
+            Triple("null", "\"root\"", "'external[0]' names the sender 'root' beside no origin"),
         )
         for ((origin, sender, reason) in cases) {
             val message = refusal(tree(external = listOf(event(origin, sender))))
             assertTrue(message.contains(reason), "$origin, $sender: $message")
         }
+    }
+
+    @Test
+    fun `a queued event's sender is read apart from its reply address`() {
+        // A remote child's event names the child as its sender and its Mesh
+        // endpoint as the address; any pair stands beside a sender.
+        val endpoint = """{"processor":"$scxml","address":"mesh://dev/machine/root.kid"}"""
+        val text = tree(
+            external = listOf(
+                event(endpoint, "\"root.kid\"", "answer"),
+                event(pair("other"), "\"root.kid\"", "report"),
+                event(host, "\"motor\"", "rest"),
+            ),
+        )
+        val saved = SavedState.fromJson(text)
+        assertEquals(
+            listOf(
+                EventOrigin(scxml, "mesh://dev/machine/root.kid") to "root.kid",
+                IoProcessors.scxmlOrigin("other") to "root.kid",
+                EventOrigin("x-sce-host", "motor") to "motor",
+            ),
+            saved.external.map { it.origin to it.sender },
+        )
+        assertEquals(text, saved.toJson())
+    }
+
+    @Test
+    fun `a format-2 waiting send that stored no origin is the send of the session that holds it`() {
+        val text = tree(
+            pending = listOf(
+                """{"due":"1700000001000","act":"raise","event":"ping","data":"","sendid":"r","origin":""}""",
+                """{"due":"1700000002000","act":"parent","event":"ping","data":"","sendid":"p","origin":""}""",
+            ),
+        ).replace("{\"format\":3,", "{\"format\":2,")
+        val saved = SavedState.fromJson(text)
+        assertEquals(
+            listOf(SavedAct.Raise("ping", "", "r", "root"), SavedAct.Parent("ping", "", "p", "root")),
+            saved.pending.map { it.act },
+        )
+        // Written back as format 3 with the session's pair, which reads again.
+        val written = saved.toJson()
+        assertTrue(written.contains("\"sendid\":\"r\",\"origin\":${pair("root")},\"sender\":\"root\""), written)
+        assertEquals(saved, SavedState.fromJson(written))
     }
 
     @Test
@@ -145,7 +188,10 @@ class SavedOriginTest {
             send("raise", "null", "null") to "'pending[0]' is a raise act with no sender",
             send("parent", "null", "null") to "'pending[0]' is a parent act with no sender",
             send("raise", host, "null") to "'pending[0]' is a raise act with no sender",
-            send("raise", pair("other"), "\"root\"") to "'pending[0]' names the sender 'root' beside an origin",
+            send("raise", pair("other"), "\"root\"") to
+                "'pending[0]' is a raise act whose origin is not the SCXML pair of its sender 'root'",
+            send("parent", host, "\"root\"") to
+                "'pending[0]' is a parent act whose origin is not the SCXML pair of its sender 'root'",
             send("internal", pair("root"), "null") to "'pending[0]' is an internal act and holds an origin or a sender",
             send("internal", "null", "\"root\"") to "'pending[0]' is an internal act and holds an origin or a sender",
             send("internal", pair("root"), "\"root\"") to "'pending[0]' is an internal act",

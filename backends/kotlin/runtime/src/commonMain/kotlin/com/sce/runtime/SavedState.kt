@@ -312,16 +312,10 @@ class SavedState(
                 val list = states as? List<*> ?: throw StateRefusal("'history.$id' is not an array")
                 history[id as String] = list.map { text(it, "history.$id") }
             }
-            val pending = (field("pending") as? List<*> ?: throw StateRefusal("'pending' is not an array"))
-                .mapIndexed { i, item -> SavedSend.fromJsonValue(item, "pending[$i]", format) }
-            val listed = field("invokes") as? List<*> ?: throw StateRefusal("'invokes' is not an array")
-            val invokes = if (format == FORMAT_1) {
-                SavedInvokes.Restarted(listed.map { text(it, "invokes") })
-            } else {
-                SavedInvokes.Resumed(listed.mapIndexed { i, item -> SavedChild.fromJsonValue(item, i, format) })
-            }
             // A tree's own members, which format 1 lacks: the session's id and its
-            // count of starts.
+            // count of starts. The id is read first: a format-2 waiting send that
+            // stored no origin is read as this session's own (docs/adr/0090,
+            // section 7).
             var sessionId = ""
             val invokeStarts = LinkedHashMap<String, Long>()
             if (format != FORMAT_1) {
@@ -336,6 +330,14 @@ class SavedState(
                         "invokestarts.$id",
                     )
                 }
+            }
+            val pending = (field("pending") as? List<*> ?: throw StateRefusal("'pending' is not an array"))
+                .mapIndexed { i, item -> SavedSend.fromJsonValue(item, "pending[$i]", format, sessionId) }
+            val listed = field("invokes") as? List<*> ?: throw StateRefusal("'invokes' is not an array")
+            val invokes = if (format == FORMAT_1) {
+                SavedInvokes.Restarted(listed.map { text(it, "invokes") })
+            } else {
+                SavedInvokes.Resumed(listed.mapIndexed { i, item -> SavedChild.fromJsonValue(item, i, format) })
             }
             val hostInvokes = (field("hostinvokes") as? List<*> ?: throw StateRefusal("'hostinvokes' is not an array"))
                 .mapIndexed { i, item -> SavedHostInvoke.fromJsonValue(item, "hostinvokes[$i]") }
@@ -974,9 +976,11 @@ data class SavedEvent(
      */
     val origin: EventOrigin? = null,
     /**
-     * The id of the session that sent the event, set only for one the SCXML
-     * Event I/O Processor delivered, whose [origin] is then that session's
-     * SCXML pair; `null` otherwise.
+     * The id of the session that sent the event, written by the processor that
+     * delivered it from that session (the SCXML processor for a local one, the
+     * Mesh transport for a remote child or parent); `null` for any other
+     * sender. Independent of [origin], the reply address, which is never `null`
+     * beside it.
      */
     val sender: String? = null,
     val invokeId: String = "",
@@ -1036,7 +1040,17 @@ data class SavedEvent(
             // Format 3 holds the pair and the sender as written; formats 1 and 2
             // hold one text beside a type, read by the table of section 7.
             val stored = if (format == SavedState.FORMAT_3) {
-                readOriginAndSender(members, what)
+                // The sender is who sent the event and the origin where a reply
+                // goes, which no rule ties to the sender: a remote child's event
+                // names the child and its Mesh endpoint. A session that sent an
+                // event always has a reply address, so a sender stands beside one.
+                readOriginAndSender(members, what).also {
+                    if (it.sender != null && it.origin == null) {
+                        throw StateRefusal(
+                            "'$what' names the sender '${it.sender}' beside no origin, and a session that sends " +
+                                "an event has a reply address")
+                    }
+                }
             } else {
                 IoProcessors.readStoredOrigin(text("origin"), text("origintype"))
             }
@@ -1066,9 +1080,9 @@ private fun originToJson(origin: EventOrigin?): Map<String, Any?>? =
  * [what] names in a refusal, read as they are written: neither is derived from
  * the other (docs/adr/0090, section 7). Both members are required, `null` where
  * there is none. Refused: an origin that is neither `null` nor a pair of two
- * non-empty texts with no other member, a sender that is not a session id, and
- * a sender beside an origin other than that session's SCXML pair, which the
- * SCXML processor writes whenever it names a sender.
+ * non-empty texts with no other member, and a sender that is not a session id.
+ * How the two stand beside each other is the record's own rule: a queued
+ * event's and a waiting send's differ.
  */
 private fun readOriginAndSender(members: Map<*, *>, what: String): StoredOrigin {
     if (!members.containsKey("origin")) throw StateRefusal("'$what' has no 'origin'")
@@ -1088,11 +1102,6 @@ private fun readOriginAndSender(members: Map<*, *>, what: String): StoredOrigin 
             written
         }
         else -> throw StateRefusal("'$what.sender' is neither a text nor null")
-    }
-    if (sender != null && origin != IoProcessors.scxmlOrigin(sender)) {
-        throw StateRefusal(
-            "'$what' names the sender '$sender' beside an origin that is not its SCXML pair, which the SCXML " +
-                "processor writes for every event it names a sender of")
     }
     return StoredOrigin(origin, sender)
 }
@@ -1300,19 +1309,33 @@ data class SavedSend(val due: Long, val act: SavedAct) {
          * one holds neither, the event it delivers being internal. Formats 1 and 2
          * stored `origin` alone, the sending session's id or its location: read as
          * that id ([IoProcessors.readStoredSender]), and not read at all for an
-         * internal act.
+         * internal act. A format-2 send that stored an empty one is read as sent by
+         * [sessionId], the session whose record holds it; a format-1 text names no
+         * session, so its send is read with no sender, and the machine that
+         * restores it arms it as its own.
          */
-        fun fromJsonValue(value: Any?, what: String, format: Int): SavedSend {
+        fun fromJsonValue(value: Any?, what: String, format: Int, sessionId: String): SavedSend {
             val members = value as? Map<*, *> ?: throw StateRefusal("'$what' is not an object")
             fun text(key: String): String {
                 if (!members.containsKey(key)) throw StateRefusal("'$what' has no '$key'")
                 return members[key] as? String ?: throw StateRefusal("'$what.$key' is not a text")
             }
-            // The sender of a session's own send, an act of [act].
+            // The sender of a session's own send, an act of [act], which carries
+            // that session's SCXML pair.
             fun sender(act: String): String? {
-                if (format != SavedState.FORMAT_3) return IoProcessors.readStoredSender(text("origin"))
-                return readOriginAndSender(members, what).sender ?: throw StateRefusal(
+                when (format) {
+                    SavedState.FORMAT_1 -> return IoProcessors.readStoredSender(text("origin"))
+                    SavedState.FORMAT_2 -> return IoProcessors.readStoredSender(text("origin")) ?: sessionId
+                }
+                val stored = readOriginAndSender(members, what)
+                val sender = stored.sender ?: throw StateRefusal(
                     "'$what' is a $act act with no sender: it is a session's own send, which names that session")
+                if (stored.origin != IoProcessors.scxmlOrigin(sender)) {
+                    throw StateRefusal(
+                        "'$what' is a $act act whose origin is not the SCXML pair of its sender '$sender': a " +
+                            "session's own send carries that session's pair")
+                }
+                return sender
             }
             // An internal act carries no origin: in formats 1 and 2 its stored text
             // is not read, and in format 3 both members are written `null`.
@@ -1393,8 +1416,9 @@ sealed interface SavedAct {
         val sendId: String,
         /**
          * The sender: this session's id, whose SCXML pair is the event's origin
-         * (docs/adr/0090, section 7). `null` only where a format-2 text stored
-         * none.
+         * (docs/adr/0090, section 7). A format-2 text that stored none names the
+         * session whose record holds the send, so a state read from a text always
+         * holds one.
          */
         val sender: String?,
     ) : SavedAct
@@ -1411,8 +1435,9 @@ sealed interface SavedAct {
         val sendId: String,
         /**
          * The sender: this session's id, whose SCXML pair is the event's origin
-         * (docs/adr/0090, section 7). `null` only where a format-2 text stored
-         * none.
+         * (docs/adr/0090, section 7). A format-2 text that stored none names the
+         * session whose record holds the send, so a state read from a text always
+         * holds one.
          */
         val sender: String?,
     ) : SavedAct
