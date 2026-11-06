@@ -5,11 +5,12 @@
 //! field holds one at any depth, named through `<sce:import kind="union">`; an
 //! alias no import names and a bracket on one are refused at the attribute; the
 //! scope a document's types are read in holds the union, its cases in its tag
-//! enum's order, and sizes it by its largest case; and every backend refuses a
-//! field of one by name until one lowers it (section 7).
+//! enum's order, and sizes it by its largest case; and every backend that does
+//! not lower a union refuses a field of one by name (section 7).
 
 use std::path::{Path, PathBuf};
 
+use sce_build::forge::codegen_matrix::UNION_BACKENDS;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
 use sce_build::forge::model::ForgeDocument;
@@ -212,8 +213,14 @@ fn compiled(language: Language) -> Located<ForgeError> {
 }
 
 #[test]
-fn every_backend_refuses_a_field_of_a_union_by_name() {
-    for language in Language::ALL.iter().copied() {
+fn every_backend_that_does_not_lower_a_union_refuses_a_field_of_one_by_name() {
+    let refusing: Vec<Language> = Language::ALL
+        .iter()
+        .copied()
+        .filter(|language| !UNION_BACKENDS.contains(language))
+        .collect();
+    assert!(!refusing.is_empty(), "every backend lowers a union");
+    for language in refusing {
         let err = compiled(language);
         assert!(
             matches!(

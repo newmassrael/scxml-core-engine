@@ -20,6 +20,11 @@
 //! | Swift | `[T]` | `String` / `[UInt8]` | `T?` | its struct |
 //! | C11 | `{ uint32_t len; T items[N]; }` | `sce_static_string_<N>_t` / `{ uint32_t len; uint8_t data[N]; }` | `{ bool present; T value; }` | its struct |
 //!
+//! A union (docs/adr/0092, section 7) is spelled on a backend that lowers one
+//! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]) as the sum type its own
+//! unit declares: on Kotlin the sealed interface, named as the import names the
+//! union's unit. Every other backend refuses it by name.
+//!
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
 //! bound on every profile (sections 5.4 and 7.4), the types a machine holds
@@ -43,6 +48,9 @@ pub(crate) trait UnitNames {
     /// The payload type of the record the import `alias` names, or `None` when
     /// no event-schema import goes by that alias.
     fn record(&self, alias: &str) -> Option<String>;
+    /// The sum type the unit of the union the import `alias` names declares,
+    /// or `None` when no union import goes by that alias.
+    fn union(&self, alias: &str) -> Option<String>;
     /// The name the enum the import `alias` names is mangled by in a C11
     /// composition's type name: its document, so one enum is one name whatever
     /// alias a unit imports it under.
@@ -90,8 +98,14 @@ pub(crate) fn unit_type(
             .record(alias)
             .ok_or_else(|| format!("`record:{alias}` names no event schema the document imports"))
     };
-    // No unit holds a union yet (docs/adr/0092, section 7): refused by name.
+    // A backend that does not lower a union refuses one by name (docs/adr/0092,
+    // section 7); one that does names the sum type of the union's unit.
     let unlowered = crate::forge::value_type::union_unlowered;
+    let union_type = |alias: &str| {
+        names
+            .union(alias)
+            .ok_or_else(|| format!("`union:{alias}` names no union the document imports"))
+    };
     let inner = |elem: &ValueType, c11: &mut C11Declarations| unit_type(lang, elem, names, c11);
     Ok(match lang {
         Language::Rust => match ty {
@@ -113,7 +127,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "ByteArray".to_string(),
             ValueType::Optional { elem } => format!("{}?", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
-            ValueType::Union { alias } => return Err(unlowered(alias)),
+            ValueType::Union { alias } => union_type(alias)?,
             ValueType::List { elem, .. } => format!("List<{}>", inner(elem, c11)?),
         },
         Language::Cpp => match ty {
@@ -249,6 +263,9 @@ mod tests {
         fn record(&self, alias: &str) -> Option<String> {
             (alias == "Item").then(|| "ItemPayload_t".to_string())
         }
+        fn union(&self, alias: &str) -> Option<String> {
+            (alias == "Shape").then(|| "UnionShape".to_string())
+        }
         fn enum_mangle(&self, alias: &str) -> String {
             format!("doc_{}", alias.to_lowercase())
         }
@@ -302,6 +319,41 @@ mod tests {
             &mut C11Declarations::default()
         )
         .is_err());
+    }
+
+    /// Kotlin names a union by the sealed interface its unit declares, at any
+    /// depth; a union no import names is refused, and a backend that does not
+    /// lower a union refuses it by name (docs/adr/0092, section 7).
+    #[test]
+    fn kotlin_names_a_union_by_its_units_sum_and_the_rest_refuse_it() {
+        assert_eq!(spelled(Language::Kotlin, "union:Shape"), "UnionShape");
+        assert_eq!(
+            spelled(Language::Kotlin, "list<optional<union:Shape>>[3]"),
+            "List<UnionShape?>"
+        );
+        let unnamed = unit_type(
+            Language::Kotlin,
+            &read("union:Other"),
+            &Names,
+            &mut C11Declarations::default(),
+        )
+        .expect_err("no import names the union");
+        assert!(unnamed.contains("`union:Other`"), "{unnamed}");
+        for lang in Language::ALL.iter().copied() {
+            if crate::forge::codegen_matrix::UNION_BACKENDS.contains(&lang) {
+                continue;
+            }
+            assert_eq!(
+                unit_type(
+                    lang,
+                    &read("union:Shape"),
+                    &Names,
+                    &mut C11Declarations::default()
+                ),
+                Err(crate::forge::value_type::union_unlowered("Shape")),
+                "{lang:?}"
+            );
+        }
     }
 
     #[test]

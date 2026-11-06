@@ -511,9 +511,16 @@ one whose every case is empty (which is its enum) are `validation/union-cases`, 
 each; a case's record that declares a field whose `id` is the tag's key is
 `validation/union-tag-collision`. A union declares no revision of its own: its
 revision is its tag enum's. A field, a variable or an algorithm's slot names one as
-`union:<alias>`, through `<sce:import kind="union">`. No backend lowers a union yet:
-generating a union document, and every position that holds a union, is refused by
-name (`generate/unsupported-feature`).
+`union:<alias>`, through `<sce:import kind="union">`. Kotlin generates a union
+document as a sealed interface, `val kind` on it, one nested case per variant (a
+`data class` holding the case's record as `value`, or a `data object` for an empty
+case) and a `proven<Case>()` read per case that holds a record, beside `REVISION`,
+`DATA_MAX_LEN`, `SCHEMA_ID` and `JSON_SCHEMA`; and an event schema's field of the
+union at any depth as that interface. Every other backend refuses a union document
+and a union field by name. A statechart's variable of a union, and its read or send
+of a payload that holds one, are composed values: a backend whose statechart does
+not lower them refuses each by name, as it refuses any composed value it does not
+lower (`generate/unsupported-feature`).
 
 `text-template` (docs/adr/0087, section 3) is a text with typed holes, rendered by
 one pure function into the same bytes on every backend. Its holes are the `<data>`

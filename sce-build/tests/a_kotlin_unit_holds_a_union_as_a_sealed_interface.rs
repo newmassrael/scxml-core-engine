@@ -10,11 +10,18 @@
 //!   record or a `data object` for an empty case, and one `proven<Case>()` per
 //!   case that holds a record; beside it `REVISION` (the tag enum's),
 //!   `DATA_MAX_LEN`, `SCHEMA_ID` and `JSON_SCHEMA` (section 3.1, item 4).
+//! * `event_shapes.scxml`, whose fields hold the union alone, in a list and
+//!   optionally, generates a payload class that names the sealed interface at
+//!   each depth and imports the union's unit.
+//! * The units, with the enum and the records they name, compile together under
+//!   `kotlinc -Werror` with a file that builds every case, reads one through its
+//!   `proven` read and matches a value exhaustively.
 //!
 //! A case whose Kotlin class would be another's, and a case that holds a
 //! record no unit declares a class for, are refused by name.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
@@ -103,6 +110,91 @@ fn a_union_unit_names_its_revision_its_largest_text_and_its_schema() {
     }
     assert!(text.contains("oneOf"), "{text}");
     assert!(!text.contains("No JSON_SCHEMA"), "{text}");
+}
+
+#[test]
+fn a_payload_names_the_sealed_interface_at_every_depth() {
+    let (file, text) = unit("event_shapes.scxml");
+    assert_eq!(file, "EventShapes.kt");
+    for fragment in [
+        "import com.sce.generated.union_shape.*\n",
+        "data class EventShapesPayload(",
+        "val one: UnionShape,",
+        "val many: List<UnionShape>,",
+        "val maybe: UnionShape?)",
+        "const val MANY_MAX_COUNT: UInt = 3u\n",
+        "const val JSON_SCHEMA: String = \"",
+    ] {
+        position(&text, fragment);
+    }
+}
+
+/// A file that uses every part of the union's unit: a case of each kind built,
+/// a payload that holds the union at each depth, a `proven` read, the tag, and
+/// a `when` with no `else` that the compiler holds to every case.
+const PROBE: &str = r#"package probe
+
+import com.sce.generated.event_shapes.EventShapesPayload
+import com.sce.generated.shape_kind.ShapeKind
+import com.sce.generated.shape_radius.ShapeRadiusPayload
+import com.sce.generated.shape_rect.ShapeRectPayload
+import com.sce.generated.union_shape.UnionShape
+
+fun named(shape: UnionShape): String =
+    when (shape) {
+        UnionShape.Dot -> "dot"
+        is UnionShape.Circle -> "circle of ${shape.value.radius}"
+        is UnionShape.Rect -> "rect of ${shape.value.width} by ${shape.value.height}"
+    }
+
+fun radiusOf(shape: UnionShape): UShort = shape.provenCircle().radius
+
+fun tagOf(shape: UnionShape): ShapeKind = shape.kind
+
+fun sent(): EventShapesPayload =
+    EventShapesPayload(
+        one = UnionShape.Circle(ShapeRadiusPayload(2u)),
+        many = listOf(UnionShape.Rect(ShapeRectPayload(3u, 4u)), UnionShape.Dot),
+        maybe = null,
+    )
+"#;
+
+#[test]
+fn the_kotlin_of_a_union_and_the_payload_that_holds_it_compiles_under_werror() {
+    let Some(kotlinc) =
+        sce_build::toolchain::require_any_or_skip(&["kotlinc"], "compile a generated union")
+    else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let mut sources = Vec::new();
+    for name in [
+        "shape_kind.scxml",
+        "shape_radius.scxml",
+        "shape_rect.scxml",
+        "union_shape.scxml",
+        "event_shapes.scxml",
+    ] {
+        let (file, text) = unit(name);
+        let path = dir.path().join(file);
+        std::fs::write(&path, text).expect("write the unit");
+        sources.push(path);
+    }
+    let probe = dir.path().join("Probe.kt");
+    std::fs::write(&probe, PROBE).expect("write the probe");
+    sources.push(probe);
+    let out = Command::new(&kotlinc)
+        .arg("-Werror")
+        .arg("-d")
+        .arg(dir.path().join("classes"))
+        .args(&sources)
+        .output()
+        .expect("kotlinc runs");
+    assert!(
+        out.status.success(),
+        "the generated Kotlin does not compile:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 /// The refusal Kotlin gives the union `union` written beside `documents`, each

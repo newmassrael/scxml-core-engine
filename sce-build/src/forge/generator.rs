@@ -3599,6 +3599,14 @@ impl crate::forge::schema_unit_type::UnitNames for SchemaUnitNames<'_> {
             .find(|i| i.kind == "event-schema" && i.alias == alias)
             .map(|i| event_schema_payload_type(&i.document_name, self.l.lang))
     }
+    // The type the union's own unit declares, as the import line that brings
+    // its unit into scope names it ([`forge_import_identity`]).
+    fn union(&self, alias: &str) -> Option<String> {
+        self.imports
+            .iter()
+            .find(|i| i.kind == "union" && i.alias == alias)
+            .map(|i| i.type_name.clone())
+    }
     fn enum_mangle(&self, alias: &str) -> String {
         self.imports
             .iter()
@@ -3630,6 +3638,18 @@ fn composed_schema_field(
         )))
     };
     let spelled = unit_type(l.lang, &field.sce_type, names, c11).map_err(refused)?;
+    // The value a field starts at is a Swift struct's alone, and asked only
+    // there: a type another backend spells (a union on Kotlin) has no Swift
+    // zero to refuse it by.
+    let zero = match l.lang {
+        crate::generator::Language::Swift => swift_zero(&field.sce_type, names).map_err(refused)?,
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Go
+        | crate::generator::Language::Python
+        | crate::generator::Language::C11 => String::new(),
+    };
     Ok(serde_json::json!({
         "id": field.id,
         "cpp_type": spelled,
@@ -3639,7 +3659,7 @@ fn composed_schema_field(
         "swift_type": spelled,
         "py_type": spelled,
         "c_type": spelled,
-        "swift_zero": swift_zero(&field.sce_type, names).map_err(refused)?,
+        "swift_zero": zero,
         "go_field_name": event_schema_field_ident(&field.id, crate::generator::Language::Go),
         "rs_field_name": event_schema_field_ident(&field.id, crate::generator::Language::Rust),
     }))
@@ -4067,9 +4087,17 @@ fn render_event_schema(
     // directive from `ImportContext.include_stmt` / `namespace` / `type_name` —
     // already populated by `resolve_imports` with the correct per-language
     // shape.
+    //
+    // A union (`union:<alias>`, docs/adr/0092) is the third, on a backend that
+    // writes a union's unit ([`crate::forge::codegen_matrix::UNION_BACKENDS`]):
+    // a backend that does not refused every union field above, and names no
+    // unit it does not write, whatever imports its caller hands it.
+    let lowers_unions = crate::forge::codegen_matrix::UNION_BACKENDS.contains(&_lang);
     let type_imports: Vec<&ImportContext> = imports
         .iter()
-        .filter(|i| i.kind == "enum" || i.kind == "event-schema")
+        .filter(|i| {
+            i.kind == "enum" || i.kind == "event-schema" || (i.kind == "union" && lowers_unions)
+        })
         .collect();
 
     // C++ / C11: per-imported-document `<snake>.h` include path. The
