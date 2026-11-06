@@ -830,7 +830,91 @@ static void check_bounded_list(void) {
     }
 }
 
+/* A union over `dot`, `circle` and `disc`, the last two holding one record (`radius`
+   uint16), read as a generated reader reads it: the tag first, then the case's record
+   from the same object (docs/adr/0092, section 4). Answers the refusal, `*at_tag` where
+   it stands, and the case and radius read. */
+static const char *read_shape(const char *data, size_t *kind, uint16_t *radius, bool *at_tag) {
+    static const char *const kinds[] = {"dot", "circle", "disc"};
+    sce_payload_fields_t fields;
+    const char *s = NULL;
+    *at_tag = false;
+    *radius = 0u;
+    const char *refusal = sce_payload_decode(data, &fields);
+    if (refusal == NULL) {
+        refusal = sce_payload_field(&fields, "s", &s);
+    }
+    if (refusal == NULL) {
+        refusal = sce_payload_union_open(s, "kind", kinds, 3u, kind, at_tag);
+    }
+    if (refusal != NULL || *kind == 0u) {
+        return refusal;
+    }
+    *at_tag = false;
+    sce_payload_fields_t record;
+    refusal = sce_payload_record_open(s, NULL, &record);
+    return refusal != NULL ? refusal : sce_payload_read_u16(&record, "radius", radius);
+}
+
+/* A union's tag is read first, wherever it stands, and names the case whose record is
+   read from the same object: two cases that hold one record stay apart by their tag, a
+   key or a `null` the case does not declare is stepped over, and a refusal stands at the
+   union, at its tag, or at the case's field. */
+static void check_union(void) {
+    const struct {
+        const char *data;
+        size_t kind;
+        uint16_t radius;
+    } readable[] = {
+        {"{\"s\":{\"kind\":\"dot\"}}", 0u, 0u},
+        {"{\"s\":{\"radius\":2,\"kind\":\"disc\"}}", 2u, 2u},
+        {"{\"s\":{\"kind\":\"circle\",\"radius\":2,\"width\":null,\"text\":\"x\"}}", 1u, 2u},
+        {"{\"s\":{\"kind\":\"dot\",\"radius\":null}}", 0u, 0u},
+    };
+
+    for (size_t i = 0u; i < sizeof(readable) / sizeof(readable[0]); ++i) {
+        size_t kind = 99u;
+        uint16_t radius = 0u;
+        bool at_tag = false;
+        const char *refusal = read_shape(readable[i].data, &kind, &radius, &at_tag);
+        if (refusal != NULL || kind != readable[i].kind || radius != readable[i].radius) {
+            fprintf(stderr, "FAIL: %s read case %u radius %u (%s)\n", readable[i].data, (unsigned)kind,
+                    (unsigned)radius, refusal != NULL ? refusal : "read");
+            failures++;
+        }
+    }
+
+    const struct {
+        const char *data;
+        const char *refusal;
+        bool at_tag;
+    } refused[] = {
+        {"{\"s\":[]}", SCE_PAYLOAD_REFUSE_NOT_UNION, false},
+        {"{\"s\":null}", SCE_PAYLOAD_REFUSE_NULL, false},
+        {"{\"s\":{\"radius\":2}}", SCE_PAYLOAD_REFUSE_MISSING, true},
+        {"{\"s\":{\"kind\":null,\"radius\":null}}", SCE_PAYLOAD_REFUSE_NULL, true},
+        {"{\"s\":{\"kind\":3,\"radius\":\"x\"}}", SCE_PAYLOAD_REFUSE_NOT_TEXT, true},
+        {"{\"s\":{\"kind\":\"oval\",\"radius\":2}}", SCE_PAYLOAD_REFUSE_UNKNOWN_VARIANT, true},
+        {"{\"s\":{\"kind\":\"circle\",\"width\":2}}", SCE_PAYLOAD_REFUSE_MISSING, false},
+        {"{\"s\":{\"kind\":\"disc\",\"radius\":null}}", SCE_PAYLOAD_REFUSE_NULL, false},
+    };
+
+    for (size_t i = 0u; i < sizeof(refused) / sizeof(refused[0]); ++i) {
+        size_t kind = 0u;
+        uint16_t radius = 0u;
+        bool at_tag = !refused[i].at_tag;
+        const char *refusal = read_shape(refused[i].data, &kind, &radius, &at_tag);
+        if (refusal != refused[i].refusal || at_tag != refused[i].at_tag) {
+            fprintf(stderr, "FAIL: %s refused (%s) at the %s, the case says (%s) at the %s\n", refused[i].data,
+                    refusal != NULL ? refusal : "nothing", at_tag ? "tag" : "union or field", refused[i].refusal,
+                    refused[i].at_tag ? "tag" : "union or field");
+            failures++;
+        }
+    }
+}
+
 int main(void) {
+    check_union();
     check_cross_product();
     check_maximal_sizes();
     check_the_writer_refuses_a_shape_it_cannot_close();

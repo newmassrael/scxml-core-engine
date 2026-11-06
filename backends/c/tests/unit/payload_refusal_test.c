@@ -32,6 +32,8 @@ enum {
     NAME_CAP = 64,
     MIN_CASES = 40,
     LIST_CAP = 16,
+    /* The most cases a union of the table declares. */
+    UNION_CASES = 8,
     /* The room of the standard refusal record's `path` (sce:std/lift/refusal.scxml). */
     STANDARD_PATH_BOUND = 256
 };
@@ -202,6 +204,35 @@ static const char *read_described(const char *type, const char *value, const cha
             }
         }
         return NULL;
+    }
+    const char *described = member(type, "union");
+    if (described != NULL) {
+        /* The tag's enum is the cases' names, in the table's order; an empty case is
+           null, any other the record it holds (docs/adr/0092, section 4). */
+        char tag[NAME_CAP];
+        (void)sce_payload_text_into(member(described, "tag"), tag, sizeof(tag), false);
+        const char *cases = member(described, "cases");
+        char held[UNION_CASES][NAME_CAP];
+        const char *names[UNION_CASES] = {NULL};
+        const char *records[UNION_CASES] = {NULL};
+        size_t count = 0u;
+        for (const char *name = sce_payload_skip_space(cases + 1); name != NULL && *name == '"' && count < UNION_CASES;
+             name = sce_payload_next_member(name)) {
+            (void)sce_payload_text_into(name, held[count], sizeof(held[count]), false);
+            names[count] = held[count];
+            const char *colon = sce_payload_skip_space(sce_payload_past_string(name));
+            records[count] = sce_payload_skip_space(colon + 1);
+            count++;
+        }
+        size_t index = 0u;
+        bool at_tag = false;
+        const char *refusal = sce_payload_union_open(value, tag, names, count, &index, &at_tag);
+        if (refusal != NULL) {
+            char below[POINTER_CAP];
+            (void)sce_payload_pointer_join(below, sizeof(below), pointer, tag);
+            return refuse_at(refusal, at_tag ? below : pointer, at);
+        }
+        return sce_payload_is_null(records[index]) ? NULL : read_described(records[index], value, pointer, at);
     }
     fprintf(stderr, "FAIL: a type of the table names no constructor\n");
     return refuse_at(SCE_PAYLOAD_REFUSE_NOT_TEXT, pointer, at);

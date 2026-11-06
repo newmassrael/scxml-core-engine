@@ -126,6 +126,8 @@ SCE_C_UNUSED static const char sce_payload_refuse_unknown_variant[] = "is not a 
 SCE_C_UNUSED static const char sce_payload_refuse_null[] = "is null, and its type is not optional";
 SCE_C_UNUSED static const char sce_payload_refuse_not_list[] = "is not a list";
 SCE_C_UNUSED static const char sce_payload_refuse_not_record[] = "is not a record";
+/* A union is one object, its tag beside its case's fields (docs/adr/0092, section 2). */
+SCE_C_UNUSED static const char sce_payload_refuse_not_union[] = "is not a union";
 SCE_C_UNUSED static const char sce_payload_refuse_past_count[] = "holds more elements than its type declares";
 /* A list short of the lower count its type states (docs/adr/0086, section 15). */
 SCE_C_UNUSED static const char sce_payload_refuse_short_count[] = "holds fewer elements than its type declares";
@@ -159,6 +161,7 @@ SCE_C_UNUSED static const char sce_payload_refuse_too_deep[] =
 #define SCE_PAYLOAD_REFUSE_NULL sce_payload_refuse_null
 #define SCE_PAYLOAD_REFUSE_NOT_LIST sce_payload_refuse_not_list
 #define SCE_PAYLOAD_REFUSE_NOT_RECORD sce_payload_refuse_not_record
+#define SCE_PAYLOAD_REFUSE_NOT_UNION sce_payload_refuse_not_union
 #define SCE_PAYLOAD_REFUSE_PAST_COUNT sce_payload_refuse_past_count
 #define SCE_PAYLOAD_REFUSE_SHORT_COUNT sce_payload_refuse_short_count
 #define SCE_PAYLOAD_REFUSE_PAST_BOUND sce_payload_refuse_past_bound
@@ -195,6 +198,7 @@ SCE_C_UNUSED static inline uint8_t sce_payload_refusal_code(const char *refusal)
         {sce_payload_refuse_null, SCE_PAYLOAD_CODE_NULL_NOT_OPTIONAL},
         {sce_payload_refuse_not_list, SCE_PAYLOAD_CODE_WRONG_KIND},
         {sce_payload_refuse_not_record, SCE_PAYLOAD_CODE_WRONG_KIND},
+        {sce_payload_refuse_not_union, SCE_PAYLOAD_CODE_WRONG_KIND},
         {sce_payload_refuse_past_count, SCE_PAYLOAD_CODE_TOO_MANY},
         {sce_payload_refuse_short_count, SCE_PAYLOAD_CODE_TOO_FEW},
         {sce_payload_refuse_past_bound, SCE_PAYLOAD_CODE_TOO_LONG},
@@ -1849,6 +1853,34 @@ SCE_C_UNUSED static inline const char *sce_payload_value_variant(const char *p, 
         }
     }
     return SCE_PAYLOAD_REFUSE_UNKNOWN_VARIANT;
+}
+
+/* Open the union value at `p` (docs/adr/0092, section 4): one object holding its tag
+   under the key `tag`, a name of the tag's enum, and beside it the fields of the case the
+   tag names. The tag is read first, wherever it stands in the object, as
+   `sce_payload_value_variant` reads an enum against the `count` names of `names`, and the
+   index of the case it names is written to `*index`. The caller then opens the case's
+   record at `p` with `sce_payload_record_open`, under that record's own defaults, and
+   reads its fields from the same object; an empty case reads none. A key the case does
+   not declare is never asked for, so it is stepped over.
+
+   The refusals come in one order on every runtime: a value that is no object
+   (SCE_PAYLOAD_REFUSE_NOT_UNION, or SCE_PAYLOAD_REFUSE_NULL for `null`); then the tag,
+   absent (SCE_PAYLOAD_REFUSE_MISSING) or refused as the enum's reader refuses it. The
+   caller composes the pointer, so `*at_tag` says where the refusal stands: true at the
+   tag (the union's pointer joined with `tag`), false at the union itself. */
+SCE_C_UNUSED static inline const char *sce_payload_union_open(const char *p, const char *tag, const char *const *names,
+                                                              size_t count, size_t *index, bool *at_tag) {
+    *at_tag = false;
+    if (*p != '{') {
+        return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_UNION);
+    }
+    *at_tag = true;
+    const char *tag_value = sce_payload_find_in(p, tag);
+    if (tag_value == NULL) {
+        return SCE_PAYLOAD_REFUSE_MISSING;
+    }
+    return sce_payload_value_variant(tag_value, names, count, index);
 }
 
 /* The short form JSON gives a control character, or 0 when it has none. */
