@@ -195,10 +195,10 @@ extension SavedState {
     /// The configuration `saved` was taken in is judged first, before the shape.
     public static func upgrade(_ saved: SavedState, against shape: SavedShape) throws -> SavedState {
         try checkFeatures(saved, shape.features)
-        // A format-2 state names an enum by its document and a format-1 state by the alias it is imported under,
-        // so each is judged against its own shape (docs/adr/0045, section 2).
-        let first = saved.formatVersion == format2 ? shape.format2First : shape.first
-        let revised = saved.formatVersion == format2 ? shape.format2Revised : shape.revised
+        // A tree (formats 2 and 3) names an enum by its document and a format-1 state by the alias it is imported
+        // under, so each is judged against its own shape (docs/adr/0045, section 2). Format 3 changes no shape.
+        let first = saved.formatVersion == format1 ? shape.first : shape.format2First
+        let revised = saved.formatVersion == format1 ? shape.revised : shape.format2Revised
         if saved.revisions.isEmpty {
             try checkShape(saved, first)
         } else if saved.shape == first {

@@ -237,13 +237,12 @@ extension SavedState {
 }
 
 private func savedEvent<Event>(_ queued: EventWithMetadata<Event>, name: String) -> SavedEvent {
-    // Format 2 holds the origin and its sender as one text (docs/adr/0090, "Until step 6"): the
-    // sender's id for an event a session sent, the address otherwise, beside the pair's processor.
+    // The pair the delivering processor wrote and the sender beside it, as the event holds them
+    // (docs/adr/0090, section 7): a restore gives them back as they were.
     let metadata = queued.metadata
     return SavedEvent(
         name: name, data: metadata.data, type: metadata.eventType.description, sendID: metadata.sendID,
-        origin: storedOriginText(metadata.origin, sender: metadata.sender), originType: metadata.originProcessor,
-        invokeID: metadata.invokeID,
+        origin: metadata.origin, sender: metadata.sender, invokeID: metadata.invokeID,
         hostInvokeToken: metadata.hostInvokeToken.map { Int64(bitPattern: $0) })
 }
 
@@ -267,7 +266,7 @@ extension Engine where Policy: SavedPolicy {
             throw StateRefusal(
                 "the machine is not at a macrostep boundary: its internal queue holds events a save would lose")
         }
-        let pending = try savedPendingSends(wallNowMs: wallNowMs)
+        let pending = try savedPendingSends(wallNowMs: wallNowMs, sessionID: policy.sessionID)
         let children = try policy.savedChildren(wallNowMs: wallNowMs)
         // Document order, which is also entry order: the same text from every run that stands in the same place.
         let active = getActiveStates().sorted { policy.getDocumentOrder($0) < policy.getDocumentOrder($1) }
@@ -408,17 +407,17 @@ extension Engine where Policy: SavedPolicy {
             default:
                 throw StateRefusal("the saved event '\(event.name)' is of the type '\(event.type)', which is no event type")
             }
-            // docs/adr/0090, section 7: the stored text is read back as the pair and the sender it stands
-            // for, whichever backend wrote it.
-            let stored = readStoredOrigin(event.origin, originType: event.originType)
+            // docs/adr/0090, section 7: the pair and the sender as the saved state holds them, read from a
+            // format-3 text as written and from an older one by the table of that section.
             return EventWithMetadata(
                 resolved,
                 metadata: EventMetadata(
-                    name: event.name, data: event.data, eventType: kind, sendID: event.sendID, origin: stored.origin,
-                    sender: stored.sender, invokeID: event.invokeID,
+                    name: event.name, data: event.data, eventType: kind, sendID: event.sendID, origin: event.origin,
+                    sender: event.sender, invokeID: event.invokeID,
                     hostInvokeToken: event.hostInvokeToken.map { UInt64(bitPattern: $0) }))
         }
-        let waiting = try judgeSavedSends(saved.pending, invokeIDs: policy.savedInvokeIDs)
+        let waiting = try judgeSavedSends(
+            saved.pending, invokeIDs: policy.savedInvokeIDs, sessionID: saved.boundSessionID ?? policy.sessionID)
         let apply = try policy.readSavedVariables(from: saved)
         guard saved.autoSendSeq >= 0 else {
             throw StateRefusal("the saved count of generated send ids is negative")

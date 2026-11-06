@@ -165,7 +165,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
 @Test func aSendNamingAnEventTheDocumentLacksIsRefusedAndLeavesTheMachineAsItWas() throws {
     let (_, engine, _) = try startedTimers()
     var saved = try engine.save(wallNowMs: startedAt)
-    saved.pending[1].act = .raise(event: "nowhere", data: "", sendID: "__send_0", origin: root)
+    saved.pending[1].act = .raise(event: "nowhere", data: "", sendID: "__send_0", sender: root)
     let policy = StaticTimersPolicy()
     let restoredEngine = Engine(policy: policy)
     restoredEngine.setClock(ManualClock())
@@ -178,7 +178,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
 @Test func aSendWithNoIdIsRefused() throws {
     let (_, engine, _) = try startedTimers()
     var saved = try engine.save(wallNowMs: startedAt)
-    saved.pending[0].act = .internal(event: "inner", data: "", sendID: "", origin: root)
+    saved.pending[0].act = .internal(event: "inner", data: "", sendID: "")
     let restoredEngine = Engine(policy: StaticTimersPolicy())
     restoredEngine.setClock(ManualClock())
     let said = refusal { try restoredEngine.restore(saved, wallNowMs: startedAt) }
@@ -189,7 +189,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
     let (_, engine, _) = try startedTimers()
     var saved = try engine.save(wallNowMs: startedAt)
     saved.pending[0].act = .child(
-        invokeID: "ghost", event: "inner", data: "", sendID: "__send_2", origin: root)
+        invokeID: "ghost", event: "inner", data: "", sendID: "__send_2", sender: root)
     let restoredEngine = Engine(policy: StaticTimersPolicy())
     restoredEngine.setClock(ManualClock())
     #expect(
@@ -207,7 +207,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
     let saved = try SavedState.fromJSON(engine.save(wallNowMs: startedAt).toJSON())
     #expect(
         saved.pending.first { $0.due == startedAt + 3000 }?.act
-            == .parent(event: "up", data: "", sendID: "up", origin: root))
+            == .parent(event: "up", data: "", sendID: "up", sender: root))
     let restoredEngine = Engine(policy: StaticTimersPolicy())
     restoredEngine.setClock(ManualClock())
     try restoredEngine.restore(saved, wallNowMs: startedAt)

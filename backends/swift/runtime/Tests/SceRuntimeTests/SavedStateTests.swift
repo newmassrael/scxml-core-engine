@@ -6,18 +6,24 @@ import Testing
 
 @testable import SceRuntime
 
-// The saved-state document (`sce-saved-state`, formats 1 and 2): what one backend wrote, every backend reads,
-// and what a reader writes back is the text it was given. The shared fixtures under
-// `sce-build/tests/fixtures/static_datamodel/saved` are the text the Rust and Kotlin runtimes write and read,
-// so reading each and writing it again holds this runtime's reader and writer to theirs, byte for byte.
+// The saved-state document (`sce-saved-state`, formats 1, 2 and 3): what one backend wrote, every backend reads,
+// and what a reader writes back is the text it was given, or, for a format-2 text, the format-3 text it is read
+// as (docs/adr/0090, section 7). The shared fixtures under `sce-build/tests/fixtures/static_datamodel/saved` are
+// the text every runtime writes and reads, so reading each and writing it again holds this runtime's reader and
+// writer to theirs, byte for byte.
 
-private func savedFixtures() -> [(name: String, text: String)] {
+/// `sce-build/tests/fixtures/static_datamodel/saved`, found from this file's own path.
+private func savedDirectory() -> URL {
     var root = URL(fileURLWithPath: #filePath)
     // The file, then SceRuntimeTests, Tests, runtime, swift and backends.
     for _ in 0..<6 {
         root.deleteLastPathComponent()
     }
-    let directory = root.appendingPathComponent("sce-build/tests/fixtures/static_datamodel/saved")
+    return root.appendingPathComponent("sce-build/tests/fixtures/static_datamodel/saved")
+}
+
+private func savedFixtures() -> [(name: String, text: String)] {
+    let directory = savedDirectory()
     var found: [(name: String, text: String)] = []
     for sub in ["", "format1"] {
         let folder = sub.isEmpty ? directory : directory.appendingPathComponent(sub)
@@ -59,14 +65,31 @@ private func format1(_ extra: String = "") -> String {
         do {
             let state = try SavedState.fromJSON(text)
             #expect(state.toJSON() + "\n" == text, "\(name) is written back as it was read")
-            #expect(state.formatVersion == (name.hasPrefix("format1/") ? 1 : 2), "\(name) is of the format it is in")
+            #expect(state.formatVersion == (name.hasPrefix("format1/") ? 1 : 3), "\(name) is of the format it is in")
         } catch {
             Issue.record("\(name) is not read: \(error)")
         }
     }
 }
 
-/// A session of a format-2 tree that runs no child: a child of a tree is one, with an id of its own.
+@Test func everyFormat2TextIsWrittenBackAsTheFormat3TextItIsReadAs() throws {
+    // docs/adr/0090, section 7: each origin of a format-2 text is read by the table of that section, and the
+    // state is written back as format 3. `format2/read_as/` holds, under the same name, the text each is read as.
+    let directory = savedDirectory().appendingPathComponent("format2")
+    let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        .filter { $0.hasSuffix(".json") }.sorted()
+    #expect(names.count == 4, "\(names.count) format-2 texts read: a test that read none would pass")
+    for name in names {
+        let text = try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8)
+        let readAs = try String(
+            contentsOf: directory.appendingPathComponent("read_as").appendingPathComponent(name), encoding: .utf8)
+        let state = try SavedState.fromJSON(text)
+        #expect(state.formatVersion == SavedState.format3, "\(name) is written as format 3")
+        #expect(state.toJSON() + "\n" == readAs, "\(name) is written as the text it is read as")
+    }
+}
+
+/// A session of a tree that runs no child: a child of a tree is one, with an id of its own.
 private func leaf(_ id: String) -> SavedState {
     SavedState(
         shape: String(repeating: "a", count: 64), configuration: ["a"], current: "a", variables: [],
@@ -81,13 +104,15 @@ private func leaf(_ id: String) -> SavedState {
     let two = SavedState(
         shape: one.shape, configuration: ["a"], current: "a", variables: [], invokes: .resumed([child]),
         sessionID: "root", invokeStarts: [SavedEntry("kid", 1)])
-    #expect(two.formatVersion == 2)
+    #expect(two.formatVersion == 3, "a tree is written as format 3")
     #expect(two.boundSessionID == "root")
     #expect(two.invokeIDs == ["kid"])
     #expect(two.invokeStart("kid") == 1)
     #expect(two.invokeStart("other") == 0, "an invoke that never started has started none")
+    #expect(two.toJSON().hasPrefix(#"{"format":3,"#))
     let again = try SavedState.fromJSON(two.toJSON())
-    #expect(again.formatVersion == 2)
+    #expect(again.formatVersion == 3)
+    #expect(again == two)
 }
 
 @Test func aVariableIsAskedForByItsId() throws {
@@ -101,9 +126,13 @@ private func leaf(_ id: String) -> SavedState {
     #expect(refusal("not json")?.hasPrefix("the saved state is not JSON") == true)
     #expect(refusal("[]") == "the saved state is not an object")
     #expect(refusal("{}") == "the saved state has no 'format'")
+    // A format of the future is refused by its `format`, before anything else of the text is read.
     #expect(
-        refusal(#"{"format":3}"#)
-            == "the saved state is format 3, and this runtime reads formats 1 and 2")
+        refusal(#"{"format":4}"#)
+            == "the saved state is format 4, and this runtime reads formats 1, 2 and 3")
+    #expect(
+        refusal(#"{"format":"3"}"#)
+            == #"the saved state is format "3", and this runtime reads formats 1, 2 and 3"#)
     #expect(refusal(format1().replacingOccurrences(of: #""current":"a","#, with: "")) == "the saved state has no 'current'")
     #expect(refusal(format1().replacingOccurrences(of: #""configuration":["a"]"#, with: #""configuration":"a""#))
         == "'configuration' is not an array")
@@ -141,7 +170,7 @@ private func leaf(_ id: String) -> SavedState {
         shape: child.shape, configuration: ["a"], current: "a", variables: [], invokes: .resumed([grandchild]),
         sessionID: "root", invokeStarts: [SavedEntry("kid", 1)])
     // The child's session states a format of its own, which only the root of a tree does.
-    let text = root.toJSON().replacingOccurrences(of: #""session":{"#, with: #""session":{"format":2,"#)
+    let text = root.toJSON().replacingOccurrences(of: #""session":{"#, with: #""session":{"format":3,"#)
     #expect(refusal(text) == "'invokes[0].session' states a format, which only the root of a tree does")
     // A refusal inside the child's own session is named by the path to it.
     let broken = root.toJSON().replacingOccurrences(of: #""hostinvoketoken":"0""#, with: #""hostinvoketoken":"x""#)
@@ -210,4 +239,172 @@ private func leaf(_ id: String) -> SavedState {
     #expect(text.contains(#""params":{"b":["2"],"y":["1"]}"#), "\(text)")
     let read = try SavedState.fromJSON(text)
     #expect(read == state)
+}
+
+// MARK: - An event's origin in format 3 (docs/adr/0090, section 7)
+
+/// A format-3 state of the session `root`, with `pending` and `external` inside its two arrays.
+private func format3(pending: String = "", external: String = "") -> String {
+    """
+    {"format":3,"shape":"\(String(repeating: "a", count: 64))","sessionid":"root","configuration":["a"],\
+    "current":"a","variables":{},"history":{},"pending":[\(pending)],"invokes":[],"invokestarts":{},\
+    "hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[\(external)]}
+    """
+}
+
+/// The text of a pair, `processor` then `address`.
+private func pairText(_ processor: String, _ address: String) -> String {
+    #"{"processor":"\#(processor)","address":"\#(address)"}"#
+}
+
+/// The text of the pair the SCXML Event I/O Processor writes for the session `id`.
+private func scxmlPairText(_ id: String) -> String {
+    pairText(scxmlEventProcessorType, scxmlProcessorLocation(sessionID: id))
+}
+
+/// A queued event whose `origin` and `sender` members are the texts given.
+private func queuedText(origin: String, sender: String) -> String {
+    #"{"name":"e","data":"","type":"external","sendid":"","origin":\#(origin),"sender":\#(sender),"invokeid":"","hostinvoketoken":null}"#
+}
+
+@Test func aFormat3OriginIsReadAsWrittenAndWrittenBackAsItWasRead() throws {
+    let sent = format3(external: queuedText(origin: scxmlPairText("peer:1"), sender: #""peer:1""#))
+    let read = try SavedState.fromJSON(sent)
+    #expect(read.external.first?.origin == scxmlOrigin(sender: "peer:1"))
+    #expect(read.external.first?.origin?.address == "sce://scxml/peer%3A1", "the id is percent-encoded")
+    #expect(read.external.first?.sender == "peer:1")
+    // A host's own pair, an SCXML pair at an address that names no session, and none: no sender beside any.
+    let host = format3(external: queuedText(origin: pairText("x-sce-host", "motor"), sender: "null"))
+    #expect(try SavedState.fromJSON(host).external.first?.origin == EventOrigin(processor: "x-sce-host", address: "motor"))
+    let mesh = format3(external: queuedText(origin: pairText(scxmlEventProcessorType, "mesh://ecu"), sender: "null"))
+    #expect(try SavedState.fromJSON(mesh).external.first?.sender == nil)
+    let none = format3(external: queuedText(origin: "null", sender: "null"))
+    #expect(try SavedState.fromJSON(none).external.first?.origin == nil)
+    // A session's own send carries its pair and its id; an internal act carries neither.
+    let raise = #"{"due":"5","act":"raise","event":"e","data":"","sendid":"s","origin":\#(scxmlPairText("root")),"sender":"root"}"#
+    let inner = #"{"due":"6","act":"internal","event":"i","data":"","sendid":"t","origin":null,"sender":null}"#
+    let acts = format3(pending: "\(raise),\(inner)")
+    #expect(
+        try SavedState.fromJSON(acts).pending.map(\.act)
+            == [.raise(event: "e", data: "", sendID: "s", sender: "root"), .internal(event: "i", data: "", sendID: "t")])
+    for text in [sent, host, mesh, none, acts] {
+        #expect(try SavedState.fromJSON(text).toJSON() == text, "\(text) is written back as it was read")
+    }
+}
+
+@Test func aFormat3OriginThatIsNotAWholePairOrIsNotItsSendersPairIsRefused() {
+    func event(_ origin: String, _ sender: String) -> String? {
+        refusal(format3(external: queuedText(origin: origin, sender: sender)))
+    }
+    #expect(event(#""kid""#, "null") == "'external[0].origin' is neither null nor a pair of a processor and an address")
+    #expect(event(#"{"processor":"p"}"#, "null") == "'external[0].origin' has no 'address'")
+    #expect(event(#"{"address":"a"}"#, "null") == "'external[0].origin' has no 'processor'")
+    #expect(
+        event(#"{"processor":"","address":"a"}"#, "null")
+            == "'external[0].origin.processor' is empty, and a pair names both its members")
+    #expect(
+        event(#"{"processor":"p","address":""}"#, "null")
+            == "'external[0].origin.address' is empty, and a pair names both its members")
+    #expect(
+        event(#"{"processor":"p","address":"a","port":"1"}"#, "null")
+            == "'external[0].origin' holds 'port', which a pair does not")
+    #expect(event(#"{"processor":"p","address":7}"#, "null") == "'external[0].origin.address' is not a text")
+    #expect(event(scxmlPairText("kid"), #""a b""#) == "'external[0].sender' (a b) is not a session id, an XML Nmtoken")
+    #expect(event(scxmlPairText("kid"), "7") == "'external[0].sender' is neither null nor a session id")
+    // A sender beside any origin but the SCXML pair of that very id.
+    let notKids = "'external[0].origin' is not the SCXML pair of its sender 'kid'"
+    #expect(event(pairText("x-sce-host", "motor"), #""kid""#) == notKids)
+    #expect(event("null", #""kid""#) == notKids)
+    #expect(event(scxmlPairText("other"), #""kid""#) == notKids)
+    #expect(event(pairText("x-sce-host", "sce://scxml/kid"), #""kid""#) == notKids)
+    // Both members are always written.
+    let unsent = #"{"name":"e","data":"","type":"external","sendid":"","origin":null,"invokeid":"","hostinvoketoken":null}"#
+    #expect(refusal(format3(external: unsent)) == "'external[0]' has no 'sender'")
+
+    func act(_ members: String) -> String? {
+        refusal(format3(pending: #"{"due":"5",\#(members)}"#))
+    }
+    let mine = scxmlPairText("root")
+    #expect(
+        act(#""act":"raise","event":"e","data":"","sendid":"s","origin":null,"sender":null"#)
+            == "'pending[0]' is a raise act with no sender, which a session's own send names")
+    #expect(
+        act(#""act":"parent","event":"e","data":"","sendid":"s","origin":\#(mine),"sender":null"#)
+            == "'pending[0]' is a parent act with no sender, which a session's own send names")
+    #expect(
+        act(#""act":"child","invokeid":"k","event":"e","data":"","sendid":"s","origin":null,"sender":"root""#)
+            == "'pending[0].origin' is not the SCXML pair of its sender 'root'")
+    #expect(
+        act(#""act":"internal","event":"e","data":"","sendid":"s","origin":\#(mine),"sender":null"#)
+            == "'pending[0].origin' is not null, and an internal act's event has no origin and no sender")
+    #expect(
+        act(#""act":"internal","event":"e","data":"","sendid":"s","origin":null,"sender":"root""#)
+            == "'pending[0].sender' is not null, and an internal act's event has no origin and no sender")
+}
+
+@Test func aFormat1TextIsWrittenBackAsFormat1WithTheOriginTextFormat2Wrote() throws {
+    // docs/adr/0090, section 7: format 1 has no place for the pair, so a state read from it and written back
+    // without a machine writes `origin` as the sender's id for a session's send and the address otherwise, and
+    // `origintype` as the pair's processor.
+    let host = #"{"name":"e","data":"","type":"external","sendid":"","origin":"motor","origintype":"x-sce-host","invokeid":"","hostinvoketoken":null}"#
+    let sent = #"{"name":"f","data":"","type":"external","sendid":"","origin":"kid","origintype":"\#(scxmlEventProcessorType)","invokeid":"","hostinvoketoken":null}"#
+    let raise = #"{"due":"5","act":"raise","event":"e","data":"","sendid":"s","origin":"kid"}"#
+    let text = format1()
+        .replacingOccurrences(of: #""external":[]"#, with: #""external":[\#(host),\#(sent)]"#)
+        .replacingOccurrences(of: #""pending":[]"#, with: #""pending":[\#(raise)]"#)
+    let state = try SavedState.fromJSON(text)
+    #expect(
+        state.external.map(\.origin) == [EventOrigin(processor: "x-sce-host", address: "motor"), scxmlOrigin(sender: "kid")])
+    #expect(state.external.map(\.sender) == [nil, "kid"])
+    #expect(state.pending.map(\.act) == [.raise(event: "e", data: "", sendID: "s", sender: "kid")])
+    #expect(state.formatVersion == SavedState.format1)
+    #expect(state.toJSON() == text, "a format-1 state is written back as format 1")
+    // An empty address is none whatever type was stored beside it, and none is written as two empty texts. An
+    // internal act's stored origin is not its event's, which has none.
+    let blank = #"{"name":"g","data":"","type":"external","sendid":"","origin":"","origintype":"\#(scxmlEventProcessorType)","invokeid":"","hostinvoketoken":null}"#
+    let inner = #"{"due":"5","act":"internal","event":"i","data":"","sendid":"t","origin":"kid"}"#
+    let stored = format1()
+        .replacingOccurrences(of: #""external":[]"#, with: #""external":[\#(blank)]"#)
+        .replacingOccurrences(of: #""pending":[]"#, with: #""pending":[\#(inner)]"#)
+    let written = try SavedState.fromJSON(stored)
+    #expect(written.external.first?.origin == nil && written.external.first?.sender == nil)
+    #expect(written.pending.map(\.act) == [.internal(event: "i", data: "", sendID: "t")])
+    #expect(
+        written.toJSON()
+            == stored.replacingOccurrences(of: #""origintype":"\#(scxmlEventProcessorType)""#, with: #""origintype":"""#)
+            .replacingOccurrences(of: #""origin":"kid""#, with: #""origin":"""#))
+}
+
+@Test func aSessionsOwnWaitingSendIsSavedAsSentByTheSessionAndAnInternalOneAsSentByNone() throws {
+    // docs/adr/0090, section 7, "Text form": a `raise`, `parent` or `child` act carries the pair and the id of the
+    // session saved, and an `internal` act neither, whatever sender the waiting entry kept.
+    let (engine, _, _) = makeEngine { _ in }
+    engine.scheduleEvent(.go, delay: .milliseconds(5), sendID: "s", eventData: "", sender: "")
+    engine.scheduleRoutedEvent(
+        .go, delay: .milliseconds(6), sendID: "t", eventData: "", sender: "root",
+        route: ScheduledRoute(kind: .internalQueue, eventName: "go"))
+    engine.scheduleRoutedEvent(
+        nil, delay: .milliseconds(7), sendID: "u", eventData: "", sender: "root",
+        route: ScheduledRoute(kind: .parent, eventName: "up"))
+    let saved = try engine.savedPendingSends(wallNowMs: 1000, sessionID: "root")
+    #expect(
+        saved.map(\.act) == [
+            .raise(event: "go", data: "", sendID: "s", sender: "root"),
+            .internal(event: "go", data: "", sendID: "t"),
+            .parent(event: "up", data: "", sendID: "u", sender: "root"),
+        ])
+}
+
+@Test func aSessionsOwnSendThatStoredNoSenderIsArmedAsSentByTheRestoredSession() throws {
+    // A format-1 text stored an empty `origin` for a send of a machine that held no session id: the send is the
+    // restored session's own, and it is armed as that session's, as the save of it writes it.
+    let (engine, _, _) = makeEngine { _ in }
+    let sends = [
+        SavedSend(due: 5, act: .raise(event: "go", data: "", sendID: "a", sender: nil)),
+        SavedSend(due: 6, act: .raise(event: "go", data: "", sendID: "b", sender: "peer")),
+        SavedSend(due: 7, act: .parent(event: "up", data: "", sendID: "c", sender: nil)),
+        SavedSend(due: 8, act: .internal(event: "go", data: "", sendID: "d")),
+    ]
+    let arms = try engine.judgeSavedSends(sends, invokeIDs: [], sessionID: "root")
+    #expect(arms.map(\.sender) == ["root", "peer", "root", ""])
 }

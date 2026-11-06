@@ -70,8 +70,8 @@ func aTextThatIsNoLocationNamesNoSession(text: String) {
     #expect(none.originAddress == "" && none.originProcessor == "", "no origin reads both fields as empty")
 }
 
-// docs/adr/0090, section 7: a format-2 origin, as a saved state stores it, is read back as the
-// pair and the sender.
+// docs/adr/0090, section 7: a format-1 or format-2 origin, as a saved state stores it, is read
+// back as the pair and the sender.
 @Test func aFormat2OriginIsReadAsThePairItStoodFor() {
     let none = readStoredOrigin("", originType: "")
     #expect(none.origin == nil && none.sender == nil)
@@ -108,7 +108,8 @@ func aTextThatIsNoLocationNamesNoSession(text: String) {
     #expect(readStoredSender("sce://scxml/a%20b") == "a b")
 }
 
-@Test func anEventIsStoredAsFormat2WritesIt() {
+// A format-1 text written back stores the origin by the rule format 2 used (docs/adr/0090, section 7).
+@Test func anEventOfAFormat1TextIsStoredAsFormat2StoredIt() {
     #expect(storedOriginText(scxmlOrigin(sender: "kid"), sender: "kid") == "kid")
     #expect(storedOriginText(EventOrigin(processor: "x-sce-host", address: "motor"), sender: nil) == "motor")
     #expect(storedOriginText(nil, sender: nil) == "")

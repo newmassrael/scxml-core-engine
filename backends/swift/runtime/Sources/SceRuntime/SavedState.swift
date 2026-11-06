@@ -13,7 +13,10 @@
 // The format is one JSON document (`sce-saved-state`), the same on every backend, so what one backend saved
 // another can read. Format 1 names a running child by its id, which a restore starts again from its
 // beginning. Format 2 saves a tree of sessions: each running child is saved inside its parent with its own
-// state, which a restore resumes where it stood. Both are read, and each is written as it is.
+// state, which a restore resumes where it stood. Format 3 is format 2 with an event's origin held as the one
+// pair the processor that delivered it wrote, and the sending session's id beside it (docs/adr/0090, section
+// 7). All three are read. A tree is written as format 3, whichever format it was read from, and a state that
+// names its running children by id alone is written as format 1.
 //
 // This file is the document: its model, the reading of its text and the writing of it. Whether a state is
 // one a machine may be restored from (its shape, its features, its revisions) is the machine's to judge, and
@@ -80,8 +83,15 @@ public struct SavedEvent: Equatable, Sendable {
     public var data: String
     public var type: String
     public var sendID: String
-    public var origin: String
-    public var originType: String
+
+    /// The pair the processor that delivered the event wrote (docs/adr/0090, section 1), nil for an event no
+    /// processor stamped.
+    public var origin: EventOrigin?
+
+    /// The id of the session that sent the event, set only for one the SCXML Event I/O Processor delivered,
+    /// whose `origin` is then that session's pair.
+    public var sender: String?
+
     public var invokeID: String
 
     /// The token a host-run invocation's completion or failure was stamped with when the engine accepted it,
@@ -91,15 +101,15 @@ public struct SavedEvent: Equatable, Sendable {
     public var hostInvokeToken: Int64?
 
     public init(
-        name: String, data: String = "", type: String = "external", sendID: String = "", origin: String = "",
-        originType: String = "", invokeID: String = "", hostInvokeToken: Int64? = nil
+        name: String, data: String = "", type: String = "external", sendID: String = "", origin: EventOrigin? = nil,
+        sender: String? = nil, invokeID: String = "", hostInvokeToken: Int64? = nil
     ) {
         self.name = name
         self.data = data
         self.type = type
         self.sendID = sendID
         self.origin = origin
-        self.originType = originType
+        self.sender = sender
         self.invokeID = invokeID
         self.hostInvokeToken = hostInvokeToken
     }
@@ -148,18 +158,24 @@ public struct SavedHostInvoke: Equatable, Sendable {
 /// internal queue, an act a host-served processor performs, or an event for the session that started this one
 /// or for a running child of it, which the tree holds (docs/adr/0045). A delayed send to any other session is
 /// none of them, and a document that makes one is generated without the save API.
+///
+/// A `raise`, `parent` or `child` act is this session's own send, which the SCXML Event I/O Processor delivers:
+/// it holds the id of the session that sent it, and the event it delivers carries that session's pair
+/// (`scxmlOrigin(sender:)`), which is what a text of format 3 writes beside the id (docs/adr/0090, section 7). The
+/// sender is nil only for a send read from a format-1 or format-2 text that stored none. An `internal` act
+/// delivers an internal event, which has no origin (§scxml-5.10.1), so it holds no sender.
 public enum SavedAct: Equatable, Sendable {
-    /// An event for the session that started this one (`#_parent`). Format 2 only.
-    case parent(event: String, data: String, sendID: String, origin: String)
+    /// An event for the session that started this one (`#_parent`). A tree's only (formats 2 and 3).
+    case parent(event: String, data: String, sendID: String, sender: String?)
 
-    /// An event for a running child of this session (`#_<invokeid>`). Format 2 only.
-    case child(invokeID: String, event: String, data: String, sendID: String, origin: String)
+    /// An event for a running child of this session (`#_<invokeid>`). A tree's only (formats 2 and 3).
+    case child(invokeID: String, event: String, data: String, sendID: String, sender: String?)
 
     /// An event for this session's external queue.
-    case raise(event: String, data: String, sendID: String, origin: String)
+    case raise(event: String, data: String, sendID: String, sender: String?)
 
     /// An event for this session's internal queue.
-    case `internal`(event: String, data: String, sendID: String, origin: String)
+    case `internal`(event: String, data: String, sendID: String)
 
     /// A `<send>` a host-served processor performs, as it is performed when it comes due: every field is what
     /// the document wrote, so a handler sees the request it would have seen had there been no delay.
@@ -191,7 +207,7 @@ public enum SavedInvokes: Equatable, Sendable {
     /// restore starts each again from its beginning, under the same id.
     case restarted([String])
 
-    /// Format 2: each running child with its whole state, resumed by a restore where it stood.
+    /// Formats 2 and 3: each running child with its whole state, resumed by a restore where it stood.
     case resumed([SavedChild])
 
     /// The id the document gives each running `<invoke>`, in order.
@@ -230,7 +246,7 @@ public struct SavedChild: Equatable, Sendable {
     }
 }
 
-/// A saved session: one machine's state, or, in format 2, a tree of them.
+/// A saved session: one machine's state, or, in formats 2 and 3, a tree of them.
 public struct SavedState: Equatable, Sendable {
     /// Format 1: a state that names its running children by id alone.
     public static let format1 = 1
@@ -238,12 +254,18 @@ public struct SavedState: Equatable, Sendable {
     /// Format 2: a tree of sessions, each running child saved inside its parent (docs/adr/0045).
     public static let format2 = 2
 
-    /// The newest format version this runtime writes; it reads this one and format 1.
-    public static let format = format2
+    /// Format 3: format 2 with an event's origin held as one pair and its sender beside it (docs/adr/0090,
+    /// section 7). The shape of a session is format 2's: the pair changes no document.
+    public static let format3 = 3
+
+    /// The newest format version this runtime writes, which it writes for every tree; it reads this one and
+    /// formats 1 and 2.
+    public static let format = format3
 
     /// The stability status of the saved-state wire surface, held in lockstep with `x-sce-schema-status` in
-    /// `schemas/sce-saved-state.v1.schema.json` and `schemas/sce-saved-state.v2.schema.json`, the surface's two
-    /// formats (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all three in one commit.
+    /// `schemas/sce-saved-state.v1.schema.json`, `schemas/sce-saved-state.v2.schema.json` and
+    /// `schemas/sce-saved-state.v3.schema.json`, the surface's three formats (`SCE_WIRE_CONTRACTS.md`). A flip to
+    /// `"stable"` changes all four in one commit.
     public static let schemaStatus = "pre-release"
 
     /// The shape of the document the machine was generated from: a digest the generator computes of every
@@ -278,7 +300,7 @@ public struct SavedState: Equatable, Sendable {
     public var invokes: SavedInvokes
 
     /// The session's own id (`_sessionid`), which events held in the tree name sessions by and a restore binds
-    /// again (docs/adr/0045). An XML Nmtoken in format 2; empty in a format-1 state, which holds none.
+    /// again (docs/adr/0045). An XML Nmtoken in a tree; empty in a format-1 state, which holds none.
     public var sessionID: String
 
     /// How many times each `<invoke>` of the document has started in this session, by its id, for each
@@ -337,23 +359,23 @@ public struct SavedState: Equatable, Sendable {
         self.features = features
     }
 
-    /// The format this state is of: format 2 for a tree of sessions, format 1 for a state that names its
-    /// running children by id alone.
+    /// The format this state is written in: format 3 for a tree of sessions, whichever format it was read from
+    /// (docs/adr/0090, section 7), and format 1 for a state that names its running children by id alone.
     public var formatVersion: Int {
         switch invokes {
         case .restarted: return Self.format1
-        case .resumed: return Self.format2
+        case .resumed: return Self.format
         }
     }
 
     /// The id the document gives each running `<invoke>`, in order.
     public var invokeIDs: [String] { invokes.ids }
 
-    /// The id a restore binds the session to: the saved one, for a format-2 state, since the session carries
-    /// on and every child's id and a peer's address name it; nil for a format-1 state, which holds none, so the
-    /// restored machine keeps the id it was created with.
+    /// The id a restore binds the session to: the saved one, for a tree, since the session carries on and every
+    /// child's id and a peer's address name it; nil for a format-1 state, which holds none, so the restored
+    /// machine keeps the id it was created with.
     public var boundSessionID: String? {
-        formatVersion == Self.format2 ? sessionID : nil
+        formatVersion == Self.format1 ? nil : sessionID
     }
 
     /// How many times the `<invoke>` `id` had started in this session when it was saved: 0 for one that had
@@ -390,18 +412,41 @@ private func paramsJSON(_ params: [String: [String]]) -> JSONValue {
             .map { (key: $0.key, value: texts($0.value)) })
 }
 
+/// The members that hold an event's origin, in the text of `format`, in the place each record gives them
+/// (docs/adr/0090, section 7, "Text form"). Format 3 writes the pair, `processor` then `address`, or `null`, and
+/// then the sender's id or `null`: both always, so no writer decides when to leave one out. Format 1 writes the
+/// one `origin` text by the rule format 2 used (`storedOriginText`), and an event of the queue (`typed`) the
+/// pair's processor beside it as `origintype`, both empty for none.
+private func originMembers(_ origin: EventOrigin?, sender: String?, format: Int, typed: Bool) -> Members {
+    if format == SavedState.format1 {
+        var members: Members = [(key: "origin", value: .text(storedOriginText(origin, sender: sender)))]
+        if typed {
+            members.append((key: "origintype", value: .text(origin?.processor ?? "")))
+        }
+        return members
+    }
+    var pair = JSONValue.null
+    if let origin {
+        pair = .object([
+            (key: "processor", value: .text(origin.processor)),
+            (key: "address", value: .text(origin.address)),
+        ])
+    }
+    return [(key: "origin", value: pair), (key: "sender", value: sender.map(JSONValue.text) ?? .null)]
+}
+
 extension SavedEvent {
-    fileprivate var json: JSONValue {
-        .object([
+    fileprivate func json(format: Int) -> JSONValue {
+        var members: Members = [
             (key: "name", value: .text(name)),
             (key: "data", value: .text(data)),
             (key: "type", value: .text(type)),
             (key: "sendid", value: .text(sendID)),
-            (key: "origin", value: .text(origin)),
-            (key: "origintype", value: .text(originType)),
-            (key: "invokeid", value: .text(invokeID)),
-            (key: "hostinvoketoken", value: hostInvokeToken.map(counted) ?? .null),
-        ])
+        ]
+        members.append(contentsOf: originMembers(origin, sender: sender, format: format, typed: true))
+        members.append((key: "invokeid", value: .text(invokeID)))
+        members.append((key: "hostinvoketoken", value: hostInvokeToken.map(counted) ?? .null))
+        return .object(members)
     }
 }
 
@@ -420,32 +465,40 @@ extension SavedHostInvoke {
 }
 
 extension SavedSend {
-    fileprivate var json: JSONValue {
+    fileprivate func json(format: Int) -> JSONValue {
         var members: Members = [(key: "due", value: counted(due))]
         func append(_ pairs: [(String, JSONValue)]) {
             members.append(contentsOf: pairs.map { (key: $0.0, value: $0.1) })
         }
+        // After `sendid`: the pair and the id of the session that sent it, which the event carries when it is
+        // delivered; an internal act's event carries neither (docs/adr/0090, section 7).
+        func sent(by sender: String?) {
+            members.append(
+                contentsOf: originMembers(sender.map(scxmlOrigin(sender:)), sender: sender, format: format, typed: false))
+        }
         switch act {
-        case .parent(let event, let data, let sendID, let origin):
+        case .parent(let event, let data, let sendID, let sender):
             append([
-                ("act", .text("parent")), ("event", .text(event)), ("data", .text(data)),
-                ("sendid", .text(sendID)), ("origin", .text(origin)),
+                ("act", .text("parent")), ("event", .text(event)), ("data", .text(data)), ("sendid", .text(sendID)),
             ])
-        case .child(let invokeID, let event, let data, let sendID, let origin):
+            sent(by: sender)
+        case .child(let invokeID, let event, let data, let sendID, let sender):
             append([
                 ("act", .text("child")), ("invokeid", .text(invokeID)), ("event", .text(event)),
-                ("data", .text(data)), ("sendid", .text(sendID)), ("origin", .text(origin)),
+                ("data", .text(data)), ("sendid", .text(sendID)),
             ])
-        case .raise(let event, let data, let sendID, let origin):
+            sent(by: sender)
+        case .raise(let event, let data, let sendID, let sender):
             append([
-                ("act", .text("raise")), ("event", .text(event)), ("data", .text(data)),
-                ("sendid", .text(sendID)), ("origin", .text(origin)),
+                ("act", .text("raise")), ("event", .text(event)), ("data", .text(data)), ("sendid", .text(sendID)),
             ])
-        case .internal(let event, let data, let sendID, let origin):
+            sent(by: sender)
+        case .internal(let event, let data, let sendID):
             append([
                 ("act", .text("internal")), ("event", .text(event)), ("data", .text(data)),
-                ("sendid", .text(sendID)), ("origin", .text(origin)),
+                ("sendid", .text(sendID)),
             ])
+            sent(by: nil)
         case .host(let type, let event, let target, let content, let params, let sendID, let data, let invokeID):
             append([
                 ("act", .text("host")), ("type", .text(type)), ("event", .text(event)),
@@ -458,29 +511,31 @@ extension SavedSend {
 }
 
 extension SavedChild {
-    fileprivate var json: JSONValue {
+    fileprivate func json(format: Int) -> JSONValue {
         .object([
             (key: "id", value: .text(id)),
             (key: "start", value: counted(start)),
             (key: "invokeid", value: .text(invokeID)),
             (key: "document", value: .text(document)),
-            (key: "session", value: .object(session.sessionMembers())),
+            (key: "session", value: .object(session.sessionMembers(format: format))),
         ])
     }
 }
 
 extension SavedState {
-    /// The state as `sce-saved-state` JSON, in the format it is of: the root of the text, with its `format`.
+    /// The state as `sce-saved-state` JSON, in the format it is written in (`formatVersion`): the root of the
+    /// text, with its `format`, which applies to every session of the text.
     public func toJSON() -> String {
-        var members: Members = [(key: "format", value: number(Int64(formatVersion)))]
-        members.append(contentsOf: sessionMembers())
+        let format = formatVersion
+        var members: Members = [(key: "format", value: number(Int64(format)))]
+        members.append(contentsOf: sessionMembers(format: format))
         return writeJSON(.object(members))
     }
 
-    /// The members of this session, in the order every backend writes them: format 1's, and in format 2
-    /// `sessionid` after `shape` and `invokestarts` after `invokes`, each running child's session written by
-    /// the same rule.
-    fileprivate func sessionMembers() -> Members {
+    /// The members of this session, in a text of `format`, in the order every backend writes them: format 1's,
+    /// and in a tree `sessionid` after `shape` and `invokestarts` after `invokes`, each running child's session
+    /// written by the same rule.
+    fileprivate func sessionMembers(format: Int) -> Members {
         var members: Members = [(key: "shape", value: .text(shape))]
         if case .resumed = invokes {
             members.append((key: "sessionid", value: .text(sessionID)))
@@ -490,10 +545,10 @@ extension SavedState {
         members.append((key: "variables", value: .object(variables.map { (key: $0.key, value: $0.value) })))
         members.append(
             (key: "history", value: .object(history.map { (key: $0.key, value: texts($0.value)) })))
-        members.append((key: "pending", value: .array(pending.map(\.json))))
+        members.append((key: "pending", value: .array(pending.map { $0.json(format: format) })))
         switch invokes {
         case .resumed(let children):
-            members.append((key: "invokes", value: .array(children.map(\.json))))
+            members.append((key: "invokes", value: .array(children.map { $0.json(format: format) })))
             members.append(
                 (key: "invokestarts", value: .object(invokeStarts.map { (key: $0.key, value: counted($0.value)) })))
         case .restarted(let ids):
@@ -502,7 +557,7 @@ extension SavedState {
         members.append((key: "hostinvokes", value: .array(hostInvokes.map(\.json))))
         members.append((key: "hostinvoketoken", value: counted(hostInvokeToken)))
         members.append((key: "sendseq", value: counted(autoSendSeq)))
-        members.append((key: "external", value: .array(external.map(\.json))))
+        members.append((key: "external", value: .array(external.map { $0.json(format: format) })))
         // Absent, not empty, when no schema is past its first revision: the text of such a state is the text
         // it was before revisions existed.
         if !revisions.isEmpty {
@@ -610,8 +665,63 @@ private func readParams(_ object: JSONValue, _ what: String) throws -> [String: 
     return read
 }
 
+/// Whether `origin` is, byte for byte, the pair the SCXML Event I/O Processor writes for the session `sender`.
+private func isSCXMLOrigin(_ origin: EventOrigin, of sender: String) -> Bool {
+    let expected = scxmlOrigin(sender: sender)
+    return origin.processor.utf8.elementsEqual(expected.processor.utf8)
+        && origin.address.utf8.elementsEqual(expected.address.utf8)
+}
+
+/// The `origin` member of a format-3 record, as written: `null`, or the pair of a processor and an address, each
+/// a text that is not empty, and nothing else (docs/adr/0090, section 7).
+private func readOrigin(_ record: JSONValue, _ what: String) throws -> EventOrigin? {
+    let named = "\(what).origin"
+    let written = try need(record, "origin", what)
+    guard case .object(let pair) = written else {
+        if written == .null { return nil }
+        throw StateRefusal("'\(named)' is neither null nor a pair of a processor and an address")
+    }
+    for (key, _) in pair where key != "processor" && key != "address" {
+        throw StateRefusal("'\(named)' holds '\(key)', which a pair does not")
+    }
+    func member(_ key: String) throws -> String {
+        let text = try requiredText(written, key, named)
+        if text.isEmpty {
+            throw StateRefusal("'\(named).\(key)' is empty, and a pair names both its members")
+        }
+        return text
+    }
+    return EventOrigin(processor: try member("processor"), address: try member("address"))
+}
+
+/// The `origin` and `sender` of a format-3 record, each as written and neither derived from the other. The
+/// sender is `null` or a session id. Only the SCXML Event I/O Processor sets one, and it writes that session's
+/// pair as the origin, so a sender beside any other origin is refused (docs/adr/0090, section 7).
+private func readOriginAndSender(_ record: JSONValue, _ what: String) throws -> (origin: EventOrigin?, sender: String?) {
+    let origin = try readOrigin(record, what)
+    let sender: String?
+    switch try need(record, "sender", what) {
+    case .null:
+        sender = nil
+    case .text(let id):
+        if !sessionIDRefusalOf(id).isEmpty {
+            throw StateRefusal("'\(what).sender' (\(id)) is not a session id, an XML Nmtoken")
+        }
+        sender = id
+    default:
+        throw StateRefusal("'\(what).sender' is neither null nor a session id")
+    }
+    if let sender {
+        guard let origin, isSCXMLOrigin(origin, of: sender) else {
+            throw StateRefusal("'\(what).origin' is not the SCXML pair of its sender '\(sender)'")
+        }
+    }
+    return (origin, sender)
+}
+
 extension SavedEvent {
-    fileprivate static func read(_ value: JSONValue, _ what: String) throws -> SavedEvent {
+    /// The event `value` of a queue, of a state of `format`.
+    fileprivate static func read(_ value: JSONValue, _ what: String, format: Int) throws -> SavedEvent {
         _ = try members(of: value, what)
         let token = try need(value, "hostinvoketoken", what)
         let hostInvokeToken: Int64?
@@ -620,11 +730,19 @@ extension SavedEvent {
         case .text(let written): hostInvokeToken = try readToken(written, "\(what).hostinvoketoken")
         default: throw StateRefusal("'\(what).hostinvoketoken' is neither a text nor null")
         }
+        let carried: (origin: EventOrigin?, sender: String?)
+        if format == SavedState.format3 {
+            carried = try readOriginAndSender(value, what)
+        } else {
+            // docs/adr/0090, section 7: a format-1 or format-2 `origin` and `origintype` are read by the table of
+            // that section, as the pair and the sender they stood for, whichever backend wrote them.
+            carried = readStoredOrigin(
+                try requiredText(value, "origin", what), originType: try requiredText(value, "origintype", what))
+        }
         return SavedEvent(
             name: try requiredText(value, "name", what), data: try requiredText(value, "data", what),
             type: try requiredText(value, "type", what), sendID: try requiredText(value, "sendid", what),
-            origin: try requiredText(value, "origin", what),
-            originType: try requiredText(value, "origintype", what),
+            origin: carried.origin, sender: carried.sender,
             invokeID: try requiredText(value, "invokeid", what), hostInvokeToken: hostInvokeToken)
     }
 }
@@ -648,31 +766,60 @@ extension SavedHostInvoke {
 }
 
 extension SavedSend {
-    /// The waiting send `value`, of a state of `format`; a send to the parent or to a child is an act of
-    /// format 2 only.
+    /// The waiting send `value`, of a state of `format`; a send to the parent or to a child is an act of a
+    /// tree only.
     fileprivate static func read(_ value: JSONValue, _ what: String, format: Int) throws -> SavedSend {
         _ = try members(of: value, what)
         let due = try readMoment(try requiredText(value, "due", what), "\(what).due")
         let name = try requiredText(value, "act", what)
         func field(_ key: String) throws -> String { try requiredText(value, key, what) }
+        // The session that sent a `raise`, `parent` or `child` act, which is this session's own send
+        // (docs/adr/0090, section 7). Format 3 holds the session's pair and its id, both judged and neither
+        // derived from the other, and an act without its sender is refused. Formats 1 and 2 hold one `origin`
+        // text, the sender's id or the location C11 stored, read by `readStoredSender`; nil for one that is
+        // empty.
+        func sentBy() throws -> String? {
+            if format == SavedState.format3 {
+                guard let id = try readOriginAndSender(value, what).sender else {
+                    throw StateRefusal("'\(what)' is a \(name) act with no sender, which a session's own send names")
+                }
+                return id
+            }
+            let stored = readStoredSender(try field("origin"))
+            return stored.isEmpty ? nil : stored
+        }
+        // An `internal` act delivers an internal event, which has no origin (§scxml-5.10.1): format 3 writes
+        // both members `null` and refuses either one set; the `origin` text formats 1 and 2 stored beside it is
+        // not read as the event's.
+        func carriesNoOrigin() throws {
+            guard format == SavedState.format3 else {
+                _ = try field("origin")
+                return
+            }
+            for key in ["origin", "sender"] {
+                if try need(value, key, what) != .null {
+                    throw StateRefusal(
+                        "'\(what).\(key)' is not null, and an internal act's event has no origin and no sender")
+                }
+            }
+        }
         let act: SavedAct
         switch name {
-        case "parent" where format == SavedState.format2:
+        case "parent" where format != SavedState.format1:
             act = .parent(
                 event: try field("event"), data: try field("data"), sendID: try field("sendid"),
-                origin: try field("origin"))
-        case "child" where format == SavedState.format2:
+                sender: try sentBy())
+        case "child" where format != SavedState.format1:
             act = .child(
                 invokeID: try field("invokeid"), event: try field("event"), data: try field("data"),
-                sendID: try field("sendid"), origin: try field("origin"))
+                sendID: try field("sendid"), sender: try sentBy())
         case "raise":
             act = .raise(
                 event: try field("event"), data: try field("data"), sendID: try field("sendid"),
-                origin: try field("origin"))
+                sender: try sentBy())
         case "internal":
-            act = .internal(
-                event: try field("event"), data: try field("data"), sendID: try field("sendid"),
-                origin: try field("origin"))
+            try carriesNoOrigin()
+            act = .internal(event: try field("event"), data: try field("data"), sendID: try field("sendid"))
         case "host":
             act = .host(
                 processorType: try field("type"), event: try field("event"), target: try field("target"),
@@ -689,9 +836,9 @@ extension SavedSend {
 }
 
 extension SavedChild {
-    /// The `index`th running child of a format-2 session. A refusal inside the child's own session names it by
-    /// its path (`StateRefusal.within`).
-    fileprivate static func read(_ value: JSONValue, index: Int) throws -> SavedChild {
+    /// The `index`th running child of a session of a tree of `format`, which the child's session is read in
+    /// too. A refusal inside the child's own session names it by its path (`StateRefusal.within`).
+    fileprivate static func read(_ value: JSONValue, index: Int, format: Int) throws -> SavedChild {
         let what = "invokes[\(index)]"
         _ = try members(of: value, what)
         func nonEmpty(_ key: String) throws -> String {
@@ -707,7 +854,7 @@ extension SavedChild {
         }
         let read: SavedState
         do {
-            read = try SavedState.readSession(session, format: SavedState.format2)
+            read = try SavedState.readSession(session, format: format)
         } catch let refusal as StateRefusal {
             throw refusal.within("\(what).session")
         }
@@ -718,8 +865,8 @@ extension SavedChild {
 }
 
 extension SavedState {
-    /// Reads `sce-saved-state` JSON, of format 1 or 2. The shape is not judged here: the machine that
-    /// restores it knows its own.
+    /// Reads `sce-saved-state` JSON, of format 1, 2 or 3, judged by its `format` before anything else. The shape
+    /// is not judged here: the machine that restores it knows its own.
     public static func fromJSON(_ text: String) throws -> SavedState {
         let value: JSONValue
         do {
@@ -733,9 +880,11 @@ extension SavedState {
         switch written {
         case .number("1"): format = format1
         case .number("2"): format = format2
+        case .number("3"): format = format3
         default:
             throw StateRefusal(
-                "the saved state is format \(writeJSON(written)), and this runtime reads formats \(format1) and \(format2)")
+                "the saved state is format \(writeJSON(written)), and this runtime reads formats \(format1), \(format2) and \(format3)"
+            )
         }
         return try readSession(value, format: format)
     }
@@ -763,12 +912,13 @@ extension SavedState {
         if format == format1 {
             invokes = .restarted(try listed.map { try text($0, "invokes") })
         } else {
-            invokes = .resumed(try listed.enumerated().map { index, item in try SavedChild.read(item, index: index) })
+            invokes = .resumed(
+                try listed.enumerated().map { index, item in try SavedChild.read(item, index: index, format: format) })
         }
-        // Format 2's own members: the session's id and its count of starts.
+        // A tree's own members: the session's id and its count of starts.
         var sessionID = ""
         var invokeStarts: [SavedEntry<Int64>] = []
-        if format == format2 {
+        if format != format1 {
             sessionID = try text(field("sessionid"), "sessionid")
             if !sessionIDRefusalOf(sessionID).isEmpty {
                 throw StateRefusal("'sessionid' (\(sessionID)) is not an XML Nmtoken, which a session id is")
@@ -786,7 +936,7 @@ extension SavedState {
         let hostInvokeToken = try readToken(try text(field("hostinvoketoken"), "hostinvoketoken"), "hostinvoketoken")
         let autoSendSeq = try readToken(try text(field("sendseq"), "sendseq"), "sendseq")
         let external = try array(of: field("external"), "external").enumerated().map { index, item in
-            try SavedEvent.read(item, "external[\(index)]")
+            try SavedEvent.read(item, "external[\(index)]", format: format)
         }
         // Optional, unlike every member above: a state whose schemas are all in their first revision leaves it
         // out, as every state saved before schemas had revisions does.

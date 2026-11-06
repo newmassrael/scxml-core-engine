@@ -2361,7 +2361,10 @@ extension Engine {
     /// target. Leaving it out would restore a machine that never delivers it and says nothing. The end of the time
     /// a running host-run invocation was given is no send: it is saved with the invocation, as its `due`
     /// (`savedHostInvokes`), and left out here.
-    func savedPendingSends(wallNowMs: Int64) throws -> [SavedSend] {
+    ///
+    /// A `raise`, `parent` or `child` act is this session's own send, so it is saved as sent by `sessionID`, the
+    /// session saved (docs/adr/0090, section 7, "Text form").
+    func savedPendingSends(wallNowMs: Int64, sessionID: String) throws -> [SavedSend] {
         let now = schedNowMs()
         return try scheduler.pending().compactMap { waiting -> SavedSend? in
             let act = waiting.act
@@ -2375,12 +2378,13 @@ extension Engine {
                         + "invocation this machine is running")
             }
             let (due, overflowed) = wallNowMs.addingReportingOverflow(max(0, waiting.readyAtMs - now))
-            return SavedSend(due: overflowed ? Int64.max : due, act: try savedAct(act))
+            return SavedSend(due: overflowed ? Int64.max : due, act: try savedAct(act, sessionID: sessionID))
         }
     }
 
-    /// The act a waiting entry performs when it comes due, as a saved state spells it.
-    private func savedAct(_ act: ReadyAct<Event>) throws -> SavedAct {
+    /// The act a waiting entry performs when it comes due, as a saved state spells it, a send of the session
+    /// `sessionID`.
+    private func savedAct(_ act: ReadyAct<Event>, sessionID: String) throws -> SavedAct {
         // The name the event was sent under: the whole name when the member that takes it is not called that.
         func name(_ member: Event?, _ sentAs: String) throws -> String {
             guard let member else {
@@ -2388,16 +2392,17 @@ extension Engine {
             }
             return sentAs.isEmpty ? policy.getEventName(member) : sentAs
         }
-        // A waiting send is a session's, so its format-2 `origin` is the sender's id
-        // (docs/adr/0090, "Until step 6").
+        // A `raise`, `parent` or `child` act carries this session's pair and its id, which the SCXML
+        // Event I/O Processor writes for the event when it is delivered; an `internal` act delivers an
+        // internal event, which carries neither, so the sender its entry keeps is not saved
+        // (docs/adr/0090, section 7).
         guard let route = act.route else {
             return .raise(
-                event: try name(act.event, act.name), data: act.data, sendID: act.sendID, origin: act.sender)
+                event: try name(act.event, act.name), data: act.data, sendID: act.sendID, sender: sessionID)
         }
         switch route.kind {
         case .internalQueue:
-            return .internal(
-                event: try name(act.event, route.eventName), data: act.data, sendID: act.sendID, origin: act.sender)
+            return .internal(event: try name(act.event, route.eventName), data: act.data, sendID: act.sendID)
         case .host:
             guard let request = route.host else {
                 throw StateRefusal("the delayed send '\(act.sendID)' is routed to a host processor and holds no request")
@@ -2409,11 +2414,11 @@ extension Engine {
         // The session that started this one, and a running child of it: both are sessions the tree holds
         // (docs/adr/0045).
         case .parent:
-            return .parent(event: route.eventName, data: act.data, sendID: act.sendID, origin: act.sender)
+            return .parent(event: route.eventName, data: act.data, sendID: act.sendID, sender: sessionID)
         case .invocation:
             return .child(
                 invokeID: route.invokeID, event: route.eventName, data: act.data, sendID: act.sendID,
-                origin: act.sender)
+                sender: sessionID)
         case .session:
             throw StateRefusal("the delayed send '\(act.sendID)' is routed to a child session, which a saved state does not carry")
         case .httpPost:
@@ -2462,7 +2467,8 @@ extension Engine {
         let name: String
         let data: String
         let sendID: String
-        /// The sending session's id, read from the saved `origin` (`readStoredSender`).
+        /// The sending session's id, as the saved act holds it or, for one that holds none, the restored
+        /// session's; empty for an `internal` act, whose event carries none, and for a host act.
         let sender: String
         let route: ScheduledRoute?
     }
@@ -2470,7 +2476,11 @@ extension Engine {
     /// Reads every delayed send `sends` holds as the entry its send site would have armed, or the refusal that
     /// says which event this document does not name, or which child it does not invoke (`invokeIDs`). Changes
     /// nothing.
-    func judgeSavedSends(_ sends: [SavedSend], invokeIDs: [String]) throws -> [SavedArm] {
+    ///
+    /// A `raise`, `parent` or `child` act is the restored session's own send. One read from a format-1 or
+    /// format-2 text that stored no sender is armed as sent by `sessionID`, the id the restored session holds,
+    /// as the save of it writes it (docs/adr/0090, section 7).
+    func judgeSavedSends(_ sends: [SavedSend], invokeIDs: [String], sessionID: String) throws -> [SavedArm] {
         try sends.enumerated().map { index, send in
             func resolved(_ name: String) throws -> Event {
                 guard let event = resolveEventByName(name) else {
@@ -2484,18 +2494,18 @@ extension Engine {
                 }
                 return id
             }
-            // docs/adr/0090, section 7: a waiting send's `origin` names its sender, as the bare id this
-            // backend writes or the SCXML location another one wrote.
+            // docs/adr/0090, section 7: a session's own send is armed as sent by the session the saved state
+            // names, from which the SCXML Event I/O Processor writes the event's pair when it comes due.
             switch send.act {
-            case .raise(let name, let data, let id, let origin):
+            case .raise(let name, let data, let id, let sender):
                 let event = try resolved(name)
                 return SavedArm(
                     due: send.due, event: event, name: arrivalName(of: event, name: name), data: data,
-                    sendID: try sendID(id), sender: readStoredSender(origin), route: nil)
-            case .internal(let name, let data, let id, let origin):
+                    sendID: try sendID(id), sender: sender ?? sessionID, route: nil)
+            case .internal(let name, let data, let id):
                 return SavedArm(
                     due: send.due, event: try resolved(name), name: "", data: data, sendID: try sendID(id),
-                    sender: readStoredSender(origin), route: ScheduledRoute(kind: .internalQueue, eventName: name))
+                    sender: "", route: ScheduledRoute(kind: .internalQueue, eventName: name))
             case .host(let type, let event, let target, let content, let params, let id, let data, let invokeID):
                 let request = HostSendRequest(
                     processorType: type, eventName: event, target: target, content: content, params: params,
@@ -2503,17 +2513,17 @@ extension Engine {
                 return SavedArm(
                     due: send.due, event: nil, name: "", data: data, sendID: request.sendID, sender: "",
                     route: ScheduledRoute(kind: .host, eventName: event, host: request))
-            case .parent(let name, let data, let id, let origin):
+            case .parent(let name, let data, let id, let sender):
                 return SavedArm(
                     due: send.due, event: nil, name: "", data: data, sendID: try sendID(id),
-                    sender: readStoredSender(origin), route: ScheduledRoute(kind: .parent, eventName: name))
-            case .child(let invokeID, let name, let data, let id, let origin):
+                    sender: sender ?? sessionID, route: ScheduledRoute(kind: .parent, eventName: name))
+            case .child(let invokeID, let name, let data, let id, let sender):
                 guard invokeIDs.contains(invokeID) else {
                     throw StateRefusal("pending[\(index)] is a send to '\(invokeID)', which the document does not invoke")
                 }
                 return SavedArm(
                     due: send.due, event: nil, name: "", data: data, sendID: try sendID(id),
-                    sender: readStoredSender(origin),
+                    sender: sender ?? sessionID,
                     route: ScheduledRoute(kind: .invocation, eventName: name, invokeID: invokeID))
             }
         }
