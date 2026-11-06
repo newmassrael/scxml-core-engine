@@ -106,15 +106,10 @@
 {% else %}
             let ev_sendid: &str = "";
 {% endif %}
-{% if model.needs_event_origin %}
-            let ev_origin: &str = &self.pending_event_origin;
+{% if model.needs_event_origin or model.needs_event_origintype %}
+            let ev_origin: Option<&sce_rust_runtime::EventOrigin> = self.pending_event_origin.as_ref();
 {% else %}
-            let ev_origin: &str = "";
-{% endif %}
-{% if model.needs_event_origintype %}
-            let ev_origintype: &str = &self.pending_event_origintype;
-{% else %}
-            let ev_origintype: &str = "";
+            let ev_origin: Option<&sce_rust_runtime::EventOrigin> = None;
 {% endif %}
 {% if model.needs_event_invokeid %}
             let ev_invokeid: &str = &self.pending_event_invokeid;
@@ -125,7 +120,7 @@
             // rather than dropped. This is the only frame that has both the
             // reading and the event it belongs to.
             let payload_reading = self.set_current_event_in_script_engine(
-                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
+                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_invokeid,
             );
             engine.note_payload_reading(event, payload_reading);
         }

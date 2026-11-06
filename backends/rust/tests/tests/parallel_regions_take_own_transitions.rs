@@ -47,7 +47,7 @@ fn every_region_takes_its_own_transition() {
          testing what it claims"
     );
 
-    engine.raise_external(Event::E, "", "");
+    engine.raise_external(Event::E, "");
     engine.step();
 
     let after = engine.get_active_states();
@@ -63,7 +63,7 @@ fn every_region_takes_its_own_transition() {
          of its own external self-transition (active: {after:?})"
     );
 
-    engine.raise_external(Event::Check, "", "");
+    engine.raise_external(Event::Check, "");
     engine.step();
 
     let settled = engine.get_active_states();

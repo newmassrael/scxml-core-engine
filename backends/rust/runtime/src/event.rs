@@ -78,6 +78,41 @@ impl EventType {
     }
 }
 
+/// Where a reply to an event goes: the Event I/O Processor that delivered it
+/// and the address that processor accepts as a `<send>` target (§scxml-5.10.1,
+/// docs/adr/0090).
+///
+/// Ports C++ `SCE::Core::EventOrigin`. The document reads the two as
+/// `_event.origintype` and `_event.origin`; they are one value because the
+/// address means something only relative to its processor. The processor that
+/// delivers an event writes the pair once, where it builds the event, and
+/// nothing converts it later. The type has no `Default`, so a pair with one
+/// field set cannot be spelled by accident: an event with no origin holds
+/// `None` instead.
+///
+/// Only under std, as every `_event` text field is (see [`EventMetadata`]).
+#[cfg(feature = "std")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventOrigin {
+    /// The canonical type URI of the Event I/O Processor that delivered the
+    /// event (`_event.origintype`).
+    pub processor: String,
+    /// A URI that processor accepts as a `<send>` target (`_event.origin`).
+    pub address: String,
+}
+
+#[cfg(feature = "std")]
+impl EventOrigin {
+    /// The pair of `processor`, the canonical type URI of an Event I/O
+    /// Processor, and `address`, a URI that processor accepts as a target.
+    pub fn new(processor: impl Into<String>, address: impl Into<String>) -> Self {
+        Self {
+            processor: processor.into(),
+            address: address.into(),
+        }
+    }
+}
+
 /// Metadata fields attached to events (§scxml-5.10).
 ///
 /// Ports C++ `SCE::Core::EventMetadata`. Every event flowing through the
@@ -94,7 +129,7 @@ impl EventType {
 /// [`platform`](Self::platform) and [`internal`](Self::internal) below have no
 /// callers. It stays on every profile because removing it would change the
 /// no_std layout.
-/// The five `SceString` fields gated below are W3C `_event.*` script/invoke/HTTP
+/// The `SceString` and origin fields gated below are W3C `_event.*` script/invoke/HTTP
 /// metadata with no no_std reader: reading `_event.data` (schemaless/dynamic) /
 /// `_event.sendid` / `_event.origin` / `_event.origintype` is an ECMAScript
 /// access that forces `NEEDS_SCRIPT_ENGINE` (rejected under no_std via
@@ -125,12 +160,18 @@ pub struct EventMetadata {
     /// `_event.sendid` — send ID from originating `<send>` (empty if none).
     #[cfg(feature = "std")]
     pub send_id: SceString,
-    /// `_event.origin` — origin URI (empty if no origin).
+    /// `_event.origin` and `_event.origintype` — the reply address the
+    /// processor that delivered the event wrote when it built it, as one value
+    /// (docs/adr/0090); `None` for an event no processor stamped, and then the
+    /// document reads both fields as the empty string.
     #[cfg(feature = "std")]
-    pub origin: SceString,
-    /// `_event.origintype` — type of origin (e.g., SCXML Event I/O Processor URI).
+    pub origin: Option<EventOrigin>,
+    /// The id of the session that sent the event, set only by the SCXML Event
+    /// I/O Processor; empty otherwise. Not an `_event` field: `<finalize>` and
+    /// a saved state find the sending session by it, and nothing reads the
+    /// origin's address to find a session (docs/adr/0090, section 1).
     #[cfg(feature = "std")]
-    pub origin_type: SceString,
+    pub sender: SceString,
     /// `_event.invokeid` — invoke ID if event came from a child invoke (W3C 6.4.1).
     #[cfg(feature = "std")]
     pub invoke_id: SceString,
@@ -178,36 +219,73 @@ impl EventMetadata {
         }
     }
 
-    /// Construct external metadata with a send ID and origin (e.g., for `<send>`).
+    /// Construct external metadata with a send ID and no origin: an event no
+    /// Event I/O Processor stamped — one a host raises naming no party, a reply
+    /// a host processor gives naming none, an HTTP response (docs/adr/0090,
+    /// sections 2 and 3). `_event.origin` and `_event.origintype` read empty.
     ///
-    /// Under `--no-default-features` the `_event.sendid` / `_event.origin` string
-    /// metadata is elided (no script-engine reader exists), so the `send_id` /
-    /// `origin` arguments are accepted for a uniform call shape across profiles
-    /// but not stored.
-    ///
-    /// Both are borrowed, so a profile that stores nothing builds nothing: a
-    /// caller holding an owned string for each, to hand over a copy that is then
-    /// dropped, would spend two buffers of the string bound on its stack for it.
-    pub fn external(send_id: &str, origin: &str) -> Self {
+    /// Under `--no-default-features` the `_event.sendid` string metadata is
+    /// elided (no script-engine reader exists), so `send_id` is accepted for a
+    /// uniform call shape across profiles but not stored.
+    pub fn external(send_id: &str) -> Self {
         #[cfg(feature = "std")]
         {
             Self {
                 event_type: EventType::External,
                 send_id: sce_string_from_str(send_id),
-                origin: sce_string_from_str(origin),
-                origin_type: sce_string_from_str(
-                    crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
-                ),
                 ..Default::default()
             }
         }
         #[cfg(not(feature = "std"))]
         {
-            let _ = (send_id, origin);
+            let _ = send_id;
             Self {
                 event_type: EventType::External,
             }
         }
+    }
+
+    /// Construct the external metadata the SCXML Event I/O Processor writes
+    /// for an event the session `sender` sent: the pair of its own type and
+    /// the location `sender` publishes, and `sender` beside it (docs/adr/0090,
+    /// section 2). A machine that holds no session id sends an event with no
+    /// origin.
+    ///
+    /// Under `--no-default-features` neither the send id nor the origin is
+    /// stored, as [`external`](Self::external) stores neither; both arguments
+    /// are borrowed so that profile builds nothing for them.
+    pub fn sent_by_session(send_id: &str, sender: &str) -> Self {
+        #[cfg(feature = "std")]
+        {
+            Self {
+                origin: crate::helpers::io_processors::scxml_origin_of(sender),
+                sender: sce_string_from_str(sender),
+                ..Self::external(send_id)
+            }
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            let _ = sender;
+            Self::external(send_id)
+        }
+    }
+
+    /// `_event.origin`: the address of the event's origin, or the empty string
+    /// when it has none (§scxml-5.10.1).
+    #[cfg(feature = "std")]
+    pub fn origin_address(&self) -> &str {
+        self.origin
+            .as_ref()
+            .map_or("", |origin| origin.address.as_str())
+    }
+
+    /// `_event.origintype`: the processor of the event's origin, or the empty
+    /// string when it has none (§scxml-5.10.1).
+    #[cfg(feature = "std")]
+    pub fn origin_processor(&self) -> &str {
+        self.origin
+            .as_ref()
+            .map_or("", |origin| origin.processor.as_str())
     }
 }
 
@@ -336,5 +414,38 @@ mod tests {
              `new()` defaults to External, which is what every Rust raise site \
              passed before this constructor existed"
         );
+    }
+
+    /// docs/adr/0090, section 2: an event a session sends carries the pair
+    /// the SCXML processor writes, and the sender's id beside it.
+    #[test]
+    fn a_session_send_carries_the_scxml_pair_and_its_sender() {
+        let sent = EventMetadata::sent_by_session("s-1", "a b");
+
+        assert_eq!(
+            sent.origin,
+            Some(EventOrigin::new(
+                crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
+                "sce://scxml/a%20b",
+            )),
+            "the origin is the location the sender publishes, percent-encoded as \
+             `_ioprocessors` publishes it"
+        );
+        assert_eq!(sent.sender.as_str(), "a b");
+        assert_eq!(sent.send_id.as_str(), "s-1");
+    }
+
+    /// docs/adr/0090, section 3: no constructor invents an origin, and a
+    /// machine with no session id sends one with none.
+    #[test]
+    fn an_event_no_processor_stamped_reads_both_fields_empty() {
+        let posted = EventMetadata::external("");
+        assert_eq!(posted.origin, None);
+        assert_eq!(posted.origin_address(), "");
+        assert_eq!(posted.origin_processor(), "");
+
+        let anonymous = EventMetadata::sent_by_session("", "");
+        assert_eq!(anonymous.origin, None);
+        assert!(anonymous.sender.is_empty());
     }
 }

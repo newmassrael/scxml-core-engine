@@ -238,7 +238,7 @@ fn a_machine_with_no_host_run_invoke_starts_none_and_refuses_every_ending() {
         "a completion was taken for an invocation that never started"
     );
     assert!(
-        !engine.fail_host_invoke(TYPE, JOB, 0, "", "", ""),
+        !engine.fail_host_invoke(TYPE, JOB, 0, "", None),
         "a failure was taken for an invocation that never started"
     );
     engine
@@ -251,6 +251,7 @@ fn a_machine_with_no_host_run_invoke_starts_none_and_refuses_every_ending() {
                 token: 0,
                 done: true,
                 data: "",
+                origin: None,
             },
         ))
         .expect("an engine's own inbox takes every post while the engine lives");

@@ -446,7 +446,8 @@ pub enum SavedAct {
         data: String,
         /// The `<send>`'s id, which a `<cancel>` names.
         send_id: String,
-        /// `_event.origin`: this session's id.
+        /// The format-2 `origin`: this session's id, the event's sender
+        /// (docs/adr/0090, "Until step 6").
         origin: String,
     },
     /// An event for a running child of this session (`#_<invokeid>`).
@@ -459,7 +460,8 @@ pub enum SavedAct {
         data: String,
         /// The `<send>`'s id, which a `<cancel>` names.
         send_id: String,
-        /// `_event.origin`: this session's id.
+        /// The format-2 `origin`: this session's id, the event's sender
+        /// (docs/adr/0090, "Until step 6").
         origin: String,
     },
     /// An event for this session's external queue.
@@ -471,7 +473,8 @@ pub enum SavedAct {
         /// The `<send>`'s id, which `_event.sendid` carries and a `<cancel>`
         /// names.
         send_id: String,
-        /// `_event.origin`: the session that sent it.
+        /// The format-2 `origin`: the id of the session that sent it, the
+        /// event's sender (docs/adr/0090, "Until step 6").
         origin: String,
     },
     /// An event for this session's internal queue.
@@ -482,7 +485,7 @@ pub enum SavedAct {
         data: String,
         /// The `<send>`'s id, which a `<cancel>` names.
         send_id: String,
-        /// `_event.origin`: the session that sent it. Empty on a backend whose
+        /// The format-2 `origin`: the id of the session that sent it. Empty on a backend whose
         /// internal events carry none.
         origin: String,
     },
@@ -1839,8 +1842,14 @@ pub fn save<P: StatePolicy>(
                 data: queued.metadata.data.clone(),
                 event_type: queued.metadata.event_type.as_str().to_string(),
                 send_id: queued.metadata.send_id.clone(),
-                origin: queued.metadata.origin.clone(),
-                origin_type: queued.metadata.origin_type.clone(),
+                // docs/adr/0090, "Until step 6": format 2 as every backend
+                // writes it, the sender for a session's send and the address
+                // otherwise.
+                origin: crate::helpers::io_processors::stored_origin_text(
+                    queued.metadata.origin.as_ref(),
+                    &queued.metadata.sender,
+                ),
+                origin_type: queued.metadata.origin_processor().to_string(),
                 invoke_id: queued.metadata.invoke_id.clone(),
                 host_invoke_token: queued.metadata.host_invoke_token,
             })
@@ -1911,49 +1920,51 @@ fn save_pending<P: StatePolicy>(
                 // §scxml-5.10: a send is saved under its member's name. A name the
                 // document computed (`<send eventexpr>`, `name`) needs a script
                 // engine, which no saved machine has, so none is waiting here.
+                // docs/adr/0090, "Until step 6": a waiting send is a session's,
+                // and format 2 stores the sending session's id as its `origin`.
                 ScheduledAct::Raise {
                     event,
                     event_data,
                     send_id,
-                    origin,
+                    sender,
                     ..
                 } => SavedAct::Raise {
                     event: name(event),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
-                    origin: origin.clone(),
+                    origin: sender.clone(),
                 },
                 ScheduledAct::Routed {
                     event: Some(event),
                     event_data,
                     send_id,
-                    origin,
+                    sender,
                     route: ScheduledRoute::InternalQueue,
                     ..
                 } => SavedAct::Internal {
                     event: name(event),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
-                    origin: origin.clone(),
+                    origin: sender.clone(),
                 },
                 // docs/adr/0045: the parent and a child of this session are
                 // sessions the saved tree holds.
                 ScheduledAct::Routed {
                     event_data,
                     send_id,
-                    origin,
+                    sender,
                     route: ScheduledRoute::Parent { event_name },
                     ..
                 } => SavedAct::Parent {
                     event: event_name.clone(),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
-                    origin: origin.clone(),
+                    origin: sender.clone(),
                 },
                 ScheduledAct::Routed {
                     event_data,
                     send_id,
-                    origin,
+                    sender,
                     route:
                         ScheduledRoute::Invocation {
                             invoke_id,
@@ -1965,7 +1976,7 @@ fn save_pending<P: StatePolicy>(
                     event: event_name.clone(),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
-                    origin: origin.clone(),
+                    origin: sender.clone(),
                 },
                 ScheduledAct::Routed { send_id, route, .. } => {
                     return Err(StateRefusal::new(format!(
@@ -2624,8 +2635,10 @@ fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, St
             queued.metadata.data = e.data.clone();
             queued.metadata.event_type = event_type;
             queued.metadata.send_id = e.send_id.clone();
-            queued.metadata.origin = e.origin.clone();
-            queued.metadata.origin_type = e.origin_type.clone();
+            // docs/adr/0090, section 7: the pair a format-2 origin is read as.
+            let read = crate::helpers::io_processors::read_stored_origin(&e.origin, &e.origin_type);
+            queued.metadata.origin = read.origin;
+            queued.metadata.sender = read.sender;
             queued.metadata.invoke_id = e.invoke_id.clone();
             queued.metadata.host_invoke_token = e.host_invoke_token;
             Ok(queued)
@@ -2924,6 +2937,9 @@ fn arm_pending<P: StatePolicy>(
     pending: Vec<ReadSend<'_, P::Event>>,
     wall_now_ms: u64,
 ) {
+    // docs/adr/0090, section 7: a waiting send is a session's, so its stored
+    // `origin` names the sender by id, or by location as one backend wrote it.
+    use crate::helpers::io_processors::read_stored_sender;
     use crate::ScheduledRoute;
 
     let now = engine.now_ms();
@@ -2942,7 +2958,7 @@ fn arm_pending<P: StatePolicy>(
                     ready_at(due),
                     send_id,
                     data,
-                    origin,
+                    &read_stored_sender(origin),
                 );
             }
             ReadSend::Internal {
@@ -2957,7 +2973,7 @@ fn arm_pending<P: StatePolicy>(
                     ready_at(due),
                     send_id,
                     data,
-                    origin,
+                    &read_stored_sender(origin),
                     ScheduledRoute::InternalQueue,
                 );
             }
@@ -2988,7 +3004,7 @@ fn arm_pending<P: StatePolicy>(
                     ready_at(due),
                     send_id,
                     data,
-                    origin,
+                    &read_stored_sender(origin),
                     route,
                 );
             }

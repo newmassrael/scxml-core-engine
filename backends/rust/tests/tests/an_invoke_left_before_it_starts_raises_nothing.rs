@@ -33,7 +33,7 @@ fn the_left_states_invoke_is_never_attempted() {
         "`s0` leaves on an eventless transition within the first macrostep"
     );
 
-    e.raise_external(Event::Finish, "", "");
+    e.raise_external(Event::Finish, "");
     e.step();
 
     assert_eq!(

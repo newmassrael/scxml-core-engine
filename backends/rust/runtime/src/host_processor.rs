@@ -98,6 +98,12 @@ pub struct HostSendResponse {
     pub event_name: String,
     /// `_event.data` for the raised event (§scxml-5.10.1).
     pub event_data: String,
+    /// `_event.origin` and `_event.origintype` of the reply, in the host's
+    /// own terms (docs/adr/0090, section 2): the host processor's type and
+    /// the address a `<send>` of that type reaches the party at. `None` when
+    /// the reply names no party, and then both fields read empty; the engine
+    /// never fills in the SCXML processor's type for a host.
+    pub origin: Option<crate::EventOrigin>,
 }
 
 /// A registered handler and the type it answers for.
@@ -214,7 +220,9 @@ pub const MESH_ORIGIN_SCHEME: &str = "mesh://";
 /// SCE_MESH.md §mesh-10.7 tabulates it: external, origin `mesh://<source>`,
 /// the SCXML processor as origin type (every envelope is SCE's own, so the
 /// traffic is inter-SCXML by construction), and the send id the envelope
-/// carried.
+/// carried. The Mesh transport writes the pair where it builds the event
+/// (docs/adr/0090, section 2); the event has no sender, since no session of
+/// this tree sent it.
 ///
 /// The one place it is built: a host core's endpoint builds what it hands a
 /// top-level machine with it, and what it hands a child session (SCE_MESH.md
@@ -225,8 +233,10 @@ pub fn mesh_event_metadata(data: String, source: &str, send_id: String) -> crate
         data,
         event_type: crate::EventType::External,
         send_id,
-        origin: format!("{MESH_ORIGIN_SCHEME}{source}"),
-        origin_type: crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string(),
+        origin: Some(crate::EventOrigin::new(
+            crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
+            format!("{MESH_ORIGIN_SCHEME}{source}"),
+        )),
         ..crate::EventMetadata::default()
     }
 }
@@ -441,6 +451,12 @@ pub struct HostInvokeEnding<'a> {
     pub done: bool,
     /// `_event.data` of the event the ending raises.
     pub data: &'a str,
+    /// `_event.origin` and `_event.origintype` of that event, for a host whose
+    /// invocation stands for a party it can name, in the host's own terms
+    /// (docs/adr/0090, section 2): its declared type and the address a
+    /// `<send>` of that type reaches the party at. `None` for a host that
+    /// names no party.
+    pub origin: Option<&'a crate::EventOrigin>,
 }
 
 /// Why an ending a host reported for some session of a tree was refused
@@ -770,7 +786,7 @@ impl HostProcessorRegistry {
     /// End start `ending.token` of the running invocation `ending` names, as
     /// its host reported (§scxml-6.4): take it out of the set, and give the
     /// name and `_event` fields of the event the document receives, which
-    /// carries `origin` and, unless empty, `origin_type`. `None`, and nothing
+    /// carries the ending's origin as the host named it. `None`, and nothing
     /// taken, when that start is not running: cancelled, ended, or started
     /// again since.
     ///
@@ -780,8 +796,6 @@ impl HostProcessorRegistry {
     pub(crate) fn end_started(
         &mut self,
         ending: HostInvokeEnding<'_>,
-        origin: &str,
-        origin_type: &str,
     ) -> Option<(String, crate::EventMetadata)> {
         let HostInvokeEnding {
             processor_type,
@@ -789,6 +803,7 @@ impl HostProcessorRegistry {
             token,
             done,
             data,
+            origin,
         } = ending;
         if !self.take_started(processor_type, invoke_id, token) {
             return None;
@@ -803,12 +818,10 @@ impl HostProcessorRegistry {
         } else {
             format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX)
         };
-        let mut metadata = crate::EventMetadata::external("", origin);
-        // An empty `origin_type` keeps the one every host completion has
-        // carried, so `complete_host_invoke` reads as it always did.
-        if !origin_type.is_empty() {
-            metadata.origin_type = crate::sce_string_from_str(origin_type);
-        }
+        // docs/adr/0090, section 2: the pair the host named, as it named it, or
+        // none; never the SCXML processor's type by default.
+        let mut metadata = crate::EventMetadata::external("");
+        metadata.origin = origin.cloned();
         metadata.data = crate::sce_string_from_str(data);
         // §scxml-5.10.1: the completion is an event of the invocation, so
         // `_event.invokeid` is the invocation's id, the one the event names

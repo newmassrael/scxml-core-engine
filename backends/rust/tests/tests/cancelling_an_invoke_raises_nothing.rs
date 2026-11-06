@@ -33,7 +33,7 @@ fn leaving_the_invoking_state_raises_no_cancel_event() {
     );
 
     for event in [Event::Leave, Event::Finish] {
-        e.raise_external(event, "", "");
+        e.raise_external(event, "");
         e.step();
     }
 

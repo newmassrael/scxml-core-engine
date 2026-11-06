@@ -28,7 +28,7 @@ fn each_bad_argument_discards_its_message() {
     e.set_clock(SceClock::Manual(0));
     e.initialize();
     e.advance_time_ms(60_000);
-    e.raise_external(Event::Finish, "", "");
+    e.raise_external(Event::Finish, "");
     e.step();
 
     assert_eq!(

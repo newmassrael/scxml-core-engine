@@ -40,7 +40,7 @@ fn each_error_ends_only_its_own_block() {
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     e.initialize();
     for event in [Event::T, Event::Finish] {
-        e.raise_external(event, "", "");
+        e.raise_external(event, "");
         e.step();
     }
 

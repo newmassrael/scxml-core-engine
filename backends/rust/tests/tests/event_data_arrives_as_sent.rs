@@ -5,7 +5,7 @@
 // value — Rust AOT path.
 //
 // The edge nothing measured. Every other integration fixture in this
-// repository drives its machine with `raise_external(event, "", "")`; the
+// repository drives its machine with `raise_external(event, "")`; the
 // payload argument was the empty string in every call on every channel until
 // this one, so the host-to-datamodel boundary was covered by no test at all.
 // The W3C suite does not reach it either — its payloads originate inside the
@@ -45,7 +45,7 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
 
     // A JSON object, the shape an embedder has when it holds structured data
     // and a state machine to give it to.
-    engine.raise_external(Event::Payload, r#"{"milestone":"refined","turns":2}"#, "");
+    engine.raise_external(Event::Payload, r#"{"milestone":"refined","turns":2}"#);
     engine.step();
 
     let after_payload = engine.get_active_states();
@@ -65,7 +65,7 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
     // Text that is not JSON. The same call, and it must NOT be parsed into
     // something else: `hold the line` is the value the document compares
     // against, character for character.
-    engine.raise_external(Event::Note, "hold the line", "");
+    engine.raise_external(Event::Note, "hold the line");
     engine.step();
 
     let after_note = engine.get_active_states();
@@ -80,7 +80,7 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
     // payload three readings and none of them is "evaluate it": a payload is
     // what a host, a peer session or an HTTP sender put there, and running it
     // makes `_event.data` mean whatever the receiver's engine is written in.
-    engine.raise_external(Event::Arith, "2 + 3", "");
+    engine.raise_external(Event::Arith, "2 + 3");
     engine.step();
 
     let after_arith = engine.get_active_states();
@@ -104,7 +104,6 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
         // NON-blank character, and a pretty-printed document is the ordinary
         // shape of one. The scan past it is small enough to look redundant.
         "\n  <books xmlns=\"\"><book title=\"t1\"/></books>",
-        "",
     );
     engine.step();
 
@@ -120,7 +119,7 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
     // The sentence that closes the clause. Every `error.*` message this
     // repository raises names the SCXML construct that failed, so every one of
     // them has exactly this shape: it opens like a document and is not one.
-    engine.raise_external(Event::Broken, "<assign>  to  detail failed", "");
+    engine.raise_external(Event::Broken, "<assign>  to  detail failed");
     engine.step();
 
     let after_broken = engine.get_active_states();

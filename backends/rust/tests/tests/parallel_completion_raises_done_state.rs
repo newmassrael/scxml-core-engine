@@ -38,7 +38,7 @@ fn every_region_final_completes_the_parallel() {
          it came up as {entry:?}, so nothing below is testing what it claims"
     );
 
-    engine.raise_external(Event::Go, "", "");
+    engine.raise_external(Event::Go, "");
     engine.step();
 
     let after = engine.get_active_states();

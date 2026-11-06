@@ -23,7 +23,7 @@ fn each_argument_costs_what_its_clause_says() {
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     e.initialize();
     for event in [Event::Go, Event::Finish] {
-        e.raise_external(event, "", "");
+        e.raise_external(event, "");
         e.step();
     }
 

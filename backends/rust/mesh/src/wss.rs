@@ -549,7 +549,7 @@ mod tests {
         };
         assert_eq!(event.name, "go");
         assert_eq!(event.metadata.data, r#"{"v":1}"#);
-        assert_eq!(event.metadata.origin, "mesh://client");
+        assert_eq!(event.metadata.origin_address(), "mesh://client");
         assert_eq!(event.metadata.send_id, "s-1");
         assert!(client.take_host_errors().is_empty());
     }

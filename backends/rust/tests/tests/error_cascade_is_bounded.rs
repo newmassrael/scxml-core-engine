@@ -70,7 +70,7 @@ fn a_handler_that_cannot_handle_its_error_is_stopped() {
         "nothing has been refused before the machine has done anything"
     );
 
-    engine.raise_external(Event::Spin, "", "");
+    engine.raise_external(Event::Spin, "");
     engine.step();
 
     assert_eq!(
@@ -123,7 +123,7 @@ fn a_handler_that_cannot_handle_its_error_is_stopped() {
 fn a_chain_that_ends_on_its_own_is_not_refused() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Settle, "", "");
+    engine.raise_external(Event::Settle, "");
     engine.step();
 
     assert_eq!(
@@ -161,7 +161,7 @@ fn one_error_nobody_answered_is_not_a_chain() {
     let (mut engine, _se) = started();
 
     for _ in 0..5 {
-        engine.raise_external(Event::Boom, "", "");
+        engine.raise_external(Event::Boom, "");
         engine.step();
     }
 
@@ -184,7 +184,7 @@ fn one_error_nobody_answered_is_not_a_chain() {
 fn the_machine_still_answers_after_its_chain_is_cut() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Spin, "", "");
+    engine.raise_external(Event::Spin, "");
     engine.step();
     assert_eq!(
         engine.error_cascade_events(),
@@ -192,7 +192,7 @@ fn the_machine_still_answers_after_its_chain_is_cut() {
         "precondition: this test is about what happens AFTER a refusal"
     );
 
-    engine.raise_external(Event::Poke, "", "");
+    engine.raise_external(Event::Poke, "");
     engine.step();
 
     assert_eq!(
@@ -218,9 +218,9 @@ fn the_machine_still_answers_after_its_chain_is_cut() {
 fn a_second_chain_starts_from_zero() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Spin, "", "");
+    engine.raise_external(Event::Spin, "");
     engine.step();
-    engine.raise_external(Event::Reset, "", "");
+    engine.raise_external(Event::Reset, "");
     engine.step();
     assert_eq!(
         engine.get_current_state(),
@@ -228,7 +228,7 @@ fn a_second_chain_starts_from_zero() {
         "`reset` is the fixture's way back out of the chain"
     );
 
-    engine.raise_external(Event::Spin, "", "");
+    engine.raise_external(Event::Spin, "");
     engine.step();
 
     assert_eq!(

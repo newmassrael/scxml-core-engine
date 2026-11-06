@@ -56,7 +56,7 @@ fn describe(e: &Engine) -> String {
 #[test]
 fn a_run_that_reaches_its_final_exits_the_final() {
     let mut e = started();
-    e.raise_external(Event::Finish, "", "");
+    e.raise_external(Event::Finish, "");
     e.step();
 
     let seen = describe(&e);

@@ -129,6 +129,10 @@ pub enum InboxInput<E, D = ()> {
         done: bool,
         /// `_event.data` of the event the ending raises.
         data: String,
+        /// `_event.origin` and `_event.origintype` of that event, in the
+        /// host's own terms (docs/adr/0090, section 2); `None` for a host
+        /// that names no party.
+        origin: Option<crate::EventOrigin>,
     },
 }
 
@@ -136,12 +140,24 @@ pub enum InboxInput<E, D = ()> {
 pub type InboxInputOf<P> = InboxInput<<P as StatePolicy>::Event, <P as StatePolicy>::Payload>;
 
 impl<E, D: Default> InboxInput<E, D> {
-    /// The external event `Engine::raise_external(event, data, origin)` raises,
-    /// as an input: `data` as `_event.data` and `origin` as `_event.origin`.
-    /// Both are dropped in the bare-metal profile, as that call drops them.
-    pub fn external(event: E, data: &str, origin: &str) -> Self {
+    /// The external event `Engine::raise_external(event, data)` raises, as an
+    /// input: `data` as `_event.data`, and no origin (docs/adr/0090, section
+    /// 3). `data` is dropped in the bare-metal profile, as that call drops it.
+    pub fn external(event: E, data: &str) -> Self {
         let mut raised = EventWithMetadata::new(event);
-        raised.metadata = EventMetadata::external("", origin);
+        raised.metadata = EventMetadata::external("");
+        raised.set_event_data(data);
+        InboxInput::ExternalEvent(raised)
+    }
+
+    /// The external event `Engine::raise_external_from(event, data, origin)`
+    /// raises, as an input: `origin` is the pair the host names for it in its
+    /// own terms, `None` for no party (docs/adr/0090, section 2).
+    #[cfg(feature = "std")]
+    pub fn external_from(event: E, data: &str, origin: Option<crate::EventOrigin>) -> Self {
+        let mut raised = EventWithMetadata::new(event);
+        raised.metadata = EventMetadata::external("");
+        raised.metadata.origin = origin;
         raised.set_event_data(data);
         InboxInput::ExternalEvent(raised)
     }
@@ -152,7 +168,7 @@ impl<E, D> InboxInput<E, D> {
     /// The external event named `name`, carrying `data` as `_event.data`: what
     /// `Engine::raise_external_by_name(name, data)` raises, as an input.
     pub fn external_by_name(name: &str, data: &str) -> Self {
-        let mut metadata = EventMetadata::external("", "");
+        let mut metadata = EventMetadata::external("");
         metadata.data = crate::sce_string_from_str(data);
         InboxInput::ExternalEventByName {
             name: name.to_string(),
@@ -173,6 +189,7 @@ impl<E, D> InboxInput<E, D> {
             token: ending.token,
             done: ending.done,
             data: ending.data.to_string(),
+            origin: ending.origin.cloned(),
         }
     }
 }
@@ -354,6 +371,7 @@ pub(crate) struct HeldEnding {
     token: u64,
     done: bool,
     data: String,
+    origin: Option<crate::EventOrigin>,
 }
 
 #[cfg(feature = "std")]
@@ -366,6 +384,7 @@ impl HeldEnding {
             token: self.token,
             done: self.done,
             data: &self.data,
+            origin: self.origin.as_ref(),
         }
     }
 }
@@ -409,6 +428,7 @@ impl HeldInput {
                 token,
                 done,
                 data,
+                origin,
             } => (
                 HeldInput::HostInvokeEnding(HeldEnding {
                     processor_type,
@@ -416,6 +436,7 @@ impl HeldInput {
                     token,
                     done,
                     data,
+                    origin,
                 }),
                 session_id,
             ),
@@ -448,6 +469,7 @@ impl HeldInput {
                 token,
                 done,
                 data,
+                origin,
             }) => InboxInput::HostInvokeEnding {
                 session_id,
                 processor_type,
@@ -455,6 +477,7 @@ impl HeldInput {
                 token,
                 done,
                 data,
+                origin,
             },
         }
     }
@@ -685,7 +708,7 @@ impl<P: StatePolicy> EngineInbox<P> {
 ///
 /// engine.attach_inbox(&INBOX);
 /// // in an interrupt handler:
-/// let _ = INBOX.post(InboxInput::external(MachineEvent::ButtonPressed, "", ""));
+/// let _ = INBOX.post(InboxInput::external(MachineEvent::ButtonPressed, ""));
 /// ```
 ///
 /// `N` is a power of two from 2 to 128; another value fails to compile where the
@@ -747,7 +770,7 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
         &self,
         input: InboxInputOf<P>,
     ) -> Result<InboxInputOf<P>, InboxRefusal<InboxInputOf<P>>> {
-        let (session_id, processor_type, invoke_id, token, done, data) = match input {
+        let (session_id, processor_type, invoke_id, token, done, data, origin) = match input {
             InboxInput::HostInvokeEnding {
                 session_id: Some(session_id),
                 processor_type,
@@ -755,7 +778,16 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
                 token,
                 done,
                 data,
-            } => (session_id, processor_type, invoke_id, token, done, data),
+                origin,
+            } => (
+                session_id,
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+                origin,
+            ),
             other => return Ok(other),
         };
         let own = self
@@ -772,6 +804,7 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
                 token,
                 done,
                 data,
+                origin,
             })
         } else {
             Err(InboxRefusal::UnknownSession(InboxInput::HostInvokeEnding {
@@ -781,6 +814,7 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
                 token,
                 done,
                 data,
+                origin,
             }))
         }
     }

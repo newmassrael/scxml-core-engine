@@ -578,8 +578,8 @@ impl ExternalMachine {
             "event": event.name,
             "data": meta.data,
             "send_id": meta.send_id,
-            "origin": meta.origin,
-            "origin_type": meta.origin_type,
+            "origin": meta.origin_address(),
+            "origin_type": meta.origin_processor(),
             "invoke_id": meta.invoke_id,
         }))
     }

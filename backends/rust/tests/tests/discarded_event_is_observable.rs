@@ -70,7 +70,7 @@ fn an_event_no_active_state_answered_is_counted() {
     // `settle` is declared in `busy`, so it is in the machine's vocabulary and
     // the host can name it — it just matches nothing while the machine is in
     // `idle`. That is the host-side wiring mistake this count exists for.
-    engine.raise_external(Event::Settle, "", "");
+    engine.raise_external(Event::Settle, "");
     engine.step();
 
     assert_eq!(
@@ -94,7 +94,7 @@ fn an_event_no_active_state_answered_is_counted() {
 fn a_handled_event_is_not_counted() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Poke, "", "");
+    engine.raise_external(Event::Poke, "");
     engine.step();
     assert_eq!(
         counter(&engine, &se, "pokes"),
@@ -109,7 +109,7 @@ fn a_handled_event_is_not_counted() {
          unchanged only because the transition returns to its own source"
     );
 
-    engine.raise_external(Event::Nudge, "", "");
+    engine.raise_external(Event::Nudge, "");
     engine.step();
     assert_eq!(
         counter(&engine, &se, "nudges"),
@@ -131,7 +131,7 @@ fn a_handled_event_is_not_counted() {
 fn the_discard_is_not_derivable_from_any_other_accessor() {
     let (mut engine, _se) = started();
 
-    engine.raise_external(Event::Poke, "", "");
+    engine.raise_external(Event::Poke, "");
     engine.step();
     let handled = (
         engine.get_current_state(),
@@ -140,7 +140,7 @@ fn the_discard_is_not_derivable_from_any_other_accessor() {
         engine.is_in_final_state(),
     );
 
-    engine.raise_external(Event::Settle, "", "");
+    engine.raise_external(Event::Settle, "");
     engine.step();
     let discarded = (
         engine.get_current_state(),
@@ -174,7 +174,7 @@ fn the_engine_names_the_event_it_discarded() {
         "nothing has been discarded yet"
     );
 
-    engine.raise_external(Event::Settle, "", "");
+    engine.raise_external(Event::Settle, "");
     engine.step();
 
     assert_eq!(
@@ -189,7 +189,7 @@ fn the_engine_names_the_event_it_discarded() {
 #[test]
 fn an_event_the_machine_has_moved_past_is_counted() {
     let (mut engine, _se) = started();
-    engine.raise_external(Event::Go, "", "");
+    engine.raise_external(Event::Go, "");
     engine.step();
     assert_eq!(
         engine.get_current_state(),
@@ -198,7 +198,7 @@ fn an_event_the_machine_has_moved_past_is_counted() {
     );
 
     // `poke` is `idle`'s vocabulary; in `busy` it answers nothing.
-    engine.raise_external(Event::Poke, "", "");
+    engine.raise_external(Event::Poke, "");
     engine.step();
     assert_eq!(
         engine.discarded_external_events(),

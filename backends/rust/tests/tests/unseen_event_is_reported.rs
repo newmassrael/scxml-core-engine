@@ -53,7 +53,7 @@ fn pokes(engine: &Engine<Policy>, script_engine: &Arc<dyn IScriptEngine>) -> i64
 }
 
 fn deliver(engine: &mut Engine<Policy>, event: Event) {
-    engine.raise_external(event, "", "");
+    engine.raise_external(event, "");
     engine.step();
 }
 

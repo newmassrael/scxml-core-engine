@@ -76,7 +76,7 @@ fn an_error_no_transition_answered_is_counted() {
         "no error has gone unhandled before the first event"
     );
 
-    engine.raise_external(Event::Boom, "", "");
+    engine.raise_external(Event::Boom, "");
     engine.step();
 
     assert_eq!(
@@ -106,7 +106,7 @@ fn an_error_no_transition_answered_is_counted() {
 fn an_error_the_document_handled_is_not_counted() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Go, "", "");
+    engine.raise_external(Event::Go, "");
     engine.step();
     assert_eq!(
         engine.get_current_state(),
@@ -114,7 +114,7 @@ fn an_error_the_document_handled_is_not_counted() {
         "`go` should have moved the machine to the state that answers errors"
     );
 
-    engine.raise_external(Event::Boom, "", "");
+    engine.raise_external(Event::Boom, "");
     engine.step();
 
     assert_eq!(
@@ -169,7 +169,7 @@ fn an_error_the_document_handled_is_not_counted() {
 fn an_authors_unmatched_raise_is_not_an_unhandled_error() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Whisper, "", "");
+    engine.raise_external(Event::Whisper, "");
     engine.step();
 
     assert_eq!(
@@ -206,7 +206,7 @@ fn an_authors_unmatched_raise_is_not_an_unhandled_error() {
 fn the_unhandled_error_is_not_derivable_from_any_other_accessor() {
     let (mut engine, _se) = started();
 
-    engine.raise_external(Event::Poke, "", "");
+    engine.raise_external(Event::Poke, "");
     engine.step();
     let clean = (
         engine.get_current_state(),
@@ -217,7 +217,7 @@ fn the_unhandled_error_is_not_derivable_from_any_other_accessor() {
         engine.last_discarded_event(),
     );
 
-    engine.raise_external(Event::Boom, "", "");
+    engine.raise_external(Event::Boom, "");
     engine.step();
     let failed = (
         engine.get_current_state(),
@@ -253,7 +253,7 @@ fn the_engine_names_the_error_it_dropped() {
         "nothing has gone unhandled yet"
     );
 
-    engine.raise_external(Event::Boom, "", "");
+    engine.raise_external(Event::Boom, "");
     engine.step();
 
     assert_eq!(
@@ -272,7 +272,7 @@ fn a_machine_failing_every_round_is_counted_every_round() {
     let (mut engine, se) = started();
 
     for round in 1..=3 {
-        engine.raise_external(Event::Boom, "", "");
+        engine.raise_external(Event::Boom, "");
         engine.step();
         assert_eq!(
             engine.unhandled_error_events(),

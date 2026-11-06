@@ -46,7 +46,7 @@ fn engine() -> sce_rust_runtime::Engine<Policy> {
 }
 
 fn send(e: &mut sce_rust_runtime::Engine<Policy>, ev: Event) {
-    e.raise_external(ev, "", "");
+    e.raise_external(ev, "");
     e.step();
 }
 

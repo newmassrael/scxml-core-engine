@@ -23,7 +23,7 @@ fn the_childs_reply_arrives_before_the_hosts_next_event() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     e.initialize();
-    e.raise_external(Event::Finish, "", "");
+    e.raise_external(Event::Finish, "");
     e.step();
 
     let p = e.policy();

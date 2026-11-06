@@ -815,8 +815,12 @@ mod tests {
         assert_eq!(event.name, "go");
         assert_eq!(event.metadata.data, r#"{"a":1}"#);
         assert_eq!(event.metadata.event_type, EventType::External);
-        assert_eq!(event.metadata.origin, "mesh://ecu");
-        assert_eq!(event.metadata.origin_type, SCXML_EVENT_PROCESSOR_TYPE);
+        assert_eq!(event.metadata.origin_address(), "mesh://ecu");
+        assert_eq!(
+            event.metadata.origin_processor(),
+            SCXML_EVENT_PROCESSOR_TYPE
+        );
+        assert!(event.metadata.sender.is_empty());
         assert_eq!(event.metadata.send_id, "s-7");
     }
 
@@ -964,7 +968,7 @@ mod tests {
             r#"{"errorName":"communication","reason":"SEND_FAILED","target":"hmi","transport":"wss","transport_error":"reset"}"#
         );
         // Raised as the C++ core raises it: an envelope from its own machine.
-        assert_eq!(event.metadata.origin, "mesh://ecu");
+        assert_eq!(event.metadata.origin_address(), "mesh://ecu");
         assert_eq!(event.metadata.send_id, "");
     }
 

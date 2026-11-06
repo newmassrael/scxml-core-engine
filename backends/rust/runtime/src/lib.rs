@@ -204,9 +204,9 @@ pub const MAX_SCHEDULED_EVENTS: usize = 32;
 /// Maximum byte length of an event metadata string under `--no-default-features`.
 ///
 /// Bounds the capacity of [`SceString`] for `EventMetadata.data`,
-/// `EventMetadata.send_id`, `EventMetadata.origin`, `EventMetadata.origin_type`,
-/// and `EventMetadata.invoke_id`. The std build's `SceString = String` is
-/// unbounded; this constant only affects the no_std variant.
+/// `EventMetadata.send_id`, `EventMetadata.sender` and `EventMetadata.invoke_id`.
+/// The std build's `SceString = String` is unbounded; this constant only
+/// affects the no_std variant.
 ///
 /// v1 value 256 covers §scxml-5.10.1 platform-event payloads + send-target
 /// URIs without truncation. Author-tunable cap deferred to a future atomic
@@ -515,6 +515,10 @@ pub use engine::ScheduledRoute;
 /// §scxml-6.2.4: what became of a send handed to [`Engine::send_to_target`].
 #[cfg(feature = "std")]
 pub use engine::TargetSendOutcome;
+/// docs/adr/0090: the reply address an event carries, which the processor that
+/// delivers it writes and a host names in its own terms.
+#[cfg(feature = "std")]
+pub use event::EventOrigin;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::configuration::ConfigurationRejection;

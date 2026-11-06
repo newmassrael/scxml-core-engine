@@ -21,7 +21,8 @@
 use std::sync::{Arc, Mutex};
 
 use sce_rust_runtime::{
-    Engine, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, MESH_RPC_INVOKE_TYPE,
+    Engine, EventOrigin, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse,
+    MESH_RPC_INVOKE_TYPE,
 };
 use sce_rust_tests::integration::host_processor::{
     StatechartStaticMeshRequestPolicy as Policy, StatechartStaticMeshRequestState as State,
@@ -112,8 +113,7 @@ fn a_static_mesh_request_the_router_fails_is_error_invoke() {
         "ask",
         request.token,
         "\"unreachable\"",
-        "mesh://motor",
-        ""
+        Some(EventOrigin::new(MESH_RPC_INVOKE_TYPE, "mesh://motor")),
     ));
     e.step();
 

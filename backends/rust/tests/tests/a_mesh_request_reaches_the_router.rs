@@ -11,7 +11,7 @@
 use std::sync::{Arc, Mutex};
 
 use sce_rust_runtime::{
-    Engine, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, IScriptEngine,
+    Engine, EventOrigin, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, IScriptEngine,
     MESH_RPC_INVOKE_TYPE,
 };
 use sce_rust_tests::integration::a_mesh_request_reaches_the_router::{
@@ -95,8 +95,7 @@ fn a_mesh_request_the_router_fails_is_error_invoke() {
         "ask",
         request.token,
         "\"unreachable\"",
-        "mesh://motor",
-        ""
+        Some(EventOrigin::new(MESH_RPC_INVOKE_TYPE, "mesh://motor")),
     ));
     e.step();
 

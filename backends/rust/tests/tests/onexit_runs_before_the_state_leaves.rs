@@ -36,7 +36,7 @@ fn a_state_is_still_active_while_its_own_onexit_runs() {
         "the run has to start inside `inner`; it came up as {entry:?}"
     );
 
-    e.raise_external(Event::Leave, "", "");
+    e.raise_external(Event::Leave, "");
     e.step();
 
     let settled = e.get_active_states();

@@ -64,7 +64,7 @@ fn counter(engine: &Engine<Policy>, script_engine: &Arc<dyn IScriptEngine>, name
 fn a_targetless_transition_does_not_end_the_macrostep() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Arm, "", "");
+    engine.raise_external(Event::Arm, "");
     engine.step();
 
     assert_eq!(
@@ -106,7 +106,7 @@ fn a_targetless_transition_does_not_end_the_macrostep() {
 fn a_raise_from_a_targetless_transition_is_answered_in_the_same_macrostep() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Ping, "", "");
+    engine.raise_external(Event::Ping, "");
     engine.step();
 
     assert_eq!(
@@ -134,7 +134,7 @@ fn a_raise_from_a_targetless_transition_is_answered_in_the_same_macrostep() {
 fn a_targetless_transition_that_enables_nothing_changes_nothing_else() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Quiet, "", "");
+    engine.raise_external(Event::Quiet, "");
     engine.step();
 
     assert_eq!(counter(&engine, &se, "quiet"), 1, "the transition fired");
@@ -163,7 +163,7 @@ fn a_targetless_transition_that_enables_nothing_changes_nothing_else() {
 fn an_eventless_self_transition_exits_and_re_enters() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Recycle, "", "");
+    engine.raise_external(Event::Recycle, "");
     engine.step();
 
     assert_eq!(
@@ -191,13 +191,13 @@ fn an_eventless_self_transition_exits_and_re_enters() {
 fn the_second_targetless_transition_is_followed_too() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Quiet, "", "");
+    engine.raise_external(Event::Quiet, "");
     engine.step();
-    engine.raise_external(Event::Ping, "", "");
+    engine.raise_external(Event::Ping, "");
     engine.step();
     assert_eq!(counter(&engine, &se, "answered"), 1);
 
-    engine.raise_external(Event::Ping, "", "");
+    engine.raise_external(Event::Ping, "");
     engine.step();
 
     assert_eq!(

@@ -39,7 +39,7 @@ fn completion_carries_the_machine_to_a_top_level_final() {
          it came up as {entry:?}, so nothing below is testing what it claims"
     );
 
-    engine.raise_external(Event::Go, "", "");
+    engine.raise_external(Event::Go, "");
     engine.step();
 
     // One assertion, with the configuration in its message, because the two

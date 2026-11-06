@@ -73,7 +73,7 @@ fn a_raise_chain_that_cannot_end_is_stopped() {
         "nothing has been refused before the machine has done anything"
     );
 
-    engine.raise_external(Event::Spin, "", "");
+    engine.raise_external(Event::Spin, "");
     engine.step();
 
     assert_eq!(
@@ -115,7 +115,7 @@ fn a_raise_chain_that_cannot_end_is_stopped() {
 fn a_raise_chain_that_ends_at_the_ceiling_is_not_refused() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Bounded, "", "");
+    engine.raise_external(Event::Bounded, "");
     engine.step();
 
     assert_eq!(
@@ -159,7 +159,7 @@ fn a_raise_chain_that_ends_at_the_ceiling_is_not_refused() {
 fn a_dequeue_that_selected_nothing_spends_no_budget() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Unanswered, "", "");
+    engine.raise_external(Event::Unanswered, "");
     engine.step();
 
     assert_eq!(
@@ -196,7 +196,7 @@ fn a_dequeue_that_selected_nothing_spends_no_budget() {
 fn an_alternating_chain_spends_one_shared_budget() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Alternate, "", "");
+    engine.raise_external(Event::Alternate, "");
     engine.step();
 
     assert_eq!(
@@ -238,7 +238,7 @@ fn an_alternating_chain_spends_one_shared_budget() {
 fn a_refused_chain_is_left_queued_for_the_next_macrostep() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Resume, "", "");
+    engine.raise_external(Event::Resume, "");
     engine.step();
     assert_eq!(
         counter(&engine, &se, "beats"),
@@ -247,7 +247,7 @@ fn a_refused_chain_is_left_queued_for_the_next_macrostep() {
     );
     assert_eq!(engine.truncated_macrosteps(), 1);
 
-    engine.raise_external(Event::Poke, "", "");
+    engine.raise_external(Event::Poke, "");
     engine.step();
 
     assert_eq!(
@@ -275,7 +275,7 @@ fn a_refused_chain_is_left_queued_for_the_next_macrostep() {
 fn an_ordinary_macrostep_is_not_counted() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Poke, "", "");
+    engine.raise_external(Event::Poke, "");
     engine.step();
 
     assert_eq!(

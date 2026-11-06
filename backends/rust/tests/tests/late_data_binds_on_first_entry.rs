@@ -33,7 +33,7 @@ fn a_state_binds_its_data_only_on_its_first_entry() {
 
     // Enter `s`, change its `v`, leave it, enter it again — one step each.
     for event in [Event::Go, Event::Bump, Event::Back, Event::Go] {
-        e.raise_external(event, "", "");
+        e.raise_external(event, "");
         e.step();
     }
 

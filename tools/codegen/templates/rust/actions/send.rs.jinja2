@@ -12,21 +12,22 @@
 {# W3C SCXML 5.7: `<param>` collection is shared with the host invoke; see
    `param_macros.rs.jinja2`. #}
 {% from 'param_macros.rs.jinja2' import collect_params_into %}
-{# §scxml-C-1: the origin of an event this session sends to itself — its own
-   session, which `_event.origin` publishes as the location a reply goes back
-   to. One spelling for every arm that delivers into this session's queue,
-   immediate or delayed. Under no_std no session identity exists and origin
-   metadata is elided, so the value is empty there. It is text, borrowed: the
-   engine builds the one string it keeps, and a profile that keeps none builds
-   none, where an owned string made here would be a buffer of the string bound on
-   this action's stack for a value that is dropped. #}
-{% macro self_origin(no_std) %}{% if no_std %}""{% else %}self.session_id.as_deref().unwrap_or(""){% endif %}{% endmacro %}
-{# The same origin, owned, for the one call that hands the policy over beside it:
+{# §scxml-C-1: the sender of an event this session sends — its own session,
+   whose published location the SCXML processor writes as `_event.origin`, the
+   location a reply goes back to (docs/adr/0090). One spelling for every arm
+   that delivers an event this session sends, immediate or delayed. Under
+   no_std no session identity exists and origin metadata is elided, so the
+   value is empty there. It is text, borrowed: the engine builds the one string
+   it keeps, and a profile that keeps none builds none, where an owned string
+   made here would be a buffer of the string bound on this action's stack for
+   a value that is dropped. #}
+{% macro self_sender(no_std) %}{% if no_std %}""{% else %}self.session_id.as_deref().unwrap_or(""){% endif %}{% endmacro %}
+{# The same sender, owned, for the one call that hands the policy over beside it:
    `Engine::send_to_target` takes `self` mutably, which a borrow of `self.session_id`
    would still hold. That call is std only, and the string is the one it needs. #}
-{% macro self_origin_owned(no_std) %}{% if no_std %}::sce_rust_runtime::SceString::new(){% else %}::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")){% endif %}{% endmacro %}
+{% macro self_sender_owned(no_std) %}{% if no_std %}::sce_rust_runtime::SceString::new(){% else %}::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")){% endif %}{% endmacro %}
 {# W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-   queue, carrying this session as its origin. One body for the send with no
+   queue, carrying this session as its sender. One body for the send with no
    target and the one whose target names this session. #}
 {% macro raise_external_here(action, machine_name, dyn_event, no_std, delay_rs=none) %}
 {% if delay_rs and (action.event or dyn_event) %}
@@ -35,22 +36,23 @@
 {% if action.event %}
     // The id is known here, so it is handed over and none is handed back: the
     // returned owned string was a buffer of the string bound to drop.
-    engine.schedule_event_as({{ machine_name }}Event::{{ action.event | to_event_variant }}, {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }});
+    engine.schedule_event_as({{ machine_name }}Event::{{ action.event | to_event_variant }}, {{ delay_rs }}, &send_id, event_data, &{{ self_sender(no_std) }});
 {% else %}
     // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
     // document's names resolve it to, and `_event.name` is the whole name.
-    engine.send_named_external(&_send_event_name, Some({{ delay_rs }}), &send_id, event_data, &{{ self_origin(no_std) }});
+    engine.send_named_external(&_send_event_name, Some({{ delay_rs }}), &send_id, event_data, &{{ self_sender(no_std) }});
 {% endif %}
 {% elif action.event %}
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-        // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id, {{ self_origin(no_std) }});
+        // W3C SCXML 5.10.1 + C.1: External send — the sendid, and the pair the
+        // SCXML processor writes for this session's send (docs/adr/0090)
+        meta.metadata = sce_rust_runtime::EventMetadata::sent_by_session(send_id, {{ self_sender(no_std) }});
         meta.set_event_data(event_data);
         engine.raise_external_with_meta(meta);
     }
 {% elif dyn_event %}
-    engine.send_named_external(&_send_event_name, None, &send_id, event_data, &{{ self_origin(no_std) }});
+    engine.send_named_external(&_send_event_name, None, &send_id, event_data, &{{ self_sender(no_std) }});
 {% endif %}
 {%- endmacro %}
 {# §scxml-6.2.5: the act a host-served send performs, for `processor_type`.
@@ -843,12 +845,12 @@
     // A delay postpones it and does not change the queue.
 {% if delay_rs and not no_std and (action.event or dyn_event) %}
 {% if action.event %}
-    engine.schedule_routed_event(Some({{ machine_name }}Event::{{ action.event | to_event_variant }}), {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }},
+    engine.schedule_routed_event(Some({{ machine_name }}Event::{{ action.event | to_event_variant }}), {{ delay_rs }}, &send_id, event_data, &{{ self_sender(no_std) }},
         sce_rust_runtime::ScheduledRoute::InternalQueue);
 {% else %}
     // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
     // document's names resolve it to, and `_event.name` is the whole name.
-    engine.send_named_internal(&_send_event_name, Some({{ delay_rs }}), &send_id, event_data, &{{ self_origin(no_std) }});
+    engine.send_named_internal(&_send_event_name, Some({{ delay_rs }}), &send_id, event_data, &{{ self_sender(no_std) }});
 {% endif %}
 {% elif action.event %}
     {
@@ -857,7 +859,7 @@
         engine.raise(meta);
     }
 {% elif dyn_event %}
-    engine.send_named_internal(&_send_event_name, None, &send_id, event_data, &{{ self_origin(no_std) }});
+    engine.send_named_internal(&_send_event_name, None, &send_id, event_data, &{{ self_sender(no_std) }});
 {% endif %}
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target is startingwith('http://') or action.target is startingwith('https://')))) %}
     // W3C SCXML C.2: BasicHTTP send to HTTP target
@@ -936,11 +938,11 @@
             &_send_event_name,
 {% endif %}
             _rt,
-            &{{ self_origin_owned(no_std) }},
+            &{{ self_sender_owned(no_std) }},
             {% if delay_rs %}Some({{ delay_rs }}){% else %}None{% endif %},
             &send_id,
             &event_data,
-            &{{ self_origin_owned(no_std) }},
+            &{{ self_sender_owned(no_std) }},
         );
         if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
 {% if 'error.execution' in model.events %}
@@ -988,7 +990,7 @@
     // W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own
     // queue, so `<cancel>` reaches it and a child that ends first drops it, and
     // it carries its payload when the delay has elapsed.
-    engine.schedule_routed_event(None, {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }},
+    engine.schedule_routed_event(None, {{ delay_rs }}, &send_id, event_data, &{{ self_sender(no_std) }},
         sce_rust_runtime::ScheduledRoute::Parent { event_name: "{{ action.event }}".to_string() });
 {% else %}
     if let Some(ref parent_queue) = self.parent_external_queue {
@@ -1029,14 +1031,16 @@
 {% if delay_rs %}
         // W3C SCXML 6.2: named now, reached when the delay has elapsed — or
         // reported then, if the invocation has ended by that time (C.1).
-        engine.schedule_routed_event(None, {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }},
+        engine.schedule_routed_event(None, {{ delay_rs }}, &send_id, event_data, &{{ self_sender(no_std) }},
             sce_rust_runtime::ScheduledRoute::Invocation {
                 invoke_id: "{{ child_ns.invoke.invoke_id | escape_rust }}".to_string(),
                 event_name: {% if dyn_event %}_send_event_name.to_string(){% else %}"{{ action.event }}".to_string(){% endif %},
             });
 {% else %}
         if let Some(ref mut child) = {{ slot }} {
-            child.deliver_by_name({% if dyn_event %}&_send_event_name{% else %}"{{ action.event }}"{% endif %}, &event_data);
+            // W3C SCXML C.1: this session is the sender, and the child reads
+            // the location it publishes as `_event.origin` (docs/adr/0090).
+            child.deliver_by_name({% if dyn_event %}&_send_event_name{% else %}"{{ action.event }}"{% endif %}, &event_data, self.session_id.as_deref().unwrap_or(""));
         }
         // docs/adr/0045: what the child sent its parent as it took the event,
         // and its ending, reach this session within the delivery.

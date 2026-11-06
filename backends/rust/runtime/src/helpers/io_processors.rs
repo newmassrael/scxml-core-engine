@@ -17,6 +17,7 @@
 
 use super::scxml_constants::{BASIC_HTTP_EVENT_PROCESSOR_TYPE, SCXML_EVENT_PROCESSOR_TYPE};
 use super::url_encoding::{url_decode, url_encode};
+use crate::event::EventOrigin;
 
 /// Alias the SCXML Event I/O Processor is indexed under by SCXML documents.
 pub const SCXML_ALIAS: &str = "scxml";
@@ -62,25 +63,115 @@ pub fn session_id_from_scxml_location(uri: &str) -> String {
     }
 }
 
-/// The `_event.origin` a receiver should see for an event sent by
-/// `origin_session_id`.
+/// The origin the SCXML Event I/O Processor writes for an event the session
+/// `sender` sends (docs/adr/0090, section 2).
 ///
-/// §scxml-C-1 requires the origin of a delivered event to match the 'location'
-/// the sending session published, which is what makes it an address the
-/// receiver can answer. The engine carries the sender's BARE session id
-/// internally — `EventMetadata::origin` — because its session-keyed lookups
-/// (`<finalize>` dispatch, cancelled-invoke filtering) match on the id.
-/// Converting where the event is raised would make one value serve two
-/// consumers that need different spellings. So the conversion belongs at the
-/// boundary where the value becomes visible to the document, and this is that
-/// conversion — the same rule, and the same shape, as the C++
-/// `IOProcessorHelper::publishedOrigin` both engines already share.
+/// The SCXML processor's rule has the origin of an event raised in the
+/// receiving session match the location the sending session publishes, so the
+/// pair is the
+/// processor's canonical type and [`scxml_location`] of the sender — the one
+/// function that also writes the session's `_ioprocessors` entry. The sender's
+/// id travels beside the pair, as the event's `sender`, for the lookups that
+/// find a session by it.
+pub fn scxml_origin(sender: &str) -> EventOrigin {
+    EventOrigin::new(SCXML_EVENT_PROCESSOR_TYPE, scxml_location(sender))
+}
+
+/// [`scxml_origin`] of a sender that may be absent: a machine that holds no
+/// session id has no address to publish, so an event it sends carries no
+/// origin rather than the location of an empty id.
+pub fn scxml_origin_of(sender: &str) -> Option<EventOrigin> {
+    if sender.is_empty() {
+        None
+    } else {
+        Some(scxml_origin(sender))
+    }
+}
+
+/// The `origin` text a saved state stores for an event's origin and sender:
+/// the sending session's id for an event a session sent, the address
+/// otherwise, and empty for none — what every backend writes as a format-2
+/// `origin` (docs/adr/0090, "Until step 6"). The `origintype` beside it is the
+/// pair's processor.
+pub fn stored_origin_text(origin: Option<&EventOrigin>, sender: &str) -> String {
+    if sender.is_empty() {
+        origin.map_or_else(String::new, |origin| origin.address.clone())
+    } else {
+        sender.to_string()
+    }
+}
+
+/// An event's origin and sender, as a stored `origin` and `origintype` spell
+/// them back.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StoredOrigin {
+    /// The pair the event carries, `None` for none.
+    pub origin: Option<EventOrigin>,
+    /// The sending session's id, empty unless a session sent the event.
+    pub sender: String,
+}
+
+/// The origin and sender a stored `origin` and `origintype` are read as
+/// (docs/adr/0090, section 7).
 ///
-/// A remote invoke is the case that makes this more than a rename: its child
-/// session is stamped with a URI rather than an id, and wrapping a URI in
-/// [`scxml_location`] would produce an address naming nothing. An argument that
-/// already carries a scheme is therefore passed through — it is already an
-/// address.
+/// An empty `origin` is none whatever type was stored beside it: an empty
+/// address answers nothing, and format 2 wrote the SCXML type beside it for
+/// events no processor stamped. An empty `origintype` beside an address is the
+/// SCXML processor's, which is what format 2 meant by it. A value without a
+/// scheme read with the SCXML type is a session's id, read as that session's
+/// pair with the id as its sender; an SCXML location (which one backend stored
+/// in place of the id) is read the same way by the id it names. Anything else
+/// is the pair as stored, with no sender. Never half a pair.
+pub fn read_stored_origin(origin: &str, origin_type: &str) -> StoredOrigin {
+    if origin.is_empty() {
+        return StoredOrigin::default();
+    }
+    let located = session_id_from_scxml_location(origin);
+    if !located.is_empty() {
+        return StoredOrigin {
+            origin: Some(scxml_origin(&located)),
+            sender: located,
+        };
+    }
+    let processor = if origin_type.is_empty() {
+        SCXML_EVENT_PROCESSOR_TYPE
+    } else {
+        origin_type
+    };
+    if !origin.contains("://") && processor == SCXML_EVENT_PROCESSOR_TYPE {
+        return StoredOrigin {
+            origin: Some(scxml_origin(origin)),
+            sender: origin.to_string(),
+        };
+    }
+    StoredOrigin {
+        origin: Some(EventOrigin::new(processor, origin)),
+        sender: String::new(),
+    }
+}
+
+/// The sender a stored waiting send's `origin` names (docs/adr/0090, section
+/// 7): a waiting send is always a session's, so a bare id is that id and an
+/// SCXML location names it.
+pub fn read_stored_sender(origin: &str) -> String {
+    let located = session_id_from_scxml_location(origin);
+    if located.is_empty() {
+        origin.to_string()
+    } else {
+        located
+    }
+}
+
+/// The `_event.origin` an engine that carried the sender's bare session id
+/// published for it.
+///
+/// No engine of this runtime calls it: each event now carries the pair the
+/// processor that delivered it wrote ([`scxml_origin`]), so nothing converts
+/// at the read. It is the Rust statement of the rule the C++
+/// `IOProcessorHelper::publishedOrigin` states, which docs/adr/0090 removes
+/// from every runtime at once (its step 7). A value that already carries a
+/// scheme is passed through, and anything else is wrapped as an SCXML
+/// location.
 pub fn published_origin(origin_session_id: &str) -> String {
     // §scxml-C-1: the 'origin' of the event raised in the receiving session
     // must match the 'location' the sending session published in its
@@ -185,6 +276,102 @@ mod tests {
         assert_eq!(session_id_from_scxml_location("sce://scxml/"), "");
         assert_eq!(session_id_from_scxml_location("session-1"), "");
         assert_eq!(session_id_from_scxml_location("http://host/x"), "");
+    }
+
+    #[test]
+    fn a_reserved_character_survives_the_round_trip() {
+        // `%` is the escape itself, and `:` and `?` would read as URI
+        // structure: a session id holding them must still be the one its
+        // location names.
+        for id in ["50%off", "a:b?c=d", "x/y#z", "planner-1.worker"] {
+            assert_eq!(session_id_from_scxml_location(&scxml_location(id)), id);
+        }
+    }
+
+    #[test]
+    fn the_scxml_origin_is_the_processor_and_the_location_the_sender_publishes() {
+        let descriptors = build("a b", "");
+
+        let origin = scxml_origin("a b");
+        assert_eq!(origin.processor, SCXML_EVENT_PROCESSOR_TYPE);
+        assert_eq!(Some(origin.address), location_of(&descriptors, SCXML_ALIAS));
+        assert_eq!(scxml_origin_of(""), None);
+        assert_eq!(scxml_origin_of("a b"), Some(scxml_origin("a b")));
+    }
+
+    #[test]
+    fn a_stored_origin_is_the_sender_for_a_session_and_the_address_otherwise() {
+        let host = EventOrigin::new("x-sce-host", "motor");
+
+        assert_eq!(
+            stored_origin_text(Some(&scxml_origin("s1")), "s1"),
+            "s1",
+            "format 2 stores the sending session's id, not its location"
+        );
+        assert_eq!(stored_origin_text(Some(&host), ""), "motor");
+        assert_eq!(stored_origin_text(None, ""), "");
+    }
+
+    #[test]
+    fn a_stored_origin_is_read_by_the_table_of_section_7() {
+        assert_eq!(read_stored_origin("", ""), StoredOrigin::default());
+        // An empty address is none, whatever type format 2 saved beside it.
+        assert_eq!(
+            read_stored_origin("", SCXML_EVENT_PROCESSOR_TYPE),
+            StoredOrigin::default()
+        );
+        // An address saved with no type is the SCXML processor's.
+        assert_eq!(
+            read_stored_origin("s1", ""),
+            StoredOrigin {
+                origin: Some(scxml_origin("s1")),
+                sender: "s1".to_string(),
+            }
+        );
+        assert_eq!(
+            read_stored_origin("mesh://ecu", ""),
+            StoredOrigin {
+                origin: Some(EventOrigin::new(SCXML_EVENT_PROCESSOR_TYPE, "mesh://ecu")),
+                sender: String::new(),
+            }
+        );
+        assert_eq!(
+            read_stored_origin("s1", SCXML_EVENT_PROCESSOR_TYPE),
+            StoredOrigin {
+                origin: Some(scxml_origin("s1")),
+                sender: "s1".to_string(),
+            }
+        );
+        // C11 stored the location in place of the id, with any type.
+        assert_eq!(
+            read_stored_origin("sce://scxml/a%20b", ""),
+            StoredOrigin {
+                origin: Some(scxml_origin("a b")),
+                sender: "a b".to_string(),
+            }
+        );
+        // A host's pair has no sender, whether or not its address has a scheme.
+        assert_eq!(
+            read_stored_origin("motor", "x-sce-host"),
+            StoredOrigin {
+                origin: Some(EventOrigin::new("x-sce-host", "motor")),
+                sender: String::new(),
+            }
+        );
+        assert_eq!(
+            read_stored_origin("mesh://ecu", SCXML_EVENT_PROCESSOR_TYPE),
+            StoredOrigin {
+                origin: Some(EventOrigin::new(SCXML_EVENT_PROCESSOR_TYPE, "mesh://ecu")),
+                sender: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_stored_waiting_send_names_its_sender_by_id_or_location() {
+        assert_eq!(read_stored_sender("s1"), "s1");
+        assert_eq!(read_stored_sender("sce://scxml/a%20b"), "a b");
+        assert_eq!(read_stored_sender(""), "");
     }
 
     #[test]

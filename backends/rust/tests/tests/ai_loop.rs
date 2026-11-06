@@ -94,7 +94,6 @@ fn verdict(e: &mut Engine<AiLoopPolicy>, done: bool) {
         } else {
             r#"{"done":false}"#
         },
-        "",
     );
     e.step();
 }
@@ -697,7 +696,6 @@ fn what_a_reflection_writes_is_what_the_machine_then_holds() {
     e.raise_external(
         AiLoopEvent::ReflectApplied,
         r#"{"start_prompt":"Resuming. Milestone: refined","turn_prompt":"Continue toward: refined","milestone":"refined"}"#,
-        "",
     );
     e.step();
 
@@ -847,7 +845,6 @@ fn a_correctly_driven_run_reports_no_errors() {
     e.raise_external(
         AiLoopEvent::ReflectApplied,
         r#"{"start_prompt":"Resuming. Milestone: refined","turn_prompt":"Continue toward: refined","milestone":"refined"}"#,
-        "",
     );
     e.step();
     step(&mut e, AiLoopEvent::SessionReady);

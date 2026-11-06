@@ -105,9 +105,9 @@ pub(crate) mod sealed {
             ready_at: SchedTimePoint,
             send_id: &str,
             event_data: &str,
-            origin: &str,
+            sender: &str,
         ) -> SceString {
-            self.schedule_event_named_at(event, ready_at, send_id, event_data, origin, "")
+            self.schedule_event_named_at(event, ready_at, send_id, event_data, sender, "")
         }
 
         /// [`schedule_event_at`](Self::schedule_event_at) for an event sent
@@ -118,7 +118,7 @@ pub(crate) mod sealed {
             ready_at: SchedTimePoint,
             send_id: &str,
             event_data: &str,
-            origin: &str,
+            sender: &str,
             name: &str,
         ) -> SceString;
 
@@ -130,7 +130,7 @@ pub(crate) mod sealed {
             ready_at: SchedTimePoint,
             send_id: &str,
             event_data: &str,
-            origin: &str,
+            sender: &str,
             name: &str,
         );
 
@@ -143,10 +143,10 @@ pub(crate) mod sealed {
             ready_at: SchedTimePoint,
             send_id: &str,
             event_data: &str,
-            origin: &str,
+            sender: &str,
             route: ScheduledRoute,
         ) -> SceString {
-            self.schedule_routed_named_at(event, ready_at, send_id, event_data, origin, route, "")
+            self.schedule_routed_named_at(event, ready_at, send_id, event_data, sender, route, "")
         }
 
         /// [`schedule_routed_at`](Self::schedule_routed_at) for an event sent
@@ -159,7 +159,7 @@ pub(crate) mod sealed {
             ready_at: SchedTimePoint,
             send_id: &str,
             event_data: &str,
-            origin: &str,
+            sender: &str,
             route: ScheduledRoute,
             name: &str,
         ) -> SceString;
@@ -229,11 +229,11 @@ pub(crate) mod sealed {
             ready_at: SchedTimePoint,
             send_id: &str,
             event_data: &str,
-            origin: &str,
+            sender: &str,
             name: &str,
         ) -> SceString {
             PullScheduler::schedule_event_named_at(
-                self, event, ready_at, send_id, event_data, origin, name,
+                self, event, ready_at, send_id, event_data, sender, name,
             )
         }
 
@@ -244,11 +244,11 @@ pub(crate) mod sealed {
             ready_at: SchedTimePoint,
             send_id: &str,
             event_data: &str,
-            origin: &str,
+            sender: &str,
             name: &str,
         ) {
             PullScheduler::schedule_event_as(
-                self, event, ready_at, send_id, event_data, origin, name,
+                self, event, ready_at, send_id, event_data, sender, name,
             )
         }
 
@@ -261,12 +261,12 @@ pub(crate) mod sealed {
             ready_at: SchedTimePoint,
             send_id: &str,
             event_data: &str,
-            origin: &str,
+            sender: &str,
             route: ScheduledRoute,
             name: &str,
         ) -> SceString {
             PullScheduler::schedule_routed_named_at(
-                self, event, ready_at, send_id, event_data, origin, route, name,
+                self, event, ready_at, send_id, event_data, sender, route, name,
             )
         }
 
@@ -357,7 +357,7 @@ pub(crate) mod sealed {
             _ready_at: SchedTimePoint,
             _send_id: &str,
             _event_data: &str,
-            _origin: &str,
+            _sender: &str,
             _name: &str,
         ) -> SceString {
             no_delayed_sends()
@@ -369,7 +369,7 @@ pub(crate) mod sealed {
             _ready_at: SchedTimePoint,
             _send_id: &str,
             _event_data: &str,
-            _origin: &str,
+            _sender: &str,
             _name: &str,
         ) {
             no_delayed_sends()
@@ -383,7 +383,7 @@ pub(crate) mod sealed {
             _ready_at: SchedTimePoint,
             _send_id: &str,
             _event_data: &str,
-            _origin: &str,
+            _sender: &str,
             _route: ScheduledRoute,
             _name: &str,
         ) -> SceString {

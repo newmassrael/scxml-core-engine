@@ -69,7 +69,7 @@ fn counter(engine: &Engine<Policy>, script_engine: &Arc<dyn IScriptEngine>, name
 }
 
 fn deliver(engine: &mut Engine<Policy>, event: Event, payload: &str) {
-    engine.raise_external(event, payload, "");
+    engine.raise_external(event, payload);
     engine.step();
 }
 

@@ -88,17 +88,14 @@ pub fn drain_and_raise_child_events<P: StatePolicy>(
         // §scxml-3.12.1 + §scxml-5.10: the child names the event, and its names are
         // not the parent's, so one the parent does not write reaches it as the
         // event of the longest prefix it does, under the name the child sent.
-        let mut metadata = EventMetadata {
-            data: ev_data,
-            invoke_id: active_invokes
-                .get(invoke_key)
-                .map_or_else(String::new, |cs| cs.invoke_id.clone()),
-            origin: active_invokes
-                .get(invoke_key)
-                .map_or_else(String::new, |cs| cs.session_id.clone()),
-            ..Default::default()
-        };
-        metadata.origin_type = super::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string();
+        // docs/adr/0090, section 2: the SCXML processor writes the child's
+        // published location as the origin, and its id as the sender the
+        // parent's `<finalize>` finds it by.
+        let child = active_invokes.get(invoke_key);
+        let sender = child.map_or("", |cs| cs.session_id.as_str());
+        let mut metadata = EventMetadata::sent_by_session("", sender);
+        metadata.data = ev_data;
+        metadata.invoke_id = child.map_or_else(String::new, |cs| cs.invoke_id.clone());
         if let Some(meta) = Engine::<P>::arriving_event(&ev_name, metadata) {
             engine.raise_external_with_meta(meta);
         }

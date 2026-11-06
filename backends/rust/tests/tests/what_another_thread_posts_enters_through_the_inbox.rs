@@ -174,6 +174,7 @@ fn ending_of(session_id: Option<&str>, token: u64, done: bool, data: &str) -> In
             token,
             done,
             data,
+            origin: None,
         },
     )
 }
@@ -185,7 +186,7 @@ fn ending(token: u64, done: bool, data: &str) -> Input {
 
 /// `ping` with `data`, as the document's own event.
 fn ping(data: &str) -> Input {
-    InboxInput::external(Event::Ping, data, "")
+    InboxInput::external(Event::Ping, data)
 }
 
 /// `ping` with `data`, named by text, as a host that knows no member names it.
@@ -643,7 +644,7 @@ fn a_post_made_before_the_hosts_own_raise_is_taken_before_it() {
     ));
     machine
         .engine
-        .raise_external(Event::Ping, &quoted("raised"), "");
+        .raise_external(Event::Ping, &quoted("raised"));
     machine.engine.step();
     assert_eq!(
         machine.taken(),
@@ -703,6 +704,7 @@ fn clock_ending(session_id: &str, token: u64) -> TreeInput {
             token,
             done: true,
             data: NOW,
+            origin: None,
         },
     )
 }
@@ -801,6 +803,7 @@ fn an_ending_posted_for_a_child_before_its_parents_send_to_it_is_taken_first() {
                 token,
                 done: true,
                 data: NOW,
+                origin: None,
             },
         );
         let taken = std::thread::spawn(move || inbox.post(ending).is_ok())
@@ -809,7 +812,7 @@ fn an_ending_posted_for_a_child_before_its_parents_send_to_it_is_taken_first() {
         assert!(taken, "the inbox refused the ending posted for `worker`");
     }));
 
-    engine.raise_external(StaticInvokeEndingOrderEvent::Ask, "", "");
+    engine.raise_external(StaticInvokeEndingOrderEvent::Ask, "");
     for _ in 0..4 {
         engine.tick();
     }

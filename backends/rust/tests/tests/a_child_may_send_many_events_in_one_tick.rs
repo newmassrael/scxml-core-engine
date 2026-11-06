@@ -23,7 +23,7 @@ fn every_event_the_child_sent_arrives() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     e.initialize();
-    e.raise_external(Event::Finish, "", "");
+    e.raise_external(Event::Finish, "");
     e.step();
 
     let p = e.policy();

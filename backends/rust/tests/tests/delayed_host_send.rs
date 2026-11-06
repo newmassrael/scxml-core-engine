@@ -83,6 +83,7 @@ fn armed() -> (Engine<Policy>, CallLog, Arc<Mutex<u64>>) {
         vec![HostSendResponse {
             event_name: "turn.done".to_string(),
             event_data: String::new(),
+            origin: None,
         }]
     });
     engine.initialize();

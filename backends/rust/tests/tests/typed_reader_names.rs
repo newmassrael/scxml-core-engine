@@ -49,7 +49,7 @@ fn an_escaped_reader_reads_its_own_variable() {
 #[test]
 fn an_escaped_reader_reads_the_live_value() {
     let mut engine = started();
-    engine.raise_external(Event::Bump, "", "");
+    engine.raise_external(Event::Bump, "");
     engine.step();
     let p = engine.policy();
     assert_eq!(p.r#box(), Some(11));

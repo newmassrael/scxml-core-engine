@@ -26,7 +26,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use sce_rust_runtime::{Engine, HostInvokeEvent, HostInvokeResponse, IScriptEngine};
+use sce_rust_runtime::{Engine, EventOrigin, HostInvokeEvent, HostInvokeResponse, IScriptEngine};
 use sce_rust_tests::integration::host_processor::{
     StatechartHostInvokerEvent as Event, StatechartHostInvokerHostInvokers,
     StatechartHostInvokerPermRequest as PermRequest, StatechartHostInvokerPermResult as PermResult,
@@ -411,8 +411,7 @@ fn a_failed_invocation_raises_error_invoke_once_with_its_origin() {
             "job",
             token,
             "\"no\"",
-            "host://job",
-            DECLARED_TYPE
+            Some(EventOrigin::new(DECLARED_TYPE, "host://job")),
         ),
         "a running invocation's failure was refused",
     );
@@ -431,8 +430,7 @@ fn a_failed_invocation_raises_error_invoke_once_with_its_origin() {
             "job",
             token,
             "\"no\"",
-            "host://job",
-            DECLARED_TYPE
+            Some(EventOrigin::new(DECLARED_TYPE, "host://job")),
         ),
         "the same run failed twice",
     );

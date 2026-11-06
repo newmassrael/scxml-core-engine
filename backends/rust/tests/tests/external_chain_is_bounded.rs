@@ -82,7 +82,7 @@ fn started() -> (Engine<Policy>, Arc<dyn IScriptEngine>) {
 /// One host call that delivers `event`: the engine takes it off the queue it was
 /// raised on, as the first event of the invocation that runs.
 fn send(engine: &mut Engine<Policy>, event: Event) {
-    engine.raise_external(event, "", "");
+    engine.raise_external(event, "");
     engine.tick();
 }
 

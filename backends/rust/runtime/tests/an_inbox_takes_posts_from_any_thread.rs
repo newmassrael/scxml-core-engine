@@ -249,7 +249,7 @@ fn running() -> Engine<InboxPolicy> {
 }
 
 fn ping() -> InboxInput<Ev> {
-    InboxInput::external(Ev::Ping, "", "")
+    InboxInput::external(Ev::Ping, "")
 }
 
 /// `ping`, carrying `payload`, for the machine whose payload type is `u32`.
@@ -277,7 +277,7 @@ fn the_inbox_handle_crosses_threads_and_the_engine_stays_send() {
 fn a_post_is_applied_at_the_next_boundary_behind_what_the_owner_queued() {
     let _posting = posting();
     let mut engine = running();
-    engine.raise_external(Ev::Pong, "", "");
+    engine.raise_external(Ev::Pong, "");
 
     let inbox = engine.inbox();
     let taken = std::thread::spawn(move || inbox.post(ping()).is_ok())
@@ -450,7 +450,7 @@ fn a_bounded_inbox_refuses_a_post_when_full_and_its_engine_applies_what_it_took(
         .expect("the posting thread");
     assert!(taken, "an empty inbox of two takes a post");
     FULL_AT_TWO
-        .post(InboxInput::external(Ev::Pong, "", ""))
+        .post(InboxInput::external(Ev::Pong, ""))
         .expect("an inbox of two holding one takes a post");
     match FULL_AT_TWO.post(ping()) {
         Err(InboxRefusal::Full(InboxInput::ExternalEvent(refused))) => {

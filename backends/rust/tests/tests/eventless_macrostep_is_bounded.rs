@@ -77,7 +77,7 @@ fn a_macrostep_that_cannot_end_is_stopped() {
         "nothing has been refused before the machine has done anything"
     );
 
-    engine.raise_external(Event::Spin, "", "");
+    engine.raise_external(Event::Spin, "");
     engine.step();
 
     assert_eq!(
@@ -121,7 +121,7 @@ fn a_macrostep_that_cannot_end_is_stopped() {
 fn a_chain_that_ends_at_the_ceiling_is_not_refused() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Bounded, "", "");
+    engine.raise_external(Event::Bounded, "");
     engine.step();
 
     assert_eq!(
@@ -164,18 +164,18 @@ fn a_chain_that_ends_at_the_ceiling_is_not_refused() {
 fn a_second_truncated_macrostep_counts_again() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Spin, "", "");
+    engine.raise_external(Event::Spin, "");
     engine.step();
     assert_eq!(engine.truncated_macrosteps(), 1);
 
     // `reset` is the fixture's way back out of the cycle, and it moves the
     // machine on purpose: the two C++ engines complete a macrostep only after
     // a transition that does.
-    engine.raise_external(Event::Reset, "", "");
+    engine.raise_external(Event::Reset, "");
     engine.step();
     assert_eq!(engine.get_current_state(), State::Idle);
 
-    engine.raise_external(Event::Spin, "", "");
+    engine.raise_external(Event::Spin, "");
     engine.step();
 
     assert_eq!(
@@ -200,7 +200,7 @@ fn a_second_truncated_macrostep_counts_again() {
 fn an_ordinary_macrostep_is_not_counted() {
     let (mut engine, se) = started();
 
-    engine.raise_external(Event::Poke, "", "");
+    engine.raise_external(Event::Poke, "");
     engine.step();
 
     assert_eq!(counter(&engine, &se, "pokes"), 1, "the run fired");

@@ -306,6 +306,9 @@
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = {{ started_under }}.clone();
                 child_policy.child_session_id = child_session_id.clone();
+                // W3C SCXML C.1: the id whose published location reaches this
+                // session from the child, as `#_parent` does (docs/adr/0090).
+                child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 {% endmacro %}
 {# §scxml-6.5: the `<finalize>` body of the static invoke `invoke_info`, as
    the expression `track_child` stores. It is AUTHORED content and reaches the
@@ -964,16 +967,19 @@
         event_with_meta: &sce_rust_runtime::EventWithMetadata<{{ machine_name }}Event>,
         _engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        // W3C SCXML 6.5: Only execute finalize for events from child invokes
-        if event_with_meta.metadata.origin.is_empty() {
+        // W3C SCXML 6.5: Only execute finalize for events from child invokes.
+        // The child is found by the event's sender, the session id the SCXML
+        // processor sets beside the origin; the origin's address is never
+        // read to find a session (docs/adr/0090).
+        let sender = event_with_meta.metadata.sender.as_str();
+        if sender.is_empty() {
             return;
         }
 
         // Find which invoke sent this event by matching child session ID
-        let origin = event_with_meta.metadata.origin.clone();
         let mut finalize_script = String::new();
         for (_invoke_id, child_session) in &self.active_invokes {
-            if child_session.session_id == origin && !child_session.finalize_script.is_empty() {
+            if child_session.session_id == sender && !child_session.finalize_script.is_empty() {
                 finalize_script = child_session.finalize_script.clone();
                 break;
             }
@@ -1001,8 +1007,8 @@
                     event_data: &event_with_meta.metadata.data,
                     event_type: "external",
                     send_id: &event_with_meta.metadata.send_id,
-                    origin: &event_with_meta.metadata.origin,
-                    origin_type: &event_with_meta.metadata.origin_type,
+                    origin: event_with_meta.metadata.origin_address(),
+                    origin_type: event_with_meta.metadata.origin_processor(),
                     invoke_id: &event_with_meta.metadata.invoke_id,
                 },
             );

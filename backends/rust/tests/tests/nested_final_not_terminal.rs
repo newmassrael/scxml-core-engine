@@ -48,7 +48,7 @@ fn a_nested_final_does_not_end_the_session() {
          machine live. Completion must test the parent, not just `is_final_state`"
     );
 
-    engine.raise_external(NestedFinalNotTerminalEvent::Resume, "", "");
+    engine.raise_external(NestedFinalNotTerminalEvent::Resume, "");
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
 
     assert!(

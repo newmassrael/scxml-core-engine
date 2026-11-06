@@ -49,7 +49,7 @@ fn the_self_transitioned_region_answers_the_next_event() {
          what it claims"
     );
 
-    engine.raise_external(Event::E, "", "");
+    engine.raise_external(Event::E, "");
     engine.step();
 
     // The symptom, named where it happens. A region holding no atomic state is
@@ -71,7 +71,7 @@ fn the_self_transitioned_region_answers_the_next_event() {
     // The second event is the one this fixture exists for: `judging` has no
     // `e` transition, so nothing but the self-transitioning region can answer,
     // and it can only answer from a leaf.
-    engine.raise_external(Event::E, "", "");
+    engine.raise_external(Event::E, "");
     engine.step();
 
     let twice = engine.get_active_states();
@@ -80,7 +80,7 @@ fn the_self_transitioned_region_answers_the_next_event() {
         "the self-transitioning region is not in `within` after the second `e` (active: {twice:?})"
     );
 
-    engine.raise_external(Event::Check, "", "");
+    engine.raise_external(Event::Check, "");
     engine.step();
 
     let settled = engine.get_active_states();

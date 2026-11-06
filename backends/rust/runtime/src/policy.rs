@@ -877,11 +877,16 @@ pub trait StatePolicy: Sized + 'static {
     /// does, and its ending, reach this session within the delivery, on
     /// `engine` (docs/adr/0045): nothing a delivery produced waits in the
     /// child's buffer for a later drive.
+    ///
+    /// `sender` is the id of the session that sent the event, this one: the
+    /// child reads the location it publishes as `_event.origin`
+    /// (docs/adr/0090, section 2).
     fn deliver_to_invocation(
         &mut self,
         _invoke_id: &str,
         _event_name: &str,
         _event_data: &str,
+        _sender: &str,
         _engine: &mut Engine<Self>,
     ) -> bool {
         false
@@ -904,6 +909,16 @@ pub trait StatePolicy: Sized + 'static {
     /// A policy that was not invoked has no parent, which is what the
     /// default says.
     fn has_parent_session(&self) -> bool {
+        false
+    }
+
+    /// Whether `session_id` names the session that invoked this one. The location a session publishes is a target, so a reply sent to
+    /// the origin of an event the parent sent — its location — reaches the
+    /// parent as `#_parent` does (docs/adr/0090).
+    ///
+    /// A policy that was not invoked has no parent, which is what the
+    /// default says.
+    fn is_parent_session(&self, _session_id: &str) -> bool {
         false
     }
 
@@ -930,12 +945,14 @@ pub trait StatePolicy: Sized + 'static {
     /// Answers whether that child was there to take it. A policy with no
     /// children has none, which is what the default says. What the child sends
     /// its parent as it takes the event reaches this session on `engine` within
-    /// the delivery, as for [`deliver_to_invocation`](Self::deliver_to_invocation).
+    /// the delivery, as for [`deliver_to_invocation`](Self::deliver_to_invocation),
+    /// and `sender` is what it is there.
     fn deliver_to_child_session(
         &mut self,
         _child_session_id: &str,
         _event_name: &str,
         _event_data: &str,
+        _sender: &str,
         _engine: &mut Engine<Self>,
     ) -> bool {
         false

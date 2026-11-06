@@ -191,7 +191,7 @@ fn server(args: &[String]) {
                 continue;
             }
             pings += 1;
-            let origin = event.metadata.origin.to_string();
+            let origin = event.metadata.origin_address().to_string();
             let Some(source) = origin.strip_prefix(MESH_ORIGIN_SCHEME) else {
                 continue;
             };

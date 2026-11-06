@@ -24,7 +24,7 @@ fn the_error_ends_the_block_and_is_the_only_one() {
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     e.initialize();
     for event in [Event::Go, Event::T, Event::Finish] {
-        e.raise_external(event, "", "");
+        e.raise_external(event, "");
         e.step();
     }
 

@@ -179,16 +179,11 @@
 
     // W3C SCXML 5.10: Set _event system variable for current event
     //
-    // W3C SCXML C.1: `_event.origin` is the sender's published
-    // `_ioprocessors` location, not its bare session id — and this is the one
-    // place that publishes `_event` to the document, so this is where the id
-    // becomes a location. The engine keeps the bare id in
-    // `EventMetadata::origin` because its session-keyed lookups match on it;
-    // converting at the raise would make one value serve two consumers that
-    // need different spellings. The conversion itself lives in
-    // `helpers::io_processors::published_origin`, the port of the
-    // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
-    // spelling of the rule is how the backends would stop agreeing.
+    // W3C SCXML 5.10.1 + C.1: `_event.origin` and `_event.origintype` are the
+    // one pair the processor that delivered the event wrote when it built it
+    // (docs/adr/0090) — the sender's published `_ioprocessors` location for a
+    // session's send — read here as they are, and both empty for none.
+    // Nothing converts at this boundary, so every backend answers the same.
     // Returns which rung of §scxml-B-2-8-1 the payload got, because the
     // binding is the only place that knows. This used to be `let _ = ...`:
     // the ladder decided between a DOM, a value and a space-normalized string,
@@ -200,19 +195,18 @@
     // A session that has not been created yet binds nothing, which is
     // `Absent` rather than a failure: there is no payload in play.
     fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
-            event_type: &str, send_id: &str, origin: &str, origin_type: &str,
+            event_type: &str, send_id: &str, origin: Option<&sce_rust_runtime::EventOrigin>,
             invoke_id: &str) -> sce_rust_runtime::PayloadReading {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let published = sce_rust_runtime::helpers::io_processors::published_origin(origin);
             se.set_current_event(sid, sce_rust_runtime::SetCurrentEventArgs {
                 event_name,
                 event_data,
                 event_type,
                 send_id,
-                origin: &published,
-                origin_type,
+                origin: origin.map_or("", |origin| origin.address.as_str()),
+                origin_type: origin.map_or("", |origin| origin.processor.as_str()),
                 invoke_id,
             })
             // An engine that could not bind `_event` at all has a larger

@@ -116,6 +116,7 @@ fn restored(saved: &SavedState, elapsed_ms: u64) -> (Engine<Policy>, CallLog, Ar
             vec![HostSendResponse {
                 event_name: "turn.done".to_string(),
                 event_data: String::new(),
+                origin: None,
             }]
         } else {
             Vec::new()

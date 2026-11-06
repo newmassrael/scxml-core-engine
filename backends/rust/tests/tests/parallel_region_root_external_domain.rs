@@ -81,7 +81,7 @@ fn an_external_region_root_transition_exits_every_region() {
          their defaults, so nothing below is testing what it claims"
     );
 
-    engine.raise_external(Event::Restart, "", "");
+    engine.raise_external(Event::Restart, "");
     engine.step();
 
     assert_eq!(
@@ -102,7 +102,7 @@ fn an_external_region_root_transition_exits_every_region() {
 fn an_internal_region_root_transition_leaves_the_other_region() {
     let mut engine = started();
 
-    engine.raise_external(Event::Hold, "", "");
+    engine.raise_external(Event::Hold, "");
     engine.step();
 
     assert_eq!(

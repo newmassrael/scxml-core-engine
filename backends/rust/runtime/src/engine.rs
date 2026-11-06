@@ -280,10 +280,12 @@ pub enum ScheduledAct {
         /// §scxml-5.10.1: the `<send>`'s id, which `_event.sendid` carries
         /// when the event arrives — the same one the immediate send stamps.
         send_id: SceString,
-        /// §scxml-C-1: the sending session, which `_event.origin` publishes.
-        /// A delayed send is the same event as an immediate one, only later,
-        /// so waiting must not cost it the address a reply goes back to.
-        origin: SceString,
+        /// §scxml-C-1: the id of the sending session, whose published
+        /// location the SCXML processor writes as the event's origin when the
+        /// wait ends (docs/adr/0090). A delayed send is the same event as an
+        /// immediate one, only later, so waiting must not cost it the address
+        /// a reply goes back to.
+        sender: SceString,
         /// §scxml-5.10: the name the event was sent under when that is not
         /// `event`'s own — a `<send eventexpr>` computes it, and the member that
         /// takes it is the document's event of that name, the longest token
@@ -303,8 +305,8 @@ pub enum ScheduledAct {
         event_data: SceString,
         /// §scxml-5.10.1: the `<send>`'s id.
         send_id: SceString,
-        /// §scxml-C-1: the sending session.
-        origin: SceString,
+        /// §scxml-C-1: the id of the sending session.
+        sender: SceString,
         /// §scxml-5.10: the name `event` was sent under when that is not its
         /// own, for the internal queue (see `Raise::name`).
         name: SceString,
@@ -405,7 +407,7 @@ struct ScheduledEntry<S> {
     /// is only one thing it can be, and the `_event.data` string it would carry
     /// is elided too — the no_std build has no script engine, and the scheduler
     /// drain ([`Engine::tick`] → [`Engine::raise_external`]) discards the data
-    /// string there anyway (`let _ = (event_data, origin)`), so storing it per
+    /// string there anyway (`let _ = (event_data, sender)`), so storing it per
     /// entry is pure dead weight (~264 B `heapless::String<256>` ×
     /// `MAX_SCHEDULED_EVENTS`). Mirrors the `EventMetadata.data` profile-level
     /// elision (B-γ2d-1).
@@ -486,9 +488,9 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
     ) -> SceString {
-        self.schedule_event_named_at(event, ready_at, send_id, event_data, origin, "")
+        self.schedule_event_named_at(event, ready_at, send_id, event_data, sender, "")
     }
 
     /// [`schedule_event_at`](Self::schedule_event_at) for an event sent under
@@ -500,7 +502,7 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
         name: &str,
     ) -> SceString {
         let effective_send_id: SceString = if send_id.is_empty() {
@@ -514,7 +516,7 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
             ready_at,
             &effective_send_id,
             event_data,
-            origin,
+            sender,
             name,
         );
         effective_send_id
@@ -538,20 +540,20 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
         name: &str,
     ) {
         // no_std elides the per-entry strings (see `ScheduledEntry`); the
         // parameters are then unused (mirrors `raise_external`'s `let _ = ...`).
         #[cfg(not(feature = "std"))]
-        let _ = (event_data, origin, name);
+        let _ = (event_data, sender, name);
         let entry = ScheduledEntry {
             #[cfg(feature = "std")]
             act: ScheduledAct::Raise {
                 event,
                 event_data: crate::sce_string_from_str(event_data),
                 send_id: crate::sce_string_from_str(send_id),
-                origin: crate::sce_string_from_str(origin),
+                sender: crate::sce_string_from_str(sender),
                 name: crate::sce_string_from_str(name),
             },
             #[cfg(not(feature = "std"))]
@@ -578,10 +580,10 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
         route: ScheduledRoute,
     ) -> SceString {
-        self.schedule_routed_named_at(event, ready_at, send_id, event_data, origin, route, "")
+        self.schedule_routed_named_at(event, ready_at, send_id, event_data, sender, route, "")
     }
 
     /// [`schedule_routed_at`](Self::schedule_routed_at) for an event sent under
@@ -595,7 +597,7 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
         route: ScheduledRoute,
         name: &str,
     ) -> SceString {
@@ -610,7 +612,7 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
                 event,
                 event_data: crate::sce_string_from_str(event_data),
                 send_id: effective_send_id.clone(),
-                origin: crate::sce_string_from_str(origin),
+                sender: crate::sce_string_from_str(sender),
                 name: crate::sce_string_from_str(name),
                 route,
             },
@@ -1629,6 +1631,7 @@ impl<P: StatePolicy> Engine<P> {
                 token,
                 done,
                 data,
+                origin,
             } => {
                 debug_assert!(
                     session_id.is_none(),
@@ -1640,6 +1643,7 @@ impl<P: StatePolicy> Engine<P> {
                     token,
                     done,
                     data: &data,
+                    origin: origin.as_ref(),
                 });
             }
         }
@@ -1682,7 +1686,7 @@ impl<P: StatePolicy> Engine<P> {
         &mut self,
         ending: crate::host_processor::HostInvokeEnding<'_>,
     ) {
-        if !self.end_host_invoke(ending, "", "") {
+        if !self.end_host_invoke(ending) {
             crate::host_processor::note_refused_posted_ending(&ending);
         }
     }
@@ -2137,14 +2141,14 @@ impl<P: StatePolicy> Engine<P> {
                         event,
                         event_data,
                         send_id,
-                        origin,
+                        sender,
                         name,
                     } => {
                         // §scxml-5.10.1 + §scxml-C-1: the metadata the
                         // immediate send stamps, restored when the wait ends,
                         // and §scxml-5.10: the name it was sent under.
                         let mut meta = EventWithMetadata::new(Self::event_of(event));
-                        meta.metadata = EventMetadata::external(&send_id, &origin);
+                        meta.metadata = EventMetadata::sent_by_session(&send_id, &sender);
                         meta.metadata.name = name;
                         meta.set_event_data(&event_data);
                         self.raise_external_with_meta(meta);
@@ -2154,7 +2158,7 @@ impl<P: StatePolicy> Engine<P> {
                         event,
                         event_data,
                         send_id,
-                        origin,
+                        sender,
                         name,
                         route,
                     } => {
@@ -2162,7 +2166,7 @@ impl<P: StatePolicy> Engine<P> {
                             event.map(Self::event_of),
                             &event_data,
                             send_id,
-                            origin,
+                            sender,
                             name,
                             route,
                         );
@@ -2191,7 +2195,7 @@ impl<P: StatePolicy> Engine<P> {
                 let Some(popped) = self.scheduler.pop_ready_event_at(now) else {
                     break;
                 };
-                self.raise_external(Self::event_of(popped), "", "");
+                self.raise_external(Self::event_of(popped), "");
             }
 
             // The macrostep this event drives may `<cancel>` a later one, so
@@ -2803,11 +2807,33 @@ impl<P: StatePolicy> Engine<P> {
         Self::enqueue(&mut self.internal_queue, event);
     }
 
-    /// §scxml-C-1 / 6.2: Raise an external event with optional data and origin.
+    /// §scxml-C-1 / 6.2: Raise an external event a host posts, with optional
+    /// data and naming no party: no processor stamped it, so `_event.origin`
+    /// and `_event.origintype` read empty (docs/adr/0090, section 3).
     ///
-    /// Matches C++ `raiseExternal(Event, const string&, const string&)`.
-    pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
-        self.raise_external_arrived_as(event, event_data, origin, "");
+    /// Matches C++ `raiseExternal(Event, const string&)` with no origin;
+    /// [`raise_external_from`](Self::raise_external_from) names one.
+    pub fn raise_external(&mut self, event: P::Event, event_data: &str) {
+        self.raise_external_arrived_as(event, event_data, "");
+    }
+
+    /// [`raise_external`](Self::raise_external), with the reply address the
+    /// host names for the event in its own terms (docs/adr/0090, section 2):
+    /// its processor's type and the address a `<send>` of that type reaches
+    /// the party at. `None` names no party, and the engine never fills in the
+    /// SCXML processor's type for a host.
+    #[cfg(feature = "std")]
+    pub fn raise_external_from(
+        &mut self,
+        event: P::Event,
+        event_data: &str,
+        origin: Option<crate::EventOrigin>,
+    ) {
+        let mut posted = EventWithMetadata::new(event);
+        posted.metadata = EventMetadata::external("");
+        posted.metadata.origin = origin;
+        posted.set_event_data(event_data);
+        self.enqueue_external(posted);
     }
 
     /// What `EventMetadata::name` is for an event that arrived as `name` and was
@@ -2846,18 +2872,13 @@ impl<P: StatePolicy> Engine<P> {
 
     /// [`raise_external`](Self::raise_external) for an event that arrived under
     /// `arrival_name` (§scxml-5.10): empty when the member's own name is the name.
-    fn raise_external_arrived_as(
-        &mut self,
-        event: P::Event,
-        event_data: &str,
-        origin: &str,
-        arrival_name: &str,
-    ) {
+    fn raise_external_arrived_as(&mut self, event: P::Event, event_data: &str, arrival_name: &str) {
         let meta = EventWithMetadata {
             event,
             payload: P::Payload::default(),
-            // no_std elides the `_event.origin` / `origintype` string metadata
-            // (no script reader); the `origin` argument has no MCU consumer.
+            // no_std elides the `_event` string metadata (no script reader).
+            // The event names no party, so it carries no origin on any profile
+            // (docs/adr/0090, section 3).
             metadata: {
                 #[cfg(feature = "std")]
                 {
@@ -2865,16 +2886,12 @@ impl<P: StatePolicy> Engine<P> {
                         name: crate::sce_string_from_str(arrival_name),
                         data: crate::sce_string_from_str(event_data),
                         event_type: EventType::External,
-                        origin: crate::sce_string_from_str(origin),
-                        origin_type: crate::sce_string_from_str(
-                            crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
-                        ),
                         ..Default::default()
                     }
                 }
                 #[cfg(not(feature = "std"))]
                 {
-                    let _ = (event_data, origin, arrival_name);
+                    let _ = (event_data, arrival_name);
                     EventMetadata {
                         event_type: EventType::External,
                     }
@@ -2907,10 +2924,9 @@ impl<P: StatePolicy> Engine<P> {
                 #[cfg(feature = "std")]
                 {
                     EventMetadata {
+                        // A host posts it naming no party: no origin
+                        // (docs/adr/0090, section 3).
                         event_type: EventType::External,
-                        origin_type: crate::sce_string_from_str(
-                            crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
-                        ),
                         ..Default::default()
                     }
                 }
@@ -2955,9 +2971,6 @@ impl<P: StatePolicy> Engine<P> {
                     EventMetadata {
                         event_type: EventType::External,
                         data: crate::sce_string_from_str(data),
-                        origin_type: crate::sce_string_from_str(
-                            crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
-                        ),
                         ..Default::default()
                     }
                 }
@@ -2982,12 +2995,16 @@ impl<P: StatePolicy> Engine<P> {
     /// that is a token prefix of it (§scxml-3.12.1). A name no transition could
     /// match is silently ignored (the child may simply not have that event
     /// declared).
+    ///
+    /// The event names no party, so `_event.origin` and `_event.origintype`
+    /// read empty (docs/adr/0090, section 3);
+    /// [`raise_external_by_name_from`](Self::raise_external_by_name_from)
+    /// names one.
     pub fn raise_external_by_name(&mut self, event_name: &str, event_data: &str) {
         if let Some(event) = P::resolve_event_by_name(event_name) {
             self.raise_external_arrived_as(
                 event,
                 event_data,
-                "",
                 Self::arrival_name_of(event, event_name),
             );
         } else {
@@ -2996,6 +3013,22 @@ impl<P: StatePolicy> Engine<P> {
                 event_name
             );
         }
+    }
+
+    /// [`raise_external_by_name`](Self::raise_external_by_name), with the reply
+    /// address the host names for the event in its own terms (docs/adr/0090,
+    /// section 2); `None` names no party.
+    #[cfg(feature = "std")]
+    pub fn raise_external_by_name_from(
+        &mut self,
+        event_name: &str,
+        event_data: &str,
+        origin: Option<crate::EventOrigin>,
+    ) {
+        let mut metadata = EventMetadata::external("");
+        metadata.data = crate::sce_string_from_str(event_data);
+        metadata.origin = origin;
+        self.raise_external_by_name_with_meta(event_name, &metadata);
     }
 
     /// §scxml-6.2.4 + §scxml-6.4: deliver a `<send>` addressed to this
@@ -3017,8 +3050,16 @@ impl<P: StatePolicy> Engine<P> {
     /// returns: the generated parent drains it, and raises the child's
     /// `done.invoke` if it ended, right after this call (docs/adr/0045), so no
     /// event is between the two sessions when the parent's macrostep ends.
-    pub fn deliver_by_name(&mut self, event_name: &str, event_data: &str) {
-        self.raise_external_by_name(event_name, event_data);
+    ///
+    /// `sender` is the id of the session that sent the event, the parent: the
+    /// SCXML processor writes the location it publishes as the event's origin
+    /// and keeps the id beside it (§scxml-C-1, docs/adr/0090), so a reply to
+    /// `_event.origin` reaches the parent.
+    #[cfg(feature = "std")]
+    pub fn deliver_by_name(&mut self, event_name: &str, event_data: &str, sender: &str) {
+        let mut metadata = EventMetadata::sent_by_session("", sender);
+        metadata.data = crate::sce_string_from_str(event_data);
+        self.raise_external_by_name_with_meta(event_name, &metadata);
         let opened = self.begin_turn();
         self.run_main_event_loop();
         self.end_turn(opened);
@@ -3082,7 +3123,7 @@ impl<P: StatePolicy> Engine<P> {
             self.core.note_unseen_event(P::event_id(event));
             return;
         }
-        self.raise_external(event, "", "");
+        self.raise_external(event, "");
         self.step();
     }
 
@@ -3122,11 +3163,11 @@ impl<P: StatePolicy> Engine<P> {
         delay: Duration,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
     ) -> SceString {
         let ready_at = self.sched_now_plus(delay);
         self.scheduler
-            .schedule_event_at(P::event_id(event), ready_at, send_id, event_data, origin)
+            .schedule_event_at(P::event_id(event), ready_at, send_id, event_data, sender)
     }
 
     /// [`schedule_event`](Self::schedule_event) under the id the caller names,
@@ -3139,7 +3180,7 @@ impl<P: StatePolicy> Engine<P> {
         delay: Duration,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
     ) {
         let ready_at = self.sched_now_plus(delay);
         self.scheduler.schedule_event_as(
@@ -3147,7 +3188,7 @@ impl<P: StatePolicy> Engine<P> {
             ready_at,
             send_id,
             event_data,
-            origin,
+            sender,
             "",
         );
     }
@@ -3169,7 +3210,7 @@ impl<P: StatePolicy> Engine<P> {
         delay: Duration,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
         route: ScheduledRoute,
     ) -> SceString {
         let ready_at = self.sched_now_plus(delay);
@@ -3178,7 +3219,7 @@ impl<P: StatePolicy> Engine<P> {
             ready_at,
             send_id,
             event_data,
-            origin,
+            sender,
             route,
         )
     }
@@ -3200,7 +3241,7 @@ impl<P: StatePolicy> Engine<P> {
         delay: Option<Duration>,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
     ) {
         let Some(event) = P::resolve_event_by_name(name) else {
             return;
@@ -3214,13 +3255,13 @@ impl<P: StatePolicy> Engine<P> {
                     ready_at,
                     send_id,
                     event_data,
-                    origin,
+                    sender,
                     arrival,
                 );
             }
             None => {
                 let mut meta = EventWithMetadata::new(event);
-                meta.metadata = EventMetadata::external(send_id, origin);
+                meta.metadata = EventMetadata::sent_by_session(send_id, sender);
                 meta.metadata.name = crate::sce_string_from_str(arrival);
                 meta.set_event_data(event_data);
                 self.raise_external_with_meta(meta);
@@ -3238,7 +3279,7 @@ impl<P: StatePolicy> Engine<P> {
         delay: Option<Duration>,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
     ) {
         let Some(event) = P::resolve_event_by_name(name) else {
             return;
@@ -3252,7 +3293,7 @@ impl<P: StatePolicy> Engine<P> {
                     ready_at,
                     send_id,
                     event_data,
-                    origin,
+                    sender,
                     ScheduledRoute::InternalQueue,
                     arrival,
                 );
@@ -3293,7 +3334,7 @@ impl<P: StatePolicy> Engine<P> {
         delay: Option<Duration>,
         send_id: &str,
         event_data: &str,
-        origin: &str,
+        sender: &str,
     ) -> TargetSendOutcome {
         use crate::helpers::send::{classify_target, SendTarget};
         // §scxml-5.10: `event` is the member the sender's name resolved to in
@@ -3314,13 +3355,13 @@ impl<P: StatePolicy> Engine<P> {
                                 ready_at,
                                 send_id,
                                 event_data,
-                                origin,
+                                sender,
                                 arrival,
                             );
                         }
                         None => {
                             let mut meta = EventWithMetadata::new(event);
-                            meta.metadata = EventMetadata::external(send_id, origin);
+                            meta.metadata = EventMetadata::sent_by_session(send_id, sender);
                             meta.metadata.name = crate::sce_string_from_str(arrival);
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
@@ -3350,12 +3391,20 @@ impl<P: StatePolicy> Engine<P> {
                 }
             }
             SendTarget::Session(session_id) => {
-                if !policy.is_child_session_running(&session_id) {
+                // §scxml-C-1: the location the session that invoked this one
+                // publishes is a target, as `#_parent` is — the address a reply
+                // to an event the parent sent goes to (docs/adr/0090).
+                if policy.is_parent_session(&session_id) {
+                    ScheduledRoute::Parent {
+                        event_name: event_name.to_string(),
+                    }
+                } else if policy.is_child_session_running(&session_id) {
+                    ScheduledRoute::Session {
+                        session_id,
+                        event_name: event_name.to_string(),
+                    }
+                } else {
                     return TargetSendOutcome::Unreachable;
-                }
-                ScheduledRoute::Session {
-                    session_id,
-                    event_name: event_name.to_string(),
                 }
             }
         };
@@ -3366,7 +3415,7 @@ impl<P: StatePolicy> Engine<P> {
                 ready_at,
                 send_id,
                 event_data,
-                origin,
+                sender,
                 route,
                 arrival,
             );
@@ -3374,10 +3423,12 @@ impl<P: StatePolicy> Engine<P> {
         }
         let delivered = match &route {
             ScheduledRoute::InternalQueue => {
+                // An event on the internal queue is an internal event, whose
+                // origin the processor leaves blank (docs/adr/0090, section
+                // 2): no pair, and no sender.
                 if let Some(event) = event {
                     let mut meta = EventWithMetadata::new(event);
                     meta.metadata.send_id = crate::sce_string_from_str(send_id);
-                    meta.metadata.origin = crate::sce_string_from_str(origin);
                     meta.metadata.name = crate::sce_string_from_str(arrival);
                     meta.set_event_data(event_data);
                     engine.raise(meta);
@@ -3390,11 +3441,13 @@ impl<P: StatePolicy> Engine<P> {
             ScheduledRoute::Invocation {
                 invoke_id,
                 event_name,
-            } => policy.deliver_to_invocation(invoke_id, event_name, event_data, engine),
+            } => policy.deliver_to_invocation(invoke_id, event_name, event_data, sender, engine),
             ScheduledRoute::Session {
                 session_id,
                 event_name,
-            } => policy.deliver_to_child_session(session_id, event_name, event_data, engine),
+            } => {
+                policy.deliver_to_child_session(session_id, event_name, event_data, sender, engine)
+            }
         };
         if delivered {
             TargetSendOutcome::Sent
@@ -3416,7 +3469,7 @@ impl<P: StatePolicy> Engine<P> {
         event: Option<P::Event>,
         event_data: &str,
         send_id: SceString,
-        origin: SceString,
+        sender: SceString,
         name: SceString,
         route: ScheduledRoute,
     ) {
@@ -3424,12 +3477,13 @@ impl<P: StatePolicy> Engine<P> {
             ScheduledRoute::InternalQueue => {
                 // The send site names this machine's event for this route; an
                 // entry without one reaches nobody, which is what it reports.
+                // An internal event carries no origin and no sender
+                // (docs/adr/0090, section 2).
                 let Some(event) = event else {
                     return;
                 };
                 let mut meta = EventWithMetadata::new(event);
                 meta.metadata.send_id = send_id;
-                meta.metadata.origin = origin;
                 meta.metadata.name = name;
                 meta.set_event_data(event_data);
                 self.raise(meta);
@@ -3439,7 +3493,7 @@ impl<P: StatePolicy> Engine<P> {
                 invoke_id,
                 event_name,
             } => self.with_policy(|policy, engine| {
-                policy.deliver_to_invocation(invoke_id, event_name, event_data, engine)
+                policy.deliver_to_invocation(invoke_id, event_name, event_data, &sender, engine)
             }),
             ScheduledRoute::Parent { event_name } => {
                 self.policy.deliver_to_parent(event_name, event_data)
@@ -3448,7 +3502,7 @@ impl<P: StatePolicy> Engine<P> {
                 session_id,
                 event_name,
             } => self.with_policy(|policy, engine| {
-                policy.deliver_to_child_session(session_id, event_name, event_data, engine)
+                policy.deliver_to_child_session(session_id, event_name, event_data, &sender, engine)
             }),
         };
         if delivered {
@@ -3873,7 +3927,10 @@ impl<P: StatePolicy> Engine<P> {
         if let Some(cb) = self.on_http_send.as_mut() {
             let response = cb(request);
             if let Some(resp) = response {
-                let mut metadata = EventMetadata::external("", "");
+                // The BasicHTTP processor's rules give a response no reply
+                // address beyond its data, so it carries no origin
+                // (docs/adr/0090, section 2).
+                let mut metadata = EventMetadata::external("");
                 metadata.data = resp.event_data;
                 if let Some(meta) = Self::arriving_event(&resp.event_name, metadata) {
                     self.enqueue_external(meta);
@@ -4212,25 +4269,19 @@ impl<P: StatePolicy> Engine<P> {
                 data,
                 source,
             } => {
-                let (origin, origin_type) = match &source {
-                    Some(source) => (
-                        format!("{MESH_ORIGIN_SCHEME}{source}"),
+                // docs/adr/0090, section 2: the pair the Mesh transport gives
+                // the peer that answered, written where the event is built.
+                let origin = source.map(|source| {
+                    crate::EventOrigin::new(
                         MESH_RPC_INVOKE_TYPE,
-                    ),
-                    None => (String::new(), ""),
-                };
+                        format!("{MESH_ORIGIN_SCHEME}{source}"),
+                    )
+                });
                 let kind = MESH_RPC_INVOKE_TYPE;
                 if failed {
-                    self.fail_host_invoke(kind, &invoke_id, token, &data, &origin, origin_type);
+                    self.fail_host_invoke(kind, &invoke_id, token, &data, origin);
                 } else {
-                    self.complete_host_invoke_from(
-                        kind,
-                        &invoke_id,
-                        token,
-                        &data,
-                        &origin,
-                        origin_type,
-                    );
+                    self.complete_host_invoke_from(kind, &invoke_id, token, &data, origin);
                 }
             }
         }
@@ -4601,14 +4652,18 @@ impl<P: StatePolicy> Engine<P> {
         token: u64,
         done_data: &str,
     ) -> bool {
-        self.complete_host_invoke_from(processor_type, invoke_id, token, done_data, "", "")
+        self.complete_host_invoke_from(processor_type, invoke_id, token, done_data, None)
     }
 
     /// [`complete_host_invoke`](Self::complete_host_invoke), with the
     /// `_event.origin` and `_event.origintype` the completion carries
-    /// (§scxml-5.10.1) — for a host whose invocation stands for another
-    /// party it can name, as a Mesh router's `sce:mesh-rpc` stands for the
-    /// peer that answered (`mesh://<peer>`, SCE_MESH.md §mesh-9.5).
+    /// (§scxml-5.10.1) as one pair — for a host whose invocation stands for
+    /// another party it can name, as a Mesh router's `sce:mesh-rpc` stands for
+    /// the peer that answered (`mesh://<peer>`, SCE_MESH.md §mesh-9.5). The host
+    /// names it in its own terms (docs/adr/0090, section 2): its declared type
+    /// and the address a `<send>` of that type reaches the party at. `None`
+    /// reads both fields empty; the engine never fills in the SCXML
+    /// processor's type for a host.
     #[cfg(feature = "std")]
     pub fn complete_host_invoke_from(
         &mut self,
@@ -4616,20 +4671,16 @@ impl<P: StatePolicy> Engine<P> {
         invoke_id: &str,
         token: u64,
         done_data: &str,
-        origin: &str,
-        origin_type: &str,
+        origin: Option<crate::EventOrigin>,
     ) -> bool {
-        self.end_host_invoke(
-            crate::host_processor::HostInvokeEnding {
-                processor_type,
-                invoke_id,
-                token,
-                done: true,
-                data: done_data,
-            },
-            origin,
-            origin_type,
-        )
+        self.end_host_invoke(crate::host_processor::HostInvokeEnding {
+            processor_type,
+            invoke_id,
+            token,
+            done: true,
+            data: done_data,
+            origin: origin.as_ref(),
+        })
     }
 
     /// §scxml-6.4: a host-run invocation failed; raise its
@@ -4640,7 +4691,9 @@ impl<P: StatePolicy> Engine<P> {
     /// while start `token` is still running, ending the invocation, so a run
     /// ends once, by success, failure or deadline, whichever comes first.
     /// Returns `false` — raising nothing — for an invocation that was
-    /// cancelled, already ended, or restarted since.
+    /// cancelled, already ended, or restarted since. `origin` is the pair the
+    /// failure carries, as for
+    /// [`complete_host_invoke_from`](Self::complete_host_invoke_from).
     #[cfg(feature = "std")]
     pub fn fail_host_invoke(
         &mut self,
@@ -4648,20 +4701,16 @@ impl<P: StatePolicy> Engine<P> {
         invoke_id: &str,
         token: u64,
         error_data: &str,
-        origin: &str,
-        origin_type: &str,
+        origin: Option<crate::EventOrigin>,
     ) -> bool {
-        self.end_host_invoke(
-            crate::host_processor::HostInvokeEnding {
-                processor_type,
-                invoke_id,
-                token,
-                done: false,
-                data: error_data,
-            },
-            origin,
-            origin_type,
-        )
+        self.end_host_invoke(crate::host_processor::HostInvokeEnding {
+            processor_type,
+            invoke_id,
+            token,
+            done: false,
+            data: error_data,
+            origin: origin.as_ref(),
+        })
     }
 
     /// End the host-run invocation of session `session_id` of this machine's
@@ -4715,6 +4764,7 @@ impl<P: StatePolicy> Engine<P> {
                 token,
                 done: true,
                 data: done_data,
+                origin: None,
             },
         )
     }
@@ -4742,6 +4792,7 @@ impl<P: StatePolicy> Engine<P> {
                 token,
                 done: false,
                 data: error_data,
+                origin: None,
             },
         )
     }
@@ -4757,7 +4808,7 @@ impl<P: StatePolicy> Engine<P> {
         ending: crate::host_processor::HostInvokeEnding<'_>,
     ) -> Option<Result<(), crate::host_processor::HostInvokeEndRefusal>> {
         if session_id == self.policy.own_session_id() {
-            let ended = self.end_host_invoke(ending, "", "");
+            let ended = self.end_host_invoke(ending);
             return Some(if ended {
                 Ok(())
             } else {
@@ -4779,19 +4830,11 @@ impl<P: StatePolicy> Engine<P> {
     /// ([`StatePolicy::HAS_HOST_INVOKES`]) starts none, so no ending finds
     /// its start running, and the body is left out of that machine.
     #[cfg(feature = "std")]
-    fn end_host_invoke(
-        &mut self,
-        ending: crate::host_processor::HostInvokeEnding<'_>,
-        origin: &str,
-        origin_type: &str,
-    ) -> bool {
+    fn end_host_invoke(&mut self, ending: crate::host_processor::HostInvokeEnding<'_>) -> bool {
         if !P::HAS_HOST_INVOKES {
             return false;
         }
-        let Some((event_name, metadata)) =
-            self.host_processors
-                .end_started(ending, origin, origin_type)
-        else {
+        let Some((event_name, metadata)) = self.host_processors.end_started(ending) else {
             return false;
         };
         self.scheduler.drop_host_invoke_deadline(ending.token);
@@ -4866,7 +4909,7 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(feature = "std")]
     fn raise_host_invoke_failure(&mut self, invoke_id: &str, reason: &str) {
         let event_name = format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX);
-        let mut metadata = EventMetadata::external("", "");
+        let mut metadata = EventMetadata::external("");
         metadata.data = crate::sce_string_from_str(&format!("\"{reason}\""));
         metadata.invoke_id = crate::sce_string_from_str(invoke_id);
         if let Some(meta) = Self::arriving_event(&event_name, metadata) {
@@ -4924,9 +4967,12 @@ impl<P: StatePolicy> Engine<P> {
         for reply in &replies {
             // §scxml-C-1: a reply from outside the machine arrives on the external
             // queue, like any event the host raises; and `_event.name` is the name
-            // the host gave it (§scxml-5.10).
-            let mut metadata = EventMetadata::external("", "");
+            // the host gave it (§scxml-5.10). Its origin is the pair the host
+            // named for it, or none; never the SCXML processor's by default
+            // (docs/adr/0090, section 2).
+            let mut metadata = EventMetadata::external("");
             metadata.data = reply.event_data.clone();
+            metadata.origin = reply.origin.clone();
             if let Some(meta) = Self::arriving_event(&reply.event_name, metadata) {
                 self.enqueue_external(meta);
             }

@@ -74,6 +74,7 @@ fn a_registered_handler_receives_the_send_and_its_reply_arrives() {
         vec![HostSendResponse {
             event_name: "turn.done".to_string(),
             event_data: String::new(),
+            origin: None,
         }]
     });
     engine.initialize();
@@ -230,6 +231,7 @@ fn a_handler_registered_for_another_type_does_not_serve_this_one() {
         vec![HostSendResponse {
             event_name: "turn.done".to_string(),
             event_data: String::new(),
+            origin: None,
         }]
     });
     engine.initialize();
