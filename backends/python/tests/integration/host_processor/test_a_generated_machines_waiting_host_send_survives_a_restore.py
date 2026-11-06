@@ -11,7 +11,7 @@ saved and restored by the ``save_at`` and ``restore`` the generator emitted. The
 Kotlin and Go halves are ``a_generated_machines_waiting_host_send_survives_a_restore.rs``,
 ``AGeneratedMachinesWaitingHostSendSurvivesARestoreTest.kt`` and
 ``a_generated_machines_waiting_host_send_survives_a_restore_test.go``. The text this
-backend writes is the format-2 ``saved/statechart_static_delayed_host_send_waiting.json``
+backend writes is the format-3 ``saved/statechart_static_delayed_host_send_waiting.json``
 (docs/adr/0045), its root given the id the fixtures name it by; the format-1 text of
 the same run, under ``saved/format1/``, still restores.
 
@@ -40,7 +40,7 @@ import statechart_static_delayed_host_send_sm as _sm  # noqa: E402 -- path inser
 
 _State = _sm.StatechartStaticDelayedHostSendState
 _DECLARED_TYPE = "x-sce-host"
-# The session id the shared format-2 fixtures give their root.
+# The session id the shared fixtures give their root.
 _ROOT = "fixture-root"
 # The wall-clock moment the shared instance was saved at.
 _SAVED_AT_MS = 1_700_000_000_000

@@ -15,7 +15,7 @@ Kotlin and Go halves are ``a_saved_mesh_request_is_not_sent_again_after_a_restor
 ``a_saved_mesh_request_is_not_sent_again_after_a_restore_test.go``.
 
 Driven entirely on the engine's virtual clock: no case sleeps. The shared instance
-``saved/statechart_static_mesh_request_asking.json`` is the format-2 text every backend
+``saved/statechart_static_mesh_request_asking.json`` is the format-3 text every backend
 writes (docs/adr/0045); ``saved/format1/`` holds the format-1 text of the same run.
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ class _Router:
 
 def _asking():
     """A machine whose request to `#motor` is in flight, the router having been handed
-    it, given the session id the shared format-2 fixtures name their root by."""
+    it, given the session id the shared fixtures name their root by."""
     engine = _sm.create_engine(session_id="fixture-root")
     router = _Router().register(engine)
     engine.initialize()

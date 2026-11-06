@@ -16,7 +16,7 @@ time, with ``restarted`` set, a new token and what was left of the deadline.
 
 Driven entirely on the engine's virtual clock: no case sleeps, and none can be decided
 by how loaded the build machine is. The shared instance
-``saved/statechart_static_host_invoke_running.json`` is the format-2 text every backend
+``saved/statechart_static_host_invoke_running.json`` is the format-3 text every backend
 writes (docs/adr/0045); the format-1 text of the same run, under ``saved/format1/``,
 still restores.
 """
@@ -85,7 +85,7 @@ def _same_request(a, b) -> bool:
 
 def _working():
     """A machine standing in `working`, its invocation started with token 0, given the
-    session id the shared format-2 fixtures name their root by."""
+    session id the shared fixtures name their root by."""
     engine = _sm.create_engine(session_id="fixture-root")
     host = _Host().register(engine)
     engine.initialize()
@@ -137,7 +137,7 @@ def test_a_machine_is_saved_with_the_request_its_invocation_was_started_with() -
 
 @pytest.mark.parametrize("format1", [False, True])
 def test_a_restore_asks_nothing_of_the_host_until_the_machine_is_driven(format1: bool) -> None:
-    # From the format-2 text, and from the format-1 text of the same run.
+    # From the format-3 text, and from the format-1 text of the same run.
     engine, host = _restored(_shared(format1), 1000)
     assert host.log == [], "the restore itself calls nobody"
     assert _standing_in(engine) == {_State.WORKING}
@@ -238,8 +238,8 @@ def test_a_completion_the_engine_was_about_to_refuse_is_still_refused_after_the_
     # would.
     shared = _shared()
     queued = (
-        '"external":[{"name":"done.invoke.h","data":"","type":"external","sendid":"","origin":"",'
-        '"origintype":"","invokeid":"h","hostinvoketoken":null}]'
+        '"external":[{"name":"done.invoke.h","data":"","type":"external","sendid":"","origin":null,'
+        '"sender":null,"invokeid":"h","hostinvoketoken":null}]'
     )
     text = shared.replace('"external":[]', queued, 1)
     assert text != shared, "the queue was changed"

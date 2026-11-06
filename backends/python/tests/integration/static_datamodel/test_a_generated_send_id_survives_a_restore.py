@@ -11,7 +11,7 @@ again, which would let one ``<cancel>`` remove two sends.
 ``second.due``, each under an id written to ``first`` and ``second``, and
 ``cancel.first`` and ``cancel.second`` remove the send whose id the variable holds.
 Everything runs on the engine's virtual clock, so no case sleeps. The shared fixture
-``saved/static_send_idlocation_armed.json`` is the format-2 text every backend writes
+``saved/static_send_idlocation_armed.json`` is the format-3 text every backend writes
 (docs/adr/0045), its root given the id the fixtures name it by, and ``saved/format1/``
 holds the format-1 text of the same run, which still restores. The Rust, Kotlin and Go
 halves are ``a_generated_send_id_survives_a_restore.rs``,
@@ -73,7 +73,7 @@ def test_a_machine_that_armed_two_sends_saves_the_ids_it_generated() -> None:
 
 @pytest.mark.parametrize("format1", [False, True])
 def test_a_restored_send_is_cancelled_by_the_id_the_document_holds(format1: bool) -> None:
-    # From the format-2 text, and from the format-1 text of the same run.
+    # From the format-3 text, and from the format-1 text of the same run.
     engine = _restored_from(_shared_armed(format1))
     _send(engine, "cancel.first")
     engine.advance_time(250)

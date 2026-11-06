@@ -2,10 +2,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0045, section 8):
 the saved states the shared fixtures hold are the text every backend writes and
-reads, so a state saved by one backend is one another restores. Each format-2 text
+reads, so a state saved by one backend is one another restores. Each format-3 text
 is restored by the generated Python machine of its document and saved again, which
 is the same text byte for byte; each format-1 text, which every backend still reads,
-is restored.
+is restored. Each format-2 text of ``saved/format2/`` is restored, its origins read
+by the table of docs/adr/0090, section 7, and saved again as the format-3 text of
+the same name in ``saved/format2/read_as/``.
 
 The Rust, Kotlin and Go halves are ``static_datamodel.rs``,
 ``StaticDatamodelTest.kt`` and ``a_state_another_backend_saved_is_restored_test.go``;
@@ -47,13 +49,18 @@ _MACHINES = (
 )
 
 
-def _machine_of(name: str) -> str:
+# The documents a format-2 reading fixture is of: the shared tree, in the spellings
+# of its origins, and the shared timers.
+_READING_MACHINES = ("static_invoke_tree", "static_timers")
+
+
+def _machine_of(name: str, machines=_MACHINES) -> str:
     """The stem of the document a shared text is of: the file's own name up to the
     part that says which moment of the run it is (``static_schema_pending_first`` and
     ``static_schema_revision_second`` are moments of one document each). The longest
     stem a name begins with is the document: ``static_optional_record`` begins with
     ``static_optional`` too, and is not a moment of that one."""
-    matching = [stem for stem in _MACHINES if name == stem or name.startswith(stem + "_")]
+    matching = [stem for stem in machines if name == stem or name.startswith(stem + "_")]
     return max(matching, key=len, default="")
 
 
@@ -74,22 +81,45 @@ def _texts(directory: Path) -> dict:
 
 
 @pytest.mark.parametrize("name", sorted(_texts(_SAVED)))
-def test_a_format_two_state_another_backend_saved_is_restored_and_saved_as_it_was(name: str) -> None:
+def test_a_format_three_state_another_backend_saved_is_restored_and_saved_as_it_was(name: str) -> None:
     text = _texts(_SAVED)[name]
     assert _restored_and_saved_again(_machine_of(name), text) == text
 
 
-def test_every_format_two_text_of_a_document_is_held_to_its_machine() -> None:
-    assert len(_texts(_SAVED)) >= 8, "the shared format-2 texts lost instances"
+def test_every_format_three_text_of_a_document_is_held_to_its_machine() -> None:
+    assert len(_texts(_SAVED)) >= 8, "the shared format-3 texts lost instances"
 
 
 @pytest.mark.parametrize("name", sorted(_texts(_SAVED / "format1")))
 def test_a_format_one_state_is_restored_and_takes_the_machines_own_session(name: str) -> None:
     text = _texts(_SAVED / "format1")[name]
     # What a format-1 text holds is what a restore reads; saving it again writes
-    # format 2, with the machine's own session id.
+    # format 3, with the machine's own session id.
     again = _restored_and_saved_again(_machine_of(name), text)
-    assert again.startswith('{"format":2,'), again
+    assert again.startswith('{"format":3,'), again
+
+
+def _readings() -> dict:
+    """Each format-2 reading fixture, by name, with the document it is of."""
+    return {
+        path.stem: (_machine_of(path.stem, _READING_MACHINES), path.read_text(encoding="utf-8").strip())
+        for path in sorted((_SAVED / "format2").glob("*.json"))
+    }
+
+
+@pytest.mark.parametrize("name", sorted(_readings()))
+def test_a_format_two_state_is_restored_and_saved_as_the_format_three_text_it_reads_as(name: str) -> None:
+    # Restored at the moment the shared fixtures were saved at and saved at once:
+    # the C11 spelling of the tree and the other backends' are both the shared
+    # format-3 tree, and the timers' internal act carries no origin.
+    stem, text = _readings()[name]
+    assert stem, f"{name} is of no document this suite restores"
+    read_as = (_SAVED / "format2" / "read_as" / f"{name}.json").read_text(encoding="utf-8").strip()
+    assert _restored_and_saved_again(stem, text) == read_as
+
+
+def test_every_format_two_reading_fixture_is_held_to_its_machine() -> None:
+    assert len(_readings()) >= 4, "the format-2 reading fixtures lost instances"
 
 
 def test_every_format_one_text_of_a_document_is_held_to_its_machine() -> None:

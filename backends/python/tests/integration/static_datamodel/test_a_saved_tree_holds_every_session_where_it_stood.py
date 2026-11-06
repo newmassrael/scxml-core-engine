@@ -51,7 +51,7 @@ _SAVED_AT_MS = 1_700_000_000_000
 _SAVED = _HERE.parents[4] / "sce-build" / "tests" / "fixtures" / "static_datamodel" / "saved"
 _TREE = importlib.import_module("integration.static_datamodel.static_invoke_tree_sm")
 
-# The session id the shared format-2 fixtures give their root.
+# The session id the shared fixtures give their root.
 _ROOT = "fixture-root"
 # The session `worker` is: the root's id and the id its first start is started under
 # (`<state>.<start>.<invoke>`).

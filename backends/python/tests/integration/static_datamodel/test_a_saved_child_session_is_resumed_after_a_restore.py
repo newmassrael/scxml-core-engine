@@ -13,7 +13,7 @@ the child through the parent and every case is read from the parent:
 ``working``. A child that had taken ``a`` is resumed at ``second``, so ``b`` alone
 ends it.
 
-The shared instance ``saved/static_invoke_working.json`` is the format-2 text of the
+The shared instance ``saved/static_invoke_working.json`` is the format-3 text of the
 machine just started, its root given the id the fixtures name it by. A format-1 text
 holds the child's id alone, and the build that wrote it promised to start the child
 again from its beginning: ``saved/format1/static_invoke_working.json`` is the one
@@ -165,7 +165,7 @@ def test_an_event_saved_in_the_childs_queue_is_taken_by_the_resumed_child() -> N
     )
     queued = empty.replace(
         '"external":[]',
-        '"external":[{"name":"a","data":"","type":"external","sendid":"","origin":"","origintype":"",'
+        '"external":[{"name":"a","data":"","type":"external","sendid":"","origin":null,"sender":null,'
         '"invokeid":"","hostinvoketoken":null}]',
         1,
     )
