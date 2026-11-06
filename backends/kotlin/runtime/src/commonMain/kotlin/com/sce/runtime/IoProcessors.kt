@@ -99,19 +99,24 @@ object IoProcessors {
      * The origin and sender a stored [origin] and [originType] are read as
      * (docs/adr/0090, section 7).
      *
-     * Empty both is none. An SCXML location (which one backend stored in place
-     * of the id) is that session's pair, with the id it names as the sender; a
-     * value without a scheme stored with this processor's type is a session's
-     * id, read the same way. Anything else is the pair as stored, with no
-     * sender.
+     * An empty [origin] is none whatever type was stored beside it: an empty
+     * address answers nothing, and format 2 wrote this processor's type beside
+     * it for events no processor stamped. An empty [originType] beside an
+     * address is this processor's, which is what format 2 meant by it. An SCXML
+     * location (which one backend stored in place of the id) is that session's
+     * pair, with the id it names as the sender; a value without a scheme read
+     * with this processor's type is a session's id, read the same way. Anything
+     * else is the pair as stored, with no sender. So neither field of a pair
+     * read back is ever empty.
      */
     fun readStoredOrigin(origin: String, originType: String): StoredOrigin {
-        if (origin.isEmpty() && originType.isEmpty()) return StoredOrigin(null, null)
+        if (origin.isEmpty()) return StoredOrigin(null, null)
         val located = sessionIdFromScxmlLocation(origin)
         if (located.isNotEmpty()) return StoredOrigin(scxmlOrigin(located), located)
-        val bareId = origin.isNotEmpty() && !origin.contains("://")
-        if (bareId && originType == SCXML_PROCESSOR) return StoredOrigin(scxmlOrigin(origin), origin)
-        return StoredOrigin(EventOrigin(originType, origin), null)
+        val processor = originType.ifEmpty { SCXML_PROCESSOR }
+        val bareId = !origin.contains("://")
+        if (bareId && processor == SCXML_PROCESSOR) return StoredOrigin(scxmlOrigin(origin), origin)
+        return StoredOrigin(EventOrigin(processor, origin), null)
     }
 
     /**

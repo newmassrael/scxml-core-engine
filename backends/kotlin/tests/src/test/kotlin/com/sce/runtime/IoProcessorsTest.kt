@@ -98,6 +98,22 @@ class IoProcessorsTest {
             StoredOrigin(EventOrigin(IoProcessors.SCXML_PROCESSOR, "mesh://motor"), null),
             IoProcessors.readStoredOrigin("mesh://motor", IoProcessors.SCXML_PROCESSOR),
         )
+        // An empty origin is none whatever type was stored beside it: format 2
+        // wrote the SCXML type beside an event no processor stamped, and an
+        // empty address is no reply address. Never half a pair.
+        assertEquals(StoredOrigin(null, null), IoProcessors.readStoredOrigin("", IoProcessors.SCXML_PROCESSOR))
+        assertEquals(StoredOrigin(null, null), IoProcessors.readStoredOrigin("", "x-sce-host"))
+        // An address with an empty type is the SCXML processor's, what format 2
+        // meant by an empty type: a peer's address keeps no sender, and a bare
+        // id is that session's pair with the id its sender.
+        assertEquals(
+            StoredOrigin(EventOrigin(IoProcessors.SCXML_PROCESSOR, "mesh://motor"), null),
+            IoProcessors.readStoredOrigin("mesh://motor", ""),
+        )
+        assertEquals(
+            StoredOrigin(IoProcessors.scxmlOrigin("fixture-root"), "fixture-root"),
+            IoProcessors.readStoredOrigin("fixture-root", ""),
+        )
         // A waiting send's origin names its sender, bare or located.
         assertEquals("fixture-root", IoProcessors.readStoredSender("fixture-root"))
         assertEquals("a b", IoProcessors.readStoredSender("sce://scxml/a%20b"))
