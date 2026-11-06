@@ -1001,10 +1001,16 @@ fn enforce_static_datamodel(
             // A record variable is built whole from its `<sce:set>`
             // children, as an algorithm's record local is (SCE_FORGE.md
             // §4.12): those children are its initial value, so it takes no
-            // `expr`, and they are not the untyped content refused below.
+            // `expr`, and they are not the untyped content refused below. A
+            // union variable is built the same way, its tag and then the
+            // fields of that case (docs/adr/0092, section 6.1 item 5); the
+            // judge holds the children to that rule.
             let is_record = matches!(
                 written,
-                Some(crate::forge::value_type::WrittenType::Record { .. })
+                Some(
+                    crate::forge::value_type::WrittenType::Record { .. }
+                        | crate::forge::value_type::WrittenType::Union { .. }
+                )
             );
             if is_record {
                 if let Some((written, pos)) = attribute_as_written(&node, "expr") {
