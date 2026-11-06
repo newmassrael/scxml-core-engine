@@ -34,6 +34,7 @@ import com.sce.integration.static_host_duty.StaticHostDutyStateMachine
 import com.sce.integration.static_history.StaticHistoryEvent
 import com.sce.integration.static_history.StaticHistoryState
 import com.sce.integration.static_history.StaticHistoryStateMachine
+import com.sce.integration.static_invoke_tree.StaticInvokeTreeStateMachine
 import com.sce.integration.static_list.StaticListEvent
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_optional.StaticOptionalDueRecord
@@ -686,6 +687,55 @@ class StaticDatamodelTest {
                 schema["x-sce-schema-status"],
                 "SCHEMA_STATUS and every format's schema header move together ($file, SCE_WIRE_CONTRACTS.md)"
             )
+        }
+    }
+
+    /**
+     * A format-2 reading fixture, restored at the moment the shared fixtures were
+     * saved at by a machine of its document and saved at once: the text this
+     * runtime writes for it.
+     */
+    private fun restoredAndSaved(name: String, saved: SavedState): String = when {
+        name.startsWith("static_invoke_tree_working") -> {
+            val sm = StaticInvokeTreeStateMachine()
+            try {
+                sm.clock = ManualClock(0)
+                sm.restore(saved, savedAtMs)
+                sm.save(savedAtMs).toJson()
+            } finally {
+                sm.cleanup()
+            }
+        }
+        name.startsWith("static_timers") -> {
+            val sm = StaticTimersStateMachine()
+            try {
+                sm.clock = ManualClock(0)
+                sm.restore(saved, savedAtMs)
+                sm.save(savedAtMs).toJson()
+            } finally {
+                sm.cleanup()
+            }
+        }
+        else -> error("no machine of this suite restores the reading fixture $name")
+    }
+
+    @Test
+    fun aFormat2TextIsReadAsTheFormat3TextOfTheSameName() {
+        // docs/adr/0090, section 7: each origin a format-2 text stored is read by
+        // the table, and the state is written back as format 3, whether a machine
+        // restored it or not. Every text of `saved/format2/` is read here.
+        val dir = File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/format2")
+        val names = dir.listFiles().orEmpty()
+            .filter { it.isFile && it.name.endsWith(".json") }
+            .map { it.name }
+            .sorted()
+        assertTrue(names.isNotEmpty(), "the format-2 reading fixtures are in $dir")
+        for (name in names) {
+            val text = File(dir, name).readText().trim()
+            val readAs = File(dir, "read_as/$name").readText().trim()
+            val saved = SavedState.fromJson(text)
+            assertEquals(readAs, saved.toJson(), "$name, read and written again, is read_as/$name")
+            assertEquals(readAs, restoredAndSaved(name, saved), "$name, restored and saved, is read_as/$name")
         }
     }
 
