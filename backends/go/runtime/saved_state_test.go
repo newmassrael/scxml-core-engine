@@ -200,18 +200,16 @@ func waitingSend(act, origin string) string {
 
 // docs/adr/0090, section 7: a format-3 reader refuses, naming the record, an
 // origin that is neither null nor a pair, a pair with a member missing, empty
-// or added, a sender that is not a session id, a sender beside an origin other
-// than its SCXML pair, a session's act with no sender, and an internal act that
-// holds either member.
+// or added, a sender that is not a session id, a sender beside a null origin, a
+// session's act with no sender or beside an origin other than its SCXML pair,
+// and an internal act that holds either member.
 func TestAFormatThreeOriginIsRefusedForTheMemberThatBreaksIt(t *testing.T) {
 	rootPair := `{` + scxmlProcessorMember + `,"address":"sce://scxml/root"}`
 	meshPair := `{` + scxmlProcessorMember + `,"address":"mesh://ecu"}`
 	queued := func(origin string) string { return withQueued(queuedEvent("e", origin), "") }
 	waiting := func(act, origin string) string { return withQueued("", waitingSend(act, origin)) }
-	notTheSendersPair := func(what string) string {
-		return "'" + what + ".origin' is not the SCXML pair of its sender 'root', which is the origin the SCXML " +
-			"processor writes for an event a session sent"
-	}
+	const notTheActsPair = "'pending[0].origin' is not the SCXML pair of its sender 'root', which is the origin " +
+		"the SCXML processor writes for a send of this session"
 	const internalHolds = "'pending[0]' is an internal act, whose event is an internal event and has no origin, " +
 		"and it holds an origin or a sender"
 	cases := []struct{ name, text, reason string }{
@@ -241,12 +239,9 @@ func TestAFormatThreeOriginIsRefusedForTheMemberThatBreaksIt(t *testing.T) {
 			"'external[0].sender' (a b) is not an XML Nmtoken, which a session id is"},
 		{"a sender that is not a text", queued(`"origin":null,"sender":1`),
 			"'external[0].sender' is neither a text nor null"},
-		{"a sender beside no origin", queued(`"origin":null,"sender":"root"`), notTheSendersPair("external[0]")},
-		{"a sender beside another address", queued(`"origin":` + meshPair + `,"sender":"root"`),
-			notTheSendersPair("external[0]")},
-		{"a sender beside another processor",
-			queued(`"origin":{"processor":"x-sce-host","address":"sce://scxml/root"},"sender":"root"`),
-			notTheSendersPair("external[0]")},
+		{"a sender beside no origin", queued(`"origin":null,"sender":"root"`),
+			"'external[0].origin' is null beside the sender 'root', and a session that sends an event always " +
+				"has a reply address"},
 		{"a raise act with no sender", waiting("raise", `"origin":null,"sender":null`),
 			"'pending[0]' is a raise act, a send of this session, and names no sender"},
 		{"a parent act with an origin and no sender", waiting("parent", `"origin":`+meshPair+`,"sender":null`),
@@ -257,8 +252,14 @@ func TestAFormatThreeOriginIsRefusedForTheMemberThatBreaksIt(t *testing.T) {
 			"'pending[0]' has no 'sender'"},
 		{"a waiting send with the origin of format 2", waiting("raise", `"origin":"root"`),
 			"'pending[0].origin' is neither null nor a pair of 'processor' and 'address'"},
-		{"a waiting send whose sender is beside another origin", waiting("raise", `"origin":`+meshPair+`,"sender":"root"`),
-			notTheSendersPair("pending[0]")},
+		{"a waiting send whose sender is beside another address", waiting("raise", `"origin":`+meshPair+`,"sender":"root"`),
+			notTheActsPair},
+		{"a waiting send whose sender is beside another processor",
+			waiting("child", `"origin":{"processor":"x-sce-host","address":"sce://scxml/root"},"sender":"root"`),
+			notTheActsPair},
+		{"a waiting send whose sender is beside no origin", waiting("parent", `"origin":null,"sender":"root"`),
+			"'pending[0].origin' is null beside the sender 'root', and a session that sends an event always " +
+				"has a reply address"},
 		{"an internal act that holds a sender", waiting("internal", `"origin":`+rootPair+`,"sender":"root"`),
 			internalHolds},
 		{"an internal act that holds an origin", waiting("internal", `"origin":`+meshPair+`,"sender":null`),
@@ -278,13 +279,17 @@ func TestAFormatThreeOriginIsRefusedForTheMemberThatBreaksIt(t *testing.T) {
 
 // docs/adr/0090, section 7: a format-3 reader takes both members as they are
 // written and derives neither from the other, and the text it read is the text
-// it writes.
+// it writes. A queued event's sender is not tied to its address: the Mesh
+// transport delivers a remote child session's event with that session's
+// endpoint as the address and its id as the sender.
 func TestAFormatThreeOriginIsReadAsItIsWrittenAndWrittenBack(t *testing.T) {
 	events := strings.Join([]string{
 		queuedEvent("sent", `"origin":{`+scxmlProcessorMember+`,"address":"sce://scxml/peer%3A1"},"sender":"peer:1"`),
 		queuedEvent("hosted", `"origin":{"processor":"x-sce-host","address":"motor"},"sender":null`),
 		queuedEvent("meshed", `"origin":{`+scxmlProcessorMember+`,"address":"mesh://ecu"},"sender":null`),
 		queuedEvent("posted", `"origin":null,"sender":null`),
+		queuedEvent("remote", `"origin":{`+scxmlProcessorMember+`,"address":"mesh://dev/machine/session"},`+
+			`"sender":"root.w"`),
 	}, ",")
 	sends := strings.Join([]string{
 		waitingSend("raise", `"origin":{`+scxmlProcessorMember+`,"address":"sce://scxml/root"},"sender":"root"`),
@@ -303,6 +308,7 @@ func TestAFormatThreeOriginIsReadAsItIsWrittenAndWrittenBack(t *testing.T) {
 		{NewEventOrigin("x-sce-host", "motor"), ""},
 		{NewEventOrigin(SCXMLEventProcessorType, "mesh://ecu"), ""},
 		{nil, ""},
+		{NewEventOrigin(SCXMLEventProcessorType, "mesh://dev/machine/session"), "root.w"},
 	} {
 		event := saved.External[at]
 		if !event.Origin.Equal(want.origin) || event.Sender != want.sender {
@@ -366,6 +372,43 @@ func TestAFormatOneTextIsWrittenBackInFormatOne(t *testing.T) {
 	}
 	if written, want := internal.ToJSON(), session("", send("internal", "")); written != want {
 		t.Errorf("an internal act is written back as\n%s\nwant\n%s", written, want)
+	}
+}
+
+// docs/adr/0090, section 7: a raise, parent or child act of a format-2 text
+// whose stored `origin` is empty is read as sent by the session that holds it,
+// the `sessionid` of its own session record, so the state is written back as a
+// format-3 text that is read. An internal act is not: it has no origin.
+func TestAFormatTwoSendWithNoStoredOriginIsASendOfTheSessionHoldingIt(t *testing.T) {
+	stored := func(act string) string {
+		return `{"due":"5","act":"` + act + `","event":"e","data":"","sendid":"s","origin":""}`
+	}
+	waiting := func(session string, sends ...string) string {
+		return strings.Replace(session, `"pending":[]`, `"pending":[`+strings.Join(sends, ",")+`]`, 1)
+	}
+	child := waiting(strings.Replace(minimalSession, `"sessionid":"root"`, `"sessionid":"root.w"`, 1),
+		stored("raise"), stored("parent"))
+	root := strings.Replace(waiting(minimalSession, stored("raise"), stored("internal")), `"invokes":[]`,
+		`"invokes":[{"id":"w","start":"1","invokeid":"w","document":"w","session":{`+child+`}}]`, 1)
+	saved, err := SavedStateFromJSON(`{"format":2,` + root + `}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentBy := func(where string, act SavedAct, id string) {
+		t.Helper()
+		if !act.Origin.Equal(ScxmlOrigin(id)) || act.Sender != id {
+			t.Errorf("%s is read as (%+v, %q), want the pair and the id of '%s'", where, act.Origin, act.Sender, id)
+		}
+	}
+	sentBy("the root's raise act", saved.Pending[0].Act, "root")
+	if internal := saved.Pending[1].Act; internal.Origin != nil || internal.Sender != "" {
+		t.Errorf("the internal act is read as (%+v, %q)", internal.Origin, internal.Sender)
+	}
+	resumed := saved.Invokes.Children[0].Session
+	sentBy("the child's raise act", resumed.Pending[0].Act, "root.w")
+	sentBy("the child's parent act", resumed.Pending[1].Act, "root.w")
+	if _, err := SavedStateFromJSON(saved.ToJSON()); err != nil {
+		t.Errorf("written back as a text that is refused: %v\n%s", err, saved.ToJSON())
 	}
 }
 

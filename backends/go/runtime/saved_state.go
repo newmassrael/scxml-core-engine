@@ -740,6 +740,17 @@ func savedSessionFromJSON(members *JSONObject, format int) (*SavedState, error) 
 			return nil, refuse("'sessionid' (%s) is not an XML Nmtoken, which a session id is", sessionID)
 		}
 		state.SessionID = sessionID
+		// docs/adr/0090, section 7: a raise, parent or child act of a format-2 text
+		// whose stored `origin` is empty is a send of the session that holds it,
+		// and is read as that session's pair and id.
+		if format == SavedFormat2 {
+			for at := range state.Pending {
+				act := &state.Pending[at].Act
+				if act.Kind != SavedActInternal && act.Kind != SavedActHost && act.Sender == "" {
+					act.Origin, act.Sender = ScxmlOrigin(sessionID), sessionID
+				}
+			}
+		}
 		counted, err := field("invokestarts")
 		if err != nil {
 			return nil, err
@@ -1093,9 +1104,14 @@ func savedEventFromJSON(value any, what string, format int) (SavedEvent, error) 
 // members, which what names in a refusal, read as they are written: neither is
 // derived from the other (docs/adr/0090, section 7). The record is refused for
 // an `origin` that is neither null nor a pair, for a `sender` that is not a
-// session id, and for a sender beside an origin other than that session's
-// SCXML pair, the one origin the SCXML processor writes for an event a session
-// sent.
+// session id, and for a sender beside a null origin: a session that sent an
+// event always has a reply address.
+//
+// The address beside a sender is the reply address the processor that delivered
+// the event wrote, and no rule ties it to the sender: the SCXML processor writes
+// the sender's local location, and the Mesh transport, for a remote child or
+// parent session, that session's endpoint. Only a session's own waiting send is
+// held to its SCXML pair (savedSendOriginFromJSON).
 func savedOriginFromJSON(members *JSONObject, what string) (*EventOrigin, string, error) {
 	written, held := members.Get("origin")
 	if !held {
@@ -1128,9 +1144,9 @@ func savedOriginFromJSON(members *JSONObject, what string) (*EventOrigin, string
 	default:
 		return nil, "", refuse("'%s.sender' is neither a text nor null", what)
 	}
-	if sender != "" && !origin.Equal(ScxmlOrigin(sender)) {
-		return nil, "", refuse("'%s.origin' is not the SCXML pair of its sender '%s', which is the origin the "+
-			"SCXML processor writes for an event a session sent", what, sender)
+	if sender != "" && origin == nil {
+		return nil, "", refuse("'%s.origin' is null beside the sender '%s', and a session that sends an event "+
+			"always has a reply address", what, sender)
 	}
 	return origin, sender, nil
 }
@@ -1340,9 +1356,12 @@ func savedSendFromJSON(value any, what string, format int) (SavedSend, error) {
 // A `raise`, `parent` or `child` act is this session's own send, which the
 // SCXML processor delivers: in format 3 it names its sender, beside that
 // session's pair, and in formats 1 and 2 its stored `origin` is the sender's id,
-// or its location, read as that session's pair. An `internal` act delivers an
-// internal event, which has no origin: in format 3 it holds neither member, and
-// in formats 1 and 2 its stored `origin` is not read.
+// or its location, read as that session's pair. One a format-2 text stored with
+// an empty `origin` is read as the send of the session that holds it, once that
+// session's id is read (savedSessionFromJSON); a format-1 text holds no id, and
+// the machine that restores it arms such a send as its own. An `internal` act
+// delivers an internal event, which has no origin: in format 3 it holds neither
+// member, and in formats 1 and 2 its stored `origin` is not read.
 func savedSendOriginFromJSON(
 	members *JSONObject, what string, kind SavedActKind, format int,
 ) (*EventOrigin, string, error) {
@@ -1370,6 +1389,10 @@ func savedSendOriginFromJSON(
 	}
 	if sender == "" {
 		return nil, "", refuse("'%s' is a %s act, a send of this session, and names no sender", what, kind)
+	}
+	if !origin.Equal(ScxmlOrigin(sender)) {
+		return nil, "", refuse("'%s.origin' is not the SCXML pair of its sender '%s', which is the origin the "+
+			"SCXML processor writes for a send of this session", what, sender)
 	}
 	return origin, sender, nil
 }
