@@ -1,6 +1,6 @@
 # SCE test profile — operational semantics
 
-- Status: specification of ADR 0091, order of work step 1. Nothing in the tree implements it yet.
+- Status: specification of ADR 0091, order of work step 1 (§1 to §10), and the document forms of step 2 (§11).
 - Decision: `docs/adr/0091-a-test-is-a-document-of-the-test-profile-and-its-ttcn-3-export-runs-and-agrees-with-it.md`.
   Where this document and the ADR disagree, the ADR is amended or this document is wrong; neither is read as
   overriding the other.
@@ -11,7 +11,8 @@
 
 This document defines what a profile document means. It is the basis of the native test runtime (step 3), of the
 exporter and its translation validator (step 4), and of the conformance lane (step 5). The names of elements and
-attributes are those of ADR 0091 answer 5. Their schemas are step 2's; this document fixes only their meaning.
+attributes are those of ADR 0091 answer 5. §11 fixes the XML they are written in; the schemas that check it are in
+`schemas/sce-forge-ext.xsd`.
 
 ## 1. How the semantics is stated
 
@@ -308,12 +309,14 @@ template over one `event-schema` type, or over one field type of it.
 | any value or none `*` | B.1.2.4 | optional fields |
 | value range | B.1.2.5 | integer types |
 | omit | B.1.2.8 | optional fields |
-| length restriction | B.1.4.1 | `string[N]` |
+| any element `?` inside a list | B.1.3.1 | elements of `list<T>[B]` |
+| length restriction | B.1.4.1 | `string[N]`, `bytes[N]`, `list<T>[B]` |
 | `ifpresent` | B.1.4.2 | optional fields |
-| parameterised template | -1 §15.1 | every template |
+| parameterised template, value parameters | -1 §15.1, §5.4.1.1 | every template |
 
 Not in the profile: superset and subset (B.1.2.6, B.1.2.7), which match set types; matching decoded content
-(B.1.2.9); patterns (B.1.5); any element and permutation (B.1.3), which match inside lists.
+(B.1.2.9); patterns (B.1.5); any elements or none and permutation (B.1.3.2, B.1.3.3), which change how many elements
+of a list a template matches; template parameters (-1 §5.4.1.2). §8.1 records each.
 
 ### 6.2 Specific templates
 
@@ -332,6 +335,11 @@ module (ADR 0091 C2) as:
 | `enum:X` | `enumerated` with the declared names, in declared order | |
 | `string[N]` | `universal charstring` | SCE bounds a string by UTF-8 bytes; -1 length restrictions count characters. The bound is held by the codec and stated in the types module as a comment, not as a length restriction |
 | `optional<T>` | an `optional` field of type T | |
+| `bytes[N]` | `octetstring` | the bound is stated as for `string[N]`; for octets the two counts agree |
+| `record:X` | the `record` type of the event schema `X` | |
+| `list<T>[B]` | `record length (0 .. B) of T` | |
+| `union:X` | `union` with one alternative per case of `X`, named by its variant; a case that holds no record is an empty `record {}` | the tag is the alternative chosen, as ADR 0092 §1 makes it |
+| `float32`, `float64` | none | not in the profile (§8.1) |
 | an `event-schema` | `record` with one field per declared field, in declared order | |
 
 ## 7. The change to §scxml-D
@@ -376,7 +384,9 @@ an amendment of the ADR that gives its semantics and its export.
 | `read`, `running` (timers and components), `alive`, `killed` | -4 §9.36, §9.42, §9.41 | deferred | need the timer and component state readable as values |
 | `now` | -1 §23 | deferred | needs `NOW` readable as a value |
 | `stop` of the test case or of a component by statement | -4 §9.50, §9.49, §9.53a | out by design | a component stops by entering a top-level `<final>` |
-| patterns, superset, subset, permutation | -1 B.1.2.6, B.1.2.7, B.1.3, B.1.5 | deferred | §6.1 |
+| patterns, superset, subset, any elements or none, permutation | -1 B.1.2.6, B.1.2.7, B.1.3.2, B.1.3.3, B.1.5 | deferred | §6.1 |
+| template parameters | -1 §5.4.1.2 | deferred | a template that takes a template needs a matcher as an argument, and an argument is a component variable (§11.5) |
+| `float` | -1 §6.1.0 | deferred | -1's `float` is a real with the special values `infinity`, `-infinity` and `not_a_number`; IEEE 754's binary32 and binary64 add `-0.0` and many NaNs, and matching them needs a rule of its own |
 
 ### 8.2 SCXML constructs a `test-component` refuses
 
@@ -478,3 +488,245 @@ advances time and then starts one.
 Titan's clock must compare instants as integers of microseconds (§3.3). Titan holds time as a `double` of seconds, and
 the sum of a start instant and a duration in `double` arithmetic can differ in its last bit from the instant a trace
 gives for the same moment, which would order a timeout and an input differently on the two sides.
+
+## 11. Document forms
+
+This section fixes the XML of the six kinds (ADR 0091 §2, answer 5). The names are those of answer 5: every element
+and attribute is in SCE's one extension namespace (`http://sce.dev/ext`), and none reuses a name the grammar already
+has. A name follows -1's term for the concept where -1 has one. The rules of §4 to §6 give each form its meaning, and
+this section adds only what the XML must say. Every refusal named here is a `DiagnosticCode` whose name begins with
+`test-profile/`, unless an existing code already states it.
+
+### 11.1 Two URIs
+
+| URI | Names | Rule |
+|---|---|---|
+| `http://sce.dev/ext/test-port` | the Event I/O Processor whose addresses are ports (ADR 0091 answer 6) | `type` of every `<send>` in a `test-component` (P6) |
+| `http://sce.dev/ext/test-component` | the invocation of a PTC | `type` of every `<invoke>` in a `test-component` (P9) |
+
+### 11.2 Data model
+
+A `test-component` declares `datamodel="sce-static"`: it is the only kind of the profile that holds expressions
+(answer 9). The other five kinds hold declarations and literals. A document of one of them that names a data model
+names `sce-static`. Any other value is refused, in all six kinds.
+
+### 11.3 `test-port-type`
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="job_port">
+  <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
+  <sce:import kind="event-schema" src="job_completed.scxml" as="JobCompleted"/>
+  <sce:message type="JobRequest" direction="out"/>
+  <sce:message type="JobCompleted" direction="in"/>
+</scxml>
+```
+
+- `<sce:message>` names an imported `event-schema` and its direction: `in`, `out` or `inout`, seen from the component
+  that owns a port of this type (-1 §6.2.9).
+- The `in` list of a port type is the set of messages with direction `in` or `inout`, and the `out` list is the set
+  with `out` or `inout`. §11.6 checks ports against each other by these lists.
+- Refused: a port type with no message; one type listed twice; two types with the same event name, because a message
+  delivered to a port is told apart from the others by its event name.
+- Export: `type port job_port message { out JobRequest; in JobCompleted }`.
+
+### 11.4 `test-template`
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="completed_within" sce:type="record:JobCompleted">
+  <sce:import kind="event-schema" src="job_completed.scxml" as="JobCompleted"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:value-range field="elapsed_ms">
+      <sce:lower value="0"/>
+      <sce:upper param="limit"/>
+    </sce:value-range>
+    <sce:any-value-or-none field="note"/>
+  </sce:record-match>
+</scxml>
+```
+
+- `sce:type` on the root is the template's type, written in the type grammar of `event-schema` fields. A template
+  used in a send or a receive has the type `record:<alias>` of a message.
+- The root holds exactly one matcher, of the template's type.
+- **Formal parameters** are `<data sce:direction="in">` declarations with no `expr`. They are value parameters
+  (-1 §5.4.1.1). A template parameter (-1 §5.4.1.2) is not in the profile (§8.1).
+
+**Matchers.** Each row is one element. A matcher is written where a value of some type is matched: the root, a field
+of a `record-match`, an element of a `list-match`, the case of a `union-match`, or an item of a `value-list` or
+`complement`.
+
+| Element | -1 | Content | Type of the position |
+|---|---|---|---|
+| `<sce:specific value="…"/>` or `<sce:specific param="p"/>` | B.1.1 | a literal (below) or a formal parameter of the position's type | integer, `bool`, `enum:`, `string[N]`, `bytes[N]` |
+| `<sce:record-match>` | B.1.1 | one matcher per field of the record, each with `field="<name>"`, every field exactly once | `record:` |
+| `<sce:list-match>` | B.1.1, B.1.3.1 | one matcher per element, in order; it matches a list of exactly that many elements | `list<T>[B]` |
+| `<sce:union-match variant="v">` | B.1.1 | the matcher of case `v`'s record, or nothing when case `v` holds none | `union:` |
+| `<sce:value-list>` | B.1.2.1 | two or more matchers; the value matches if it matches one of them | every type |
+| `<sce:complement>` | B.1.2.2 | one or more matchers; the value matches if it matches none of them | every type |
+| `<sce:any-value/>` | B.1.2.3 | — | every type; in a `list-match` it is one element of any value |
+| `<sce:any-value-or-none/>` | B.1.2.4 | — | an `optional<T>` field |
+| `<sce:value-range>` | B.1.2.5 | `<sce:lower>` and `<sce:upper>`, each optional, each with `value` or `param`; a missing bound is unbounded; bounds are inclusive | integer |
+| `<sce:omit/>` | B.1.2.8 | — | an `optional<T>` field |
+| `<sce:template-ref template="A" args="p q"/>` | -1 §15.1 | the imported template `A`, its formal parameters bound in order to this template's own parameters `p q` | the type of `A` |
+
+**Attributes every matcher may carry:**
+
+- `field="<name>"`: on a matcher that is a child of `record-match`, required there and refused anywhere else.
+- `length-min` and `length-max` (B.1.4.1): a length restriction, on a position of type `string[N]` (counted in
+  characters, as -1 counts the length of a `universal charstring`), `bytes[N]` (octets) or `list<T>[B]` (elements).
+  Either may be absent; both are whole numbers and `length-min ≤ length-max`.
+- `ifpresent="true"` (B.1.4.2): on a matcher in an `optional<T>` field; the field matches if it is absent or if it
+  matches.
+
+**Literals of `<sce:specific value>`:** an integer in decimal, within the range of its type; `true` or `false`; the
+name of a variant of the enum; the attribute's text for `string[N]`, within the bound; an even number of hex digits
+for `bytes[N]`, within the bound.
+
+**A specific template** (§6.2) is one whose matchers are only `specific`, `record-match`, `list-match`, `union-match`,
+`omit`, and `template-ref` to a specific template, with no `length-min`, `length-max` or `ifpresent`. A send names a
+specific template; a receive names any template.
+
+Refused: a matcher whose position's type does not admit it (the table above); a `record-match` that misses a field or
+names one twice or names one the record does not have; a `union-match` whose variant the union does not declare; a
+`value-list` with fewer than two items; a literal outside its type; a `param` or `args` entry that is not a formal
+parameter or whose type differs from the position's; a `length-min` greater than `length-max`; `any-value-or-none`
+inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle; a template whose type contains
+`float32` or `float64` (§8.1).
+
+### 11.5 `test-component`
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="job_tester" datamodel="sce-static" initial="requesting">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="test-template" src="job_request.scxml" as="Request"/>
+  <sce:import kind="test-template" src="completed_within.scxml" as="CompletedWithin"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <sce:test-timer id="reply" duration="2s"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="requesting">
+    <onentry>
+      <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="Request"/>
+      <sce:start-timer timer="reply"/>
+    </onentry>
+    <transition sce:receive="sut" sce:test-template="CompletedWithin" sce:template-args="limit" target="passed">
+      <sce:stop-timer timer="reply"/>
+      <sce:setverdict value="pass"/>
+    </transition>
+    <transition sce:timeout="reply" target="failed">
+      <sce:setverdict value="fail" reason="'no reply in time'"/>
+    </transition>
+  </state>
+  <final id="passed"/>
+  <final id="failed"/>
+</scxml>
+```
+
+- **Declarations**, children of `<scxml>`:
+  - `<sce:test-port id="p" type="<alias>">`, a port of an imported `test-port-type` (-1 §6.2.10);
+  - `<sce:test-timer id="T" duration="…">`, a timer with an optional default duration (P7).
+- **Variables** are `sce-static` `<data>`. A `<data sce:module-parameter="true">` has no `expr`. Its value is the
+  module parameter of the same `id` that the suite declares (§11.8), it is exported as a reference to that
+  `modulepar`, and assigning to it is refused.
+- **Executable content** added by the profile:
+  - `<sce:setverdict value="pass|inconclusive|fail|none" reason="<expr>"/>` (P12), where `reason` is optional and is
+    an `sce-static` expression of type `string`;
+  - `<sce:start-timer timer="T" duration="…"/>` and `<sce:stop-timer timer="T"/>` (P7). A start with no `duration`
+    needs a default on the timer.
+- **Template arguments.** `sce:template-args` on a `<send>` or a receive branch lists component variables, separated
+  by spaces, bound in order to the template's formal parameters. Like SCXML's `namelist`, it names locations, not
+  expressions. It is an attribute so that the children of `<transition>` stay executable content (ADR 0057 §3).
+- **A send** has exactly the attributes `type`, `target` (a port of the component), `sce:test-template`, and
+  `sce:template-args` when the template takes parameters. The template is specific and its type is in the port's `out`
+  list. The event name of the sent message is that of the template's record type.
+- **A receive branch** names a port whose `in` list contains the template's type. A receive any branch names a port
+  and no template.
+- **A PTC** is `<invoke type="http://sce.dev/ext/test-component" src="<test-component document>" id="<id>"/>`, with
+  a literal `id` and no `idlocation`, `autoforward`, `<param>`, `<content>` or `<finalize>`. The id is the PTC's name in
+  the configuration (§11.6).
+- Refused, besides §8.2: a duration that is not whole microseconds; `sce:template-args` whose length differs from the
+  template's parameter count, or whose variable types differ from the parameters'; a port or timer declared twice;
+  a reference to a port, timer or template the component does not declare or import.
+
+### 11.6 `test-configuration`
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="tester_and_helper">
+  <sce:import kind="test-component" src="job_tester.scxml" as="Tester"/>
+  <sce:import kind="test-component" src="helper.scxml" as="Helper"/>
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:mtc type="Tester"/>
+  <sce:ptc id="helper" type="Helper"/>
+  <sce:system-port id="sut" type="JobPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+  <sce:connect>
+    <sce:endpoint component="mtc" port="control"/>
+    <sce:endpoint component="helper" port="control"/>
+  </sce:connect>
+</scxml>
+```
+
+- `<sce:mtc>` names the MTC's component type, once. `<sce:ptc>` names each PTC and its type. The name `mtc` is the
+  MTC's and no PTC takes it.
+- `<sce:system-port>` declares a port of the test system interface. Together they are the `system` component type of
+  the exported test case (-1 §6.2.10).
+- `<sce:connect>` joins two component ports (-1 §21.1.1 b): each one's `out` list is contained in the other's `in`
+  list, and at least one `out` list is not empty.
+- `<sce:map>` joins a component port to a system port (-1 §21.1.1 c): the component port's `out` list is contained in
+  the system port's `out` list, the system port's `in` list in the component port's `in` list, and at least one of
+  those two is not empty.
+- **Ports are one-to-one** (§2.2): every component port and every system port takes part in exactly one `connect` or
+  `map`.
+- **The PTCs are created by invocations.** Every `<sce:ptc>` is the `id` of exactly one `<invoke>` in the components
+  of the configuration, whose `src` is a document of the PTC's type; every such `<invoke>` names a declared PTC. The
+  invoking relation is a tree rooted at the MTC, so no component creates itself.
+
+### 11.7 `test-case`
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="completes_in_time" sce:configuration="TesterAndHelper">
+  <sce:import kind="test-configuration" src="tester_and_helper.scxml" as="TesterAndHelper"/>
+</scxml>
+```
+
+- A test case names its configuration. Its body is the MTC's statechart, and it `runs on` the MTC type with the
+  configuration's system ports as its `system` (-1 §26.1).
+- Its name is the test case's name in the suite, in the test log and in the export.
+
+### 11.8 `test-suite`
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="job_suite">
+  <sce:import kind="feature-model" src="job_features.scxml" as="Features"/>
+  <sce:import kind="test-case" src="completes_in_time.scxml" as="CompletesInTime"/>
+  <sce:module-parameter id="limit" type="uint32" value="500"/>
+  <sce:execute test-case="CompletesInTime" guard="10s" requires="job-timeout"/>
+</scxml>
+```
+
+- `<sce:execute>` lists one test case, in run order (P11). `guard` is its time limit (answer 4). `requires` is its
+  selection, a feature condition over the imported `feature-model` in ADR 0057's grammar; an `<sce:execute>` is an
+  `sce:` element, so the attribute is `requires` (ADR 0057 §3). The selection is the suite's, as TTCN-3 writes it in
+  the control part (`if (…) { execute(…) }`, -1 §26.1, §26.2); a test case document carries none.
+- A test case is listed once.
+- `<sce:module-parameter id type value>` declares a module parameter (-1 §8.2.1) and its default. Its type is a
+  scalar, `string[N]` or `bytes[N]` type, and `value` is a literal of §11.4. Every `<data sce:module-parameter="true">`
+  of a component reached from the suite has a declaration here with its `id` and type.
+- Feature conditions appear only on `<sce:execute>`. The other kinds of the profile take none.
+- At most one `feature-model` import. A `requires` names only its features
+  (`validation/feature-requirement-undeclared`, ADR 0091 §3).
+
+### 11.9 Generation
+
+The six kinds are parsed and checked on every backend from the step that lands them. Until the native runtime of the
+order of work step 3 lands in a backend, generating a document of the profile on it is refused by name
+(`generate/unsupported-feature`).

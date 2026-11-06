@@ -2949,6 +2949,18 @@ The request, from a downstream consumer, was an overflow policy for the `queue` 
 
 Passed 3-of-3 axes; admitted. The flag on `queue` was ruled out before admission: a queue consumes (each element goes to one reader), and a full queue refuses the writer, so "overwrite the oldest of a consumed queue" would make the consumer's end a location the producer also writes, which destroys the property that makes the Lamport row wait-free on loads and stores alone. What the request describes, a ring every reader reads in full at its own pace, with loss reported to the reader that suffered it, is a different abstract data type: a bounded log. The kind's name fixes its sequential specification, and `ring`, `journal` and `stream` each name something else (storage, durability, an unbounded flow). Only `producers` `one` is offered: with several producers a claimed but unpublished sequence number is a hole readers can neither return nor skip (ADR 0062 §8). The Axis 3 count above is of domains the contract serves, as the owner decided on 2026-10-28, not of consumers that have asked.
 
+### Application: 2026-11-06 the test profile (`test-template`, `test-port-type`, `test-component`, `test-configuration`, `test-case`, `test-suite`)
+
+The request, from the owner, was a test profile whose documents have TTCN-3's semantics and whose TTCN-3 export is executed by a TTCN-3 tool SCE did not write. The design is ADR 0091; the semantics and the document forms are `docs/SCE_TEST_PROFILE.md`. The six kinds are judged together, because none of them is usable without the others: a test case needs a configuration, a configuration needs components and port types, and a component needs templates.
+
+| Axis | Pass/Fail | Reason |
+|---|---|---|
+| Domain alignment | PASS | Executable state (a test component is a statechart) over deterministic data (templates match values of event-schema types). One input trace has one run (`docs/SCE_TEST_PROFILE.md` §3), so the verdicts are byte-identical across backends and against the TTCN-3 tool |
+| Futamura projection compatibility | PASS | Port types, templates, the configuration, the components' statecharts and the suite's order are all build-time; only the messages received and the instants they arrive at are runtime |
+| Cross-domain reuse | PASS | A message-based test system serves every domain whose behaviour is a protocol: network protocols, embedded telemetry, sensor pipelines, game networking, robotics control. TTCN-3 itself is used across telecommunications, automotive, IoT and transport conformance testing |
+
+Passed 3-of-3 axes; admitted. Three alternatives were ruled out (ADR 0091, alternatives A to G): TTCN-3 as an eighth backend, which would make a test a program of one language rather than a document; tests written directly in TTCN-3 outside SCE, which would leave SCE's own runtimes untested by them; and the present conventions (native conditions, verdicts in `<donedata>`), which no tool other than SCE can execute. The kinds carry the prefix `test-` so that their names cannot collide with `timer`, `text-template` or `<sce:template>` (ADR 0091 answer 5).
+
 ### When admission is borderline
 
 If a candidate fails one axis but passes two, the candidate is rejected from the Forge catalog and reconsidered as either:

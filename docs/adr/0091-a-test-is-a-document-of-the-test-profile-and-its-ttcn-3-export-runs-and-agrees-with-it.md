@@ -29,6 +29,12 @@
   That specification found two things the decision needs:
   - a scheduler: -4 leaves the order of components free, and C3 needs one run (answer 3);
   - refusals for SCXML constructs that have no TTCN-3 meaning in a test component (§3).
+
+  Amended when the document forms were written (`docs/SCE_TEST_PROFILE.md` §11, order of work step 2). A test case's
+  feature selection is written on its entry in the suite, where ADR 0057 lets an `sce:` element carry `requires` and
+  where TTCN-3's control part writes it. Module parameters are declared by the suite (§2). The type grammar the
+  templates match now includes the lists of ADR 0086 and the unions of ADR 0092; `float32` and `float64` are left out
+  of the profile until a rule matches IEEE 754 values against -1's `float`.
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer
@@ -51,6 +57,7 @@
   - ADR 0084 (what reaches an engine from outside enters through one inbox and one processor door);
   - ADR 0089 (a run tells each transition it takes by its row);
   - ADR 0090 (an event origin is the reply address its processor writes);
+  - ADRs 0086 and 0092 (an event field may hold a bounded list, or one of several record shapes chosen by its tag);
   - `ARCHITECTURE.md` Key Principles 1, 2, 5, 7, 8, 9;
   - `docs/SCE_CODEGEN_DETERMINISM.md`, `docs/SCE_ACCEPTED_SUBSET.md` (§2.18, the scenario set),
     `SCE_WIRE_CONTRACTS.md`, `SCE_ERROR_CONTRACT.md`.
@@ -142,8 +149,8 @@ has is written with the SCXML element.
 | Port type | new forge kind `test-port-type` | message kinds per direction (`in`, `out`, `inout`) |
 | Component type | new forge kind `test-component` | a statechart restricted per §3; declares its ports, timers and variables |
 | Test configuration | new forge kind `test-configuration` | the MTC type, the test system interface, PTCs, `connect` and `map` of ports (answer 10) |
-| Test case | new forge kind `test-case` | runs on a component type, names its configuration, names the features it requires |
-| Module parameters (PICS, PIXIT) | existing `feature-model` (ADR 0057) for PICS booleans; new module-parameter declarations for numeric PICS items and PIXIT | a test case's feature requirement is its selection expression |
+| Test case | new forge kind `test-case` | names its configuration and runs on its MTC type; the features it requires are stated by its entry in the `test-suite` |
+| Module parameters (PICS, PIXIT) | existing `feature-model` (ADR 0057) for PICS booleans; `<sce:module-parameter>` declarations of the `test-suite` for numeric PICS items and PIXIT | a test case's feature requirement is its selection expression, written on its `<sce:execute>` as TTCN-3 writes it in the control part |
 | Control part | new forge kind `test-suite` | the ordered list of test cases, their selection and each one's guard timer (answer 4); exported as the module's `control` part |
 | `setverdict` | new executable content `<sce:setverdict value="pass\|inconclusive\|fail\|none" reason="…"/>` | the document cannot set `error` (as in TTCN-3); only the runtime sets it |
 | `alt` with receive branches | a state of a `test-component`; each `<transition sce:receive="port" sce:test-template="t">` is a branch | branches are evaluated in document order over one snapshot (§5) |
@@ -195,8 +202,9 @@ row (`acceptance_doc_covers_every_code`):
 - `<script>`;
 - `<donedata>` used as a verdict carrier;
 - a receive branch whose template is not one of the port's declared incoming types;
-- a `test-case` that requires a feature its suite's `feature-model` does not declare. This is the existing
-  `validation/feature-requirement-undeclared` of ADR 0057, applied to a test case. It is not a new variant;
+- a test case selected by a feature its suite's `feature-model` does not declare. This is the existing
+  `validation/feature-requirement-undeclared` of ADR 0057, applied to the suite's `<sce:execute>`. It is not a new
+  variant;
 - the constructs the operational semantics needs refused in a `test-component` (`docs/SCE_TEST_PROFILE.md` §8.2):
   - `<raise>` and a `<send>` to `#_internal`;
   - a `<send>` whose target is not one of the component's ports;
