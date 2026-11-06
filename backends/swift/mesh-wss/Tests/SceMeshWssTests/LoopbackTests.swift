@@ -144,7 +144,7 @@ private final class Lines {
         #expect(pong.name == "pong")
         #expect(pong.metadata.data == data)
         #expect(pong.metadata.sendID == "reply-1")
-        #expect(pong.metadata.origin == "mesh://server")
+        #expect(pong.metadata.originAddress == "mesh://server")
 
         // §mesh-9.5, §mesh-10.7: a request and its reply. The Swift core writes the RpcRequest; the
         // Rust core delivers it with its wire invokeid, and stamps the reply the server sends while

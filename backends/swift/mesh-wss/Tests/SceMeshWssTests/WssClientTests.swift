@@ -124,7 +124,7 @@ func sendRequest(_ event: String, target: String = "#server", sendID: String = "
         let raised = try takeEvents(endpoint)
         #expect(raised.count == 1)
         #expect(raised.first?.name == "done")
-        #expect(raised.first?.metadata.origin == "mesh://server")
+        #expect(raised.first?.metadata.originAddress == "mesh://server")
         #expect(endpoint.takeHostErrors().isEmpty)
         link.close()
     }
