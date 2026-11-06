@@ -1364,9 +1364,11 @@ func savedSendFromJSON(value any, what string, format int) (SavedSend, error) {
 // A `raise`, `parent` or `child` act is this session's own send, which the
 // SCXML processor delivers: in format 3 it names its sender, beside that
 // session's pair, and in formats 1 and 2 its stored `origin` is the sender's id,
-// or its location, read as that session's pair. One a format-2 text stored with
-// an empty `origin` is read as the send of the session that holds it, once that
-// session's id is read (savedSessionFromJSON); a format-1 text holds no id, and
+// or its location, read as that session's pair; a text that gives no XML
+// Nmtoken as the sender names no session and is refused. One a format-2 text
+// stored with an empty `origin` is read as the send of the session that holds
+// it, once that session's id is read (savedSessionFromJSON); a format-1 text
+// holds no id, and
 // the machine that restores it arms such a send as its own. An `internal` act
 // delivers an internal event, which has no origin: in format 3 it holds neither
 // member, and in formats 1 and 2 its stored `origin` is not read.
@@ -1381,14 +1383,20 @@ func savedSendOriginFromJSON(
 		if kind == SavedActInternal {
 			return nil, "", nil
 		}
-		// The SCXML location's prefix alone names no session, and a session's
-		// act is always a session's send.
-		if stored == scxmlLocationPrefix {
-			return nil, "", refuse("'%s.origin' is '%s', the SCXML location's prefix alone, which names no "+
-				"session: a %s act is a send of this session", what, stored, kind)
+		if stored == "" {
+			return nil, "", nil
 		}
+		// A stored origin names the act's session by its id or by its SCXML
+		// location, and the sender read from it is that id, an XML Nmtoken.
+		// Any other text, the location's prefix alone among them, names no
+		// session; a queued event that stored such a text is read as the pair
+		// as saved instead.
 		sender := ReadStoredSender(stored)
-		return ScxmlOriginOf(sender), sender, nil
+		if !IsNmtoken(sender) {
+			return nil, "", refuse("'%s.origin' is '%s', which names no session: a %s act is a session's own "+
+				"send, and its stored origin is that session's id or its SCXML location", what, stored, kind)
+		}
+		return ScxmlOrigin(sender), sender, nil
 	}
 	origin, sender, err := savedOriginFromJSON(members, what)
 	if err != nil {

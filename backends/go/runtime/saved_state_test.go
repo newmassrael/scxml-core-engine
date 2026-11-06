@@ -448,39 +448,55 @@ func TestAFormatTwoSendWithNoStoredOriginIsASendOfTheSessionHoldingIt(t *testing
 	}
 }
 
-// docs/adr/0090, section 7: the SCXML location's prefix alone names no session.
-// A format-1 or format-2 `raise`, `parent` or `child` act that stored it is
-// refused, since such an act is always a session's send; a queued event that
-// stored it is read as the pair as saved, with no sender, and written so.
-func TestTheSCXMLPrefixAloneNamesNoSession(t *testing.T) {
-	stored := func(kind string) string {
-		return `{"due":"5","act":"` + kind + `","event":"e","data":"","sendid":"s","origin":"sce://scxml/"}`
+// docs/adr/0090, section 7: a format-1 or format-2 `raise`, `parent` or `child`
+// act's stored origin names its session by an id or by a location with an id,
+// and the sender read from it is an XML Nmtoken. Any other text names no
+// session, and the act is refused: the SCXML location's prefix alone, an
+// address with no SCXML location, and a location whose id decodes to no
+// Nmtoken. A queued event that stored the prefix alone is read as the pair as
+// saved, with no sender, and written so.
+func TestAnActOriginThatNamesNoSessionIsRefused(t *testing.T) {
+	stored := func(kind, origin string) string {
+		return `{"due":"5","act":"` + kind + `","event":"e","data":"","sendid":"s","origin":"` + origin + `"}`
 	}
-	act := func(kind string) string {
-		return `{"format":2,` + strings.Replace(minimalSession, `"pending":[]`, `"pending":[`+stored(kind)+`]`, 1) + `}`
-	}
-	refused := func(text, kind string) {
-		t.Helper()
-		_, err := SavedStateFromJSON(text)
-		want := "'pending[0].origin' is 'sce://scxml/', the SCXML location's prefix alone, which names no " +
-			"session: a " + kind + " act is a send of this session"
-		if err == nil || err.Error() != want {
-			t.Errorf("a %s act is refused as %v, want %q", kind, err, want)
-		}
-	}
-	for _, kind := range []string{"raise", "parent", "child"} {
-		text := act(kind)
+	act := func(kind, origin string) string {
+		text := `{"format":2,` + strings.Replace(minimalSession, `"pending":[]`,
+			`"pending":[`+stored(kind, origin)+`]`, 1) + `}`
 		if kind == "child" {
 			text = strings.Replace(text, `"act":"child",`, `"act":"child","invokeid":"w",`, 1)
 		}
-		refused(text, kind)
+		return text
 	}
-	// Format 1, which has no parent or child act.
-	refused(`{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},`+
-		`"pending":[`+stored("raise")+`],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0",`+
-		`"external":[]}`, "raise")
-	if _, err := SavedStateFromJSON(act("internal")); err != nil {
-		t.Errorf("an internal act's stored origin is not read, and it is refused: %v", err)
+	refused := func(text, kind, origin string) {
+		t.Helper()
+		_, err := SavedStateFromJSON(text)
+		want := "'pending[0].origin' is '" + origin + "', which names no session: a " + kind + " act is a " +
+			"session's own send, and its stored origin is that session's id or its SCXML location"
+		if err == nil || err.Error() != want {
+			t.Errorf("a %s act of '%s' is refused as %v, want %q", kind, origin, err, want)
+		}
+	}
+	for _, origin := range []string{"sce://scxml/", "mesh://elsewhere", "sce://scxml/a%20b"} {
+		for _, kind := range []string{"raise", "parent", "child"} {
+			refused(act(kind, origin), kind, origin)
+		}
+		// Format 1, which has no parent or child act.
+		refused(`{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},`+
+			`"pending":[`+stored("raise", origin)+`],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0",`+
+			`"sendseq":"0","external":[]}`, "raise", origin)
+		if _, err := SavedStateFromJSON(act("internal", origin)); err != nil {
+			t.Errorf("an internal act's stored origin '%s' is not read, and it is refused: %v", origin, err)
+		}
+	}
+	// A neighbour that names a session: its id, read from the location.
+	for _, origin := range []string{"peer:1", "sce://scxml/peer%3A1"} {
+		saved, err := SavedStateFromJSON(act("raise", origin))
+		if err != nil {
+			t.Fatalf("a raise act of '%s' is refused: %v", origin, err)
+		}
+		if raise := saved.Pending[0].Act; !raise.Origin.Equal(ScxmlOrigin("peer:1")) || raise.Sender != "peer:1" {
+			t.Errorf("a raise act of '%s' is read as (%+v, %q)", origin, raise.Origin, raise.Sender)
+		}
 	}
 
 	queued := strings.Replace(minimalSession, `"external":[]`, `"external":[`+
