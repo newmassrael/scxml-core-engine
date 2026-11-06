@@ -390,6 +390,10 @@ pub trait ComposedSpelling {
     fn union_shared_read(&self, field: &str) -> String;
     /// The declaration of a union's type, its cases and its reads.
     fn union_def(&self, def: &UnionDef) -> String;
+    /// A value of the union held in `ty`, in the case `case` (its identifier,
+    /// [`Self::union_case_ident`]) holding the record value `record`, or none
+    /// for an empty case (docs/adr/0092, section 7 item 3: built only whole).
+    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String;
     /// The reader of a value of a union at `value`, as `read` says it: its tag
     /// first, and then the case the tag names, by its arm.
     fn read_union(&self, value: &str, read: &UnionRead<'_>) -> String;
@@ -1492,6 +1496,13 @@ impl ComposedSpelling for RustComposed<'_> {
             tag = def.tag_method,
             tag_ty = def.tag_ty,
         )
+    }
+    // The case's constructor, holding the record or nothing.
+    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+        match record {
+            Some(record) => format!("{ty}::{case}({record})"),
+            None => format!("{ty}::{case}"),
+        }
     }
     // The tag first, by the enum's reader, then the record of the case it
     // names from the same object (docs/adr/0092, section 4), each case a

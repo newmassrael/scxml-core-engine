@@ -1360,6 +1360,20 @@ impl WrittenType {
         }
     }
 
+    /// The type as a lowering of a statechart's variable holds it: what every
+    /// slot holds ([`Self::slot_view`]), and, where the lowering holds unions
+    /// (`unions`, [`crate::forge::event_schema_check::ComposedLowering::unions`]),
+    /// `union:U` and `optional<union:U>` too (docs/adr/0092, section 6.1 item 5
+    /// and its amendment of 2026-11-07). A lowering that holds none refuses a
+    /// union by name, as every slot does.
+    pub fn variable_view(&self, unions: bool) -> Result<&Self, Composition> {
+        match self {
+            Self::Union { .. } if unions => Ok(self),
+            Self::Optional { elem } if unions && matches!(**elem, Self::Union { .. }) => Ok(self),
+            _ => self.slot_view(),
+        }
+    }
+
     /// The bound stated on the outermost text, byte string or list of the
     /// type, seen through every `optional<…>`: what a held slot (a return, a
     /// local, a statechart's variable) holds at most, and `None` for a
@@ -6205,6 +6219,25 @@ mod tests {
             "union"
         );
         assert!(union_unlowered("Shape").starts_with("`union:Shape`: "));
+    }
+
+    /// A statechart's variable holds `union:U` and `optional<union:U>` on a
+    /// lowering that holds unions, and nothing more than a slot does on one
+    /// that holds none; a list of unions is held by neither yet.
+    #[test]
+    fn a_variable_holds_a_union_only_where_its_lowering_holds_one() {
+        let union = ty("union:Shape");
+        let optional = ty("optional<union:Shape>");
+        let listed = WrittenType::read("list<union:Shape>[2]").unwrap();
+        assert!(union.variable_view(true).is_ok());
+        assert!(optional.variable_view(true).is_ok());
+        assert_eq!(union.variable_view(false).unwrap_err().constructor, "union");
+        assert_eq!(
+            optional.variable_view(false).unwrap_err().constructor,
+            "union"
+        );
+        assert_eq!(listed.variable_view(true).unwrap_err().place, "union:Shape");
+        assert!(ty("uint8").variable_view(false).is_ok());
     }
 
     #[test]

@@ -3790,11 +3790,14 @@ impl SCXMLParser {
                 crate::forge::parser::read_static_variable_type(data, source_name, &element, text)
             })
             .transpose()?;
-        let record_fields = if value_type
-            .as_ref()
-            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
-            .is_some()
-        {
+        // A `union:<alias>` variable is built the same way: one `<sce:set>` for
+        // the tag and one for each field of its case (docs/adr/0092, section
+        // 6.1 item 5), judged where the union's document is read.
+        let built_whole = value_type.as_ref().is_some_and(|ty| {
+            ty.record_alias().is_some()
+                || matches!(ty, crate::forge::model::AlgorithmValueType::Union { .. })
+        });
+        let record_fields = if built_whole {
             crate::forge::parser::read_record_fields(data, source_name, element)?
         } else {
             Vec::new()

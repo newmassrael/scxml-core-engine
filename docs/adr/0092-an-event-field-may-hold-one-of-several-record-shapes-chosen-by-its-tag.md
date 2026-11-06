@@ -4,6 +4,7 @@
   most long-term correct structure, textbook in its foundations, cost ignored, and took the recommendation of each
   of the nine questions in "Open questions", which are therefore decided as recommended there. Nothing has landed
   yet; "Landing order" lists the steps. Numbered 0092 because 0090 is taken on `main` and 0091 on a branch.
+  Amended 2026-11-07: a union variable has no default value ("Amendment (2026-11-07)").
 - Date: 2026-11-06
 - Amends:
   - ADR 0086 section 1.1 (the type grammar gains `union:<alias>`), section 2.1 (the size calculus gains its row),
@@ -689,6 +690,22 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    tree's `DateExpression.swift` and `ResolveDate.swift` among them).
 7. **The deterministic CBOR encoder**: the union mapping and its vectors in `sce-rust-trust`.
 8. **The census** of section 12 item 7, last, once every lane holds the constructor.
+
+## Amendment (2026-11-07): a union variable has no default value
+
+Section 6.1 item 5 says how a union is built and is silent on a variable that builds none. A record has a value
+every field of which is its type's zero, but a sum type has no such value: no case is the zero of the others, and
+choosing one (the first in the enum's order, say) would make a variable hold a shape its author never wrote, and
+would move with the enum's order. So:
+
+1. A statechart's variable of `union:U` is built at its declaration, as section 6.1 item 5 says: its `<data>`
+   takes `<sce:set>` children, one naming the tag with a variant literal of the tag's enum and one naming each
+   field of that case's record, exactly once, and no `expr`.
+2. A variable that has no case to start at is declared `optional<union:U>`. It starts absent (`expr="null"`, and
+   no `<sce:set>`), is filled by a whole assignment, and is read through the presence narrowing of ADR 0055 and
+   then the tag narrowing of section 6.1.
+3. A `union:U` variable with no `<sce:set>` is refused (`scxml/static-datamodel-rule`, on its `sce:type`, naming
+   both repairs), and so is one with an `expr`. No diagnostic code is added.
 
 ## Consequences
 

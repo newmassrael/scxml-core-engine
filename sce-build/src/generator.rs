@@ -3641,6 +3641,7 @@ fn render_rust(
         static_imports => &static_lowering.imports,
         static_records => minijinja::Value::from_serialize(&static_lowering.records),
         static_enums => minijinja::Value::from_serialize(&static_lowering.enums),
+        static_unions => minijinja::Value::from_serialize(&static_lowering.unions),
         static_saved_shape => &static_lowering.saved_shape,
     };
     tmpl.render(ctx).map_err(render_error)

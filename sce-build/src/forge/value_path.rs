@@ -166,6 +166,42 @@ pub fn tag_enum_alias(base: &TypeScope, union: &ScopedUnion) -> Option<String> {
         .map(|(alias, _)| alias.clone())
 }
 
+/// The case of `union` the tag's `expr` names, where it is a variant literal of
+/// the enum the statechart's scope `base` names the tag's enum by
+/// ([`tag_enum_alias`]): `ShapeKind.circle` names the case `circle`. `None` for
+/// any other expression, which builds no case the build knows (docs/adr/0092,
+/// section 6.1 item 5).
+pub fn case_of_tag_literal<'u>(
+    base: &TypeScope,
+    union: &'u ScopedUnion,
+    expr: &str,
+) -> Option<&'u ScopedCase> {
+    let alias = tag_enum_alias(base, union)?;
+    let (written_alias, variant) = expr.trim().split_once('.')?;
+    if written_alias.trim() != alias {
+        return None;
+    }
+    union
+        .cases
+        .iter()
+        .find(|case| case.variant.name == variant.trim())
+}
+
+/// The alias the statechart's scope `base` imports the record of `case` of
+/// `union` by: the first of its records of the same document. `None` for an
+/// empty case, and for a record the statechart does not import.
+pub fn case_record_alias(
+    base: &TypeScope,
+    union: &ScopedUnion,
+    case: &ScopedCase,
+) -> Option<String> {
+    let record = union.scope.records.get(case.record.as_deref()?)?;
+    base.records
+        .iter()
+        .find(|(_, held)| held.identity == record.identity)
+        .map(|(alias, _)| alias.clone())
+}
+
 /// The cases of `union` the subject `subject` may be in where `facts` hold
 /// (docs/adr/0092, section 6.1): those no test of its tag rules out, in the
 /// enum's order. Every case where the subject is no subject (an element read

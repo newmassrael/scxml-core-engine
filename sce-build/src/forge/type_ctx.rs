@@ -1801,6 +1801,14 @@ fn static_statechart<'a>(
             ctx.insert_record(var.id.as_str(), RecordShape::Closed);
             continue;
         }
+        // A union is read through its value alone: its tag, and a field of the
+        // cases a test leaves (docs/adr/0092, section 6.1), as a payload's is.
+        if matches!(
+            value_type,
+            crate::forge::model::AlgorithmValueType::Union { .. }
+        ) {
+            continue;
+        }
         if let Some(elem) = value_type.list_elem() {
             // Typed as a list so `len(…)` measures it and `xs[i]` reads one
             // element, as a value of the element's own type; the static data

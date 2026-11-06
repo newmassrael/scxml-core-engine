@@ -497,6 +497,43 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
     }
 }
 {% endfor %}
+{# docs/adr/0092, section 6.1 item 7: a union a variable holds is saved as one
+   object, its tag beside the fields of its case, and read back by its tag
+   first, which names the record the rest of the object is read as. #}
+{% for union in static_unions %}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for {{ union.ty }} {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        match self {
+{% for case in union.cases %}
+{% if case.holds_record %}
+            Self::{{ case.ident }}(record) => ::sce_rust_runtime::saved_state::union_to_saved("{{ union.tag | escape_rust }}", "{{ case.variant | escape_rust }}", Some(::sce_rust_runtime::saved_state::SavedValue::to_saved(record))),
+{% else %}
+            Self::{{ case.ident }} => ::sce_rust_runtime::saved_state::union_to_saved("{{ union.tag | escape_rust }}", "{{ case.variant | escape_rust }}", None),
+{% endif %}
+{% endfor %}
+        }
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match ::sce_rust_runtime::saved_state::union_tag(value, what, "{{ union.tag | escape_rust }}")? {
+{% for case in union.cases %}
+{% if case.holds_record %}
+            "{{ case.variant | escape_rust }}" => Ok(Self::{{ case.ident }}(::sce_rust_runtime::saved_state::SavedValue::from_saved(value, what)?)),
+{% else %}
+            "{{ case.variant | escape_rust }}" => Ok(Self::{{ case.ident }}),
+{% endif %}
+{% endfor %}
+            other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' ({other}) is not a case of {{ union.name | escape_rust }}"
+            ))),
+        }
+    }
+}
+{% endfor %}
 
 /// A running machine saved at a macrostep boundary, and restored into a new
 /// process in place of `initialize` — every variable, the machine's own

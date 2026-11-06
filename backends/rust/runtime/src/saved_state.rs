@@ -1879,6 +1879,31 @@ pub fn record_member<'v>(
     })
 }
 
+/// A value of a union, written (docs/adr/0092, section 6.1 item 7): one
+/// object, the tag under the key `tag` as the declared name `variant`, before
+/// the members of `case`, the record of the case as it writes itself, or
+/// nothing for an empty case (`None`). What a generated union's
+/// [`SavedValue`] writes each case with.
+pub fn union_to_saved(tag: &str, variant: &str, case: Option<Value>) -> Value {
+    let mut members = vec![(tag.to_string(), Value::Text(variant.to_string()))];
+    if let Some(Value::Object(fields)) = case {
+        members.extend(fields);
+    }
+    Value::Object(members)
+}
+
+/// The declared name of the case a saved union `value` is in: the text under
+/// its tag's key `tag`, read before any field of the case, since the tag says
+/// which fields follow (docs/adr/0092, section 4). A value that is no object,
+/// that has no tag, or whose tag is not a text is refused naming `what`; a
+/// name the union has no case for is the generated reader's to refuse.
+pub fn union_tag<'v>(value: &'v Value, what: &str, tag: &str) -> Result<&'v str, StateRefusal> {
+    match record_member(value, what, tag)? {
+        Value::Text(variant) => Ok(variant),
+        other => Err(not_a(other, &format!("{what}.{tag}"), "a text")),
+    }
+}
+
 /// A saved list `value`, read back only if it holds no more than the `N`
 /// elements its type bounds it by (docs/adr/0086, section 7.4) — a machine
 /// never holds more, and a restored one must not be the first to. The count is
@@ -3371,6 +3396,47 @@ fn describe<P: StatePolicy>(rejection: &ConfigurationRejection<P::State>) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A union is saved as one object, its tag first and the case's fields
+    /// after it (docs/adr/0092, section 6.1 item 7), an empty case as its tag
+    /// alone; the tag is read back by its key, and a value with no tag, a tag
+    /// that is no text, and `null` are each refused naming the variable.
+    #[test]
+    fn a_union_is_saved_as_its_tag_beside_its_case() {
+        let circle = union_to_saved(
+            "kind",
+            "circle",
+            Some(Value::Object(vec![("radius".to_string(), 3u16.to_saved())])),
+        );
+        assert_eq!(
+            circle,
+            Value::Object(vec![
+                ("kind".to_string(), Value::Text("circle".to_string())),
+                ("radius".to_string(), Value::Number("3".to_string())),
+            ])
+        );
+        assert_eq!(
+            union_to_saved("kind", "dot", None),
+            Value::Object(vec![("kind".to_string(), Value::Text("dot".to_string()))])
+        );
+        assert_eq!(union_tag(&circle, "shape", "kind").unwrap(), "circle");
+        let untagged = Value::Object(vec![("radius".to_string(), 3u16.to_saved())]);
+        assert_eq!(
+            union_tag(&untagged, "shape", "kind").unwrap_err().reason(),
+            "'shape' has no field 'kind'"
+        );
+        let numbered = Value::Object(vec![("kind".to_string(), 1u8.to_saved())]);
+        assert_eq!(
+            union_tag(&numbered, "shape", "kind").unwrap_err().reason(),
+            "'shape.kind' is not a text"
+        );
+        assert_eq!(
+            union_tag(&Value::Null, "shape", "kind")
+                .unwrap_err()
+                .reason(),
+            "'shape' is absent (null), and its type is not optional"
+        );
+    }
 
     #[test]
     fn a_saved_state_is_read_back_as_it_was_written() {

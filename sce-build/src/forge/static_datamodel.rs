@@ -235,6 +235,24 @@ pub fn check(
             judge.optional_record(&plain, var, alias, &records)?;
             continue;
         }
+        // A union is built at its declaration, or starts absent (docs/adr/0092,
+        // amendment of 2026-11-07).
+        match var.value_type.as_ref() {
+            Some(crate::forge::model::AlgorithmValueType::Union { alias }) => {
+                judge.union_variable(&plain, var, alias, &records)?;
+                continue;
+            }
+            Some(ty)
+                if matches!(
+                    ty.optional_elem(),
+                    Some(crate::forge::model::AlgorithmValueType::Union { .. })
+                ) =>
+            {
+                judge.optional_union_variable(&plain, var)?;
+                continue;
+            }
+            _ => {}
+        }
         if let Some(alias) = judge.enum_vars.get(&var.id) {
             judge.enum_variable(
                 &plain,
@@ -2291,6 +2309,19 @@ impl<'a> Judge<'a> {
         self.schema_enums_closed(var, alias, schema)?;
         self.schema_enums_named(var, alias, schema)?;
         self.schema_strings_bounded(var, alias, schema)?;
+        self.record_starts(ctx, schema, ordered)
+    }
+
+    /// Each field of a record built whole starts at the value its `<sce:set>`
+    /// writes (`ordered`, in the schema's order), judged against the field's
+    /// type: a record variable's, and the record of the case a union variable
+    /// is built in.
+    fn record_starts(
+        &self,
+        ctx: &TypeCtx<'_>,
+        schema: &crate::forge::model::EntrySchema,
+        ordered: Vec<&crate::forge::model::RecordFieldInit>,
+    ) -> Result<(), Located<ForgeError>> {
         for (field, init) in schema.fields.iter().zip(ordered) {
             use crate::forge::model::{EntryType, SceType};
             // A field of an enum starts at one of its variants, as a variable
@@ -2387,6 +2418,228 @@ impl<'a> Judge<'a> {
         if let Some(schema) = records.get(alias) {
             self.schema_enums_closed(var, alias, schema)?;
             self.schema_strings_bounded(var, alias, schema)?;
+        }
+        self.expr(
+            ctx,
+            &var.expr,
+            var.expr_spelling.as_ref(),
+            Expected::Slot(variable_type(var)),
+        )?;
+        Ok(())
+    }
+
+    /// A `union:<alias>` variable (docs/adr/0092, section 6.1 item 5, and its
+    /// amendment of 2026-11-07): a sum type has no default value, so the
+    /// variable is built at its declaration, from one `<sce:set>` naming the
+    /// tag with a variant literal of the tag's enum and one naming each field
+    /// of that case's record, exactly once, and takes no `expr`. One with no
+    /// `<sce:set>` is refused on its `sce:type`, naming both repairs: build a
+    /// case, or declare `optional<union:<alias>>`, which starts absent. The
+    /// case's record is held to what a record variable of it is.
+    fn union_variable(
+        &self,
+        ctx: &TypeCtx<'_>,
+        var: &Variable,
+        alias: &str,
+        records: &std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
+    ) -> Result<(), Located<ForgeError>> {
+        // An alias the parser admitted names an import; without sibling files
+        // to read it has no document here, and nothing to judge against.
+        let Some(union) = self.type_scope.unions.get(alias) else {
+            return Ok(());
+        };
+        let written_type = var
+            .value_type
+            .as_ref()
+            .map(|t| t.as_attr())
+            .unwrap_or_default();
+        let element = format!("<data id=\"{}\" sce:type=\"{written_type}\">", var.id);
+        let type_spelling = var.value_type_spelling.as_ref();
+        if !var.expr.trim().is_empty() {
+            let spelling = var.expr_spelling.as_ref();
+            return Err(self.rule_at(
+                element,
+                "a union variable is built whole from <sce:set> children, one naming the tag \
+                 and one naming each field of its case, and takes no expr: no expression \
+                 makes a union",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                var.expr.trim(),
+            ));
+        }
+        let tag_alias = crate::forge::value_path::tag_enum_alias(&self.type_scope, union);
+        let literal = format!(
+            "{}.<variant>",
+            tag_alias.as_deref().unwrap_or(union.tag_enum.as_str())
+        );
+        if var.record_fields.is_empty() {
+            return Err(self.rule_at(
+                element,
+                &format!(
+                    "a union has no default value: no case is the zero of the others. Build \
+                     one case where it is declared (<sce:set name=\"{}\" expr=\"{literal}\"/> \
+                     and one <sce:set> per field of that case), or declare \
+                     optional<union:{alias}>, which starts absent",
+                    union.tag
+                ),
+                type_spelling.map(|s| s.row()),
+                type_spelling.map(|s| s.col()),
+                "",
+                &written_type,
+            ));
+        }
+        let mut tags = var.record_fields.iter().filter(|f| f.name == union.tag);
+        let Some(tag) = tags.next() else {
+            return Err(self.rule_at(
+                element,
+                &format!(
+                    "a union is built from one <sce:set name=\"{}\" expr=\"{literal}\"/> that \
+                     names its case, and none of its <sce:set> names the tag `{}`",
+                    union.tag, union.tag
+                ),
+                type_spelling.map(|s| s.row()),
+                type_spelling.map(|s| s.col()),
+                "",
+                &written_type,
+            ));
+        };
+        if let Some(again) = tags.next() {
+            let spelling = again.name_spelling.as_ref();
+            return Err(self.rule_at(
+                format!("<sce:set name=\"{}\" expr=\"{}\">", again.name, again.expr),
+                &format!(
+                    "the tag `{}` is given once: a union holds one case",
+                    union.tag
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                &again.name,
+            ));
+        }
+        let Some(case) =
+            crate::forge::value_path::case_of_tag_literal(&self.type_scope, union, &tag.expr)
+        else {
+            let spelling = tag.expr_spelling.as_ref();
+            let rule = match &tag_alias {
+                Some(_) => format!(
+                    "the tag of a union is a variant of its enum written as a literal \
+                     ({literal}, one of {}): the build must know the case to know which \
+                     fields follow",
+                    union
+                        .cases
+                        .iter()
+                        .map(|case| case.variant.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                None => format!(
+                    "the tag of a union is a variant of its enum written as a literal, and \
+                     the statechart imports no enum of the tag's: import the enum the union \
+                     `{}` tags its cases with",
+                    union.name
+                ),
+            };
+            return Err(self.rule_at(
+                format!("<sce:set name=\"{}\" expr=\"{}\">", tag.name, tag.expr),
+                &rule,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                tag.expr.trim(),
+            ));
+        };
+        let fields: Vec<crate::forge::model::RecordFieldInit> = var
+            .record_fields
+            .iter()
+            .filter(|f| f.name != union.tag)
+            .cloned()
+            .collect();
+        if case.record.is_none() {
+            return match fields.first() {
+                None => Ok(()),
+                Some(stray) => {
+                    let spelling = stray.name_spelling.as_ref();
+                    Err(self.rule_at(
+                        format!("<sce:set name=\"{}\" expr=\"{}\">", stray.name, stray.expr),
+                        &format!(
+                            "the case `{}` of union:{alias} is empty, its tag alone: no field \
+                             follows it",
+                            case.variant.name
+                        ),
+                        spelling.map(|s| s.row()),
+                        spelling.map(|s| s.col()),
+                        "",
+                        &stray.name,
+                    ))
+                }
+            };
+        }
+        let held = crate::forge::value_path::case_record_alias(&self.type_scope, union, case);
+        let Some((record, schema)) = held
+            .as_deref()
+            .and_then(|record| records.get_key_value(record))
+        else {
+            let spelling = tag.expr_spelling.as_ref();
+            return Err(self.rule_at(
+                format!("<sce:set name=\"{}\" expr=\"{}\">", tag.name, tag.expr),
+                &format!(
+                    "the case `{}` holds a record the statechart builds as a record variable \
+                     of it is built: import its event schema, one whose every field is one \
+                     entry, as a record variable's is",
+                    case.variant.name
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                tag.expr.trim(),
+            ));
+        };
+        let declared: Vec<&str> = schema.fields.iter().map(|f| f.id.as_str()).collect();
+        let ordered = crate::forge::generator::order_record_fields(
+            &fields,
+            &declared,
+            record,
+            element,
+            "sce:type",
+            &written_type,
+            type_spelling,
+        )
+        .map_err(|error| Located::in_file(error, self.diag_label))?;
+        self.schema_enums_closed(var, record, schema)?;
+        self.schema_enums_named(var, record, schema)?;
+        self.schema_strings_bounded(var, record, schema)?;
+        self.record_starts(ctx, schema, ordered)
+    }
+
+    /// An `optional<union:<alias>>` variable (docs/adr/0092, amendment of
+    /// 2026-11-07): it starts absent, as an optional record does, so its `expr`
+    /// is `null`, and a union is put into it whole where the machine runs.
+    fn optional_union_variable(
+        &self,
+        ctx: &TypeCtx<'_>,
+        var: &Variable,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = var.expr_spelling.as_ref();
+        if !is_null_literal(&var.expr) {
+            return Err(self.rule_at(
+                format!(
+                    "<data id=\"{}\" sce:type=\"{}\" expr=\"{}\">",
+                    var.id,
+                    var.value_type
+                        .as_ref()
+                        .map(|t| t.as_attr())
+                        .unwrap_or_default(),
+                    var.expr
+                ),
+                "an optional union starts absent, so its expr is `null`: a union is put into \
+                 it whole where the machine runs",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                var.expr.trim(),
+            ));
         }
         self.expr(
             ctx,

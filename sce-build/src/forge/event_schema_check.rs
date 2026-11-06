@@ -233,6 +233,11 @@ pub struct ComposedLowering {
     /// that holds one (section 6.1), copied into the variable's type, which the
     /// value's fits (section 5.1).
     pub copies: bool,
+    /// Whether it holds a statechart's variable of `union:U` or
+    /// `optional<union:U>` (docs/adr/0092, section 6.1 item 5 and its
+    /// amendment of 2026-11-07): the machine's own sum of the union's
+    /// records, built at the declaration or starting absent.
+    pub unions: bool,
 }
 
 impl ComposedLowering {
@@ -241,6 +246,7 @@ impl ComposedLowering {
         name: "ecmascript",
         reads: false,
         copies: false,
+        unions: false,
     };
 
     /// What some generated backend lowers: the gate every route asks before a
@@ -251,11 +257,12 @@ impl ComposedLowering {
         name: "backend",
         reads: true,
         copies: true,
+        unions: true,
     };
 
     /// What the backend `language` lowers: Rust reads a composed payload at
-    /// any depth and takes a list whole, the backend whose machine spells the
-    /// walks over a composed value
+    /// any depth, takes a list whole and holds a union variable, the backend
+    /// whose machine spells the walks over a composed value
     /// ([`crate::forge::static_lowering::StaticTarget::composed_spelling`]);
     /// every other backend lowers no composed value yet.
     pub fn of(language: crate::generator::Language) -> Self {
@@ -264,6 +271,7 @@ impl ComposedLowering {
             name: language.canonical_name(),
             reads: rust,
             copies: rust,
+            unions: rust,
         }
     }
 }
@@ -342,6 +350,7 @@ fn first_unlowered_composed_use(
         name: lowering,
         reads: lowers_reads,
         copies: lowers_copies,
+        unions: lowers_unions,
     } = lowering;
     // Each refusal names the construct and the lowering that has none of it,
     // as every backend's refusal of what it does not lower yet does.
@@ -387,7 +396,7 @@ fn first_unlowered_composed_use(
                 line: Some(spelling.row()),
                 col: Some(spelling.col()),
             });
-        if let Err(composition) = ty.slot_view() {
+        if let Err(composition) = ty.variable_view(lowers_unions) {
             return not_lowered(
                 format!(
                     "<data id=\"{}\">: `{}` in a statechart's variable is a type of the \
@@ -2518,11 +2527,16 @@ mod tests {
             some_backend(|lowering| lowering.copies)
         );
         assert_eq!(
+            ComposedLowering::ANY_BACKEND.unions,
+            some_backend(|lowering| lowering.unions)
+        );
+        assert_eq!(
             ComposedLowering::ECMASCRIPT,
             ComposedLowering {
                 name: "ecmascript",
                 reads: false,
                 copies: false,
+                unions: false,
             }
         );
     }
@@ -2537,6 +2551,7 @@ mod tests {
             let rust = *language == crate::generator::Language::Rust;
             assert_eq!(lowering.reads, rust, "{language:?}");
             assert_eq!(lowering.copies, rust, "{language:?}");
+            assert_eq!(lowering.unions, rust, "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
     }

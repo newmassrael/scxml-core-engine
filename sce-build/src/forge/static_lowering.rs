@@ -64,8 +64,9 @@ pub struct StaticField {
     /// value.
     pub bound: Option<u32>,
     /// How a saved state holds the value: `scalar`, `enum`, `list`, `record`,
-    /// `record_list`, or `optional` for a value that may be absent, which a
-    /// saved state holds as `null` or as its present value (docs/adr/0055).
+    /// `record_list`, `union` (its tag beside its case's fields, docs/adr/0092),
+    /// or `optional` for a value that may be absent, which a saved state holds
+    /// as `null` or as its present value (docs/adr/0055).
     pub saved_kind: &'static str,
     /// What [`Self::saved_kind`] is of: a scalar's or a list element's
     /// `sce:type` spelling (`uint8`, `bool`, `bytes`, …), or a record's or an
@@ -76,7 +77,8 @@ pub struct StaticField {
     /// For an optional value, how a saved state holds its present value:
     /// `scalar`, or `enum` for a value of an enum the machine declares, which is
     /// written and read by its own type as a variable of the enum is
-    /// ([`Self::saved_type`] is then that type). `None` for every other kind.
+    /// ([`Self::saved_type`] is then that type); `record` and `union` likewise
+    /// by the machine's own type. `None` for every other kind.
     pub saved_elem: Option<&'static str>,
     /// For a list, the backend type of one element, which a saved state is read into
     /// an element at a time for a backend whose list holds its whole bound
@@ -140,6 +142,10 @@ pub struct StaticLowering {
     /// saved state writes an enum value as, for a backend that writes it
     /// outside the type ([`StaticEnumType`]).
     pub enums: Vec<StaticEnumType>,
+    /// The unions of [`Self::type_defs`] a variable holds, case by case: what
+    /// a saved state writes a union value as (docs/adr/0092, section 6.1 item
+    /// 7).
+    pub unions: Vec<StaticUnion>,
     /// What a saved state of this machine is bound to ([`saved_shape`]), or
     /// `None` for a machine whose state a saved state cannot yet hold.
     pub saved_shape: Option<SavedShape>,
@@ -207,6 +213,31 @@ pub struct StaticRecord {
     /// The backend type ([`StaticTarget::record_type`]).
     pub ty: String,
     pub fields: Vec<StaticRecordField>,
+}
+
+/// A union a `sce-static` machine's variable holds, as a saved state writes it
+/// (docs/adr/0092, section 6.1 item 7): one JSON object, the tag under its key
+/// beside the fields of the case's record, the same on every backend.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StaticUnion {
+    /// The backend type of the machine's sum.
+    pub ty: String,
+    /// The union document's name, which a refusal of a saved value names.
+    pub name: String,
+    /// The key the tag is written under.
+    pub tag: String,
+    /// Each case, in the tag enum's order.
+    pub cases: Vec<StaticUnionCase>,
+}
+
+/// One case of a [`StaticUnion`]: its identifier in the backend type, the
+/// variant's declared name its tag is written as, and whether it holds a
+/// record (an empty case is its tag alone).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StaticUnionCase {
+    pub ident: String,
+    pub variant: String,
+    pub holds_record: bool,
 }
 
 /// What a saved state of a machine is bound to (SCE Accepted Subset §2.15,
@@ -4649,6 +4680,249 @@ struct OptionalPlace {
 /// location an `<assign>` names it by: `due`, `item.due`.
 type OptionalPlaces = std::collections::BTreeMap<String, OptionalPlace>;
 
+/// The value each field of `schema` starts at in a record built whole from
+/// `inits`, one `<sce:set>` per field (the rule the judge held it to), as
+/// `(member, value)` in the schema's order: a record variable's, and the
+/// record of the case a union variable is built in (docs/adr/0092, section
+/// 6.1 item 5). A string field starts at its literal, which the judge held to
+/// the bound, a target that holds it in a buffer given the buffer that literal
+/// fills; an optional field (its place, `place_of`) starts absent or at a
+/// present value lifted (docs/adr/0055). `holder` is the `<data id>` a
+/// refusal names.
+fn record_start_values(
+    holder: &str,
+    inits: &[crate::forge::model::RecordFieldInit],
+    schema: &EntrySchema,
+    place_of: &dyn Fn(&EntryField) -> Option<OptionalPlace>,
+    target: &dyn StaticTarget,
+    initial: &dyn Fn(&str, InferredType) -> Result<String, GenerateError>,
+) -> Result<Vec<(String, String)>, GenerateError> {
+    let mut values = Vec::with_capacity(schema.fields.len());
+    for field in &schema.fields {
+        let what = format!("<sce:set name=\"{}\"> of <data id=\"{holder}\">", field.id);
+        let init = inits.iter().find(|f| f.name == field.id).ok_or_else(|| {
+            GenerateError::unsupported(format!(
+                "<data id=\"{holder}\">: no <sce:set> gives `{}`",
+                field.id
+            ))
+        })?;
+        let literal = |value: &str| match (field.sce_type.present_type(), field.max_size) {
+            (SceType::String, Some(bound)) => target.record_string_literal(bound, value),
+            (SceType::Bytes, Some(bound)) => target.record_bytes_literal(bound, value),
+            _ => value.to_string(),
+        };
+        let value = match place_of(field) {
+            Some(place) => optional_initial(&init.expr, &place, target, &what, initial, &literal)?,
+            None => {
+                let lowered = literal(&initial(
+                    &init.expr,
+                    InferredType::of_field(&field.sce_type),
+                )?);
+                match (field.sce_type.present_type(), field.max_size) {
+                    (elem @ (SceType::String | SceType::Bytes), Some(bound)) => {
+                        starting_text(target, elem, bound, &init.expr, lowered, &what)?
+                    }
+                    _ => lowered,
+                }
+            }
+        };
+        values.push((target.record_field(&field.id), value));
+    }
+    Ok(values)
+}
+
+/// How a statechart's variable of a union starts (docs/adr/0092, amendment of
+/// 2026-11-07): a `union:U` variable at the case its `<sce:set>`s build, an
+/// `optional<union:U>` one absent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnionStart {
+    Built,
+    Absent,
+}
+
+impl UnionStart {
+    /// How `var` starts, or `None` for a variable of no union.
+    fn of(var: &crate::model::Variable) -> Option<Self> {
+        use crate::forge::model::AlgorithmValueType;
+        match var.value_type.as_ref()? {
+            AlgorithmValueType::Union { .. } => Some(Self::Built),
+            AlgorithmValueType::Optional { elem }
+                if matches!(**elem, AlgorithmValueType::Union { .. }) =>
+            {
+                Some(Self::Absent)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// The field a statechart's variable of a union is held in (docs/adr/0092,
+/// section 7): the machine's own sum of the union's records, or the optional
+/// type over it, declared with every record, enum and union it holds, each
+/// described for a saved state ([`ComposedHolder::Variable`]). A built one
+/// starts at the case its tag's `<sce:set>` names, holding the record its
+/// other `<sce:set>`s build as a record variable's do
+/// ([`record_start_values`]); an optional one starts absent. The rules were
+/// held where the document was judged
+/// ([`crate::forge::static_datamodel::check`]), so a refusal here names a
+/// model the judge never read.
+fn union_variable_field(
+    var: &crate::model::Variable,
+    start: UnionStart,
+    model: &SCXMLModel,
+    declarations: &mut TypeDeclarations<'_>,
+    type_scope: &crate::forge::value_type::TypeScope,
+    records: &BTreeMap<String, EntrySchema>,
+    initial: &dyn Fn(&str, InferredType) -> Result<String, GenerateError>,
+) -> Result<StaticField, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    use crate::forge::value_type::ValueType;
+    let target = declarations.target;
+    let machine = declarations.machine;
+    let written = var
+        .value_type
+        .as_ref()
+        .map(|t| t.as_attr())
+        .unwrap_or_default();
+    let what = format!("<data id=\"{}\" sce:type=\"{written}\">", var.id);
+    let refused = |why: String| {
+        GenerateError::unsupported(format!("{what}: {why} (docs/adr/0092, section 7)"))
+    };
+    let ty = var
+        .value_type
+        .clone()
+        .and_then(|t| t.bounded().ok())
+        .ok_or_else(|| refused("its type is no type of the language".to_string()))?;
+    let union_ty = match &ty {
+        ValueType::Optional { elem } => (**elem).clone(),
+        other => other.clone(),
+    };
+    let ValueType::Union { alias } = &union_ty else {
+        return Err(refused("it holds no union".to_string()));
+    };
+    let enums = declare_composed(
+        declarations,
+        model,
+        &union_ty,
+        ComposedHolder::Variable,
+        &refused,
+    )?;
+    let spelling = target.composed_spelling(machine).ok_or_else(|| {
+        refused(format!(
+            "{} has no lowering of a composed value yet",
+            target.name()
+        ))
+    })?;
+    let held = composed::StatechartRecords::of(model);
+    let union_type =
+        composed::machine_type(&union_ty, None, &held, &enums, &*spelling).map_err(&refused)?;
+    let field_ty =
+        composed::machine_type(&ty, None, &held, &enums, &*spelling).map_err(&refused)?;
+    let init = match start {
+        UnionStart::Absent => absent_value(target, &union_type, &what)?,
+        UnionStart::Built => {
+            let union = type_scope
+                .unions
+                .get(alias)
+                .ok_or_else(|| refused(format!("`union:{alias}` names no union it reads")))?;
+            let tag = var
+                .record_fields
+                .iter()
+                .find(|f| f.name == union.tag)
+                .ok_or_else(|| refused(format!("no <sce:set> gives the tag `{}`", union.tag)))?;
+            let case = crate::forge::value_path::case_of_tag_literal(type_scope, union, &tag.expr)
+                .ok_or_else(|| {
+                    refused(format!(
+                        "the tag's `{}` is no variant literal of its enum",
+                        tag.expr
+                    ))
+                })?;
+            let record = match &case.record {
+                None => None,
+                Some(_) => {
+                    let record =
+                        crate::forge::value_path::case_record_alias(type_scope, union, case)
+                            .ok_or_else(|| {
+                                refused(format!(
+                                    "the case `{}` holds a record the statechart does not import",
+                                    case.variant.name
+                                ))
+                            })?;
+                    let schema = records.get(&record).ok_or_else(|| {
+                        refused(format!(
+                            "the case `{}` holds `record:{record}`, which holds a composed value \
+                             no <sce:set> builds",
+                            case.variant.name
+                        ))
+                    })?;
+                    let place_of = |field: &EntryField| {
+                        field
+                            .sce_type
+                            .optional_elem()
+                            .map(|elem| optional_place(target, machine, elem, field.max_size))
+                    };
+                    let values = record_start_values(
+                        &var.id,
+                        &var.record_fields,
+                        schema,
+                        &place_of,
+                        target,
+                        initial,
+                    )?;
+                    Some(target.record_value(&target.record_type(machine, &record), &values))
+                }
+            };
+            spelling.union_value(
+                &union_type,
+                &spelling.union_case_ident(&case.variant.name),
+                record.as_deref(),
+            )
+        }
+    };
+    Ok(StaticField {
+        id: var.id.clone(),
+        name: target.field_name(&var.id),
+        ty: field_ty.clone(),
+        init,
+        published: var.direction == Some(crate::forge::model::Direction::Out),
+        // Owned and compared whole: a host is lent it, and the snapshot clones
+        // it, as a record that owns a buffer is.
+        view: Some(field_ty),
+        read: None,
+        bound: None,
+        saved_kind: match start {
+            UnionStart::Built => "union",
+            UnionStart::Absent => "optional",
+        },
+        saved_type: union_type,
+        saved_elem: match start {
+            UnionStart::Built => None,
+            UnionStart::Absent => Some("union"),
+        },
+        elem_ty: None,
+        reader: None,
+        holds_bytes: false,
+        seeded: false,
+    })
+}
+
+/// The optional place of a present value of `elem`, held to `bound` where it
+/// is a text or a byte string ([`OptionalPlace`]).
+fn optional_place(
+    target: &dyn StaticTarget,
+    machine: &str,
+    elem: &SceType,
+    bound: Option<u32>,
+) -> OptionalPlace {
+    OptionalPlace {
+        elem: elem.clone(),
+        present: optional_present(target, machine, elem, bound),
+        bound: matches!(elem, SceType::String | SceType::Bytes)
+            .then_some(bound)
+            .flatten(),
+    }
+}
+
 /// The optional places of `variables` ([`OptionalPlaces`]): each optional
 /// variable of a scalar element, and each optional field of a record variable.
 fn optional_places(
@@ -4657,16 +4931,7 @@ fn optional_places(
     target: &dyn StaticTarget,
     machine: &str,
 ) -> OptionalPlaces {
-    let text_bound = |elem: &SceType, bound: Option<u32>| {
-        matches!(elem, SceType::String | SceType::Bytes)
-            .then_some(bound)
-            .flatten()
-    };
-    let place = |elem: &SceType, bound: Option<u32>| OptionalPlace {
-        elem: elem.clone(),
-        present: optional_present(target, machine, elem, bound),
-        bound: text_bound(elem, bound),
-    };
+    let place = |elem: &SceType, bound: Option<u32>| optional_place(target, machine, elem, bound);
     let mut places = OptionalPlaces::new();
     for var in variables {
         let Some(value_type) = var.value_type.as_ref() else {
@@ -5257,75 +5522,24 @@ pub fn lower(
                     ))
                 })?;
                 let ty = declarations.record(alias, schema)?;
-                let mut values = Vec::with_capacity(schema.fields.len());
-                for field in &schema.fields {
-                    let init = var
-                        .record_fields
-                        .iter()
-                        .find(|f| f.name == field.id)
-                        .ok_or_else(|| {
-                            GenerateError::unsupported(format!(
-                                "<data id=\"{}\">: no <sce:set> gives `{}`",
-                                var.id, field.id
-                            ))
-                        })?;
-                    // A string field starts at its literal, which the judge held
-                    // to the bound; a target that holds it in a buffer is given
-                    // the buffer as that literal fills it.
-                    let literal =
-                        |value: &str| match (field.sce_type.present_type(), field.max_size) {
-                            (SceType::String, Some(bound)) => {
-                                target.record_string_literal(bound, value)
-                            }
-                            (SceType::Bytes, Some(bound)) => {
-                                target.record_bytes_literal(bound, value)
-                            }
-                            _ => value.to_string(),
-                        };
-                    let initial = |written: &str, slot: InferredType| {
-                        initial_value(written, target, &ctx, &renames, slot)
-                            .map_err(|r| refused("the field value", written, r))
-                    };
-                    let place = rewrites.optionals.get(&format!("{}.{}", var.id, field.id));
-                    let value = match place {
-                        // An optional field starts absent, or at a present value
-                        // lifted (docs/adr/0055).
-                        Some(place) => optional_initial(
-                            &init.expr,
-                            place,
-                            target,
-                            &format!(
-                                "<sce:set name=\"{}\"> of <data id=\"{}\">",
-                                field.id, var.id
-                            ),
-                            &initial,
-                            &literal,
-                        )?,
-                        None => {
-                            let lowered = literal(&initial(
-                                &init.expr,
-                                InferredType::of_field(&field.sce_type),
-                            )?);
-                            match (field.sce_type.present_type(), field.max_size) {
-                                (elem @ (SceType::String | SceType::Bytes), Some(bound)) => {
-                                    starting_text(
-                                        target,
-                                        elem,
-                                        bound,
-                                        &init.expr,
-                                        lowered,
-                                        &format!(
-                                            "<sce:set name=\"{}\"> of <data id=\"{}\">",
-                                            field.id, var.id
-                                        ),
-                                    )?
-                                }
-                                _ => lowered,
-                            }
-                        }
-                    };
-                    values.push((target.record_field(&field.id), value));
-                }
+                let initial = |written: &str, slot: InferredType| {
+                    initial_value(written, target, &ctx, &renames, slot)
+                        .map_err(|r| refused("the field value", written, r))
+                };
+                let place_of = |field: &EntryField| {
+                    rewrites
+                        .optionals
+                        .get(&format!("{}.{}", var.id, field.id))
+                        .cloned()
+                };
+                let values = record_start_values(
+                    &var.id,
+                    &var.record_fields,
+                    schema,
+                    &place_of,
+                    target,
+                    &initial,
+                )?;
                 let init = target.record_value(&ty, &values);
                 if let Some(element) = target.data_element(&var.id, &init) {
                     rewrites.note_element(var.value_type_spelling.as_ref(), &element);
@@ -5348,6 +5562,33 @@ pub fn lower(
                     holds_bytes: holds_bytes(schema),
                     seeded: false,
                 });
+                continue;
+            }
+            // A union variable is held in the machine's own sum of the union's
+            // records (docs/adr/0092, section 7), declared with every record
+            // and enum it holds. It is built at its declaration, its case's
+            // record as a record variable of it is, or, optional, starts absent
+            // (the amendment of 2026-11-07).
+            if let Some(start) = UnionStart::of(var) {
+                let field = union_variable_field(
+                    var,
+                    start,
+                    model,
+                    &mut declarations,
+                    &rewrites.type_scope,
+                    &records,
+                    &|written: &str, slot: InferredType| {
+                        initial_value(written, target, &ctx, &renames, slot)
+                            .map_err(|r| refused("the field value", written, r))
+                    },
+                )?;
+                if let Some(element) = target.data_element(&var.id, &field.init) {
+                    rewrites.note_element(var.value_type_spelling.as_ref(), &element);
+                }
+                if start == UnionStart::Absent {
+                    rewrites.note(&var.expr, var.expr_spelling.as_ref(), &field.init);
+                }
+                fields.push(field);
                 continue;
             }
             // A list starts empty. Its elements are numbers and bools, or
@@ -6142,6 +6383,7 @@ pub fn lower(
         imports,
         records: declarations.records,
         enums: declarations.enums,
+        unions: declarations.unions,
         saved_shape,
         sites: rewrites.sites.into_inner(),
         elements: rewrites.elements.into_inner(),
@@ -6162,6 +6404,11 @@ struct TypeDeclarations<'t> {
     type_defs: Vec<String>,
     records: Vec<StaticRecord>,
     enums: Vec<StaticEnumType>,
+    /// The unions a variable holds, as a saved state writes each.
+    unions: Vec<StaticUnion>,
+    /// Each record that holds a composed value and each union a saved state
+    /// writes, by its type, so each is described once ([`declare_composed`]).
+    saved_composed: BTreeSet<String>,
 }
 
 impl<'t> TypeDeclarations<'t> {
@@ -6178,6 +6425,8 @@ impl<'t> TypeDeclarations<'t> {
             type_defs: Vec::new(),
             records: Vec::new(),
             enums: Vec::new(),
+            unions: Vec::new(),
+            saved_composed: BTreeSet::new(),
         }
     }
 
@@ -6429,24 +6678,15 @@ fn declare_composed_payload(
     model: &SCXMLModel,
     event: &str,
 ) -> Result<(), GenerateError> {
-    use crate::forge::composed_lowering as composed;
-    let target = declarations.target;
-    let lang = target.name();
     let refused = |why: String| {
         GenerateError::unsupported(format!(
             "a transition that reads the payload of `{event}`, whose schema holds a composed \
              value: {why} (docs/adr/0086, section 7.3)"
         ))
     };
-    let Some(spelling) = target.composed_spelling(declarations.machine) else {
-        return Err(refused(format!(
-            "{lang} has no lowering of a composed value yet"
-        )));
-    };
     let Some(payload) = model.imported_event_schemas.get(event) else {
         return Ok(());
     };
-    let records = composed::StatechartRecords::of(model);
     let payload_alias = model
         .imported_records
         .iter()
@@ -6458,16 +6698,59 @@ fn declare_composed_payload(
                 payload.name
             ))
         })?;
-    let mut reached = composed::Reached::default();
-    composed::held_records(
+    declare_composed(
+        declarations,
+        model,
         &crate::forge::value_type::ValueType::Record {
             alias: payload_alias.clone(),
         },
-        None,
-        &records,
-        &mut reached,
-    )
-    .map_err(refused)?;
+        ComposedHolder::Payload(&payload_alias),
+        &refused,
+    )?;
+    Ok(())
+}
+
+/// Who holds the composed value [`declare_composed`] declares the types of.
+#[derive(Debug, Clone, Copy)]
+enum ComposedHolder<'a> {
+    /// The payload of an event, whose own record (named here) is the payload
+    /// struct the typed channel declares; nothing of it is saved.
+    Payload(&'a str),
+    /// A statechart's variable, which a saved state holds: each record and
+    /// union its value holds at any depth is written and read back by its
+    /// type ([`StaticRecord`], [`StaticUnion`]).
+    Variable,
+}
+
+/// Declare in the machine's own unit what a value of `ty` holds at any depth
+/// (docs/adr/0086, docs/adr/0092): each enum, record and union, each once, an
+/// inner record before the outer one that names it and a union after the
+/// records its cases hold. A record of entries is declared as a variable of it
+/// declares it ([`TypeDeclarations::record`]); one that holds a composition by
+/// the walk ([`crate::forge::composed_lowering::record_members`]). Answers the
+/// machine's enums by the name the statechart holds each by, which the walks
+/// over the value read.
+fn declare_composed(
+    declarations: &mut TypeDeclarations<'_>,
+    model: &SCXMLModel,
+    ty: &crate::forge::value_type::ValueType,
+    holder: ComposedHolder<'_>,
+    refused: &dyn Fn(String) -> GenerateError,
+) -> Result<
+    std::collections::BTreeMap<String, crate::forge::composed_lowering::MachineEnum>,
+    GenerateError,
+> {
+    use crate::forge::composed_lowering as composed;
+    let target = declarations.target;
+    let lang = target.name();
+    let Some(spelling) = target.composed_spelling(declarations.machine) else {
+        return Err(refused(format!(
+            "{lang} has no lowering of a composed value yet"
+        )));
+    };
+    let records = composed::StatechartRecords::of(model);
+    let mut reached = composed::Reached::default();
+    composed::held_records(ty, None, &records, &mut reached).map_err(refused)?;
     let mut enums = std::collections::BTreeMap::new();
     for alias in &reached.enums {
         declarations.enum_type(alias).map_err(|alias| {
@@ -6480,11 +6763,11 @@ fn declare_composed_payload(
         }
     }
     let entries = model.entry_records();
-    for alias in reached
-        .records
-        .iter()
-        .filter(|alias| **alias != payload_alias)
-    {
+    let saved = matches!(holder, ComposedHolder::Variable);
+    for alias in reached.records.iter().filter(|alias| match holder {
+        ComposedHolder::Payload(payload) => alias.as_str() != payload,
+        ComposedHolder::Variable => true,
+    }) {
         match entries.get(alias) {
             Some(entry) => {
                 declarations.record(alias, entry)?;
@@ -6498,19 +6781,99 @@ fn declare_composed_payload(
                         .type_defs
                         .push(spelling.record_def(&ty, alias, &members));
                 }
+                if saved && declarations.saved_composed.insert(ty.clone()) {
+                    let schema = model.imported_records.get(alias).ok_or_else(|| {
+                        refused(format!(
+                            "the statechart holds no record of `record:{alias}`"
+                        ))
+                    })?;
+                    declarations
+                        .records
+                        .push(saved_composed_record(ty, schema, target).map_err(refused)?);
+                }
             }
         }
     }
-    // Each union the payload holds at any depth, after the records its cases
+    // Each union the value holds at any depth, after the records its cases
     // hold (docs/adr/0092, section 7): the machine's own sum, its tag read as
     // the machine's enum and every read the narrowing proves a method of it.
     for key in &reached.unions {
         let def = composed::union_definition(key, &records, &enums, &*spelling).map_err(refused)?;
+        if saved && declarations.saved_composed.insert(def.ty.clone()) {
+            let tag = composed::RecordEnv::union_of_key(&records, key)
+                .map_err(refused)?
+                .union
+                .tag
+                .clone();
+            declarations.unions.push(StaticUnion {
+                ty: def.ty.clone(),
+                name: def.name.clone(),
+                tag,
+                cases: def
+                    .cases
+                    .iter()
+                    .map(|case| StaticUnionCase {
+                        ident: case.ident.clone(),
+                        variant: case.variant.clone(),
+                        holds_record: case.record.is_some(),
+                    })
+                    .collect(),
+            });
+        }
         if declarations.declared.insert(def.ty.clone()) {
             declarations.type_defs.push(spelling.union_def(&def));
         }
     }
-    Ok(())
+    Ok(enums)
+}
+
+/// What a saved state writes a record that holds a composed value as
+/// ([`StaticRecord`]), a record a union variable's case holds (docs/adr/0092,
+/// section 6.1 item 7): each field by its type, as the machine holds it, a
+/// byte string and an optional one as their Latin-1 text, as a record of
+/// entries' are. `Err` for a field that holds a byte string inside a list,
+/// which a saved state would write as an array of numbers, not as its text.
+fn saved_composed_record(
+    ty: String,
+    schema: &crate::forge::model::EventSchemaModel,
+    target: &dyn StaticTarget,
+) -> Result<StaticRecord, String> {
+    use crate::forge::value_type::ValueType;
+    fn any_bytes(ty: &ValueType) -> bool {
+        match ty {
+            ValueType::Bytes { .. } => true,
+            ValueType::List { elem, .. } | ValueType::Optional { elem } => any_bytes(elem),
+            _ => false,
+        }
+    }
+    let mut fields = Vec::with_capacity(schema.fields.len());
+    for field in &schema.fields {
+        let (present, optional) = match &field.sce_type {
+            ValueType::Optional { elem } => (&**elem, true),
+            other => (other, false),
+        };
+        let (saved_type, bound) = match present {
+            ValueType::Bytes { max } => ("bytes".to_string(), Some(max.max)),
+            ValueType::List { elem, .. } if any_bytes(elem) => {
+                return Err(format!(
+                    "the field `{}` of `{}` holds a byte string inside a list, which a saved \
+                     state of the variable has no text for",
+                    field.id, schema.name
+                ))
+            }
+            other => (other.to_string(), None),
+        };
+        fields.push(StaticRecordField {
+            id: field.id.clone(),
+            name: target.record_field(&field.id),
+            saved_type,
+            bound,
+            optional,
+            since: None,
+            default: None,
+        });
+    }
+    Ok(StaticRecord { ty, fields })
 }
 
 /// The shape a saved state of this machine is bound to (SCE Accepted Subset
@@ -6630,6 +6993,8 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     // The records a variable may name, one entry per field: a variable that
     // names one holding a composition is refused where the document is parsed.
     let entry_records = model.entry_records();
+    // The unions a variable may name, each with its cases' records.
+    let type_scope = crate::forge::value_path::statechart_scope(model);
     // Where each value of an enum is held — a variable, or a field of a record a
     // variable holds — with the document the enum is: the statechart's own
     // import for a variable, the schema's for a record's field.
@@ -6662,6 +7027,37 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             &format!("variable {} {ty} {bound}", var.id),
             &format!("variable {} {by_document} {bound}", var.id),
         );
+        // A union is named by its document and each case's record shape, in
+        // the enum's order (docs/adr/0092, section 6.1 item 7), so a change of
+        // a case moves the shape as a change of a record does.
+        if let Some(crate::forge::model::AlgorithmValueType::Union { alias }) = shaped.as_ref() {
+            if let Some(union) = type_scope.unions.get(alias) {
+                text.line(&format!("union {} {} {}", var.id, union.name, union.tag));
+                for case in &union.cases {
+                    let record = case
+                        .record
+                        .as_deref()
+                        .and_then(|record| union.scope.records.get(record));
+                    let fields = record.map_or_else(
+                        || "-".to_string(),
+                        |record| {
+                            record
+                                .fields
+                                .iter()
+                                .map(|(id, ty)| format!("{id}:{ty}"))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        },
+                    );
+                    text.line(&format!(
+                        "case {} {} {} {fields}",
+                        var.id,
+                        case.variant.name,
+                        record.map_or("-", |record| record.name.as_str())
+                    ));
+                }
+            }
+        }
         // A record's fields, whether it is the variable or the element of the
         // list the variable is: what a saved state names of it.
         let own_record = shaped.as_ref().and_then(|t| t.record_alias());

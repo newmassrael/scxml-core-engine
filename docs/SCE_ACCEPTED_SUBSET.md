@@ -4644,6 +4644,24 @@ it by name, `generate/unsupported-feature`), so the rule is judged where the
 document is read. `sce-build/tests/a_union_field_is_read_only_where_its_case_is_proven.rs`
 holds this.
 
+**A union variable** (docs/adr/0092, section 6.1 item 5 and its amendment of
+2026-11-07). A sum type has no default value, so `sce:type="union:Shape"` is built where
+it is declared: one `<sce:set>` names the tag with a variant literal of the tag's enum
+as the statechart imports it (`<sce:set name="kind" expr="Kind.circle"/>`), and one
+names each field of that case's record, exactly once, as a record variable's do; an
+empty case takes its tag alone, and the variable takes no `expr`. One with no
+`<sce:set>`, one with an `expr`, a tag given twice or not at all, a tag that is no
+variant literal, and a field after an empty case are `scxml/static-datamodel-rule`; a
+field of the case missing, unknown or repeated is `validation/attribute-rule-violated`,
+as for a record variable. A variable with no case to start at is
+`optional<union:Shape>`, which starts at `null` and only there. The Rust machine holds
+either in its own sum (or `Option` of it), lent to a host by reference; a saved state
+holds the value as one object, its tag beside its case's fields, and the saved shape
+names the union's document and each case's record. Every other backend refuses the
+variable by its own name (`generate/unsupported-feature`).
+`sce-build/tests/a_union_variable_is_built_where_it_is_declared_or_starts_absent.rs`
+holds this.
+
 **An optional record** (docs/adr/0055, step 9). `sce:type="optional<record:Item>"`
 declares a variable that is absent or holds a record of the event schema the
 document imports as `Item`. It starts at `null`, and only there (`expr="null"`: a
