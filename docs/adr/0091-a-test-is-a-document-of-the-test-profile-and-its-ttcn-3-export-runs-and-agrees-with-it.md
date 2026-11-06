@@ -1,6 +1,9 @@
 # ADR 0091 — A test is a document of the test profile, and its TTCN-3 export runs and agrees with it
 
-- Status: Proposed (2026-11-06). A draft for the owner. A downstream consumer session drafted it at the owner's request
+- Status: Accepted (2026-11-06), with each question answered in "Answers (2026-11-06)". The owner ordered the
+  questions decided by the rule of 2026-10-26 and 2026-10-27 ("비용 무시하고 가장 장기적으로 올바르고 궁극적인
+  구조이고, 학술적으로 교과서적으로 결정해"); the answers below are the decisions taken under it, each with its basis.
+  History: a downstream consumer session drafted it at the owner's request
   under the owner's rule of 2026-10-26 and 2026-10-27: the most long-term correct structure, textbook in its
   foundations, cost ignored. The drafter wrote it as 0083 against a checkout 681 commits behind `origin/main`. It was
   renumbered 0091 because ADRs 0083 to 0090 had already landed, and it was reviewed against `origin/main` at
@@ -114,26 +117,26 @@ The equivalence law of §6 can be decided only on these terms. Without them it i
 
 ### 2. What the profile contains
 
-The names in this table are placeholders chosen to match TTCN-3's terms (question 5). Three of them collide with names
-the tree already uses, as the notes say.
+The names are those of answer 5: every new kind carries the prefix `test-`, and a TTCN-3 operation that SCXML already
+has is written with the SCXML element.
 
 | Concept (TTCN-3) | Profile form | Notes |
 |---|---|---|
 | Type definitions | existing `event-schema`, `enum` | exported as `record`, `union`, `enumerated`, with optional fields and value/length constraints |
-| Template | new forge kind `template` over an `event-schema` type | specific values, `?`, `*`, ranges, length restrictions, `omit`, `ifpresent`, value lists, complement; parameterised templates. **Name collides** with the `<sce:template>` composition element (expanded by the parser before validation) and is close to the `text-template` kind |
-| Port type | new forge kind `port-type` | message kinds per direction (`in`, `out`, `inout`) |
+| Template | new forge kind `test-template` over an `event-schema` type | specific values, `?`, `*`, ranges, length restrictions, `omit`, `ifpresent`, value lists, complement; parameterised templates |
+| Port type | new forge kind `test-port-type` | message kinds per direction (`in`, `out`, `inout`) |
 | Component type | new forge kind `test-component` | a statechart restricted per §3; declares its ports, timers and variables |
-| Test configuration | new forge kind `test-configuration` | the MTC type, the test system interface, PTCs, `connect` and `map` of ports |
+| Test configuration | new forge kind `test-configuration` | the MTC type, the test system interface, PTCs, `connect` and `map` of ports (answer 10) |
 | Test case | new forge kind `test-case` | runs on a component type, names its configuration, names the features it requires |
 | Module parameters (PICS, PIXIT) | existing `feature-model` (ADR 0057) for PICS booleans; new module-parameter declarations for numeric PICS items and PIXIT | a test case's feature requirement is its selection expression |
-| Control part | new forge kind `test-suite` | the ordered list of test cases and their selection; exported as the module's `control` part |
+| Control part | new forge kind `test-suite` | the ordered list of test cases, their selection and each one's guard timer (answer 4); exported as the module's `control` part |
 | `setverdict` | new executable content `<sce:setverdict value="pass\|inconclusive\|fail\|none" reason="…"/>` | the document cannot set `error` (as in TTCN-3); only the runtime sets it |
-| `alt` with receive branches | a state of a `test-component`; each `<transition sce:receive="port:template">` is a branch | branches are evaluated in document order over one snapshot (§5) |
-| `timer` | `<sce:timer>` declarations; `<sce:start>`, `<sce:stop>`; `sce:timeout="t"` as a branch | **Name collides** with the existing `timer` forge kind (one periodic timer, `SCE_FORGE.md` §4.10) and with the `<data sce:timer=…>` attribute that kind replaced. A test timer is one-shot, which the `timer` kind by its own definition is not |
-| `altstep` and `activate` | transitions of ancestor states | the innermost ancestor is the most recently activated default (TTCN-3 evaluates defaults in reverse order of activation) |
-| `send` | `<sce:send port="p" template="…"/>` | the template must be specific (no matching symbols) |
-| PTC `create`, `start`, `done`, `kill` | executable content over child sessions started by `<invoke type="scxml">` (§scxml-6.4) | a PTC is a child machine, and its local verdict is returned to the MTC. ADR 0043 applies only to a PTC that talks to Mesh peers |
-| `log` | `<sce:log>` | goes to the TCI test logging interface on export. Whether SCXML's own `<log>` suffices is question 5 |
+| `alt` with receive branches | a state of a `test-component`; each `<transition sce:receive="port" sce:test-template="t">` is a branch | branches are evaluated in document order over one snapshot (§5) |
+| `timer` | `<sce:test-timer>` declarations; `<sce:start-timer>`, `<sce:stop-timer>`; `sce:timeout="t"` as a branch | one-shot, unlike the periodic `timer` kind (`SCE_FORGE.md` §4.10) |
+| `altstep` and `activate` | transitions of ancestor states | the innermost ancestor is the most recently activated default (TTCN-3 evaluates defaults in reverse order of activation; §2.1 states what this leaves out) |
+| `send` | SCXML `<send>` whose `type` is the test-port processor and whose `target` is the port, with `sce:test-template="t"` | the template must be specific (no matching symbols); the send leaves through ADR 0084's processor door (answer 6) |
+| PTC `create`, `start`, `done`, `kill` | SCXML `<invoke type="scxml">` (§scxml-6.4): the invocation creates and starts the PTC, `done.invoke.<id>` is `done`, and leaving the invoking state is `kill` | a PTC is a child machine; the runtime, not the document, returns its local verdict to the MTC. `create` and `start` are not separable (§2.1). ADR 0043 applies only to a PTC that talks to Mesh peers |
+| `log` | SCXML `<log>` | exported as TTCN-3 `log` and recorded through the test logging interface |
 
 ### 2.1 What the subset leaves out, and why
 
@@ -153,6 +156,9 @@ document cannot express it.
   `<parallel>` it has no direct form, and its expansion grows factorially with the number of alternatives.
 - **Concurrency inside a component.** The profile refuses `<parallel>` (§3); TTCN-3 has none inside a component
   either.
+- **A PTC created and started apart.** TTCN-3 may `create` a component and `start` a function on it later, or start
+  several functions on it in turn. An SCXML invocation does both at once and runs one machine, so a PTC runs one
+  behaviour from its creation to its end.
 
 For each item, the specification of order of work step 1 says whether it is out by design or deferred. A deferred
 item returns only through an amendment of this ADR that states its semantics and its export.
@@ -166,6 +172,9 @@ row (`acceptance_doc_covers_every_code`):
   hatch inadmissible where portability is the purpose;
 - any construct that raises a script-engine cause. The generate manifest of a profile document must show
   `needs_script_engine = false`;
+- a profile document whose `datamodel` is not `sce-static` (answer 9);
+- a `cond` that reads a received message. Whether a message matches is decided by a `test-template` and nothing else
+  (answer 9);
 - `<parallel>` inside a `test-component`. A test expresses concurrency with PTCs, as in TTCN-3;
 - `<history>`;
 - `<script>`;
@@ -206,7 +215,7 @@ Two accepted ADRs constrain how this sits in an engine. The profile does not reo
   the inbox delivers, not channels that bypass it. Run-to-completion is unchanged: a snapshot is taken between
   macrosteps, never inside one.
 - **Each event carries the identity of its port (ADR 0090).** An event that reaches a port carries the `EventOrigin`
-  its processor wrote. Whether a port is identified by that origin or by a field of its own is question 6.
+  its processor wrote, and that origin names the port (answer 6).
 
 The profile changes Appendix D (ADR 0064) in one place only: how a macrostep picks the event it takes. SCXML takes the
 head of one external queue and discards an event that enables no transition. The profile takes the first matching
@@ -364,12 +373,13 @@ traces are those a generator would also produce.
    their diagnostics and acceptance-doc rows, and classify each rule under feature derivation.
 3. Build the native test runtime in one backend first (the one the existing corpus uses), then in the others case by
    case.
-4. Build the exporter, deterministic, with the types module and its structural manifest (C2).
+4. Build the exporter, deterministic, with the types module and its structural manifest (C2), the correspondence
+   witness, and the separate validator that checks it (answer 12).
 5. Build the reference adapter set and the conformance lane (C1, §7).
 6. Add the equivalence law over the corpus (C3), with the canonical log's schema and its `SCE_WIRE_CONTRACTS.md` row.
 7. Write migration guidance for consumers' existing test documents.
 
-## Questions left open
+## Questions (answered below)
 
 1. **Which TTCN-3 tool the lane uses**, and whether its adapter interface is the standard TRI/TCI or a tool-specific
    one. Eclipse Titan is the obvious open-source candidate. Nobody has checked whether it implements the standard TRI
@@ -404,3 +414,112 @@ traces are those a generator would also produce.
     once for the exporter. The recommendation is the second together with C3, because neither alone covers what the
     other misses: a static check sees every trace of the document but not the tool, and an executed run sees the tool
     but only the traces it replays.
+
+## Answers (2026-11-06)
+
+Each question was decided by the owner's rule: the most long-term correct structure, textbook in its foundations,
+cost ignored. The facts each answer rests on were checked on 2026-11-06 and are cited with it.
+
+1. **The lane runs on a tool that implements the standard TRI and TCI, and SCE's adapters are written to those
+   interfaces and to nothing tool-specific.** The reference adapter set (§7) implements the TRI system and platform
+   adapters (ES 201 873-5) and the TCI codec, logging and control interfaces (ES 201 873-6) in the standard C
+   language mapping. The point of C1 is that the suite runs elsewhere. An adapter written to one tool's own API
+   makes "elsewhere" mean that tool, so the standard interfaces are the only choice that keeps C1's meaning.
+   - Eclipse Titan is not the lane's tool. Its adapters are test ports written to its own C++ Test Port API. Its
+     Programmers' Technical Reference (11.2.1, 2026-08-05) cites parts 1, 4, 7 and 9 of ES 201 873 among its
+     references, but not parts 5 or 6. Neither that guide nor its API Technical Reference mentions TRI or TCI.
+     This is evidence of absence from the tool's own documentation, not a statement from its authors.
+   - A tool that states TRI and TCI support exists. Elvior TestCast lists TRI and TCI mappings for C, C++, C# and
+     Java, and ES 201 873-1 4.17.1 support since release 6.21.1 (2025-07-28). It is commercial and lists Windows,
+     with other platforms on request.
+   - The lane names its tool in one place, and any tool that implements the standard interfaces can replace it
+     without a change to SCE's adapters. Running the suite on a second such tool is the stronger form of C1 and is
+     admitted by the same adapters.
+2. **The profile targets one pinned set of parts:** ES 201 873-1 V4.17.1 (2025), -4 V4.6.1 (2017), -5 V4.9.1
+   (2022) and -6 V4.14.1 (2023), the latest of each on ETSI's TTCN-3 download page on 2026-11-06. Part 4 is eight
+   years older than part 1, and the profile takes its semantics from part 4 (§1). So the profile admits only
+   constructs whose semantics part 4 V4.6.1 defines, even where part 1 V4.17.1 adds to them. Moving to a later
+   edition is an amendment of this ADR, made for all four parts at once.
+3. **Time in the lane is a logical clock, and everything due at one instant is in the same snapshot.**
+   - A recorded trace gives each input a logical timestamp. The platform adapter implements TRI's timer operations
+     (start, stop, read, running, timeout) on a logical clock.
+   - The clock advances only when every component of the run is blocked (no branch can fire on the present
+     snapshot). It advances to the earliest of the next timer expiry and the next input of the trace.
+   - At an instant, every input of the trace and every timer expiry due then is delivered before the next snapshot
+     is taken. Which of them a component handles first is then decided by §5's document order, not by the order of
+     delivery. The native runtime and the TTCN-3 side therefore see the same timeouts by construction: their order
+     is never a race.
+   - The same clock is the time domain of answer 11's timed conformance relation.
+4. **The guard timer belongs to the control part, and the `error` it causes belongs to the runtime.** TTCN-3's
+   `execute` statement takes an optional time limit for the test case. If the test case has not ended when the
+   limit expires, it is stopped and its verdict is `error`. The `test-suite` therefore declares each test case's
+   guard, exported as the second argument of `execute`. The runtime alone assigns `error` (§4).
+5. **Names.** The profile stays in SCE's one extension namespace (`http://sce.dev/ext`), the one authoring grammar
+   `SCE_WIRE_CONTRACTS.md` lists as a single surface.
+   - Every new kind carries the prefix `test-`, so that a kind's name says it belongs to the profile, and the
+     collisions found in review cannot recur: `test-template`, `test-port-type`, `test-component`,
+     `test-configuration`, `test-case` and `test-suite`.
+   - The new elements and attributes carry no name the tree already uses: `<sce:setverdict>`,
+     `<sce:test-timer>`, `<sce:start-timer>`, `<sce:stop-timer>`, `sce:timeout`, `sce:receive` and
+     `sce:test-template`.
+   - Where SCXML already has the operation, the profile uses the SCXML element: `<send>` (answer 6), `<log>`, and
+     `<invoke>` for a PTC's lifecycle (§2). Inventing `<sce:send>` or `<sce:log>` would put a second element beside a
+     standard one for the same act.
+   - UTP's name is used where the concept is UTP's: the runtime's computation of §4 is the arbiter.
+6. **A port is an address of the test-port Event I/O Processor, and the `EventOrigin` of ADR 0090 names it.**
+   §scxml-C is SCXML's extension point for a new way of communicating, and a port is one. The profile defines one
+   processor type URI. Its addresses name a component instance and one of its ports.
+   - A `<send>` to a port leaves through ADR 0084's processor door.
+   - An event delivered to a port arrives through the receiving session's inbox, carrying
+     `EventOrigin { processor: <test-port URI>, address: <sending port> }` and the receiving port.
+   - The runtime distributes the inbox into port queues by that pair (§5).
+   - Nothing new is added to the event: the identity of a port is the value SCXML and ADR 0090 already define for
+     the origin of an event.
+7. **A scenario set is not lowered to test cases. Its runnable scenarios are the test purposes of answer 11.**
+   - A scenario states what a specification says should be observed. In model-based testing that is a test
+     purpose: it selects which behaviour of the specification a derived test case exercises (Jard and Jéron, TGV).
+     It is not a test case, because it does not say what the tester does with every other output.
+   - A scenario judged `not-judged`, `blocked` or `awaiting-decision` is not a test purpose yet. None of the
+     judge's verdicts maps onto a test verdict: they are judgements of a design against examples, and §4's verdicts
+     are judgements of an implementation by a tester.
+8. **The canonical log of C3 is a surface of its own, `schemas/sce-test-log.v1.schema.json`, whose record kinds are
+   the events of TCI's test logging interface (ES 201 873-6).** These are message sent, message received and matched,
+   timer started, stopped and timed out, verdict set, component created and done, and test case started and ended.
+   - The TTCN-3 side writes the log from its TCI logging implementation in the reference adapter set. The native
+     runtime writes the same record kinds at the same semantic points.
+   - It does not extend the observation trace, whose subject is a design judged against examples (§2.18).
+   - It does not extend ADR 0089's transition observer, because the TTCN-3 side has no transitions to report.
+   - It lands `pre-release`, with its row in `SCE_WIRE_CONTRACTS.md`.
+9. **A profile document declares `datamodel="sce-static"`, and matching is never an expression.** `sce-static` is
+   SCE's statically typed data model, run by every engine without a script engine (ADR 0005). A component's
+   variables, assignments and verdict reasons are `sce-static` expressions. Whether a received message is the
+   expected one is a TTCN-3 template's question, answered by a `test-template` (§2). A `cond` that reads the message
+   is refused (§3), so matching has one form and the exporter translates one form.
+10. **Ports reach each other through the test-port processor alone.** The `test-configuration` declares each
+    `connect` (component port to component port) and `map` (component port to a port of the test system interface).
+    - The processor of answer 6 routes by that table. A connected send is delivered into the inbox of the
+      connected component's session. A mapped send goes to the system adapter (TRI).
+    - The invoke channel (`#_parent`, `#_<invokeid>`) carries a PTC's lifecycle and nothing else.
+    - One mechanism carries every port message, so there is one rule to translate, one to log and one to check.
+11. **SCE adopts a timed ioco relation as its conformance relation, and the work follows in three later ADRs.**
+    - SCE's statecharts have delayed sends and the profile has timers, so the relation must be timed. The relation
+      is tioco: Krichen and Tripakis, *Conformance testing for real-time systems*, Formal Methods in System Design
+      34(3), 2009, over timed automata with inputs and outputs. It extends Tretmans' ioco (alternative G), and its
+      digital-clock tests fit the logical clock of answer 3.
+    - The three ADRs, in order:
+      1. the reading of an SCE statechart as a timed automaton with inputs, outputs and quiescence;
+      2. a soundness check of authored test cases against the specification under that reading: a `fail` is
+         reachable only on a trace the specification does not allow;
+      3. derivation of test cases from the specification, with answer 7's scenarios as test purposes.
+    - This ADR fixes only the target that work produces into: test cases of this profile.
+12. **The equivalence theorem of §1 is held by translation validation of every export, together with C3.**
+    - The exporter emits, beside each module, a correspondence witness that relates each node of the document to
+      the TTCN-3 construct it became.
+    - A validator, separate from the exporter and kept small, checks that the witness relates every construct by a
+      rule of the specification (order of work step 1), and that each rule's semantic correspondence is proved in
+      that specification. Checking the witness is local and decidable, where comparing the trace sets of two
+      programs with data is not.
+    - C3 then checks what the static validation cannot see: the TTCN-3 tool itself.
+    - A proof made once for the whole exporter is not chosen. It would have to be redone at every change of the
+      exporter, and it says nothing about the tool. Translation validation checks every output that actually exists
+      (Pnueli, Siegel, Singerman 1998), and with C3 it covers both sides.
