@@ -1305,10 +1305,11 @@ data class SavedSend(val due: Long, val act: SavedAct) {
          * to a child is an act of a tree only, formats 2 and 3.
          *
          * Its origin is read by docs/adr/0090, section 7. In format 3 a session's
-         * own send holds its sender and that sender's SCXML pair, and an internal
-         * one holds neither, the event it delivers being internal. Formats 1 and 2
-         * stored `origin` alone, the sending session's id or its location: read as
-         * that id ([IoProcessors.readStoredSender]), and not read at all for an
+         * own send holds its sender and that sender's SCXML pair, the sender being
+         * [sessionId], the session whose record holds it; an internal one holds
+         * neither, the event it delivers being internal. Formats 1 and 2 stored
+         * `origin` alone, the sending session's id or its location: read as that
+         * id ([IoProcessors.readStoredSender]), and not read at all for an
          * internal act. A format-2 send that stored an empty one is read as sent by
          * [sessionId], the session whose record holds it; a format-1 text names no
          * session, so its send is read with no sender, and the machine that
@@ -1323,9 +1324,10 @@ data class SavedSend(val due: Long, val act: SavedAct) {
             // The sender of a session's own send, an act of [act], which carries
             // that session's SCXML pair.
             fun sender(act: String): String? {
-                when (format) {
-                    SavedState.FORMAT_1 -> return IoProcessors.readStoredSender(text("origin"))
-                    SavedState.FORMAT_2 -> return IoProcessors.readStoredSender(text("origin")) ?: sessionId
+                if (format != SavedState.FORMAT_3) {
+                    val written = text("origin")
+                    val read = IoProcessors.readStoredSender(written)
+                    return if (format == SavedState.FORMAT_2) read ?: sessionId else read
                 }
                 val stored = readOriginAndSender(members, what)
                 val sender = stored.sender ?: throw StateRefusal(
@@ -1334,6 +1336,13 @@ data class SavedSend(val due: Long, val act: SavedAct) {
                     throw StateRefusal(
                         "'$what' is a $act act whose origin is not the SCXML pair of its sender '$sender': a " +
                             "session's own send carries that session's pair")
+                }
+                // The session's own send is this session's: the sender is the id of
+                // the session record the act sits in.
+                if (sender != sessionId) {
+                    throw StateRefusal(
+                        "'$what.sender' is '$sender', and this session is '$sessionId': a $act act is this " +
+                            "session's own send")
                 }
                 return sender
             }

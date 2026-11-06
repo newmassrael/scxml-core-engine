@@ -6,8 +6,9 @@
 // none. A reader takes both as they are written and refuses, naming the record,
 // an origin that is neither `null` nor a whole pair, a sender that is not a
 // session id, a queued event's sender beside no origin, a session's own send
-// with no sender or with another pair than its sender's, and an internal act
-// that holds either member. A queued event's sender is not tied to its address.
+// with no sender, with another pair than its sender's or naming another session
+// than the one whose record holds it, and an internal act that holds either
+// member. A queued event's sender is not tied to its address.
 // A format-2 send that stored no origin is the send of the session holding it.
 // A text of any other format is refused by its `format` alone. A format-1 text,
 // which has no place for the pair, is written back as format 1.
@@ -34,11 +35,26 @@ class SavedOriginTest {
     private val host = """{"processor":"x-sce-host","address":"motor"}"""
 
     /** A format-3 tree of the one session `root`, waiting [pending] and holding [external] in its queue. */
-    private fun tree(pending: List<String> = emptyList(), external: List<String> = emptyList()): String =
+    private fun tree(
+        pending: List<String> = emptyList(),
+        external: List<String> = emptyList(),
+        invokes: List<String> = emptyList(),
+    ): String =
         """{"format":3,"shape":"s","sessionid":"root","configuration":["s"],"current":"s","variables":{},""" +
-            "\"history\":{},\"pending\":[${pending.joinToString(",")}],\"invokes\":[],\"invokestarts\":{}," +
+            "\"history\":{},\"pending\":[${pending.joinToString(",")}]," +
+            "\"invokes\":[${invokes.joinToString(",")}],\"invokestarts\":{}," +
             "\"hostinvokes\":[],\"hostinvoketoken\":\"0\",\"sendseq\":\"0\"," +
             "\"external\":[${external.joinToString(",")}]}"
+
+    /** The id of the one child session [child] runs under `root`. */
+    private val kid = "root.s.1.kid"
+
+    /** A running child of `root`, the session [kid], waiting [pending]. */
+    private fun child(pending: List<String>): String =
+        """{"id":"kid","start":"1","invokeid":"s.1.kid","document":"kid","session":{"shape":"s",""" +
+            "\"sessionid\":\"$kid\",\"configuration\":[\"s\"],\"current\":\"s\",\"variables\":{},\"history\":{}," +
+            "\"pending\":[${pending.joinToString(",")}],\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[]," +
+            "\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]}}"
 
     /** A queued event whose `origin` and `sender` are the JSON texts [origin] and [sender]. */
     private fun event(origin: String, sender: String, name: String = "ping"): String =
@@ -200,6 +216,30 @@ class SavedOriginTest {
             val message = refusal(tree(pending = listOf(act)))
             assertTrue(message.contains(reason), "$act: $message")
         }
+    }
+
+    @Test
+    fun `a session's own waiting send names the session whose record holds it`() {
+        // At the root and in a child: each session's act is its own send.
+        val own = tree(
+            pending = listOf(send("raise", pair("root"), "\"root\"")),
+            invokes = listOf(child(listOf(send("parent", pair(kid), "\"$kid\"")))),
+        )
+        assertEquals(own, SavedState.fromJson(own).toJson())
+        val atRoot = refusal(tree(pending = listOf(send("raise", pair("y"), "\"y\""))))
+        assertTrue(
+            atRoot.contains("'pending[0].sender' is 'y', and this session is 'root': a raise act is this session's own send"),
+            atRoot,
+        )
+        // A child's act that names its parent is refused, naming the child's path.
+        val inChild = refusal(
+            tree(invokes = listOf(child(listOf(send("parent", pair("root"), "\"root\""))))),
+        )
+        assertTrue(inChild.contains("invokes[0].session"), inChild)
+        assertTrue(
+            inChild.contains("'pending[0].sender' is 'root', and this session is '$kid': a parent act"),
+            inChild,
+        )
     }
 
     @Test
