@@ -4,6 +4,8 @@
 # sce_scripting: Script engines (QuickJS/Lua) and engine-dependent helpers (optional)
 # sce_runtime:   Full interpreter with Parser, StateMachine, Actions, Events
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SCEVendoredSubdirectory.cmake)
+
 # Build options
 option(SCE_ENABLE_HTTP "Enable HTTP/BasicHTTPEventProcessor support (requires cpp-httplib)" ON)
 option(SCE_ENABLE_MESH "Enable SCE Mesh distributed transport layer (EventQueueBridge, SchedulerConcepts)" OFF)
@@ -25,7 +27,9 @@ if(SCE_ENABLE_QUICKJS)
         add_compile_definitions(__wasi__)
         message(STATUS "WASM build: QuickJS stack checking disabled (__wasi__)")
     endif()
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURRENT_BINARY_DIR}/quickjs)
+    # Built with QuickJS's own warning flags, not this repository's -Werror
+    # (cmake/SCEVendoredSubdirectory.cmake says why).
+    sce_add_vendored_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURRENT_BINARY_DIR}/quickjs)
     # qjs is a PUBLIC link dep of sce_scripting, so it belongs in the same
     # tier-scoped export set. quickjs already has its own install(TARGETS qjs
     # EXPORT qjsConfig); CMake permits a target to belong to multiple export
@@ -79,7 +83,7 @@ endif()
 
 # Add cpp-httplib subdirectory (native builds only, not WASM, HTTP enabled)
 if(NOT EMSCRIPTEN AND SCE_ENABLE_HTTP)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/cpp-httplib ${CMAKE_CURRENT_BINARY_DIR}/cpp-httplib)
+    sce_add_vendored_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/cpp-httplib ${CMAKE_CURRENT_BINARY_DIR}/cpp-httplib)
 endif()
 
 # Add nlohmann/json (header-only library)
