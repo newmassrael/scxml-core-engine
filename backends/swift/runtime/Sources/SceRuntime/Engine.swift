@@ -2467,8 +2467,8 @@ extension Engine {
         let name: String
         let data: String
         let sendID: String
-        /// The sending session's id, as the saved act holds it or, for one that holds none, the restored
-        /// session's; empty for an `internal` act, whose event carries none, and for a host act.
+        /// The sending session's id, as the saved act holds it or, for a format-1 act that holds none, the
+        /// restored session's; empty for an `internal` act, whose event carries none, and for a host act.
         let sender: String
         let route: ScheduledRoute?
     }
@@ -2477,9 +2477,9 @@ extension Engine {
     /// says which event this document does not name, or which child it does not invoke (`invokeIDs`). Changes
     /// nothing.
     ///
-    /// A `raise`, `parent` or `child` act is the restored session's own send. One read from a format-1 or
-    /// format-2 text that stored no sender is armed as sent by `sessionID`, the id the restored session holds,
-    /// as the save of it writes it (docs/adr/0090, section 7).
+    /// A `raise`, `parent` or `child` act is the restored session's own send. One read from a format-1 text
+    /// that stored no sender, which names no session, is armed as sent by `sessionID`, the id the restored session
+    /// holds, as the save of it writes it (docs/adr/0090, section 7).
     func judgeSavedSends(_ sends: [SavedSend], invokeIDs: [String], sessionID: String) throws -> [SavedArm] {
         try sends.enumerated().map { index, send in
             func resolved(_ name: String) throws -> Event {

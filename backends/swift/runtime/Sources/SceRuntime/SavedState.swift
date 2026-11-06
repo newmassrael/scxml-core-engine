@@ -88,8 +88,10 @@ public struct SavedEvent: Equatable, Sendable {
     /// processor stamped.
     public var origin: EventOrigin?
 
-    /// The id of the session that sent the event, set only for one the SCXML Event I/O Processor delivered,
-    /// whose `origin` is then that session's pair.
+    /// The id of the session that sent the event, written by the processor that delivered it from that session
+    /// (the SCXML Event I/O Processor for a local session, the Mesh transport for a remote child or parent); nil
+    /// for every other sender. Independent of `origin`'s address, which is the reply address that processor
+    /// wrote, but never beside a nil `origin`: a session that sent an event has an address a reply reaches.
     public var sender: String?
 
     public var invokeID: String
@@ -162,7 +164,8 @@ public struct SavedHostInvoke: Equatable, Sendable {
 /// A `raise`, `parent` or `child` act is this session's own send, which the SCXML Event I/O Processor delivers:
 /// it holds the id of the session that sent it, and the event it delivers carries that session's pair
 /// (`scxmlOrigin(sender:)`), which is what a text of format 3 writes beside the id (docs/adr/0090, section 7). The
-/// sender is nil only for a send read from a format-1 or format-2 text that stored none. An `internal` act
+/// sender is nil only for a send read from a format-1 text that stored none, which names no session; a format-2
+/// send that stored none is read as sent by the session that holds it. An `internal` act
 /// delivers an internal event, which has no origin (§scxml-5.10.1), so it holds no sender.
 public enum SavedAct: Equatable, Sendable {
     /// An event for the session that started this one (`#_parent`). A tree's only (formats 2 and 3).
@@ -694,9 +697,12 @@ private func readOrigin(_ record: JSONValue, _ what: String) throws -> EventOrig
     return EventOrigin(processor: try member("processor"), address: try member("address"))
 }
 
-/// The `origin` and `sender` of a format-3 record, each as written and neither derived from the other. The
-/// sender is `null` or a session id. Only the SCXML Event I/O Processor sets one, and it writes that session's
-/// pair as the origin, so a sender beside any other origin is refused (docs/adr/0090, section 7).
+/// The `origin` and `sender` of a format-3 record, each as written and neither derived from the other
+/// (docs/adr/0090, section 7). The origin is the reply address the delivering processor wrote, and the sender the
+/// id of the session that sent the event, or `null` for a sender that is no session. No rule ties the address to
+/// the sender: a remote child's event the Mesh transport delivers carries the child's id beside its endpoint. A
+/// session that sent an event always has an address a reply reaches, so a sender beside a `null` origin is
+/// refused.
 private func readOriginAndSender(_ record: JSONValue, _ what: String) throws -> (origin: EventOrigin?, sender: String?) {
     let origin = try readOrigin(record, what)
     let sender: String?
@@ -711,10 +717,10 @@ private func readOriginAndSender(_ record: JSONValue, _ what: String) throws -> 
     default:
         throw StateRefusal("'\(what).sender' is neither null nor a session id")
     }
-    if let sender {
-        guard let origin, isSCXMLOrigin(origin, of: sender) else {
-            throw StateRefusal("'\(what).origin' is not the SCXML pair of its sender '\(sender)'")
-        }
+    if let sender, origin == nil {
+        throw StateRefusal(
+            "'\(what).sender' is '\(sender)' beside a null 'origin', and the session that sent an event has an address a reply reaches"
+        )
     }
     return (origin, sender)
 }
@@ -766,27 +772,36 @@ extension SavedHostInvoke {
 }
 
 extension SavedSend {
-    /// The waiting send `value`, of a state of `format`; a send to the parent or to a child is an act of a
-    /// tree only.
-    fileprivate static func read(_ value: JSONValue, _ what: String, format: Int) throws -> SavedSend {
+    /// The waiting send `value`, of a state of `format` held by the session `sessionID` (empty in format 1, whose
+    /// text names no session); a send to the parent or to a child is an act of a tree only.
+    fileprivate static func read(_ value: JSONValue, _ what: String, format: Int, sessionID: String) throws
+        -> SavedSend
+    {
         _ = try members(of: value, what)
         let due = try readMoment(try requiredText(value, "due", what), "\(what).due")
         let name = try requiredText(value, "act", what)
         func field(_ key: String) throws -> String { try requiredText(value, key, what) }
         // The session that sent a `raise`, `parent` or `child` act, which is this session's own send
-        // (docs/adr/0090, section 7). Format 3 holds the session's pair and its id, both judged and neither
-        // derived from the other, and an act without its sender is refused. Formats 1 and 2 hold one `origin`
-        // text, the sender's id or the location C11 stored, read by `readStoredSender`; nil for one that is
-        // empty.
+        // (docs/adr/0090, section 7). Format 3 holds the session's SCXML pair and its id, both judged and neither
+        // derived from the other: an act without its sender, or whose pair is not that sender's, is refused.
+        // Formats 1 and 2 hold one `origin` text, the sender's id or the location C11 stored, read by
+        // `readStoredSender`. An empty one in format 2 is a send of the session that holds it, its `sessionid`;
+        // in format 1 the text names no session, so it is nil, and the machine that restores it arms it as its own.
         func sentBy() throws -> String? {
             if format == SavedState.format3 {
-                guard let id = try readOriginAndSender(value, what).sender else {
+                let carried = try readOriginAndSender(value, what)
+                guard let id = carried.sender else {
                     throw StateRefusal("'\(what)' is a \(name) act with no sender, which a session's own send names")
+                }
+                guard let origin = carried.origin, isSCXMLOrigin(origin, of: id) else {
+                    throw StateRefusal(
+                        "'\(what).origin' is not the SCXML pair of its sender '\(id)', which a session's own send carries")
                 }
                 return id
             }
             let stored = readStoredSender(try field("origin"))
-            return stored.isEmpty ? nil : stored
+            if !stored.isEmpty { return stored }
+            return sessionID.isEmpty ? nil : sessionID
         }
         // An `internal` act delivers an internal event, which has no origin (§scxml-5.10.1): format 3 writes
         // both members `null` and refuses either one set; the `origin` text formats 1 and 2 stored beside it is
@@ -904,8 +919,17 @@ extension SavedState {
             history.append(
                 SavedEntry(id, try array(of: states, "history.\(id)").map { try text($0, "history.\(id)") }))
         }
+        // A tree's own members: the session's id, read before the waiting sends, which a format-2 text may hold
+        // as sent by it without naming it (`SavedSend.read`), and its count of starts.
+        var sessionID = ""
+        if format != format1 {
+            sessionID = try text(field("sessionid"), "sessionid")
+            if !sessionIDRefusalOf(sessionID).isEmpty {
+                throw StateRefusal("'sessionid' (\(sessionID)) is not an XML Nmtoken, which a session id is")
+            }
+        }
         let pending = try array(of: field("pending"), "pending").enumerated().map { index, item in
-            try SavedSend.read(item, "pending[\(index)]", format: format)
+            try SavedSend.read(item, "pending[\(index)]", format: format, sessionID: sessionID)
         }
         let listed = try array(of: field("invokes"), "invokes")
         let invokes: SavedInvokes
@@ -915,14 +939,8 @@ extension SavedState {
             invokes = .resumed(
                 try listed.enumerated().map { index, item in try SavedChild.read(item, index: index, format: format) })
         }
-        // A tree's own members: the session's id and its count of starts.
-        var sessionID = ""
         var invokeStarts: [SavedEntry<Int64>] = []
         if format != format1 {
-            sessionID = try text(field("sessionid"), "sessionid")
-            if !sessionIDRefusalOf(sessionID).isEmpty {
-                throw StateRefusal("'sessionid' (\(sessionID)) is not an XML Nmtoken, which a session id is")
-            }
             for (id, count) in try members(of: field("invokestarts"), "invokestarts") {
                 guard case .text(let written) = count else {
                     throw StateRefusal("'invokestarts.\(id)' is not a text")

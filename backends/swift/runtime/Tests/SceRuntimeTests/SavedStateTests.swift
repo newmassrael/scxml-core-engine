@@ -280,6 +280,18 @@ private func queuedText(origin: String, sender: String) -> String {
     #expect(try SavedState.fromJSON(mesh).external.first?.sender == nil)
     let none = format3(external: queuedText(origin: "null", sender: "null"))
     #expect(try SavedState.fromJSON(none).external.first?.origin == nil)
+    // The sender is the session that sent the event and the origin its reply address, two fields no rule ties
+    // together: a remote child's event the Mesh transport delivers names the child beside its endpoint.
+    let remote = format3(
+        external: queuedText(
+            origin: pairText(scxmlEventProcessorType, "mesh://dev/machine/kid"), sender: #""root.work.1.kid""#))
+    let fromRemote = try SavedState.fromJSON(remote).external.first
+    #expect(fromRemote?.origin == EventOrigin(processor: scxmlEventProcessorType, address: "mesh://dev/machine/kid"))
+    #expect(fromRemote?.sender == "root.work.1.kid")
+    let otherAddress = format3(external: queuedText(origin: scxmlPairText("other"), sender: #""kid""#))
+    #expect(try SavedState.fromJSON(otherAddress).external.first?.sender == "kid")
+    let hostAddress = format3(external: queuedText(origin: pairText("x-sce-host", "motor"), sender: #""kid""#))
+    #expect(try SavedState.fromJSON(hostAddress).external.first?.origin?.processor == "x-sce-host")
     // A session's own send carries its pair and its id; an internal act carries neither.
     let raise = #"{"due":"5","act":"raise","event":"e","data":"","sendid":"s","origin":\#(scxmlPairText("root")),"sender":"root"}"#
     let inner = #"{"due":"6","act":"internal","event":"i","data":"","sendid":"t","origin":null,"sender":null}"#
@@ -287,12 +299,12 @@ private func queuedText(origin: String, sender: String) -> String {
     #expect(
         try SavedState.fromJSON(acts).pending.map(\.act)
             == [.raise(event: "e", data: "", sendID: "s", sender: "root"), .internal(event: "i", data: "", sendID: "t")])
-    for text in [sent, host, mesh, none, acts] {
+    for text in [sent, host, mesh, none, remote, otherAddress, hostAddress, acts] {
         #expect(try SavedState.fromJSON(text).toJSON() == text, "\(text) is written back as it was read")
     }
 }
 
-@Test func aFormat3OriginThatIsNotAWholePairOrIsNotItsSendersPairIsRefused() {
+@Test func aFormat3OriginThatIsNotAWholePairOrASenderWithNoOriginIsRefused() {
     func event(_ origin: String, _ sender: String) -> String? {
         refusal(format3(external: queuedText(origin: origin, sender: sender)))
     }
@@ -311,12 +323,11 @@ private func queuedText(origin: String, sender: String) -> String {
     #expect(event(#"{"processor":"p","address":7}"#, "null") == "'external[0].origin.address' is not a text")
     #expect(event(scxmlPairText("kid"), #""a b""#) == "'external[0].sender' (a b) is not a session id, an XML Nmtoken")
     #expect(event(scxmlPairText("kid"), "7") == "'external[0].sender' is neither null nor a session id")
-    // A sender beside any origin but the SCXML pair of that very id.
-    let notKids = "'external[0].origin' is not the SCXML pair of its sender 'kid'"
-    #expect(event(pairText("x-sce-host", "motor"), #""kid""#) == notKids)
-    #expect(event("null", #""kid""#) == notKids)
-    #expect(event(scxmlPairText("other"), #""kid""#) == notKids)
-    #expect(event(pairText("x-sce-host", "sce://scxml/kid"), #""kid""#) == notKids)
+    // A session that sent an event has an address a reply reaches, so a sender beside no origin is refused.
+    #expect(
+        event("null", #""kid""#)
+            == "'external[0].sender' is 'kid' beside a null 'origin', and the session that sent an event has an address a reply reaches"
+    )
     // Both members are always written.
     let unsent = #"{"name":"e","data":"","type":"external","sendid":"","origin":null,"invokeid":"","hostinvoketoken":null}"#
     #expect(refusal(format3(external: unsent)) == "'external[0]' has no 'sender'")
@@ -333,7 +344,19 @@ private func queuedText(origin: String, sender: String) -> String {
             == "'pending[0]' is a parent act with no sender, which a session's own send names")
     #expect(
         act(#""act":"child","invokeid":"k","event":"e","data":"","sendid":"s","origin":null,"sender":"root""#)
-            == "'pending[0].origin' is not the SCXML pair of its sender 'root'")
+            == "'pending[0].sender' is 'root' beside a null 'origin', and the session that sent an event has an address a reply reaches"
+    )
+    // A session's own send keeps its own-pair rule, which a queued event does not have.
+    let notRoots = "'pending[0].origin' is not the SCXML pair of its sender 'root', which a session's own send carries"
+    #expect(
+        act(#""act":"raise","event":"e","data":"","sendid":"s","origin":\#(scxmlPairText("other")),"sender":"root""#)
+            == notRoots)
+    #expect(
+        act(#""act":"parent","event":"e","data":"","sendid":"s","origin":\#(pairText("x-sce-host", "sce://scxml/root")),"sender":"root""#)
+            == notRoots)
+    #expect(
+        act(#""act":"child","invokeid":"k","event":"e","data":"","sendid":"s","origin":\#(pairText(scxmlEventProcessorType, "mesh://dev/m/root")),"sender":"root""#)
+            == notRoots)
     #expect(
         act(#""act":"internal","event":"e","data":"","sendid":"s","origin":\#(mine),"sender":null"#)
             == "'pending[0].origin' is not null, and an internal act's event has no origin and no sender")
@@ -373,6 +396,37 @@ private func queuedText(origin: String, sender: String) -> String {
         written.toJSON()
             == stored.replacingOccurrences(of: #""origintype":"\#(scxmlEventProcessorType)""#, with: #""origintype":"""#)
             .replacingOccurrences(of: #""origin":"kid""#, with: #""origin":"""#))
+}
+
+@Test func aFormat2SendThatStoredNoOriginIsReadAsSentByTheSessionThatHoldsIt() throws {
+    // docs/adr/0090, section 7: a `raise`, `parent` or `child` act of a format-2 text whose stored `origin` is
+    // empty is the send of the session it sits in, its `sessionid`, so the text it is written back as is one a
+    // format-3 reader reads.
+    let shape = String(repeating: "a", count: 64)
+    let child = SavedState(
+        shape: shape, configuration: ["a"], current: "a", variables: [],
+        pending: [SavedSend(due: 9, act: .parent(event: "up", data: "", sendID: "u", sender: "root.kid"))],
+        invokes: .resumed([]), sessionID: "root.kid")
+    let root = SavedState(
+        shape: shape, configuration: ["a"], current: "a", variables: [],
+        pending: [SavedSend(due: 5, act: .raise(event: "e", data: "", sendID: "s", sender: "root"))],
+        invokes: .resumed([SavedChild(id: "kid", start: 1, invokeID: "s.1.kid", document: "kid", session: child)]),
+        sessionID: "root", invokeStarts: [SavedEntry("kid", 1)])
+    let written = root.toJSON()
+    let stored = written
+        .replacingOccurrences(of: #"{"format":3,"#, with: #"{"format":2,"#)
+        .replacingOccurrences(of: #""origin":\#(scxmlPairText("root")),"sender":"root""#, with: #""origin":"""#)
+        .replacingOccurrences(of: #""origin":\#(scxmlPairText("root.kid")),"sender":"root.kid""#, with: #""origin":"""#)
+    #expect(stored.components(separatedBy: #""origin":"""#).count == 3, "both acts stored no origin: \(stored)")
+    let read = try SavedState.fromJSON(stored)
+    #expect(read == root, "each act is its own session's send")
+    #expect(read.toJSON() == written)
+    #expect(try SavedState.fromJSON(read.toJSON()) == root, "a format-3 reader reads the text written back")
+    // A format-1 text names no session, so its act that stored no origin holds no sender: the machine that
+    // restores it arms it as its own.
+    let unnamed = #"{"due":"5","act":"raise","event":"e","data":"","sendid":"s","origin":""}"#
+    let one = try SavedState.fromJSON(format1().replacingOccurrences(of: #""pending":[]"#, with: #""pending":[\#(unnamed)]"#))
+    #expect(one.pending.map(\.act) == [.raise(event: "e", data: "", sendID: "s", sender: nil)])
 }
 
 @Test func aSessionsOwnWaitingSendIsSavedAsSentByTheSessionAndAnInternalOneAsSentByNone() throws {
