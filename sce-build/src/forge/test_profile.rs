@@ -153,7 +153,7 @@ pub fn literal_of(ty: &ValueType, text: &str) -> Result<(), String> {
         }
         TypeOf::Bytes { max } => {
             let hex = text.trim();
-            if hex.len() % 2 != 0 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
                 return Err("an even number of hex digits, two for each octet".to_string());
             }
             if hex.len() / 2 > max.max as usize {
