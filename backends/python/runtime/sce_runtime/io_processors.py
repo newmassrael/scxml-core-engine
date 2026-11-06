@@ -105,21 +105,25 @@ def read_stored_origin(
 ) -> Tuple[Optional[EventOrigin], Optional[str]]:
     """The origin and sender a stored ``origin`` and ``origintype`` are read as.
 
-    docs/adr/0090, section 7. Empty both is none. A value without a scheme
-    stored with the SCXML processor's type is a session's id, read as that
-    session's pair with the id as its sender; an SCXML location (which one
-    backend stored in place of the id) is read the same way by the id it names.
-    Anything else is the pair as stored, with no sender. Port of the C++
+    docs/adr/0090, section 7. An empty ``origin`` is none whatever type was
+    stored beside it: an empty address answers nothing, and format 2 wrote the
+    SCXML type beside it for events no processor stamped. An empty
+    ``origintype`` beside an address is the SCXML processor's, which is what
+    format 2 meant by it. A value without a scheme read with the SCXML type is
+    a session's id, read as that session's pair with the id as its sender; an
+    SCXML location (which one backend stored in place of the id) is read the
+    same way by the id it names. Anything else is the pair as stored, with no
+    sender. Never half a pair. Port of the C++
     ``IOProcessorHelper::readStoredOrigin``."""
-    if not origin and not origin_type:
+    if not origin:
         return None, None
     located = session_id_from_scxml_location(origin)
     if located:
         return scxml_origin(located), located
-    bare_id = bool(origin) and "://" not in origin
-    if bare_id and origin_type == SCXML_EVENT_PROCESSOR_URI:
+    processor = origin_type or SCXML_EVENT_PROCESSOR_URI
+    if "://" not in origin and processor == SCXML_EVENT_PROCESSOR_URI:
         return scxml_origin(origin), origin
-    return EventOrigin(origin_type, origin), None
+    return EventOrigin(processor, origin), None
 
 
 def published_origin(origin_session_id: str) -> str:

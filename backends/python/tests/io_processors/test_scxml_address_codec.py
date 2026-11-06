@@ -85,6 +85,17 @@ def test_an_origin_is_constructed_whole() -> None:
 def test_a_format2_origin_is_read_as_the_pair_it_stood_for() -> None:
     # Empty both: none.
     assert read_stored_origin("", "") == (None, None)
+    # An empty address is none whatever type was saved beside it: format 2 wrote
+    # the SCXML type beside events no processor stamped, and half a pair is
+    # never read back.
+    assert read_stored_origin("", SCXML_EVENT_PROCESSOR_URI) == (None, None)
+    assert read_stored_origin("", "x-sce-host") == (None, None)
+    # An address saved with no type is the SCXML processor's, as format 2 meant.
+    assert read_stored_origin("mesh://motor", "") == (
+        EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://motor"),
+        None,
+    )
+    assert read_stored_origin("kid", "") == (scxml_origin("kid"), "kid")
     # A bare id with the SCXML type: that session's pair, the id its sender.
     assert read_stored_origin("root.work.1.kid", SCXML_EVENT_PROCESSOR_URI) == (
         scxml_origin("root.work.1.kid"),
